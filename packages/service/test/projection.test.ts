@@ -4,8 +4,8 @@
 // in this process on temporary homes; fixture spaces only.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { newId, type Id } from "@tasks/storage";
-import { seedMira } from "@tasks/testkit";
+import { backupSpace, newId, type Id } from "@tasks/storage";
+import { checkedDriver, seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import {
@@ -162,5 +162,29 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       "the refusal",
     );
     expect(existsSync(inside)).toBe(false);
+  });
+
+  test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {
+    const { home, folder } = await setUp("projrip");
+    const backup = await backupSpace(await checkedDriver(), folder, { kind: "manual" });
+    const service = await start(home, folder);
+    const claim = join(folder, "view", ".projection.json");
+    await waitFor(() => (existsSync(claim) ? true : undefined), 30_000, "the first render");
+    const before = (JSON.parse(readFileSync(claim, "utf8")) as { incarnation: string }).incarnation;
+    // The projection's worker holds a reader of the database and files of the folder: the swap
+    // fails on Windows unless the close stopped it first.
+    const change = await service.spaceManager.restoreInPlace(0, backup.file);
+    expect(change.incarnation).not.toBe(before);
+    await waitFor(
+      () =>
+        existsSync(claim) &&
+        (JSON.parse(readFileSync(claim, "utf8")) as { incarnation: string }).incarnation ===
+          change.incarnation
+          ? true
+          : undefined,
+      30_000,
+      "the restored space's render",
+    );
+    expect(catalogIds(join(folder, "view"))).toHaveLength(12);
   });
 });
