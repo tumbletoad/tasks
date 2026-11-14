@@ -268,6 +268,9 @@ When `found` is `true`:
 | `results[].entry` | string | no | Note or log entry reference |
 | `results[].version` | integer, 0 to 999999999999999 | yes | The row's version after it; for a source, the link's |
 | `results[].differs` | ("kind" \| "title" \| "who" \| "ref" \| "url" \| "at")[] | no | Fields of an existing source the input gave otherwise |
+| `results[].matched_by` | "source_key" | no | A task draft that matched an existing task: how |
+| `results[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
+| `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 49 | yes | Index of the operation in the request |
 | `conflicts[].entity` | "tasks" \| "task_sources" \| "places" | yes | Table of the row |
