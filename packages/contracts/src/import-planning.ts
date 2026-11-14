@@ -64,9 +64,11 @@ export const IMPORT_PROBLEM_CODES = {
   "checked-item": "warning",
   /** A completion without a calendar date: completed at the import time. */
   "done-date-unknown": "warning",
-  /** A date or time outside the space's range (1970 to 9999): dropped. */
+  /** A date or time outside the space's range (1970 to 9999), or a day the import's time zone
+   * skips: dropped. */
   "date-out-of-range": "warning",
-  /** `paths[0]` under no root, or not a folder a place can name: no place. */
+  /** `paths[0]` under no root, or not a folder a place can name (a climb, a hidden character, a
+   * spelling SafeText would change): no place. */
   "path-outside-roots": "warning",
   /** `paths[1…]`, kept in `ext.planning.paths`. */
   "paths-extra": "warning",
@@ -80,8 +82,12 @@ export const IMPORT_PROBLEM_CODES = {
   "source-dropped": "warning",
   /** An unknown metadata key that names one of the importer's own `ext.planning` keys. */
   "extra-key-reserved": "warning",
-  /** An unknown metadata key whose value nests deeper than 32 levels: left out. */
+  /** An unknown metadata key whose value nests deeper than 32 levels, or holds a number JSON.parse
+   * could not keep as written (`1e400`, `9007199254740993`): left out. */
   "extra-dropped": "warning",
+  /** A metadata entry without a task line whose ID no task line could carry (not of the marker
+   * grammar): not created, even with `--include-orphans`. */
+  "orphan-id-invalid": "warning",
 } as const satisfies Record<string, "error" | "warning">;
 
 export type ImportProblemCode = keyof typeof IMPORT_PROBLEM_CODES;

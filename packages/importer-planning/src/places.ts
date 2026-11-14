@@ -6,7 +6,11 @@
 //
 // Paths are split at `/`, and a Windows path (`C:\…`, `\\server\…`) also at `\`, with its
 // segments compared without case. Empty and `.` segments drop out. A `..` segment, a character a
-// place's path never holds, or a relative path over 1,024 characters gives no place.
+// place's path never holds, or a relative path over 1,024 characters gives no place. Nor does a
+// relative path SafeText would change (A3 3.10): the writer stores text normalised, and a
+// decomposed `é` stored composed names another folder on Linux.
+
+import { normaliseText } from "@tasks/contracts";
 
 /** Root IDs as `machine.toml` names them (A1 3.15). */
 export const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -79,7 +83,12 @@ export function placeFor(path: string, roots: Roots): PlannedPlace | undefined {
   }
   if (best === undefined) return undefined;
   const rel = target.segments.slice(best.depth).join("/");
-  if (Array.from(rel).length > PATH_MAX || PATH_FORBIDDEN.test(rel) || DRIVE.test(rel)) {
+  if (
+    Array.from(rel).length > PATH_MAX ||
+    PATH_FORBIDDEN.test(rel) ||
+    DRIVE.test(rel) ||
+    normaliseText(rel) !== rel
+  ) {
     return undefined;
   }
   return { root: best.root, path: rel };

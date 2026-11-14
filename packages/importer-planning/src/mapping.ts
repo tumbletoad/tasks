@@ -8,7 +8,7 @@
 
 import { normaliseLine, normaliseText } from "@tasks/contracts";
 import type { LedgerTask } from "./ledger.ts";
-import { eventMillis, isTimeZone, localDay, nineOClock } from "./local-time.ts";
+import { eventMillis, inDayRange, isTimeZone, localDay, nineOClock } from "./local-time.ts";
 import { METADATA_FILE, type MetadataEntry, type PrototypeStatus } from "./metadata.ts";
 import {
   CHECKED_AS,
@@ -29,7 +29,7 @@ import {
 import { isAbsolutePath, placeFor, ROOT_ID, type Roots } from "./places.ts";
 import { problem, type Problem, type ProblemCode, type ProblemField } from "./problems.ts";
 import type { PrototypeParse } from "./prototype.ts";
-import { groupSlug } from "./slug.ts";
+import { groupKey, groupSlug, numberedSlug } from "./slug.ts";
 import {
   classifyUrl,
   isGenericLabel,
@@ -67,8 +67,12 @@ export const MAPPING_LIMITS = {
   extraDepth: 32,
 } as const;
 
-/** The title of a task whose title and legacy ID are both empty after SafeText. */
-export const UNTITLED = "Untitled task from the Planning prototype";
+/**
+ * The IDs a task line can carry: a marker's grammar, which holds every fallback ID (A7 3.15.2).
+ * A metadata entry without a task line is created (`--include-orphans`) only with such an ID: any
+ * other key is no prototype task, and as an alias it would not pass SafeText unchanged.
+ */
+const LEGACY_ID = /^[a-z0-9_-]+$/;
 
 /** Thrown for options the caller should have checked; the message never quotes a value. */
 export class MappingOptionsError extends Error {
@@ -165,6 +169,7 @@ interface Entry {
 function entriesOf(
   parse: PrototypeParse,
   includeOrphans: boolean,
+  report: Report,
 ): {
   entries: Entry[];
   duplicates: number;
@@ -192,6 +197,10 @@ function entriesOf(
   }
   if (includeOrphans) {
     for (const id of parse.orphans) {
+      if (!LEGACY_ID.test(id)) {
+        report.add("orphan-id-invalid", metaAt(id));
+        continue;
+      }
       const meta = parse.metadata.get(id);
       entries.push({
         id,
@@ -215,7 +224,10 @@ interface Groups {
 }
 
 function groupsOf(entries: readonly Entry[], report: Report): Groups {
+  // By identity (slug.ts: groupKey), each with its slug. A slug is ASCII, so distinct titles can
+  // share one ("Работа" and "Дом" are both `area`): the later title takes the next free number.
   const areas = new Map<string, PlannedArea>();
+  const areaSlugs = new Set<string>();
   const projects = new Map<string, PlannedProject>();
   const projectSlugs = new Set<string>();
   const of = new Map<Entry, { area: string; project?: string }>();
@@ -236,22 +248,26 @@ function groupsOf(entries: readonly Entry[], report: Report): Groups {
     // The ledger's group, only when metadata has no category. An orphan has no group: `Other`.
     const areaTitle =
       category !== "" ? category : once(e.line?.group ?? "Other", "group", e.at) || "Other";
-    const area = groupSlug(areaTitle, "area");
-    if (!areas.has(area)) areas.set(area, { slug: area, title: areaTitle });
+    let planned = areas.get(groupKey(areaTitle, "area"));
+    if (planned === undefined) {
+      const slug = numberedSlug(groupSlug(areaTitle, "area"), areaSlugs);
+      areaSlugs.add(slug);
+      planned = { slug, title: areaTitle };
+      areas.set(groupKey(areaTitle, "area"), planned);
+    }
+    const area = planned.slug;
 
     const projectTitle = once(e.meta?.project ?? "", "project", e.metaAt);
     if (projectTitle === "") {
       of.set(e, { area });
       continue;
     }
-    const base = groupSlug(projectTitle, "project");
-    const key = `${area}\u0000${base}`;
+    const key = `${area}\u0000${groupKey(projectTitle, "project")}`;
     let project = projects.get(key);
     if (project === undefined) {
-      // Project slugs are unique in a space, not per area (A1 3.4): another area's project with
-      // the same slug gets the next free number.
-      let slug = base;
-      for (let n = 2; projectSlugs.has(slug); n += 1) slug = `${base}-${String(n)}`;
+      // Project slugs are unique in a space, not per area (A1 3.4): another project with the same
+      // slug gets the next free number.
+      const slug = numberedSlug(groupSlug(projectTitle, "project"), projectSlugs);
       projectSlugs.add(slug);
       project = { slug, title: projectTitle, area };
       projects.set(key, project);
@@ -278,9 +294,15 @@ interface SourceRow {
   readonly links: Link[];
 }
 
+/** A ticket's title from data/jira.json: as written, and through SafeText. */
+interface TicketTitle {
+  readonly raw: string;
+  readonly clean: string;
+}
+
 function sourcesOf(
   entries: readonly Entry[],
-  jira: ReadonlyMap<string, string>,
+  jira: ReadonlyMap<string, TicketTitle>,
   report: Report,
 ): { rows: SourceRow[]; byEntry: Map<Entry, SourceRow[]> } {
   // Pass 1: every usable source of every entry. `links` holds one per key per entry, the links the
@@ -334,8 +356,13 @@ function sourcesOf(
     let title: string;
     let generic = false;
     if (named !== undefined) title = named.label;
-    else if (ticket !== undefined && ticket !== "") title = ticket;
-    else {
+    else if (ticket !== undefined && ticket.clean !== "") {
+      title = ticket.clean;
+      // The title lands on this task's source: its change is reported there.
+      if (ticket.clean !== ticket.raw) {
+        report.add("text-sanitised", first.entry.metaAt, "sources", first.index);
+      }
+    } else {
       title = shortUrl(first.url);
       generic = true;
       report.add("source-title-generic", first.entry.metaAt, "sources", first.index);
@@ -411,12 +438,12 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   if (line !== undefined && !line.marked) report.add("fallback-id", e.at);
 
   // Title, and the full text at the top of the context when it is over 300 characters. An orphan
-  // is titled by its legacy ID, which as a metadata key can be any text.
+  // is titled by its legacy ID. A legacy ID is of the marker grammar, so SafeText keeps it.
   const rawTitle = line?.title ?? e.id;
   let title = report.clean(rawTitle, "line", e.at, "title");
   if (title.trim() === "") {
     report.add("title-empty", e.at, "title");
-    title = normaliseLine(e.id).trim() === "" ? UNTITLED : e.id;
+    title = e.id;
   }
   let head: string | undefined;
   if (codePoints(title) > MAPPING_LIMITS.title) {
@@ -452,7 +479,10 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   // Summary: metadata `next`, else (absent or empty) the body's `Next:` clause, one line.
   const metaNext =
     meta?.next === undefined ? "" : report.clean(meta.next, "line", e.metaAt, "next").trim();
-  const next = metaNext !== "" ? metaNext : normaliseLine(line?.next ?? "").trim();
+  const next =
+    metaNext !== "" || line?.next === undefined
+      ? metaNext
+      : report.clean(line.next, "line", e.at, "next").trim();
   const summary = report.fit(next, MAPPING_LIMITS.summary, "chars", e.metaAt, "next");
 
   // Days at 09:00 in the import's zone; one outside the space's range is dropped.
@@ -467,18 +497,20 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   const createdAt = at(line?.added?.date, e.at, "added");
   // A due date is a day, held to the same range: the writer refuses a year before 100.
   let due = meta?.due;
-  if (due !== undefined && (due < "1970-01-01" || due > "9999-12-31")) {
+  if (due !== undefined && !inDayRange(due)) {
     report.add("date-out-of-range", e.metaAt, "due");
     due = undefined;
   }
 
-  // The star: the day of the last focus event's instant in the import's zone.
+  // The star: the day of the last focus event's instant in the import's zone, a day the space
+  // holds. An instant near either end of the range can fall on a day outside it there.
   const state = cx.parse.events.state.get(e.id);
   let focus: string | undefined;
   if (state?.star?.starred === true) {
     const ms = eventMillis(state.star.at);
-    if (ms === undefined) report.add("date-out-of-range", e.at, "focus");
-    else focus = localDay(ms, tz);
+    const day = ms === undefined ? undefined : localDay(ms, tz);
+    if (day === undefined || !inDayRange(day)) report.add("date-out-of-range", e.at, "focus");
+    else focus = day;
   }
 
   // ext.planning.
@@ -552,13 +584,15 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   }
   if (complete !== undefined) lifecycle = "completed";
 
-  // Unknown metadata keys, each as ext.planning.<key>.
+  // Unknown metadata keys, each as ext.planning.<key>. A value holding a number JSON.parse could
+  // not keep as written is not what the file says: left out like one nested too deep.
+  const inexact = new Set(meta?.inexact ?? []);
   for (const [index, [key, value]] of Object.entries(meta?.extra ?? {}).entries()) {
     if (PLANNING_EXT_KEYS.has(key)) {
       report.add("extra-key-reserved", e.metaAt, "extra", index);
       continue;
     }
-    const clean = cleanJson(value, 0);
+    const clean = inexact.has(key) ? undefined : cleanJson(value, 0);
     if (clean === undefined) {
       report.add("extra-dropped", e.metaAt, "extra", index);
       continue;
@@ -647,6 +681,8 @@ function cleanJson(
   depth: number,
 ): { value: unknown; changed: boolean } | undefined {
   if (depth > MAPPING_LIMITS.extraDepth) return undefined;
+  // JSON holds no Infinity: it would be written as null.
+  if (typeof value === "number" && !Number.isFinite(value)) return undefined;
   if (typeof value === "string") {
     const out = normaliseText(value);
     return { value: out, changed: out !== value };
@@ -682,12 +718,14 @@ function cleanJson(
 export function mapPrototype(parse: PrototypeParse, options: MappingOptions): ImportPlan {
   checkOptions(options);
   const report = new Report();
-  const { entries, duplicates } = entriesOf(parse, options.includeOrphans === true);
+  const { entries, duplicates } = entriesOf(parse, options.includeOrphans === true, report);
   const groups = groupsOf(entries, report);
-  const jira = new Map<string, string>();
+  const jira = new Map<string, TicketTitle>();
   for (const t of parse.jira.tickets) {
     const key = t.key.toUpperCase();
-    if (t.title !== undefined && !jira.has(key)) jira.set(key, normaliseLine(t.title).trim());
+    if (t.title !== undefined && !jira.has(key)) {
+      jira.set(key, { raw: t.title.trim(), clean: normaliseLine(t.title).trim() });
+    }
   }
   const { rows, byEntry } = sourcesOf(entries, jira, report);
   const owners = new Map<string, { name: string; me: boolean; tasks: number }>();
@@ -716,12 +754,15 @@ export function mapPrototype(parse: PrototypeParse, options: MappingOptions): Im
     generic: row.generic,
     tasks: [...new Set(row.links.map((l) => l.entry.id))],
   }));
-  const sourcesByKind: Partial<Record<PlannedSourceKind, number>> = {};
-  for (const s of sources) sourcesByKind[s.kind] = (sourcesByKind[s.kind] ?? 0) + 1;
-  const placesByRoot: Record<string, number> = {};
+  // Counted in Maps: a root may be called `constructor`, which a plain object already has.
+  const byKind = new Map<PlannedSourceKind, number>();
+  for (const s of sources) byKind.set(s.kind, (byKind.get(s.kind) ?? 0) + 1);
+  const byRoot = new Map<string, number>();
   for (const t of tasks) {
-    if (t.place !== undefined) placesByRoot[t.place.root] = (placesByRoot[t.place.root] ?? 0) + 1;
+    if (t.place !== undefined) byRoot.set(t.place.root, (byRoot.get(t.place.root) ?? 0) + 1);
   }
+  const sourcesByKind = Object.fromEntries(byKind) as Partial<Record<PlannedSourceKind, number>>;
+  const placesByRoot: Record<string, number> = Object.fromEntries(byRoot);
   const completed = tasks.filter((t) => t.lifecycle === "completed");
   const ownerList: PlannedOwner[] = [...owners.values()];
 

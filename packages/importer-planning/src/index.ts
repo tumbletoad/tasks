@@ -67,7 +67,6 @@ export {
   mapPrototype,
   MappingOptionsError,
   MAPPING_LIMITS,
-  UNTITLED,
   type MappingOptions,
 } from "./mapping.ts";
 export {
@@ -95,13 +94,24 @@ export {
   type PlannedTaskCreate,
   type PlanningExt,
 } from "./plan.ts";
-export { eventMillis, isTimeZone, localDay, nineOClock } from "./local-time.ts";
+export {
+  eventMillis,
+  FIRST_DAY,
+  inDayRange,
+  INSTANT_MAX,
+  isTimeZone,
+  LAST_DAY,
+  localDay,
+  nineOClock,
+} from "./local-time.ts";
 export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
-export { groupSlug, SLUG_MAX } from "./slug.ts";
+export { groupKey, groupSlug, numberedSlug, SLUG_MAX } from "./slug.ts";
+export { exactNumber } from "./json.ts";
 export {
   classifyUrl,
   isGenericLabel,
   normaliseUrl,
+  REF_MAX,
   shortUrl,
   SOURCE_KEY_MAX,
   type PlannedSourceKind,

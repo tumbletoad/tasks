@@ -3,7 +3,8 @@
 //
 // Kind, in this order:
 // - a `mailto:` URL: `email`;
-// - a path ending `/browse/<KEY>-<n>`: `ticket`, with `ref` `<KEY>-<n>` (the key upper-cased);
+// - a path ending `/browse/<KEY>-<n>`: `ticket`, with `ref` `<KEY>-<n>` (the key upper-cased), when
+//   `<KEY>-<n>` fits a ref's 300 characters;
 // - a code host's path `/<owner>/<repo>[/-]/pull|pulls|merge_requests/<n>`: `pr`, and with
 //   `issues`: `issue`;
 // - by the host's first label: `mail`, `outlook`, `webmail`: `email`; `chat`, `teams`: `chat`;
@@ -85,12 +86,16 @@ export function normaliseUrl(url: URL): string {
   return copy.href;
 }
 
+/** A source's `ref` is one line of at most 300 characters in the space (A1 3.7). */
+export const REF_MAX = 300;
+
 export function classifyUrl(text: string): UrlClass {
   const url = URL.parse(text);
   if (url === null) return { kind: "web", keyProblem: "unparsed" };
   if (url.protocol === "mailto:") return keyed("email", `url:${normaliseUrl(url)}`);
   const ticket = TICKET.exec(url.pathname);
-  if (ticket !== null) {
+  // A key longer than a ref can hold is no ticket's: the URL is classified as any other.
+  if (ticket !== null && (ticket[1] ?? "").length <= REF_MAX) {
     const ref = (ticket[1] ?? "").toUpperCase();
     return { ...keyed("ticket", `jira:${ref}`), ref };
   }

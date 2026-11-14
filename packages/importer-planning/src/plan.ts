@@ -240,16 +240,21 @@ export type BoundOp = Readonly<Record<string, unknown>> & { readonly kind: Plann
 /**
  * The plan's operations in order, each draft handle replaced by the ID `idOf` gives its legacy ID:
  * `task.create` takes it as `id`, every other operation as `task`. Pure: the apply draws the IDs.
+ * The operations are copies, so the plan stays as it was hashed whatever the caller does with them,
+ * and two tasks given one ID throw.
  */
 export function bindOperations(
   plan: Pick<ImportPlan, "tasks">,
   idOf: (legacyId: string) => string,
 ): BoundOp[] {
   const ops: BoundOp[] = [];
+  const given = new Set<string>();
   for (const task of plan.tasks) {
     const id = idOf(task.legacyId);
+    if (given.has(id)) throw new Error("Two tasks of the plan were given one ID");
+    given.add(id);
     for (const op of task.ops) {
-      const { task: draft, ...rest } = op;
+      const { task: draft, ...rest } = structuredClone(op);
       if (draft.draft !== task.legacyId) throw new Error("An operation names another task's draft");
       ops.push(op.kind === "task.create" ? { ...rest, kind: op.kind, id } : { ...rest, task: id });
     }

@@ -3,7 +3,7 @@
 // `source_date`, `reviewed`, `confidence`, optional `due`, `sources` and `paths`. A missing file is
 // `{}`. A value of the wrong type is dropped and reported; an unknown key is kept as written.
 
-import { readJson, isObject } from "./json.ts";
+import { readJson, isObject, type Inexact } from "./json.ts";
 import { limitsWith, type Limits } from "./limits.ts";
 import { problem, type Problem, type ProblemField } from "./problems.ts";
 import { isIsoDate, type Source } from "./text.ts";
@@ -44,6 +44,9 @@ export interface MetadataEntry {
   readonly paths: readonly string[];
   /** Every key the prototype's grammar does not name, with its JSON value. */
   readonly extra: Readonly<Record<string, unknown>>;
+  /** The keys of `extra` whose value holds a number JSON.parse could not keep as written
+   * (`9007199254740993`, `1e400`): its value there is not what the file says. */
+  readonly inexact?: readonly string[];
 }
 
 export interface MetadataParse {
@@ -86,7 +89,8 @@ export function parseMetadata(
   const limits = limitsWith(overrides);
   const entries = new Map<string, MetadataEntry>();
   if (source === undefined) return { present: false, entries, problems: [] };
-  const read = readJson(source, METADATA_FILE, limits.jsonBytes);
+  const inexact: Inexact = new WeakMap();
+  const read = readJson(source, METADATA_FILE, limits.jsonBytes, inexact);
   const problems = read.problems;
   if (!read.ok) return { present: true, entries, problems };
   if (!isObject(read.value)) {
@@ -103,7 +107,7 @@ export function parseMetadata(
       problems.push(problem("entry-not-object", { file: METADATA_FILE, task: id }));
       continue;
     }
-    entries.set(id, entryFrom(id, value, limits, problems));
+    entries.set(id, entryFrom(id, value, limits, problems, inexact.get(value)));
   }
   return { present: true, entries, problems };
 }
@@ -113,6 +117,7 @@ function entryFrom(
   raw: Record<string, unknown>,
   limits: Limits,
   problems: Problem[],
+  inexact: ReadonlySet<string> = new Set(),
 ): MetadataEntry {
   const report = (code: Parameters<typeof problem>[0], field: ProblemField, index?: number) => {
     problems.push(problem(code, { file: METADATA_FILE, task: id, field, index }));
@@ -137,6 +142,8 @@ function entryFrom(
     paths: [],
     extra: Object.fromEntries(Object.entries(raw).filter(([key]) => !KNOWN.has(key))),
   };
+  const lossy = Object.keys(entry.extra).filter((key) => inexact.has(key));
+  if (lossy.length > 0) entry.inexact = lossy;
   const set = <K extends keyof MetadataEntry>(key: K, value: MetadataEntry[K] | undefined) => {
     if (value !== undefined) entry[key] = value;
   };
@@ -161,8 +168,9 @@ function entryFrom(
   else if (typeof priority === "string") report("priority-invalid", "priority");
   else if (priority !== undefined) report("field-type", "priority");
 
+  // A rank JSON.parse could not keep as written (1e400, 2^53 + 1) is no rank the file gives.
   const rank = raw["rank"];
-  if (typeof rank === "number" && Number.isFinite(rank)) entry.rank = rank;
+  if (typeof rank === "number" && Number.isFinite(rank) && !inexact.has("rank")) entry.rank = rank;
   else if (rank !== undefined) report("field-type", "rank");
 
   // Free text. A number is dropped: JSON.parse has already rounded it (1e-400, 2^53 + 1), so its

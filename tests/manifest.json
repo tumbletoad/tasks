@@ -770,6 +770,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.15.importer.writer-fit",
+      "title": "Every value of a plan is one the space stores as it is: over many seeded synthetic prototype folders built from awkward text, days, instants, zones, URLs, paths, keys and numbers, the writer's request check takes every operation unchanged, aliases keep the marker grammar, instants stay in range and ext.planning is JSON that SafeText keeps",
+      "source": "A7 3.15.3, A1 3.7, A3 3.10",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.15.importer.input-copy",
       "title": "The input copy copies only the inputs into a new folder, records their SHA-256, refuses an existing or nested destination, follows no link, and reports any source file that changed, appeared or went away",
       "source": "A7 3.14 (M7.02), A7 3.15.1",

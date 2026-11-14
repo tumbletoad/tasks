@@ -82,7 +82,8 @@ function offsetAt(ms: number, timeZone: string): number {
 
 /**
  * The instant of 09:00 on `date` (`YYYY-MM-DD`) in `timeZone`, or undefined when it is outside
- * the writer's range. In a gap of a clock change the later reading is taken.
+ * the writer's range or the zone skips that day (Samoa's 30 December 2011). In a gap of a clock
+ * change within the day the later reading is taken.
  */
 export function nineOClock(date: string, timeZone: string): number | undefined {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -97,14 +98,25 @@ export function nineOClock(date: string, timeZone: string): number | undefined {
   });
   const first = wall - offsetAt(wall, timeZone);
   const at = wall - offsetAt(first, timeZone);
-  return inRange(at) ? at : undefined;
+  if (!inRange(at)) return undefined;
+  // A day the zone skips has no 09:00: the reading lands on another day.
+  return localDay(at, timeZone) === date ? at : undefined;
 }
+
+/** The first and last days the space holds (A1 3.4). */
+export const FIRST_DAY = "1970-01-01";
+export const LAST_DAY = "9999-12-31";
 
 /** The calendar day in `timeZone` at the instant `ms`, as `YYYY-MM-DD`. */
 export function localDay(ms: number, timeZone: string): string {
   const w = wallAt(ms, timeZone);
   const pad = (n: number, width: number) => String(n).padStart(width, "0");
   return `${pad(w.year, 4)}-${pad(w.month, 2)}-${pad(w.day, 2)}`;
+}
+
+/** Whether `day` (`YYYY-MM-DD`) is one the space holds: 1970 to 9999. */
+export function inDayRange(day: string): boolean {
+  return day.length === FIRST_DAY.length && day >= FIRST_DAY && day <= LAST_DAY;
 }
 
 /** Microseconds from 0001-01-01 to 1970-01-01: 719,162 days. */
