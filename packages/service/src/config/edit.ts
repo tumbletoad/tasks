@@ -340,8 +340,8 @@ export interface PreparedEdit {
 }
 
 /** The file's bytes (bounded, a regular file only), undefined when missing, or a problem. */
-function readIfPresent(path: string): Buffer | undefined | "problem" {
-  const read = readConfigFile(path);
+function readIfPresent(path: string, maxBytes?: number): Buffer | undefined | "problem" {
+  const read = readConfigFile(path, maxBytes);
   if (read.kind === "missing") return undefined;
   return read.kind === "bytes" ? read.bytes : "problem";
 }
@@ -379,6 +379,8 @@ class ChangedMeanwhile extends Error {}
 export interface CommitOptions {
   /** Whether the file or its folder fails the caller's rule. Default: machine.toml's rule. */
   readonly unsafe?: (path: string) => boolean;
+  /** The bound of the caller's file, which its read before the write keeps. Default: 1 MiB. */
+  readonly maxBytes?: number;
 }
 
 /**
@@ -396,7 +398,7 @@ export interface CommitOptions {
  */
 export function commitEdit(edit: PreparedEdit, options: CommitOptions = {}): EditResult {
   const unchanged = () => {
-    const again = readIfPresent(edit.path);
+    const again = readIfPresent(edit.path, options.maxBytes);
     if (again === "problem") return false;
     return edit.before === undefined
       ? again === undefined

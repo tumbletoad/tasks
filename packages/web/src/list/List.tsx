@@ -237,8 +237,14 @@ export function List({
       onCollapse();
       return;
     }
+    // A text field in the row (the title being edited) keeps its keys (A5 3.21).
+    const typing =
+      target.isContentEditable ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLInputElement && target.type !== "checkbox");
     if (
       line === null ||
+      typing ||
       event.altKey ||
       event.ctrlKey ||
       event.metaKey ||

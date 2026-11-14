@@ -71,7 +71,12 @@
         "enabled": true
       }
     ],
-    "approvals": {}
+    "approvals": {},
+    "setup": {
+      "managedPaths": [
+        "/home/mira/ok.toml"
+      ]
+    }
   },
   "problems": [
     {
@@ -167,6 +172,16 @@
     {
       "key": "approvals.sha256-short",
       "code": "invalid_value",
+      "severity": "error"
+    },
+    {
+      "key": "setup.managed.extra",
+      "code": "unknown_key",
+      "severity": "warning"
+    },
+    {
+      "key": "setup.managed.paths[1]",
+      "code": "not_absolute",
       "severity": "error"
     }
   ]

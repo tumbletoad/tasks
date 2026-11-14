@@ -31,10 +31,12 @@ import {
   readSnapshot,
   sameAuthority,
   type Cursor,
+  type FeedHere,
   type SnapshotMessage,
   type Visibility,
 } from "./feed.ts";
 import type { UiInstance } from "./launches.ts";
+import type { Root } from "@tasks/launch";
 import type { HttpLimits } from "./limits.ts";
 import type { HttpTimerKind, StartHttpTimer } from "./timers.ts";
 
@@ -48,6 +50,11 @@ export interface FeedHost {
   spaces(): readonly ServedSpace[];
   /** The machine's default space (A2 3.1): what a subscription that names none gets. */
   readonly defaultSpace?: () => string | undefined;
+  /** This machine: a task's row shows its place's state here (A5 3.6). None: no place shown. */
+  readonly machine?: { readonly id: string };
+  /** This machine's roots as they are now, for that state. Default: none. */
+  readonly roots?: () => readonly Root[];
+  readonly platform?: NodeJS.Platform;
 }
 
 export interface FeedOptions {
@@ -380,7 +387,7 @@ class FeedSocket {
         const head = await readHead(reader);
         if (!sameAuthority(cursor, head.cursor) || cursor.seq > head.cursor.seq) {
           start = undefined;
-          const snapshot = await readSnapshot(reader);
+          const snapshot = await readSnapshot(reader, this.#hub.here());
           if (generation !== this.#generation) return;
           await this.#sendSnapshot(
             snapshot,
@@ -389,7 +396,7 @@ class FeedSocket {
           start = snapshot.cursor;
         }
       } else {
-        const snapshot = await readSnapshot(reader);
+        const snapshot = await readSnapshot(reader, this.#hub.here());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot);
         start = snapshot.cursor;
@@ -448,7 +455,9 @@ class FeedSocket {
       }
       let read;
       try {
+        const here = this.#hub.here();
         read = await readBatch(space.reader, cursor.seq, {
+          ...(here === undefined ? {} : { here }),
           ...(this.#hub.options.visible === undefined
             ? {}
             : { visible: this.#hub.options.visible }),
@@ -464,7 +473,7 @@ class FeedSocket {
       const { head, batch } = read;
       if (!sameAuthority(cursor, head.cursor)) {
         // An epoch or incarnation change always means a fresh snapshot (A1 3.7).
-        const snapshot = await readSnapshot(space.reader);
+        const snapshot = await readSnapshot(space.reader, this.#hub.here());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, "epoch");
         this.#cursor = snapshot.cursor;
@@ -524,6 +533,17 @@ export class FeedHub {
 
   get size(): number {
     return this.#sockets.size;
+  }
+
+  /** @internal The machine a task's row shows its place on, or none when the host names none. */
+  here(): FeedHere | undefined {
+    const { machine, roots, platform } = this.options.host;
+    if (machine === undefined) return undefined;
+    return {
+      machine: machine.id,
+      roots: roots ?? (() => []),
+      platform: platform ?? process.platform,
+    };
   }
 
   /** Serves the feed on an upgraded connection of the grant `grant`. */
