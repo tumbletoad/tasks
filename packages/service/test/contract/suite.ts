@@ -528,6 +528,12 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
       "[A3.3.7.grant.faces] every agent tool's call from a home that is not granted the space: forbidden, rule grant, A3's body",
       { timeout: 180_000 },
       async () => {
+        // Every agent tool is called, but run_report, refused before any space is chosen.
+        const tools = registry
+          .filter((e) => e.actors === "agent" && e.faces.mcp !== undefined)
+          .map((e) => e.name)
+          .sort();
+        expect(GRANT_CALLS.map(([entry]) => entry).sort()).toEqual(tools);
         const transport = await open();
         try {
           let n = 0;

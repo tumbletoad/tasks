@@ -1804,6 +1804,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const action = String(input["action"]);
     if (action !== "list") {
       checkMode(input);
+      // The input rules of a write come first, so the agent fixes its call once (A3 3.4.10): every
+      // write names its group, and a change to an existing one needs base (A1 3.5).
+      if (input["path"] === undefined) {
+        throw invalid("path", `Required to ${action}`, "Name the area, or the area/project.");
+      }
+      if (action !== "create" && input["base"] === undefined) {
+        throw invalid("base", `Required to ${action}`, "Pass base: the as_of of your last read.");
+      }
       // A1's area.* and project.* operations arrive with M4.01b (A3 3.4.10).
       throw unsupported("action", "M4.01b (A1's area and project operations)");
     }
@@ -1992,19 +2000,20 @@ function checkPrefSets(pairs: unknown, actor: "human" | "agent"): void {
   });
 }
 
-/** A stored value as its key reads it (A1 3.16): the default when it is missing or unreadable. */
+/**
+ * A stored value as its key reads it (A1 3.16): the default when it is missing, unreadable or
+ * refused by the key's own schema. A list is read in either stored form first (`keysOf`: keys, or
+ * objects with a `key`), then checked like any other value.
+ */
 function prefValue(p: PrefDeclaration, stored: string | undefined): PrefPlain {
   if (stored === undefined) return p.default;
-  if (p.value.kind === "keys") {
-    const fallback = Array.isArray(p.default) ? (p.default as string[]) : [];
-    return keysOf(stored, fallback);
-  }
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(stored);
-    return prefValueSchema(p.value).safeParse(value).success ? (value as PrefPlain) : p.default;
+    value = p.value.kind === "keys" ? keysOf(stored, []) : JSON.parse(stored);
   } catch {
     return p.default;
   }
+  return prefValueSchema(p.value).safeParse(value).success ? (value as PrefPlain) : p.default;
 }
 
 const plain = (value: PrefPlain): PrefPlain =>

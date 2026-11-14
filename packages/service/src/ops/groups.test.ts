@@ -41,6 +41,24 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
     expect(failure(() => resolveGroup(names, "project", "Portal", "p")).code).toBe("ambiguous");
   });
 
+  test("a project named beside an area must be that area's: one only elsewhere is refused", () => {
+    // The writer would file the task under the project's own area, not the one named.
+    const refused = failure(() =>
+      resolveGroup(names, "project", "portal-2", "tasks.0.project", { area: "a_1" }),
+    );
+    expect(refused).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "tasks.0.project" }], suggestions: ["Home"] },
+    });
+    expect(`${refused.message} ${refused.hint ?? ""}`).not.toContain("Home");
+    // Neither area holds one: the areas of both matches are suggested.
+    expect(
+      failure(() => resolveGroup(names, "project", "Portal", "p", { area: "a_3" })).data,
+    ).toMatchObject({ suggestions: ["Client work", "Home"] });
+    // Without an area, the project decides where the task goes.
+    expect(resolveGroup(names, "project", "portal-2", "p")).toBe("p_2");
+  });
+
   test("a typo is within 2 edits and under half the name's length; anything else is new", () => {
     const typo = failure(() => resolveGroup(names, "area", "Client wrok", "tasks.0.area"));
     expect(typo.code).toBe("invalid_input");

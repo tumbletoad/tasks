@@ -39,25 +39,36 @@ let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
 let indexed: Fixture;
 let plain: Fixture;
-let long: Fixture;
+/** A fixture whose rows tests change by hand (`edit`), for states no operation makes yet. */
+let edited: Fixture;
 const clock = Date.UTC(2026, 10, 12, 9, 0, 0);
 
 beforeAll(async () => {
   temp = tempRoot("m401");
-  for (const name of ["fx", "indexed", "plain", "long"]) mkdirSync(join(temp.root, name));
+  for (const name of ["fx", "indexed", "plain", "edited"]) mkdirSync(join(temp.root, name));
   fx = await writeFixture(join(temp.root, "fx"));
   indexed = await writeFixture(join(temp.root, "indexed"), { search: true });
   plain = await writeFixture(join(temp.root, "plain"));
-  long = await writeFixture(join(temp.root, "long"));
+  edited = await writeFixture(join(temp.root, "edited"));
 }, 60_000);
 
 afterAll(() => {
   fx.close();
   indexed.close();
   plain.close();
-  long.close();
+  edited.close();
   temp.cleanup();
 });
+
+/** One statement on the fixture's database, through a connection of its own. */
+async function edit(f: Fixture, sql: string, params: Record<string, unknown>): Promise<void> {
+  const conn = openSpaceConnection(await checkedDriver(), join(f.folder, "space.db"), "writer");
+  try {
+    conn.prepare(sql).run(params as never);
+  } finally {
+    conn.close();
+  }
+}
 
 /** The fixture's reader as the service's: one deferred read transaction per call. */
 function readerOf(f: Fixture): WorkerConnection {
@@ -191,6 +202,21 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
     expect(fx.base()).toBe(before);
   });
 
+  test("a project named beside an area it is not in is refused, and nothing is written", async () => {
+    const before = fx.base();
+    const body = await refusal(
+      call(fx, script, "task.add", {
+        tasks: [{ title: "Wrong area", area: "Home", project: "portal" }],
+        request_id: rid(),
+      }),
+    );
+    expect(body).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "tasks.0.project" }], suggestions: ["Lumen"] },
+    });
+    expect(fx.base()).toBe(before);
+  });
+
   test("an agent's task without area or project goes to the Inbox; the user's and inbox false do not", async () => {
     const agent = await add(fx, script, [
       { title: "Inbox one" },
@@ -238,35 +264,26 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
     // 61 code points, within the input's 120, but 122 UTF-16 units, past the writer's 120: only
     // the first call resolves it to an ID, so the retry must not send the name itself.
     const name = "🙂".repeat(61);
-    const conn = openSpaceConnection(
-      await checkedDriver(),
-      join(long.folder, "space.db"),
-      "writer",
-    );
-    try {
-      conn.prepare("UPDATE areas SET title = $title WHERE id = $id").run({
-        title: name,
-        id: long.areas.home,
-      });
-    } finally {
-      conn.close();
-    }
+    await edit(edited, "UPDATE areas SET title = $title WHERE id = $id", {
+      title: name,
+      id: edited.areas.home,
+    });
     const request = rid();
     const drafts = [{ title: "Long area name", area: name }];
-    const first = await add(long, script, drafts, request);
+    const first = await add(edited, script, drafts, request);
     expect(first.tasks.map((t) => t.result)).toEqual(["created"]);
-    const again = await add(long, script, drafts, request);
+    const again = await add(edited, script, drafts, request);
     expect(again.replayed).toBe(true);
     expect(again.tasks.map((t) => t.ref)).toEqual(first.tasks.map((t) => t.ref));
     // update_task's set takes names the same way, and replays the same way.
     const update = {
       task: first.tasks[0]?.ref ?? "",
       set: { area: name, summary: "Fixture summary." },
-      base: long.base(),
+      base: edited.base(),
       request_id: rid(),
     };
-    const updated = await call(long, script, "task.update", update);
-    expect(await call(long, script, "task.update", update)).toEqual({
+    const updated = await call(edited, script, "task.update", update);
+    expect(await call(edited, script, "task.update", update)).toEqual({
       ...(updated as object),
       replayed: true,
     });
@@ -329,8 +346,17 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     ).toMatchObject({ code: "not_found", data: { issues: [{ path: "path" }] } });
     // A request ID on a read is ignored: nothing is written, nothing is receipted.
     const before = fx.base();
-    await call(fx, script, "group.manage", { action: "list", request_id: rid() });
+    const reads = [rid(), rid()];
+    await call(fx, script, "group.manage", { action: "list", request_id: reads[0] });
+    await call(fx, script, "prefs.manage", { action: "get", request_id: reads[1] });
     expect(fx.base()).toBe(before);
+    const found = async (request: string) =>
+      ((await call(fx, script, "receipt.get", { request })) as { found: boolean }).found;
+    for (const request of reads) expect(await found(request), request).toBe(false);
+    // The same lookup finds a write's receipt in that writer scope.
+    const written = rid();
+    await add(fx, script, [{ title: "Receipted fixture task" }], written);
+    expect(await found(written)).toBe(true);
   });
 
   test("a write action needs a request_id, then waits for M4.01b; mode propose waits for M4.02", async () => {
@@ -341,15 +367,38 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
       code: "invalid_input",
       data: { issues: [{ path: "request_id" }] },
     });
+    // The input rules of each write come before the step it waits for: a group, and base to change
+    // an existing one.
+    expect(
+      await refusal(call(fx, script, "group.manage", { action: "create", request_id: rid() })),
+    ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "path" }] } });
+    for (const action of ["rename", "move", "archive"]) {
+      expect(
+        await refusal(
+          call(fx, script, "group.manage", {
+            action,
+            path: "Home",
+            to: "House",
+            request_id: rid(),
+          }),
+        ),
+        action,
+      ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "base" }] } });
+    }
     const later = await refusal(
       call(fx, script, "group.manage", {
         action: "rename",
         path: "Home",
         to: "House",
+        base: fx.base(),
         request_id: rid(),
       }),
     );
     expect(later.hint).toContain("M4.01b");
+    const created = await refusal(
+      call(fx, script, "group.manage", { action: "create", path: "Garden", request_id: rid() }),
+    );
+    expect(created.hint).toContain("M4.01b");
     const propose = await refusal(
       call(fx, script, "group.manage", {
         action: "create",
@@ -386,6 +435,29 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       call(fx, script, "prefs.manage", { action: "get", keys: ["tasks.statuss"] }),
     );
     expect(unknown).toMatchObject({ code: "invalid_input", hint: "Did you mean tasks.statuses?" });
+  });
+
+  test("a stored value its key's schema refuses reads as the default; a list in either stored form", async () => {
+    const store = (key: string, value: string) =>
+      edit(
+        edited,
+        "INSERT INTO preferences (key, value, schema_ver, policy, created_seq, version) " +
+          "VALUES ($key, $value, 1, 0, 0, 0) ON CONFLICT (key) DO UPDATE SET value = $value",
+        { key, value },
+      );
+    // A key with a space in it, and one twice: no list of statuses.
+    await store("tasks.statuses", JSON.stringify(["open", "has space", "open"]));
+    // Objects with a key are the list's other stored form.
+    await store("tasks.effort_scale", JSON.stringify([{ key: "S" }, { key: "XL" }]));
+    await store("tasks.dedupe_window_days", "9999");
+    const got = PrefsManageResult.parse(
+      await call(edited, user, "prefs.manage", { action: "get", keys: ["tasks.*"] }),
+    );
+    expect(got.prefs.map((p) => [p.key, p.value, p.is_default])).toEqual([
+      ["tasks.dedupe_window_days", 30, true],
+      ["tasks.effort_scale", ["S", "XL"], false],
+      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true],
+    ]);
   });
 
   test("set: a policy key is forbidden to everyone, the user's keys to agents, values must fit", async () => {

@@ -1,7 +1,7 @@
 // Areas and projects by name (A3 3.4.5, 3.4.10): a caller names a group as people do, and the
 // writer takes IDs and slugs only (A1 3.6). A name matches an area's or a project's name or slug,
-// ignoring case, else an old slug; a project named beside an area is looked for in that area
-// first. A name that matches nothing but lies within edit distance 2 of a group's name or slug, and
+// ignoring case, else an old slug; a project named beside an area must be one of that area's. A
+// name that matches nothing but lies within edit distance 2 of a group's name or slug, and
 // less than half that name's length from it, is `invalid_input` with the close names in
 // `data.suggestions` (stored names never reach a message, A3 3.5): "Client wrok" is a typo of
 // "Client work", while "UX" is no typo of "QA". Any other new name is created under autonomy once
@@ -57,6 +57,23 @@ export function editDistance(a: string, b: string, limit: number): number {
 
 type Kind = "area" | "project";
 
+/**
+ * A project named beside an area that holds no project of that name (A3 3.4.5): the areas of the
+ * projects it matched go in `data.suggestions`, never in the message.
+ */
+function elsewhere(names: GroupNames, found: readonly GroupName[], path: string): AppError {
+  const areas = names.areas.filter((a) => found.some((p) => p.area === a.id)).map((a) => a.title);
+  return new AppError({
+    code: "invalid_input",
+    message: "The area named holds no project of this name.",
+    hint: "Leave out area to use the project where it is, or name its own area: see the suggestions.",
+    data: {
+      issues: [{ path, message: "A project of another area" }],
+      ...(areas.length === 0 ? {} : { suggestions: areas.slice(0, SUGGESTIONS) }),
+    },
+  });
+}
+
 const exact = (group: GroupName, wanted: string): boolean =>
   group.id === wanted || group.slug === fold(wanted) || fold(group.title) === fold(wanted);
 
@@ -75,13 +92,16 @@ export function resolveGroup(
   const { area } = options;
   const groups = kind === "area" ? names.areas : names.projects;
   let found = groups.filter((group) => exact(group, name));
-  if (found.length > 1 && area !== undefined) {
-    const inArea = found.filter((group) => group.area === area);
-    if (inArea.length > 0) found = inArea;
-  }
   if (found.length === 0) {
     const old = names.aliases.filter((a) => a.kind === kind && a.alias === fold(name));
     found = groups.filter((group) => old.some((a) => a.id === group.id));
+  }
+  if (found.length > 0 && area !== undefined) {
+    // The writer files a task under its project's own area, whatever area the call named (A1
+    // 3.6), so a project only elsewhere would move the task out of the area asked for.
+    const inArea = found.filter((group) => group.area === area);
+    if (inArea.length === 0) throw elsewhere(names, found, path);
+    found = inArea;
   }
   const [one, ...more] = found;
   if (one !== undefined && more.length === 0) return one.id;
