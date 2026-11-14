@@ -1133,6 +1133,41 @@ describe("[A1.5.write.dedupe-lifecycle] dedupe sees the request's archive, wrap-
       ["created", follow.id],
     ]);
     expect(holders(fx.reader, "jira:FIX-2")).toEqual([b.id, follow.id].sort());
+    // A finishing operation that finds the task finished already (if_active) or wrapped already
+    // (once) says the same, though it writes nothing: complete_task's follow-up of a task the
+    // user finished first is new work after it too (A3 3.4.8).
+    for (const [key, finish] of [
+      [
+        "jira:FIX-3",
+        (id: Id<"t">): Operation => ({ kind: "task.archive", task: id, if_active: true }),
+      ],
+      [
+        "jira:FIX-4",
+        (id: Id<"t">): Operation => ({
+          kind: "task.wrap_up",
+          task: id,
+          outcome: "Answered the clinic.",
+          once: true,
+        }),
+      ],
+    ] as const) {
+      const done = draft([key]);
+      submit(done.ops);
+      complete(done.id);
+      human([{ kind: "task.wrap_up", task: done.id, outcome: "Answered the clinic." }]);
+      // Alone, a draft with its key matches the task finished within the window.
+      expect(submit(draft([key]).ops).results[0]).toMatchObject({
+        status: "existing",
+        id: done.id,
+      });
+      const next = draft([key]);
+      const kept = human([finish(done.id), ...next.ops]);
+      expect(kept.results.map((r) => [r.status, r.task ?? r.id])).toEqual([
+        ["unchanged", done.id],
+        ["created", next.id],
+        ["created", next.id],
+      ]);
+    }
   });
 
   test("a task the request deletes holds no key, and one it restores holds its keys again", () => {

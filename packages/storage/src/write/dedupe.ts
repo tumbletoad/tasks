@@ -13,7 +13,8 @@
 //   its keys and one it restores holds them again. A task the request itself completes, archives
 //   or wraps up finished last of all and is no match: a draft after it is new work, as
 //   complete_task's follow-up of the same ticket is (A3 3.4.8), so it is created, never matched
-//   to an earlier finish either.
+//   to an earlier finish either. That holds also when the operation finds the task finished or
+//   wrapped already (`if_active`, `once`): the request says it is done before the draft.
 // - One active holder is the match, and the draft's entries follow it. Several are ambiguous: the
 //   first by reference is named, the rest listed, and nothing follows. With none, a holder finished
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
