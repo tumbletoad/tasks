@@ -1,5 +1,6 @@
 // The helper runner (@tasks/launch helpers.ts; A3 3.14, M4.05): every program doctor and setup
-// start ends with what it started, at its deadline and when the process that started it exits.
+// start ends with what it started while it runs, at its deadline and when the process that started
+// it exits, and a signal the host handles itself stays the host's.
 // Each case starts a program that starts a descendant of its own, and checks both. On Windows the
 // descendant leaves Node's kill-on-close job (`detached`), as one a native app starts is never in
 // it, so only taskkill's tree finds it; on Linux and macOS it stays in the program's process group.
@@ -105,7 +106,7 @@ const exited = (child: ReturnType<typeof spawn>) =>
     });
   });
 
-describe("[A3.3.14.doctor.helpers] no program doctor or setup starts outlives it, nor anything that program started", () => {
+describe("[A3.3.14.doctor.helpers] a running program doctor or setup started ends with what it started, at its deadline, on stop and when doctor ends", () => {
   test("doctor exiting (Ctrl+C exits 130) ends a running program and its descendant", async () => {
     const t = tree("exit");
     const stand = doctor(
@@ -147,6 +148,23 @@ describe("[A3.3.14.doctor.helpers] no program doctor or setup starts outlives it
     expect(await helper.ended).toBeNull();
     expect(helper.timedOut()).toBe(false);
     expect(await survivors(list)).toEqual([false, false]);
+  }, 120_000);
+
+  test("a signal the host took first with a one-shot handler stays the host's: its own shutdown runs to the end", async () => {
+    const t = tree("host-signal");
+    // Node removes a `once` listener before it calls it, so at the runner's turn the host has no
+    // listener left; the host's shutdown still has work to do, and ends with its own exit code.
+    const stand = doctor(
+      [
+        `process.once("SIGHUP", () => { setTimeout(() => process.exit(7), 50); });`,
+        `runner.startHelper(${JSON.stringify(t.argv)}, { env: process.env, cwd: ${JSON.stringify(t.dir)}, deadlineMs: 120000 });`,
+        `setInterval(() => {}, 1000);`,
+        // The signal as Node delivers it, on every OS: the same event to the same listeners.
+        whenReady(t, `process.emit("SIGHUP", "SIGHUP")`),
+      ].join("\n"),
+    );
+    expect(await exited(stand)).toBe(7);
+    expect(await survivors(await pids(t, 0))).toEqual([false, false]);
   }, 120_000);
 
   test.skipIf(windows)(

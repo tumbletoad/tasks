@@ -8,17 +8,20 @@
 // - The runner keeps every helper it started until the helper exits. Ending a helper ends its
 //   tree: on Linux and macOS SIGKILL to its group; on Windows the system's taskkill /T /F, by its
 //   full path, then the helper itself.
-// - The tree is ended synchronously at the deadline, on `stop`, and when this process exits, so
-//   an exit cannot outrun it: the process exits through `process.exit` (Ctrl+C in the CLI exits
-//   130), at the end of its event loop, or on SIGTERM or SIGHUP (SIGHUP or SIGBREAK on Windows),
-//   which the runner turns into an exit while a helper runs, unless another listener owns them.
+// - While the helper is alive, its tree is ended synchronously at the deadline, on `stop`, and
+//   when this process exits, so an exit cannot outrun it: the process exits through `process.exit`
+//   (Ctrl+C in the CLI exits 130), at the end of its event loop, or on SIGTERM or SIGHUP (SIGHUP or
+//   SIGBREAK on Windows). While a helper runs, the runner ends the helpers at such a signal and
+//   turns it into an exit only when the host had no listener for it, neither when the runner began
+//   to watch it nor at the signal: a host's own handler, a one-shot one too, keeps its shutdown.
 // - When a helper exits by itself, on Linux and macOS what it left in its group is killed at once.
-//   On Windows the system ends nothing of it: only the deadline, `stop` and the exit do.
+//   On Windows nothing follows it: what it started and left running stays.
 //
-// What remains: a program that leaves its group (setsid), and on Windows a process whose parent
-// already exited (taskkill /T walks a tree only from a running process), cannot be found from the
-// helper, because Node has no job objects of its own. A process killed without its exit (SIGKILL,
-// a crash of the runtime) ends nothing.
+// What remains: a program that leaves its group (setsid), and on Windows anything a helper started
+// that outlives the helper (taskkill /T walks a tree only from a running process), cannot be found,
+// because Node has no job objects of its own. A native helper for runs (M6.04h) is where job-object
+// ownership would come from. A process killed without its exit (SIGKILL, a crash of the runtime)
+// ends nothing.
 //
 // This module imports Node built-ins only.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -70,20 +73,34 @@ const SIGNALS: readonly NodeJS.Signals[] =
   process.platform === "win32" ? ["SIGHUP", "SIGBREAK"] : ["SIGTERM", "SIGHUP"];
 
 /**
- * A signal that would end this process without its exit handlers: the helpers end first. When no
- * other listener takes the signal, the process exits as the signal's default action would.
+ * The signals the host had a listener for when the runner began to watch: those stay the host's.
+ * Decided then, never from the listeners left at the signal: Node removes a `once` listener
+ * before it calls it.
+ */
+const hostOwned = new Set<NodeJS.Signals>();
+
+/**
+ * A signal that would end this process without its exit handlers: the helpers end first. A signal
+ * the host had no listener for when the runner began to watch, and has none for now, ends the
+ * process as the signal's default action would.
  */
 function onSignal(signal: NodeJS.Signals): void {
   endAll();
   unwatchSignals();
-  if (process.listenerCount(signal) === 0) process.exit(128 + constants.signals[signal]);
+  if (!hostOwned.has(signal) && process.listenerCount(signal) === 0) {
+    process.exit(128 + constants.signals[signal]);
+  }
 }
 
 let watching = false;
 function watchSignals(): void {
   if (watching) return;
   watching = true;
-  for (const signal of SIGNALS) process.on(signal, onSignal);
+  hostOwned.clear();
+  for (const signal of SIGNALS) {
+    if (process.listenerCount(signal) > 0) hostOwned.add(signal);
+    process.on(signal, onSignal);
+  }
 }
 function unwatchSignals(): void {
   if (!watching) return;
