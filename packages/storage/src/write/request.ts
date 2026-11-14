@@ -145,7 +145,11 @@ export interface FieldConflict {
 
 export interface OpResult {
   i: number;
-  status: "created" | "updated" | "unchanged";
+  /**
+   * `existing`: a `task.create` whose draft matched a task by source key (A1 3.6), or a later
+   * operation of that draft left out by the rebinding rules. It names the matched task.
+   */
+  status: "created" | "updated" | "unchanged" | "existing";
   /** The row the operation acts on: a task, a note, a log entry, a source or a place. */
   id: string;
   /** The task the operation acts on or under, with its reference such as `M-14`. */
@@ -157,7 +161,18 @@ export interface OpResult {
   version: number;
   /** `source.add` on an existing source: the fields the input gives otherwise (A1 3.6). */
   differs?: string[];
+  /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
+  matched_by?: "source_key";
+  lifecycle?: TaskLifecycle;
+  /**
+   * A `task.create` whose keys several active tasks hold: their references, lowest first. The
+   * result's task is the first of them, so the result keeps one shape; the caller picks one.
+   */
+  ambiguous?: string[];
 }
+
+/** A task's lifecycle (A1 3.11). */
+export type TaskLifecycle = "active" | "completed" | "archived";
 
 export type WriteStatus = "applied" | "unchanged" | "conflict" | "rejected";
 
@@ -249,11 +264,33 @@ export interface Placement {
   before?: string;
 }
 
+/**
+ * How a `task.create` deduplicates by the source keys of its draft (A1 3.6, R4): the keys of the
+ * `source.add` operations of the request that name the draft's ID.
+ * - `source_key` (the default): an active task that holds a key is returned (`existing`), else a
+ *   task finished within the window, else the task is created.
+ * - `new`: a new task beside finished ones (A3's `create_new`); an active task holding a key
+ *   refuses the request.
+ * - `none`: no lookup, as the importer creates each legacy task (A7 3.15.3).
+ */
+export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
+export type DedupeMode = (typeof DEDUPE_MODES)[number];
+
+/** Days a finished task still matches a draft's key: `tasks.dedupe_window_days`'s default. */
+export const DEDUPE_WINDOW_DAYS = 30;
+
 export interface TaskCreate extends TaskValues, Placement {
   kind: "task.create";
   /** A client-supplied ID (A1 3.3). Later operations of the request may name it. */
   id?: Id<"t">;
   title: string;
+  /** Default `source_key` (DEDUPE_MODES). Only a draft with a client ID has sources to match. */
+  dedupe?: DedupeMode;
+  /**
+   * On one active match, link the draft's sources to the matched task (A3's `add_sources`).
+   * Without it a matched draft takes only its entries there (A1 3.6). Only with `source_key`.
+   */
+  link_sources?: boolean;
 }
 
 export interface TaskPatch {
@@ -984,6 +1021,17 @@ function checkOperation(value: unknown, i: number): Operation {
       const values = taskValues(f);
       const create: TaskCreate = { kind, title: values.title ?? "", ...values, ...placement(f) };
       if (f.has("id")) create.id = f.id("id", "t");
+      if (f.has("dedupe")) create.dedupe = f.oneOf("dedupe", DEDUPE_MODES);
+      if (f.has("link_sources")) {
+        create.link_sources = f.boolean("link_sources");
+        if (create.link_sources && (create.dedupe ?? "source_key") !== "source_key") {
+          f.fail(
+            "VALIDATION_FAILED",
+            "Linking on a match needs dedupe by source key",
+            "link_sources",
+          );
+        }
+      }
       op = create;
       break;
     }
@@ -1530,8 +1578,62 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
+  checkMatchableDrafts(request.ops);
   f.done();
   return request;
+}
+
+/** The operations that may name a draft that dedupes by source key: its entries, sources, place. */
+const MATCHABLE_DRAFT_OPS: ReadonlySet<Operation["kind"]> = new Set([
+  "log.add",
+  "note.add",
+  "task.context_append",
+  "source.add",
+  "place.set",
+]);
+
+/**
+ * A draft that may match a task by its source keys (A1 3.6: a `task.create` with a client ID, the
+ * default `dedupe`, and a keyed `source.add` naming it) is named only by its entries, its sources
+ * and its place, and never as a sibling. Anything else would change a task the caller never read
+ * as this one, or be dropped unseen, so it is refused from the input alone: whether a request is
+ * valid never depends on what the space holds under its keys.
+ */
+function checkMatchableDrafts(ops: readonly Operation[]): void {
+  const keyed = new Set<string>();
+  for (const op of ops) {
+    if (op.kind === "source.add" && op.source.key !== undefined) keyed.add(op.task);
+  }
+  const matchable = new Set<string>();
+  for (const op of ops) {
+    if (
+      op.kind === "task.create" &&
+      op.id !== undefined &&
+      (op.dedupe ?? "source_key") === "source_key" &&
+      keyed.has(op.id)
+    ) {
+      matchable.add(op.id);
+    }
+  }
+  if (matchable.size === 0) return;
+  const message =
+    "A draft that may match a task by source key takes only entries, sources and a place: " +
+    "change it in a later request, or create it with dedupe new or none";
+  ops.forEach((op, i) => {
+    const at = `ops[${String(i)}]`;
+    const named = "task" in op ? op.task : undefined;
+    if (named !== undefined && matchable.has(named) && !MATCHABLE_DRAFT_OPS.has(op.kind)) {
+      fail("VALIDATION_FAILED", message, `${at}.task`, i);
+    }
+    if (op.kind === "task.create" || op.kind === "task.move") {
+      for (const side of ["after", "before"] as const) {
+        const sibling = op[side];
+        if (sibling !== undefined && matchable.has(sibling)) {
+          fail("VALIDATION_FAILED", message, `${at}.${side}`, i);
+        }
+      }
+    }
+  });
 }
 
 /**
