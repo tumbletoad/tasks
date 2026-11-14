@@ -1,8 +1,9 @@
-// The Planning prototype importer (A7 3.15). M7.02: the pure parsers and the input copy. The
-// mapping to operations (M7.03), the dry run (M7.04) and apply (M7.05) build on these.
+// The Planning prototype importer (A7 3.15): the pure parsers and the input copy (M7.02), and the
+// pure mapping from a parse to a plan of A1 operations (M7.03). The dry run (M7.04) and apply
+// (M7.05) build on these.
 //
-// The shapes here are local to the importer. Those that cross the service boundary (the report,
-// the preview) move to packages/contracts with M7.03 and M7.04.
+// The shapes that cross the service boundary live in packages/contracts: the problem table and
+// one problem now (import-planning.ts), the report and the preview with M7.04.
 
 export { fallbackId, fnv1aCodePoints } from "./fallback-id.ts";
 export { LIMITS, type Limits } from "./limits.ts";
@@ -61,6 +62,50 @@ export {
   type PrototypeInput,
   type PrototypeParse,
 } from "./prototype.ts";
+export {
+  cutAtWord,
+  mapPrototype,
+  MappingOptionsError,
+  MAPPING_LIMITS,
+  type MappingOptions,
+} from "./mapping.ts";
+export {
+  bindOperations,
+  CHECKED_AS,
+  IMPORT_LOG,
+  PLANNING_EXT_KEYS,
+  type BoundOp,
+  type CheckedAs,
+  type Draft,
+  type ImportPlan,
+  type PlanCounts,
+  type PlannedAliasAdd,
+  type PlannedArea,
+  type PlannedLogAdd,
+  type PlannedOp,
+  type PlannedOwner,
+  type PlannedPlaceSet,
+  type PlannedProject,
+  type PlannedSource,
+  type PlannedSourceAdd,
+  type PlannedSourceFields,
+  type PlannedTask,
+  type PlannedTaskComplete,
+  type PlannedTaskCreate,
+  type PlanningExt,
+} from "./plan.ts";
+export { eventMillis, isTimeZone, localDay, nineOClock } from "./local-time.ts";
+export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
+export { groupSlug, SLUG_MAX } from "./slug.ts";
+export {
+  classifyUrl,
+  isGenericLabel,
+  normaliseUrl,
+  shortUrl,
+  SOURCE_KEY_MAX,
+  type PlannedSourceKind,
+  type UrlClass,
+} from "./sources.ts";
 export {
   EXPORT_FILE,
   copyInput,
