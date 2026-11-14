@@ -2,7 +2,8 @@
 //
 //   pnpm seed --planning [--out <folder>]
 //
-// Writes <folder>/planning-prototype/ and the index beside it, <folder>/planning-prototype.index.json.
+// Writes <folder>/planning-prototype/ and, beside it, the index (planning-prototype.index.json)
+// and the page's actions export (planning-prototype.actions.json).
 // Without --out the folder is the repository's fixtures/, and the committed fixture is replaced by a
 // fresh copy. With --out neither may exist yet. The output is the same on every machine, byte for
 // byte: the script prints its digest, and tests compare the files with the committed fixture.
@@ -51,12 +52,14 @@ export function seedPlanning(argv: string[], root: string = repoRoot): number {
         : resolve(values.out);
   const folder = join(target, PLANNING.folder);
   const indexFile = join(target, PLANNING.index);
+  const actionsFile = join(target, PLANNING.actions);
   if (replace) {
-    // Only the generated folder and the index, by their full names. Removing the index first
-    // unlinks it, so a write never goes through a link to a file outside the target.
+    // Only the generated folder, the index and the export, by their full names. Removing a file
+    // first unlinks it, so a write never goes through a link to a file outside the target.
     rmSync(folder, { recursive: true, force: true });
     rmSync(indexFile, { force: true });
-  } else if (present(folder) || present(indexFile)) {
+    rmSync(actionsFile, { force: true });
+  } else if (present(folder) || present(indexFile) || present(actionsFile)) {
     console.error("pnpm seed --planning: the fixture already exists in that folder");
     return 1;
   }
@@ -67,6 +70,7 @@ export function seedPlanning(argv: string[], root: string = repoRoot): number {
     writeFileSync(file, text, { encoding: "utf8", flag: "wx" });
   }
   writeFileSync(indexFile, serializeIndex(fixture.index), { encoding: "utf8", flag: "wx" });
+  writeFileSync(actionsFile, fixture.actions, { encoding: "utf8", flag: "wx" });
   console.log(`Planning prototype fixture: ${folder}`);
   console.log(
     `files: ${String(fixture.files.size)}, task lines: ${String(fixture.index.counts.taskLines)}`,

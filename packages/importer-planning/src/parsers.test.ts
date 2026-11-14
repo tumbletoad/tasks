@@ -6,6 +6,7 @@ import {
   eachLine,
   eventInstant,
   fallbackId,
+  parseActions,
   parseAudit,
   parseEvents,
   parseJira,
@@ -143,9 +144,10 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       ].join("\n"),
     );
     const [a, b, c, d, e] = todo.tasks;
+    // The page's rule: from the first `Next:` up to ` Refs:`, ` (added` or the end, dots kept.
     expect(a?.next).toBe("call Tomas");
     expect(a?.added).toEqual({ date: "2026-10-01", agent: "codex" });
-    expect(b?.next).toBe("ship v2.1 today");
+    expect(b?.next).toBe("ship v2.1 today.");
     expect(b?.added).toEqual({ agent: "claude" });
     expect(todo.problems).toEqual([
       {
@@ -157,10 +159,17 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
         field: "added",
       },
     ]);
-    expect(c?.next).toBeUndefined();
+    // `Nextday:` holds no `Next:`; the page's pattern is not anchored, so `xNext:` is one.
+    expect(c?.next).toBe("no.");
     expect(c?.added).toBeUndefined();
     expect(d?.next).toBe("spaced out");
     expect(e?.completion).toBeUndefined();
+    // Nothing but ` Refs:` and ` (added` ends it: a dot does not, nor does a `(done` clause.
+    const ends = parseLedger(
+      "DONE.md",
+      "- [x] **N** Next: one. Two (done 2026-01-02; ok)\n- [x] **O** Next: a\tRefs: b",
+    );
+    expect(ends.tasks.map((t) => t.next)).toEqual(["one. Two (done 2026-01-02; ok)", "a"]);
 
     const done = parseLedger(
       "DONE.md",
@@ -192,25 +201,26 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
     expect(codes(done.problems)).toEqual(["date-invalid"]);
   });
 
-  test("duplicate IDs across and within the ledgers are errors", () => {
+  test("one ID on two lines: within a ledger an error, across the ledgers the DONE.md line wins", () => {
     const parse = parsePrototype({
       todo: "- [ ] **A** <!-- task:x -->\n- [ ] **B** <!-- task:x -->\n- [ ] **C**",
-      done: "- [x] **D** <!-- task:y -->\n## Other\n- [x] **C**",
+      done: "- [x] **D** <!-- task:y -->\n## Other\n- [x] **C**\n- [x] **E** <!-- task:y -->",
       events: [],
     });
-    const dup = parse.problems.filter((p) => p.code === "duplicate-id");
+    const c = fallbackId("Other", "C");
+    const dup = parse.problems.filter((p) => /duplicate-id|open-copy-hidden/.test(p.code));
     expect(dup).toEqual([
       { code: "duplicate-id", severity: "error", file: "TODO.md", line: 2, task: "x" },
-      {
-        code: "duplicate-id",
-        severity: "error",
-        file: "DONE.md",
-        line: 3,
-        task: fallbackId("Other", "C"),
-      },
+      { code: "open-copy-hidden", severity: "warning", file: "TODO.md", line: 3, task: c },
+      { code: "duplicate-id", severity: "error", file: "DONE.md", line: 4, task: "y" },
     ]);
-    // Every task line is still returned: M7.03 and M7.04 decide what an error blocks.
-    expect(parse.tasks).toHaveLength(5);
+    // Every task line is still returned; `kept` holds the one line per ID that the plan maps.
+    expect(parse.tasks).toHaveLength(6);
+    expect(parse.kept.map((t) => `${t.file}:${String(t.line)}`)).toEqual([
+      "TODO.md:1",
+      "DONE.md:1",
+      "DONE.md:3",
+    ]);
   });
 
   test("decoding: a byte-order mark stays, as Python's utf-8 codec keeps it; bad bytes are an error", () => {
@@ -251,6 +261,9 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
         b: { priority: 1, status: 3, rank: 1.5, sources: "x", paths: {}, confidence: [] },
         c: 5,
         ["__proto__"]: { owner: "proto" },
+        // The page keeps a due that starts with a day, and shows each path once.
+        d: { due: "2026-11-20T17:00", paths: ["/x", "/y", "/x"] },
+        e: { due: "2026-13-01 soon" },
       }),
     );
     const a = parse.entries.get("a");
@@ -259,12 +272,24 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       project: "P (Q4)",
       owner: "Noor",
       due: "2024-02-29",
-      sources: [{ label: "", url: "https://x.example/1", index: 0 }],
+      // A label that is not text is no label: the source stays, as the page keeps it.
+      sources: [
+        { label: "", url: "https://x.example/1", index: 0 },
+        { label: "", url: "u", index: 3 },
+      ],
       paths: ["rel/x", "C:\\work\\x", "\\\\host\\share", "/home/x"],
       // The kept paths' places in the file's list: 5 at position 1 was left out.
       pathIndexes: [0, 2, 3, 4],
       extra: { estimate: { hours: 2 } },
     });
+    expect(parse.entries.get("d")).toEqual({
+      id: "d",
+      due: "2026-11-20",
+      sources: [],
+      paths: ["/x", "/y"],
+      extra: {},
+    });
+    expect(parse.entries.get("e")?.due).toBeUndefined();
     expect(parse.entries.get("b")).toEqual({
       id: "b",
       rank: 1.5,
@@ -287,7 +312,7 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       "a field-type confidence ",
       "a source-invalid sources 1",
       "a source-invalid sources 2",
-      "a source-invalid sources 3",
+      "a field-type sources 3",
       "a path-not-absolute paths 0",
       "a field-type paths 1",
       "b field-type status ",
@@ -296,6 +321,8 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       "b field-type sources ",
       "b field-type paths ",
       "c entry-not-object  ",
+      "d date-trimmed due ",
+      "e date-invalid due ",
     ]);
 
     // JSON.parse has already rounded a number, so its text as written cannot be kept: a number is
@@ -400,7 +427,8 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       { name: "web-2.json", bytes: ev("web-2", "t", "check", "2026-01-01T12:00Z") },
       { name: "web-2.ready" },
       { name: "web-3.ready" },
-      { name: "dup.json", bytes: ev("z", "t", "check", "2026-01-01T09:00Z") },
+      // An ID counts once: the first file with it in sorted file-name order.
+      { name: "zz-dup.json", bytes: ev("z", "t", "check", "2026-01-01T09:00Z") },
       { name: "notes.txt", bytes: "ignored" },
     ]);
     expect(parse.files.map((f) => [f.name, f.counted])).toEqual([
@@ -410,7 +438,6 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       ["bad-shape.json", false],
       ["bad-task.json", false],
       ["bad-time.json", false],
-      ["dup.json", true],
       ["v.json", true],
       ["w.json", true],
       ["web-1.json", false],
@@ -418,10 +445,12 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       ["x.json", true],
       ["y.json", true],
       ["z.json", true],
+      ["zz-dup.json", true],
     ]);
     expect(parse.readyFiles).toBe(2);
+    expect(parse.notReady).toBe(1);
     // Python keeps microseconds: z and a-late are one instant, so the ID orders them.
-    expect(parse.applied.map((e) => e.id)).toEqual(["z", "a-late", "z", "w", "v", "web-2", "m"]);
+    expect(parse.applied.map((e) => e.id)).toEqual(["a-late", "z", "w", "v", "web-2", "m"]);
     expect(parse.state.get("t")?.check).toEqual({
       checked: true,
       at: "2026-01-01T12:00Z",
@@ -444,7 +473,7 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       "event-invalid events/bad-time.json",
       // A web- file without .ready may be half written: it is not checked, only reported.
       "event-not-ready events/web-1.json",
-      "event-duplicate-id events/z.json",
+      "event-duplicate-id events/zz-dup.json",
     ]);
   });
 
@@ -489,6 +518,90 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
     ]);
   });
 
+  test("the actions export: the import command's checks on the whole file, merged by event ID", () => {
+    const exported = (events: unknown[], extra: object = {}) =>
+      JSON.stringify({ version: 1, exported: "2026-11-07T10:00:00.000Z", events, ...extra });
+    const e = (id: string, task: string, action: string, at: string, more: object = {}) => ({
+      id,
+      task,
+      action,
+      at,
+      ...more,
+    });
+    const ok = parseActions(
+      exported([
+        e("web-a", "t", "check", "2026-11-01T10:00:00.000Z", { source: "browser" }),
+        e("cli-1", "t", "focus", "2026-11-01T09:00:00+01:00"),
+      ]),
+    );
+    expect(ok.ok).toBe(true);
+    expect(ok.events.map((x) => [x.id, x.file, x.index])).toEqual([
+      ["web-a", "actions.json", 0],
+      ["cli-1", "actions.json", 1],
+    ]);
+    // `version` and `exported` are not read; extra fields of an event are allowed. A time is read
+    // with the grammar of events/, whose times the export carries as written.
+    expect(parseActions(exported([], { version: 7 })).ok).toBe(true);
+    expect(parseActions(exported([e("a", "t", "check", "2026-11-01T10:00Z")])).ok).toBe(true);
+
+    // One bad event refuses the whole file, as the import command checks all before it writes.
+    const refusedAt = (events: unknown[]) => {
+      const r = parseActions(exported(events));
+      expect(r.ok).toBe(false);
+      expect(r.events).toEqual([]);
+      return r.problems.map((p) => `${p.code} ${p.file} ${String(p.index ?? "")}`);
+    };
+    const good = e("a", "t", "check", "2026-11-01T10:00:00Z");
+    for (const [bad, index] of [
+      [e("a", "t", "star", "2026-11-01T10:00:00Z"), 1],
+      [e("a b", "t", "check", "2026-11-01T10:00:00Z"), 1],
+      [e("a", "t".repeat(101), "check", "2026-11-01T10:00:00Z"), 1],
+      [e("a", "t", "check", "2026-11-01T10:00:00"), 1],
+      [e("a", "t", "check", "2026-02-30T10:00:00Z"), 1],
+      [e("a", "t", "check", "2026-11-01T10:00:00.1234567890Z"), 1],
+      ["text", 1],
+    ] as const) {
+      expect(refusedAt([good, bad])).toEqual([`actions-invalid actions.json ${String(index)}`]);
+    }
+    expect(refusedAt(Array.from({ length: 10_001 }, () => good))).toEqual([
+      "actions-invalid actions.json ",
+    ]);
+    expect(parseActions("[]").ok).toBe(false);
+    expect(codes(parseActions("{ secret").problems)).toEqual(["json-invalid", "actions-invalid"]);
+
+    // The merge: an export event a counted file has is not counted again; with other content it
+    // is a conflict; a web- event whose file has no .ready yet, and the browser's own, are added.
+    const parse = parsePrototype({
+      todo: "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->",
+      done: "",
+      events: [
+        { name: "cli-1.json", bytes: ev("cli-1", "a", "check", "2026-11-01T09:00:00Z") },
+        { name: "cli-2.json", bytes: ev("cli-2", "a", "focus", "2026-11-01T09:00:00Z") },
+        { name: "web-w.json", bytes: ev("web-w", "b", "check", "2026-11-02T09:00:00.000Z") },
+      ],
+      actions: exported([
+        e("cli-1", "a", "check", "2026-11-01T09:00:00Z"),
+        e("cli-2", "a", "unfocus", "2026-11-01T09:00:00Z"),
+        e("web-w", "b", "check", "2026-11-02T09:00:00.000Z"),
+        e("web-x", "a", "uncheck", "2026-11-03T09:00:00.000Z"),
+        e("web-x", "a", "uncheck", "2026-11-03T09:00:00.000Z"),
+      ]),
+    });
+    expect(parse.events.actions).toEqual({ events: 5, added: 2 });
+    expect(parse.events.applied.map((x) => `${x.id} ${x.file}`)).toEqual([
+      "cli-1 cli-1.json",
+      "cli-2 cli-2.json",
+      "web-w actions.json",
+      "web-x actions.json",
+    ]);
+    expect(parse.events.state.get("a")?.check?.checked).toBe(false);
+    expect(parse.events.state.get("b")?.check?.checked).toBe(true);
+    expect(parse.problems.map((p) => `${p.code} ${p.file} ${String(p.index ?? "")}`)).toEqual([
+      "event-not-ready events/web-w.json ",
+      "actions-conflict actions.json 1",
+    ]);
+  });
+
   test("a whole folder: orphans, lines without metadata and events for no task", () => {
     const parse = parsePrototype({
       todo: "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->",
@@ -517,6 +630,7 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       eventFiles: 2,
       readyFiles: 0,
       countedEventFiles: 2,
+      eventsNotReady: 0,
     });
   });
 });

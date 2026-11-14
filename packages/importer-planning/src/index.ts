@@ -35,11 +35,14 @@ export {
   type MetadataSource,
   type PrototypeStatus,
 } from "./metadata.ts";
+export { ACTIONS_MAX, parseActions, type ActionsParse } from "./actions.ts";
 export {
   ACTIONS,
+  ACTIONS_FILE,
   EVENTS_DIR,
   eventInstant,
   parseEvents,
+  placeOfEvent,
   type EventAction,
   type EventFileInput,
   type EventFileResult,
@@ -57,6 +60,7 @@ export {
   type JiraTicket,
 } from "./optional.ts";
 export {
+  keptLines,
   parsePrototype,
   type PrototypeCounts,
   type PrototypeInput,
@@ -109,6 +113,7 @@ export { groupKey, groupSlug, numberedSlug, SLUG_MAX } from "./slug.ts";
 export { exactNumber } from "./json.ts";
 export {
   classifyUrl,
+  fileLinkPath,
   isGenericLabel,
   normaliseUrl,
   REF_MAX,
@@ -119,9 +124,12 @@ export {
 } from "./sources.ts";
 export {
   EXPORT_FILE,
+  copyActions,
   copyInput,
   hashInputs,
+  readCopy,
   readInput,
+  verifyActions,
   verifySource,
   type InputCopy,
   type InputFile,

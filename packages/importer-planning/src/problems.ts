@@ -43,11 +43,12 @@ export interface Problem {
  * fallback ID. Anything else (a metadata key could be any text) is left out. */
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,100}$/;
 
-/** A file a problem may name: a fixed input path, the folder itself, or an event file whose name
- * follows the event grammar (`<id>.json`, `<id>.ready`). Any other name read from disk could hold
- * task text, so a problem names its folder `events` instead, and its place goes in `index`. */
+/** A file a problem may name: a fixed input path, the folder itself, the actions export by its
+ * copy's name (`actions.json`), or an event file whose name follows the event grammar
+ * (`<id>.json`, `<id>.ready`). Any other name read from disk could hold task text, so a problem
+ * names its folder `events` instead, and its place goes in `index`. */
 const SAFE_FILE =
-  /^(?:\.|TODO\.md|DONE\.md|tasks-export\.json|data|events|data\/(?:metadata|jira|audit)\.json|events\/[a-zA-Z0-9_-]{1,100}\.(?:json|ready))$/;
+  /^(?:\.|TODO\.md|DONE\.md|tasks-export\.json|actions\.json|data|events|data\/(?:metadata|jira|audit)\.json|events\/[a-zA-Z0-9_-]{1,100}\.(?:json|ready))$/;
 
 export function isSafeFile(file: string): boolean {
   return SAFE_FILE.test(file);

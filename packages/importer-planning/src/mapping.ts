@@ -32,6 +32,8 @@ import type { PrototypeParse } from "./prototype.ts";
 import { groupKey, groupSlug, numberedSlug } from "./slug.ts";
 import {
   classifyUrl,
+  fileLinkPath,
+  isFileLink,
   isGenericLabel,
   shortUrl,
   type PlannedSourceKind,
@@ -175,17 +177,12 @@ function entriesOf(
   duplicates: number;
 } {
   const entries: Entry[] = [];
-  const seen = new Set<string>();
-  let duplicates = 0;
   const metaAt = (id: string): Place => ({ file: METADATA_FILE, task: id });
-  for (const t of parse.tasks) {
-    // A later line with an ID an earlier line has is an error the parse reports (duplicate-id).
-    // It is left out of the plan, so one legacy ID is one task and one alias.
-    if (seen.has(t.id)) {
-      duplicates += 1;
-      continue;
-    }
-    seen.add(t.id);
+  // One line per ID, the one the parse keeps: the DONE.md line of an ID in both ledgers, as the
+  // page shows it, else the first (prototype.ts). The others are reported there and left out, so
+  // one legacy ID is one task and one alias.
+  const duplicates = parse.tasks.length - parse.kept.length;
+  for (const t of parse.kept) {
     const meta = parse.metadata.get(t.id);
     entries.push({
       id: t.id,
@@ -311,11 +308,20 @@ interface TicketTitle {
   readonly clean: string;
 }
 
+/** A ticket's label that is its key, which the page does not use as the ticket's title. */
+const isTicketKey = (label: string, cls: UrlClass): boolean =>
+  cls.ref !== undefined && label.toUpperCase() === cls.ref;
+
 function sourcesOf(
   entries: readonly Entry[],
   jira: ReadonlyMap<string, TicketTitle>,
   report: Report,
-): { rows: SourceRow[]; byEntry: Map<Entry, SourceRow[]> } {
+): {
+  rows: SourceRow[];
+  byEntry: Map<Entry, SourceRow[]>;
+  /** Per entry, the paths of its `file:` links, in its own order. */
+  fileLinks: Map<Entry, string[]>;
+} {
   // Pass 1: every usable source of every entry. `links` holds one per key per entry, the links the
   // plan makes; `named` holds every one, whose labels can title the row.
   interface Group {
@@ -324,11 +330,20 @@ function sourcesOf(
   }
   const groups = new Map<string, Group>();
   const order: Group[] = [];
+  const fileLinks = new Map<Entry, string[]>();
   for (const e of entries) {
     const keys = new Set<string>();
     for (const s of e.meta?.sources ?? []) {
       // Its place in the file's list, which an invalid item before it does not shift.
       const index = s.index;
+      // A `file:` link names a path on the machine that wrote it, not a source: its path (else the
+      // URL as written) is kept with the task's other paths.
+      if (isFileLink(s.url)) {
+        report.add("source-file-link", e.metaAt, "sources", index);
+        const path = report.clean(fileLinkPath(s.url) ?? s.url, "text", e.metaAt, "sources", index);
+        fileLinks.set(e, [...(fileLinks.get(e) ?? []), path]);
+        continue;
+      }
       const url = report.clean(s.url, "line", e.metaAt, "sources", index).trim();
       if (url === "" || codePoints(url) > MAPPING_LIMITS.url) {
         report.add("source-dropped", e.metaAt, "sources", index);
@@ -339,6 +354,7 @@ function sourcesOf(
       if (cls.keyProblem !== undefined) {
         report.add("source-key-unavailable", e.metaAt, "sources", index);
       }
+      if (cls.hidden === true) report.add("source-not-shown", e.metaAt, "sources", index);
       const link: Link = { entry: e, index, url, label, cls };
       if (cls.key === undefined) {
         order.push({ links: [link], named: [link] });
@@ -364,7 +380,7 @@ function sourcesOf(
   for (const { links, named: labelled } of order) {
     const first = links[0];
     if (first === undefined) continue;
-    const named = labelled.find((l) => !isGenericLabel(l.label));
+    const named = labelled.find((l) => !isGenericLabel(l.label) && !isTicketKey(l.label, l.cls));
     const ticket = first.cls.ref === undefined ? undefined : jira.get(first.cls.ref);
     let title: string;
     let generic = false;
@@ -411,7 +427,7 @@ function sourcesOf(
       list.sort((a, b) => a.index - b.index).map((l) => l.row),
     );
   }
-  return { rows, byEntry };
+  return { rows, byEntry, fileLinks };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -440,8 +456,12 @@ interface Context {
   readonly report: Report;
   readonly groups: Groups;
   readonly sources: Map<Entry, SourceRow[]>;
+  readonly fileLinks: Map<Entry, string[]>;
   readonly owners: Map<string, { name: string; me: boolean; tasks: number }>;
 }
+
+/** Metadata keys the page applies to a task without events (A7 3.15.3): reported, not applied. */
+const STATE_KEYS: ReadonlySet<string> = new Set(["checked", "focus", "ticked"]);
 
 function mapEntry(e: Entry, cx: Context): PlannedTask {
   const { report, options } = cx;
@@ -518,10 +538,11 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   }
 
   // The star: the day of the last focus event's instant in the import's zone, a day the space
-  // holds. An instant near either end of the range can fall on a day outside it there.
+  // holds. An instant near either end of the range can fall on a day outside it there. A DONE.md
+  // task has no star, as on the page.
   const state = cx.parse.events.state.get(e.id);
   let focus: string | undefined;
-  if (state?.star?.starred === true) {
+  if (state?.star?.starred === true && line?.file !== "DONE.md") {
     const ms = eventMillis(state.star.at);
     const day = ms === undefined ? undefined : localDay(ms, tz);
     if (day === undefined || !inDayRange(day)) report.add("date-out-of-range", e.at, "focus");
@@ -543,24 +564,25 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
     ext["confidence"] = report.clean(meta.confidence, "text", e.metaAt, "confidence");
   }
 
-  // The place from paths[0]; every other path goes to ext.planning.paths. Problems name a path's
-  // place in the file's list, which a path the parser left out does not shift.
+  // The place from the first absolute path, the folder the page shows; every other path, and the
+  // paths of `file:` links, go to ext.planning.paths. Problems name a path's place in the file's
+  // list, which a path the parser left out does not shift.
   const paths = meta?.paths ?? [];
   const pathAt = (i: number): number => meta?.pathIndexes?.[i] ?? i;
   let place: { root: string; path: string } | undefined;
+  const folder = paths.findIndex(isAbsolutePath);
+  if (folder >= 0) {
+    place = placeFor(paths[folder] ?? "", options.roots ?? {});
+    if (place === undefined) report.add("path-outside-roots", e.metaAt, "paths", pathAt(folder));
+  }
+  const extra = paths.findIndex((_, i) => i !== folder);
+  if (extra >= 0) report.add("paths-extra", e.metaAt, "paths", pathAt(extra));
   const others: string[] = [];
-  const first = paths[0];
-  if (first !== undefined) {
-    place = placeFor(first, options.roots ?? {});
-    if (place === undefined) {
-      report.add("path-outside-roots", e.metaAt, "paths", pathAt(0));
-      others.push(report.clean(first, "text", e.metaAt, "paths", pathAt(0)));
-    }
+  for (const [i, p] of paths.entries()) {
+    if (i === folder && place !== undefined) continue;
+    others.push(report.clean(p, "text", e.metaAt, "paths", pathAt(i)));
   }
-  if (paths.length > 1) report.add("paths-extra", e.metaAt, "paths", pathAt(1));
-  for (const [i, p] of paths.slice(1).entries()) {
-    others.push(report.clean(p, "text", e.metaAt, "paths", pathAt(i + 1)));
-  }
+  others.push(...(cx.fileLinks.get(e) ?? []));
   if (others.length > 0) ext["paths"] = others;
 
   // The completion.
@@ -586,10 +608,23 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
       ...(outcome === "" ? {} : { outcome }),
       ...(doneAt === undefined ? {} : { at: doneAt }),
     };
-  } else if (line?.checked === true || check?.checked === true) {
-    report.add("checked-item", e.at, "check");
-    if (options.checkedAs === "review") status = "review";
-    else {
+  } else {
+    // The events decide, as on the page: the last check or uncheck wins, also over a ticked box. A
+    // box ticked in TODO.md that no event checks or unchecks is the person's own statement the page
+    // does not show: completed all the same, under its own code, so the person sees which is which.
+    const ticked = line?.checked === true;
+    let checked = false;
+    if (check !== undefined) {
+      if (check.checked) {
+        checked = true;
+        report.add("checked-item", e.at, "check");
+      } else if (ticked) report.add("ticked-unchecked", e.at, "check");
+    } else if (ticked) {
+      checked = true;
+      report.add("ticked-in-file", e.at, "check");
+    }
+    if (checked && options.checkedAs === "review") status = "review";
+    else if (checked) {
       // The check's own time when an event checked it, else the import time.
       let checkedAt: number | undefined;
       if (check?.checked === true) {
@@ -609,6 +644,7 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
       report.add("extra-key-reserved", e.metaAt, "extra", index);
       continue;
     }
+    if (STATE_KEYS.has(key)) report.add("metadata-state-key", e.metaAt, "extra", index);
     const clean = inexact.has(key) ? undefined : cleanJson(value, 0);
     if (clean === undefined) {
       report.add("extra-dropped", e.metaAt, "extra", index);
@@ -744,19 +780,23 @@ export function mapPrototype(parse: PrototypeParse, options: MappingOptions): Im
       jira.set(key, { raw: t.title, clean: normaliseLine(t.title) });
     }
   }
-  const { rows, byEntry } = sourcesOf(entries, jira, report);
+  const { rows, byEntry, fileLinks } = sourcesOf(entries, jira, report);
   const owners = new Map<string, { name: string; me: boolean; tasks: number }>();
-  const cx: Context = { parse, options, report, groups, sources: byEntry, owners };
+  const cx: Context = { parse, options, report, groups, sources: byEntry, fileLinks, owners };
   const mapped = entries.map((e) => ({ e, task: mapEntry(e, cx) }));
 
   // Creation order: groups in order of first appearance; within one, ranked tasks by rank, then
-  // the others, each in file order.
+  // the others, each in file order. A rank of 0 is no rank, as the page sorts it last.
   const groupOrder = new Map<string, number>();
   const groupKey = (t: PlannedTask) => `${t.area}\u0000${t.project ?? ""}`;
   for (const { task } of mapped) {
     if (!groupOrder.has(groupKey(task))) groupOrder.set(groupKey(task), groupOrder.size);
   }
-  const ranked = mapped.map(({ e, task }, file) => ({ task, file, rank: e.meta?.rank }));
+  const ranked = mapped.map(({ e, task }, file) => ({
+    task,
+    file,
+    rank: e.meta?.rank === 0 ? undefined : e.meta?.rank,
+  }));
   ranked.sort(
     (a, b) =>
       (groupOrder.get(groupKey(a.task)) ?? 0) - (groupOrder.get(groupKey(b.task)) ?? 0) ||

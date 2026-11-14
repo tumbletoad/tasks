@@ -1,12 +1,22 @@
-// The check and focus events in events/ (A7 3.15.2, Events).
+// The check and focus events in events/ (A7 3.15.2, Events), and the events of the page's actions
+// export (`--actions`, actions.ts) merged with them.
 //
 // Every events/*.json is read in sorted file-name order. A file whose name starts with `web-` counts
 // only when events/<same stem>.ready exists; any other file counts as soon as it exists. An event is
 // an object {id, task, action, at}: action check, uncheck, focus or unfocus; id of 1 to 100
 // characters from [a-zA-Z0-9_-]; task of one or more of those characters, since a ledger ID has no
 // length bound; at an RFC 3339 time with a zone, where the seconds may be left out
-// and the fraction has up to nine digits. Counted events apply in order of the instant of `at`, then
-// `id` as text. The last check or uncheck per task wins, and the last focus or unfocus sets the star.
+// and the fraction has up to nine digits. An event ID counts once, as both of the prototype's
+// readers de-duplicate by ID: a later file with an ID an earlier file has is left out and
+// reported. Counted events apply in order of the instant of `at`, then `id` as text (by code point,
+// as planning.py does; the page compares with localeCompare). The last check or uncheck per task
+// wins, and the last focus or unfocus sets the star.
+//
+// The export holds every event the page knew, those of events/ too. An export event whose ID a
+// counted file has is that same event and is not counted again; with another task, action or time
+// it is `actions-conflict`, as the prototype's import command refuses an event file it would
+// change. The other export events (the browser's own, and those whose web- file has no .ready yet)
+// are added.
 //
 // The prototype fails its whole read on one invalid file. The importer instead leaves that file out
 // with `event-invalid` (an error), so the report can name every bad file at once.
@@ -27,14 +37,19 @@ export interface EventFileInput {
   readonly bytes?: Source;
 }
 
+/** The name problems give the actions export: its copy's name in the run folder. */
+export const ACTIONS_FILE = "actions.json";
+
 export interface PrototypeEvent {
   readonly id: string;
   readonly task: string;
   readonly action: EventAction;
   /** As written. */
   readonly at: string;
-  /** The file name in events/. */
+  /** The file name in events/, or ACTIONS_FILE for an event of the actions export. */
   readonly file: string;
+  /** An export event's position in its `events` list. */
+  readonly index?: number;
 }
 
 export interface EventFileResult {
@@ -61,7 +76,11 @@ export interface EventsParse {
   /** Every events/*.json, in sorted file-name order. */
   readonly files: readonly EventFileResult[];
   readonly readyFiles: number;
-  /** The counted events in the order they apply. */
+  /** web- files without their .ready file: skipped, as both of the prototype's readers skip them. */
+  readonly notReady: number;
+  /** The actions export's events, and how many of them were added to those of events/. */
+  readonly actions: { readonly events: number; readonly added: number };
+  /** The counted events in the order they apply, each ID once. */
   readonly applied: readonly PrototypeEvent[];
   /** The fold, per task ID. */
   readonly state: ReadonlyMap<string, TaskEventState>;
@@ -81,6 +100,19 @@ export function eventPlace(name: string, index: number): { file: string; index?:
   const file = `${EVENTS_DIR}/${name}`;
   return isSafeFile(file) ? { file } : { file, index };
 }
+
+/** Where a problem about a counted event points: its file, or its place in the actions export.
+ * `position` is each events/ file's place in the sorted list. */
+export function placeOfEvent(
+  e: PrototypeEvent,
+  position: ReadonlyMap<string, number>,
+): { file: string; index?: number } {
+  if (e.file === ACTIONS_FILE) return { file: ACTIONS_FILE, index: e.index ?? 0 };
+  return eventPlace(e.file, position.get(e.file) ?? 0);
+}
+
+const sameEvent = (a: PrototypeEvent, b: PrototypeEvent): boolean =>
+  a.task === b.task && a.action === b.action && a.at === b.at;
 const AT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
 
@@ -132,6 +164,7 @@ function eventFrom(value: unknown, file: string): PrototypeEvent | undefined {
 export function parseEvents(
   files: readonly EventFileInput[],
   overrides?: Partial<Limits>,
+  actions: readonly PrototypeEvent[] = [],
 ): EventsParse {
   const limits = limitsWith(overrides);
   const problems: Problem[] = [];
@@ -147,10 +180,11 @@ export function parseEvents(
     .sort((a, b) => compareCodePoints(a.name, b.name));
 
   const results: EventFileResult[] = [];
+  // Each ID once: the first counted file with it, in sorted file-name order.
+  const known = new Map<string, PrototypeEvent>();
   const counted: { event: PrototypeEvent; instant: bigint }[] = [];
-  const position = new Map<string, number>();
+  let notReady = 0;
   for (const [index, file] of json.entries()) {
-    position.set(file.name, index);
     const place = eventPlace(file.name, index);
     const stem = file.name.slice(0, -".json".length);
     const waits = stem.startsWith("web-") && !ready.has(`${stem}.ready`);
@@ -169,16 +203,43 @@ export function parseEvents(
         if (read.ok && event === undefined) problems.push(problem("event-invalid", place));
       }
     }
-    if (waits) problems.push(problem("event-not-ready", { ...place, task: event?.task }));
+    if (waits) {
+      notReady += 1;
+      problems.push(problem("event-not-ready", { ...place, task: event?.task }));
+    }
     if (event === undefined) {
       results.push({ name: file.name, counted: false });
-    } else {
-      results.push({ name: file.name, event, counted: !waits });
-      if (!waits) counted.push({ event, instant: eventInstant(event.at) ?? 0n });
+      continue;
     }
+    results.push({ name: file.name, event, counted: !waits });
+    if (waits) continue;
+    if (known.has(event.id)) {
+      problems.push(problem("event-duplicate-id", { ...place, task: event.task }));
+      continue;
+    }
+    known.set(event.id, event);
+    counted.push({ event, instant: eventInstant(event.at) ?? 0n });
   }
 
-  // A stable sort: two events with one instant and one ID keep their file order.
+  // The actions export: an event already counted is not counted again; one with another content is
+  // a conflict; the others are added.
+  let added = 0;
+  for (const e of actions) {
+    const before = known.get(e.id);
+    if (before !== undefined) {
+      if (!sameEvent(before, e)) {
+        problems.push(
+          problem("actions-conflict", { file: ACTIONS_FILE, index: e.index ?? 0, task: e.task }),
+        );
+      }
+      continue;
+    }
+    known.set(e.id, e);
+    counted.push({ event: e, instant: eventInstant(e.at) ?? 0n });
+    added += 1;
+  }
+
+  // Every ID is counted once, so the order is total: by instant, then by ID.
   counted.sort((a, b) =>
     a.instant < b.instant
       ? -1
@@ -188,14 +249,8 @@ export function parseEvents(
   );
   const applied = counted.map((c) => c.event);
 
-  const seen = new Set<string>();
   const state = new Map<string, TaskEventState>();
   for (const e of applied) {
-    if (seen.has(e.id)) {
-      const place = eventPlace(e.file, position.get(e.file) ?? 0);
-      problems.push(problem("event-duplicate-id", { ...place, task: e.task }));
-    }
-    seen.add(e.id);
     const prev = state.get(e.task) ?? {};
     if (e.action === "check" || e.action === "uncheck") {
       state.set(e.task, {
@@ -210,5 +265,13 @@ export function parseEvents(
       state.set(e.task, { ...prev, star });
     }
   }
-  return { files: results, readyFiles: ready.size, applied, state, problems };
+  return {
+    files: results,
+    readyFiles: ready.size,
+    notReady,
+    actions: { events: actions.length, added },
+    applied,
+    state,
+    problems,
+  };
 }

@@ -9,13 +9,15 @@
 // The inputs are the files the importer reads (A7 3.15.2) and the ones 3.15.7 says are copied:
 // TODO.md, DONE.md, data/metadata.json, data/jira.json, data/audit.json, tasks-export.json (a
 // return import, 3.15.6) and every events/*.json and events/*.ready. Code, agent files, context/,
-// reviews/ and snapshots/ stay in the frozen folder and are not copied.
+// reviews/ and snapshots/ stay in the frozen folder and are not copied. The page's actions export
+// (`--actions`) is a file of its own, outside the prototype folder: it is copied beside the input
+// copy (`copyActions`), hashed and checked again the same way.
 
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, opendir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { EVENTS_DIR, type EventFileInput } from "./events.ts";
+import { ACTIONS_FILE, EVENTS_DIR, type EventFileInput } from "./events.ts";
 import { limitsWith, type Limits } from "./limits.ts";
 import { METADATA_FILE } from "./metadata.ts";
 import { AUDIT_FILE, JIRA_FILE } from "./optional.ts";
@@ -332,6 +334,66 @@ export async function copyInput(
   const changes = await compareSource(from, files, problems, limits);
   problems.push(...changes);
   return { ok: !problems.some((p) => p.severity === "error"), files, problems };
+}
+
+/**
+ * Copies the page's actions export (`--actions`) to the new file `destination`, with the bytes'
+ * SHA-256 under the name ACTIONS_FILE, then hashes the source again: a difference gives
+ * `source-changed`. A source that is no regular file (a link, a folder), unreadable or over its
+ * bound gives its problem and no copy.
+ */
+export async function copyActions(
+  source: string,
+  destination: string,
+  overrides?: Partial<Limits>,
+): Promise<{ file?: InputFile; problems: Problem[] }> {
+  const bound = limitsWith(overrides).jsonBytes;
+  const read = await readActionsSource(source, bound);
+  if (read.bytes === undefined) return { problems: read.problems };
+  try {
+    await writePrivateFile(destination, read.bytes);
+  } catch {
+    return { problems: [problem("write-failed", { file: ACTIONS_FILE })] };
+  }
+  const file: InputFile = {
+    path: ACTIONS_FILE,
+    size: read.bytes.length,
+    sha256: sha256(read.bytes),
+  };
+  return { file, problems: await verifyActions(source, file, overrides) };
+}
+
+/** Checks the actions export against the hash its copy recorded: `source-changed` when it differs,
+ * went away or cannot be read. Fails closed, like verifySource. */
+export async function verifyActions(
+  source: string,
+  recorded: InputFile,
+  overrides?: Partial<Limits>,
+): Promise<Problem[]> {
+  const read = await readActionsSource(source, limitsWith(overrides).jsonBytes);
+  return read.bytes !== undefined && sha256(read.bytes) === recorded.sha256
+    ? []
+    : [problem("source-changed", { file: ACTIONS_FILE })];
+}
+
+async function readActionsSource(
+  source: string,
+  bound: number,
+): Promise<{ bytes?: Buffer; problems: Problem[] }> {
+  const at = { file: ACTIONS_FILE };
+  try {
+    if (!(await lstat(source)).isFile()) return { problems: [problem("not-a-regular-file", at)] };
+    const bytes = await readBounded(source, bound);
+    if (bytes.length > bound) return { problems: [problem("file-too-large", at)] };
+    return { bytes, problems: [] };
+  } catch {
+    return { problems: [problem("read-failed", at)] };
+  }
+}
+
+/** Reads a copy the run made itself (the actions export's), bounded. */
+export async function readCopy(path: string, overrides?: Partial<Limits>): Promise<Buffer> {
+  return readBounded(path, limitsWith(overrides).jsonBytes);
 }
 
 /** Whether `to` is `from` or lies under it, by whole path parts: `<from>/..input` is inside. */

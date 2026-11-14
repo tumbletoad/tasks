@@ -8,6 +8,7 @@ import {
   classifyUrl,
   cutAtWord,
   eventMillis,
+  fileLinkPath,
   groupSlug,
   isGenericLabel,
   isTimeZone,
@@ -97,6 +98,77 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     expect(classifyUrl("no url at all")).toEqual({ kind: "web", keyProblem: "unparsed" });
     const long = `https://www.example.org/${"a".repeat(600)}`;
     expect(classifyUrl(long)).toEqual({ kind: "web", keyProblem: "too-long" });
+  });
+
+  test("every link kind of the page has its kind in the space; file: links are paths", () => {
+    // The page's own rules (A7 3.15.3, Sources). Its ticket and wiki host is a real service, named
+    // here by the suffix the page matches; the fixture keeps RFC 2606 hosts.
+    const kinds: [string, string, string | undefined][] = [
+      ["https://lumen.atlassian.net/wiki/spaces/P/pages/1", "doc", undefined],
+      ["https://lumen.atlassian.net/browse/LUM-7", "ticket", "LUM-7"],
+      ["https://lumen.atlassian.net/jira/software/projects/LUM/boards/2", "ticket", undefined],
+      ["https://mail.google.example/mail/u/0/#inbox/A", "email", undefined],
+      ["https://chat.google.example/room/A", "chat", undefined],
+      ["https://docs.google.example/document/d/A", "doc", undefined],
+      ["https://drive.google.example/file/d/A", "doc", undefined],
+      ["https://gitlab.lumen.example/g/p/-/merge_requests/4", "pr", undefined],
+      ["https://github.example/o/r", "web", undefined],
+      ["t3-thread:thread-0001", "session", undefined],
+    ];
+    for (const [url, kind, ref] of kinds) {
+      const cls = classifyUrl(url);
+      expect(cls.kind, url).toBe(kind);
+      expect(cls.ref, url).toBe(ref);
+      expect(cls.hidden, url).toBeUndefined();
+    }
+    expect(classifyUrl("t3-thread:thread-0001").key).toBe("url:t3-thread:thread-0001");
+    // The page shows links only for http, https, file and t3-thread: the others are imported, and
+    // reported.
+    expect(classifyUrl("mailto:tomas@mail.lumen.example").hidden).toBe(true);
+    expect(classifyUrl("ftp://files.lumen.example/a").hidden).toBe(true);
+    expect(fileLinkPath("file:///home/mira/work/a%20b")).toBe("/home/mira/work/a b");
+    expect(fileLinkPath("file://localhost/home/mira")).toBe("/home/mira");
+    expect(fileLinkPath("file:///C:/Users/x")).toBe("C:/Users/x");
+    expect(fileLinkPath("file://server.example/share")).toBeUndefined();
+    expect(fileLinkPath("https://www.example.org/")).toBeUndefined();
+
+    const p = plan({
+      todo: line("Links", "l"),
+      metadata: metadata({
+        l: {
+          paths: ["/home/mira/work/a"],
+          sources: [
+            { label: "Folder", url: "file:///home/mira/work/b%20c" },
+            { label: "x", url: "file://server.example/share" },
+            { label: "Planning thread", url: "t3-thread:thread-0001" },
+            { label: "Mail", url: "mailto:tomas@mail.lumen.example" },
+          ],
+        },
+      }),
+    });
+    // The file: links are no sources: their paths join the task's other paths.
+    expect(opsOf(p, "l", "source.add").map((o) => o.source.kind)).toEqual(["session", "email"]);
+    expect(createOf(p, "l").ext.planning.paths).toEqual([
+      "/home/mira/work/b c",
+      "file://server.example/share",
+    ]);
+    expect(p.problems.map((x) => `${x.code} ${String(x.index)}`)).toEqual([
+      "source-file-link 0",
+      "source-file-link 1",
+      "source-not-shown 3",
+      "source-title-generic 3",
+    ]);
+  });
+
+  test("a ticket's label that is its key is no title, as on the page", () => {
+    const p = plan({
+      todo: line("T", "t"),
+      metadata: metadata({
+        t: { sources: [{ label: "lum-7", url: "https://tickets.lumen.example/browse/LUM-7" }] },
+      }),
+      jira: JSON.stringify([{ key: "LUM-7", summary: "Fix the export" }]),
+    });
+    expect(opsOf(p, "t", "source.add")[0]?.source.title).toBe("Fix the export");
   });
 
   test("a url: key lower-cases scheme and host, drops utm_* and a fragment without a route", () => {
@@ -322,14 +394,17 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     expect(createOf(noMe, "x1").owner).toBe("Mira Okafor");
   });
 
-  test("a later line with an earlier line's ID is left out: one legacy ID, one task", () => {
+  test("one ID on two lines: the DONE.md line wins over TODO.md, else the first line", () => {
     const p = plan({
-      todo: line("First", "x1"),
-      done: `- [x] **Again** (done 2026-10-01; done) <!-- task:x1 -->\n`,
+      todo: line("Open copy", "x1") + line("First", "x2") + line("Second", "x2"),
+      done: `- [x] **Archived** (done 2026-10-01; done) <!-- task:x1 -->\n`,
     });
-    expect(p.tasks.map((t) => t.legacyId)).toEqual(["x1"]);
-    expect(createOf(p, "x1").title).toBe("First");
-    expect(p.counts.duplicatesLeftOut).toBe(1);
+    expect(p.tasks.map((t) => t.legacyId)).toEqual(["x2", "x1"]);
+    // As the page shows it: the archived line, completed.
+    expect(createOf(p, "x1").title).toBe("Archived");
+    expect(p.tasks.find((t) => t.legacyId === "x1")?.lifecycle).toBe("completed");
+    expect(createOf(p, "x2").title).toBe("First");
+    expect(p.counts.duplicatesLeftOut).toBe(2);
   });
 
   test("project slugs are unique in the space: one name in two areas gets a number", () => {
@@ -366,9 +441,15 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
-  test("completions: an empty outcome is pending, a day out of range is unknown, the box wins", () => {
+  test("completions: an empty outcome is pending, a day out of range is unknown, events win", () => {
+    const ev = (id: string, task: string, action: string) => ({
+      name: `${id}.json`,
+      bytes: JSON.stringify({ id, task, action, at: "2026-11-01T10:00:00Z" }),
+    });
     const p = plan({
-      todo: `- [x] **Boxed** <!-- task:x3 -->\n`,
+      todo:
+        `- [x] **Boxed** <!-- task:x3 -->\n- [x] **Boxed and checked** <!-- task:x4 -->\n` +
+        `- [X] **Only boxed** <!-- task:x5 -->\n- [ ] **Checked** <!-- task:x6 -->\n`,
       done:
         `- [x] **Empty** (done 2026-10-01; ) <!-- task:x1 -->\n` +
         `- [x] **Old** (done 1969-07-20; landed) <!-- task:x2 -->\n`,
@@ -382,31 +463,87 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
             at: "2026-11-01T10:00:00Z",
           }),
         },
-        {
-          name: "cli-2.json",
-          bytes: JSON.stringify({
-            id: "cli-2",
-            task: "x1",
-            action: "focus",
-            at: "2026-11-01T10:00:00Z",
-          }),
-        },
+        ev("cli-2", "x1", "focus"),
+        ev("cli-3", "x4", "check"),
+        ev("cli-4", "x6", "check"),
+        ev("cli-5", "x6", "focus"),
       ],
     });
     expect(opsOf(p, "x1", "task.complete")).toEqual([
       { kind: "task.complete", task: { draft: "x1" }, at: Date.parse("2026-10-01T07:00:00Z") },
     ]);
     expect(p.tasks.find((t) => t.legacyId === "x1")?.wrap).toBe("pending");
-    expect(createOf(p, "x1").focus).toBe("2026-11-01");
+    // A DONE.md task has no star, as on the page; a task checked by an event keeps its star.
+    expect(createOf(p, "x1").focus).toBeUndefined();
+    expect(createOf(p, "x6").focus).toBe("2026-11-01");
     expect(opsOf(p, "x2", "task.complete")).toEqual([
       { kind: "task.complete", task: { draft: "x2" }, outcome: "landed" },
     ]);
     expect(createOf(p, "x2").ext.planning["done_date_unknown"]).toBe(true);
     expect(codes(p, "x2")).toEqual(["date-out-of-range done"]);
-    // A checked box completes, at the import time, even when an event unchecked the task.
-    expect(opsOf(p, "x3", "task.complete")).toEqual([
-      { kind: "task.complete", task: { draft: "x3" } },
+    // The last check event wins over a ticked box, as on the page: unchecked stays active.
+    expect(opsOf(p, "x3", "task.complete")).toEqual([]);
+    expect(codes(p, "x3")).toEqual(["ticked-unchecked check"]);
+    // Checked by an event, at its time, ticked or not.
+    const at = Date.parse("2026-11-01T10:00:00Z");
+    expect(opsOf(p, "x4", "task.complete")).toEqual([
+      { kind: "task.complete", task: { draft: "x4" }, at },
     ]);
+    expect(codes(p, "x4")).toEqual(["checked-item check"]);
+    expect(codes(p, "x6")).toEqual(["checked-item check"]);
+    // A ticked box no event decides: completed at the import time, under its own code.
+    expect(opsOf(p, "x5", "task.complete")).toEqual([
+      { kind: "task.complete", task: { draft: "x5" } },
+    ]);
+    expect(codes(p, "x5")).toEqual(["ticked-in-file check"]);
+    // --checked-as review keeps both kinds active in Review.
+    const review = plan(
+      {
+        todo: `- [x] **Boxed** <!-- task:y1 -->\n- [ ] **Checked** <!-- task:y2 -->\n`,
+        events: [ev("e", "y2", "check")],
+      },
+      { checkedAs: "review" },
+    );
+    for (const id of ["y1", "y2"]) {
+      expect(createOf(review, id).status).toBe("review");
+      expect(opsOf(review, id, "task.complete")).toEqual([]);
+    }
+  });
+
+  test("metadata keys the page applies to a task without events are reported, not applied", () => {
+    const p = plan({
+      todo: line("A", "x1"),
+      metadata: metadata({ x1: { checked: true, focus: true, ticked: true, size: 1 } }),
+    });
+    expect(p.tasks[0]?.lifecycle).toBe("active");
+    expect(createOf(p, "x1").focus).toBeUndefined();
+    expect(createOf(p, "x1").ext.planning).toMatchObject({
+      checked: true,
+      focus: true,
+      ticked: true,
+    });
+    expect(p.problems.map((x) => `${x.code} ${String(x.index)}`)).toEqual([
+      "metadata-state-key 0",
+      "metadata-state-key 1",
+      "metadata-state-key 2",
+    ]);
+  });
+
+  test("the place is the first absolute path, the folder the page shows; rank 0 sorts last", () => {
+    const p = plan({
+      todo: line("A", "x1") + line("B", "x2") + line("C", "x3"),
+      metadata: metadata({
+        x1: { paths: ["notes/a", "/home/mira/work/a", "/home/mira/work/b"], rank: 0 },
+        x2: { rank: 2 },
+        x3: { rank: 1 },
+      }),
+    });
+    expect(opsOf(p, "x1", "place.set")).toEqual([
+      { kind: "place.set", task: { draft: "x1" }, root: "work", path: "a" },
+    ]);
+    expect(createOf(p, "x1").ext.planning.paths).toEqual(["notes/a", "/home/mira/work/b"]);
+    expect(createOf(p, "x1").ext.planning.rank).toBe(0);
+    expect(p.tasks.map((t) => t.legacyId)).toEqual(["x3", "x2", "x1"]);
   });
 
   test("sources: dropped, keyless, one per key per task, and one title per shared key", () => {
@@ -492,13 +629,14 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
 
   test("an empty metadata next falls back to the body's Next: clause", () => {
     const p = plan({
-      todo: line("A", "x1", "Next: call the clinic. More."),
+      todo: line("A", "x1", "Next: call the clinic. More. Refs: LUM-7."),
       metadata: metadata({ x1: { next: "  " } }),
     });
-    expect(createOf(p, "x1").summary).toBe("call the clinic");
+    // The page's rule: up to ` Refs:`, dots kept.
+    expect(createOf(p, "x1").summary).toBe("call the clinic. More.");
     // The clause's text passes SafeText like every field, and its change is reported as `next`.
     const hidden = plan({ todo: line("A", "x1", "Next: call\u200b the clinic.") });
-    expect(createOf(hidden, "x1").summary).toBe("call the clinic");
+    expect(createOf(hidden, "x1").summary).toBe("call the clinic.");
     expect(codes(hidden, "x1")).toEqual(["text-sanitised body", "text-sanitised next"]);
   });
 
