@@ -222,6 +222,23 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
       const unbound = await raw(w, bridgeContext({ space: w.space }));
       await unbound.initialize();
       const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
+      // A connection that carries two conversations (A3 3.7.5): bound by thread 20's call, then
+      // shared by thread 21's. A call is the session's only when its own ID proves it.
+      const shared = await raw(w, bridgeContext({ space: w.space }));
+      await shared.initialize();
+      expect(
+        textOf(
+          JSON.parse(
+            (await shared.request("tools/call", { ...bind, _meta: { threadId: thread(20) } }))
+              .result ?? "{}",
+          ),
+        ),
+      ).toContain("Session: bound to this task");
+      await shared.request("tools/call", {
+        name: "status",
+        arguments: {},
+        _meta: { threadId: thread(21) },
+      });
       w.service.bindings.flush();
       const records = join(stateOf(w.home), "sessions.json");
       const kept = readFileSync(records);
@@ -240,6 +257,17 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
       expect(refused(await boundModern.request("tools/call", modernReport(7)))).toMatch(
         /^error not_permitted: .* This session is bound to a task, not a run\./u,
       );
+      // On the shared connection, the bound thread's call and another thread's.
+      expect(
+        refused(
+          await shared.request("tools/call", { ...report(8), _meta: { threadId: thread(20) } }),
+        ),
+      ).toMatch(/^error not_permitted: .* This session is bound to a task, not a run\./u);
+      expect(
+        refused(
+          await shared.request("tools/call", { ...report(9), _meta: { threadId: thread(22) } }),
+        ),
+      ).toMatch(/^error not_permitted: .* Nothing to report outside a run\./u);
       // The CLI: a person's terminal and an agent's shell are no run either.
       for (const cls of ["cli-interactive", "cli-agent"] as const) {
         const session = await classSession(w.home, w.path, cls, {

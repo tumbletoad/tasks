@@ -352,18 +352,25 @@ export class Bindings implements BindingPort {
    * resumed connection may be another's): it is shared from then on, and the ID joins no session.
    */
   present(slot: Slot, source: NativeSource, id: string): void {
-    if (!NATIVE_ID.test(id)) return;
-    const held = slot.presented.get(source);
-    if (held === id) return;
-    const session = slot.session === undefined ? undefined : this.#sessions.get(slot.session.id);
-    const theirs = session?.native.filter((n) => n.source === source) ?? [];
-    if (held !== undefined || (theirs.length > 0 && !theirs.some((n) => n.id === id))) {
+    if (!NATIVE_ID.test(id) || slot.presented.get(source) === id) return;
+    if (this.#shares(slot, source, id)) {
       this.#share(slot);
       return;
     }
     if (slot.presented.size >= MAX_PRESENTED) return;
     slot.presented.set(source, id);
+    const session = slot.session === undefined ? undefined : this.#sessions.get(slot.session.id);
     if (session !== undefined) this.#record(session, slot, {});
+  }
+
+  /** Whether presenting `id` would mark the connection shared (`present`), deciding nothing. */
+  #shares(slot: Slot, source: NativeSource, id: string): boolean {
+    if (!NATIVE_ID.test(id)) return false;
+    const held = slot.presented.get(source);
+    if (held === id) return false;
+    const session = slot.session === undefined ? undefined : this.#sessions.get(slot.session.id);
+    const theirs = session?.native.filter((n) => n.source === source) ?? [];
+    return held !== undefined || (theirs.length > 0 && !theirs.some((n) => n.id === id));
   }
 
   /** The connection carries two conversations: shared from now on, its handle too. */
@@ -380,11 +387,18 @@ export class Bindings implements BindingPort {
    * the connection's own, unless the connection is shared (A3 3.7.5). On a shared connection a
    * call is its bound session's only when its own ID is one that session holds; any other call
    * acts without a binding, so it inherits no task or actor and binds nothing (steps 5 and 6
-   * resolve for that call only).
+   * resolve for that call only). With `record` false the ID is not presented: the slot is chosen as
+   * if it were, and nothing changes (a call refused before it may act, A3 3.4.12).
    */
-  forCall(slot: Slot, source: NativeSource, id: string | undefined): Slot | undefined {
-    if (id !== undefined) this.present(slot, source, id);
-    if (!slot.shared) return slot;
+  forCall(
+    slot: Slot,
+    source: NativeSource,
+    id: string | undefined,
+    record = true,
+  ): Slot | undefined {
+    if (id !== undefined && record) this.present(slot, source, id);
+    const shared = slot.shared || (id !== undefined && !record && this.#shares(slot, source, id));
+    if (!shared) return slot;
     const session = slot.session === undefined ? undefined : this.#sessions.get(slot.session.id);
     const proven =
       id !== undefined &&
