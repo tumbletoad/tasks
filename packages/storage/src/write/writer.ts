@@ -1051,21 +1051,6 @@ export class SpaceWriter {
       if (typeof values.effort === "string" && !efforts.includes(values.effort)) {
         problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
       }
-      // A later operation of a matched draft: the rebinding rules (A1 3.6) either leave it out,
-      // or let it go on with the matched task, which `task` below resolves the draft's ID to.
-      const named = "task" in op ? op.task : undefined;
-      const match = named === undefined ? undefined : matched.get(named);
-      if (match !== undefined && !follows(op, match)) {
-        return {
-          i,
-          op,
-          target: match.task,
-          task: match.task,
-          touches: [],
-          record: { existing: true },
-          existing: {},
-        };
-      }
       const task = (given: string, field: string): Id<"t"> => {
         // A matched draft's ID names the matched task: a sibling, or an operation that follows.
         const rebound = matched.get(given);
@@ -1134,6 +1119,25 @@ export class SpaceWriter {
         }
         return { owner, machine, key: `${owner.kind}|${owner.id}` };
       };
+
+      // A later operation of a matched draft: the rebinding rules (A1 3.6) either leave it out,
+      // or let it go on with the matched task, which `task` resolves the draft's ID to. A move left
+      // out still has its group and sibling checked, so whether a request is valid never depends
+      // on what dedupe finds.
+      const named = "task" in op ? op.task : undefined;
+      const match = named === undefined ? undefined : matched.get(named);
+      if (match !== undefined && !follows(op, match)) {
+        if (op.kind === "task.move") where(op);
+        return {
+          i,
+          op,
+          target: match.task,
+          task: match.task,
+          touches: [],
+          record: { existing: true },
+          existing: {},
+        };
+      }
 
       switch (op.kind) {
         case "task.create": {

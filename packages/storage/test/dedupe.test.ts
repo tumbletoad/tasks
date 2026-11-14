@@ -493,6 +493,7 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       ...again.ops,
       { kind: "task.patch", task: again.id, set: { summary: "Next: call back" } },
       { kind: "task.complete", task: again.id },
+      { kind: "task.move", task: again.id, area: "home" },
     ]);
     expectStatus(patched, "unchanged");
     expect(patched.results.map((r) => [r.status, r.id])).toEqual([
@@ -500,9 +501,16 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       ["existing", first.id],
       ["existing", first.id],
       ["existing", first.id],
+      ["existing", first.id],
     ]);
     expect(one("SELECT summary FROM tasks")).toBe("");
     expect(one("SELECT lifecycle FROM tasks")).toBe("active");
+    expect(one("SELECT area_id FROM tasks")).toBe(null);
+    // What is left out is still checked: a move to an area the space lacks is refused as for a
+    // created draft, whatever dedupe found.
+    const unknown = submit([...again.ops, { kind: "task.move", task: again.id, area: "garden" }]);
+    expectStatus(unknown, "rejected");
+    expect(unknown.error).toMatchObject({ code: "NOT_FOUND", op: 2, field: "area" });
     // Another draft placed after a matched draft stands right after the matched task.
     const other = newId("t");
     const matched = draft(["jira:FIX-1"]);
@@ -574,9 +582,13 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
 /** Five keys, so drafts of one or two keys overlap often. */
 const KEYS = ["jira:FIX-1", "jira:FIX-2", "jira:FIX-3", "github:lumen/portal#4", "email:<5@x>"];
 
+/** A draft's `on_existing` as A3 3.4.5 maps it onto A1 3.6: return, add_sources, create_new. */
+type Mode = "return" | "link" | "new";
+
 interface DraftSpec {
   keys: number[];
   log: boolean;
+  mode: Mode;
 }
 
 type Step =
@@ -588,6 +600,8 @@ type Step =
 const draftSpec: fc.Arbitrary<DraftSpec> = fc.record({
   keys: fc.uniqueArray(fc.nat({ max: KEYS.length - 1 }), { minLength: 1, maxLength: 2 }),
   log: fc.boolean(),
+  // Mostly the default, as a refresh sends.
+  mode: fc.constantFrom<Mode>("return", "return", "return", "link", "new"),
 });
 
 const sessionStep: fc.Arbitrary<Step> = fc.oneof(
@@ -612,81 +626,131 @@ interface ModelTask {
   logs: number;
 }
 
-/** What a request's operations return, in order, as `<status> <task>`. */
-type Predicted = { results: string[]; applied: boolean };
+/**
+ * What a request returns: its status and, when accepted, each operation's `<status> <task>` in
+ * order; when refused, the operation of the `new` draft an active task refused.
+ */
+type Predicted =
+  | {
+      status: "applied" | "unchanged";
+      results: string[];
+      /** Sources add_sources linked to a match, and `new` drafts created beside finished tasks. */
+      linked: number;
+      beside: number;
+    }
+  | { status: "rejected"; op: number };
+
+interface ModelDraft {
+  id: Id<"t">;
+  keys: string[];
+  log: boolean;
+  mode: Mode;
+}
 
 /**
  * The reference model of A1 3.6's dedupe without clock jumps, so every finished task is within the
- * window: each key names at most one task, and a draft matches the tasks its keys name.
+ * window: the tasks each key is linked to, and each task's lifecycle and log entries.
  */
 class SessionsModel {
-  readonly tasks = new Map<Id<"t">, ModelTask>();
-  readonly keys = new Map<string, Id<"t">>();
+  tasks = new Map<Id<"t">, ModelTask>();
+  keys = new Map<string, Set<Id<"t">>>();
   #finished = 0;
 
   /** Predicts a request of `drafts` and changes the model as the writer would. */
-  add(drafts: readonly { id: Id<"t">; keys: string[]; log: boolean }[]): Predicted {
+  add(drafts: readonly ModelDraft[]): Predicted {
+    // On copies: a refused request changes nothing.
+    const tasks = new Map([...this.tasks].map(([id, t]) => [id, { ...t }]));
+    const keys = new Map([...this.keys].map(([k, held]) => [k, new Set(held)]));
+    const task = (t: Id<"t">): ModelTask => {
+      const found = tasks.get(t);
+      if (found === undefined) throw new Error("the model has no such task");
+      return found;
+    };
+    const hold = (key: string, t: Id<"t">): void => {
+      keys.set(key, new Set([...(keys.get(key) ?? []), t]));
+    };
     const results: string[] = [];
     let applied = false;
+    let index = 0;
+    let linked = 0;
+    let beside = 0;
     for (const d of drafts) {
-      const named = [
-        ...new Set(d.keys.flatMap((k) => (this.keys.has(k) ? [this.keys.get(k) as Id<"t">] : []))),
-      ];
-      const byRef = (a: Id<"t">, b: Id<"t">): number => this.#task(a).ref - this.#task(b).ref;
-      const active = named.filter((t) => this.#task(t).lifecycle === "active").sort(byRef);
-      const rest = d.keys.length;
-      if (active.length === 1) {
-        const t = active[0] as Id<"t">;
-        results.push(`existing ${t}`);
+      const holders = [...new Set(d.keys.flatMap((k) => [...(keys.get(k) ?? [])]))];
+      const active = holders
+        .filter((t) => task(t).lifecycle === "active")
+        .sort((a, b) => task(a).ref - task(b).ref);
+      const size = 1 + (d.log ? 1 : 0) + d.keys.length;
+      const [first] = active;
+      if (d.mode === "new" && first !== undefined) return { status: "rejected", op: index };
+      if (d.mode !== "new" && first !== undefined && active.length === 1) {
+        // One active match: the draft's log follows it, and its sources with add_sources.
+        results.push(`existing ${first}`);
         if (d.log) {
-          results.push(`created ${t}`);
-          this.#task(t).logs += 1;
+          results.push(`created ${first}`);
+          task(first).logs += 1;
           applied = true;
         }
-        for (let k = 0; k < rest; k += 1) results.push(`existing ${t}`);
-      } else if (active.length > 1 || named.length > 0) {
-        const t =
-          active.length > 1
-            ? (active[0] as Id<"t">)
-            : (named.sort((a, b) => this.#task(b).finished - this.#task(a).finished)[0] as Id<"t">);
-        for (let k = 0; k < 1 + (d.log ? 1 : 0) + rest; k += 1) results.push(`existing ${t}`);
+        for (const key of d.keys) {
+          if (d.mode !== "link") {
+            results.push(`existing ${first}`);
+            continue;
+          }
+          const held = keys.get(key)?.has(first) === true;
+          results.push(`${held ? "unchanged" : "created"} ${first}`);
+          if (!held) {
+            applied = true;
+            linked += 1;
+          }
+          hold(key, first);
+        }
+      } else if (d.mode !== "new" && holders.length > 0) {
+        // Ambiguous, or finished only (the one finished last): nothing of the draft follows.
+        const named =
+          first ?? holders.sort((a, b) => task(b).finished - task(a).finished)[0] ?? d.id;
+        for (let k = 0; k < size; k += 1) results.push(`existing ${named}`);
       } else {
-        this.tasks.set(d.id, {
-          ref: this.tasks.size + 1,
+        if (holders.length > 0) beside += 1;
+        tasks.set(d.id, {
+          ref: tasks.size + 1,
           lifecycle: "active",
           finished: 0,
           logs: d.log ? 1 : 0,
         });
-        for (const k of d.keys) this.keys.set(k, d.id);
-        for (let k = 0; k < 1 + (d.log ? 1 : 0) + rest; k += 1) results.push(`created ${d.id}`);
+        for (const key of d.keys) hold(key, d.id);
+        for (let k = 0; k < size; k += 1) results.push(`created ${d.id}`);
         applied = true;
       }
+      index += size;
     }
-    return { results, applied };
+    this.tasks = tasks;
+    this.keys = keys;
+    return { status: applied ? "applied" : "unchanged", results, linked, beside };
   }
 
   complete(t: Id<"t">): void {
-    const task = this.#task(t);
+    const task = this.tasks.get(t);
+    if (task === undefined) throw new Error("the model has no such task");
     task.lifecycle = "completed";
     task.finished = this.#finished += 1;
   }
 
   reopen(t: Id<"t">): void {
-    this.#task(t).lifecycle = "active";
-  }
-
-  #task(t: Id<"t">): ModelTask {
     const task = this.tasks.get(t);
     if (task === undefined) throw new Error("the model has no such task");
-    return task;
+    task.lifecycle = "active";
+  }
+
+  /** The active tasks a key is linked to. */
+  active(key: string): number {
+    return [...(this.keys.get(key) ?? [])].filter((t) => this.tasks.get(t)?.lifecycle === "active")
+      .length;
   }
 }
 
 /** The space against the model: each key's holders, each task's lifecycle and log entries. */
 function expectSessionsModel(conn: Connection, model: SessionsModel): void {
   for (const key of KEYS) {
-    const held = model.keys.get(key);
-    expect(holders(conn, key), key).toEqual(held === undefined ? [] : [held]);
+    expect(holders(conn, key), key).toEqual([...(model.keys.get(key) ?? [])].sort());
   }
   const rows = conn
     .prepare(
@@ -716,6 +780,8 @@ const sessionsProperty = (seen: Record<string, number>) =>
       const count = (label: string): void => {
         seen[label] = (seen[label] ?? 0) + 1;
       };
+      // A reopen is the user's act and may leave two active tasks with one key; dedupe never does.
+      let reopened = false;
       for (const s of steps) {
         if (s.kind === "complete" || s.kind === "reopen") {
           const want = s.kind === "complete" ? "active" : "completed";
@@ -731,6 +797,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
           expectStatus(space.writer.submit(space.request(space.human, [op], { base })), "applied");
           if (s.kind === "complete") model.complete(id);
           else model.reopen(id);
+          reopened ||= s.kind === "reopen";
           count(s.kind);
         } else if (s.kind === "retry") {
           const earlier = sent[s.pick % Math.max(sent.length, 1)];
@@ -742,13 +809,20 @@ const sessionsProperty = (seen: Record<string, number>) =>
           });
           count("replayed");
         } else {
-          const drafts = s.drafts.map((d) => ({
+          const drafts: ModelDraft[] = s.drafts.map((d) => ({
             id: newId("t"),
             keys: d.keys.map((k) => KEYS[k] ?? ""),
             log: d.log,
+            mode: d.mode,
           }));
           const ops: Operation[] = drafts.flatMap((d): Operation[] => [
-            { kind: "task.create", id: d.id, title: "Answer the clinic" },
+            {
+              kind: "task.create",
+              id: d.id,
+              title: "Answer the clinic",
+              ...(d.mode === "new" ? { dedupe: "new" as const } : {}),
+              ...(d.mode === "link" ? { link_sources: true } : {}),
+            },
             ...(d.log
               ? [{ kind: "log.add" as const, task: d.id, body: "New in the thread." }]
               : []),
@@ -764,10 +838,21 @@ const sessionsProperty = (seen: Record<string, number>) =>
           const request = space.request(actor, ops);
           const result = space.writer.submit(request);
           sent.push({ request, result });
-          expect(result.status).toBe(predicted.applied ? "applied" : "unchanged");
-          expect(result.results.map((r) => `${r.status} ${r.task ?? r.id}`)).toEqual(
-            predicted.results,
-          );
+          expect(result.status, JSON.stringify(result.error)).toBe(predicted.status);
+          if (predicted.status === "rejected") {
+            expect(result.error).toMatchObject({
+              code: "VALIDATION_FAILED",
+              op: predicted.op,
+              field: "dedupe",
+            });
+            count("refused new");
+          } else {
+            expect(result.results.map((r) => `${r.status} ${r.task ?? r.id}`)).toEqual(
+              predicted.results,
+            );
+            if (predicted.linked > 0) count("source linked");
+            if (predicted.beside > 0) count("created new");
+          }
           for (const r of result.results) {
             if (r.ambiguous !== undefined) count("ambiguous");
             else if (r.lifecycle === "completed") count("existing completed");
@@ -776,6 +861,9 @@ const sessionsProperty = (seen: Record<string, number>) =>
           if (s.drafts.length > 1) count("drafts in one request");
         }
         expectSessionsModel(space.reader, model);
+        if (!reopened) {
+          for (const key of KEYS) expect(model.active(key), key).toBeLessThanOrEqual(1);
+        }
       }
       checkHistory(space.reader);
     } finally {
@@ -784,13 +872,16 @@ const sessionsProperty = (seen: Record<string, number>) =>
   });
 
 describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", () => {
-  test("property: interleaved drafts, completions, reopens and retries leave at most one task per key, as the model predicts", async () => {
+  test("property: interleaved drafts in every on_existing mode, completions, reopens and retries leave at most one active task per key, as the model predicts", async () => {
     const seen: Record<string, number> = {};
     await fc.assert(sessionsProperty(seen), { numRuns: 40, seed: 20261114 });
     for (const outcome of [
       "existing active",
       "existing completed",
       "ambiguous",
+      "refused new",
+      "created new",
+      "source linked",
       "replayed",
       "complete",
       "reopen",
