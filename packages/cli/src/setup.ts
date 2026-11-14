@@ -135,7 +135,18 @@ export async function setupCommand(
     if (status) {
       const result = await call("t3/status", {});
       if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
-      else io.stdout(`${String(result["message"])}\n`);
+      else {
+        io.stdout(`${String(result["message"])}\n`);
+        // Each T3 instance: the route a click takes now, or why none (M6.10).
+        const instances = Array.isArray(result["instances"]) ? result["instances"] : [];
+        for (const item of instances as unknown[]) {
+          if (typeof item !== "object" || item === null) continue;
+          const { id, message } = item as Record<string, unknown>;
+          if (typeof id === "string" && typeof message === "string") {
+            io.stdout(`  ${id}: ${message}\n`);
+          }
+        }
+      }
       return 0;
     }
     const started = await call("t3/pair", {});

@@ -65,6 +65,11 @@ export interface FoundCommand {
    * run by detection and selects its own home, so it is no raw command).
    */
   readonly unusable?: "cmd_shim" | "no_node" | "wrapper";
+  /**
+   * T3 on Windows: the `.cmd` shim found. Detection never runs or reads it; the T3 CLI route reads
+   * it when it uses it (t3-cli.ts), so it is what a T3 instance's `exec` names.
+   */
+  readonly shim?: string;
   readonly version?: string;
   /** Whether the version lies in the catalogue's tested range; absent when unknown. */
   readonly tested?: boolean;
@@ -253,7 +258,13 @@ function findCommand(
             : { target, source: "npm", exec: [node, entry] };
         }
       }
-      return { target, source, exec: [], unusable: "cmd_shim" };
+      return {
+        target,
+        source,
+        exec: [],
+        unusable: "cmd_shim",
+        ...(target === "t3" && /\.(cmd|bat)$/iu.test(file) ? { shim: file } : {}),
+      };
     }
     // A link into node_modules (npm and nvm on Linux and macOS): run the entry with Node, never
     // through its `#!/usr/bin/env node` line (A4 3.2).
@@ -448,8 +459,16 @@ export async function detect(
   const t3 = commands.find((c) => c.target === "t3");
   if (t3 !== undefined || t3Folder) {
     // T3's provider instances live in its settings, which Tasks reads only through T3's own
-    // API once paired (A4 3.4.1, M2.09): the person picks one.
-    const exec = t3 !== undefined && t3.exec.length > 0 ? t3.exec : undefined;
+    // API once paired (A4 3.4.1, M2.09): the person picks one. On Windows the command is T3's
+    // `.cmd` shim, which the CLI route reads and never runs (t3-cli.ts).
+    const exec =
+      t3 === undefined
+        ? undefined
+        : t3.exec.length > 0
+          ? t3.exec
+          : t3.shim !== undefined
+            ? [t3.shim]
+            : undefined;
     proposals.push({
       id: "t3",
       target: "t3",
