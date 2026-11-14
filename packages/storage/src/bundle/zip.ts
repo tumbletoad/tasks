@@ -849,6 +849,15 @@ function lookAt(path: string): BigIntStats {
 const sameId = (a: BigIntStats, b: BigIntStats): boolean =>
   a.dev === b.dev && a.ino === b.ino && a.size === b.size;
 
+/** A local header's ZIP64 field: both sizes, or undefined when it is missing or cut short. */
+function localZip64(extra: Buffer): { size?: number; packed?: number } | undefined {
+  try {
+    return zip64Values(extra, { size: true, packed: true, offset: false, disk: false });
+  } catch {
+    return undefined;
+  }
+}
+
 /** A data descriptor follows the data, and the local header may hold zeros for its CRC and sizes. */
 const FLAG_DESCRIPTOR = 0x0008;
 
@@ -872,12 +881,8 @@ function checkLocalFacts(
   const differs = invalidArchive("a local header differs from its central record");
   if (crc !== record.crc32 >>> 0) throw differs;
   if (packed === MAX32 || size === MAX32) {
-    let big: { size?: number; packed?: number } = {};
-    try {
-      big = zip64Values(extra, { size: true, packed: true, offset: false, disk: false });
-    } catch {
-      throw differs;
-    }
+    const big = localZip64(extra);
+    if (big === undefined) throw differs;
     size = big.size ?? -1;
     packed = big.packed ?? -1;
   }
