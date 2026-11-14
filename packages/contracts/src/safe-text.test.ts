@@ -1,6 +1,7 @@
 // SafeText (A3 3.10 item 4). Strings are built from code points, so this file stays ASCII and
 // shows every hidden character it tests.
 import { Ajv2020 } from "ajv/dist/2020.js";
+import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { parseInput } from "./define.ts";
@@ -53,6 +54,22 @@ describe("[A3.3.10.safe-text] SafeText normalises without rejecting", () => {
   test("one-line fields turn line breaks into one space", () => {
     expect(normaliseLine("Fix appointment\r\n  time zones\n")).toBe("Fix appointment time zones ");
     expect(normaliseLine(normaliseLine("a \n\n b"))).toBe("a b");
+    // Every run of spaces, tabs and breaks that holds a break is one space; other runs stay.
+    expect(normaliseLine("a \t b\t\n \n\tc  d\n")).toBe("a \t b c  d ");
+    // Linear: a long run of spaces without a break once cost quadratic time in a regex.
+    const started = performance.now();
+    expect(normaliseLine(`a${" ".repeat(200_000)}b`)).toHaveLength(200_002);
+    expect(normaliseLine(`a${" ".repeat(200_000)}\nb`)).toBe("a b");
+    expect(performance.now() - started).toBeLessThan(5_000);
+    // The same result as the regular expression it replaced, on short texts of gaps and words.
+    const pieces = fc.constantFrom(" ", "\t", "\n", "\r", "\r\n", "a", "b c", "\u200b");
+    fc.assert(
+      fc.property(fc.array(pieces, { maxLength: 30 }), (list) => {
+        const text = list.join("");
+        expect(normaliseLine(text)).toBe(normaliseText(text).replace(/[ \t]*\n[ \t\n]*/g, " "));
+      }),
+      { numRuns: 2_000 },
+    );
   });
 
   test("schemas normalise on parse and check the limit on the input as sent", () => {

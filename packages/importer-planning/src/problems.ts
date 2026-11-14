@@ -1,75 +1,28 @@
-// Typed problems of the prototype importer's parsers (A7 3.15.2). Every parser is total: whatever
-// it is given, it returns a result and a list of these, and never throws. A problem names a place
-// (a file, a line, a task ID, a field) and a fixed code. It never carries text from the input, so
-// a report or a log line built from it holds no task text (AGENTS.md).
+// Typed problems of the prototype importer (A7 3.15.2, 3.15.3). Every parser is total: whatever it
+// is given, it returns a result and a list of these, and never throws; the mapping adds its own.
+// A problem names a place (a file, a line, a task ID, a field) and a fixed code. It never carries
+// text from the input, so a report or a log line built from it holds no task text (AGENTS.md).
+//
+// The code table and the problem's shape cross the service boundary in the dry-run report, so they
+// live in packages/contracts (import-planning.ts). This module builds problems from them.
+import {
+  IMPORT_PROBLEM_CODES,
+  IMPORT_PROBLEM_FIELDS,
+  type ImportProblemCode,
+  type ImportProblemField,
+  type ImportProblemSeverity,
+} from "@tasks/contracts";
 
-/** Every problem code, with its severity. An error means the input is not what the prototype
- * itself would accept, or the parser had to leave something out; a warning is reported and the
- * import can go on. */
-export const PROBLEM_CODES = {
-  // Files and bounds.
-  "file-missing": "error",
-  "file-too-large": "error",
-  "invalid-utf8": "error",
-  "byte-order-mark": "warning",
-  "line-too-long": "error",
-  "too-many-task-lines": "error",
-  "too-many-entries": "error",
-  "too-many-items": "warning",
-  "too-many-event-files": "error",
-  // Ledgers.
-  "duplicate-id": "error",
-  "date-invalid": "warning",
-  // JSON files.
-  "json-invalid": "error",
-  "json-wrong-shape": "error",
-  "entry-not-object": "warning",
-  "field-type": "warning",
-  "status-unknown": "warning",
-  "priority-invalid": "warning",
-  "source-invalid": "warning",
-  "path-not-absolute": "warning",
-  "metadata-orphan": "warning",
-  "jira-row-without-key": "warning",
-  // Events.
-  "event-invalid": "error",
-  "event-too-large": "error",
-  "event-not-ready": "warning",
-  "event-duplicate-id": "warning",
-  "event-unknown-task": "warning",
-  // The input copy.
-  "not-a-regular-file": "error",
-  "destination-exists": "error",
-  "destination-inside-source": "error",
-  "read-failed": "error",
-  "write-failed": "error",
-  "source-changed": "error",
-} as const satisfies Record<string, "error" | "warning">;
+/** Every problem code, with its severity (contracts: IMPORT_PROBLEM_CODES). */
+export const PROBLEM_CODES = IMPORT_PROBLEM_CODES;
+export type ProblemCode = ImportProblemCode;
+export type Severity = ImportProblemSeverity;
 
-export type ProblemCode = keyof typeof PROBLEM_CODES;
-export type Severity = (typeof PROBLEM_CODES)[ProblemCode];
+/** The fields a problem may name (contracts: IMPORT_PROBLEM_FIELDS). */
+export const PROBLEM_FIELDS = IMPORT_PROBLEM_FIELDS;
+export type ProblemField = ImportProblemField;
 
-/** The fields a problem may name: the known metadata keys, the ledger clauses and audit's time. */
-export const PROBLEM_FIELDS = [
-  "category",
-  "project",
-  "status",
-  "owner",
-  "priority",
-  "rank",
-  "next",
-  "evidence",
-  "source_date",
-  "reviewed",
-  "confidence",
-  "due",
-  "sources",
-  "paths",
-  "added",
-  "done",
-] as const;
-export type ProblemField = (typeof PROBLEM_FIELDS)[number];
-
+/** One problem (contracts: ImportProblem). */
 export interface Problem {
   readonly code: ProblemCode;
   readonly severity: Severity;
