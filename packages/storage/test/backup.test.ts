@@ -99,6 +99,13 @@ function startWriters(folder: string, count: number) {
         });
       }),
   );
+  // A writer that fails ends the wait for them at once, with its own error.
+  let failed: Error | undefined;
+  for (const exit of exits) {
+    exit.catch((error: unknown) => {
+      failed ??= error instanceof Error ? error : new Error(String(error));
+    });
+  }
   const committed = (): number => {
     let total = 0;
     for (let i = 1; i <= count; i += 1) total += Atomics.load(slots, i);
@@ -106,16 +113,19 @@ function startWriters(folder: string, count: number) {
   };
   return {
     committed,
-    /** Waits until every writer committed at least once. */
+    /**
+     * Waits until every writer committed at least once, or one failed. No time limit of its own:
+     * ten threads loading the write path start late on a loaded machine (a 30 s limit once ran
+     * out in a full run), and the test's own timeout bounds the wait.
+     */
     async running(): Promise<void> {
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
+      for (;;) {
+        if (failed !== undefined) throw failed;
         let all = true;
         for (let w = 1; w <= count; w += 1) if (Atomics.load(slots, w) === 0) all = false;
         if (all) return;
         await new Promise((r) => setTimeout(r, 5));
       }
-      throw new Error("the writers did not start");
     },
     async stop(): Promise<number[]> {
       Atomics.store(slots, 0, 1);
