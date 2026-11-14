@@ -441,7 +441,9 @@
                       "enum": [
                         "tasks",
                         "task_sources",
-                        "places"
+                        "places",
+                        "learnings",
+                        "preferences"
                       ],
                       "type": "string"
                     },
@@ -451,10 +453,19 @@
                       "type": "string"
                     },
                     "id": {
-                      "description": "The row, or task_id|source_id for a link",
-                      "maxLength": 60,
-                      "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|s_[0-9a-hjkmnp-tv-z]{26})?$",
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "maxLength": 60,
+                          "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|s_[0-9a-hjkmnp-tv-z]{26})?$",
+                          "type": "string"
+                        },
+                        {
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                          "type": "string"
+                        }
+                      ],
+                      "description": "The row, task_id|source_id for a link, or a preference's key"
                     },
                     "op": {
                       "description": "Index of the operation in the request",

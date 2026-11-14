@@ -1543,6 +1543,12 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
   const launches = request.ops.some((op) => op.kind.startsWith("launch."));
   if (launches) checkLaunchRequest(f, request);
+  // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,
+  // as the request starts, so no other operation may share a request with a change of them.
+  const prefs = request.ops.filter((op) => op.kind === "pref.set").length;
+  if (prefs > 0 && prefs < request.ops.length) {
+    f.fail("VALIDATION_FAILED", "A preference request holds pref.set operations only", "ops");
+  }
   checkMatchableDrafts(request.ops);
   f.done();
   return request;

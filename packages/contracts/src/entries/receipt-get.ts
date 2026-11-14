@@ -57,12 +57,19 @@ const ReceiptOpResult = z.strictObject({
 
 const ReceiptConflict = z.strictObject({
   op: OpIndex,
-  entity: z.enum(["tasks", "task_sources", "places"]).describe("Table of the row"),
+  // Every table a request can conflict on: storage's ConflictEntity (write/request.ts).
+  entity: z
+    .enum(["tasks", "task_sources", "places", "learnings", "preferences"])
+    .describe("Table of the row"),
   id: z
-    .string()
-    .max(60)
-    .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|s_[0-9a-hjkmnp-tv-z]{26})?$/u)
-    .describe("The row, or task_id|source_id for a link"),
+    .union([
+      z
+        .string()
+        .max(60)
+        .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|s_[0-9a-hjkmnp-tv-z]{26})?$/u),
+      PreferenceKey,
+    ])
+    .describe("The row, task_id|source_id for a link, or a preference's key"),
   task: TaskId.optional(),
   ref: TaskRef.optional(),
   field: z.string().max(40).describe("Logical field"),

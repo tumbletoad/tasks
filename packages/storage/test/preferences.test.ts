@@ -1,11 +1,12 @@
 // pref.set through the write path, and the writer's own reads of preferences (A1 3.16, 3.5, 3.7;
 // A3 3.8.3; A7 3.10 M3.11). The registry itself is tested in packages/contracts. Fixture text only.
 import { join } from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
+import { ReceiptGetResult, receiptResult } from "@tasks/contracts";
+import { afterAll, afterEach, beforeEach, describe, expect, expectTypeOf, test } from "vitest";
 import { newId } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
 import { readSpacePreference, readSpacePreferences } from "../src/preferences.ts";
-import type { Operation, WriteResult } from "../src/write/request.ts";
+import type { ConflictEntity, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
 
@@ -136,6 +137,58 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
     expect(result.results.map((r) => r.status)).toEqual(["created", "updated"]);
     expect(changesAt(result.seq)).toHaveLength(1);
     expect(read("ui.theme").value).toBe("system");
+  });
+
+  test("a preference request holds pref.set operations only, so no operation reads a preference the request changes", () => {
+    const create = (status?: string): Operation =>
+      ({
+        kind: "task.create",
+        title: "Ask",
+        ...(status === undefined ? {} : { status }),
+      }) as Operation;
+    for (const ops of [
+      // A status the request adds, or the default status of a list without `open`.
+      [set("tasks.statuses", ["doing"]), create("doing")],
+      [set("tasks.statuses", ["doing"]), create()],
+      [create(), set("tasks.statuses", ["doing"])],
+      // Dedupe's window, which a draft of the same request would read.
+      [set("tasks.dedupe_window_days", 0), create()],
+    ]) {
+      const result = submit(ops);
+      expectStatus(result, "rejected");
+      expect(result.error).toMatchObject({ code: "VALIDATION_FAILED", field: "ops" });
+    }
+    // Refused before the transaction: no receipt, no row, no task.
+    expect(receipts("rejected")).toBe(0);
+    expect(one("SELECT count(*) FROM preferences")).toBe(0);
+    expect(one("SELECT count(*) FROM tasks WHERE title = 'Ask'")).toBe(0);
+    // In two requests, the second reads what the first set.
+    expectStatus(submit([set("tasks.statuses", ["doing"])]), "applied");
+    expectStatus(submit([create()]), "applied");
+    expect(one("SELECT status FROM tasks WHERE title = 'Ask'")).toBe("doing");
+  });
+
+  test("every receipt of pref.set is receipt.get's result: applied, conflict and refused", () => {
+    const first = submit([set("ui.theme", "washi")], { base: null });
+    const stale = first.as_of;
+    expectStatus(submit([set("ui.theme", "sumi")]), "applied");
+    const outcomes = [
+      fx.request(fx.human, [set("ui.theme", "system")], { base: stale }),
+      fx.request(fx.codex, [set("autonomy.level", "full")]),
+      fx.request(fx.human, [set("grouping.names", { area: "A", project: "P" })]),
+    ].map((request) => {
+      fx.writer.submit(request);
+      const output = receiptResult(
+        fx.writer.receipt({ scope_id: request.actor.scope_id, request_id: request.request_id }),
+      );
+      expect(ReceiptGetResult.safeParse(output).error).toBeUndefined();
+      return output.found ? output.status : "none";
+    });
+    expect(outcomes).toEqual(["conflict", "rejected", "applied"]);
+    // receipt.get names every table a request can conflict on.
+    type Found = Extract<ReturnType<typeof ReceiptGetResult.parse>, { found: true }>;
+    type Entity = NonNullable<Found["conflicts"]>[number]["entity"];
+    expectTypeOf<Entity>().toEqualTypeOf<ConflictEntity>();
   });
 
   test("an agent writes only keys that list it; a policy key refuses it, decided with a receipt", () => {

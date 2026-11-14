@@ -274,8 +274,8 @@ When `found` is `true`:
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 49 | yes | Index of the operation in the request |
-| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" | yes | Table of the row |
-| `conflicts[].id` | string, max 60 | yes | The row, or task_id\|source_id for a link |
+| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "learnings" \| "preferences" | yes | Table of the row |
+| `conflicts[].id` | string, max 60 \| string, max 64 | yes | The row, task_id\|source_id for a link, or a preference's key |
 | `conflicts[].task` | string | no | Task ID |
 | `conflicts[].ref` | string | no | Task reference |
 | `conflicts[].field` | string, max 40 | yes | Logical field |
