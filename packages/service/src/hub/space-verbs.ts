@@ -548,14 +548,10 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
     "space/claim": async (params, cls) => {
       userOnly(cls);
       const view = find(required(params, "space"));
-      // A read-only copy, or a stale restore made current (A6 3.5 "Use this restore as current").
-      if (
-        view.state !== "read_only" ||
-        (view.reason !== "read_only_copy" && view.reason !== "stale_restore")
-      ) {
+      if (view.state !== "read_only" || view.reason !== "read_only_copy") {
         throw new AppError({
           code: "invalid_input",
-          message: "Only a read-only copy or a stale restore is claimed.",
+          message: "Only a read-only copy is claimed.",
           data: { issues: [{ path: "space", message: "Not a read-only copy" }] },
         });
       }

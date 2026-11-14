@@ -48,8 +48,7 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   restore <backup> --in-place [<space>]    Replace the space with the backup, keeping the old folder
   rescue [<space>]                         Write the rows that can still be read into the space's
                                            exchange/rescued folder
-  claim [<space>]                          Make a read-only copy, or a stale restore, this
-                                           machine's
+  claim [<space>]                          Make a read-only copy this machine's
   recover [<space>]                        Play back a space's rollback journal
   use <space>                             Make it the default: what a new tab and a command
                                            without --space open

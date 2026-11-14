@@ -73,11 +73,6 @@ export interface OpenedSpaceInfo {
    * the database a failed migration was tried on (A1 3.17).
    */
   lastSeq: number;
-  /**
-   * The incarnations of the space's lineage, oldest first, the current one last (A6 3.5): what a
-   * machine compares a folder's incarnation with to find a stale restore.
-   */
-  lineage: Id<"ai">[];
 }
 
 /** A space's writer.lock as its holder took it: the file and its identity, for a watch. */
@@ -103,12 +98,8 @@ export interface MigrationReport {
 export type WriterPurpose =
   /** The writer: migrated first when the space's revision is older, then the write path. */
   | { kind: "write"; backupDir?: string }
-  /**
-   * A claim of a read-only copy (A1 3.18): the claim commit, then the connection closes. With
-   * `restore`, a restore claim of a stale restore this machine was its authority for (A6 3.5 "Use
-   * this restore as current"), which is no read-only copy.
-   */
-  | { kind: "claim"; knownEpochs: number[]; restore?: boolean };
+  /** A claim of a read-only copy (A1 3.18): the claim commit, then the connection closes. */
+  | { kind: "claim"; knownEpochs: number[] };
 
 /** An opened connection. A writer's is held until `proceed`. */
 export interface OpenedFile {

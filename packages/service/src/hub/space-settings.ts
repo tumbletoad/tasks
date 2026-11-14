@@ -3,12 +3,10 @@
 //
 // - `backup.dir`: the machine-local backup folder (A1 3.18). The service only reads it: a later
 //   step that owns the space's settings writes it. Default: the space's own `backups/`.
-// - `seen`: A6 3.5's `spaces_seen` entry, `{epoch, incarnation, last_seq, lineage}`: the highest
-//   epoch this machine has seen for the space, the highest last_seq it has seen of that
-//   incarnation, and that incarnation's ancestors. A claim and a restore in place go above the
-//   epoch (A1 3.18, `knownEpochs`). The service records it when a writer opens the space as its
-//   authority, after a claim or a restore, every hour while it is open, and when it closes. A folder
-//   of the space whose state is older (staleAgainst) is a stale restore (A6 3.5).
+// - `seen`: A6 3.5's `spaces_seen` entry, `{epoch, incarnation}`: the highest epoch this machine
+//   has seen for the space. A claim and a restore in place go above it (A1 3.18,
+//   `knownEpochs`). The service records it when a writer opens the space as its authority and
+//   after a claim or a restore. A6's stale-restore detection adds `last_seq` with its step.
 // - `synced_folder_confirmed`: the folder the person confirmed is excluded from sync (A1 3.2, "It
 //   is excluded, open anyway"), by its canonical real path, and when. Per machine and per path: a
 //   space in another folder (renamed, or restored there) asks again.
@@ -36,34 +34,6 @@ export const MAX_FAILED_MIGRATIONS = 8;
 export interface Seen {
   readonly epoch: number;
   readonly incarnation: Id<"ai">;
-  /** The highest last_seq seen of this incarnation. */
-  readonly lastSeq?: number;
-  /** This incarnation's lineage, its ancestors first and itself last (A6 3.5). */
-  readonly lineage?: readonly Id<"ai">[];
-}
-
-/** The lineage kept in `seen`: the newest entries, enough to know a restore's ancestors. */
-export const MAX_SEEN_LINEAGE = 64;
-
-/** What a folder of the space holds, as its reader opened it. */
-export interface FolderState {
-  readonly incarnation: Id<"ai">;
-  readonly lastSeq: number;
-}
-
-/**
- * Whether a folder of the space, whose authority is this machine, is a stale restore (A6 3.5): the
- * incarnation this machine has seen with a lower last_seq, or one of the seen incarnation's
- * ancestors. A later incarnation, or one that is neither (a sibling claim of one backup: a
- * competing branch, M3.08), is not judged here: an epoch only orders, it says nothing of descent.
- * Every record of a new incarnation carries its lineage (a claim's and a restore's change too),
- * so no crash leaves the ancestors unrecorded.
- */
-export function staleAgainst(seen: Seen, folder: FolderState): boolean {
-  if (folder.incarnation === seen.incarnation) {
-    return seen.lastSeq !== undefined && folder.lastSeq < seen.lastSeq;
-  }
-  return (seen.lineage ?? []).includes(folder.incarnation);
 }
 
 /** A product build: its version and its build label (hub/build.ts). */
@@ -205,14 +175,6 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
   const seen = record["seen"];
   const epoch = isRecord(seen) ? seen["epoch"] : undefined;
   const incarnation = isRecord(seen) ? seen["incarnation"] : undefined;
-  const seenSeq = isRecord(seen) ? seen["last_seq"] : undefined;
-  const seenLineage = isRecord(seen) ? seen["lineage"] : undefined;
-  const lineage =
-    Array.isArray(seenLineage) &&
-    seenLineage.length <= MAX_SEEN_LINEAGE &&
-    seenLineage.every((id) => isId(id, "ai"))
-      ? seenLineage
-      : undefined;
   const confirmed = record["synced_folder_confirmed"];
   const confirmedPath = isRecord(confirmed) ? confirmed["path"] : undefined;
   const failed = failedMigrationsOf(record["failed_migrations"]);
@@ -224,15 +186,7 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
     Number.isSafeInteger(epoch) &&
     epoch >= 0 &&
     isId(incarnation, "ai")
-      ? {
-          seen: {
-            epoch,
-            incarnation,
-            // A bad last_seq or lineage leaves only that part out: the epoch floor still holds.
-            ...(isCount(seenSeq) ? { lastSeq: seenSeq } : {}),
-            ...(lineage === undefined ? {} : { lineage }),
-          },
-        }
+      ? { seen: { epoch, incarnation } }
       : {}),
     ...(typeof confirmedPath === "string" &&
     confirmedPath.length <= MAX_PATH &&
@@ -270,47 +224,25 @@ export const knownEpochs = (settings: SpaceSettings): number[] =>
 
 /**
  * Records an authority this machine has seen for the space, when its epoch is at least the one
- * recorded: the highest epoch only ever goes up. For the incarnation already recorded, a higher
- * last_seq and a lineage it did not have are added; a lower last_seq never replaces a higher one.
- * Returns whether the file changed.
+ * recorded: the highest epoch only ever goes up. Returns whether the file changed.
  */
 export function recordSeen(state: string, spaceId: Id<"sp">, seen: Seen): boolean {
   const path = fileOf(state, spaceId);
   const record = readRecord(path);
   const known = readSpaceSettings(state, spaceId).seen;
-  let next: Seen = seen;
   if (known !== undefined) {
     if (known.epoch > seen.epoch) return false;
-    if (known.epoch === seen.epoch && known.incarnation === seen.incarnation) {
-      const lastSeq = Math.max(known.lastSeq ?? -1, seen.lastSeq ?? -1);
-      const lineage = (seen.lineage ?? known.lineage)?.slice(-MAX_SEEN_LINEAGE);
-      if (lastSeq === (known.lastSeq ?? -1) && sameList(lineage, known.lineage)) return false;
-      next = {
-        epoch: seen.epoch,
-        incarnation: seen.incarnation,
-        ...(lastSeq < 0 ? {} : { lastSeq }),
-        ...(lineage === undefined ? {} : { lineage }),
-      };
-    }
+    if (known.epoch === seen.epoch && known.incarnation === seen.incarnation) return false;
   }
   makeDir(join(state, SPACES_FOLDER), 0o700);
-  const written = {
+  const next = {
     format: 1,
     ...record,
-    seen: {
-      epoch: next.epoch,
-      incarnation: next.incarnation,
-      ...(next.lastSeq === undefined ? {} : { last_seq: next.lastSeq }),
-      ...(next.lineage === undefined ? {} : { lineage: next.lineage.slice(-MAX_SEEN_LINEAGE) }),
-    },
+    seen: { epoch: seen.epoch, incarnation: seen.incarnation },
   };
-  atomicWrite(path, `${JSON.stringify(written, null, 2)}\n`);
+  atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
   return true;
 }
-
-const sameList = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean =>
-  a === b ||
-  (a !== undefined && b !== undefined && a.length === b.length && a.every((x, i) => x === b[i]));
 
 /** The state of a database a migration was tried on: what a failed migration's entry names. */
 export interface TriedState {

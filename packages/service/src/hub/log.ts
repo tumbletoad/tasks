@@ -117,8 +117,6 @@ export const SPACE_REASONS = [
   "synced_folder",
   /** A sync signal was found and PRAGMA quick_check failed: never written (A1 3.2). */
   "check_failed",
-  /** Older than the state this machine has seen of the space: a stale restore (A6 3.5). */
-  "stale_restore",
 ] as const;
 export type SpaceReason = (typeof SPACE_REASONS)[number];
 

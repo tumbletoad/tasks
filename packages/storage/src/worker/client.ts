@@ -283,11 +283,6 @@ export interface ClaimCopyOptions {
   holder?: HolderFacts;
   /** Called once the worker holds the copy's writer.lock, before the claim runs (A2 3.4). */
   onLock?: (lock: LockedFile) => void;
-  /**
-   * A restore claim of a stale restore (A6 3.5 "Use this restore as current"): a space this
-   * machine was the authority for, older than what it has seen, which is no read-only copy.
-   */
-  restore?: boolean;
 }
 
 export interface InPlaceRestoreOptions {
@@ -596,17 +591,8 @@ export class StorageWorker {
     const { claim, info: probe } = await this.#claimSpace(dir, settings);
     try {
       if (probe === undefined) throw misuse("A claim reads the space ID");
-      const restore = options.restore === true;
-      if (
-        restore
-          ? probe.authority.machineId !== machine.id
-          : !probe.readOnlyReasons.includes("read_only_copy")
-      ) {
-        throw misuse(
-          restore
-            ? "Only a stale restore of this machine's space is made current"
-            : "Only a read-only copy is claimed",
-        );
+      if (!probe.readOnlyReasons.includes("read_only_copy")) {
+        throw misuse("Only a read-only copy is claimed");
       }
       const { info } = await this.#openClaimed(
         claim,
@@ -614,11 +600,7 @@ export class StorageWorker {
         probe,
         machine,
         settings,
-        {
-          kind: "claim",
-          knownEpochs: [...(options.knownEpochs ?? [])],
-          ...(restore ? { restore } : {}),
-        },
+        { kind: "claim", knownEpochs: [...(options.knownEpochs ?? [])] },
         {
           ...(options.holder === undefined ? {} : { facts: options.holder }),
           ...(options.onLock === undefined ? {} : { onLock: options.onLock }),
@@ -822,10 +804,6 @@ export class SpaceWriterHandle {
    * `not_authority`), so an opener can report the space as read-only.
    */
   readonly authority: OpenedSpaceInfo["authority"];
-  /** The space's last_seq when the writer opened. */
-  readonly lastSeq: number;
-  /** The incarnations of the space's lineage when it opened, the current one last (A6 3.5). */
-  readonly lineage: readonly Id<"ai">[];
   /** The space's writer.lock this writer holds (A2 3.4), for a watch of its identity. */
   readonly lock: LockedFile | undefined;
   #waiting = 0;
@@ -848,8 +826,6 @@ export class SpaceWriterHandle {
     this.machineRegistered = machineRegistered;
     this.migration = info.migration;
     this.authority = info.authority;
-    this.lastSeq = info.lastSeq;
-    this.lineage = info.lineage;
     this.lock = lock;
     this.#timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
     this.#queueLimit = options.queueLimit ?? WRITER_QUEUE_LIMIT;

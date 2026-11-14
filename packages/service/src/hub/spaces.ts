@@ -80,7 +80,6 @@ import {
   StorageError,
   StorageWorker,
   UnexpectedSpace,
-  isId,
   type Id,
   type LockedFile,
   type MachineInfo,
@@ -105,7 +104,6 @@ import {
   readSpaceSettings,
   recordFailedMigration,
   recordSeen,
-  staleAgainst,
   recordSyncedConfirmed,
   type BuildIdentity,
   type FailedMigration,
@@ -213,16 +211,6 @@ export const RETRY_MIGRATION = `${CLI_NAME} space open <folder> --retry-migratio
 /** What a failed migration's message adds: when it is tried again, and how to ask for it now. */
 const TRIED_AGAIN = `It is tried again after an update, or now with: ${RETRY_MIGRATION}`;
 
-/** The space ID a folder's space.json names, best effort: a hint, which the database confirms. */
-function manifestId(folder: string): Id<"sp"> | undefined {
-  try {
-    const read = readManifest(folder);
-    return read.state === "present" ? read.safety.space_id : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * A folder's canonical form, the key of a confirmation that it is excluded from sync (A1 3.2): its
  * real path, in lower case on Windows and macOS, whose file systems ignore case.
@@ -239,11 +227,6 @@ export function canonicalFolder(
   }
   return platform === "win32" || platform === "darwin" ? real.toLowerCase() : real;
 }
-
-/** Why a stale restore is read-only (A6 3.5), and its two ways: use it as current, or close it. */
-const STALE_RESTORE =
-  "This folder holds an older state of the space than this computer has seen: a stale restore. It is read-only. " +
-  `To use it as the current space: ${CLI_NAME} space claim <folder>. Otherwise close it: ${CLI_NAME} space close <folder>.`;
 
 /** Why a synced space whose database fails PRAGMA quick_check is read-only (A1 3.2). */
 const CHECK_FAILED =
@@ -425,29 +408,11 @@ class Hosted {
   }
 }
 
-/**
- * What a restore in place or a claim through the manager reports. Content-free. The service
- * records it as `seen` before the space opens again, with the new incarnation's last_seq and
- * lineage, so a crash before that open leaves the ancestors recorded (A6 3.5).
- */
+/** What a restore in place or a claim through the manager reports. Content-free. */
 export interface SpaceChange {
   readonly epoch: number;
   readonly incarnation: Id<"ai">;
-  readonly lastSeq: number;
-  readonly lineage: readonly Id<"ai">[];
 }
-
-/** A claim's change, from the space row its commit left. */
-const changeOf = (claim: {
-  epoch: number;
-  incarnation: Id<"ai">;
-  space: { lastSeq: number; lineage: { incarnations: readonly { incarnation: Id<"ai"> }[] } };
-}): SpaceChange => ({
-  epoch: claim.epoch,
-  incarnation: claim.incarnation,
-  lastSeq: claim.space.lastSeq,
-  lineage: claim.space.lineage.incarnations.map((entry) => entry.incarnation),
-});
 
 export class SpaceManager {
   readonly #options: SpaceManagerOptions;
@@ -591,7 +556,7 @@ export class SpaceManager {
    * the database holds this space before anything is claimed (A2 3.2.4).
    */
   async #heldBy(folder: string): Promise<Id<"sp">> {
-    const named = manifestId(folder);
+    const named = this.#settingsOf(folder).spaceId;
     if (named !== undefined) return named;
     const worker = await this.#startWorkerBounded();
     try {
@@ -685,20 +650,18 @@ export class SpaceManager {
       this.#forgetFailures(restored.space.spaceId);
       return {
         spaceId: restored.space.spaceId,
-        change: changeOf(restored.claim),
+        change: { epoch: restored.claim.epoch, incarnation: restored.claim.incarnation },
       };
     });
   }
 
   /**
    * Claims a read-only copy (A1 3.18, A6 3.5): a new epoch above every one this machine has seen
-   * and a new incarnation, under the space's writer.lock, then opens it as this machine's. A stale
-   * restore is made current the same way, by a restore claim ("Use this restore as current").
+   * and a new incarnation, under the space's writer.lock, then opens it as this machine's.
    */
   async claim(entry: number): Promise<SpaceChange> {
     const space = this.#space(entry);
-    const stale = space.reason === "stale_restore";
-    if (space.state !== "read_only" || (space.reason !== "read_only_copy" && !stale)) {
+    if (space.state !== "read_only" || space.reason !== "read_only_copy") {
       throw new StorageError("STORAGE_MISUSE", "Only a read-only copy is claimed");
     }
     return this.#changed(space, async (worker, settings) => {
@@ -706,7 +669,6 @@ export class SpaceManager {
         machine: this.#options.machine,
         knownEpochs: knownEpochs(settings),
         holder: this.#holderFacts,
-        ...(stale ? { restore: true } : {}),
         // Watched while the claim writes, as a writer is.
         onLock: (lock) => {
           this.#watch(space, worker, lock);
@@ -714,7 +676,7 @@ export class SpaceManager {
       });
       return {
         spaceId: claim.space.spaceId,
-        change: changeOf(claim),
+        change: { epoch: claim.epoch, incarnation: claim.incarnation },
       };
     });
   }
@@ -828,6 +790,18 @@ export class SpaceManager {
     return opening;
   }
 
+  /** The machine-local settings of the space at `folder`, by its space.json's ID, best effort. */
+  #settingsOf(folder: string): SpaceSettings & { spaceId?: Id<"sp"> } {
+    try {
+      const read = readManifest(folder);
+      const spaceId = read.state === "present" ? read.safety.space_id : undefined;
+      if (spaceId === undefined) return {};
+      return { spaceId, ...readSpaceSettings(this.#options.settingsDir, spaceId) };
+    } catch {
+      return {};
+    }
+  }
+
   async #open(space: Hosted, retry: boolean): Promise<void> {
     const { log } = this.#options;
     const t0 = performance.now();
@@ -850,10 +824,7 @@ export class SpaceManager {
       this.#unavailable(space, new StorageError("SPACE_NOT_FOUND", ""));
       return;
     }
-    // By the space's registered ID, which its database confirms before anything is written:
-    // space.json can be missing or another space's, and the stale-restore judgement and the
-    // failed-migration record must not depend on a file the writer's open rebuilds.
-    const settings = this.#settingsFor(space.registered);
+    const settings = this.#settingsOf(space.folder);
     space.backupDir = settings.backupDir;
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
@@ -873,74 +844,7 @@ export class SpaceManager {
     // STARTUP 2, first: a migration that this build tried on this state of the database, and that
     // failed, is not tried again by itself (A1 3.17), unless the person asked for it.
     if (!retry && (await this.#notTriedAgain(space, settings, t0))) return;
-    // STARTUP 2, then: a folder older than what this machine has seen of the space is a stale
-    // restore (A6 3.5), served read-only before its writer could migrate or register it.
-    if (await this.#staleRestore(space, settings, t0)) return;
     await this.#openWriter(space, settings, t0, false);
-  }
-
-  /**
-   * A stale restore (A6 3.5): a reader reads the folder's authority, and when this machine was its
-   * authority and has seen a later state of it (a higher last_seq of its incarnation, or a
-   * descendant incarnation), the space is read_only(stale_restore) with "Use this restore as
-   * current" (`tasks space claim`, a restore claim above every epoch known here) and "Close".
-   * Nothing is opened for writing. Returns whether the open ended here.
-   */
-  async #staleRestore(space: Hosted, settings: SpaceSettings, t0: number): Promise<boolean> {
-    const seen = settings.seen;
-    if (seen === undefined) return false;
-    try {
-      const worker = space.worker ?? (await this.#startWorkerBounded());
-      space.worker = worker;
-      if (await this.#stopped(space)) return true;
-      const { conn, info } = await bounded(worker.openSpaceReader(space.folder), this.#openMs);
-      const stale =
-        info.spaceId === space.registered &&
-        info.authority.machineId === this.#options.machine.id &&
-        // A read-only copy or a refusal is the writer's open's to judge.
-        info.readOnlyReasons.every((reason) => reason === "older_revision") &&
-        staleAgainst(seen, { incarnation: info.authority.incarnation, lastSeq: info.lastSeq });
-      if (!stale) {
-        await conn.close();
-        return false;
-      }
-      space.reader = conn;
-      space.id = info.spaceId;
-      if (await this.#stopped(space)) return true;
-      await this.#learnName(space);
-      space.message = STALE_RESTORE;
-      this.#readOnly(space, "stale_restore", undefined, { ms: Math.round(performance.now() - t0) });
-      return true;
-    } catch (error) {
-      // Not read here: the writer's open decides, in a new worker, as after #notTriedAgain.
-      const released = await this.#release(space);
-      if (closing(space)) return true;
-      if (released) return false;
-      this.#unavailable(space, error);
-      return true;
-    }
-  }
-
-  /**
-   * Records what this machine has seen of a space open as its authority (the caller knows it is):
-   * its epoch, incarnation and last_seq (A6 3.5), the floor of the stale-restore check. Read
-   * through the space's reader, so it is the last commit, not the open's. Best effort: the next
-   * open writes it again.
-   */
-  async #noteSeen(space: Hosted): Promise<void> {
-    const reader = space.reader;
-    if (space.id === undefined || reader === undefined) return;
-    try {
-      const row = await reader.get<{ epoch: unknown; incarnation: unknown; seq: unknown }>(
-        "SELECT authority_epoch AS epoch, authority_incarnation AS incarnation, last_seq AS seq " +
-          "FROM space WHERE one = 1",
-      );
-      const { epoch, incarnation, seq } = row ?? {};
-      if (typeof epoch !== "number" || typeof seq !== "number" || !isId(incarnation, "ai")) return;
-      recordSeen(this.#options.settingsDir, space.id, { epoch, incarnation, lastSeq: seq });
-    } catch {
-      // The floor stays where it was.
-    }
   }
 
   /**
@@ -1008,12 +912,7 @@ export class SpaceManager {
       return;
     }
     try {
-      recordSeen(this.#options.settingsDir, writer.spaceId, {
-        epoch: writer.authority.epoch,
-        incarnation: writer.authority.incarnation,
-        lastSeq: writer.lastSeq,
-        lineage: writer.lineage,
-      });
+      recordSeen(this.#options.settingsDir, writer.spaceId, writer.authority);
     } catch {
       // The record is a floor for later claims; the next open writes it again.
     }
@@ -1028,7 +927,6 @@ export class SpaceManager {
     // STARTUP 3: the backup upkeep, then the hourly check for the next daily backup.
     this.#maintain(space, true);
     const timer = setInterval(() => {
-      if (space.state === "open") void this.#noteSeen(space);
       if (space.state === "open" && space.maintaining === undefined) this.#maintain(space, false);
     }, DAILY_CHECK_MS);
     timer.unref();
@@ -1504,14 +1402,11 @@ export class SpaceManager {
       const t0 = performance.now();
       const deadline = t0 + ms;
       const wasServed = space.state === "open" || space.state === "read_only";
-      const wasOpen = space.state === "open";
       space.stopping = true;
       if (wasServed) space.state = "closing";
       const busy = space.busy;
       const settled = busy === undefined || (await within(busy, ms));
       if (settled) {
-        // The last state this machine saw of its own space, before its reader closes.
-        if (wasOpen) await within(this.#noteSeen(space), Math.max(1, deadline - performance.now()));
         await within(
           space.maintaining ?? Promise.resolve(),
           Math.max(1, deadline - performance.now()),
@@ -1585,7 +1480,8 @@ export class SpaceManager {
     }
     // Read again: the service may have begun to drain while the space closed.
     if (this.#isDraining()) throw new StorageError("STORAGE_MISUSE", "The service is stopping");
-    const settings = this.#settingsFor(space.id ?? space.registered);
+    const settings =
+      space.id === undefined ? this.#settingsOf(space.folder) : this.#settingsFor(space.id);
     let outcome: { spaceId: Id<"sp">; change?: SpaceChange } | undefined;
     try {
       const worker = await this.#startWorkerBounded();

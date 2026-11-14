@@ -51,29 +51,19 @@ const SPACE = "SELECT * FROM space WHERE one = 1";
 /**
  * Claims the read-only copy that `opened` holds as its writer (opened with `read_only_copy`
  * allowed, under its process's claim: the storage worker's claimSpace), then rewrites space.json.
- * With kind `restore_claim` it is a stale restore this machine was the authority for instead (A6
- * 3.5 "Use this restore as current"), which is no read-only copy: the same commit, of that kind.
  * A crash between the claim's commit and space.json leaves a stale space.json, which the next
  * writer's open rebuilds from the database. The caller closes the connection.
  */
 export function claimCopy(
   opened: OpenedSpace,
-  options: Omit<ClaimOptions, "kind"> & {
-    kind?: ClaimOptions["kind"];
-    appVersion: string;
-    steps: readonly SchemaStep[];
-  },
+  options: Omit<ClaimOptions, "kind"> & { appVersion: string; steps: readonly SchemaStep[] },
 ): Claim {
-  const kind = options.kind ?? "claim";
-  if (
-    opened.role !== "writer" ||
-    (kind === "claim" && !opened.readOnlyReasons.includes("read_only_copy"))
-  ) {
+  if (opened.role !== "writer" || !opened.readOnlyReasons.includes("read_only_copy")) {
     throw misuse("Only a read-only copy is claimed");
   }
   const position = stepPosition(options.steps, encodeRevision(opened.revision));
   if (position.state !== "known") throw misuse("The writer opened a revision it does not know");
-  const claim = claimSpace(opened.conn, { ...options, kind });
+  const claim = claimSpace(opened.conn, { ...options, kind: "claim" });
   writeManifest(opened.folder, manifestFor(claim.space, position.step, options.appVersion));
   return claim;
 }
