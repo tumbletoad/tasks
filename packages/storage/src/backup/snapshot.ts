@@ -206,6 +206,24 @@ export function referenceSchema(
 }
 
 /**
+ * The SQL text the schema steps give the object `name` at `userVersion`, or undefined: no such
+ * object, none kept (a shadow table, an index SQLite made for a key), or never reached. What a
+ * caller that must make an object again runs, never text read out of the database at hand.
+ */
+export function referenceDefinition(
+  checked: CheckedDriver,
+  steps: readonly SchemaStep[],
+  userVersion: number,
+  name: string,
+): string | undefined {
+  for (const object of reference(checked, steps, userVersion)?.objects ?? []) {
+    const [, objectName, , sql] = JSON.parse(object) as unknown[];
+    if (objectName === name) return typeof sql === "string" ? sql : undefined;
+  }
+  return undefined;
+}
+
+/**
  * The product's data tables at `userVersion`, with their columns: the names a diagnostic, a rescue
  * or `data.jsonl` may give, never ones read out of the database at hand. Undefined when the steps
  * never reach that revision.

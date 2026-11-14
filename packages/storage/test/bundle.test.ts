@@ -1139,6 +1139,44 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     );
   });
 
+  test("the export makes the search index again in its snapshot: neither a deleted document's words nor a row planted in a shadow table reach the bundle", async () => {
+    const checked = await checkedDriver();
+    const steps = STEPS_SEARCH;
+    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
+    await writeCommits(folder, 3, "s", steps);
+    // Two words no task holds, lower-case letters only so the tokenizer keeps each whole.
+    const deleted = "qzxvdeletedwordqzxv";
+    const planted = "qzxvplantedwordqzxv";
+    const conn = await rawWriter(folder);
+    try {
+      conn
+        .prepare("INSERT INTO search_fts (rowid, title, body, extra) VALUES (900001, $t, $t, $t)")
+        .run({ t: deleted });
+      conn.exec("DELETE FROM search_fts WHERE rowid = 900001");
+    } finally {
+      conn.close();
+    }
+    plant(
+      join(folder, "space.db"),
+      `INSERT INTO search_fts_content (id, c0, c1, c2) VALUES (900002, '${planted}', '', '')`,
+    );
+    const live = readFileSync(join(folder, "space.db"));
+    expect(live.includes(Buffer.from(deleted)) || live.includes(Buffer.from(planted))).toBe(true);
+    const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, { steps });
+    const unpacked = folders.make();
+    await readBundle(bundle.file, BUNDLE_POLICY, {
+      extractTo: (name) => join(unpacked, ...name.split("/")),
+    });
+    const db = readFileSync(join(unpacked, "space.db"));
+    expect(db.includes(Buffer.from(deleted))).toBe(false);
+    expect(db.includes(Buffer.from(planted))).toBe(false);
+    // The index is whole again: one row per document, every one of them named by search_docs.
+    const facts = await readFacts(unpacked);
+    expect(facts.counts["search_fts_content"]).toBe(facts.counts["search_docs"]);
+    expect(facts.counts["search_docs"]).toBeGreaterThan(0);
+    await restoreBackupWith(checked, bundle.file, join(folders.make(), "mira"), {}, { steps });
+  });
+
   test("an export whose bundle a restore would refuse at its first write is refused, and nothing is published", async () => {
     const checked = await checkedDriver();
     // A schema whose restore refuses its read-only mark once the space has three commits.

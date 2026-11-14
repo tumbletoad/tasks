@@ -104,11 +104,14 @@ import {
   copySnapshot,
   databaseBytes,
   productTables,
+  referenceDefinition,
   requireOwnSchema,
   schemaObjects,
   type ProductTable,
   type SnapshotFacts,
 } from "../backup/snapshot.ts";
+import { rebuildSearchIndex } from "../search/documents.ts";
+import { hasSearchTables } from "../search/tables.ts";
 import { dropUnchecked } from "../restore/mark.ts";
 import { restoreCopy } from "../restore/restore.ts";
 import { inFolder } from "../restore/unpack.ts";
@@ -273,7 +276,7 @@ export async function exportBundleWith(
     } finally {
       opened.conn.close();
     }
-    vacuum(checked, db, busy);
+    prepareSnapshot(checked, db, busy, steps);
     const facts = checkSnapshot(checked, db, options.busyTimeoutMs);
     const position = stepPosition(steps, facts.userVersion);
     if (position.state !== "known") throw misuse("The snapshot's revision is not the source's");
@@ -419,23 +422,60 @@ function exportFailed(error: unknown): StorageError {
 const sizeOf = (path: string): number => fsCall(() => statSync(path).size);
 
 /**
- * Drops the objects the exact-schema rule leaves out from the private snapshot (restore/mark.ts
- * dropUnchecked: triggers and SQLite's statistics tables, which a restore drops anyway), so the
- * bundle holds exactly its revision's schema and nothing the secret scan does not read, then
- * vacuums it, so the bundle carries no bytes of deleted rows or free pages. The connection is the
- * only one on the file; its close checkpoints the -wal into the file.
+ * Makes the private snapshot what a bundle holds, in one transaction, then vacuums it, so the
+ * bundle carries no bytes of deleted rows or free pages:
+ * - the objects the exact-schema rule leaves out are dropped (restore/mark.ts dropUnchecked:
+ *   triggers and SQLite's statistics tables, which a restore drops anyway);
+ * - the search index (A1 3.12), which is derived from the product's tables, is made again
+ *   (remakeSearchIndex), since its shadow tables are compared by name only and keep tokens of
+ *   deleted text until their segments merge.
+ * So the bundle holds exactly its revision's schema and no text the secret scan does not read. The
+ * connection is the only one on the file; its close checkpoints the -wal into the file.
  */
-function vacuum(checked: CheckedDriver, db: string, busy: { busyTimeoutMs?: number }): void {
+function prepareSnapshot(
+  checked: CheckedDriver,
+  db: string,
+  busy: { busyTimeoutMs?: number },
+  steps: readonly SchemaStep[],
+): void {
   const conn = openWriter(checked, db, busy);
   try {
     conn.transaction("immediate", () => {
       dropUnchecked(conn);
+      remakeSearchIndex(checked, conn, steps);
     });
     conn.exec("VACUUM");
   } finally {
     conn.close();
   }
   for (const path of [`${db}-wal`, `${db}-shm`]) removeQuietly(path);
+}
+
+/** The search index's FTS table (search/tables.ts). */
+const SEARCH_FTS = "search_fts";
+
+/**
+ * Makes the snapshot's search index again, inside the caller's write transaction, when its revision
+ * has one: the FTS table dropped with its shadow tables, created again from the definition the
+ * schema steps make at that revision (never from text read out of the snapshot), and both search
+ * tables filled from the product's tables (search/documents.ts rebuildSearchIndex).
+ */
+function remakeSearchIndex(
+  checked: CheckedDriver,
+  conn: Connection,
+  steps: readonly SchemaStep[],
+): void {
+  if (!hasSearchTables(conn)) return;
+  const userVersion = conn.pragma("user_version");
+  const definition = inRange(userVersion, "count")
+    ? referenceDefinition(checked, steps, userVersion, SEARCH_FTS)
+    : undefined;
+  if (definition === undefined) {
+    throw new StorageError("SPACE_SCHEMA_FOREIGN", "The search table is not its revision's");
+  }
+  conn.exec(`DROP TABLE ${SEARCH_FTS}`);
+  conn.exec(definition);
+  rebuildSearchIndex(conn);
 }
 
 /** A live attachment row's blob: its hash and size. */
