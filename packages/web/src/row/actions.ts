@@ -12,6 +12,8 @@ export interface RowActions {
   readonly open: (task: TaskRow, instance: Instance) => void;
   readonly copy: (task: TaskRow) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
+  /** The title was edited in place (A5 3.7): it shows at once and holds until the feed confirms. */
+  readonly rename: (task: TaskRow, title: string) => void;
   /** Focus moved into the row: it becomes the list's current row. */
   readonly current: (task: TaskRow) => void;
 }

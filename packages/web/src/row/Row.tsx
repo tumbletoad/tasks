@@ -7,7 +7,7 @@
 // The row is memoised: it renders again only when its own task, its area or project, its receipts,
 // its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
 // value the list keeps by identity, so a store update that touches one task renders one row.
-import { memo, type CSSProperties } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Instance, Receipt } from "../api.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { useIntl } from "react-intl";
@@ -20,6 +20,7 @@ import { tileClick } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import {
+  ChevronUpIcon,
   ClockIcon,
   CopyIcon,
   FolderElsewhereIcon,
@@ -57,6 +58,7 @@ const styles = classes(css, [
   "icon",
   "tile",
   "body",
+  "edit",
 ]);
 
 export interface RowProps {
@@ -88,12 +90,14 @@ function Slots({
   model,
   task,
   tab,
+  expanded,
   actions,
   t,
 }: {
   readonly model: RowModel;
   readonly task: TaskRow;
   readonly tab: number;
+  readonly expanded: boolean;
   readonly actions: RowActions;
   readonly t: Translate;
 }) {
@@ -174,6 +178,24 @@ function Slots({
           <StarIcon />
         </button>
       </span>
+      {/* Expanded, the launch slot holds the collapse button: the body owns the launch (A5 3.7). */}
+      {expanded ? (
+        <span className={styles.slot}>
+          <button
+            type="button"
+            className={styles.icon}
+            data-part="collapse"
+            aria-label={t("task.collapse")}
+            data-tip={t("task.collapse")}
+            tabIndex={tab}
+            onClick={() => {
+              actions.toggle(task);
+            }}
+          >
+            <ChevronUpIcon />
+          </button>
+        </span>
+      ) : null}
       <span className={`${styles.slot} ${styles.launch}`}>
         {launch.state === "none" ? null : (
           <button
@@ -204,6 +226,64 @@ function Slots({
         )}
       </span>
     </div>
+  );
+}
+
+/**
+ * The title's editor: Enter or leaving the field saves a changed title, Escape keeps the old one.
+ * Either way focus goes back to the title, so the keyboard stays on the row.
+ */
+function TitleEditor({
+  task,
+  label,
+  onDone,
+}: {
+  readonly task: TaskRow;
+  readonly label: string;
+  readonly onDone: (title: string | undefined) => void;
+}) {
+  const field = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    field.current?.focus();
+    field.current?.select();
+  }, []);
+  const finish = (save: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    const title = (field.current?.value ?? "").trim();
+    const line = field.current?.closest("[data-row-line]");
+    onDone(save && title !== "" && title !== task.title ? title : undefined);
+    // After React has put the title back.
+    requestAnimationFrame(() => {
+      line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
+    });
+  };
+  return (
+    <input
+      ref={field}
+      className={styles.edit}
+      data-part="title-edit"
+      aria-label={label}
+      defaultValue={task.title}
+      maxLength={500}
+      dir="auto"
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          finish(true);
+        } else if (event.key === "Escape") {
+          // Escape leaves the editor only: the list must not collapse the row.
+          event.preventDefault();
+          event.stopPropagation();
+          finish(false);
+        }
+      }}
+      onBlur={() => {
+        finish(true);
+      }}
+    />
   );
 }
 
@@ -246,6 +326,14 @@ function RowView({
   const described = `row-${task.id}-desc`;
   const toggle = () => {
     actions.toggle(task);
+  };
+  // The title edits in place, for typo fixes (A5 3.7): only an open task's, the one kind the
+  // service changes. Editing expands the row, so the card is what is being edited.
+  const [editing, setEditing] = useState(false);
+  const edit = () => {
+    if (task.lifecycle !== "active") return;
+    if (!expanded) actions.expand(task);
+    setEditing(true);
   };
   // The offset is a custom property set through the CSSOM (React's style object), which the CSP's
   // style-src allows; the stylesheet turns it into a transform. Nothing writes a style attribute.
@@ -290,18 +378,39 @@ function RowView({
         </span>
         <div className={styles.main}>
           <div className={styles.tline}>
-            <button
-              type="button"
-              className={styles.title}
-              data-part="title"
-              aria-expanded={expanded}
-              aria-controls={expanded ? body : undefined}
-              aria-describedby={described}
-              tabIndex={tab}
-              onClick={toggle}
-            >
-              <span dir="auto">{model.title}</span>
-            </button>
+            {editing ? (
+              <TitleEditor
+                task={task}
+                label={t("task.title")}
+                onDone={(title) => {
+                  setEditing(false);
+                  if (title !== undefined) actions.rename(task, title);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className={styles.title}
+                data-part="title"
+                aria-expanded={expanded}
+                aria-controls={expanded ? body : undefined}
+                aria-describedby={described}
+                tabIndex={tab}
+                onClick={(event) => {
+                  // The second click of a double-click is the editor's, not another toggle.
+                  if (event.detail < 2) toggle();
+                }}
+                onDoubleClick={edit}
+                onKeyDown={(event) => {
+                  if (event.key === "F2") {
+                    event.preventDefault();
+                    edit();
+                  }
+                }}
+              >
+                <span dir="auto">{model.title}</span>
+              </button>
+            )}
             {model.chip === undefined ? null : (
               <span className={styles.chip} data-kind={model.chip.kind}>
                 {model.chip.person ? <PersonIcon /> : null}
@@ -342,7 +451,7 @@ function RowView({
             </div>
           )}
         </div>
-        <Slots model={model} task={task} tab={tab} actions={actions} t={t} />
+        <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>
           {intl.formatList(
             model.description.map((m) => sayMsg(t, m)),

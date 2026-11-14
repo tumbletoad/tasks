@@ -1,64 +1,51 @@
-// The expanded row's thread (A5 3.7, 3.9; the skeleton's, M2.13, until M5.06 builds the expanded task): the task's log entries and its launch receipts, oldest
-// first, so it reads like a conversation. The log comes from `task.get` (sections: log) and is
-// fetched again whenever the feed says the task changed; receipts come from the row's launch list,
-// which the feed's launch events refresh. All text is plain text: React escapes it, and nothing is
-// read as markup (A5 3.26). Markdown rendering arrives with the expanded task (M5.06).
-import { useContext, useEffect, useState } from "react";
+// The expanded task's thread (A5 3.7 item 5, 3.9): notes, log entries and sessions, oldest first,
+// so it reads like a conversation that ends at the composer. Notes and log entries come from the
+// detail (detail.ts); sessions are the task's launch receipts, which the feed's launch events
+// refresh. The last six entries show, and "Earlier" reveals the rest. Each entry: the actor's mark
+// (the person's initial, an agent's initials, an instance's monogram), the actor, the mode, the
+// time, then the text, as Markdown that is never HTML (markdown.tsx). Copy on a log entry shows on
+// hover and on focus. Runs join with M6, and grouped field changes and their Revert with M5.09.
+import { useState } from "react";
 import type { Instance, Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
-import { Session } from "../context.ts";
-import { Latest } from "../latest.ts";
-import { useT, type Translate } from "../i18n/intl.tsx";
+import { useToast } from "../app/frame.ts";
+import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
+import type { DetailLog, DetailNote } from "./detail.ts";
 import css from "./Expanded.module.css";
+import { Markdown } from "./markdown.tsx";
 
-const styles = classes(css, ["line", "thread", "entry", "mark", "head", "who", "when", "text"]);
+const styles = classes(css, [
+  "line",
+  "thread",
+  "earlier",
+  "entry",
+  "mark",
+  "meta",
+  "who",
+  "when",
+  "text",
+  "state",
+  "acts",
+  "act",
+]);
 
-interface LogEntry {
-  readonly ref: string;
-  readonly author: string;
-  readonly at: string;
-  readonly text: string;
-}
-
-interface Item {
-  readonly key: string;
-  readonly at: number;
-  readonly mark: string;
-  readonly who: string;
-  readonly text: string;
-  readonly state?: string;
-}
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-
-/** The log of a `task.get` sections result, checked by its shape. */
-function logOf(result: unknown): LogEntry[] {
-  if (!isRecord(result) || !isRecord(result["sections"])) return [];
-  const log = result["sections"]["log"];
-  if (!Array.isArray(log)) return [];
-  return log.filter(
-    (e): e is LogEntry =>
-      isRecord(e) &&
-      typeof e["ref"] === "string" &&
-      typeof e["author"] === "string" &&
-      typeof e["at"] === "string" &&
-      // An instant the page cannot read is no entry: it would have no time to show or sort by.
-      Number.isFinite(Date.parse(e["at"])) &&
-      typeof e["text"] === "string",
-  );
-}
+/** The entries shown before "Earlier" (A5 3.7). */
+export const SHOWN_ENTRIES = 6;
 
 /** An actor as the thread names it: "You" for the person, the agent's label otherwise. */
-function actorOf(author: string, t: Translate): { who: string; mark: string } {
+export function actorOf(author: string, t: Translate): { who: string; mark: string } {
   if (author === "user") {
     const you = t("thread.you");
     return { who: you, mark: you.slice(0, 1) };
   }
+  if (author === "import") {
+    const imported = t("thread.import");
+    return { who: imported, mark: imported.slice(0, 1) };
+  }
   // An agent that has not said who it is (an unbound CLI call) is just "Agent".
   const named = author.replace(/^agent:/, "");
   const who = named === "" || named === "unknown" ? t("thread.agent") : named;
-  const words = who.split(/[-_ :]+/).filter((w) => w !== "");
+  const words = who.split(/[-_ :·]+/).filter((w) => w !== "");
   const mark = words
     .slice(0, 2)
     .map((w) => w.slice(0, 1).toUpperCase())
@@ -90,55 +77,82 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
   }
 }
 
-const clock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
+/** The word a log entry's kind adds after its actor; progress, the usual kind, adds none. */
+const LOG_MODE: Readonly<Record<string, MessageId>> = {
+  evidence: "log.evidence",
+  blocker: "log.blocker",
+  decision: "log.decision",
+  question: "log.question",
+  handoff: "log.handoff",
+};
+
+interface Item {
+  readonly key: string;
+  readonly at: number;
+  readonly mark: string;
+  readonly ring?: number;
+  readonly who: string;
+  readonly mode?: string;
+  readonly text: string;
+  /** Plain text (a receipt's words), or the Markdown of a note or a log entry. */
+  readonly markdown: boolean;
+  readonly kind: "note" | "log" | "session";
+  readonly state?: string;
+}
+
+const clock = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 const day = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
 
-function when(ms: number): string {
+function when(ms: number, today: string): string {
   const date = new Date(ms);
-  const today = new Date();
-  return date.toDateString() === today.toDateString() ? clock.format(date) : day.format(date);
+  return date.toDateString() === today ? clock.format(date) : day.format(date);
 }
 
 export interface ThreadProps {
-  readonly task: string;
+  readonly notes: readonly DetailNote[];
+  readonly log: readonly DetailLog[];
   readonly receipts: readonly Receipt[];
   readonly instances: readonly Instance[];
+  /** The pages ran out before the oldest entries. */
+  readonly partial: boolean;
 }
 
-export function Thread({ task, receipts, instances }: ThreadProps) {
+export function Thread({ notes, log, receipts, instances, partial }: ThreadProps) {
   const t = useT();
-  const { api, live } = useContext(Session);
-  const [log, setLog] = useState<LogEntry[] | "failed" | undefined>(undefined);
-
-  useEffect(() => {
-    let current = true;
-    // Only the newest read applies: an older one that answers late never replaces a newer log.
-    const reads = new Latest();
-    const load = () => {
-      const newest = reads.begin(task);
-      api.client.task
-        .get({ task, sections: ["log"], log_limit: 20 })
-        .then((result) => {
-          if (current && newest()) setLog(logOf(result));
-        })
-        .catch((error: unknown) => {
-          if (current && newest() && !live.failed(error)) setLog("failed");
-        });
-    };
-    load();
-    const stop = live.onTouched((touched) => {
-      if (touched.tasks.has(task)) load();
-    });
-    return () => {
-      current = false;
-      stop();
-    };
-  }, [api, live, task]);
+  const say = useToast();
+  const [all, setAll] = useState(false);
 
   const items: Item[] = [];
-  for (const entry of Array.isArray(log) ? log : []) {
+  for (const note of notes) {
+    const { who, mark } = actorOf(note.author, t);
+    items.push({
+      key: `n:${note.ref}`,
+      at: Date.parse(note.at),
+      who,
+      mark,
+      ...(note.forAgents ? { mode: t("thread.toAgents") } : {}),
+      text: note.text,
+      markdown: true,
+      kind: "note",
+    });
+  }
+  for (const entry of log) {
     const { who, mark } = actorOf(entry.author, t);
-    items.push({ key: entry.ref, at: Date.parse(entry.at), who, mark, text: entry.text });
+    const mode = LOG_MODE[entry.logKind];
+    items.push({
+      key: `l:${entry.ref}`,
+      at: Date.parse(entry.at),
+      who,
+      mark,
+      ...(mode === undefined ? {} : { mode: t(mode) }),
+      text: entry.text,
+      markdown: true,
+      kind: "log",
+    });
   }
   for (const receipt of receipts) {
     const instance = instances.find((i) => i.key === receipt.instance);
@@ -147,41 +161,109 @@ export function Thread({ task, receipts, instances }: ThreadProps) {
     const text = receiptText(receipt, label, t);
     if (text === undefined) continue;
     items.push({
-      key: receipt.id,
+      key: `r:${receipt.id}`,
       at: receipt.at.prepared ?? 0,
       who: label,
-      mark: instance?.glyph ?? "",
+      mark: instance?.glyph ?? label.slice(0, 2),
+      ...(instance === undefined ? {} : { ring: instance.ring }),
+      mode: t("thread.session"),
       text,
+      markdown: false,
+      kind: "session",
       state: receipt.state,
     });
   }
-  items.sort((a, b) => a.at - b.at || (a.key < b.key ? -1 : 1));
+  // An instant the page cannot read sorts first rather than vanish.
+  items.sort(
+    (a, b) =>
+      (Number.isFinite(a.at) ? a.at : 0) - (Number.isFinite(b.at) ? b.at : 0) ||
+      (a.key < b.key ? -1 : 1),
+  );
 
-  if (log === undefined && items.length === 0) return null;
-  if (log === "failed" && items.length === 0) {
-    return <p className={styles.line}>{t("thread.failed")}</p>;
-  }
   if (items.length === 0) return <p className={styles.line}>{t("thread.empty")}</p>;
+  const hidden = all ? 0 : Math.max(0, items.length - SHOWN_ENTRIES);
+  const shown = items.slice(hidden);
+  const today = new Date().toDateString();
   return (
-    <ol className={styles.thread} aria-live="polite">
-      {items.map((item) => (
-        <li key={item.key} className={styles.entry} data-entry="" data-state={item.state}>
-          <span className={styles.mark} aria-hidden="true">
-            {item.mark}
-          </span>
-          <div>
-            <div className={styles.head}>
-              <span className={styles.who}>{item.who}</span>
-              <time className={styles.when} dateTime={new Date(item.at).toISOString()}>
-                {when(item.at)}
-              </time>
+    <>
+      {hidden > 0 || partial ? (
+        <button
+          type="button"
+          className={styles.earlier}
+          data-part="earlier"
+          disabled={hidden === 0}
+          onClick={() => {
+            setAll(true);
+          }}
+        >
+          {hidden > 0 ? t("thread.earlier", { count: hidden }) : t("thread.partial")}
+        </button>
+      ) : null}
+      {/* New entries are announced politely; the ones there when it opens are not. */}
+      <ol
+        className={styles.thread}
+        aria-label={t("thread.label")}
+        aria-live="polite"
+        aria-relevant="additions"
+      >
+        {shown.map((item) => (
+          <li
+            key={item.key}
+            className={styles.entry}
+            data-entry={item.kind}
+            data-state={item.state}
+            data-ring={item.ring}
+          >
+            <span className={styles.mark} aria-hidden="true">
+              {item.mark}
+            </span>
+            <div>
+              <div className={styles.meta}>
+                <span className={styles.who} dir="auto">
+                  {item.who}
+                </span>
+                {item.mode === undefined ? null : <span>{item.mode}</span>}
+                {Number.isFinite(item.at) && item.at > 0 ? (
+                  <time className={styles.when} dateTime={new Date(item.at).toISOString()}>
+                    {when(item.at, today)}
+                  </time>
+                ) : null}
+              </div>
+              {item.markdown ? (
+                <div data-part="entry-text">
+                  <Markdown text={item.text} className={styles.text} />
+                </div>
+              ) : (
+                <p className={`${styles.text} ${styles.state}`} data-part="entry-text" dir="auto">
+                  {item.text}
+                </p>
+              )}
             </div>
-            <p className={styles.text} data-part="entry-text" dir="auto">
-              {item.text}
-            </p>
-          </div>
-        </li>
-      ))}
-    </ol>
+            <span className={styles.acts}>
+              {item.kind === "log" ? (
+                <button
+                  type="button"
+                  className={styles.act}
+                  aria-label={t("thread.copyEntry", { who: item.who })}
+                  data-tip={t("thread.copy")}
+                  onClick={() => {
+                    navigator.clipboard.writeText(item.text).then(
+                      () => {
+                        say(t("row.copied"));
+                      },
+                      () => {
+                        say(t("row.copyFailed"));
+                      },
+                    );
+                  }}
+                >
+                  {t("thread.copy")}
+                </button>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }

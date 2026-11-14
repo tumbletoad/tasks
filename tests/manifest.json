@@ -2658,6 +2658,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.26.web.markdown",
+      "title": "Task Markdown (context, notes, log, outcome, learnings) renders as React elements of an allow-list (paragraphs and line breaks, strong lines, lists, quotes, fenced and inline code, emphasis, links): raw HTML and the XSS payloads show as text, and only https, http and mailto links open, in a new tab with no opener and no referrer",
+      "source": "A5 3.26, A5 3.7, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.web.task-host",
+      "title": "A task link's host view for every row of A5 3.3's table: Inbox, the area view, the status view (Open for another status), Completed for completed and archived tasks, Trash for a restorable deleted task, and the landing view for an unknown one",
+      "source": "A5 3.3, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.web.detail",
+      "title": "The expanded task's detail joins the pages of a sections read (a text a page boundary split is one entry, notes and log oldest first, learnings once), and a task the live rows do not hold becomes a row with its area and project found by name",
+      "source": "A5 3.7, A5 3.3, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.25.web.items",
       "title": "A grouped list as one sequence of items: group headings and project labels are items, each row knows its place and its list's size, rows keep their area and project rows by identity, and keyboard moves (next, previous, first, last, next and previous group) skip headings",
       "source": "A5 3.25, A5 3.22, A7 3.12 M5.03",
