@@ -1078,6 +1078,7 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
   { table: "tasks", key: "id", fields: TASK_FIELDS },
   { table: "task_sources", key: "task_id || '|' || source_id", fields: CHILD_FIELDS.task_sources },
   { table: "places", key: "id", fields: CHILD_FIELDS.places },
+  { table: "learnings", key: "id", fields: CHILD_FIELDS.learnings },
   { table: "notes", key: "id", fields: {} },
   { table: "log_entries", key: "id", fields: {} },
   { table: "sources", key: "id", fields: {} },

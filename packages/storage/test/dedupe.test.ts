@@ -119,9 +119,9 @@ const opsAt = (seq: number): { op: string; target: string; input: Row }[] =>
   }[];
 
 /**
- * Sets one logical field of a task or a link as a later step's operation will (`task.delete`,
- * `source.unlink`): a commit by Mira with its change row, the row's versions, the touched mark and
- * the outbox row, on a second connection between the writer's requests.
+ * Sets one logical field of a task or a link as a later step's operation will (`source.unlink`):
+ * a commit by Mira with its change row, the row's versions, the touched mark and the outbox row,
+ * on a second connection between the writer's requests.
  */
 async function rawSet(
   entity: "tasks" | "task_sources",
@@ -432,10 +432,10 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     const second = draft(["jira:FIX-1"]);
     expect(submit(second.ops).results[0]).toMatchObject({ status: "created", id: second.id });
     expect(one("SELECT count(*) FROM sources")).toBe(1);
-    await rawSet("tasks", second.id, second.id, "deleted", {
-      deleted_at: "$at",
-      deleted_by: fx.human.principal_id,
-    });
+    expectStatus(
+      submit([{ kind: "task.delete", task: second.id }], { actor: "human", base: fx.base() }),
+      "applied",
+    );
     const third = draft(["jira:FIX-1"]);
     expect(submit(third.ops).results[0]).toMatchObject({ status: "created", id: third.id });
   });
@@ -1053,4 +1053,111 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
       await worker.close();
     }
   }, 120_000);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The lifecycle steps dedupe stages (A7 3.10 M3.04): archive, wrap-up, delete and restore.
+
+describe("[A1.5.write.dedupe-lifecycle] dedupe sees the request's archive, wrap-up, delete and restore", () => {
+  beforeEach(async () => {
+    fx = await writeFixture(temp.make());
+    clock.now = Date.UTC(2026, 10, 13, 8);
+    fx.reopen({ now: tick });
+  });
+  afterEach(() => {
+    checkHistory(fx.reader);
+    fx.close();
+  });
+
+  const human = (ops: Operation[]): WriteResult => {
+    const result = submit(ops, { actor: "human", base: fx.base() });
+    expectStatus(result, "applied");
+    return result;
+  };
+
+  test("an archived task within the window matches with lifecycle archived, finished at the commit that archived it", () => {
+    const first = draft(["jira:FIX-1"]);
+    submit(first.ops);
+    // Archived: no completion time, so it finished at the instant of its archive's commit.
+    human([{ kind: "task.archive", task: first.id, reason: "Won't do." }]);
+    const archivedAt = Number(
+      one("SELECT at FROM commits WHERE seq = (SELECT max(seq) FROM commits)"),
+    );
+    expect(one("SELECT completed_at FROM tasks WHERE id = $id", { id: first.id })).toBeNull();
+    // A later change to another field does not move when it finished.
+    clock.now += 20 * DAY;
+    human([{ kind: "task.patch", task: first.id, set: { summary: "Kept for the record" } }]);
+    clock.now = archivedAt + 29 * DAY;
+    expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      id: first.id,
+      matched_by: "source_key",
+      lifecycle: "archived",
+    });
+    // Of an archived and a completed task, the one finished last.
+    const second = draft(["jira:FIX-1"], { dedupe: "none" });
+    submit(second.ops);
+    complete(second.id);
+    expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({
+      id: second.id,
+      lifecycle: "completed",
+    });
+    // Past the window counted from the archive and the completion: a new task.
+    clock.now += 31 * DAY;
+    const late = draft(["jira:FIX-1"]);
+    expect(submit(late.ops).results[0]).toMatchObject({ status: "created", id: late.id });
+  });
+
+  test("a task the request archives or wraps up is no match for a later draft: it is new work", () => {
+    const a = draft(["jira:FIX-1"]);
+    submit(a.ops);
+    const after = draft(["jira:FIX-1"]);
+    const archived = human([{ kind: "task.archive", task: a.id }, ...after.ops]);
+    expect(archived.results.map((r) => [r.status, r.task ?? r.id])).toEqual([
+      ["updated", a.id],
+      ["created", after.id],
+      ["created", after.id],
+    ]);
+    // A task the user checked off earlier, wrapped up with a follow-up of its own ticket.
+    const b = draft(["jira:FIX-2"]);
+    submit(b.ops);
+    complete(b.id);
+    const follow = draft(["jira:FIX-2"]);
+    const wrapped = human([
+      { kind: "task.wrap_up", task: b.id, outcome: "Answered the clinic." },
+      ...follow.ops,
+    ]);
+    expect(wrapped.results.map((r) => [r.status, r.task ?? r.id])).toEqual([
+      ["updated", b.id],
+      ["created", follow.id],
+      ["created", follow.id],
+    ]);
+    expect(holders(fx.reader, "jira:FIX-2")).toEqual([b.id, follow.id].sort());
+  });
+
+  test("a task the request deletes holds no key, and one it restores holds its keys again", () => {
+    const a = draft(["jira:FIX-1"]);
+    submit(a.ops);
+    const fresh = draft(["jira:FIX-1"]);
+    const deleted = human([{ kind: "task.delete", task: a.id }, ...fresh.ops]);
+    expect(deleted.results[1]).toMatchObject({ status: "created", id: fresh.id });
+    // Restored in the same request as a draft with its key: an active holder again, so with the
+    // other active holder the match is ambiguous.
+    const both = human([{ kind: "task.restore", task: a.id }, ...draft(["jira:FIX-1"]).ops]);
+    expect(both.results[1]).toMatchObject({ status: "existing", ambiguous: ["M-1", "M-2"] });
+    // Deleted in a request of its own, then restored before a draft: the draft's entries follow.
+    const b = draft(["jira:FIX-2"]);
+    submit(b.ops);
+    human([{ kind: "task.delete", task: b.id }]);
+    const back = human([
+      { kind: "task.restore", task: b.id },
+      ...draft(["jira:FIX-2"], { log: "Back in the thread." }).ops,
+    ]);
+    expect(back.results.map((r) => [r.status, r.task ?? r.id])).toEqual([
+      ["updated", b.id],
+      ["existing", b.id],
+      ["created", b.id],
+      ["existing", b.id],
+    ]);
+  });
 });
