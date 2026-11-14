@@ -17,7 +17,8 @@ const NOT_IMPORTED: Readonly<Record<Report["not_imported"][number]["what"], stri
   agent_rules:
     "The prototype's agent files: move the rules that still matter by hand into the Refresh sources and the instructions",
   snapshots: "snapshots/: old copies of the ledgers. They stay in the frozen folder",
-  notes: "context/ and reviews/: background notes and refresh reports. They stay in the frozen folder",
+  notes:
+    "context/ and reviews/: background notes and refresh reports. They stay in the frozen folder",
   ticket_inventory:
     "data/jira.json: a ticket inventory, not tasks. Its ticket titles title the ticket sources",
   audit: "data/audit.json: review times and coverage, copied into the run folder",
@@ -61,9 +62,18 @@ export function renderPreview(r: Report): string {
   row("Metadata entries", c.metadata_entries);
   row("Metadata entries without a task line", c.metadata_orphans);
   row("Task lines without metadata", c.task_lines_without_metadata);
-  row("Event files (counted, without .ready)", `${String(c.event_files)} (${String(c.counted_event_files)}, ${String(c.events_not_ready)})`);
-  row("Events in the actions export (added)", `${String(c.actions_events)} (${String(c.actions_added)})`);
-  row("Tasks to create (active, completed)", `${String(c.tasks)} (${String(c.active)}, ${String(c.completed)})`);
+  row(
+    "Event files (counted, without .ready)",
+    `${String(c.event_files)} (${String(c.counted_event_files)}, ${String(c.events_not_ready)})`,
+  );
+  row(
+    "Events in the actions export (added)",
+    `${String(c.actions_events)} (${String(c.actions_added)})`,
+  );
+  row(
+    "Tasks to create (active, completed)",
+    `${String(c.tasks)} (${String(c.active)}, ${String(c.completed)})`,
+  );
   row("Of the completed, wrapped up", c.wrapped);
   row("Aliases", c.aliases);
   row("Areas (the space has)", `${String(c.areas)} (${String(c.areas_existing)})`);
