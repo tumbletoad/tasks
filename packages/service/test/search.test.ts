@@ -38,6 +38,7 @@ import {
   type SearchReader,
   type SearchResult,
 } from "../src/search/search.ts";
+import { SEPARATOR_RANGES } from "../src/search/query.ts";
 import { queryText } from "./search-queries.ts";
 import { tempRoot } from "./harness.ts";
 
@@ -208,6 +209,36 @@ describe("[A3.5.search.query] random query strings never raise an SQLite error",
       expect(error.data).toMatchObject({ reason: "not_indexed", retryable: false });
     }
   });
+
+  test("every character the parser leaves out is one the index's tokenizer drops", async () => {
+    const text = SEPARATOR_RANGES.flatMap(([a, b]) =>
+      Array.from({ length: b - a + 1 }, (_, i) => String.fromCodePoint(a + i)),
+    ).join("");
+    const tokens = await directly(fx, (conn) => {
+      conn.exec(
+        "CREATE VIRTUAL TABLE tok_probe USING fts5(x, tokenize = 'unicode61 remove_diacritics 2')",
+      );
+      conn.exec("CREATE VIRTUAL TABLE tok_probe_v USING fts5vocab(tok_probe, 'instance')");
+      conn.prepare("INSERT INTO tok_probe (x) VALUES ($x)").run({ x: text });
+      const n = Number(conn.prepare("SELECT count(*) AS n FROM tok_probe_v").get()?.["n"]);
+      conn.exec("DROP TABLE tok_probe_v");
+      conn.exec("DROP TABLE tok_probe");
+      return n;
+    });
+    expect(text.length).toBeGreaterThan(250);
+    expect(tokens).toBe(0);
+  });
+
+  test("a symbol the index keeps is searched as written, negated or not", async () => {
+    const [withIt, without] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Emojiword 🧪" },
+        { kind: "task.create", title: "Emojiword plain" },
+      ]),
+    );
+    expect(ids(await search({ q: "emojiword 🧪" }))).toEqual([withIt]);
+    expect(ids(await search({ q: "emojiword -🧪" }))).toEqual([without]);
+  });
 });
 
 describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
@@ -278,9 +309,12 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "rankw" }))).toContain(title);
     expect(ids(await search({ q: "Ra" }))).toContain(title);
     expect(ids(await search({ q: '"rankw"' }))).toEqual([]);
-    // The prefix goes to the last token: "R." has the one-letter token r, which gets none.
+    // The prefix goes to the last token: "R." has the one-letter token r, which gets none, and an
+    // enclosing mark ends a token as it does in the index.
     expect(ids(await search({ q: "rankw." }))).toContain(title);
     expect(ids(await search({ q: "rankword R." }))).toEqual([]);
+    const enclosing = String.fromCodePoint(0x20dd);
+    expect(ids(await search({ q: `rankword the${enclosing}T` }))).toEqual([]);
     // Punctuation alone is no word, so it never empties the AND.
     expect(ids(await search({ q: "rankword & —" }))).toContain(title);
     const without = ids(await search({ q: "rankword -again" }));

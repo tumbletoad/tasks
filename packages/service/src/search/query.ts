@@ -382,10 +382,12 @@ export function parseQuery(given: string): Query {
       throw queryProblem("OR joins words with words or filters with filters");
     }
   }
-  // The index keeps letters and digits only (A1 3.12's unicode61), so a word or phrase without one
-  // could match nothing and would empty the whole AND: it is left out, and `parsed` shows that.
+  // A word or phrase made only of characters the index's tokenizer surely drops (A1 3.12's
+  // unicode61) could match nothing and would empty the whole AND: it is left out, and `parsed` shows
+  // that. Anything else goes to the index as written, since only SQLite's own tables say for sure
+  // which other characters it keeps (it keeps 🧪, and drops 😀).
   const kept = groups
-    .map((group) => group.filter((t) => t.type === "filter" || SEARCHABLE.test(t.text)))
+    .map((group) => group.filter((t) => t.type === "filter" || !SEPARATORS_ONLY.test(t.text)))
     .filter((group) => group.length > 0);
   const query = { groups: kept };
   // `parsed` is a query too: printing closes an open phrase and quotes a value with a quote, so
@@ -396,8 +398,38 @@ export function parseQuery(given: string): Query {
   return query;
 }
 
-/** A character FTS5's unicode61 keeps in a token: its default categories L*, N* and Co. */
-const SEARCHABLE = /[\p{L}\p{N}\p{Co}]/u;
+/**
+ * Characters FTS5's unicode61 tokenizer always treats as separators: ASCII other than letters and
+ * digits, and punctuation, symbols and spaces of Latin-1, General Punctuation, CJK punctuation and
+ * the fullwidth forms, all assigned long before the tokenizer's tables. `[A3.5.search.query]`
+ * checks every one of them against the index's own tokenizer.
+ */
+export const SEPARATOR_RANGES: readonly (readonly [number, number])[] = [
+  [0x00, 0x2f],
+  [0x3a, 0x40],
+  [0x5b, 0x60],
+  [0x7b, 0xa9],
+  [0xab, 0xb1],
+  [0xb4, 0xb4],
+  [0xb6, 0xb8],
+  [0xbb, 0xbb],
+  [0xbf, 0xbf],
+  [0xd7, 0xd7],
+  [0xf7, 0xf7],
+  [0x2000, 0x205f],
+  [0x3000, 0x3004],
+  [0x3008, 0x3020],
+  [0xff01, 0xff0f],
+  [0xff1a, 0xff20],
+  [0xff3b, 0xff40],
+  [0xff5b, 0xff65],
+];
+
+const codePoint = (n: number): string => `\\u{${n.toString(16)}}`;
+const SEPARATORS_ONLY = new RegExp(
+  `^[${SEPARATOR_RANGES.map(([a, b]) => (a === b ? codePoint(a) : `${codePoint(a)}-${codePoint(b)}`)).join("")}]*$`,
+  "u",
+);
 
 // ---------------------------------------------------------------------------------------------
 // Printing

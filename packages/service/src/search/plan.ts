@@ -108,12 +108,14 @@ function ftsString(term: TextTerm, prefix: boolean): string {
 
 /**
  * Whether `term` takes FTS5's prefix: an unquoted word whose last token, as unicode61 cuts it
- * (letters, digits and private-use characters, with marks inside a token), keeps two characters
- * or more. The `*` applies to that token, so `M-1` gets none.
+ * (letters, digits and private-use characters, with nonspacing marks inside a token, which it
+ * removes), keeps two characters or more. The `*` applies to that token, so `M-1` gets none.
+ * Enclosing and spacing marks, symbols and emoji end a token here: the index may keep some of
+ * them, which only makes its token longer than the one counted, never shorter.
  */
 function prefixes(term: TextTerm): boolean {
   if (term.phrase || term.negated) return false;
-  const last = term.text.match(/[\p{L}\p{N}\p{Co}\p{M}]+/gu)?.at(-1) ?? "";
+  const last = term.text.match(/[\p{L}\p{N}\p{Co}\p{Mn}]+/gu)?.at(-1) ?? "";
   return (last.match(/[\p{L}\p{N}\p{Co}]/gu)?.length ?? 0) >= 2;
 }
 

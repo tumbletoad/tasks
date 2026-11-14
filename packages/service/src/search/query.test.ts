@@ -116,15 +116,17 @@ describe("[A3.5.search.parser] the query language", () => {
     );
   });
 
-  test("a word or phrase without a letter or digit is not searched, and parsed leaves it out", () => {
-    const q = parseQuery('zone & clinic — "!!" -/ "a&b" 😀 OR report');
+  test("a word or phrase of separators only is not searched, and parsed leaves it out", () => {
+    const q = parseQuery('zone & clinic — "!!" -/ "a&b" ¿ OR report 🧪 "" «»');
     expect(q.groups.map((g) => g.map((t) => (t.type === "text" ? t.text : t.key)))).toEqual([
       ["zone"],
       ["clinic"],
       ["a&b"],
       ["report"],
+      // Not a separator for certain: the index keeps some symbols (A3 3.9.2).
+      ["🧪"],
     ]);
-    expect(printQuery(q)).toBe('zone clinic "a&b" report');
+    expect(printQuery(q)).toBe('zone clinic "a&b" report 🧪');
     expect(parseQuery("& status:open").groups.flat()).toMatchObject([{ key: "status" }]);
     expect(parseQuery("— …").groups).toEqual([]);
     // The OR rules hold for what was written.
