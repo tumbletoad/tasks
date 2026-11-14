@@ -11,13 +11,14 @@ import { openWriter } from "../src/open.ts";
 import { openSpace } from "../src/space.ts";
 import { StorageWorker } from "../src/worker/client.ts";
 import { CHILD_FIELDS, columnsValue, TASK_FIELDS } from "../src/write/fields.ts";
-import type {
-  Credential,
-  Operation,
-  SourceFields,
-  TaskCreate,
-  WriteRequest,
-  WriteResult,
+import {
+  DEDUPE_WINDOW_DAYS,
+  type Credential,
+  type Operation,
+  type SourceFields,
+  type TaskCreate,
+  type WriteRequest,
+  type WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import {
@@ -655,7 +656,8 @@ type Step =
   | { kind: "add"; session: number; drafts: DraftSpec[] }
   | { kind: "complete"; pick: number }
   | { kind: "reopen"; pick: number }
-  | { kind: "retry"; pick: number };
+  | { kind: "retry"; pick: number }
+  | { kind: "jump" };
 
 const draftSpec: fc.Arbitrary<DraftSpec> = fc.record({
   keys: fc.uniqueArray(fc.nat({ max: KEYS.length - 1 }), { minLength: 1, maxLength: 2 }),
@@ -676,6 +678,8 @@ const sessionStep: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("complete" as const), pick: fc.nat() }), weight: 2 },
   { arbitrary: fc.record({ kind: fc.constant("reopen" as const), pick: fc.nat() }), weight: 1 },
   { arbitrary: fc.record({ kind: fc.constant("retry" as const), pick: fc.nat() }), weight: 2 },
+  // The clock moves past the window: every task finished before then no longer matches.
+  { arbitrary: fc.record({ kind: fc.constant("jump" as const) }), weight: 1 },
 );
 
 interface ModelTask {
@@ -683,6 +687,8 @@ interface ModelTask {
   lifecycle: "active" | "completed";
   /** The order of its last completion: the later, the higher. */
   finished: number;
+  /** The window it last finished in: it matches as finished only in the current one. */
+  window: number;
   logs: number;
 }
 
@@ -694,9 +700,13 @@ type Predicted =
   | {
       status: "applied" | "unchanged";
       results: string[];
-      /** Sources add_sources linked to a match, and `new` drafts created beside finished tasks. */
+      /**
+       * Sources add_sources linked to a match, `new` drafts created beside finished tasks, and
+       * other drafts created because every task with their keys finished before the window.
+       */
       linked: number;
       beside: number;
+      past: number;
     }
   | { status: "rejected"; op: number };
 
@@ -708,13 +718,16 @@ interface ModelDraft {
 }
 
 /**
- * The reference model of A1 3.6's dedupe without clock jumps, so every finished task is within the
- * window: the tasks each key is linked to, and each task's lifecycle and log entries.
+ * The reference model of A1 3.6's dedupe: the tasks each key is linked to, and each task's
+ * lifecycle and log entries. Between jumps the clock moves by seconds, so a task finished since
+ * the last jump is within the window and one finished before it is not.
  */
 class SessionsModel {
   tasks = new Map<Id<"t">, ModelTask>();
   keys = new Map<string, Set<Id<"t">>>();
   #finished = 0;
+  /** The window the clock stands in: each jump starts the next. */
+  window = 0;
 
   /** Predicts a request of `drafts` and changes the model as the writer would. */
   add(drafts: readonly ModelDraft[]): Predicted {
@@ -734,11 +747,15 @@ class SessionsModel {
     let index = 0;
     let linked = 0;
     let beside = 0;
+    let past = 0;
     for (const d of drafts) {
       const holders = [...new Set(d.keys.flatMap((k) => [...(keys.get(k) ?? [])]))];
       const active = holders
         .filter((t) => task(t).lifecycle === "active")
         .sort((a, b) => task(a).ref - task(b).ref);
+      const recent = holders.filter(
+        (t) => task(t).lifecycle === "completed" && task(t).window === this.window,
+      );
       const size = 1 + (d.log ? 1 : 0) + d.keys.length;
       const [first] = active;
       if (d.mode === "new" && first !== undefined) return { status: "rejected", op: index };
@@ -763,17 +780,21 @@ class SessionsModel {
           }
           hold(key, first);
         }
-      } else if (d.mode !== "new" && holders.length > 0) {
-        // Ambiguous, or finished only (the one finished last): nothing of the draft follows.
+      } else if (d.mode !== "new" && (first !== undefined || recent.length > 0)) {
+        // Ambiguous, or finished within the window only (the one finished last): nothing of the
+        // draft follows.
         const named =
-          first ?? holders.sort((a, b) => task(b).finished - task(a).finished)[0] ?? d.id;
+          first ?? recent.sort((a, b) => task(b).finished - task(a).finished)[0] ?? d.id;
         for (let k = 0; k < size; k += 1) results.push(`existing ${named}`);
       } else {
-        if (holders.length > 0) beside += 1;
+        if (holders.length > 0 && d.mode === "new") beside += 1;
+        // Every holder finished before the window: a new task, as if the key were new.
+        if (holders.length > 0 && d.mode !== "new") past += 1;
         tasks.set(d.id, {
           ref: tasks.size + 1,
           lifecycle: "active",
           finished: 0,
+          window: this.window,
           logs: d.log ? 1 : 0,
         });
         for (const key of d.keys) hold(key, d.id);
@@ -784,7 +805,7 @@ class SessionsModel {
     }
     this.tasks = tasks;
     this.keys = keys;
-    return { status: applied ? "applied" : "unchanged", results, linked, beside };
+    return { status: applied ? "applied" : "unchanged", results, linked, beside, past };
   }
 
   complete(t: Id<"t">): void {
@@ -792,6 +813,7 @@ class SessionsModel {
     if (task === undefined) throw new Error("the model has no such task");
     task.lifecycle = "completed";
     task.finished = this.#finished += 1;
+    task.window = this.window;
   }
 
   reopen(t: Id<"t">): void {
@@ -833,17 +855,24 @@ function expectSessionsModel(conn: Connection, model: SessionsModel): void {
 const sessionsProperty = (seen: Record<string, number>) =>
   fc.asyncProperty(fc.array(sessionStep, { minLength: 8, maxLength: 30 }), async (steps) => {
     const space = await writeFixture(temp.make());
+    // One second per commit, and past the window at a jump.
+    let now = Date.UTC(2026, 10, 13, 8);
+    space.reopen({ now: () => (now += 1000) });
     try {
       const sessions: Credential[] = [space.human, space.codex, space.claude];
       const model = new SessionsModel();
-      const sent: { request: WriteRequest; result: WriteResult }[] = [];
+      const sent: { request: WriteRequest; result: WriteResult; window: number }[] = [];
       const count = (label: string): void => {
         seen[label] = (seen[label] ?? 0) + 1;
       };
       // A reopen is the user's act and may leave two active tasks with one key; dedupe never does.
       let reopened = false;
       for (const s of steps) {
-        if (s.kind === "complete" || s.kind === "reopen") {
+        if (s.kind === "jump") {
+          now += (DEDUPE_WINDOW_DAYS + 1) * DAY;
+          model.window += 1;
+          count("jump");
+        } else if (s.kind === "complete" || s.kind === "reopen") {
           const want = s.kind === "complete" ? "active" : "completed";
           const pool = [...model.tasks].filter(([, t]) => t.lifecycle === want);
           const picked = pool[s.pick % Math.max(pool.length, 1)];
@@ -862,12 +891,20 @@ const sessionsProperty = (seen: Record<string, number>) =>
         } else if (s.kind === "retry") {
           const earlier = sent[s.pick % Math.max(sent.length, 1)];
           if (earlier === undefined) continue;
-          // The stored result, whatever happened to the tasks and keys since (A1 3.8).
+          // The stored result, whatever happened to the tasks and keys since (A1 3.8), also after
+          // the window: an `existing` replays `existing`, and the space still matches the model,
+          // so nothing was created.
           expect(space.writer.submit(earlier.request)).toEqual({
             ...earlier.result,
             replayed: true,
           });
           count("replayed");
+          if (
+            earlier.window < model.window &&
+            earlier.result.results.some((r) => r.matched_by !== undefined)
+          ) {
+            count("existing replayed after the window");
+          }
         } else {
           const drafts: ModelDraft[] = s.drafts.map((d) => ({
             id: newId("t"),
@@ -897,7 +934,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
           if (actor === undefined) throw new Error("no session");
           const request = space.request(actor, ops);
           const result = space.writer.submit(request);
-          sent.push({ request, result });
+          sent.push({ request, result, window: model.window });
           expect(result.status, JSON.stringify(result.error)).toBe(predicted.status);
           if (predicted.status === "rejected") {
             expect(result.error).toMatchObject({
@@ -912,6 +949,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
             );
             if (predicted.linked > 0) count("source linked");
             if (predicted.beside > 0) count("created new");
+            if (predicted.past > 0) count("created past the window");
           }
           for (const r of result.results) {
             if (r.ambiguous !== undefined) count("ambiguous");
@@ -932,9 +970,9 @@ const sessionsProperty = (seen: Record<string, number>) =>
   });
 
 describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", () => {
-  test("property: interleaved drafts in every on_existing mode, completions, reopens and retries leave at most one active task per key, as the model predicts", async () => {
+  test("property: interleaved drafts in every on_existing mode, completions, reopens, retries and jumps past the window leave at most one active task per key, as the model predicts", async () => {
     const seen: Record<string, number> = {};
-    await fc.assert(sessionsProperty(seen), { numRuns: 40, seed: 20261114 });
+    await fc.assert(sessionsProperty(seen), { numRuns: 100, seed: 20261114 });
     for (const outcome of [
       "existing active",
       "existing completed",
@@ -946,6 +984,9 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
       "complete",
       "reopen",
       "drafts in one request",
+      "jump",
+      "created past the window",
+      "existing replayed after the window",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }

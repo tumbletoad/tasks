@@ -2707,7 +2707,7 @@
     },
     {
       "id": "A1.5.write.dedupe-sessions",
-      "title": "Property test against a reference model: drafts with overlapping source keys from three sessions, interleaved with completions, reopens and retries, leave at most one task per key and return what the model predicts; requests sent at once through the storage worker leave one task per key",
+      "title": "Property test against a reference model: drafts with overlapping source keys from three sessions, interleaved with completions, reopens, retries and clock jumps past the window, leave at most one task per key and return what the model predicts, and a retry after the window replays its first answer; requests sent at once through the storage worker leave one task per key",
       "source": "A1 3.6, A1 3.8, A1 5, A7 3.10 M3.06",
       "owner": "M3",
       "kind": "ci",
