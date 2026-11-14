@@ -21,6 +21,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { MAX_LINE_BYTES } from "@tasks/launch/shell-line";
 import { editMachineToml } from "../src/config/edit.ts";
 import { loadMachineConfig, type UnsafePart } from "../src/config/machine-toml.ts";
 import { unsafeConfigMessage } from "../src/config/messages.ts";
@@ -30,6 +31,7 @@ import {
   fixCommand,
   problemOf,
   repairOf,
+  shellArg,
   shellPath,
   unsafeMessage,
   type Need,
@@ -172,6 +174,31 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
     expect(shellPath("/srv/a b/it's", "/home/ada")).toBe(`'/srv/a b/it'\\''s'`);
     expect(shellPath("/home/ada x/f", "/home/ada")).toBe(`'/home/ada x/f'`);
     expect(shellPath("/srv/$(id)\n`x`", "/home/ada")).toBe(`'/srv/$(id)\n\`x\`'`);
+    // Any other control character: no line to paste shows it as it is (A3 3.13.7), so the
+    // sentence shows it escaped and no command is given.
+    expect(shellArg("/srv/a\rb", "/home/ada")).toBeUndefined();
+    expect(shellPath("/srv/a\rb", "/home/ada")).toBe(`"/srv/a\\rb"`);
+    expect(
+      fixCommand(
+        [{ facts: facts("/srv/a\rb", "folder", 0o777), problem: "world_writable" }],
+        "ada",
+      ),
+    ).toBeUndefined();
+    // A line longer than a line to paste can be (A3 3.13.7): no command, and the message says why.
+    const fits = `/srv/${"d".repeat(MAX_LINE_BYTES - "chmod go-w /srv/".length)}`;
+    const long = `${fits}d`;
+    const world = (path: string) => [
+      {
+        name: "The folder",
+        facts: facts(path, "folder", 0o777),
+        problem: "world_writable" as const,
+      },
+    ];
+    expect(Buffer.byteLength(fixCommand(world(fits), "ada") ?? "")).toBe(MAX_LINE_BYTES);
+    expect(fixCommand(world(long), "ada")).toBeUndefined();
+    expect(unsafeMessage(world(long), "Why", "ada")).toContain(
+      `No command is given, because it would be longer than a line to paste can be (${String(MAX_LINE_BYTES)} bytes).`,
+    );
   });
 
   test("the message says what is wrong in plain words first, then why, then the command", () => {

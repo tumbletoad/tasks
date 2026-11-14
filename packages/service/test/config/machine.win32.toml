@@ -35,3 +35,6 @@ label = "Claude Code"
 account = "personal"
 exec = "C:/Users/mira/.local/bin/claude.exe"
 extra_args = ["--verbose"]
+
+[setup.managed]
+paths = ["C:/Users/mira/.claude/CLAUDE.md"]

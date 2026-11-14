@@ -11,7 +11,6 @@
 //
 // Everything goes through DetectHost, so the rules run against a fake file system in tests (one
 // golden file per OS) and against the real one through nodeDetectHost().
-import { spawn } from "node:child_process";
 import { readdirSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import {
@@ -22,6 +21,7 @@ import {
   type BuiltInTargetId,
   type TargetDef,
 } from "./catalogue.ts";
+import { helperOutput } from "./helpers.ts";
 import type { Instance } from "./sections.ts";
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -576,15 +576,14 @@ export interface NodeHostOptions {
   readonly timeoutMs?: number;
 }
 
-/** At most this much of a command's `--version` output is read. */
-const VERSION_OUTPUT_BYTES = 4096;
-/** How long a killed `--version` run may take to exit before the call gives up waiting. */
-const KILL_GRACE_MS = 5_000;
+/** At most this much of a command's `--version` output is read: more is no answer. */
+const VERSION_OUTPUT_CHARS = 64 * 1024;
 
 /**
  * The real file system and processes. `env` is the agent environment the caller built (A4 3.8):
- * detection never falls back to this process's own. A `--version` run gets only that environment,
- * no stdin, no shell and no window, and is killed at its time bound.
+ * detection never falls back to this process's own. A `--version` run goes through the helper
+ * runner (helpers.ts): only that environment, no stdin, no shell and no window, killed with what it
+ * started at its time bound or when this process exits.
  */
 export function nodeDetectHost(options: NodeHostOptions): DetectHost {
   const platform = options.platform ?? process.platform;
@@ -628,93 +627,11 @@ export function nodeDetectHost(options: NodeHostOptions): DetectHost {
     },
     output(file, args) {
       if (isShim(file)) return Promise.resolve(undefined);
-      const env: Record<string, string> = {};
-      for (const [k, v] of Object.entries(options.env)) if (v !== undefined) env[k] = v;
-      return new Promise((resolve) => {
-        let out = "";
-        let settled = false;
-        let timer: NodeJS.Timeout | undefined;
-        const finish = (value: string | undefined) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve(value);
-        };
-        // Linux and macOS: the command leads a process group of its own, so whatever it starts is
-        // killed with it. Windows has no such group here: a descendant may outlive the call, and
-        // the grace below still ends the call and closes Tasks's end of the pipe.
-        const group = platform !== "win32";
-        let child;
-        try {
-          child = spawn(file, [...args], {
-            env,
-            cwd: options.home,
-            stdio: ["ignore", "pipe", "ignore"],
-            shell: false,
-            windowsHide: true,
-            detached: group,
-          });
-        } catch {
-          finish(undefined);
-          return;
-        }
-        const killAll = () => {
-          if (group && child.pid !== undefined) {
-            try {
-              process.kill(-child.pid, "SIGKILL");
-              return;
-            } catch {
-              // The group is gone: only the command itself may be left.
-            }
-          }
-          child.kill("SIGKILL");
-        };
-        // Windows, at the bound: the command is still running, so its tree can be found from it.
-        // The system's own taskkill, by its full path, ends it with every descendant.
-        const killTree = () => {
-          if (platform !== "win32" || child.pid === undefined) {
-            killAll();
-            return;
-          }
-          const killer = spawn(
-            win32.join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "taskkill.exe"),
-            ["/T", "/F", "/PID", String(child.pid)],
-            { stdio: "ignore", shell: false, windowsHide: true },
-          );
-          killer.once("error", () => {
-            child.kill("SIGKILL");
-          });
-          killer.once("exit", () => {
-            child.kill("SIGKILL");
-          });
-        };
-        // At the bound the command and its group are killed, and the answer waits for the pipe to
-        // close. A grace bounds even that wait, then the pipe is closed from this end.
-        let timedOut = false;
-        timer = setTimeout(() => {
-          timedOut = true;
-          killTree();
-          timer = setTimeout(() => {
-            child.stdout.destroy();
-            finish(undefined);
-          }, KILL_GRACE_MS);
-        }, timeoutMs);
-        // When the command exits, what it left behind in its group is killed, so a descendant
-        // holding the pipe cannot keep the answer waiting.
-        child.once("exit", () => {
-          if (group) killAll();
-        });
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
-          if (out.length < VERSION_OUTPUT_BYTES)
-            out += chunk.slice(0, VERSION_OUTPUT_BYTES - out.length);
-        });
-        child.once("error", () => {
-          finish(undefined);
-        });
-        child.once("close", (code) => {
-          finish(code === 0 && !timedOut ? out : undefined);
-        });
+      return helperOutput([file, ...args], {
+        env: options.env,
+        cwd: options.home,
+        deadlineMs: timeoutMs,
+        maxChars: VERSION_OUTPUT_CHARS,
       });
     },
   };

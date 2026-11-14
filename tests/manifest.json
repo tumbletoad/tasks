@@ -1986,6 +1986,62 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.json-edit",
+      "title": "One entry spliced into and out of a JSON file (two spaces, four, tabs, CRLF, one line, an empty or a missing servers table): the document gains exactly the entry and the removal gives back every byte; not JSON, servers that are not an object or an entry already there are refused",
+      "source": "A3 3.13.1, A3 3.13.3, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.12.setup.managed",
+      "title": "A file another git repository tracks is managed, by git's own answer: through a .git file, git metadata behind a link or junction, a linked folder above the file, a linked worktree and a submodule, past an empty .git folder git skips, 66 folders below its repository and with core.worktree, while a repository's file-system monitor is never started; no clear answer is managed (a .git git refuses, a 16 MiB .git file setup never reads, no git on the PATH, a git that times out or answers otherwise); a repository at the home itself is not, and a path machine.toml lists under [setup.managed] covers the file and the files below it",
+      "source": "A3 3.12, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.apps",
+      "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
+      "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.print-quoting",
+      "title": "A command line setup and doctor print for a person to paste gives the command exactly its words: fed to the real shell (PowerShell 7 and Windows PowerShell 5.1 through an npm-style .ps1 and .cmd shim on Windows, /bin/sh elsewhere) with a stub that reports its argv, no word or variable is expanded, split, joined or dropped, print's Claude Code command registers the install's path as it is, and a word no quoting keeps literal (a control character other than a newline in a POSIX line; on Windows any control character and % ! ^ & | < > \") gets no line, nor does a line past 4,095 bytes of UTF-8, while one at that bound reaches the command through every shell and shim",
+      "source": "A3 3.13.7, A3 3.13.1, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.agents",
+      "title": "tasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print and approve-tools write nothing",
+      "source": "A3 3.14, A3 3.13.1, A3 3.13.7, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.helpers",
+      "title": "The helper runner that every program setup, detection and doctor start goes through ends the program and a descendant it started (one outside Node's job on Windows, in its process group elsewhere) when the starting process exits as Ctrl+C makes it (also while doctor reads an app's own mcp get), on stop and at the deadline, and on Linux and macOS when that process gets SIGTERM, while a signal the host took first, with a one-shot handler too, stays the host's and its shutdown runs to the end; their modules import no child_process (dependency-cruiser)",
+      "source": "A3 3.14, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.live",
+      "title": "tasks doctor --live against fake apps: a headless claude -p and codex exec with the prompt on stdin start the home's entry and call status, the service records the call by instance (setup/seen), and the row passes only for a call seen after the run started; without --live nothing is run",
+      "source": "A3 3.14, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.4.1.t3.client",
       "title": "The MCP client of T3 reads a streamed answer event by event: a reply ended by CRLF, LF or CR in any mix, also split across chunks, is taken at once from a stream T3 keeps open; a request from the server with the same ID is not the reply; an answer over the size limit or not UTF-8 is unreadable",
       "source": "A4 3.4.1, A7 3.9 M2.11",

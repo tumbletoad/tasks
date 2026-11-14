@@ -20,6 +20,9 @@ and workflow.
   the vision and write it into the specification.
 - Keep the core lean: a feature outside the plan needs a clear reason in its pull request and
   specification.
+- Limits on performance, latency, memory and token counts are guidelines until real use (PLAN
+  D26). Aim for them and report a breach, but keep a feature that is better or more complete over
+  a limit. Functionality, usability, stability, flexibility and maintainability come first.
 - Rewrite when you find a better solution. Do not keep a weaker design for history.
 - Clean up what is finished (merged branches, worktrees, scratch folders, test installs, files
   that only served a finished step), after looking at it, and only what this project made.

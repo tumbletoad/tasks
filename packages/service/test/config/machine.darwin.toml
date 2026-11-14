@@ -22,3 +22,6 @@ account = "work"
 exec = "/Users/mira/.local/bin/claude-work"
 config_home = "/Users/mira/.claude-work"
 via_login_shell = true
+
+[setup.managed]
+paths = ["/Users/mira/.codex/AGENTS.md"]
