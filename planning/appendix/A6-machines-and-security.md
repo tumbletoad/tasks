@@ -80,7 +80,7 @@ The file `<state>/machine.json` (A2's `<state>`). It sits outside spaces, synced
 
 **Epoch and incarnation (R20).** The epoch is an integer that rises every time authority changes hands or a restore is accepted as current. It orders authority changes but does not identify one. The incarnation is a random ID that names one stretch of authority. Every create, claim, transfer import, restore claim and cancelled transfer starts a new incarnation with a lineage entry of that kind (`packages/storage/src/rows.ts`). Copies with the same incarnation share one history. Copies with different incarnations never match silently, even at the same epoch.
 
-**Built:** create, the claim of a read-only copy and the restore claim of a restore in place (A1 3.18). **Not built:** export bundles, transfers, fork, the full role model, stale-restore and competing-branch detection.
+**Built:** create, the claim of a read-only copy, the restore claim of a restore in place, and export bundles in backup and fork mode with their restore as a read-only copy (A1 3.18). **Not built:** transfers, fork import, the full role model, stale-restore and competing-branch detection.
 
 **Local role of a space on a machine:**
 
@@ -609,12 +609,12 @@ Code: the UI listener in `packages/service/src/http/`, the socket and pipe in `p
 - **Launch tickets** (A4). A process listing shows a ticket for its terminal window's life, so a ticket is worth something only briefly and only for its own launch: one shim claim and one bridge redemption, each in a short window. The attachment credential never travels in argv, a file or a log. Tests: `[A4.5.shim.claim]`, `[A4.5.shim.attach]`, `[A4.5.launch.shim-property]`.
 - **The login-shell snapshot** (A4 3.8) holds whatever the person's profile exports, secrets included: owner-only, never exported or logged (`packages/launch/src/environment/provider.ts`).
 - **Hashes:** tokens and pairing secrets are stored as SHA-256 and compared in constant time (`[A2.3.6.local.grants]`).
-- **Secret scan:** writes to notes, context, logs and summaries are checked for PEM private-key headers, `ghp_`, `github_pat_`, `glpat-`, `sk-`, `xox[abp]-`, `AKIA` and JWT-shaped strings. A match adds a warning to the result and flags the field in the UI. `security.secret_scan = "block"` refuses the write.
+- **Secret scan:** writes to notes, context, logs and summaries are checked for PEM private-key headers, `ghp_`, `github_pat_`, `glpat-`, `sk-`, `xox[abp]-`, `AKIA` and JWT-shaped strings. A match adds a warning to the result and flags the field in the UI. `security.secret_scan = "block"` refuses the write. **Built:** the patterns (`packages/storage/src/secrets.ts`, `[A6.5.secrets.scanner]`) and the export's scan (A1 3.18). Each pattern is the token's shape, not its bare prefix, which would match ordinary words ("task-" holds "sk-"): the prefix at the start of a word, at least as many token characters as the issuer's shortest real token, and for random tokens at least one digit, which no hyphenated phrase has. A match names only its kind. **Not built:** the write path's warning (M4.03).
 - **Redaction:** the user-only `redact` operation replaces text with a marker: the one deliberate exception to "no data destroyed", recorded as an operation (A1).
   - One traversal (A1) covers every store of the active database and its derived stores: current state, history, `commits` payloads, pending and superseded proposals and their alternatives, exchange bases, receipts where they hold text, FTS, the projection, the outbox and caches. Receipts keep identity and hash metadata only. Pending work that refers to the text is invalidated.
   - Later, `redact` travels like any operation, replicas apply the same traversal, and the authority uploads fresh snapshots of the touched streams and deletes older blobs.
   - Backups, exports and working copies already written are not changed. The confirmation says so, and A1 says how open working copies are handled.
-- **Exports** are checked before writing: no file from the secrets folder, no string matching the patterns.
+- **Exports** are checked before writing: no file from the secrets folder, no string matching the patterns. Built (A1 3.18 "Export bundle"): a hit writes nothing and names the kind and the table and column, never the text.
 
 #### 3.16.5 Managed machines (A2 implements)
 
