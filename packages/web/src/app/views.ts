@@ -206,16 +206,27 @@ export function inFocus(task: TaskRow, clock: Clock): boolean {
   );
 }
 
+/** This week's six days after today, worked out once per clock. */
+const windows = new WeakMap<Clock, { readonly first: string; readonly last: string }>();
+function windowOf(clock: Clock): { readonly first: string; readonly last: string } {
+  let found = windows.get(clock);
+  if (found === undefined) {
+    const today = dayNumber(clock.today) ?? 0;
+    found = { first: dateOf(today + 1), last: dateOf(today + 6) };
+    windows.set(clock, found);
+  }
+  return found;
+}
+
 /** The day that brings a task into This week: the earlier of its due and planned days there. */
 function weekDay(task: TaskRow, clock: Clock): string | undefined {
   if (task.lifecycle !== "active" || task.status === "backlog") return undefined;
-  const today = dayNumber(clock.today) ?? 0;
-  const first = dateOf(today + 1);
-  const last = dateOf(today + 6);
-  const days = [dueDayOf(task, clock), plannedOf(task)].filter(
-    (d): d is string => d !== undefined && d >= first && d <= last,
-  );
-  return days.sort()[0];
+  const { first, last } = windowOf(clock);
+  const inside = (d: string | undefined) => d !== undefined && d >= first && d <= last;
+  const due = dueDayOf(task, clock);
+  const planned = plannedOf(task);
+  if (inside(due) && (!inside(planned) || (due ?? "") <= (planned ?? ""))) return due;
+  return inside(planned) ? planned : undefined;
 }
 
 /** This week selects it (when Focus does not): not backlog, due or planned in the next six days. */
@@ -242,43 +253,67 @@ const byDue = (a: number | undefined, b: number | undefined): number =>
 
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+/** What the orders read of a task, worked out once per `todayOf`: sorts compare these only. */
+interface Keys {
+  /** 0 late, 1 due today, 2 any other (Focus's tiers). */
+  readonly tier: number;
+  readonly due: number | undefined;
+  readonly priority: number;
+  /** The day that selects it for This week. */
+  readonly week: string;
+}
+
+function keysOf(task: TaskRow, clock: Clock): Keys {
+  return {
+    tier: isLate(task, clock) ? 0 : dueDayOf(task, clock) === clock.today ? 1 : 2,
+    due: dueKey(task, clock),
+    priority: priorityOf(task),
+    week: weekDay(task, clock) ?? "",
+  };
+}
+
+type Order = (a: TaskRow, b: TaskRow) => number;
+
 /** Focus: late first (oldest due first), then due today, then priority, due date and age. */
-function focusOrder(clock: Clock): (a: TaskRow, b: TaskRow) => number {
-  const tier = (task: TaskRow): number =>
-    isLate(task, clock) ? 0 : dueDayOf(task, clock) === clock.today ? 1 : 2;
-  return (a, b) => {
-    const ta = tier(a);
-    const tb = tier(b);
-    if (ta !== tb) return ta - tb;
+const focusOrder =
+  (k: (task: TaskRow) => Keys): Order =>
+  (a, b) => {
+    const ka = k(a);
+    const kb = k(b);
     return (
-      (ta === 0 ? byDue(dueKey(a, clock), dueKey(b, clock)) : 0) ||
-      priorityOf(a) - priorityOf(b) ||
-      byDue(dueKey(a, clock), dueKey(b, clock)) ||
+      ka.tier - kb.tier ||
+      (ka.tier === 0 ? byDue(ka.due, kb.due) : 0) ||
+      ka.priority - kb.priority ||
+      byDue(ka.due, kb.due) ||
       a.created_at - b.created_at ||
       byText(a.id, b.id)
     );
   };
-}
 
 /** This week: by the day that selects it, then priority. */
-function weekOrder(clock: Clock): (a: TaskRow, b: TaskRow) => number {
-  return (a, b) =>
-    byText(weekDay(a, clock) ?? "", weekDay(b, clock) ?? "") ||
-    priorityOf(a) - priorityOf(b) ||
-    byDue(dueKey(a, clock), dueKey(b, clock)) ||
-    a.created_at - b.created_at ||
-    byText(a.id, b.id);
-}
+const weekOrder =
+  (k: (task: TaskRow) => Keys): Order =>
+  (a, b) => {
+    const ka = k(a);
+    const kb = k(b);
+    return (
+      byText(ka.week, kb.week) ||
+      ka.priority - kb.priority ||
+      byDue(ka.due, kb.due) ||
+      a.created_at - b.created_at ||
+      byText(a.id, b.id)
+    );
+  };
 
 /** Next: priority, then due date (undated last), then the space's order, then age. */
-function nextOrder(clock: Clock): (a: TaskRow, b: TaskRow) => number {
-  return (a, b) =>
+const nextOrder =
+  (clock: Clock): Order =>
+  (a, b) =>
     priorityOf(a) - priorityOf(b) ||
     byDue(dueKey(a, clock), dueKey(b, clock)) ||
     byText(a.position, b.position) ||
     a.created_at - b.created_at ||
     byText(a.id, b.id);
-}
 
 /** Whether a day is a task's due or planned day. */
 export const onDay = (task: TaskRow, day: string, clock: Clock): boolean =>
@@ -291,6 +326,28 @@ export function stripDays(clock: Clock): string[] {
 }
 
 /**
+ * The first `n` of a list in an order, in that order: one pass that keeps the best `n`, so Next
+ * costs a scan of the open tasks, not a sort of them.
+ */
+function first(list: readonly TaskRow[], n: number, order: Order): TaskRow[] {
+  const best: TaskRow[] = [];
+  if (n <= 0) return best;
+  for (const task of list) {
+    const last = best.at(-1);
+    if (best.length === n && last !== undefined && order(task, last) >= 0) continue;
+    let at = best.length;
+    while (at > 0) {
+      const before = best[at - 1];
+      if (before === undefined || order(task, before) >= 0) break;
+      at -= 1;
+    }
+    best.splice(at, 0, task);
+    if (best.length > n) best.pop();
+  }
+  return best;
+}
+
+/**
  * Today from the open tasks. Focus and This week are what the strip marks; the strip's chosen day
  * narrows what they show to that day. Next takes the first `nextLimit` open tasks left. Changes
  * lists the tasks agents changed that no section above holds, newest first.
@@ -299,17 +356,26 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
   const nextLimit = options.nextLimit ?? NEXT_LIMIT;
   const focus: TaskRow[] = [];
   const week: TaskRow[] = [];
-  const rest: TaskRow[] = [];
+  const open: TaskRow[] = [];
   const all = new Map<string, TaskRow>();
   for (const task of tasks) {
     if (task.lifecycle !== "active") continue;
     all.set(task.id, task);
     if (inFocus(task, clock)) focus.push(task);
     else if (inWeek(task, clock)) week.push(task);
-    else rest.push(task);
+    else if (inNext(task)) open.push(task);
   }
-  focus.sort(focusOrder(clock));
-  week.sort(weekOrder(clock));
+  const keys = new Map<TaskRow, Keys>();
+  const k = (task: TaskRow): Keys => {
+    let found = keys.get(task);
+    if (found === undefined) {
+      found = keysOf(task, clock);
+      keys.set(task, found);
+    }
+    return found;
+  };
+  focus.sort(focusOrder(k));
+  week.sort(weekOrder(k));
 
   // The strip marks the days of the tasks Focus and This week hold, before the day filter.
   const days = stripDays(clock);
@@ -339,8 +405,9 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
   const shownFocus = day === undefined ? focus : focus.filter((t) => onDay(t, day, clock));
   const shownWeek = day === undefined ? week : week.filter((t) => onDay(t, day, clock));
   // Next and Changes never take a task Focus or This week selected, shown or filtered out: a task
-  // keeps its one section, and the day filter only narrows what that section shows.
-  const next = rest.filter(inNext).sort(nextOrder(clock)).slice(0, Math.max(0, nextLimit));
+  // keeps its one section, and the day filter only narrows what that section shows. Next's
+  // candidates are the open tasks outside the Inbox that neither section above selected.
+  const next = first(open, nextLimit, nextOrder(clock));
   const above = new Set([...focus, ...week, ...next].map((t) => t.id));
   const since = clock.now - CHANGES_DAYS * DAY_MS;
   const changed: TaskRow[] = [];
