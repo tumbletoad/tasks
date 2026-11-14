@@ -444,6 +444,9 @@ function prepareSnapshot(
       dropUnchecked(conn);
       remakeSearchIndex(checked, conn, steps);
     });
+    // The log is emptied into the file first, so it holds only the vacuum's pages: at most the
+    // database once (exportPeak's 2D).
+    conn.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     conn.exec("VACUUM");
   } finally {
     conn.close();

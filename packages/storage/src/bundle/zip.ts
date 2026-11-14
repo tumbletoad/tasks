@@ -42,6 +42,7 @@ import { pipeline } from "node:stream/promises";
 import { crc32, createDeflateRaw, createInflateRaw, deflateRawSync } from "node:zlib";
 import { StorageError } from "../errors.ts";
 import { createFileExact, FILE_MODE, fsError, NODE_IO, type FileIo } from "../files.ts";
+import { isWindowsDeviceName } from "../space-path.ts";
 import { limitExceeded, type BundlePolicy, type ExpansionBudget } from "../backup/policy.ts";
 
 const SIG_LOCAL = 0x04034b50;
@@ -83,8 +84,6 @@ export const invalidArchive = (why: string): StorageError =>
 /** Characters no entry name may hold: controls, the backslash and what Windows refuses in names. */
 // eslint-disable-next-line no-control-regex -- control characters are what it finds
 const FORBIDDEN = /[\u0000-\u001f\u007f<>:"|?*\\]/;
-/** Windows device names, with or without an extension. */
-const DEVICE = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\..*)?$/i;
 
 /**
  * Checks that `name` is a plain relative path, and says whether it names a folder (a final `/`).
@@ -104,7 +103,9 @@ export function checkEntryName(name: string): { directory: boolean } {
     if (part === "" || part === "." || part === "..") {
       throw invalidArchive("an entry's path leaves its folder or has an empty part");
     }
-    if (FORBIDDEN.test(part) || DEVICE.test(part) || /[. ]$/.test(part)) {
+    // Windows device names as space-path.ts reads them: the part before the first dot, less
+    // its trailing spaces (`con .txt` and `nul.tar.gz` open the device).
+    if (FORBIDDEN.test(part) || isWindowsDeviceName(part) || /[. ]$/.test(part)) {
       throw invalidArchive("an entry's name has characters a file name cannot have");
     }
     if (Buffer.byteLength(part, "utf8") > MAX_SEGMENT_BYTES) {

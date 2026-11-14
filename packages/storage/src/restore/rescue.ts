@@ -147,18 +147,46 @@ export interface RescueOptions {
   freeBytes?: (folder: string) => number;
 }
 
+/** The first bytes of a rollback journal's header (SQLite's file format, "The Rollback Journal"). */
+const JOURNAL_MAGIC = Buffer.from("d9d505f920a163d7", "hex");
+
+/**
+ * The size SQLite gives a database when it plays back the rollback journal at `journal`: the page
+ * count before the transaction times the page size, both from the journal's header. 0 when there
+ * is no journal, or no header SQLite would play back. Read by plain file reads, never by SQLite.
+ */
+function journalledSize(journal: string): number {
+  let fd: number;
+  try {
+    fd = openSync(journal, constants.O_RDONLY | NO_FOLLOW);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return 0;
+    throw fsError(error);
+  }
+  try {
+    const header = Buffer.alloc(28);
+    const read = fsCall(() => readSync(fd, header, 0, header.length, 0));
+    if (read < header.length || !header.subarray(0, 8).equals(JOURNAL_MAGIC)) return 0;
+    return header.readUInt32BE(16) * header.readUInt32BE(24);
+  } finally {
+    closeQuietly(fd);
+  }
+}
+
 /**
  * What a rescue's private copy may take on disk (A1 3.18 "Bundle limits"): the database files as
- * they are, and the log once more, which SQLite may play back into the copy of the database.
+ * they are; the log once more, which SQLite may play back into the copy of the database; and the
+ * growth of the database to the size its rollback journal records, which a playback restores.
+ * SQLite's shared-memory file and its own few pages of log are the reserve's to cover.
  */
 function copyBytes(db: string): number {
-  let total = 0;
-  for (const suffix of DATABASE_FILES) {
+  const sizes = DATABASE_FILES.map((suffix) => {
     const stats = fsCall(() => lstatSync(`${db}${suffix}`, { throwIfNoEntry: false }));
-    const size = stats?.isFile() === true ? stats.size : 0;
-    total += suffix === "-wal" ? 2 * size : size;
-  }
-  return total;
+    return stats?.isFile() === true ? stats.size : 0;
+  });
+  const [main = 0, wal = 0, shm = 0, journal = 0] = sizes;
+  const growth = Math.max(0, journalledSize(`${db}-journal`) - main);
+  return main + 2 * wal + shm + journal + growth;
 }
 
 const notRegular = (): StorageError =>

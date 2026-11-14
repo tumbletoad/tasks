@@ -10,6 +10,7 @@ import {
   readFileSync,
   statSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
@@ -25,7 +26,7 @@ import {
 } from "../src/bundle/export.ts";
 import { EXPORT_MARKER, EXPORT_VERSION, exportText } from "../src/bundle/export-file.ts";
 import { readBundle } from "../src/bundle/read.ts";
-import { ZipWriter } from "../src/bundle/zip.ts";
+import { checkEntryName, ZipWriter } from "../src/bundle/zip.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "../src/backup/policy.ts";
 import { StorageError } from "../src/errors.ts";
 import { NODE_IO } from "../src/files.ts";
@@ -37,7 +38,7 @@ import { schemaObjects } from "../src/backup/snapshot.ts";
 import { openReader } from "../src/open.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
-import { unpackBackup } from "../src/restore/unpack.ts";
+import { SPACE_ROW_MAX_BYTES, unpackBackup } from "../src/restore/unpack.ts";
 import { openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
@@ -234,6 +235,9 @@ describe("[A1.5.bundle.zip-hardening] a restore refuses an archive that breaks a
       "view//tasks.md",
       "view/./tasks.md",
       "view/con.md",
+      // Windows reads the part before the first dot, less its trailing spaces.
+      "view/con .md",
+      "view/nul.tar.gz",
       "view/notes.",
       "view/Cafe\u0301.md",
       "view/tab\there.md",
@@ -247,6 +251,15 @@ describe("[A1.5.bundle.zip-hardening] a restore refuses an archive that breaks a
       ]);
       const error = await refused(zip, "BUNDLE_INVALID");
       expect(error.message, name).not.toContain(name);
+    }
+  });
+
+  test("an entry's name is refused where Windows reads a device: the part before the first dot, less its trailing spaces", () => {
+    for (const name of ["view/con.md", "view/con .md", "view/NUL.tar.gz", "view/com1 .x"]) {
+      expect(() => checkEntryName(name), name).toThrow(StorageError);
+    }
+    for (const name of ["view/console.md", "view/com0.md", "view/a con.md"]) {
+      expect(checkEntryName(name), name).toEqual({ directory: false });
     }
   });
 
@@ -789,6 +802,25 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
     );
     expect(most).toBeGreaterThan(0);
     expect(most).toBeLessThanOrEqual(backupNeeds);
+    // A snapshot that cannot be removed (a scanner holds it) stays until the end: still within it.
+    most = 0;
+    const held = {
+      ...noLinks,
+      rmSync: (path: string, options: { recursive?: boolean; force: boolean }) => {
+        if (/\.backup\.tmp-[0-9a-f]+\.db$/.test(path)) {
+          throw Object.assign(new Error("held by another program"), { code: "EPERM" });
+        }
+        NODE_IO.rmSync(path, options);
+      },
+    };
+    await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "manual", now: () => Date.now() + 2000 },
+      { io: held, freeBytes: free(backupNeeds) },
+    );
+    expect(most).toBeGreaterThan(2 * size);
+    expect(most).toBeLessThanOrEqual(backupNeeds);
 
     // The export, before data.jsonl: 2D before it writes anything.
     const exportNeeds = exportPeak(size, 0, 0);
@@ -961,6 +993,37 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     expect(copy.revision).toEqual({ major: 0, minor: 1 });
     const inPlace = await restoreInPlace(checked, backup.file, folder, { machineId: TEST_MACHINE });
     expect(inPlace.claim.epoch).toBe(backup.sidecar.epoch + 1);
+  });
+
+  test("a space row larger than a space's is refused before the first write rewrites it, and an export of it publishes nothing", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const at = Date.now() - 60_000;
+    const good = await backupSpace(checked, folder, { kind: "manual", now: () => at });
+    const conn = await rawWriter(folder);
+    try {
+      // A lineage the space's own writes never make: the first write would rewrite it twice.
+      conn
+        .prepare("UPDATE space SET lineage = json_set(lineage, '$.forked_from', $big)")
+        .run({ big: "x".repeat(SPACE_ROW_MAX_BYTES) });
+    } finally {
+      conn.close();
+    }
+    const big = await backupSpace(checked, folder, { kind: "manual", now: () => at + 1000 });
+    const listing = listBackups(join(folder, "backups"));
+    for (const b of listing.backups) {
+      expect(await verifyBackup(checked, b), b.name).toEqual(
+        b.name === good.name ? good.sidecar : undefined,
+      );
+    }
+    const refusal = await expectCode(
+      () => restoreBackup(checked, big.file, join(folders.make(), "mira")),
+      "BACKUP_INVALID",
+    );
+    expect(refusal.message).toContain("space row");
+    await expectCode(() => exportBundle(checked, folder, { mode: "backup" }), "BUNDLE_INVALID");
+    expect(readdirSync(join(folder, "exports"))).toEqual([]);
   });
 
   test("an object under SQLite's reserved prefix is compared like any other: one planted in the file is refused by the export, a verification, a restore and retention", async () => {
@@ -1369,6 +1432,23 @@ describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1
     expect(withoutRescued(treeDigest(folder))).toEqual(before);
     const report = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14, 1) });
     expect(report.failed).toEqual([]);
+
+    // A hot journal beside a database cut short: playing it back in the copy gives the copy the
+    // size the journal records, far past the files' own sizes, so that growth is counted too.
+    const damaged = (await createFixtureSpace(folders.make())).folder;
+    await writeCommits(damaged, 3);
+    const damagedDb = join(damaged, "space.db");
+    await crashWithHotJournal(damagedDb);
+    truncateSync(damagedDb, 4096);
+    const files = sizeOf(damagedDb) + sizeOf(`${damagedDb}-journal`);
+    const damagedBefore = treeDigest(damaged);
+    await expectCode(
+      () => rescueSpace(checked, damaged, { freeBytes: () => reserve + files + 64 * 1024 }),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    expect(existsSync(join(damaged, "exchange"))).toBe(false);
+    rescueSpace(checked, damaged, { now: () => Date.UTC(2026, 10, 14, 2) });
+    expect(withoutRescued(treeDigest(damaged))).toEqual(damagedBefore);
   });
 
   test("a damaged table stops partway and is named, the others are written whole, and the space is unchanged", async () => {

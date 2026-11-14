@@ -282,8 +282,8 @@ export async function writeBackup(
       throw new StorageError("BACKUP_FAILED", "The compressed backup does not read back");
     }
     // The snapshot is done once its compressed form reads back: it goes before the publication,
-    // whose copy (where the file system makes no hard link) is a second compressed file, so the
-    // backup's files never pass backupPeak.
+    // whose copy (where the file system makes no hard link) is a second compressed file. A removal
+    // that fails leaves it: backupPeak counts it anyway.
     for (const path of databaseFiles(copy)) removeQuietly(path, io);
     own.splice(0, own.length, packed);
     refresh();
@@ -363,13 +363,14 @@ export const FRESH_INTERVAL_MS = 5 * 60_000;
 
 /**
  * What a backup needs on disk at its peak, from the database's size D (its pages times their
- * size): the snapshot (D) and its compressed form while both exist, which is at most about D (gzip
- * adds a few bytes per block to data it cannot compress); then the compressed form and, where the
- * file system makes no hard link, its published copy, since the snapshot is removed before the
- * publication. The read-back writes nothing, and the sidecar is a few hundred bytes. A guideline
- * (PLAN D26): a disk that fills anyway fails the backup.
+ * size): every file it makes, counted at once, since a removal can fail (a scanner holding the
+ * file on Windows) and the backup goes on: the snapshot (D), its compressed form (at most about D:
+ * gzip adds a few bytes per block to data it cannot compress), and, where the file system makes no
+ * hard link, the published copy of the compressed form (D). The snapshot is removed once its
+ * compressed form reads back, so the disk usually holds less. The read-back writes nothing, and the
+ * sidecar is a few hundred bytes.
  */
-export const backupPeak = (databaseSize: number): number => 2 * databaseSize;
+export const backupPeak = (databaseSize: number): number => 3 * databaseSize;
 
 /** A database file and the files SQLite keeps beside it. */
 const databaseFiles = (db: string): string[] => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`];

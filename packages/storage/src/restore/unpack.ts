@@ -11,7 +11,8 @@
 //
 // Then one function decides for both (acceptRestored): the database passes integrity_check and
 // agrees with what its source records (space, epoch, incarnation, last commit, revision, rows per
-// table), the revision is one this build knows and not newer, the space's format is its
+// table), its space row holds at most SPACE_ROW_MAX_BYTES, the revision is one this build knows and
+// not newer, the space's format is its
 // revision's, and its tables, indexes and views are exactly its revision's (backup/snapshot.ts
 // requireOwnSchema). A bundle's live attachment rows must each have their blob, with the row's size.
 import { join } from "node:path";
@@ -231,6 +232,14 @@ const sameCounts = (a: Record<string, number>, b: Record<string, number>): boole
 };
 
 /**
+ * The most a space row may hold for a restore to take it (A1 3.18 "Bundle limits"): the restore's
+ * first write rewrites the row, twice with its trial claim, so the log and the growth of that write
+ * stay a few MiB, which the free-space reserve covers. Tasks' own writes keep the row far smaller:
+ * a name of at most 100 characters and about 260 bytes of lineage per claim.
+ */
+export const SPACE_ROW_MAX_BYTES = 1024 * 1024;
+
+/**
  * The checks every restore makes of an unpacked database before it writes to it, for a backup and
  * a bundle alike (see the header). Returns the revision's step.
  */
@@ -251,6 +260,9 @@ export function acceptRestored(
     !sameCounts(facts.counts, recorded.counts)
   ) {
     throw source.invalid(`its database differs from ${source.record}`);
+  }
+  if (facts.spaceRowBytes > SPACE_ROW_MAX_BYTES) {
+    throw source.invalid("its space row is larger than a space's");
   }
   const position = stepPosition(steps, facts.userVersion);
   if (position.state === "newer") {

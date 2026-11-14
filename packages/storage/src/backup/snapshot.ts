@@ -66,10 +66,23 @@ export function databaseBytes(conn: Connection): number {
 export interface SnapshotFacts {
   userVersion: number;
   space: SpaceRow;
+  /** The bytes the space row's values hold: what a restore's first write rewrites. */
+  spaceRowBytes: number;
   /** Rows per table, by table name. */
   counts: Record<string, number>;
   /** Its schema objects as the exact-schema rule compares them (schemaObjects). */
   schema: readonly string[];
+}
+
+/** The bytes the values of a row hold: text in UTF-8, a BLOB's own length, 8 for a number. */
+function rowBytes(row: Record<string, unknown> | undefined): number {
+  let total = 0;
+  for (const value of Object.values(row ?? {})) {
+    if (typeof value === "string") total += Buffer.byteLength(value, "utf8");
+    else if (value instanceof Uint8Array) total += value.length;
+    else if (value !== null) total += 8;
+  }
+  return total;
 }
 
 /** SQLite's literal reserved prefix: what SQLite names so is its own. */
@@ -285,8 +298,15 @@ export function readSnapshotFacts(conn: Connection): SnapshotFacts {
     if (!inRange(userVersion, "count") || userVersion === 0) {
       throw new StorageError("SPACE_VERSION_UNKNOWN", "The copy has no schema revision");
     }
-    const space = decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get());
-    return { userVersion, space, counts: tableCounts(conn), schema: schemaObjects(conn) };
+    const row = conn.prepare("SELECT * FROM space WHERE one = 1").get();
+    const space = decodeSpaceRow(row);
+    return {
+      userVersion,
+      space,
+      spaceRowBytes: rowBytes(row),
+      counts: tableCounts(conn),
+      schema: schemaObjects(conn),
+    };
   });
 }
 
