@@ -60,6 +60,8 @@ beforeAll(async () => {
     identity: () => ({ root: false, elevated: false, package: null }),
     maintenance: false,
     say: () => undefined,
+    // `doctor --live` would take the person's login-shell snapshot: a fixed environment instead.
+    launch: { baseEnv: () => ({}) },
   });
   const session = await classSession(home, service.endpoint.path, "cli-interactive");
   try {
@@ -510,6 +512,47 @@ describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", ()
         expect(row(flood, "bridge.claude-desktop")).toMatchObject({ status: "fail" });
         expect(Date.now() - t0).toBeLessThan(15_000);
       } finally {
+        const removed = await run(["setup", "agents", "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(0);
+      }
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.14.doctor.manual] tasks doctor on an entry setup did not write", () => {
+  test(
+    "an entry without --instance is named for what it reaches, one with an instance for its refusal, each with how to take it out",
+    async () => {
+      await applyAll(["--app", "claude-desktop"]);
+      const claudeFile = join(user, ".claude.json");
+      const before = readFileSync(claudeFile, "utf8");
+      const withEntry = (args: string[]) => {
+        const doc = JSON.parse(before) as { mcpServers: Record<string, unknown> };
+        doc.mcpServers[MCP_SERVER_KEY] = { command: tasks, args };
+        writeFileSync(claudeFile, JSON.stringify(doc, null, 2));
+      };
+      try {
+        expect(row(await doctor(), "manual")?.status).toBe("ok");
+
+        // As `print` gives one: a hand-made entry, not a mistake.
+        withEntry(["mcp", "--app", "claude-code"]);
+        const handMade = row(await doctor(), "manual");
+        expect(handMade?.status).toBe("warn");
+        expect(handMade?.detail).toContain("without --instance");
+        expect(handMade?.detail).toContain("reach only the machine's default space");
+        expect(handMade?.detail).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
+        expect(handMade?.detail).not.toContain(user);
+
+        // One with an instance setup did not register: the grant gate refuses it.
+        withEntry(["mcp", "--instance", "claude-x", "--app", "claude-code"]);
+        const named = row(await doctor(), "manual");
+        expect(named?.status).toBe("warn");
+        expect(named?.detail).toContain("as instance claude-x");
+        expect(named?.detail).toContain("refuses its calls");
+        expect(named?.detail).not.toContain(user);
+      } finally {
+        writeFileSync(claudeFile, before);
         const removed = await run(["setup", "agents", "--remove", "--json"]);
         expect(removed.code, removed.stdout).toBe(0);
       }

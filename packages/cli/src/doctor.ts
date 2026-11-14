@@ -381,7 +381,12 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
 }
 
 /** The checks that talk to the service. */
-async function serviceChecks(io: Io, state: string, connect: ConnectOptions): Promise<Check[]> {
+async function serviceChecks(
+  io: Io,
+  state: string,
+  connect: ConnectOptions,
+  live: boolean,
+): Promise<Check[]> {
   // The launch rows and the sessions row (A3 3.14), loaded only here, like the agent side.
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
@@ -427,7 +432,7 @@ async function serviceChecks(io: Io, state: string, connect: ConnectOptions): Pr
     });
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));
-    checks.push(...(await launch.launchChecks(session)));
+    checks.push(...(await launch.launchChecks(session, live)));
     return checks;
   } catch (error) {
     const body = bodyOf(asAppError(error));
@@ -654,7 +659,7 @@ export async function doctor(
     ...(await versionChecks(io, connect.versionFolder)),
     accountsCheck(accounts),
     ...(io.platform === "win32" ? [supervisorCheck(state, layout.crash)] : []),
-    ...(await serviceChecks(io, state, connect)),
+    ...(await serviceChecks(io, state, connect, args.includes("--live"))),
     ...(await candidateRows(io, connect.versionFolder, args.includes("--self-test"), state)),
     // The agent side (A3 3.14), loaded only here: it loads setup's engine.
     ...(await (

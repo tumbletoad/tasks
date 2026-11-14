@@ -90,8 +90,8 @@ export const RPC_METHODS = {
   "setup/home_revoke": USER,
   // `tasks doctor --live` (A3 3.14, M4.05): which instances' tool calls this start saw.
   "setup/seen": CLI,
-  // `tasks doctor` (A3 3.14, M4.05b): the launch rows' facts (a login-shell snapshot taken now, as
-  // a launch takes it) and the sessions row's counts.
+  // `tasks doctor` (A3 3.14, M4.05b): the launch rows' facts (with --live a login-shell snapshot
+  // taken now, as a launch takes it) and the sessions row's counts.
   "doctor/launch": CLI,
   "doctor/sessions": CLI,
   "launch.claim": SHIM,

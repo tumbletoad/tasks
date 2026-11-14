@@ -89,7 +89,7 @@ export interface EndpointHub {
   /** The machine's default space: `tasks space use` (`space/use`). */
   readonly defaults?: Pick<DefaultSpace, "make">;
   /** The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). */
-  readonly launches?: { handlers(): RpcHandlers; doctor?(): Promise<JsonObject> };
+  readonly launches?: { handlers(): RpcHandlers; doctor?(take: boolean): Promise<JsonObject> };
   /** `tasks setup t3` (`t3/*`). */
   readonly t3?: T3Host;
   /**
@@ -180,9 +180,13 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     ),
     // A4 3.6.3: the shim's claim, attach and reports. Each checks its own credential.
     ...hub.launches?.handlers(),
-    // `tasks doctor` (A3 3.14): the launch rows' facts, and the sessions row's.
-    "doctor/launch": async () =>
-      (await hub.launches?.doctor?.()) ?? { scopes: null, environment: null },
+    // `tasks doctor` (A3 3.14): the launch rows' facts (`take`: `--live` takes the login shell's
+    // snapshot now), and the sessions row's.
+    "doctor/launch": async (params) =>
+      (await hub.launches?.doctor?.(params["take"] === true)) ?? {
+        scopes: null,
+        environment: null,
+      },
     "doctor/sessions": () => (hub.bindings === undefined ? null : sessionFacts(hub.bindings)),
     "service/status": () => hub.status(),
     // A2 3.8.4 step 1: a one-time code for `tasks open`, and the port to use it on.

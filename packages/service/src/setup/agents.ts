@@ -906,7 +906,7 @@ export function entryInstance(entry: unknown): string | null | undefined {
   if (!Array.isArray(args) || args[0] !== "mcp" || !args.every((a) => typeof a === "string")) {
     return undefined;
   }
-  const parsed = parseArgs(args.slice(1) as string[]);
+  const parsed = parseArgs(args.slice(1));
   return "problem" in parsed ? undefined : parsed.instance;
 }
 

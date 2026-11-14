@@ -4,9 +4,10 @@
 //
 //   launch.scopes   Linux: terminals start without a systemd scope, so a restart or update of the
 //                   service may end the sessions in them (warn)
-//   launch.env      the person's environment as a launch reads it, read now: on Linux and macOS a
-//                   login-shell snapshot that did not succeed, with the age of the one in use or
-//                   none (warn); on Windows a registry read that failed (warn)
+//   launch.env      the person's environment as a launch reads it: on Linux and macOS the last
+//                   login-shell snapshot the service attempted did not succeed, with the age of the
+//                   one in use or none (warn); `--live` takes one now first, so plain doctor never
+//                   runs the person's profile. On Windows a registry read that failed (warn)
 //   launch.t3       the pairing with T3 Code: "Reconnect T3", or a token that cannot renew itself
 //                   and runs out within 5 days or ran out (warn)
 //   sessions        session records the service could not read back at its start, or agent
@@ -107,15 +108,32 @@ export function environmentCheck(environment: unknown, now: number): Check {
         };
   }
   const outcome = environment["outcome"];
+  const attempted = instant(environment["attempted_at"]);
   const taken = instant(environment["taken_at"]);
+  const live = `${CLI_NAME} doctor --live`;
+  if (typeof outcome !== "string") {
+    // No attempt since the service started: a launch takes one when it needs it.
+    return taken === undefined
+      ? {
+          id,
+          status: "skip",
+          detail: `No launch has read your login shell's environment yet. To read it now, run: ${live}`,
+        }
+      : {
+          id,
+          status: "ok",
+          detail: `Launched agents get your login shell's environment, taken ${age(now - taken)} ago; a launch takes it again once it is a day old.`,
+        };
+  }
+  const when = attempted === undefined ? "" : ` (${age(now - attempted)} ago)`;
   if (outcome === "ok") {
     return {
       id,
       status: "ok",
-      detail: "Your login shell gave its environment just now; launched agents get it.",
+      detail: `Your login shell gave its environment when last asked${when}; launched agents get it.`,
     };
   }
-  const why = SNAPSHOT_WHY[typeof outcome === "string" ? outcome : ""] ?? "it failed";
+  const why = SNAPSHOT_WHY[outcome] ?? "it failed";
   const used =
     taken === undefined
       ? "launched agents get the service's own environment, without what your profile sets (such as nvm's PATH)"
@@ -123,7 +141,7 @@ export function environmentCheck(environment: unknown, now: number): Check {
   return {
     id,
     status: "warn",
-    detail: `Your login shell did not give its environment just now (${why}), so ${used}. Check your shell profile, then run: ${CLI_NAME} doctor`,
+    detail: `Your login shell did not give its environment when last asked${when}: ${why}. So ${used}. Check your shell profile, then run: ${live}`,
   };
 }
 
@@ -231,18 +249,22 @@ export const LAUNCH_ROWS_WITHOUT_SERVICE: readonly Check[] = [
 
 /**
  * The rows, asked of a running service. A question it cannot answer (an older service) skips its
- * rows; the environment's question may run the login shell, so it gets the snapshot's deadline
- * and more.
+ * rows. With `live` (`doctor --live`) the service takes the login shell's snapshot now, so that
+ * question gets the snapshot's deadline and more.
  */
-export async function launchChecks(session: Session, now: number = Date.now()): Promise<Check[]> {
-  const ask = (method: string, timeoutMs: number) =>
-    session.call(method, {}, { timeoutMs }).then(
+export async function launchChecks(
+  session: Session,
+  live: boolean,
+  now: number = Date.now(),
+): Promise<Check[]> {
+  const ask = (method: string, params: Record<string, unknown>, timeoutMs: number) =>
+    session.call(method, params, { timeoutMs }).then(
       (answer) => ({ answer }),
       () => undefined,
     );
-  const launch = await ask("doctor/launch", 60_000);
-  const t3 = await ask("t3/status", 30_000);
-  const sessions = await ask("doctor/sessions", 30_000);
+  const launch = await ask("doctor/launch", { take: live }, 60_000);
+  const t3 = await ask("t3/status", {}, 30_000);
+  const sessions = await ask("doctor/sessions", {}, 30_000);
   const facts = isObject(launch?.answer) ? launch.answer : undefined;
   return [
     facts === undefined
