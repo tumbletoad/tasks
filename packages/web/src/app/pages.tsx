@@ -27,18 +27,22 @@ function NotBuilt() {
   return <p className={styles.line}>{t("view.notBuilt")}</p>;
 }
 
-/** Writes the expanded task into the view's URL, replacing the entry: no history per click. */
-function useExpandInUrl(): (task: TaskRow | undefined) => void {
+/**
+ * Writes the expanded task into the view's URL. Expanding replaces the entry; collapsing pushes
+ * the view's own route, so Back returns to the task (A5 3.3). A task that does not exist leaves
+ * the URL without a step to come back to.
+ */
+function useExpandInUrl(): (task: TaskRow | undefined, gone?: boolean) => void {
   const navigate = useNavigate();
   return useCallback(
-    (task: TaskRow | undefined) => {
+    (task: TaskRow | undefined, gone = false) => {
       void navigate({
         to: ".",
         search: (prev: Record<string, unknown>) => {
           const rest = Object.fromEntries(Object.entries(prev).filter(([key]) => key !== "task"));
           return task === undefined ? rest : { ...rest, task: task.ref };
         },
-        replace: true,
+        replace: task !== undefined || gone,
       });
     },
     [navigate],

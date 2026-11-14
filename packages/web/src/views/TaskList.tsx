@@ -46,8 +46,11 @@ export interface TaskListProps {
    * view's filter leaves out. Undefined: none is expanded.
    */
   readonly expand?: string | undefined;
-  /** The person expanded a task or collapsed it: the page puts it in the URL. */
-  readonly onExpand?: (task: TaskRow | undefined) => void;
+  /**
+   * The person expanded a task or collapsed it: the page puts it in the URL. `gone`: the URL's
+   * task does not exist, and the URL drops it.
+   */
+  readonly onExpand?: (task: TaskRow | undefined, gone?: boolean) => void;
 }
 
 export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: TaskListProps) {
@@ -246,7 +249,7 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
         if (!newest() || live.failed(error)) return;
         handled.current = wantedRef;
         say(t("task.gone"));
-        changed.current?.(undefined);
+        changed.current?.(undefined, true);
       });
   }, [wantedRef, state, injected, api, live, say, t, expandTask]);
 

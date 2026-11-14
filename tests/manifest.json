@@ -2714,6 +2714,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-06.e2e.expanded",
+      "title": "In Chromium and Firefox against the real service: a task link lands on the area view with the task expanded; sources show their own text with the key first and the person after, a blocked scheme as text; the work folder line; the context as Markdown whose markup stays text and runs nothing; the last six thread entries then Earlier; the facts with short labels; no fact string twice; a new agent entry appears live; no CSP report",
+      "source": "A5 3.7, A5 3.3, A5 3.26, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.task-links",
+      "title": "In Chromium and Firefox against the real service: a link to an Inbox task, a waiting task without an area, an area task, a completed task (with its outcome and learning) and a dropped task each opens on its host view expanded, with its sidebar item current; a reload keeps it, collapsing pushes the view so Back reopens it, and an unknown task lands on the landing view with a toast",
+      "source": "A5 3.3, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.keyboard",
+      "title": "In Chromium and Firefox against the real service, by keyboard alone: Enter expands and puts the task in the URL, Tab reaches the star, the collapse button, a source link and the strip, Escape collapses to the title, Back reopens, F2 renames with Enter (kept after a reload) and Escape cancels, typed letters stay in the field, and j moves to the next row",
+      "source": "A5 3.7, A5 3.21, A5 3.22, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.screens",
+      "title": "In Chromium and Firefox against the real service: screenshots of the expanded task in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation in the expanded task in either theme, and nothing scrolls horizontally at 390 px",
+      "source": "A5 3.7, A5 3.19, A5 3.22, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-03.e2e.scroll-5000",
       "title": "In Chromium and Firefox against the real service with 5,000 open fixture tasks: the built page virtualises the list, scrolling from top to bottom and back keeps the mounted rows bounded and leaves no frame with an uncovered gap, the focused row keeps focus while it leaves and re-enters the window, End and Home move focus across the whole list, an agent's add above the viewport keeps the first visible row in place, and no CSP violation is reported",
       "source": "A5 3.25, A5 3.22, A5 3.15, A5 3.26, A7 3.12 M5.03",
