@@ -435,7 +435,7 @@
     },
     {
       "id": "A1.5.migration.stand-in-steps",
-      "title": "The migration runner from 0.1 through the real 0.2 and a stand-in 0.3: one system commit per step, user_version, format, undo floor and space.json; a step that fails midway, in its verify or on a foreign key leaves the space at its revision, and it still opens",
+      "title": "The migration runner from 0.1 through the real 0.2 and 0.3 and a stand-in 0.4: one system commit per step, user_version, format, undo floor and space.json; a step that fails midway, in its verify or on a foreign key leaves the space at its revision, and it still opens",
       "source": "A1 3.17, A1 5, A7 3.8 M1.06, A7 3.10 M3.01",
       "owner": "M1",
       "kind": "ci",
@@ -443,7 +443,7 @@
     },
     {
       "id": "A1.5.migration.from-0.1",
-      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to 0.2 behind its verified barrier backup: every 0.1 row stays, one migration commit, the new tables empty, the schema equal to a new 0.2 space's, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to the build's latest revision behind its verified barrier backup: every 0.1 row stays, one migration commit per step, the new tables empty, the schema equal to a new space's and to the pinned released schema, and the barrier backup restores the fixture's counts, last_seq and rows",
       "source": "A1 3.4, A1 3.17, A1 5, A7 3.10 M3.01, MIL-02",
       "owner": "M3",
       "kind": "ci",
@@ -451,7 +451,7 @@
     },
     {
       "id": "A1.5.migration.statement-faults",
-      "title": "A fault at every statement boundary of the 0.1 to 0.2 migration, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the fixture's, it opens read-only with A1's message, the 0.1 build still writes it, and without the fault it migrates",
+      "title": "A fault at every statement boundary of the 0.1 to 0.2 migration (the 0.2 chain), one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the fixture's, it opens read-only with A1's message, the 0.1 build still writes it, and without the fault it migrates",
       "source": "A1 3.17, A1 5, A7 3.10 M3.01",
       "owner": "M3",
       "kind": "ci",
@@ -466,8 +466,32 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.from-0.2",
+      "title": "The 0.2 fixture (the Mira sample built by the 0.2 chain, with a row in every 0.2 table) migrates to 0.3 behind its verified barrier backup: every 0.2 row stays, one migration commit, the sessions and runs tables empty, the schema equal to a new 0.3 space's and to the pinned 0.3 schema, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "source": "A1 3.4, A1 3.17, A1 5, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.statement-faults-0003",
+      "title": "A fault at every statement boundary of the 0.2 to 0.3 migration, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the 0.2 fixture's, it opens read-only with A1's message, the 0.2 build still writes it, and without the fault it migrates",
+      "source": "A1 3.17, A1 5, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.older-build-0003",
+      "title": "A 0.2 build refuses to open a 0.3 space writable: the 0.2 chain's writer, in the calling thread and in its storage worker, is refused with SPACE_TOO_NEW and changes nothing, its reader reads, and it restores no 0.3 backup",
+      "source": "A1 3.17, A1 5, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2: a populated 0.1 fixture space, a fault planted in its migration, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
+      "title": "The installed-build migration failure and restore drill with the real 0.2 and 0.3: a populated 0.1 fixture space, a fault planted in its migration' last step, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",

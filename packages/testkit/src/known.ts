@@ -4,7 +4,7 @@
 export const FIXED_SAMPLE = {
   seed: "fixed",
   tasks: 3,
-  digest: "bea7c814540f899e99693781c509173f33b625f9046781e425f7d56142abbffd",
+  digest: "53f83dcf55d010e7e42506bf0953c21128644a925cefbba404268c7d778fe1f5",
 } as const;
 
 /**
@@ -25,10 +25,12 @@ export const FIXED_SAMPLE_0_1 = {
  * The schema of each frozen revision (digestSchema: every table, index and trigger with its SQL),
  * as a space built with that revision's chain has it, created or migrated. The row digests above
  * do not see an index, a CHECK or a foreign key, so these pin what the frozen steps create. They
- * must never change, as their steps never do (migrations/0001-schema-0.1.ts, 0002-schema-0.2.ts):
- * a later revision is a new step with its own entry.
+ * must never change, as their steps never do (migrations/0001-schema-0.1.ts, 0002-schema-0.2.ts,
+ * 0003-schema-0.3.ts): a later revision is a new step with its own entry. 0.3 is pinned with its
+ * step (M6.01), because the next deploy releases it to real spaces.
  */
 export const RELEASED_SCHEMAS = {
   "0.1": "7b2e6d9cb39d8656a869e083219109f903fecdcc83bee5c3caa3ead6140afbb0",
   "0.2": "19ee58deae2331a9648ea25c4c8b23b9813f3ca07e16d939105e39655336ac7b",
+  "0.3": "8dec19e6dbb8532d468e6b6dc7ae4ef71956ce5687e5bc79f80db7d7adc6c741",
 } as const;

@@ -549,7 +549,8 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
           reason: "migration_failed",
           code: "ETIMEDOUT",
           message:
-            "Migration to 0.2 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
+            // The service names its own build's latest revision: the stopped worker's cannot tell.
+            "Migration to 0.3 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
             "The space stays at 0.1. It is tried again when the space next opens.",
           id,
         },
@@ -563,16 +564,16 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       await stop(service);
       expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
 
-      // The next open tries again, with this build's real 0.2, and migrates.
+      // The next open tries again, with this build's real steps, and migrates.
       const next = await start(home, space.folder);
       expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 2 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 3 } });
     },
     LONG,
   );
 
   test(
-    "a migration that succeeds within the close's bound after the open's bound passed leaves the space at 0.2, served for writing, never reported unchanged",
+    "a migration that succeeds within the close's bound after the open's bound passed leaves the space at this build's 0.3, served for writing, never reported unchanged",
     async () => {
       const { home, spaces } = setUp("slowok");
       const space = await spaceAt01(join(spaces, "work"));
@@ -585,7 +586,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
         closeTimeoutMs: 30_000,
       });
       expect(slow.closed()).toBeDefined();
-      // The stopped open's migration committed before its worker ended: the space is at 0.2, and
+      // The stopped open's migration committed before its worker ended: the space is at 0.3, and
       // the writer opened again in the new worker. Never read-only, never "unchanged".
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
       expect(events(home, "space.read_only")).toEqual([]);
@@ -602,15 +603,16 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       expect(added).toHaveProperty("tasks");
       await stop(service);
       const after = await dbState(space.folder);
-      expect(after.revision).toEqual({ major: 0, minor: 2 });
-      // The fixture's commits, then the migration's, this machine's registration and the task's.
-      expect(after.lastSeq).toBe(before.lastSeq + 3);
+      expect(after.revision).toEqual({ major: 0, minor: 3 });
+      // The fixture's commits, then the migration's two, this machine's registration and the
+      // task's.
+      expect(after.lastSeq).toBe(before.lastSeq + 4);
     },
     LONG,
   );
 
   test.each([
-    ["succeeds", "slow-real", { major: 0, minor: 2 }],
+    ["succeeds", "slow-real", { major: 0, minor: 3 }],
     ["fails", "slow-failing", { major: 0, minor: 1 }],
   ] as const)(
     "a migration still running when the close's bound passes, which then %s: no reader is served, the space is unavailable, and the next start finds the state it left intact",
@@ -641,10 +643,10 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       }
 
       // The next start finds that state: a migrated space opens; an unchanged one is tried again,
-      // with this build's real 0.2 (a timeout recorded no failure).
+      // with this build's real steps (a timeout recorded no failure).
       const next = await start(home, space.folder);
       expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 2 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 3 } });
       expect(barrierBackups(space.folder)).toHaveLength(set === "slow-real" ? 1 : 2);
     },
     LONG,

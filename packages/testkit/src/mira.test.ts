@@ -36,6 +36,12 @@ const EMPTY_0_2 = [
   "exchange_items",
 ] as const;
 
+/**
+ * The tables of schema 0.3 that no operation writes yet: sessions, whose records still live in
+ * machine state until binding writes them (A4 3.10), and runs, until the sample writes runs.
+ */
+const EMPTY_0_3 = ["sessions", "runs"] as const;
+
 const made: string[] = [];
 const temp = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "mira-"));
@@ -178,6 +184,41 @@ function fillEmpty02(conn: Connection): void {
   });
 }
 
+/**
+ * One valid row in each table of EMPTY_0_3, as fillEmpty02 does: no operation, no history. The
+ * sample's machine is the authority's.
+ */
+function fillEmpty03(conn: Connection): void {
+  const one = (sql: string): unknown => Object.values(conn.prepare(sql).get() ?? {})[0];
+  const params = {
+    task: String(one("SELECT id FROM tasks ORDER BY ref LIMIT 1")),
+    machine: String(one("SELECT authority_machine FROM space")),
+    seq: Number(one("SELECT last_seq FROM space")),
+    at: Number(one("SELECT max(at) FROM commits")),
+  };
+  conn.transaction("immediate", () => {
+    const run = (sql: string): void => {
+      conn.prepare(sql).run(params);
+    };
+    if ((EMPTY_0_3 as readonly string[]).includes("sessions")) {
+      run(
+        `INSERT INTO sessions (id, task_id, kind, instance_id, machine_id, state, created_at,
+           created_seq, version)
+         VALUES ('se_fixture', $task, 'interactive', 'codex-work', $machine, 'live', $at,
+           $seq, $seq)`,
+      );
+    }
+    if ((EMPTY_0_3 as readonly string[]).includes("runs")) {
+      run(
+        `INSERT INTO runs (id, task_id, instance_id, machine_id, adapter, state, queued_at,
+           created_seq, version)
+         VALUES ('ru_fixture', $task, 'codex-work', $machine, 'codex-exec', 'queued', $at,
+           $seq, $seq)`,
+      );
+    }
+  });
+}
+
 describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () => {
   test("the same seed and size give the same space twice, with the fixed digest", async () => {
     const checked = await checkedDriver();
@@ -205,10 +246,14 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
     } finally {
       conn.close();
     }
-    // The sample at this build's revision holds the same rows in every 0.1 table: 0.2 adds only
-    // tables and the space's hold.
+    // The sample at this build's revision holds the same rows in every 0.1 table: 0.2 and 0.3 add
+    // only tables and the space's hold, and their tables are empty but for the sample's runs.
     const b = await seedMira(temp(), { seed, tasks });
-    expect(b.counts).toEqual({ ...a.counts, ...Object.fromEntries(EMPTY_0_2.map((t) => [t, 0])) });
+    const later = Object.fromEntries(
+      Object.entries(b.counts).filter(([table]) => table !== "runs" && table !== "sessions"),
+    );
+    expect(later).toEqual({ ...a.counts, ...Object.fromEntries(EMPTY_0_2.map((t) => [t, 0])) });
+    for (const table of EMPTY_0_3) expect(b.counts[table], table).toBe(0);
     expect(b.machine).toBe(a.machine);
   });
 
@@ -283,7 +328,9 @@ describe("[A1.5.schema.lint] on the sample space, the CHECKs refuse what the sch
     // One valid row in each 0.2 table the sample leaves empty, so every CHECK below is tried on a
     // real row. Fixture rows without history, in this throwaway copy only.
     expect(EMPTY_0_2.map((t) => space.counts[t])).toEqual(EMPTY_0_2.map(() => 0));
+    expect(EMPTY_0_3.map((t) => space.counts[t])).toEqual(EMPTY_0_3.map(() => 0));
     fillEmpty02(conn);
+    fillEmpty03(conn);
     counts = Object.fromEntries(
       Object.keys(space.counts).map((t) => [
         t,
@@ -312,9 +359,9 @@ describe("[A1.5.schema.lint] on the sample space, the CHECKs refuse what the sch
     throw new Error(`not refused: ${sql}`);
   }
 
-  test("every table of schema 0.2 has rows: the sample's, and one each where no operation writes yet", () => {
+  test("every table of this build's schema has rows: the sample's, and one each where no operation writes yet", () => {
     for (const [table, n] of Object.entries(counts)) expect(n, table).toBeGreaterThan(0);
-    expect(Object.keys(counts)).toEqual(expect.arrayContaining([...EMPTY_0_2]));
+    expect(Object.keys(counts)).toEqual(expect.arrayContaining([...EMPTY_0_2, ...EMPTY_0_3]));
   });
 
   test("a value outside a closed enumeration is refused in every enum column", () => {

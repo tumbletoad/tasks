@@ -19,7 +19,7 @@
 // - space-opens, integrity: the space opens with no reason to refuse its next writer but an older
 //   revision, and passes integrity_check and foreign_key_check.
 // - migration-atomic: the schema revision is one the build reaches by whole migrations (0.1 or
-//   0.3, never 0.2), the schema is exactly that revision's, the format matches, and the history
+//   0.4, never 0.2 or 0.3), the schema is exactly that revision's, the format matches, and the history
 //   holds one migration commit per step it went through.
 // - seq-gapless: commits are numbered 1 to last_seq without a gap.
 // - counters-monotonic: within an incarnation, last_seq and the next task reference never go back
@@ -79,7 +79,15 @@ import {
 import { formatAsOf, type WriteResult } from "../../packages/storage/src/write/request.ts";
 import type { Ledger, Violation } from "./ledger.ts";
 import { differingParts, reduce, sameResult, type Acked, type PlannedRequest } from "./protocol.ts";
-import { HARNESS_STEPS, REVISION_0_1, REVISION_0_2, REVISION_0_3, TABLES_0_2 } from "./steps.ts";
+import {
+  HARNESS_STEPS,
+  REVISION_0_1,
+  REVISION_0_2,
+  REVISION_0_3,
+  REVISION_0_4,
+  TABLES_0_2,
+  TABLES_0_3,
+} from "./steps.ts";
 
 const BUSY_TIMEOUT_MS = 60_000;
 
@@ -173,7 +181,7 @@ export async function checkSpace(
   const { conn } = opened;
   // The next writer must be able to open what the kill left: a reader's reason other than the
   // older revision the writer migrates (A1 3.17) would refuse it, which a reader alone hides.
-  const allowed = encodeRevision(opened.revision) < REVISION_0_3 ? ["older_revision"] : [];
+  const allowed = encodeRevision(opened.revision) < REVISION_0_4 ? ["older_revision"] : [];
   for (const reason of opened.readOnlyReasons) {
     if (!allowed.includes(reason)) {
       found.add("space-opens", `the space opens read-only for its writer (${reason})`);
@@ -279,29 +287,35 @@ function reconcile(space: SpaceRow, ledger: Ledger, found: Found): void {
 }
 
 function checkMigration(conn: Connection, space: SpaceRow, revision: number, found: Found): void {
-  if (revision !== REVISION_0_1 && revision !== REVISION_0_3) {
+  if (revision !== REVISION_0_1 && revision !== REVISION_0_4) {
     found.add(
       "migration-atomic",
       `the schema is at revision ${String(revision)}, between whole migrations`,
     );
     return;
   }
-  const at = revision === REVISION_0_3 ? { major: 0, minor: 3 } : { major: 0, minor: 1 };
+  const at = revision === REVISION_0_4 ? { major: 0, minor: 4 } : { major: 0, minor: 1 };
   if (space.format.major !== at.major || space.format.minor !== at.minor) {
     found.add("migration-atomic", "the space's format is not its revision's");
   }
+  const tables = (names: readonly string[]): unknown[] =>
+    names.map((name) =>
+      one(conn, "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = $name", {
+        name,
+      }),
+    );
   // The real 0.2 (M3.01): its tables and the space's hold.
-  const real = TABLES_0_2.map((name) =>
-    one(conn, "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = $name", {
-      name,
-    }),
-  );
   const hold = one(conn, "SELECT count(*) FROM pragma_table_info('space') WHERE name = 'hold'");
   const atLeast02 = revision >= REVISION_0_2;
-  if (real.some((n) => (n === 1) !== atLeast02) || (hold === 1) !== atLeast02) {
+  if (tables(TABLES_0_2).some((n) => (n === 1) !== atLeast02) || (hold === 1) !== atLeast02) {
     found.add("migration-atomic", "the 0.2 step's tables and column do not match the revision");
   }
-  // The stand-in 0.3: its table, column and index.
+  // The real 0.3 (M6.01): its tables.
+  const atLeast03 = revision >= REVISION_0_3;
+  if (tables(TABLES_0_3).some((n) => (n === 1) !== atLeast03)) {
+    found.add("migration-atomic", "the 0.3 step's tables do not match the revision");
+  }
+  // The stand-in 0.4: its table, column and index.
   const table = one(
     conn,
     "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'test_labels'",
@@ -314,11 +328,11 @@ function checkMigration(conn: Connection, space: SpaceRow, revision: number, fou
     conn,
     "SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = 'test_labels_name'",
   );
-  const at03 = revision === REVISION_0_3;
-  if ((table === 1) !== at03 || (column === 1) !== at03 || (index === 1) !== at03) {
+  const at04 = revision === REVISION_0_4;
+  if ((table === 1) !== at04 || (column === 1) !== at04 || (index === 1) !== at04) {
     found.add(
       "migration-atomic",
-      "the 0.3 step's table, column and index do not match the revision",
+      "the 0.4 step's table, column and index do not match the revision",
     );
   }
   const steps = conn
@@ -328,20 +342,19 @@ function checkMigration(conn: Connection, space: SpaceRow, revision: number, fou
     const entry = (JSON.parse(s.ops) as { input?: { to?: string } }[])[0];
     return entry?.input?.to ?? "?";
   });
-  const expected = revision === REVISION_0_3 ? ["0.2", "0.3"] : [];
+  const expected = revision === REVISION_0_4 ? ["0.2", "0.3", "0.4"] : [];
   if (targets.join() !== expected.join()) {
     found.add(
       "migration-atomic",
       `the history holds migrations to [${targets.join(", ")}] at revision ${String(revision)}`,
     );
   } else {
-    const [first, second] = steps;
+    const first = steps[0];
     if (
       first !== undefined &&
-      second !== undefined &&
-      (second.seq !== first.seq + 1 || second.incarnation !== first.incarnation)
+      steps.some((s, i) => s.seq !== first.seq + i || s.incarnation !== first.incarnation)
     ) {
-      found.add("migration-atomic", "the two migration commits are not one migration");
+      found.add("migration-atomic", "the migration commits are not one migration");
     }
   }
 }
@@ -1154,7 +1167,7 @@ function checkRows(
       }
       version = Math.max(version, at);
     }
-    // Every column the row had when it was created. A column a migration added since (the 0.3
+    // Every column the row had when it was created. A column a migration added since (the 0.4
     // step's test_flag) has no history to compare with.
     for (const column of Object.keys(played)) {
       if (DERIVED.has(column)) continue;
