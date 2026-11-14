@@ -28,6 +28,7 @@ import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
 import { backupSpace } from "../src/backup/backup.ts";
 import { listBackups, verifyBackup } from "../src/backup/list.ts";
+import { schemaObjects } from "../src/backup/snapshot.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { openSpace } from "../src/space.ts";
@@ -741,6 +742,27 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toBe(
         undefined,
       );
+    }
+  });
+
+  test("a virtual table counts by its own text, the shadow tables its module makes by none", async () => {
+    const { folder } = await createFixtureSpace(folders.make());
+    const conn = await rawWriter(folder);
+    try {
+      const before = schemaObjects(conn);
+      conn.exec("CREATE VIRTUAL TABLE probe_fts USING fts5(body)");
+      const after = schemaObjects(conn);
+      expect(after.length).toBe(before.length + 1);
+      expect(after.filter((o) => o.includes("probe_fts"))).toEqual([
+        JSON.stringify([
+          "table",
+          "probe_fts",
+          "probe_fts",
+          "CREATE VIRTUAL TABLE probe_fts USING fts5(body)",
+        ]),
+      ]);
+    } finally {
+      conn.close();
     }
   });
 

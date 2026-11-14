@@ -56,12 +56,19 @@ const SCHEMA_OBJECTS =
 /**
  * The schema objects of the database on `conn`: each table, index and view with the SQL text
  * SQLite keeps for it, which holds every column, constraint, key and generated value. Triggers are
- * not among them: a restore drops them (restore.ts).
+ * not among them: a restore drops them (restore.ts). A virtual table (FTS5) counts by its own text;
+ * the shadow tables its module makes (`<name>_…`) count by none, since that text follows the SQLite
+ * version, and only the module writes them.
  */
 export function schemaObjects(conn: Connection): string[] {
-  return conn
-    .prepare(SCHEMA_OBJECTS)
-    .all<Record<string, unknown>>()
+  const rows = conn.prepare(SCHEMA_OBJECTS).all<Record<string, unknown>>();
+  const virtual = rows
+    .filter((row) => typeof row["sql"] === "string" && /^CREATE VIRTUAL TABLE/i.test(row["sql"]))
+    .map((row) => `${String(row["name"])}_`);
+  const shadow = (row: Record<string, unknown>): boolean =>
+    virtual.some((prefix) => String(row["tbl_name"]).startsWith(prefix));
+  return rows
+    .filter((row) => !shadow(row))
     .map((row) => JSON.stringify([row["type"], row["name"], row["tbl_name"], row["sql"]]));
 }
 
