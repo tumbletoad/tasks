@@ -9,6 +9,7 @@
 import { randomBytes } from "node:crypto";
 import { envVar } from "@tasks/brand";
 import { TERMINAL_ENV } from "../shim/wire.ts";
+import { base64Text, REGISTRY_READS } from "../windows-reads.ts";
 
 type Env = Record<string, string>;
 
@@ -326,50 +327,61 @@ export function registryEnvironment(
 }
 
 /**
- * The registry reader's script (Windows PowerShell 5.1): both keys' string values, unexpanded, as
- * JSON in base64 of UTF-8, so no console code page touches a name or a value. Fixed text.
+ * The registry reader's script (Windows PowerShell 5.1): both keys' string values, unexpanded, one
+ * line each, `<system|user> <String|ExpandString> <name> <value>` with the name and the value in
+ * base64 of UTF-8, so no console code page touches them, then a last line `end`. Fixed text.
+ *
+ * It calls .NET only, never a cmdlet: Windows PowerShell finds a cmdlet by searching the modules
+ * on its module path, and in the reader's minimal environment that search took 12 s on a machine
+ * with a few hundred modules installed (GitHub's Windows runner), against 0.13 s for the start
+ * itself. Past the reader's deadline every launch fell back to the service's environment.
+ *
+ * A read that fails ends the script without `end` (`Stop`), so the claim falls back to the service's
+ * environment, never a partial one: a key is absent only when its parent does not list it, and a
+ * listed value that reads as nothing throws (windows-reads.ts). A value of another kind than a
+ * string is no environment variable and is skipped.
  */
 export const REGISTRY_SCRIPT =
   "$ErrorActionPreference='Stop';" +
-  "$out=@{};" +
+  `${REGISTRY_READS};` +
+  "$e=[Text.Encoding]::UTF8;$o=[Text.StringBuilder]::new();" +
   "foreach($pair in @(@('system',[Microsoft.Win32.Registry]::LocalMachine," +
   "'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')," +
   "@('user',[Microsoft.Win32.Registry]::CurrentUser,'Environment'))){" +
-  "$k=$pair[1].OpenSubKey($pair[2]);$v=@{};" +
-  "if($k -ne $null){foreach($n in $k.GetValueNames()){" +
+  "$k=key $pair[1] $pair[2];" +
+  "if($null -ne $k){foreach($n in $k.GetValueNames()){" +
   "$kind=$k.GetValueKind($n).ToString();" +
   "if($kind -eq 'String' -or $kind -eq 'ExpandString'){" +
-  "$v[$n]=@{kind=$kind;value=[string]$k.GetValue($n,$null,'DoNotExpandEnvironmentNames')}}}};" +
-  "$out[$pair[0]]=$v};" +
-  "$json=ConvertTo-Json -InputObject $out -Depth 4 -Compress;" +
-  "[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))";
+  "$v=$k.GetValue($n,$null,'DoNotExpandEnvironmentNames');if($null -eq $v){throw 'value'};" +
+  "[void]$o.Append($pair[0]+' '+$kind+' '+[Convert]::ToBase64String($e.GetBytes($n))+' '+" +
+  "[Convert]::ToBase64String($e.GetBytes([string]$v))+[char]10)}}}};" +
+  "[void]$o.Append('end');" +
+  "[Console]::Out.Write($o.ToString())";
 
-/** The reader's output, checked: both keys' values, or undefined when it is not that. */
+/**
+ * The reader's output, checked: both keys' values, or undefined when it is not exactly that (a
+ * line of another shape or with a field missing, a field that is not base64 of UTF-8, or no `end`:
+ * a cut-off run). An empty name or value is still a field: the empty string's base64.
+ */
 export function parseRegistryOutput(
   text: string,
 ): { system: Map<string, RegistryValue>; user: Map<string, RegistryValue> } | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(Buffer.from(text.trim(), "base64").toString("utf8"));
-  } catch {
-    return undefined;
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined;
-  const take = (key: string): Map<string, RegistryValue> | undefined => {
-    const section = (parsed as Record<string, unknown>)[key];
-    if (typeof section !== "object" || section === null || Array.isArray(section)) return undefined;
-    const out = new Map<string, RegistryValue>();
-    for (const [name, entry] of Object.entries(section)) {
-      if (typeof entry !== "object" || entry === null) return undefined;
-      const { kind, value } = entry as Record<string, unknown>;
-      if ((kind !== "String" && kind !== "ExpandString") || typeof value !== "string") {
-        return undefined;
-      }
-      out.set(name, { kind, value });
-    }
-    return out;
+  const lines = text.trimEnd().split("\n");
+  if (lines.pop() !== "end") return undefined;
+  const sections = {
+    system: new Map<string, RegistryValue>(),
+    user: new Map<string, RegistryValue>(),
   };
-  const system = take("system");
-  const user = take("user");
-  return system === undefined || user === undefined ? undefined : { system, user };
+  for (const line of lines) {
+    const fields = line.split(" ");
+    if (fields.length !== 4) return undefined;
+    const [section = "", kind = "", name = "", value = ""] = fields;
+    if (section !== "system" && section !== "user") return undefined;
+    if (kind !== "String" && kind !== "ExpandString") return undefined;
+    const decodedName = base64Text(name);
+    const decodedValue = base64Text(value);
+    if (decodedName === undefined || decodedValue === undefined) return undefined;
+    sections[section].set(decodedName, { kind, value: decodedValue });
+  }
+  return sections;
 }

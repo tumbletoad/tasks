@@ -5,7 +5,7 @@
 // release built offline, fixture text only; every PID is stopped by this test.
 import { mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe as suite, expect, test } from "vitest";
 import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { canonicalStatePath, installId } from "../../packages/service/src/hub/paths.ts";
 import {
@@ -27,11 +27,14 @@ import {
   releaseOf,
   runInstaller,
   runProgram,
+  runsElevated,
   stableCommand,
   throwawayKey,
 } from "./test/kit.ts";
 
 const SLOW = 900_000;
+/** Both installs' services refuse an elevated token (exit 64): skipped there, builds included. */
+const describe = suite.skipIf(runsElevated());
 
 let folders: ReturnType<typeof installsFolder>;
 let work: string;
@@ -67,9 +70,16 @@ afterAll(async () => {
 /** Starts an install's service through its stable command, as a manual manager does. */
 async function start(root: string): Promise<{ proc: Proc; json: ServiceJson }> {
   const proc = services.start(root, { command: [stableCommand(root), "serve"] });
+  let ended: { code: number | null } | undefined;
+  void proc.exit.then((exit) => {
+    ended = exit;
+  });
   // On Windows tasks.exe starts Node as its child, so service.json names Node's PID.
   const json = await waitFor(
     () => {
+      if (ended !== undefined) {
+        throw new Error(`the installed service exited ${String(ended.code)} before it was ready`);
+      }
       const record = readServiceJson(root);
       return record?.state === "ready" ? record : undefined;
     },
