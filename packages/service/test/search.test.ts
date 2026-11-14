@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, SEARCH_SCOPES, TaskSearchResult } from "@tasks/contracts";
 import {
   indexChanges,
+  rebuildSearchIndex,
   type Connection,
   type Operation,
   type Row,
@@ -342,6 +343,63 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
       hidden,
     ]);
     expect(ids(await search({ q: "audience has:notes" }, { audience: "agent" }))).toEqual([]);
+  });
+
+  test("of equal best documents the lower entity ID gives the snippet, before and after a rebuild", async () => {
+    // Two notes that score the same; the pair whose first note has the higher ID, so neither the
+    // order of writing nor the order of a rebuild's document numbers decides.
+    let task = "";
+    let notes: { id: string; body: string }[] = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Tie holder" }]));
+      submit(fx, [
+        { kind: "note.add", task, body: "tieword alpha" },
+        { kind: "note.add", task, body: "tieword bravo" },
+      ]);
+      notes = fx.reader
+        .prepare("SELECT id, body FROM notes WHERE task_id = $id ORDER BY created_seq, ordinal")
+        .all<{ id: string; body: string }>({ id: task });
+      if ((notes[0]?.id ?? "") > (notes[1]?.id ?? "")) break;
+    }
+    const lower = [...notes].sort((a, b) => (a.id < b.id ? -1 : 1))[0]?.body;
+    expect(lower).toBe("tieword bravo");
+    const snippet = async () =>
+      (await search({ q: "tieword", limit: 50 })).rows.find((r) => r["id"] === task)?.["snippet"];
+    expect(await snippet()).toBe(lower);
+    await directly(fx, (conn) => rebuildSearchIndex(conn));
+    expect(await snippet()).toBe(lower);
+  });
+
+  test("a snippet comes from the best document at the snapshot, never one that took its number", async () => {
+    const [lead] = created(
+      submit(fx, [{ kind: "task.create", title: "Reuseword lead", summary: "Lead." }]),
+    );
+    const [holder = ""] = created(
+      submit(fx, [{ kind: "task.create", title: "Reuse holder", summary: "Holder summary." }]),
+    );
+    // The holder's note is the newest document, so its number is the highest.
+    submit(fx, [{ kind: "note.add", task: holder, body: "reuseword first" }]);
+    const first = await search({ q: "reuseword", limit: 1 });
+    expect(ids(first)).toEqual([lead]);
+    await directly(fx, (conn) => {
+      // Entity redaction of the note (A1 3.11.4): the row leaves, and so does its document.
+      const note = conn.prepare("SELECT id FROM notes WHERE task_id = $id").get({ id: holder });
+      conn.prepare("DELETE FROM notes WHERE task_id = $id").run({ id: holder });
+      indexChanges(conn, lastSeq(conn), [
+        {
+          entity: "notes",
+          entityId: String(note?.["id"]),
+          taskId: holder,
+          action: "set",
+          field: "deleted",
+        },
+      ]);
+    });
+    // A new note of the same task takes the freed number.
+    submit(fx, [{ kind: "note.add", task: holder, body: "reuseword second" }]);
+    const next = await search({ cursor: first.cursor ?? "" });
+    expect(next.rows[0]).toMatchObject({ id: holder, snippet: "Holder summary." });
+    expect(next.rows[0]).not.toHaveProperty("snippet_from");
   });
 
   test("titles are cut at 90 characters and snippets at 100", async () => {

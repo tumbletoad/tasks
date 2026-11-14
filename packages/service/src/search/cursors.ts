@@ -31,6 +31,11 @@ export interface FrozenItem {
   readonly ref: string;
   /** The best document at S, for the snippet; null without text. */
   readonly doc: number | null;
+  /**
+   * That document's entity at S: a page shows a snippet only while the number still holds it, since
+   * a number freed by a removal can be taken by a later document.
+   */
+  readonly entity: string | null;
 }
 
 /** A search's frozen list and what each of its pages needs. */

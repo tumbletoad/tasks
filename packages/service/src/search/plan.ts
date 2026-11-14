@@ -74,7 +74,10 @@ export interface PlanContext {
 
 export interface SearchPlan {
   readonly kind: "tasks" | "learnings";
-  /** Rows `id`, `ref` and `doc` (the best document, or null), best first, at most 1,001. */
+  /**
+   * Rows `id`, `ref`, `doc` and `entity` (the best document's number and entity ID, or null),
+   * best first, at most 1,001.
+   */
   readonly sql: string;
   readonly params: Readonly<Record<string, SqlValue>>;
   /** The positive text as one FTS5 expression, for the snippets of a page; null without it. */
@@ -471,10 +474,10 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     }
     const sql =
       match === null
-        ? "SELECT l.id AS id, t.ref AS ref, NULL AS doc FROM learnings l " +
+        ? "SELECT l.id AS id, t.ref AS ref, NULL AS doc, NULL AS entity FROM learnings l " +
           `JOIN tasks t ON t.id = l.task_id WHERE ${where.join(" AND ")} ` +
           `ORDER BY l.created_at DESC, l.id LIMIT ${limit}`
-        : `SELECT l.id AS id, t.ref AS ref, d.doc AS doc, ${BM25} AS score ` +
+        : `SELECT l.id AS id, t.ref AS ref, d.doc AS doc, d.entity_id AS entity, ${BM25} AS score ` +
           "FROM search_fts JOIN search_docs d ON d.doc = search_fts.rowid " +
           "JOIN learnings l ON l.id = d.entity_id JOIN tasks t ON t.id = l.task_id " +
           `WHERE search_fts MATCH ${b.bind(match)} AND d.kind = 'learning'${audience} AND ` +
@@ -492,7 +495,8 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   if (match === null) {
     if (lifecycles !== null) where.push(`t.lifecycle IN ${lifecycles}`);
     const sql =
-      `SELECT t.id AS id, t.ref AS ref, NULL AS doc FROM tasks t WHERE ${where.join(" AND ")} ` +
+      "SELECT t.id AS id, t.ref AS ref, NULL AS doc, NULL AS entity FROM tasks t " +
+      `WHERE ${where.join(" AND ")} ` +
       `ORDER BY ${DUE} IS NULL, ${DUE}, t.priority, t.touched DESC, t.id LIMIT ${limit}`;
     return { kind: "tasks", sql, params: b.params, match };
   }
@@ -515,16 +519,20 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     );
   }
   const scoped = lifecycles === null ? "" : ` AND d.lifecycle IN ${lifecycles}`;
-  // bm25() runs only in the FTS query itself, never inside an aggregate, so each matching
-  // document's score is materialized first. The bare `doc` beside max() is then the best
-  // document's: SQLite takes a bare column from the row that gave the max.
+  // bm25() runs only in the FTS query itself, never inside an aggregate or a window, so each
+  // matching document's score is materialized first. A task's best document is then the first by
+  // score and, among equal scores, by entity ID: neither the order of writing nor a rebuild's
+  // document numbers decide which document gives the snippet.
   const sql =
     "WITH scored AS MATERIALIZED (SELECT d.task_id AS task_id, d.doc AS doc, " +
-    `${BM25} * CASE WHEN d.kind = 'task' THEN 1.2 ELSE 1.0 END AS score ` +
+    `d.entity_id AS entity, ${BM25} * CASE WHEN d.kind = 'task' THEN 1.2 ELSE 1.0 END AS score ` +
     "FROM search_fts JOIN search_docs d ON d.doc = search_fts.rowid " +
     `WHERE search_fts MATCH ${b.bind(match)} AND d.kind IN ${TASK_TEXT}${audience}${scoped}), ` +
-    "hit AS (SELECT task_id, doc, max(score) AS score FROM scored GROUP BY task_id) " +
-    `SELECT t.id AS id, t.ref AS ref, hit.doc AS doc, hit.score * ${boosts.join(" * ")} AS score ` +
+    "ranked AS (SELECT task_id, doc, entity, score, row_number() OVER " +
+    "(PARTITION BY task_id ORDER BY score DESC, entity) AS n FROM scored), " +
+    "hit AS (SELECT task_id, doc, entity, score FROM ranked WHERE n = 1) " +
+    "SELECT t.id AS id, t.ref AS ref, hit.doc AS doc, hit.entity AS entity, " +
+    `hit.score * ${boosts.join(" * ")} AS score ` +
     `FROM hit JOIN tasks t ON t.id = hit.task_id WHERE ${where.join(" AND ")} ` +
     `ORDER BY score DESC, t.touched DESC, t.id LIMIT ${limit}`;
   return { kind: "tasks", sql, params: b.params, match };

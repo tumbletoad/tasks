@@ -107,7 +107,8 @@ const VOCABULARY: readonly SqlQuery[] = [
  * its task and its audience now. A document that no longer matches, or no longer exists, has none.
  */
 const SNIPPETS =
-  "SELECT j.value AS doc, d.task_id AS task_id, d.kind AS kind, d.audience AS audience, " +
+  "SELECT j.value AS doc, d.entity_id AS entity, d.task_id AS task_id, d.kind AS kind, " +
+  "d.audience AS audience, " +
   "(SELECT snippet(search_fts, -1, '', '', '…', 12) FROM search_fts " +
   "WHERE search_fts MATCH $match AND search_fts.rowid = j.value) AS snippet " +
   "FROM json_each($docs) j LEFT JOIN search_docs d ON d.doc = j.value";
@@ -199,6 +200,7 @@ export async function runSearch(
     id: str(row["id"]),
     ref: formatTaskRef(space.refPrefix, Number(row["ref"])),
     doc: typeof row["doc"] === "number" ? row["doc"] : null,
+    entity: typeof row["entity"] === "string" ? row["entity"] : null,
   }));
   const search: FrozenSearch = {
     space: space.spaceId,
@@ -232,7 +234,8 @@ async function page(
     SPACE,
     { sql: ROWS_BY_IDS_SQL[search.kind], params: { ids: JSON.stringify(ids) }, mode: "all" },
   ];
-  if (search.match !== null && docs.length > 0) {
+  // A learning row shows its own text, so only task pages read snippets.
+  if (search.match !== null && search.kind === "tasks" && docs.length > 0) {
     queries.push({
       sql: SNIPPETS,
       params: { match: search.match, docs: JSON.stringify(docs) },
@@ -310,6 +313,7 @@ function rowOf(
   const snippet = item.doc === null ? undefined : snippets.get(item.doc);
   const shown =
     snippet !== undefined &&
+    snippet["entity"] === item.entity &&
     snippet["task_id"] === entry.id &&
     (search.audience === "user" || snippet["audience"] === "all") &&
     str(snippet["snippet"]).trim() !== ""
