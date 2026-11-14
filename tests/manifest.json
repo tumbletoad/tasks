@@ -2712,6 +2712,14 @@
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.add.upsert",
+      "title": "task.add's upsert through the request path: exists with matched_by and lifecycle, the draft's log added to an active match, on_existing add_sources and create_new, an ambiguous match listed without a task, a follow-up of task.finish, and the existing results in the receipt and its replay",
+      "source": "A3 3.4.5, A3 3.4.8, A3 3.11.1, A7 3.10 M3.06",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

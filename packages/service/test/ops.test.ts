@@ -386,13 +386,21 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
       ...updated,
       replayed: true,
     });
-    // A new task's draft names its own source path.
+    // A draft names its own source path. Its key matches the task (A1 3.6), and add_sources
+    // links its sources there: the source exists, so the reply names what differs.
     const second = TaskAddResult.parse(
       await call(s, "task.add", {
-        tasks: [{ title: "Fixture second task", sources: [{ ...source, who: "Fixture person" }] }],
+        tasks: [
+          {
+            title: "Fixture second task",
+            sources: [{ ...source, who: "Fixture person" }],
+            on_existing: "add_sources",
+          },
+        ],
         request_id: rid(),
       }),
     );
+    expect(second.tasks[0]).toMatchObject({ result: "exists", ref });
     expect(second.warnings).toHaveLength(1);
     expect(second.warnings[0]).toContain("tasks.0.sources.0");
   });
@@ -457,6 +465,136 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     expect(mole.space.ref_prefix).not.toBe(moss.space.ref_prefix);
     expect([mole.space.ref_prefix, moss.space.ref_prefix]).not.toContain("M");
   }, 120_000);
+});
+
+describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)", () => {
+  test("exists with how it matched, the log added to an active match, add_sources, create_new, an ambiguous match, follow-ups and the receipt", async () => {
+    // The tests above add spaces: name the fixture's.
+    const mira = { space: "Mira" };
+    const s = await session("cli-script");
+    const add = async (tasks: Record<string, unknown>[], request_id = rid()) =>
+      TaskAddResult.parse(await call(s, "task.add", { tasks, request_id }, mira));
+    const ticket = (n: number) => ({
+      kind: "ticket",
+      title: "Fixture upsert ticket",
+      key: `jira:UPS-${String(n)}`,
+    });
+    const first = (await add([{ title: "Fixture upsert task", sources: [ticket(1)] }])).tasks[0];
+    const ref = first?.ref ?? "";
+    expect(first).toMatchObject({ result: "created", lifecycle: "active", log_added: false });
+
+    // The same key: exists, and the draft's log entry is added to the task, nothing else.
+    const again = await add([
+      { title: "Fixture upsert again", sources: [ticket(1)], log: "Fixture: seen again." },
+    ]);
+    expect(again.tasks).toEqual([
+      {
+        result: "exists",
+        id: first?.id,
+        ref,
+        title: "Fixture upsert again",
+        lifecycle: "active",
+        matched_by: "source_key",
+        log_added: true,
+      },
+    ]);
+    const read = TaskGetResult.parse(await call(s, "task.get", { task: ref }, mira));
+    if (read.view !== "digest") throw new Error("expected a digest");
+    expect(read.task.log).toHaveLength(1);
+    expect(read.task.title).toBe("Fixture upsert task");
+
+    // create_new against an active match: invalid_input, so a refresh never makes two.
+    const refused = await call(
+      s,
+      "task.add",
+      {
+        tasks: [{ title: "Fixture duplicate", sources: [ticket(1)], on_existing: "create_new" }],
+        request_id: rid(),
+      },
+      mira,
+    ).catch((e: unknown) => e);
+    expect(errorOf(refused)).toMatchObject({
+      code: "invalid_input",
+      data: { cause: "VALIDATION_FAILED", op: 0, field: "dedupe" },
+    });
+
+    // add_sources links the draft's other source, which then finds the task too.
+    const linked = await add([
+      { title: "Fixture upsert", sources: [ticket(1), ticket(2)], on_existing: "add_sources" },
+    ]);
+    expect(linked.tasks[0]).toMatchObject({ result: "exists", ref, log_added: false });
+    expect((await add([{ title: "Fixture upsert", sources: [ticket(2)] }])).tasks[0]).toMatchObject(
+      { result: "exists", ref },
+    );
+
+    // Two active tasks hold the draft's keys: their references, no task, and no log entry.
+    const other = (await add([{ title: "Fixture other upsert", sources: [ticket(3)] }])).tasks[0];
+    const otherRef = other?.ref ?? "";
+    const both = await add([
+      { title: "Fixture which", sources: [ticket(2), ticket(3)], log: "Fixture: which one?" },
+    ]);
+    expect(both.tasks).toEqual([
+      {
+        result: "exists",
+        title: "Fixture which",
+        lifecycle: "active",
+        matched_by: "source_key",
+        ambiguous: [ref, otherRef],
+        log_added: false,
+      },
+    ]);
+
+    // A follow-up upserts too: it matches the other task.
+    const before = TaskGetResult.parse(await call(s, "task.get", { task: ref }, mira));
+    const finished = TaskFinishResult.parse(
+      await call(
+        s,
+        "task.finish",
+        {
+          task: ref,
+          outcome: "Fixture outcome.",
+          follow_ups: [{ title: "Fixture follow-up", sources: [ticket(3)] }],
+          base: before.as_of,
+          request_id: rid(),
+        },
+        mira,
+      ),
+    );
+    expect(finished.follow_ups).toEqual([
+      { result: "exists", ref: otherRef, title: "Fixture follow-up" },
+    ]);
+
+    // A finished match: exists with its lifecycle, and nothing follows it. Its receipt holds the
+    // existing results, and a retry replays them.
+    const lateId = rid();
+    const late = await add([{ title: "Fixture late", sources: [ticket(1)], log: "Late." }], lateId);
+    expect(late.tasks[0]).toMatchObject({
+      result: "exists",
+      ref,
+      lifecycle: "completed",
+      log_added: false,
+    });
+    expect(
+      ReceiptGetResult.parse(await call(s, "receipt.get", { request: lateId }, mira)),
+    ).toMatchObject({
+      found: true,
+      status: "unchanged",
+      results: [
+        { i: 0, status: "existing", ref, matched_by: "source_key", lifecycle: "completed" },
+        { i: 1, status: "existing", ref },
+        { i: 2, status: "existing", ref },
+      ],
+    });
+    expect(
+      await add([{ title: "Fixture late", sources: [ticket(1)], log: "Late." }], lateId),
+    ).toEqual({ ...late, replayed: true });
+    // create_new beside the finished task: a new active task.
+    const anew = await add([
+      { title: "Fixture upsert anew", sources: [ticket(1)], on_existing: "create_new" },
+    ]);
+    expect(anew.tasks[0]).toMatchObject({ result: "created", lifecycle: "active" });
+    expect(anew.tasks[0]?.ref).not.toBe(ref);
+  });
 });
 
 /** The requests the spaces' writers receive through the request path, recorded as sent. */

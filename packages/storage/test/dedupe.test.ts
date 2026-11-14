@@ -19,13 +19,14 @@ import type {
   WriteRequest,
   WriteResult,
 } from "../src/write/request.ts";
+import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import {
-  checkedDriver,
-  createFixtureSpace,
-  TEST_MACHINE,
-  tempFolders,
-} from "./space-helpers.ts";
-import { checkHistory, expectStatus, MACHINE, writeFixture, type Fixture } from "./write-helpers.ts";
+  checkHistory,
+  expectStatus,
+  MACHINE,
+  writeFixture,
+  type Fixture,
+} from "./write-helpers.ts";
 
 const temp = tempFolders("dedupe");
 afterAll(temp.cleanup);
@@ -73,15 +74,14 @@ function draft(
   ];
   if (options.log !== undefined) ops.push({ kind: "log.add", task: id, body: options.log });
   for (const key of keys) ops.push({ kind: "source.add", task: id, source: ticket(key) });
-  if (options.place === true) ops.push({ kind: "place.set", task: id, root: "work", path: "clinic" });
+  if (options.place === true)
+    ops.push({ kind: "place.set", task: id, root: "work", path: "clinic" });
   return { id, ops };
 }
 
-const ACTORS = ["human", "codex", "claude"] as const;
-
 function submit(
   ops: Operation[],
-  extra: { base?: string; actor?: (typeof ACTORS)[number] } = {},
+  extra: { base?: string; actor?: "human" | "codex" | "claude" } = {},
 ): WriteResult {
   const actor = fx[extra.actor ?? "codex"];
   return fx.writer.submit(
@@ -90,7 +90,10 @@ function submit(
 }
 
 const complete = (task: Id<"t">): void => {
-  expectStatus(submit([{ kind: "task.complete", task }], { actor: "human", base: fx.base() }), "applied");
+  expectStatus(
+    submit([{ kind: "task.complete", task }], { actor: "human", base: fx.base() }),
+    "applied",
+  );
 };
 
 const one = (sql: string, params = {}): unknown =>
@@ -180,7 +183,8 @@ async function rawSet(
           field,
           before,
           after,
-          version: (JSON.parse(String(row["fv"])) as Record<string, number>)[field] ??
+          version:
+            (JSON.parse(String(row["fv"])) as Record<string, number>)[field] ??
             (row["created_seq"] as number),
         });
       const sets = Object.keys(resolved)
@@ -462,10 +466,10 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     ]);
     expect(holders(fx.reader, "jira:FIX-2")).toEqual([c.id]);
     // A task the request completes before the draft is a finished match.
-    const finished = submit(
-      [{ kind: "task.complete", task: a.id }, ...draft(["jira:FIX-1"]).ops],
-      { actor: "human", base: fx.base() },
-    );
+    const finished = submit([{ kind: "task.complete", task: a.id }, ...draft(["jira:FIX-1"]).ops], {
+      actor: "human",
+      base: fx.base(),
+    });
     expect(finished.results[1]).toMatchObject({ status: "existing", lifecycle: "completed" });
     // A task the request reopens is an active one, even when it finished before the window.
     clock.now += 40 * DAY;
@@ -525,11 +529,9 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
 
   test("the input: a dedupe mode, and link_sources only with dedupe by source key", () => {
     const error = (create: Record<string, unknown>): unknown => {
-      const result = fx.writer.submit(
-        fx.request(fx.codex, [
-          { kind: "task.create", title: "Answer the clinic", ...create } as Operation,
-        ]),
-      );
+      // Input as a caller may send it: the writer checks it at run time.
+      const ops: unknown[] = [{ kind: "task.create", title: "Answer the clinic", ...create }];
+      const result = fx.writer.submit({ ...fx.request(fx.codex, []), ops });
       return [result.error?.code, result.error?.field];
     };
     expect(error({ dedupe: "title" })).toEqual(["VALIDATION_FAILED", "ops[0].dedupe"]);
@@ -734,7 +736,10 @@ const sessionsProperty = (seen: Record<string, number>) =>
           const earlier = sent[s.pick % Math.max(sent.length, 1)];
           if (earlier === undefined) continue;
           // The stored result, whatever happened to the tasks and keys since (A1 3.8).
-          expect(space.writer.submit(earlier.request)).toEqual({ ...earlier.result, replayed: true });
+          expect(space.writer.submit(earlier.request)).toEqual({
+            ...earlier.result,
+            replayed: true,
+          });
           count("replayed");
         } else {
           const drafts = s.drafts.map((d) => ({
@@ -742,10 +747,16 @@ const sessionsProperty = (seen: Record<string, number>) =>
             keys: d.keys.map((k) => KEYS[k] ?? ""),
             log: d.log,
           }));
-          const ops: Operation[] = drafts.flatMap((d) => [
-            { kind: "task.create", id: d.id, title: "Answer the clinic" } as Operation,
-            ...(d.log ? [{ kind: "log.add", task: d.id, body: "New in the thread." } as Operation] : []),
-            ...d.keys.map((key): Operation => ({ kind: "source.add", task: d.id, source: ticket(key) })),
+          const ops: Operation[] = drafts.flatMap((d): Operation[] => [
+            { kind: "task.create", id: d.id, title: "Answer the clinic" },
+            ...(d.log
+              ? [{ kind: "log.add" as const, task: d.id, body: "New in the thread." }]
+              : []),
+            ...d.keys.map((key): Operation => ({
+              kind: "source.add",
+              task: d.id,
+              source: ticket(key),
+            })),
           ]);
           const predicted = model.add(drafts);
           const actor = sessions[s.session];

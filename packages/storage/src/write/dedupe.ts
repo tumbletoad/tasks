@@ -67,8 +67,7 @@ interface Holder {
   rank: readonly [number, number];
 }
 
-const byRank = (a: Holder, b: Holder): number =>
-  a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1];
+const byRank = (a: Holder, b: Holder): number => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1];
 
 /**
  * One request's dedupe state, against the start state and the request's own staged work. Without a
@@ -113,7 +112,11 @@ export class Dedupe {
   /** A draft the request creates: active, ranked after every existing task, holding its keys. */
   created(id: Id<"t">, keys: readonly string[]): void {
     if (this.#keys.size === 0) return;
-    this.#holders.set(id, { lifecycle: "active", finishedAt: null, rank: [1, (this.#drafts += 1)] });
+    this.#holders.set(id, {
+      lifecycle: "active",
+      finishedAt: null,
+      rank: [1, (this.#drafts += 1)],
+    });
     for (const key of keys) this.link(key, id);
   }
 

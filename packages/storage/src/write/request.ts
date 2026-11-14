@@ -961,7 +961,11 @@ function checkOperation(value: unknown, i: number): Operation {
       if (f.has("link_sources")) {
         create.link_sources = f.boolean("link_sources");
         if (create.link_sources && (create.dedupe ?? "source_key") !== "source_key") {
-          f.fail("VALIDATION_FAILED", "Linking on a match needs dedupe by source key", "link_sources");
+          f.fail(
+            "VALIDATION_FAILED",
+            "Linking on a match needs dedupe by source key",
+            "link_sources",
+          );
         }
       }
       op = create;
