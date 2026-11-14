@@ -2634,6 +2634,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.12.6.update.stage",
+      "title": "An update stages each changed Windows launcher as bin\\<name>.new, checked, before current changes, and a staging failure changes nothing; a launcher that is not running is replaced by one rename and the stable path is never missing, a running one is renamed aside and the new one renamed in; one a launcher's sibling repair put in place counts as swapped; a repair uses the staged copy and removes it; the clean-up removes the aside and staged launchers no journal names, never one that still runs",
+      "source": "A2 3.12.6, SL-08, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.sibling",
+      "title": "From the stable bin folder, a launcher whose sibling is missing while an update's journal is there puts back a copy of the sibling of the version current names before it runs anything, and goes on; without a journal it puts back nothing; it places nothing else (no .new or .old-<n> file of bin, nothing through a link, nothing for a bad current), leaves a present sibling, a folder or link at its name and a version-local launcher's folder alone, and leaves no temporary file",
+      "source": "A2 3.12.3, A2 3.12.6, SL-08, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.2.launcher-win.handover",
+      "title": "A supervisor whose bin\\tasksw.exe was replaced while it ran starts the new one in its place before any restart of the service (after an exit 75, or after the wait after a failure), and exits 0; the new one supervises; one whose file is unchanged restarts the service itself",
+      "source": "A2 3.3.2, A2 3.12.6, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.launchers",
+      "title": "With real builds whose launchers differ, in a temporary TASKS_HOME on Windows, an updater killed at each step of each launcher's swap (staged, renamed aside, renamed in) while both launchers run, then started again through the stable command and through the supervisor, ends on one complete version: both launchers match its hashes, current names it, the stable command runs, and the supervisor that ran from the old file hands over to the new one",
+      "source": "A2 3.12.3, A2 3.12.6, SL-08, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.6.web.render-row",
       "title": "renderRow, one case per view with A5 3.5's context (Today, Inbox, Open, Waiting by person and by area, Review, Backlog, an area view): what each row shows, what its view or group implies and leaves out, the summary prefix on views that mix areas, the chips, and the accessible description in A5 3.22's order",
       "source": "A5 3.6, A5 3.5, A5 3.22, A7 3.12 M5.03",
