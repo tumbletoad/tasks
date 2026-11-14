@@ -174,16 +174,65 @@ export interface BuiltWeb {
   readonly npmInputs: string[];
 }
 
+/** The end of the last `asProduction` call: each waits for the one before it. */
+let productionQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs `work` with NODE_ENV set to `production`, and gives the caller's value back after. Vite
+ * reads NODE_ENV itself, whatever `mode` says: any other value makes a development build, whose
+ * JSX carries the absolute source path of every component (A5 3.24). Vitest sets `test`. NODE_ENV
+ * belongs to the whole process, so calls run one at a time: two at once would each give the other's
+ * value back, and one would build with the caller's.
+ */
+export function asProduction<T>(work: () => Promise<T>): Promise<T> {
+  const run = productionQueue.then(async () => {
+    const before = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      return await work();
+    } finally {
+      if (before === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = before;
+    }
+  });
+  productionQueue = run.catch(() => undefined);
+  return run;
+}
+
 /** Builds the page into `out`, which is replaced. `root` is the repository, for npmInputs. */
 export async function buildWeb(out: string = WEB_DIST, root?: string): Promise<BuiltWeb> {
   const target = resolve(out);
   rmSync(target, { recursive: true, force: true });
-  const result = await build({
+  const result = await asProduction(() => viteBuild(target));
+  const outputs = (Array.isArray(result) ? result : [result]) as Rolldown.RolldownOutput[];
+  const files: string[] = [];
+  const modules = new Set<string>();
+  for (const output of outputs) {
+    for (const item of output.output) {
+      files.push(item.fileName);
+      if (item.type === "chunk") for (const id of item.moduleIds) modules.add(id);
+    }
+  }
+  // A second script would be a lazy chunk, which the browser loads without an integrity hash.
+  const scripts = files.filter((f) => f.endsWith(".js"));
+  if (scripts.length !== 1) {
+    throw new Error(`The page must build to one script, not ${String(scripts.length)}`);
+  }
+  const base = root ?? join(WEB_DIR, "..", "..");
+  const npmInputs = [...modules]
+    .filter((id) => id.includes(`${sep}node_modules${sep}`) || id.includes("/node_modules/"))
+    .map((id) => relative(base, id).split(sep).join("/"))
+    .sort();
+  return { out: target, files: files.sort(), integrity: addIntegrity(target), npmInputs };
+}
+
+/** Vite's production build of the page into `target`. */
+function viteBuild(target: string): ReturnType<typeof build> {
+  return build({
     root: WEB_DIR,
     configFile: false,
     envDir: false,
-    // Always React's production build, whatever NODE_ENV the caller runs with (Vitest sets
-    // `test`, which would otherwise ship the development build with its warnings).
+    // Always the production build, whatever NODE_ENV the caller runs with: see asProduction.
     mode: "production",
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     logLevel: "warn",
@@ -209,26 +258,6 @@ export async function buildWeb(out: string = WEB_DIST, root?: string): Promise<B
       },
     },
   });
-  const outputs = (Array.isArray(result) ? result : [result]) as Rolldown.RolldownOutput[];
-  const files: string[] = [];
-  const modules = new Set<string>();
-  for (const output of outputs) {
-    for (const item of output.output) {
-      files.push(item.fileName);
-      if (item.type === "chunk") for (const id of item.moduleIds) modules.add(id);
-    }
-  }
-  // A second script would be a lazy chunk, which the browser loads without an integrity hash.
-  const scripts = files.filter((f) => f.endsWith(".js"));
-  if (scripts.length !== 1) {
-    throw new Error(`The page must build to one script, not ${String(scripts.length)}`);
-  }
-  const base = root ?? join(WEB_DIR, "..", "..");
-  const npmInputs = [...modules]
-    .filter((id) => id.includes(`${sep}node_modules${sep}`) || id.includes("/node_modules/"))
-    .map((id) => relative(base, id).split(sep).join("/"))
-    .sort();
-  return { out: target, files: files.sort(), integrity: addIntegrity(target), npmInputs };
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
