@@ -12,12 +12,13 @@
 // - a trigger, since one would run on those writes;
 // - SQLite's statistics tables `sqlite_stat1` and `sqlite_stat4`, which ANALYZE makes and only the
 //   query planner reads, by their exact names.
-// Nothing else is left out: an object SQLite would let no statement create, such as an index named
-// `sqlite_autoindex_…` with a definition of its own, can be planted in a file, and it would act on
-// every later write, not only on the restore's first one.
-// A virtual table is compared by its own text. Its module's shadow tables, which SQLite itself names
-// (PRAGMA table_list's type `shadow`, never a guess from a name), are compared by type and name
-// only: their text follows the SQLite version.
+// Nothing else is left out, and everything compared is compared by its full text: an object SQLite
+// would let no statement create, such as an index named `sqlite_autoindex_…` with a definition of
+// its own, or a virtual table's shadow table with a CHECK of its own, can be planted in a file, and
+// it would act on every later write, not only on the restore's first one. A shadow table's text is
+// what the module writes for the virtual table's definition; the FTS5 texts the search index uses
+// have not changed since FTS5 came out, and a test pins them (bundle.test.ts), so an SQLite that
+// wrote them otherwise, and so would refuse older backups, fails that test before it ships.
 //
 // Every name a diagnostic gives comes from the product's own list of its tables and columns
 // (productTables), built from the schema steps, never from a name read out of the database being
@@ -102,29 +103,16 @@ const TABLE_LIST = "SELECT name, type FROM pragma_table_list WHERE schema = 'mai
 
 /**
  * The schema objects of the database on `conn` as the exact-schema rule compares them (see the
- * header): each table, index and view, SQLite's own included, with the SQL text SQLite keeps for it
- * (none for an index SQLite made for a key), which holds every column, constraint, key and
- * generated value; a shadow table by its type and name. Only what isDropped passes is left out.
+ * header): each table, index and view, SQLite's own and a virtual table's shadow tables included,
+ * with the SQL text SQLite keeps for it (none for an index SQLite made for a key), which holds every
+ * column, constraint, key and generated value. Only what isDropped passes is left out.
  */
 export function schemaObjects(conn: Connection): string[] {
-  const shadow = new Set(
-    conn
-      .prepare(TABLE_LIST)
-      .all<{ name: unknown; type: unknown }>()
-      .filter((row) => row.type === "shadow")
-      .map((row) => row.name),
-  );
   return conn
     .prepare(ALL_OBJECTS)
     .all<Record<string, unknown>>()
     .filter((row) => !isDropped(row["type"], row["name"]))
-    .map((row) =>
-      JSON.stringify(
-        row["type"] === "table" && shadow.has(row["name"])
-          ? [row["type"], row["name"], row["tbl_name"]]
-          : [row["type"], row["name"], row["tbl_name"], row["sql"]],
-      ),
-    );
+    .map((row) => JSON.stringify([row["type"], row["name"], row["tbl_name"], row["sql"]]));
 }
 
 /** A table of the product's schema that holds data, with its columns, as the schema steps make it. */
@@ -207,7 +195,7 @@ export function referenceSchema(
 
 /**
  * The SQL text the schema steps give the object `name` at `userVersion`, or undefined: no such
- * object, none kept (a shadow table, an index SQLite made for a key), or never reached. What a
+ * object, none kept (an index SQLite made for a key), or never reached. What a
  * caller that must make an object again runs, never text read out of the database at hand.
  */
 export function referenceDefinition(

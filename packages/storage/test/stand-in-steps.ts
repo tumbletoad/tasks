@@ -125,8 +125,7 @@ export const STEPS_MARK_GUARD: readonly SchemaStep[] = [...SCHEMA_STEPS, markGua
 
 /**
  * A 0.3 with the search tables A1 3.12 plans for the next real schema step: an FTS5 virtual table
- * and its module's shadow tables, which the exact-schema rule compares by their own text and by
- * type and name (A1 3.18). It stands in for the real 0.3 until that step lands on main.
+ * and its module's shadow tables, which the exact-schema rule compares by their own text (A1 3.18). It stands in for the real 0.3 until that step lands on main.
  */
 export const search0003: SchemaStep = {
   ...standIn0003,

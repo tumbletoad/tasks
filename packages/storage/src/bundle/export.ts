@@ -427,8 +427,8 @@ const sizeOf = (path: string): number => fsCall(() => statSync(path).size);
  * - the objects the exact-schema rule leaves out are dropped (restore/mark.ts dropUnchecked:
  *   triggers and SQLite's statistics tables, which a restore drops anyway);
  * - the search index (A1 3.12), which is derived from the product's tables, is made again
- *   (remakeSearchIndex), since its shadow tables are compared by name only and keep tokens of
- *   deleted text until their segments merge.
+ *   (remakeSearchIndex): its rows are copies the secret scan does not read, one may name no
+ *   document, and its segments keep words of deleted text until they merge.
  * So the bundle holds exactly its revision's schema and no text the secret scan does not read. The
  * connection is the only one on the file; its close checkpoints the -wal into the file.
  */

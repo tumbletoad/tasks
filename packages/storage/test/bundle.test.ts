@@ -1066,37 +1066,75 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     }
   });
 
-  test("a virtual table counts by its own text, its module's shadow tables by type and name, and a table named like one in full", async () => {
+  test("a virtual table and its module's shadow tables count by their own text, which this test pins: an SQLite that wrote it otherwise would refuse older backups", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const conn = await rawWriter(folder);
     try {
       const before = schemaObjects(conn);
-      conn.exec("CREATE VIRTUAL TABLE probe_fts USING fts5(body)");
+      // The search index's definition (search/tables.ts) and the texts FTS5 writes for it.
+      conn.exec(
+        "CREATE VIRTUAL TABLE probe_fts USING fts5(title, body, extra, " +
+          "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
+      );
       const added = schemaObjects(conn).filter((o) => !before.includes(o));
+      const shadow = (suffix: string, sql: string): string =>
+        JSON.stringify([
+          "table",
+          `probe_fts_${suffix}`,
+          `probe_fts_${suffix}`,
+          `CREATE TABLE 'probe_fts_${suffix}'${sql}`,
+        ]);
       expect(added).toEqual([
         JSON.stringify([
           "table",
           "probe_fts",
           "probe_fts",
-          "CREATE VIRTUAL TABLE probe_fts USING fts5(body)",
+          "CREATE VIRTUAL TABLE probe_fts USING fts5(title, body, extra, " +
+            "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
         ]),
-        // SQLite names them shadow tables (PRAGMA table_list), not a guess from their names.
-        ...["config", "content", "data", "docsize", "idx"].map((suffix) =>
-          JSON.stringify(["table", `probe_fts_${suffix}`, `probe_fts_${suffix}`]),
-        ),
+        shadow("config", "(k PRIMARY KEY, v) WITHOUT ROWID"),
+        shadow("content", "(id INTEGER PRIMARY KEY, c0, c1, c2)"),
+        shadow("data", "(id INTEGER PRIMARY KEY, block BLOB)"),
+        shadow("docsize", "(id INTEGER PRIMARY KEY, sz BLOB)"),
+        shadow("idx", "(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID"),
       ]);
-      conn.exec("CREATE TABLE probe_fts_extra (x)");
-      expect(schemaObjects(conn)).toContain(
-        JSON.stringify([
-          "table",
-          "probe_fts_extra",
-          "probe_fts_extra",
-          "CREATE TABLE probe_fts_extra (x)",
-        ]),
-      );
     } finally {
       conn.close();
     }
+  });
+
+  test("a shadow table with a definition of its own is refused: it would refuse every later write to the search index", async () => {
+    const checked = await checkedDriver();
+    const steps = STEPS_SEARCH;
+    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
+    await writeCommits(folder, 2, "s", steps);
+    const good = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
+    plant(
+      join(folder, "space.db"),
+      "UPDATE sqlite_schema SET sql = replace(sql, 'c2)', 'c2, CHECK (c0 IS NULL))') " +
+        "WHERE name = 'search_fts_content'",
+    );
+    await expectCode(
+      () => exportBundleWith(checked, folder, { mode: "backup" }, { steps }),
+      "SPACE_SCHEMA_FOREIGN",
+    );
+    const bad = await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "manual", now: () => Date.now() + 1000 },
+      { steps },
+    );
+    const listed = listBackups(join(folder, "backups")).backups;
+    expect(listed.map((b) => b.name).sort()).toEqual([good.name, bad.name].sort());
+    for (const b of listed) {
+      expect(await verifyBackup(checked, b, { steps }), b.name).toEqual(
+        b.name === good.name ? good.sidecar : undefined,
+      );
+    }
+    await expectCode(
+      () => restoreBackupWith(checked, bad.file, join(folders.make(), "mira"), {}, { steps }),
+      "BACKUP_INVALID",
+    );
   });
 
   test("a space at a revision with the search tables (a stand-in for schema 0.3) backs up, exports, verifies and restores; a table under the FTS table's prefix is refused", async () => {
