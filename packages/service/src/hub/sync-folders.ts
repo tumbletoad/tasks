@@ -385,8 +385,10 @@ async function providerRoots(
       roots.push({ provider: cloudFilesProvider(id), root: path, rule: "provider_root" });
     }
     const driveFs = readDriveFs(windows.driveFsTargets);
-    // A value read only in part may hide a root the folder is under.
+    // A value read only in part may hide a root the folder is under, and a value that holds no
+    // path the check can read is of a shape it does not know.
     if (!driveFs.complete) unseen();
+    if (windows.driveFsTargets !== "" && driveFs.paths.length === 0) unseen();
     for (const root of driveFs.paths) {
       roots.push({ provider: "google_drive", root, rule: "provider_root" });
     }
@@ -560,27 +562,37 @@ export interface MountEntry {
 const unescapeMount = (s: string): string =>
   s.replace(/\\([0-7]{3})/g, (_, o: string) => String.fromCharCode(Number.parseInt(o, 8)));
 
-/** /proc/self/mountinfo: each line's mount point and type (`fuse.sshfs` for a FUSE subtype). */
-export function parseMountinfo(text: string): MountEntry[] {
+/**
+ * /proc/self/mountinfo: each line's mount point and type (`fuse.sshfs` for a FUSE subtype), or
+ * undefined when a line is not of that shape: a table not read whole may lack the mount that holds
+ * a path, which would then be judged by the mount above it.
+ */
+export function parseMountinfo(text: string): MountEntry[] | undefined {
   const entries: MountEntry[] = [];
   for (const line of text.split("\n")) {
-    const [left, right] = line.split(" - ");
+    if (line === "") continue;
+    const [left, right, ...more] = line.split(" - ");
     const mountPoint = left?.split(" ")[4];
     const type = right?.split(" ")[0];
-    if (mountPoint === undefined || type === undefined || type === "") continue;
+    if (more.length > 0 || mountPoint === undefined || type === undefined || type === "") {
+      return undefined;
+    }
     entries.push({ mountPoint: unescapeMount(mountPoint), type });
   }
   return entries;
 }
 
-/** macOS `mount` output: `<source> on <mount point> (<type>, <options>)`. */
-export function parseMacMounts(text: string): MountEntry[] {
+/**
+ * macOS `mount` output: `<source> on <mount point> (<type>, <options>)`, or undefined when a line
+ * is not of that shape (parseMountinfo says why).
+ */
+export function parseMacMounts(text: string): MountEntry[] | undefined {
   const entries: MountEntry[] = [];
   for (const line of text.split("\n")) {
+    if (line === "") continue;
     const m = /^(.*) on (\/.*) \(([^,)]+)[,)]/.exec(line);
-    if (m?.[1] !== undefined && m[2] !== undefined && m[3] !== undefined) {
-      entries.push({ source: m[1], mountPoint: m[2], type: m[3].trim() });
-    }
+    if (m?.[1] === undefined || m[2] === undefined || m[3] === undefined) return undefined;
+    entries.push({ source: m[1], mountPoint: m[2], type: m[3].trim() });
   }
   return entries;
 }
@@ -606,7 +618,8 @@ export function linuxVolume(statfsType: number, mounts: string | undefined, path
   const named = NETWORK_MAGIC.get(statfsType);
   if (named !== undefined) return network(named);
   if (statfsType === FUSE_MAGIC) {
-    const type = mounts === undefined ? undefined : mountOf(parseMountinfo(mounts), path)?.type;
+    const entries = mounts === undefined ? undefined : parseMountinfo(mounts);
+    const type = entries === undefined ? undefined : mountOf(entries, path)?.type;
     if (type === "fuseblk") return LOCAL;
     const subtype = type?.startsWith("fuse.") === true ? type.slice(5) : undefined;
     return subtype !== undefined && NETWORK_FUSE.has(subtype)
@@ -639,7 +652,8 @@ const MAC_LOCAL: ReadonlySet<string> = new Set([
 
 /** The volume a macOS real path is on, from the mount table's entry that holds it. */
 export function macVolume(mounts: string, path: string): Volume {
-  const entry = mountOf(parseMacMounts(mounts), path);
+  const entries = parseMacMounts(mounts);
+  const entry = entries === undefined ? undefined : mountOf(entries, path);
   if (entry === undefined) return UNKNOWN;
   if (MAC_NETWORK.has(entry.type)) return network(entry.type);
   // A macFUSE mount reaches another host when its source names one (sshfs: `user@host:/path`).

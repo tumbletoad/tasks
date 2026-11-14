@@ -790,6 +790,39 @@ describe("[A1.5.sync.fails-closed] local only from positive evidence of every st
     expect(nothing.verdict).toBe("synced");
   });
 
+  test("a Drive for desktop value in which no path can be read, and a mount table with a line of another shape, leave the folder unchecked", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    const facts = localOn("win32", space);
+    for (const value of [
+      Buffer.from([0x0a, 0x02, 0x47, 0x3a]),
+      Buffer.from("D:/forward/slashes", "utf8"),
+    ]) {
+      const check = await checkFolder(
+        space,
+        fixtureHost(root, {
+          ...facts,
+          windows: { ...NO_WINDOWS, drives: [Q], driveFsTargets: value.toString("base64") },
+        }),
+      );
+      expect(unseenSteps(check), value.toString("hex")).toEqual(["sync_clients"]);
+    }
+    // FUSE on Linux, and any path on macOS, is judged by a table read whole.
+    const fuseblk = `1 2 0:1 / /srv rw - fuseblk x rw\n`;
+    const linux = (mounts: string) =>
+      checkFolder(
+        space,
+        fixtureHost(root, { ...localOn("linux", space), statfs: 0x65735546, mounts }),
+      );
+    expect((await linux(fuseblk)).verdict).toBe("local");
+    expect(unseenSteps(await linux(`${fuseblk}not a mountinfo line\n`))).toEqual(["volume"]);
+    const mac = (mounts: string) =>
+      checkFolder(space, fixtureHost(root, { ...localOn("darwin", space), mounts }));
+    const apfs = "/dev/disk3s1 on / (apfs, local, journaled)\n";
+    expect((await mac(apfs)).verdict).toBe("local");
+    expect(unseenSteps(await mac(`${apfs}//share mounted somehow\n`))).toEqual(["volume"]);
+  });
+
   test("Dropbox's info.json that is not what Dropbox writes, and a sync client's root whose real path fails, leave the folder unchecked", async () => {
     const root = tree();
     const home = dir(join(root, "home"));
