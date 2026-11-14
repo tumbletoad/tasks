@@ -188,16 +188,36 @@ export const READ_ONLY_COPY = "restored_copy";
 
 /**
  * Marks the space on `conn`, a writer on a restored copy in its staging folder, as a read-only
- * copy: `space.transfer` = `{state: "restored_copy", at}`. Writes no commit: the space row has no
- * history (A1 3.4), and the copy's history stays the backup's. Returns the marked row.
+ * copy: `space.transfer` = `{state: "restored_copy", at}`, its triggers dropped first in the same
+ * transaction (dropTriggers). Writes no commit: the space row has no history (A1 3.4), and the
+ * copy's history stays the backup's. Returns the marked row, which must hold the mark.
  */
 export function markReadOnlyCopy(conn: Connection, now: number): SpaceRow {
   return conn.transaction("immediate", () => {
+    dropTriggers(conn);
     conn
       .prepare("UPDATE space SET transfer = $transfer WHERE one = 1")
       .run({ transfer: JSON.stringify({ state: READ_ONLY_COPY, at: now }) });
-    return decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get());
+    const space = decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get());
+    if (space.transfer?.["state"] !== READ_ONLY_COPY) {
+      throw new StorageError("SPACE_INVALID", "The restored copy did not keep its read-only mark");
+    }
+    return space;
   });
+}
+
+/**
+ * Drops every trigger of a restored database, inside the caller's write transaction, before the
+ * restore's first write. Tasks' schema has none (A1 3.4); one in a copied or crafted database would
+ * run on the restore's own writes, and could clear the read-only mark or undo a claim.
+ */
+export function dropTriggers(conn: Connection): void {
+  const names = conn
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger'")
+    .all<{ name: unknown }>();
+  for (const { name } of names) {
+    conn.exec(`DROP TRIGGER IF EXISTS "${String(name).replaceAll('"', '""')}"`);
+  }
 }
 
 const busy = (options: RestoreOptions): { busyTimeoutMs?: number } =>
@@ -302,6 +322,9 @@ export async function restoreInPlaceWith(
     const conn = openWriter(checked, join(names.staging, DATABASE_FILE), busy(options));
     let claim: Claim;
     try {
+      conn.transaction("immediate", () => {
+        dropTriggers(conn);
+      });
       claim = claimSpace(conn, {
         kind: "restore_claim",
         machineId: options.machineId,

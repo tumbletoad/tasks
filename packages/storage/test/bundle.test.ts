@@ -672,6 +672,59 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     expect(writer.space.lastSeq).toBe(live.space.lastSeq + 1);
     writer.conn.close();
   });
+
+  test("a trigger the copied database holds runs on none of the restore's writes: the copy stays read-only, the claim stands", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const conn = await rawWriter(folder);
+    try {
+      // Undoes the read-only mark and keeps the authority a claim would change.
+      conn.exec(
+        `CREATE TRIGGER undo_mark AFTER UPDATE ON space WHEN NEW.transfer IS NOT NULL
+         BEGIN UPDATE space SET transfer = NULL WHERE one = 1; END`,
+      );
+      conn.exec(
+        `CREATE TRIGGER keep_authority AFTER UPDATE OF authority_incarnation ON space
+         BEGIN UPDATE space SET authority_incarnation = OLD.authority_incarnation,
+           authority_epoch = OLD.authority_epoch WHERE one = 1; END`,
+      );
+    } finally {
+      conn.close();
+    }
+    const before = await readFacts(folder);
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const bundle = await exportBundle(checked, folder, { mode: "backup" });
+    const triggers = (where: string): number => {
+      const opened = openSpace(checked, where, { role: "reader" });
+      try {
+        return Number(
+          opened.conn
+            .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE type = 'trigger'")
+            .get()?.["n"],
+        );
+      } finally {
+        opened.conn.close();
+      }
+    };
+    for (const file of [backup.file, bundle.file]) {
+      const restored = await restoreBackup(checked, file, join(folders.make(), "mira"));
+      expect(triggers(restored.folder), file).toBe(0);
+      await expectCode(
+        () => openSpace(checked, restored.folder, { role: "writer" }),
+        "SPACE_READ_ONLY_COPY",
+      );
+    }
+    const inPlace = await restoreInPlace(checked, bundle.file, folder, { machineId: TEST_MACHINE });
+    expect(triggers(folder)).toBe(0);
+    const writer = openSpace(checked, folder, { role: "writer" });
+    try {
+      expect(writer.space.authority.incarnation).toBe(inPlace.claim.incarnation);
+      expect(writer.space.authority.incarnation).not.toBe(before.space.authority.incarnation);
+    } finally {
+      writer.conn.close();
+    }
+  });
 });
 
 describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1 3.2)", () => {
