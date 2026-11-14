@@ -42,7 +42,8 @@ import { lstatSync, rmSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { envVar, MCP_SERVER_KEY } from "@tasks/brand";
-import { parseArgs } from "@tasks/bridge/mcp";
+// The bridge's own parser by its own path: the bridge's index would bring its runner into bundles.
+import { parseArgs } from "@tasks/bridge/mcp/args";
 import {
   HOME_VARIABLES,
   INSTANCE_ID,
