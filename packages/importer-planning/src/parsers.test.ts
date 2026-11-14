@@ -259,8 +259,10 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       project: "P (Q4)",
       owner: "Noor",
       due: "2024-02-29",
-      sources: [{ label: "", url: "https://x.example/1" }],
+      sources: [{ label: "", url: "https://x.example/1", index: 0 }],
       paths: ["rel/x", "C:\\work\\x", "\\\\host\\share", "/home/x"],
+      // The kept paths' places in the file's list: 5 at position 1 was left out.
+      pathIndexes: [0, 2, 3, 4],
       extra: { estimate: { hours: 2 } },
     });
     expect(parse.entries.get("b")).toEqual({

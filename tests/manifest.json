@@ -778,6 +778,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.15.importer.mapping",
+      "title": "Each mapping row of A7 3.15.3 has a fixture case and an assertion: the synthetic prototype maps to a plan of A1 operations with the areas, projects, statuses, owners, priorities, ranks, summaries, dates, sources and keys, places, completions, stars, aliases and ext.planning each row states",
+      "source": "A7 3.14 (M7.03), A7 3.15.3, A7 3.15.7",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.mapping-rules",
+      "title": "The mapping's rules on small inputs: URL kinds and keys, generic labels, slugs, roots, days at 09:00 local and a star's local day, cutting and SafeText with their problems, duplicates, orphans, reserved and deep metadata keys, and a pure, deterministic plan whose draft handles bind to IDs",
+      "source": "A7 3.14 (M7.03), A7 3.15.1, A7 3.15.3",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.shared-sources",
+      "title": "Through the writer, two legacy tasks with one source key become two tasks linked to one source row, and the Mira sample task that holds a legacy task's key is untouched",
+      "source": "A7 3.14 (M7.03), A7 3.15.3, A1 3.6",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.writer-fit",
+      "title": "Every value of a plan is one the space stores as it is: over many seeded synthetic prototype folders built from awkward text, days, instants, zones, URLs, paths, keys and numbers, the writer's request check takes every operation unchanged, aliases keep the marker grammar, instants stay in range and ext.planning is JSON that SafeText keeps",
+      "source": "A7 3.15.3, A1 3.7, A3 3.10",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.15.importer.input-copy",
       "title": "The input copy copies only the inputs into a new folder, records their SHA-256, refuses an existing or nested destination, follows no link, and reports any source file that changed, appeared or went away",
       "source": "A7 3.14 (M7.02), A7 3.15.1",
