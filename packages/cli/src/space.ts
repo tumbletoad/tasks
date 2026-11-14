@@ -8,8 +8,10 @@
 //   tasks space close [<space>]
 //   tasks space backup [<space>]
 //   tasks space backups [list] [<space>]
+//   tasks space export [<space>] [--mode backup|fork] [--with-jsonl]
 //   tasks space restore <backup> --to <folder>       a read-only copy until it is claimed
 //   tasks space restore <backup> --in-place [<space>]
+//                                                    <backup> is a backup or an export bundle
 //   tasks space claim [<space>]
 //   tasks space recover [<space>]
 //   tasks space use <space>                          the machine's default space
@@ -35,7 +37,11 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   close [<space>]                        Close a space while the service keeps running
   backup [<space>]                         Take a backup now
   backups [list] [<space>]                 The backups of a space
-  restore <backup> --to <folder>           Restore into a new folder: a read-only copy
+  export [<space>] [--mode backup|fork]    Write an export bundle into the space's exports folder,
+         [--with-jsonl]                    the copy to keep off this computer; --with-jsonl adds
+                                           every table as JSON lines
+  restore <backup> --to <folder>           Restore a backup or a bundle into a new folder: a
+                                           read-only copy
   restore <backup> --in-place [<space>]    Replace the space with the backup, keeping the old folder
   claim [<space>]                          Make a read-only copy this machine's
   recover [<space>]                        Play back a space's rollback journal
@@ -275,6 +281,27 @@ export async function spaceCommand(
         });
         return 0;
       }
+      case "export": {
+        const o = options(rest, ["--mode", "--to"], ["--with-jsonl"]);
+        if (o.positional.length > 1) throw new UsageError("tasks space export takes one <space>");
+        const result = await call("space/export", {
+          space: await which(o.positional[0]),
+          ...(o.values.has("--mode") ? { mode: o.values.get("--mode") } : {}),
+          ...(o.values.has("--to") ? { to: o.values.get("--to") } : {}),
+          ...(o.set.has("--with-jsonl") ? { with_jsonl: true } : {}),
+        });
+        out(result, () => {
+          const bundle = result["export"] as Record<string, unknown>;
+          io.stdout(
+            `Exported to ${str(bundle["file"])} (seq ${str(bundle["seq"])}, ${str(bundle["size"])} bytes)\n`,
+          );
+          // A6 3.16.6: the export screen says that a bundle is plaintext.
+          io.stdout(
+            "The bundle is a plain, unencrypted copy of the space. Keep it where only you can read it.\n",
+          );
+        });
+        return 0;
+      }
       case "restore": {
         const o = options(rest, ["--to", "--in-place"], ["--in-place"]);
         const backup = o.positional[0];
@@ -288,7 +315,7 @@ export async function spaceCommand(
           isAbsolute(backup) ||
           backup.includes("/") ||
           backup.includes("\\") ||
-          (backup.endsWith(".db.gz") && to !== undefined)
+          (/\.(?:db\.gz|zip)$/i.test(backup) && to !== undefined)
             ? absolute(io, backup)
             : backup;
         const result = await call("space/restore", {
@@ -336,7 +363,7 @@ export async function spaceCommand(
       }
       default:
         throw new UsageError(
-          `${CLI_NAME} space has list, create, open, close, backup, backups, restore, claim, recover and use`,
+          `${CLI_NAME} space has list, create, open, close, backup, backups, export, restore, claim, recover and use`,
         );
     }
   } catch (error) {

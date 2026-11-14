@@ -239,6 +239,7 @@ const VERB_METHODS = [
   "space/close",
   "space/backup",
   "space/backups",
+  "space/export",
   "space/restore",
   "space/claim",
   "space/recover",

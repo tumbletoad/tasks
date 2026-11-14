@@ -1842,6 +1842,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.cli.space-export",
+      "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title refuses the export with its kind and place and never the text",
+      "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.13.cli.doctor",
       "title": "tasks doctor --self-test with the service checks: not running, untrusted endpoint, a running service's handshake, versions and spaces, recent crash files; works without a service; --json",
       "source": "A2 3.13, A7 3.8 M1.10",

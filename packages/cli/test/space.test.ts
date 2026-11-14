@@ -2,7 +2,7 @@
 // (in this process, with a TTY as the class says) creates, backs up, restores, claims and closes
 // spaces; the script and agent classes are refused the user-only verbs; a space read-only for its
 // synced or network folder names the ways out (A1 3.2). Fixture text only.
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -235,6 +235,86 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     });
     const listed = parsed((await user(["space", "list", "--json"])).stdout)["spaces"] as Row[];
     expect(listed.find((s) => s.folder === a)).toMatchObject({ reason: "other_space" });
+  }, 180_000);
+});
+
+describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that restores", () => {
+  test("backup and fork mode, the bundle restored into a new folder, a transfer and a script refused", async () => {
+    const folder = join(world.root, "s", "exported");
+    const made = await user(["space", "create", "Exported", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const added = await world.tasks([
+      "add",
+      "Exported task",
+      "--space",
+      "Exported",
+      "--request-id",
+      "fixture-export-0001",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+
+    const ran = await user(["space", "export", folder, "--json"]);
+    expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+    const bundle = parsed(ran.stdout)["export"] as { file: string; mode: string; seq: number };
+    expect(bundle.mode).toBe("backup");
+    expect(bundle.file.startsWith(join(folder, "exports"))).toBe(true);
+    expect(existsSync(bundle.file)).toBe(true);
+    const forked = await user(["space", "export", folder, "--mode", "fork", "--with-jsonl"]);
+    expect(forked.code, forked.stdout + forked.stderr).toBe(0);
+    expect(forked.stdout).toMatch(
+      /^Exported to .+fork-[^ ]+\.zip \(seq \d+, \d+ bytes\)\nThe bundle is a plain, unencrypted copy of the space\./,
+    );
+
+    const copyFolder = join(world.root, "s", "exported-copy");
+    const copy = await user(["space", "restore", bundle.file, "--to", copyFolder, "--json"]);
+    expect(copy.code, copy.stdout + copy.stderr).toBe(0);
+    expect(parsed(copy.stdout)).toMatchObject({
+      read_only_copy: true,
+      space: { state: "read_only", reason: "read_only_copy" },
+    });
+
+    const transfer = await user(["space", "export", folder, "--mode", "transfer", "--json"]);
+    expect(transfer.code, transfer.stdout).toBe(2);
+    expect(parsed(transfer.stdout)).toMatchObject({
+      error: { code: "invalid_input", hint: "It arrives with M3.08." },
+    });
+    expect((await world.tasks(["space", "export", folder, "--json"])).code).toBe(5);
+    for (const done of [copyFolder, folder]) {
+      expect((await user(["space", "close", done, "--json"])).code).toBe(0);
+    }
+  }, 180_000);
+
+  test("a secret-shaped title refuses the export, naming its kind and place but never the text", async () => {
+    // Built from parts: the source holds no token.
+    const token = ["gh", "p_", "aB3dE5".repeat(6)].join("");
+    const folder = join(world.root, "s", "secretive");
+    const made = await user(["space", "create", "Secretive", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const added = await world.tasks([
+      "add",
+      `Rotate ${token}`,
+      "--space",
+      "Secretive",
+      "--request-id",
+      "fixture-export-0002",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+    const ran = await user(["space", "export", folder, "--json"]);
+    expect(ran.code, ran.stdout).toBe(2);
+    const error = parsed(ran.stdout)["error"] as {
+      code: string;
+      data: { cause: string; secret: { kind: string; place: string } };
+    };
+    expect(error.code).toBe("invalid_input");
+    expect(error.data.cause).toBe("EXPORT_SECRET_FOUND");
+    expect(error.data.secret.kind).toBe("github_token");
+    // The first table that holds it, by name: the title's history comes before the task.
+    expect(error.data.secret.place).toMatch(/^[a-z_]+\.[a-z_]+$/);
+    expect(ran.stdout + ran.stderr).not.toContain(token);
+    expect(readdirSync(join(folder, "exports"))).toEqual([]);
+    expect((await user(["space", "close", folder, "--json"])).code).toBe(0);
   }, 180_000);
 });
 

@@ -1,8 +1,9 @@
 // The space verbs' storage work that needs a SQLite connection of its own and no writer of a live
-// space (A1 3.18, A2 3.10.1): create a space folder, take a manual backup, restore a backup
-// into a new folder. Each job runs in a worker thread of its own (space-admin-entry.ts), as the
-// maintenance worker does: the main thread holds no SQLite connection (A1 3.9). Content-free
-// replies: an error crosses as its code only, never a message that could name a path.
+// space (A1 3.18, A2 3.10.1): create a space folder, take a manual backup, export a bundle,
+// restore a backup or a bundle into a new folder. Each job runs in a worker thread of its own
+// (space-admin-entry.ts), as the maintenance worker does: the main thread holds no SQLite
+// connection (A1 3.9). Content-free replies: an error crosses as its code only, never a message
+// that could name a path.
 import { Worker } from "node:worker_threads";
 import type { Id } from "@tasks/storage";
 
@@ -18,6 +19,14 @@ export type AdminJob =
       readonly ownerLabel: string;
     }
   | { readonly kind: "backup"; readonly folder: string; readonly backupDir?: string }
+  | {
+      readonly kind: "export";
+      readonly folder: string;
+      readonly mode: "backup" | "fork";
+      readonly withJsonl: boolean;
+      /** Folders no file of the bundle may come from: the secrets folder (A6 3.16.4). */
+      readonly secretFolders: readonly string[];
+    }
   | { readonly kind: "restore"; readonly backupFile: string; readonly target: string };
 
 export interface AdminBackup {
@@ -30,22 +39,42 @@ export interface AdminBackup {
   readonly compressed_size: number;
 }
 
+/** A published export bundle, as the CLI shows it. */
+export interface AdminExport {
+  readonly name: string;
+  readonly file: string;
+  readonly mode: string;
+  readonly epoch: number;
+  readonly seq: number;
+  readonly size: number;
+  readonly sha256: string;
+}
+
 export type AdminResult =
   | { readonly kind: "create"; readonly spaceId: Id<"sp">; readonly refPrefix: string }
   | { readonly kind: "backup"; readonly backup: AdminBackup }
+  | { readonly kind: "export"; readonly export: AdminExport }
   | { readonly kind: "restore"; readonly spaceId: Id<"sp"> };
+
+/** Where an export's secret scan found a secret-shaped string: words only, never text. */
+export interface SecretPlace {
+  readonly kind: string;
+  readonly place: string;
+}
 
 export type AdminReply =
   | { readonly ok: true; readonly result: AdminResult }
-  | { readonly ok: false; readonly code?: string };
+  | { readonly ok: false; readonly code?: string; readonly secret?: SecretPlace };
 
 /** A job that failed: its storage code, which maps to an error body (A3 3.5). */
 export class AdminFailed extends Error {
   override readonly name = "AdminFailed";
   readonly code: string | undefined;
-  constructor(code: string | undefined) {
+  readonly secret: SecretPlace | undefined;
+  constructor(code: string | undefined, secret?: SecretPlace) {
     super("The space's storage work failed");
     this.code = code;
+    this.secret = secret;
   }
 }
 
@@ -59,7 +88,7 @@ export function runAdmin(job: AdminJob): Promise<AdminResult> {
     worker.once("message", (reply: AdminReply) => {
       settled = true;
       if (reply.ok) resolve(reply.result);
-      else reject(new AdminFailed(reply.code));
+      else reject(new AdminFailed(reply.code, reply.secret));
       void worker.terminate();
     });
     worker.once("error", () => {

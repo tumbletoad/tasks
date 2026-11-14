@@ -72,6 +72,8 @@ export const RPC_METHODS = {
   "space/close": USER,
   "space/backup": USER,
   "space/backups": USER,
+  // `tasks space export` (A1 3.18, M3.07): a bundle of the space, for the user only.
+  "space/export": USER,
   "space/restore": USER,
   "space/claim": USER,
   "space/recover": USER,

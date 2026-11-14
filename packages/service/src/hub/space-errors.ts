@@ -11,8 +11,11 @@ const MESSAGES: Readonly<Record<string, string>> = {
   SPACE_ID_MISMATCH: "That holds another space than the one named.",
   SPACE_TOO_NEW: `The backup is from a newer ${PRODUCT_NAME}.`,
   BACKUP_INVALID: "The backup does not verify.",
-  BACKUP_FAILED: "The backup failed. Nothing was changed.",
-  BUNDLE_LIMIT_EXCEEDED: "The backup is over the size limit.",
+  BACKUP_FAILED: "The backup or export failed. Nothing was changed.",
+  BUNDLE_LIMIT_EXCEEDED: "The backup or bundle is over a size limit.",
+  BUNDLE_INVALID: "The bundle is not a valid export of a space, or does not verify.",
+  EXPORT_SECRET_FOUND:
+    "The space holds text shaped like a secret, such as an API key or token. Nothing was exported. Remove it from the task, then export again.",
   SPACE_WRITER_TAKEN: "Another writer still holds the space.",
   SPACE_LOCKED_ELSEWHERE: "Another process holds the space.",
   SPACE_CHANGED: "The space changed meanwhile. Nothing was replaced.",
