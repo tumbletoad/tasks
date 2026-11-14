@@ -432,11 +432,13 @@ The receipt shows in the task's session list and briefly beside the launch butto
 A **session** groups the launches of one agent conversation.
 
 **Built: session records in machine state** (`packages/service/src/binding/sessions.ts`, A3 3.7, tests `[A3.3.7.binding.*]`). Until a schema step adds A1's `sessions` table, binding keeps session records and binding handles in `<state>/sessions.json`, because schemas 0.1 and 0.2 are frozen. The file holds no task text, ticket, handle or path. Everything a session does in a space still goes through the write path, under its actor `agent:<instance>:<session>`.
-- A launch's session is made at its first binding, not with the launch intent (A3 3.7.7).
-- **Live:** an open connection bound to it, or its launch's agent running. **Ended:** none of these and no call for 24 hours. Its record stays 30 days (`bindings.ts`).
+- A launch's session is made with its launch intent, before dispatch (A3 3.7.7): the launch service reports each record it writes. Until an agent binds it, it has no `via` (the session list's state `opening`, "opened" for link and clipboard sessions) and holds the launch's instance.
+- Its native IDs carry where they came from (`preset`, `returned`, `reference-match`, `bridge`, `presented`, A3 3.7.3), the strongest kept.
+- **Live:** an open connection bound to it, or its launch's agent running. **Ended:** none of these and no call for 24 hours (`idle`); one no agent bound, after 7 such days (`stale`); or the user's end, unbind or rebind (`user`, `unbound`, `rebound`, A3 3.7.3). Its record stays 30 days (`bindings.ts`). A session an agent bound that is neither live nor ended reads `unknown`.
 - Until the table exists, a session record lost with the state folder leaves its launch's `bound_at` in the space, so its reference answers `launch_used`.
+- **The session list** is `get_task`'s `sessions` section (A3 3.4.4).
 
-**To build: the `sessions` table** (schema step 0003, with its own migration and test). It brings A1's table, the execution store's `upsertSession` and `session.*` operations through the writer, and takes each record of `sessions.json` (id, space, task, instance, kind, how it bound, launches, native IDs, created, last seen, ended). Handles stay in machine state (A2). The crash harness then counts `sessions` among its tables. Native-ID binding (Claude's preset, Codex's reference match, T3's thread ID), the session list and Resume are M4.06's. The table's shape:
+**To build: the `sessions` table** (schema step 0003, with its own migration and test). It brings A1's table, the execution store's `upsertSession` and `session.*` operations through the writer, and takes each record of `sessions.json` (id, space, task, instance, how it bound, launches, native IDs with their sources, the instance and route its launch opened, created, last seen, ended and why) through the `SessionStore` interface. Handles stay in machine state (A2). The crash harness then counts `sessions` among its tables. The table's shape:
 
 ```ts
 type Session = {
@@ -459,8 +461,7 @@ type Session = {
 
 A session has no folder field: its folder is the place of its launches, because the space holds no absolute path (A1 3.15).
 - **Live** comes from the shim's connection, the bridge's connection or T3's thread state. Link and clipboard sessions show only "opened" until an agent binds.
-- Once sessions are made with the launch intent, one that never bound and saw no activity for 7 days ends `stale`.
-- **Resume** is offered only with a `native_id` and an existing instance. It creates a new intent in the same session and never replays the original brief. Otherwise the button reads "Open".
+- **Resume** is offered (`resume: true` in the session list, `Bindings.sessionsOf`) only with a native ID Tasks trusts, of the source the target of the session's launch instance resumes by (the table), and an enabled instance of that ID on this machine. Trusted: an ID the launch set or received (`preset`, `returned`, `reference-match`), or one a connection presented when it bound through the launch (`bridge`), never one only shown at an ad-hoc bind (`presented`), and never by folder and time. A Resume creates a new intent in the same session (its `session`), which joins and continues that session, and never replays the original brief. Otherwise the button reads "Open". Still to build: the Resume launch itself, each target's argv or link below (3.4), started from the UI's session list (A5).
 
 | Target | Resume | Native ID source |
 |---|---|---|

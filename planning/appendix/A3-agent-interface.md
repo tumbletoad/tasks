@@ -107,7 +107,7 @@ One entry serves both actors where the operation is the same: the user checks a 
 - `pref.set`: an agent writes only keys whose declaration lists it. A policy key needs a human actor and the `admin` scope, else `forbidden` with `rule: "policy"`. Only the handler can tell a policy key, so an entry that emits `pref.set` may need `space:write` or `admin`.
 - `proposal.accept`, `proposal.reject`: the optional fresh base. `redact`: the typed confirmation.
 
-**Outside the registry.** Service operations that are not A1 operations (the space verbs, roots, setup's agent-home rows, T3 pairing) have no request ID, so they are rpc methods, not entries, until the UI needs them over HTTP. The page's own HTTP routes sit beside the registry's under every check of A2 3.8.3.
+**Outside the registry.** Service operations that are not A1 operations (the space verbs, roots, setup's agent-home rows, T3 pairing, and the user's `session/end`, `session/unbind` and `session/rebind` while session records live in machine state, 3.7.3) have no request ID, so they are rpc methods, not entries, until the UI needs them over HTTP. The page's own HTTP routes sit beside the registry's under every check of A2 3.8.3.
 
 #### 3.2.4 Naming, versioning and the registry check
 
@@ -199,7 +199,8 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 
 - Every variant carries `bound`. A connection that cannot hold a binding (the UI, the CLI) loads the task with `bound: false` and uses nothing up (3.7.3).
 - A routine's launch reference binds the space, not a task, so its result is the status overview (`view: "status"`, M6).
-- `sessions` and `proposals` become section values with the session list (M4.06) and proposals (M4.02). Provenance labels on context and summary arrive with digest v1 (M4.03).
+- `sessions` is the task's session list (3.7, A4 3.10): its sessions newest first, at most 20, each with its state, home, how it bound, its route, its times and end reason, and whether Resume is offered. It never shows a native ID. `proposals` becomes a section value with proposals (M4.02). Provenance labels on context and summary arrive with digest v1 (M4.03).
+- On a shared connection a launch reference or a bind holds for the call only: `durable: false` and a hint (3.7.5). A call that names another task than the bound one says which task the session stays bound to (`bound_task`, 3.7.3).
 - A launch reference or task in a space the agent home is not granted is `forbidden` with `rule: "grant"`, and binds and reads nothing (3.7.8).
 
 #### 3.4.5 `add_tasks`
@@ -337,7 +338,7 @@ Sent with `initialize` and `server/discover` on every connection and in the offl
 
 ### 3.7 Session binding and attribution
 
-Binding v0 is built in `packages/service/src/binding/` (`bindings.ts`, `sessions.ts`) and read by the request path through `ops/binding.ts`. The headers of those files state each rule. Tests: `A3.3.7.binding.*` (`packages/service/test/binding.test.ts`, `binding-tabs.test.ts`, `src/binding/bindings.test.ts`, and `tests/forwarder/binding.test.ts` through a real bridge process and a real service restart) and `A3.3.7.actors.first-act`.
+Binding is built in `packages/service/src/binding/` (`bindings.ts`, `sessions.ts`, `hosts.ts`) and read by the request path through `ops/binding.ts`. The headers of those files state each rule. Tests: `A3.3.7.binding.*` (`packages/service/test/binding.test.ts`, `binding-complete.test.ts`, `binding-tabs.test.ts`, `src/binding/bindings.test.ts`, `complete.test.ts`, `hosts.test.ts`, `packages/cli/test/session.test.ts`, and `tests/forwarder/binding.test.ts` through a real bridge process and a real service restart) and `A3.3.7.actors.first-act`.
 
 #### 3.7.1 Goals
 
@@ -356,7 +357,7 @@ What the lab measured about each app's native IDs, which the code relies on:
 - T3 Code sets `T3CODE_THREAD_ID` in the Claude provider process. For Codex it reaches only shell commands.
 - `CODEX_THREAD_ID` is undocumented and absent from the MCP server's environment (M0 row A02). It is used only if present, and only to match a recorded ID.
 - Codex sends `_meta.threadId` and `_meta.sessionId`, both the `thread.started` thread ID, on every `tools/call` but not on `initialize` or `tools/list` (M0 row A02). The bind frame cannot carry it, so the service reads it per request.
-- `parent.pid` lets the service walk up to four ancestors, only to detect the host (3.7.5, M4.06).
+- `parent.pid` lets the service walk up to four ancestors, only to detect the host (3.7.5). An ancestor's command line is compared in memory and never kept or logged.
 
 **Getting the ticket through each app's environment filter:**
 
@@ -367,18 +368,18 @@ What the lab measured about each app's native IDs, which the code relies on:
 
 `Bindings` is the only code that changes a connection's binding. The request path only reads the connection's `Slot`, so no handler takes a session, a folder or an environment hint as an input to binding, and every door shares one implementation.
 
-At the bind frame: the binding handle, then the ticket, then a native ID, otherwise unbound. Through tools: `get_task {launch}` binds once, and `get_task {task, bind: true}` binds an ad-hoc session. A connection that cannot hold a binding (the UI, the CLI's classes other than a mapped `cli-agent`, a shared connection) resolves for the call only, with `bound: false`, so a one-shot `tasks show --launch` never spends the reference the agent's own MCP connection needs.
+At the bind frame: the host (3.7.5), then the binding handle, then the ticket, then a native ID alone, otherwise unbound. Through tools: `get_task {launch}` binds once, and `get_task {task, bind: true}` binds an ad-hoc session. A connection that cannot hold a binding (the UI, the CLI's classes other than a mapped `cli-agent`, a shared connection) resolves for the call only, with `bound: false`, so a one-shot `tasks show --launch` never spends the reference the agent's own MCP connection needs.
 
 The three consistency rules in the header of `bindings.ts` must hold through any change: durable before irreversible (every crash window lands on "bind again", never on "bound twice"), a call reads a settled binding, and a connection that carries two conversations binds neither for the other (3.7.5).
 
-Still to build:
-
-- **Native ID binding (M4.06).** A native ID equal to an ID that A4 preset (Claude UUID), received (T3 thread ID) or found by launch-reference match (Codex rollout) for exactly one live session of this instance binds (`via: native_id`). Today presented IDs are only recorded on the session at a bind, which is how deep-link and clipboard launches gain a Resume target.
-- **Rebinding (M4.06).** A bound connection never rebinds silently (`already_bound`). The user unbinds or rebinds in the UI or with `tasks session rebind`.
-- **An explicit `task`** on any call applies to that call only. Once an output schema carries it (M4.06), the result adds "this session is bound to M-14".
+- **Native IDs and how far each is trusted** (`TRUST` in `sessions.ts`, A4 3.10's `native_id_source`). `preset`, `returned` and `reference-match` are IDs the launch itself set or received: A4's preset Claude UUID, T3's returned thread ID, Codex's thread from the reference match (A4 3.4.3). The launch service reports every launch record it writes, and these IDs join the launch's live sessions. `bridge` is an ID a connection presented when it bound through the launch (its ticket, reference or native ID). `presented` is one a connection only showed, at an ad-hoc bind by task. Each ID keeps the strongest trust it was recorded with.
+- **Rule 3: a native ID alone.** An ID equal to a `preset`, `returned` or `reference-match` ID of exactly one live session of the connection's instance binds that session (`via: native_id`), when the home may use its space and the connection is not pinned to another. Two such sessions bind neither. Neither a `bridge` nor a `presented` ID binds alone, though either lets the same session's ticket be presented again (rule 2). A `bridge` ID offers Resume (A4 3.10), a `presented` one never. The bind frame carries Claude's and T3's IDs. Codex's arrives only with tool calls, so the first call that carries it binds an unbound connection that is not shared. The launch of a session no agent bound before records the binding (3.7.7: Claude Code's launch is confirmed by its preset session).
+- **A CLI call** (`cli-agent`) maps to the live session of its ticket's launch, or else to the one live session that holds a native ID in its environment as `preset`, `returned` or `reference-match` (3.7.6 A, B and D). It redeems no role and binds nothing new.
+- **Rebinding.** A bound connection never rebinds silently (`already_bound`). The user changes a session with `tasks session end|unbind|rebind <session> [<task>]` (the service's `session/*` methods, refused for every class but `cli-interactive`, `hub/session-verbs.ts`); the UI reaches the same methods once its session list exists (A5). Each ends the session. `end`: its connections are unbound and lost, its handles answer `lost`, and its launch's ticket binds nothing more. `unbind`: its connections and handles go on unbound, quietly, and may bind again. `rebind`: a new session on another task of the same space takes its place, with its launches, native IDs and home, and its open connections and handles are bound to it. A session is never moved to another space (3.7.8).
+- **An explicit `task`** on any call applies to that call only. When a bound connection's call names another task, the result says which task the session stays bound to (`bound_task`, rendered "This session is bound to M-14."). It is read from the binding at the time of the call and is no part of a write's stored result.
 - **Routine sessions** (M6) bind to the space, not a task (A4's binding kind `routine`). Task tools then need an explicit `task`. Every tool works unbound with an explicit `task` or when it needs none, except `run_report`.
 - **A lost binding.** Calls that relied on the bound task return `unbound` with the hint "Your session ended. Pass task, or ask the user." Search cursors of that connection are invalidated (3.9.5).
-- **Session records move into the space** when a schema step adds A1's `sessions` table with its `session.*` operations. Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
+- **Session records move into the space** when a schema step adds A1's `sessions` table. Until then they live in machine state (`<state>/sessions.json`) behind the `SessionStore` interface, so the move is a storage change. The user's changes then become the `session.unbind`, `session.rebind` and `session.end` operations through the writer. The handles stay in machine state.
 
 #### 3.7.4 Credentials and actors
 
@@ -394,21 +395,23 @@ Still to build:
 The actor and writer scope of each connection class are computed in `ops/caller.ts` (`principalOf`, `sessionPrincipal`) and `mcp/principal.ts` (`bridgePrincipal`), never from input. What must stay true:
 
 - `script` and `agent:unknown` are never attributed to the human, because history would then record a lie. Agent policy applies to `script`, and user-only entries are refused for it.
-- A launch's session is made at its first binding, so a `cli-agent` call before any bridge bound maps to nothing and spends nothing.
+- A launch's session is made with its launch intent, before dispatch (3.7.7), so a `cli-agent` call before any bridge bound maps to it and spends nothing. Until an agent binds it, it holds the launch's instance: the first connection that binds it makes it its own home's (3.7.8), and a mapped call acts as `agent:<launch instance>:<session>` until then. Setup gives a home its instance's ID (3.13.1), so the two are one in practice.
 - A file import is `user` with origin `import` (A1, M8). Only `ui` and `cli-interactive` apply one (X15), and the `import` origin never confers a privileged actor.
 - A routine run's writes carry `routine:<name>` (A1's actor kind `routine`, M6), with the run's session and run on each commit. Agent policy and autonomy apply.
 - An agent actor joins a space on its first act, in a system commit `actor.register` through the writer. The service never inserts actor rows itself, because that would be a second write path.
 - **Agent markers** (`AGENT_MARKERS` in the bridge's protocol constants) make A2 classify a CLI call as `cli-agent`. This appendix maintains the list, and A2 applies it (section 6).
 - **Honesty.** Every process of the same OS user can reach the socket and set or unset variables. Actor rules are attribution and policy that stop a prompt-injected agent from using the product's own interfaces to launch, run or raise its rights. They are not a defence against hostile local code (A2, A6).
-- History is to show the actor plus the session record's host, instance and mode, rendered as "Claude Code · personal · via T3" (M4.06).
+- History is to show the actor plus the session record's host, instance and mode, rendered as "Claude Code · personal · via T3". The session record holds its home, its route and how it bound (`sessions.ts`); the rendering waits for the UI's thread (A5, M5.06).
 
 #### 3.7.5 Shared hosts
 
 Some hosts may run one stdio server for many conversations, and a connection-level binding would then leak between conversations. Shared until the lab proves otherwise: Claude Desktop chat (a `claude-desktop` connection without `CLAUDE_CODE_SESSION_ID`), and Codex connections whose ancestors include the Codex desktop app or the T3 Code server, which both run one Codex app-server for many threads. Per-session: Claude Desktop's Code tab and T3 Code's Claude threads, which set `CLAUDE_CODE_SESSION_ID`.
 
-Built: a connection that shows two different native IDs of one source, or one its bound session does not hold while it holds others of that source, is marked shared, in its handle too, and joins no session (`binding.shared`). This guard exists before host detection because a durable binding inherited by another thread would be a wrong-task write. On a shared connection, a ticket or native ID still proves a single session. Any other call acts as the unbound agent home in the connection's pinned space, resolves `get_task {launch}` or `{bind: true}` for that call only, and is attributed to `agent:<instance>`.
+**Host detection** (`hosts.ts`), at the bind frame, before the handle and the ticket. An entry of the app `claude-desktop` without `CLAUDE_CODE_SESSION_ID` is Claude Desktop's chat. An entry of the app `codex` or `codex-app` whose bridge has, among its first four ancestors, a Codex program run as `codex app-server` is a Codex app-server host: the Codex desktop app and T3 Code's Codex provider run one, the Codex CLI does not. The rule names the app-server rather than the apps' own processes, whose names no lab session has recorded yet. The service reads the ancestors from the OS (Linux `/proc`, Windows one Windows PowerShell call through CIM) only for a Codex entry, and waits at most 3 s within the bind's 5 s. A table it cannot read in time counts as per session, because the guard below still catches two conversations. Such a connection is shared from its bind frame on. Its ticket and its native IDs bind nothing there (`binding.ignored`, reason `shared`), and the ticket is not spent, because a shared host's environment is every conversation's.
 
-Still to build (M4.06): host detection from the ancestors, Claude Desktop chat without a session ID, per-call binding by native ID, and in the output `durable: false` with the hint `Pass task "M-14" on later calls.` and the session record's "opened by reference, not tracked".
+**The guard:** a connection that shows two different native IDs of one source, or one its bound session does not hold while it holds others of that source, is marked shared, in its handle too, and joins no session (`binding.shared`). A durable binding inherited by another thread would be a wrong-task write.
+
+**On a shared connection** a call is a session's only when its own native ID proves it, for that call only (per-call binding): the connection's bound session when it holds the ID, else the one live session of the connection's instance whose launch recorded the ID as `preset`, `returned` or `reference-match` (Codex's `_meta.threadId`, 3.7.2). Any other call acts as the unbound agent home in the connection's pinned space and is attributed to `agent:<instance>`. Its `get_task {launch}` or `{bind: true}` resolves for that call only: the result carries `durable: false` and the hint `Pass task "M-14" on later calls.`, the reference is not used up, and the launch's session, while no agent bound it, reads "opened by reference, not tracked" (`untracked`).
 
 #### 3.7.6 Launch paths
 
@@ -417,12 +420,12 @@ How each launch path reaches a binding:
 - **A. Claude Code CLI in a terminal (A4's shim).** A4 presets a session UUID and passes `--session-id` and the ticket. The bridge binds through the ticket at the bind frame, before any tool call, and the launch records `bound_at`, which is evidence for Confirmed (R8). The Brief's `get_task {launch}` returns the same binding. `tasks` CLI calls from Claude's Bash tool carry the UUID and the ticket and act as the same session.
 - **B. Codex CLI in a terminal (A4's shim).** The `env_vars` entry lets the ticket reach the bridge, which binds at the bind frame. A4 learns the thread ID by matching the launch reference in the session's first message, and from then on CLI calls carrying `CODEX_THREAD_ID` map to the record too.
 - **C. Deep links and the clipboard.** The environment cannot be set, so the bridge starts unbound. The agent's first call, `get_task {launch}`, binds and records the native ID the bridge presented, so A4 learns the ID for Resume.
-- **D. T3 Code.** A4 creates an idle thread through T3's MCP and records the returned thread ID. A Claude thread's bridge presents `T3CODE_THREAD_ID` and binds by native ID (M4.06). A Codex thread's bridge starts unbound and counts as shared: the launch reference resolves the task at the first `get_task`, and later calls pass `task`. CLI calls in that thread's shell carry `T3CODE_THREAD_ID` and map to the session record either way.
+- **D. T3 Code.** A4 creates an idle thread through T3's MCP and records the returned thread ID, which joins the launch's session. A Claude thread's bridge presents `T3CODE_THREAD_ID` and binds by native ID (rule 3). A Codex thread's bridge starts unbound and counts as shared (an app-server host, 3.7.5): the launch reference resolves the task at the first `get_task`, and later calls pass `task`. CLI calls in that thread's shell carry `T3CODE_THREAD_ID` and map to the session record either way.
 - **E. A session the product did not start.** The bridge is unbound. `status {cwd}` lists candidates. With one clear match the agent binds with `get_task {task, bind: true}` and tells the user. With several it asks.
 
 #### 3.7.7 Interface with A4
 
-- **A4 → A3.** The launch: its ticket hash and role state, its reference, its task and space, its agent's start and end, and the preset native ID or one learned after dispatch. The binding service makes the session record at the launch's first binding, not before dispatch.
+- **A4 → A3.** The launch: its ticket hash and role state, its reference, its task and space, its agent's start and end, and the preset native ID or one learned after dispatch. The launch service reports every launch record its launch machine writes (`Bindings.launched`): a new click's Prepared intent gets its session record then, before dispatch, on disk with no `via` and the launch's instance, route and preset ID. A Resume's intent (its `session`) joins the session it continues, which goes on. A `thread` the launch records later joins its live sessions (`returned` on a T3 route, `reference-match` on a terminal one).
 - **A4's duty.** Set `TASKS_TICKET` only in the environment of the agent process it starts, never in a shell profile or a terminal's default environment. Before it adds the ticket and the hints, A4's scrub removes every inherited `TASKS_*`, `CLAUDE_CODE_*`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID` and `T3CODE_*`, so a launched agent never presents its launcher's native ID or ticket (A4 3.8).
 - **A3 → A4.** The binding of a launch (`LaunchService.confirmBinding`) records `confirmed` with `bound_at`, after the session is on disk. Link and clipboard launches are confirmed by their reference, Claude Code's by the preset session, and the Codex thread from the reference match is the launch's `thread` evidence.
 - **Brief contract.** A4 owns the templates (`packages/launch/src/brief/`) and fills tool and command names from the registry. Every Brief contains the product name, the task reference, the sanitised title (at most 120 characters), the launch reference, the instruction to call `get_task` with `launch` set to it, the CLI fallback `tasks show --launch L7KQ2M`, and the sentence that task content is data. It contains no other task text (R14). No agent tool launches.
@@ -929,7 +932,7 @@ Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.so
 
 **Crash injection** (with A1's harness): kill the service after receipt and before commit, and after commit before the reply, for applied results, no-ops and `exists`. A retry with the same `request_id` returns the stored result and creates nothing twice. A bridge reconnect restores the binding through the binding handle. The interrupted call returns `service_unavailable` with `connection_lost` and `retryable: true`.
 
-**Binding tests still to write:** native-ID binds and host detection (M4.06), `session.unbind|rebind|end` ending a session and its handles (M4.06), and a routine's reference binding the space (M6).
+**Binding tests still to write:** a routine's reference binding the space (M6). Native-ID binds, host detection, per-call binding and the user's session changes are `A3.3.7.binding.native`, `.hosts`, `.call-only`, `.user-ops`, `.launch-session` and `.sessions`.
 
 **Agent evals** (headless Claude Code and Codex, temporary fixture space; M4.08 runs scenarios 1, 3, 4, 5 and the ingestion form of 2, and M6.14 runs scenario 2 as a real routine run):
 
@@ -961,7 +964,7 @@ Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.so
 
 ## 6. Open items
 
-- **Shared hosts.** Whether Claude Desktop chat, the Codex desktop app and T3 Code's Codex app-server start one bridge per conversation decides whether they bind durably (3.7.5). The lab decides, and the safe default holds until then. If they do, those hosts get session scopes instead of one shared agent-home scope, which a busy shared host can push to the burst brake sooner than one session would.
+- **Shared hosts.** Whether Claude Desktop chat, the Codex desktop app and T3 Code's Codex app-server start one bridge per conversation decides whether they bind durably (3.7.5). The lab decides, and the safe default holds until then. If they do, those hosts get session scopes instead of one shared agent-home scope, which a busy shared host can push to the burst brake sooner than one session would. The lab sessions that run M0-3, M0-4 and M0-5 also confirm what host detection assumes: that the Codex desktop app and T3 Code run `codex app-server` (by the npm wrapper or a platform binary) within four ancestors of the bridge, and that setup writes the app word `claude-desktop` for Claude Desktop's chat entry (M4.05).
 - **`preferences` input (3.4.11).** M4.01 fixes the shape of `set` and how null resets a key, within the schema grammar.
 - **Mixed read and write actions.** `organize` and `preferences` take read and write actions in one tool, with a request ID only writes need. The registry check treats `request_id` as a write's field (3.2.4), so M4.01 adds a rule for such entries.
 - **Agent markers on Windows.** Windows environment names ignore case, but the marker list (3.7.4) compares the spelling, so `CodeX_Thread_Id` is not seen. The fix belongs in the shared marker selection, used by the service's classifier and the local guard alike.
