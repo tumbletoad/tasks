@@ -11,7 +11,14 @@
 //   detach         start a detached child Node, print both process IDs, then wait as above
 //   serve          the stub service: follows plan.json in TASKS_STUB_DIR (see serve below)
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { setTimeout } from "node:timers";
@@ -47,10 +54,12 @@ function stayAlive() {
 }
 
 /**
- * The stub service. plan.json is a list of steps, one per start: {exit, ms?, switchTo?}. The
- * n-th start follows step n (after the list: exit 0). It logs a start line, writes switchTo into
- * <TASKS_ROOT>\current if given (an update switching current), waits ms, logs an end line and
- * exits with the step's code. log.jsonl in the same folder holds the lines.
+ * The stub service. plan.json is a list of steps, one per start: {exit, ms?, switchTo?,
+ * replaceSupervisor?}. The n-th start follows step n (after the list: exit 0). It logs a start
+ * line (with its parent, the supervisor), writes switchTo into <TASKS_ROOT>\current if given (an
+ * update switching current), with replaceSupervisor renames <TASKS_ROOT>\bin\tasksw.exe aside
+ * (as an update does while it runs) and copies tasksw-next.exe from its folder there, waits ms,
+ * logs an end line and exits with the step's code. log.jsonl in the same folder holds the lines.
  */
 function serve() {
   const dir = process.env.TASKS_STUB_DIR;
@@ -74,6 +83,7 @@ function serve() {
     n: starts,
     t: Date.now(),
     pid: process.pid,
+    ppid: process.ppid,
     version: version(),
     execPath: process.execPath,
     args: process.argv.slice(2),
@@ -82,6 +92,11 @@ function serve() {
   });
   if (typeof step.switchTo === "string") {
     writeFileSync(join(process.env.TASKS_ROOT ?? "", "current"), step.switchTo);
+  }
+  if (step.replaceSupervisor === true) {
+    const bin = join(process.env.TASKS_ROOT ?? "", "bin");
+    renameSync(join(bin, "tasksw.exe"), join(bin, "tasksw.exe.old-1"));
+    copyFileSync(join(dir, "tasksw-next.exe"), join(bin, "tasksw.exe"));
   }
   setTimeout(() => {
     line({ ev: "end", n: starts, t: Date.now(), exit: step.exit });
