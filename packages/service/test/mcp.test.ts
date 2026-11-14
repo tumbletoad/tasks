@@ -6,7 +6,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { offlineReply, parseOffline } from "@tasks/bridge/mcp";
 import { LocalError, PROTOCOL } from "@tasks/bridge/protocol";
-import { findEntry, AppError } from "@tasks/contracts";
+import { findEntry, AppError, readsOnly } from "@tasks/contracts";
 import { Client } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -113,11 +113,51 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
         }),
       );
       legacy.add((await replayed.request("tools/list")).result ?? "");
+      // M4.01: connections bound to a task by get_task {task, bind: true}, in both eras. The list
+      // is asked for after the bind, so nothing about the binding can reach it.
+      await grantHome(w.home, w.path, { instance: "test-agent", space: w.space });
+      const user = await classSession(w.home, w.path, "cli-interactive");
+      try {
+        await user.call(
+          "op/call",
+          {
+            op: "task.add",
+            input: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-list-0001" },
+          },
+          { timeoutMs: 60_000 },
+        );
+      } finally {
+        user.close();
+      }
+      const bind = { name: "get_task", arguments: { task: "M-1", bind: true } };
+      const bound = await raw(w, bridgeContext({ space: w.space }));
+      await bound.initialize();
+      const call = await bound.request("tools/call", bind);
+      expect(textOf(JSON.parse(call.result ?? "{}"))).toContain("Session: bound to this task");
+      legacy.add((await bound.request("tools/list")).result ?? "");
+      const boundModern = await raw(w, bridgeContext({ space: w.space }));
+      const modernCall = await boundModern.request("tools/call", modern("2026-07-28", bind));
+      expect(textOf(JSON.parse(modernCall.result ?? "{}"))).toContain(
+        "Session: bound to this task",
+      );
+      modernLists.add((await boundModern.request("tools/list", modern())).result ?? "");
       expect([...legacy]).toEqual([JSON.stringify(offline.tools_list.result)]);
       expect([...modernLists]).toEqual([JSON.stringify(offline.tools_list.modern_result)]);
-      // The list is the generated one, and the instructions are v0's.
+      // The list is the generated one: A3's eleven tools (M4.01). The instructions are v0's.
       const tools = (offline.tools_list.result["tools"] as Json[]).map((tool) => tool["name"]);
-      expect(tools).toEqual(["add_entry", "complete_task", "get_task", "status", "update_task"]);
+      expect(tools).toEqual([
+        "add_entry",
+        "add_tasks",
+        "complete_task",
+        "get_task",
+        "organize",
+        "preferences",
+        "reopen_task",
+        "run_report",
+        "search",
+        "status",
+        "update_task",
+      ]);
       expect(offline.initialize.result["instructions"]).toBe(INSTRUCTIONS);
       expect(replayed.unanswered).toEqual([]);
     },
@@ -448,7 +488,7 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
         }
         const structured = (await direct(name, input)) as Json;
         let first = structured;
-        if (entry.kind === "write") {
+        if (!readsOnly(entry, input)) {
           expect(structured["replayed"], `${name}: the same request replays`).toBe(true);
           first = Object.fromEntries(
             Object.entries(structured).filter(([key]) => key !== "replayed"),

@@ -55,7 +55,7 @@ function dueText(due: RowLike["due"]): string | undefined {
 const join = (...parts: (string | false | undefined)[]): string =>
   parts.filter((part): part is string => typeof part === "string" && part !== "").join(" · ");
 
-const group = (row: RowLike): string | undefined =>
+const group = (row: Pick<RowLike, "area" | "project">): string | undefined =>
   row.area === undefined && row.project === undefined
     ? undefined
     : [row.area, row.project].filter((name) => name !== undefined).join(" / ");
@@ -451,9 +451,192 @@ function sectionsRendered(
 }
 
 // ---------------------------------------------------------------------------------------------
+// task.search (A3 3.4.3, 3.9.4)
+
+type Search = OutputOf<"task.search">;
+type SearchRow = Search["rows"][number];
+
+/** A3 3.9.4: a title is cut at 90 characters, a snippet at 100, a learning at 200. */
+const SEARCH_CUTS = { title: 90, snippet: 100, learning: 200 } as const;
+
+/** One search row (A3 3.9.4): a task, a learning, or a placeholder for what went since. */
+function searchLine(row: SearchRow): string {
+  const changed = "changed" in row && row.changed === true ? " *" : "";
+  switch (row.kind) {
+    case "deleted":
+    case "redacted":
+      return `${row.ref} · ${row.kind} since this search`;
+    case "learning":
+      return `${join(row.task, row.date, group(row), `"${clip(row.text, SEARCH_CUTS.learning)}"`)}${changed}`;
+    default: {
+      const state =
+        row.lifecycle === "active"
+          ? row.status
+          : join(row.lifecycle, row.completed).replaceAll(" · ", " ");
+      const from =
+        row.snippet_from === undefined || row.snippet_from === "task"
+          ? ""
+          : `${row.snippet_from}: `;
+      const snippet =
+        row.snippet === undefined ? "" : ` — ${from}${clip(row.snippet, SEARCH_CUTS.snippet)}`;
+      return `${join(
+        row.ref,
+        state,
+        `P${String(row.priority)}`,
+        row.effort,
+        row.due !== undefined && `due ${dueText(row.due) ?? ""}`,
+        row.inbox && "inbox",
+        group(row),
+        clip(row.title, SEARCH_CUTS.title),
+      )}${snippet}${changed}`;
+    }
+  }
+}
+
+function searchRendered(result: Search, search: string): Rendered {
+  const { rows, first, total } = result;
+  const span =
+    rows.length <= 1
+      ? String(rows.length === 0 ? 0 : first)
+      : `${String(first)}-${String(first + rows.length - 1)}`;
+  const changed = rows.some((row) => "changed" in row && row.changed === true);
+  return {
+    parts: [
+      fixed(
+        `${span} of ${String(total)} · scope ${result.scope} · as_of ${result.as_of}${changed ? " · * changed since the search ran" : ""}`,
+      ),
+      // The query as read: the caller's words, which may hold names copied from stored text.
+      ...(result.parsed === ""
+        ? []
+        : [{ data: true, fixed: true, units: [[`Query: ${result.parsed}`]] }]),
+      { data: true, units: rows.map((row) => [searchLine(row)]) },
+      ...(result.cursor === undefined
+        ? []
+        : [fixed(`Next page: ${search} with cursor "${result.cursor}" and nothing else.`)]),
+    ],
+    more: `Call ${search} again with a smaller limit.`,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// task.add (A3 3.4.5), task.reopen (A3 3.4.9), run.report (A3 3.4.12)
+
+type Added = OutputOf<"task.add">["tasks"][number];
+
+/** What became of one draft: created, or matched by its source key (A3 3.4.5). */
+function draftLine(row: Added): string {
+  const what =
+    row.result === "exists"
+      ? row.ambiguous !== undefined
+        ? `exists, several match: ${row.ambiguous.join(", ")}`
+        : join(
+            `exists ${row.ref ?? ""}`,
+            row.lifecycle !== undefined && row.lifecycle !== "active" && row.lifecycle,
+            row.matched_by === "source_key" && "by source key",
+            row.log_added && "log added",
+          )
+      : `${row.result} ${row.ref ?? ""}`;
+  return `- ${what.trimEnd()}: ${clip(row.title, 200)}`;
+}
+
+function addRendered(result: OutputOf<"task.add">, getTask: string): Rendered {
+  const created = result.tasks.filter((t) => t.result !== "exists").length;
+  return {
+    parts: [
+      fixed(
+        `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)} · as_of ${result.as_of}${replayed(result)}`,
+        ...result.warnings.map((w) => `warning: ${w}`),
+      ),
+      { data: true, units: result.tasks.map((row) => [draftLine(row)]) },
+    ],
+    more: `Read them with ${getTask}.`,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// group.manage (A3 3.4.10): names are data, counts are not
+
+type Groups = OutputOf<"group.manage">;
+
+function groupsRendered(result: Groups, organize: string): Rendered {
+  const project = (p: Groups["projects"][number]) => `${p.name} (${String(p.active)})`;
+  const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
+  const done =
+    result.result === undefined
+      ? undefined
+      : join(
+          result.result,
+          result.group !== undefined && `${result.group.kind} ${result.group.id}`,
+          result.proposal !== undefined && `proposal ${result.proposal}`,
+        );
+  return {
+    parts: [
+      fixed(done, head),
+      {
+        data: true,
+        units: [
+          ...result.areas.map((area) => [
+            `${area.name} (${String(area.active)})`,
+            ...(area.projects.length === 0
+              ? []
+              : [
+                  `  ${area.projects.map(project).join(" · ")}${area.more_projects === undefined ? "" : ` · +${String(area.more_projects)} more`}`,
+                ]),
+          ]),
+          ...(result.projects.length === 0
+            ? []
+            : [[`No area: ${result.projects.map(project).join(" · ")}`]]),
+        ],
+      },
+    ],
+    more: `Call ${organize} with action list and the area as path.`,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// prefs.manage (A3 3.4.11): keys are the product's words, values are data
+
+type Prefs = OutputOf<"prefs.manage">;
+
+const prefText = (value: unknown): string => JSON.stringify(value);
+
+function prefsRendered(result: Prefs): Rendered {
+  const row = (p: Prefs["prefs"][number]): string[] => {
+    const who =
+      p.policy === true ? "policy, the user's" : p.writable ? "you may set it" : "the user's";
+    if (result.action === "describe") {
+      return [
+        `${p.key}: ${p.summary ?? ""}`,
+        `  ${join(p.shape, `default ${prefText(p.default)}`, who)}`,
+      ];
+    }
+    return [`${p.key} = ${prefText(p.value)}${p.is_default === true ? " (default)" : ""} · ${who}`];
+  };
+  const changed = (result.changed ?? []).map((c) => [
+    `${c.key}: ${prefText(c.from)} -> ${prefText(c.to)}`,
+  ]);
+  return {
+    parts: [
+      fixed(
+        `${join(
+          result.result,
+          result.proposal !== undefined && `proposal ${result.proposal}`,
+          `${String(result.prefs.length)} key${result.prefs.length === 1 ? "" : "s"}`,
+        )} · as_of ${result.as_of}${replayed(result)}`,
+      ),
+      { data: true, units: [...changed, ...result.prefs.map(row)] },
+    ],
+    more: "Ask for fewer keys.",
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // The renderers, by entry
 
-type Renderer = (result: never, tools: { readonly getTask: string }) => Rendered & { max?: number };
+type Renderer = (
+  result: never,
+  tools: { readonly getTask: string; readonly tool: string },
+) => Rendered & { max?: number };
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
   "space.status": (result: Status) => ({
@@ -528,6 +711,30 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       more: `Read them with ${getTask}.`,
     };
   },
+  "task.search": (result: Search, { tool }) => searchRendered(result, tool),
+  "task.add": (result: OutputOf<"task.add">, { getTask }) => addRendered(result, getTask),
+  "task.reopen": (result: OutputOf<"task.reopen">) => {
+    const head =
+      result.result === "reopened"
+        ? `reopened ${result.task} · ${result.status}`
+        : result.result === "no_change"
+          ? `no change ${result.task} (already ${result.lifecycle})`
+          : join(
+              `proposed ${result.task}`,
+              result.proposal !== undefined && `proposal ${result.proposal}`,
+            );
+    return { parts: [fixed(`${head} · as_of ${result.as_of}${replayed(result)}`)], more: "" };
+  },
+  "group.manage": (result: Groups, { tool }) => groupsRendered(result, tool),
+  "prefs.manage": (result: Prefs) => prefsRendered(result),
+  "run.report": (result: OutputOf<"run.report">) => ({
+    parts: [
+      fixed(
+        `reported on run ${result.run} · ${String(result.sources)} source${result.sources === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`,
+      ),
+    ],
+    more: "",
+  }),
 };
 
 /** Whether `entryName` has a compact rendering. Every MCP tool has one (render.test.ts). */
@@ -547,8 +754,8 @@ export function renderResult(entryName: string, result: unknown, random?: Random
     );
   }
   const rendered = (
-    renderer as (r: unknown, t: { getTask: string }) => Rendered & { max?: number }
-  )(result, { getTask: toolOf("task.get") });
+    renderer as (r: unknown, t: { getTask: string; tool: string }) => Rendered & { max?: number }
+  )(result, { getTask: toolOf("task.get"), tool: entry?.faces.mcp?.tool ?? entryName });
   return fit(rendered, Math.min(max, rendered.max ?? max, LIMITS.result), random);
 }
 
@@ -619,6 +826,17 @@ export function renderError(body: ErrorBody, random?: Random): string {
       data: true,
       title: () => "Candidates",
       units: candidates.slice(0, 3).map((row) => [`- ${rowLine(row)}`]),
+    });
+  }
+  // Close names from the space (A3 3.5: stored values only in data.suggestions), as data.
+  const suggestions = Array.isArray(data["suggestions"])
+    ? (data["suggestions"] as unknown[]).filter((s): s is string => typeof s === "string")
+    : [];
+  if (suggestions.length > 0) {
+    parts.push({
+      data: true,
+      title: () => "Did you mean",
+      units: suggestions.slice(0, 5).map((s) => [`- ${clip(s, 120)}`]),
     });
   }
   return fit({ parts, more: "Read the task again for the rest." }, ERROR_TOKENS, random);

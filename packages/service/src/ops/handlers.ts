@@ -14,11 +14,20 @@
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import {
   findEntry,
+  findPreference,
   AppError,
+  GROUP_LIMITS,
+  opSpec,
   parseInput,
+  PREFERENCES,
+  prefShape,
+  prefValueSchema,
+  readsOnly,
   receiptResult,
   registry,
   type AnyEntry,
+  type PrefDeclaration,
+  type PrefPlain,
 } from "@tasks/contracts";
 import {
   newId,
@@ -67,20 +76,29 @@ import {
 } from "./errors.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
+import { editDistance, resolveGroup } from "./groups.ts";
 import {
+  keysOf,
   readCommit,
+  readGroupNames,
+  readGroups,
   readLaunch,
   readPlaced,
   readPlacedAny,
+  readPreferences,
   readReceipt,
   readLaunchTask,
+  readSiblings,
   readSpace,
   readStatus,
   readTask,
   readTaskRef,
   taskRow,
   type CommitFacts,
+  type Destination,
+  type GroupNames,
 } from "./read.ts";
+import { duplicateWarning } from "./similar.ts";
 import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
@@ -188,10 +206,14 @@ export async function opCall(
   if (typeof params.op !== "string") throw invalid("op", "Expected an operation name");
   const entry = findEntry(params.op);
   if (entry === undefined) throw opUnknown();
-  checkExposure(entry, caller.class);
+  const runOnly = entry.actors === "run";
+  if (!runOnly) checkExposure(entry, caller.class);
   // The call reads a settled binding (binding/bindings.ts `use`).
   const slot = caller.binding;
   if (slot !== undefined && host.bindings !== undefined) await host.bindings.use(slot);
+  // A run-only entry needs a run's or a routine's binding, which none is before M6 (A3 3.4.12):
+  // refused here, before the input or the space is read, so nothing is written.
+  if (runOnly) checkExposure(entry, caller.class, slot?.session === undefined ? "none" : "task");
   return callAs(host, caller, entry, params);
 }
 
@@ -259,13 +281,33 @@ async function callAs(
     slot !== undefined && bound !== undefined
       ? sessionPrincipal(slot, bound)
       : (caller.principal ?? principalOf(caller.class, host.machine.id, caller.grant));
-  const request = entry.kind === "write" ? requestIdOf(params) : undefined;
+  // A mixed entry's read action is a read (A3 3.2.3): no request ID, nothing to wait for.
+  const request = readsOnly(entry, params.input) ? undefined : requestIdOf(params);
   if (request === undefined) return callWith(host, caller, entry, params, principal);
   return writing(
     (scope) => `${host.machine.id}\n${scope}\n${request}`,
     principal,
     () => callWith(host, caller, entry, params, principal),
   );
+}
+
+/**
+ * A mixed entry's write action needs `request_id`, and `base` when every operation the entry may
+ * emit needs one (A3 3.2.3). A read action needs neither and ignores both: it writes nothing and
+ * stores no receipt, so an agent that sends a request ID with every call loses nothing. Both are
+ * input rules, so a refusal stores nothing and a corrected call may reuse the ID.
+ */
+function checkActionFields(entry: AnyEntry, input: Record<string, unknown>): void {
+  const actions = entry.actions;
+  if (actions === undefined || readsOnly(entry, input)) return;
+  const action = String(input[actions.field]);
+  if (input["request_id"] === undefined) {
+    throw invalid("request_id", `Required to ${action}`, "Pass a new request_id for this change.");
+  }
+  const guarded = entry.ops.every((op) => opSpec(op)?.base === true);
+  if (guarded && input["base"] === undefined) {
+    throw invalid("base", `Required to ${action}`, "Pass base: the as_of of your last read.");
+  }
 }
 
 /** `opCall` as `principal`. */
@@ -288,6 +330,7 @@ async function callWith(
   checkHiddenFields(entry, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
   if (!parsed.success) throw schemaFailure(parsed.error);
+  checkActionFields(entry, parsed.data);
   if (params.space !== undefined && typeof params.space !== "string") {
     throw invalid("space", "Expected a space ID or name");
   }
@@ -1016,11 +1059,105 @@ function draftOutcome(
 }
 
 /**
+ * Where an agent's draft goes without a group (A3 3.4.5, 3.8.1): the Inbox, unless it says
+ * `inbox: false`. The user's own faces decide where a capture lands themselves (A5).
+ */
+function toInbox(draft: Record<string, unknown>, agent: boolean): boolean {
+  if (typeof draft["inbox"] === "boolean") return draft["inbox"];
+  return agent && draft["area"] === undefined && draft["project"] === undefined;
+}
+
+/** A draft's group and Inbox flag, as the writer will place its task (A1 3.6). */
+function destinationOf(draft: Record<string, unknown>, agent: boolean): Destination {
+  const project = typeof draft["project"] === "string" ? draft["project"] : null;
+  return {
+    project,
+    // A task in a project is in that project's area, which the duplicate check needs not know.
+    area: project === null && typeof draft["area"] === "string" ? draft["area"] : null,
+    inbox: toInbox(draft, agent),
+  };
+}
+
+/**
+ * The drafts (or `update_task`'s `set`) with their area and project names resolved to IDs
+ * (groups.ts, A3 3.4.5), as the writer takes them; `path` gives each item's input path. A request
+ * ID with a receipt is the writer's to replay: its names are not resolved then, so a group renamed
+ * since never refuses a retry of a call that applied (as `placeSets` does for folders). Without
+ * names to resolve, nothing is read.
+ */
+async function resolvedDrafts(
+  call: Call,
+  list: readonly Record<string, unknown>[],
+  path: (k: number) => string,
+): Promise<Record<string, unknown>[]> {
+  const named = list.some((d) => d["area"] !== undefined || d["project"] !== undefined);
+  if (!named || (await applied(call))) return [...list];
+  let names: GroupNames;
+  try {
+    names = await readGroupNames(readerOf(call.space));
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  try {
+    return list.map((draft, k) => {
+      const at = path(k);
+      const resolved = { ...draft };
+      const area = draft["area"];
+      if (typeof area === "string")
+        resolved["area"] = resolveGroup(names, "area", area, `${at}.area`);
+      const project = draft["project"];
+      if (typeof project === "string") {
+        const within = typeof resolved["area"] === "string" ? resolved["area"] : undefined;
+        resolved["project"] = resolveGroup(names, "project", project, `${at}.project`, within);
+      }
+      return resolved;
+    });
+  } catch (error) {
+    // A retry racing its first call: the request may have been decided meanwhile.
+    if (error instanceof AppError && (await applied(call))) return [...list];
+    throw error;
+  }
+}
+
+/**
+ * The `possible duplicate` warnings of the drafts (similar.ts, A3 3.4.5): one per draft whose
+ * title is close to an active task's in the group it lands in. They go with the request, so the
+ * receipt keeps them and a replay says the first call's; a draft that matched an existing task
+ * drops its warning after the write (`task.add`).
+ */
+async function duplicateWarnings(
+  call: Call,
+  list: readonly Record<string, unknown>[],
+  agent: boolean,
+): Promise<string[]> {
+  if (list.length === 0 || (await applied(call))) return [];
+  const destinations = list.map((draft) => destinationOf(draft, agent));
+  let siblings;
+  try {
+    siblings = await readSiblings(readerOf(call.space), destinations);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  return list.flatMap((draft, k) => {
+    const destination = destinations[k];
+    if (destination === undefined) return [];
+    const found = duplicateWarning(
+      `tasks.${String(k)}`,
+      String(draft["title"]),
+      destination,
+      siblings,
+    );
+    return found === undefined ? [] : [found];
+  });
+}
+
+/**
  * A task draft (A3 3.4.5) as A1 operations: task.create, then its log entry and sources. Its place
  * is bound by `placeSets`, after every draft. `start` is the index its first operation gets in the
  * request; each source.add's index is recorded in `sourcePaths` with the source's input path, for
  * `source_differs`. A draft with a keyed source upserts by it (A1 3.6): `on_existing` says what a
- * match takes, and the writer's rebinding rules apply it.
+ * match takes, and the writer's rebinding rules apply it. An agent's draft without a group goes to
+ * the Inbox (`toInbox`).
  */
 function draftOps(
   draft: Record<string, unknown>,
@@ -1029,8 +1166,10 @@ function draftOps(
   path: string,
   start: number,
   sourcePaths: Map<number, string>,
+  agent: boolean,
 ): Operation[] {
   const create: TaskCreate = { kind: "task.create", id, title: String(draft["title"]) };
+  if (toInbox(draft, agent)) create.inbox = true;
   // `return`, the default, is A1's: an active match takes the draft's log entry, nothing else.
   if (draft["on_existing"] === "add_sources") create.link_sources = true;
   // A new task beside finished ones; refused against an active one (A3 3.4.5: invalid_input).
@@ -1038,7 +1177,7 @@ function draftOps(
   for (const key of ["summary", "status", "effort", "waiting_on", "context"] as const) {
     if (typeof draft[key] === "string") create[key] = draft[key];
   }
-  if (typeof draft["inbox"] === "boolean") create.inbox = draft["inbox"];
+  if (draft["inbox"] === false) create.inbox = false;
   if (typeof draft["priority"] === "number") create.priority = draft["priority"];
   if (typeof draft["area"] === "string") create.area = draft["area"];
   if (typeof draft["project"] === "string") create.project = draft["project"];
@@ -1230,7 +1369,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "task.add": async (call) => {
     const { input } = call;
     checkMode(input);
-    const list = drafts(input["tasks"]);
+    const agent = call.principal.actorKind !== "human";
+    const list = await resolvedDrafts(call, drafts(input["tasks"]), (k) => `tasks.${String(k)}`);
     const ops: Operation[] = [];
     const firsts: number[] = [];
     const asks: PlaceAsk[] = [];
@@ -1238,22 +1378,30 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     list.forEach((draft, k) => {
       const id = newId("t");
       firsts.push(ops.length);
-      ops.push(...draftOps(draft, id, call.today, `tasks.${String(k)}`, ops.length, sourcePaths));
+      ops.push(
+        ...draftOps(draft, id, call.today, `tasks.${String(k)}`, ops.length, sourcePaths, agent),
+      );
       asks.push({ task: id, value: draft["place"], at: `tasks.${String(k)}.place` });
     });
+    const duplicates = await duplicateWarnings(call, list, agent);
     const places = await placeSets(call, asks, "warn", ops.length);
     ops.push(...places.ops);
-    // The binding's own warnings go with the request: the writer keeps them with the result, so
-    // a replay says the first call's, never this call's late binding.
-    const result = await submit(call, ops, { warnings: places.warnings });
+    // The binding's own warnings and the possible duplicates go with the request: the writer keeps
+    // them with the result, so a replay says the first call's, never this call's late reading.
+    const result = await submit(call, ops, { warnings: [...duplicates, ...places.warnings] });
     const placed = placeWarnings(
       result,
       asks.map((ask, k) => ({ asked: ask.value !== undefined, first: firsts[k] ?? 0, at: ask.at })),
     );
     const outcomes = list.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
-    // A matched draft binds no place, so the binding's warning for its place does not apply.
-    const unbound = asks.filter((_, k) => outcomes[k]?.result === "exists").map((a) => `${a.at}:`);
-    const bindings = result.warnings.filter((w) => !unbound.some((at) => w.startsWith(at)));
+    // A matched draft binds no place and creates no task, so the warnings of its place and its
+    // title do not apply: each starts with the draft's path.
+    const matched = list
+      .map((_, k) => `tasks.${String(k)}`)
+      .filter((_, k) => outcomes[k]?.result === "exists");
+    const kept = result.warnings.filter(
+      (w) => !matched.some((at) => w.startsWith(`${at}:`) || w.startsWith(`${at}.`)),
+    );
     return {
       as_of: result.as_of,
       tasks: list.map((draft, k) => {
@@ -1267,7 +1415,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           log_added: log?.status === "created",
         };
       }),
-      warnings: [...differsWarnings(result, sourcePaths), ...placed, ...bindings],
+      warnings: [...differsWarnings(result, sourcePaths), ...placed, ...kept],
       ...replayed(result),
     };
   },
@@ -1319,11 +1467,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ops.push({ kind: "task.context_append", task, text: appended });
     }
     if (set["area"] !== undefined || set["project"] !== undefined) {
+      // Names as add_tasks takes them (A3 3.4.5): the writer takes IDs and slugs only.
+      const [group = set] = await resolvedDrafts(call, [set], () => "set");
       ops.push({
         kind: "task.move",
         task,
-        ...(typeof set["area"] === "string" ? { area: set["area"] } : {}),
-        ...(typeof set["project"] === "string" ? { project: set["project"] } : {}),
+        ...(typeof group["area"] === "string" ? { area: group["area"] } : {}),
+        ...(typeof group["project"] === "string" ? { project: group["project"] } : {}),
       });
     }
     const added = Array.isArray(input["add_sources"])
@@ -1416,7 +1566,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const ops: Operation[] = [
       { kind: "task.complete", task, ...(outcome === undefined ? {} : { outcome }) },
     ];
-    const follow = drafts(input["follow_ups"]);
+    const follow = await resolvedDrafts(
+      call,
+      drafts(input["follow_ups"]),
+      (k) => `follow_ups.${String(k)}`,
+    );
+    const agent = call.principal.actorKind !== "human";
     const firsts: number[] = [];
     // task.finish's result has no warnings (A3 3.4.8): a follow-up's source_differs stays in the
     // receipt's operation results.
@@ -1426,7 +1581,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       const id = newId("t");
       firsts.push(ops.length);
       ops.push(
-        ...draftOps(draft, id, call.today, `follow_ups.${String(k)}`, ops.length, sourcePaths),
+        ...draftOps(
+          draft,
+          id,
+          call.today,
+          `follow_ups.${String(k)}`,
+          ops.length,
+          sourcePaths,
+          agent,
+        ),
       );
       asks.push({ task: id, value: draft["place"], at: `follow_ups.${String(k)}.place` });
     });
@@ -1586,7 +1749,234 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw storageFailure(error);
     }
   },
+
+  "group.manage": async (call) => {
+    const { input } = call;
+    const action = String(input["action"]);
+    if (action !== "list") {
+      checkMode(input);
+      // A1's area.* and project.* operations arrive with M4.01b (A3 3.4.10).
+      throw unsupported("action", "M4.01b (A1's area and project operations)");
+    }
+    const reader = readerOf(call.space);
+    let read;
+    let names: GroupNames | undefined;
+    try {
+      read = await readGroups(reader);
+      if (typeof input["path"] === "string") names = await readGroupNames(reader);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    // `path` narrows the list to one area, named as a draft names one (groups.ts).
+    const only =
+      names === undefined ? undefined : resolveGroup(names, "area", String(input["path"]), "path");
+    return groupList(read, only);
+  },
+
+  "prefs.manage": async (call) => {
+    const { input } = call;
+    const action = String(input["action"]);
+    const actor = call.principal.actorKind;
+    if (action === "set") {
+      checkMode(input);
+      if (input["keys"] !== undefined) {
+        throw invalid("keys", "A set names its keys in set", "Leave out keys.");
+      }
+      checkPrefSets(input["set"], actor);
+      // A1's pref.set and the rest of the registry arrive with M3.11 (A1 3.16).
+      throw unsupported("set", "M3.11 (the preferences registry and pref.set)");
+    }
+    if (input["set"] !== undefined) {
+      throw invalid("set", `A ${action} changes nothing`, "Use action set to change a key.");
+    }
+    const declared = prefsAsked(input["keys"]);
+    let read;
+    try {
+      read = await readPreferences(
+        readerOf(call.space),
+        declared.map((p) => p.key),
+      );
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    return {
+      action,
+      as_of: read.space.asOf,
+      prefs: declared.map((p) => prefRow(p, action, read.values.get(p.key), actor)),
+    };
+  },
+
+  // Refused by the exposure gate before any handler runs (`opCall`): no connection is bound to a
+  // run or routine before M6.06. The handler says the same, so no path reaches a write.
+  "run.report": (call) => {
+    const bound = call.caller.binding?.session !== undefined;
+    checkExposure(call.entry, call.caller.class, bound ? "task" : "none");
+    return Promise.reject(new AppError({ code: "internal", message: "No run binding exists." }));
+  },
 };
+
+// ---------------------------------------------------------------------------------------------
+// group.manage (A3 3.4.10) and prefs.manage (A3 3.4.11)
+
+/** A group row as the result names it. */
+function groupRow(row: Row): { id: string; slug: string; name: string; active: number } {
+  return {
+    id: String(row["id"]),
+    slug: String(row["slug"]),
+    name: String(row["title"]),
+    active: Number(row["active"]),
+  };
+}
+
+/**
+ * The areas and their projects (A3 3.4.10), in the space's order: at most GROUP_LIMITS.areas areas,
+ * each with at most GROUP_LIMITS.projects projects and the count of those left out, and the
+ * projects without an area. `only` keeps one area.
+ */
+function groupList(
+  read: Awaited<ReturnType<typeof readGroups>>,
+  only: string | undefined,
+): Record<string, unknown> {
+  const areas = read.areas.filter((row) => only === undefined || row["id"] === only);
+  const projectsOf = (area: unknown) => read.projects.filter((p) => p["area_id"] === area);
+  const loose = read.projects.filter(
+    (p) => p["area_id"] === null || !read.areas.some((a) => a["id"] === p["area_id"]),
+  );
+  return {
+    action: "list",
+    as_of: read.space.asOf,
+    areas: areas.slice(0, GROUP_LIMITS.areas).map((row) => {
+      const projects = projectsOf(row["id"]);
+      const more = projects.length - GROUP_LIMITS.projects;
+      return {
+        ...groupRow(row),
+        projects: projects.slice(0, GROUP_LIMITS.projects).map(groupRow),
+        ...(more > 0 ? { more_projects: more } : {}),
+      };
+    }),
+    projects: only === undefined ? loose.slice(0, GROUP_LIMITS.projects).map(groupRow) : [],
+    total_areas: areas.length,
+    total_projects:
+      only === undefined ? read.projects.length : areas.flatMap((a) => projectsOf(a["id"])).length,
+  };
+}
+
+/** The declarations `keys` names (A3 3.4.11): exact keys or prefixes ending in `.*`, else all. */
+function prefsAsked(keys: unknown): PrefDeclaration[] {
+  if (!Array.isArray(keys) || keys.length === 0) return [...PREFERENCES];
+  const wanted = new Set<string>();
+  (keys as string[]).forEach((key, k) => {
+    const prefix = key.endsWith(".*") ? key.slice(0, -1) : undefined;
+    const found = PREFERENCES.filter((p) =>
+      prefix === undefined ? p.key === key : p.key.startsWith(prefix),
+    );
+    if (found.length === 0) throw unknownPref(`keys.${String(k)}`, key);
+    for (const p of found) wanted.add(p.key);
+  });
+  return PREFERENCES.filter((p) => wanted.has(p.key));
+}
+
+/**
+ * A key no declaration has. Keys are the product's own words, never stored text, so the closest
+ * one may stand in the hint.
+ */
+function unknownPref(path: string, key: string): AppError {
+  const close = PREFERENCES.map((p) => p.key).find(
+    (name) => editDistance(name, key.toLowerCase(), 3) <= 3,
+  );
+  return invalid(
+    path,
+    "No preference has this key",
+    close === undefined
+      ? "Call preferences with action describe for the keys."
+      : `Did you mean ${close}?`,
+  );
+}
+
+/** Whether `actor` may set the key (A1 3.16): never a policy key here, else by its writers. */
+const prefWritable = (p: PrefDeclaration, actor: "human" | "agent"): boolean =>
+  p.policy !== true && p.writers.includes(actor);
+
+/**
+ * Each pair of a `set` (A3 3.4.11), checked as far as the input decides: a declared key, once; a
+ * policy key is `forbidden` with rule `policy` for every actor (policy changes through the user's
+ * own settings, A3 3.8.2), a key whose writers leave the caller out is `forbidden` with rule
+ * `user_only`, and a value other than null must fit its key's own schema.
+ */
+function checkPrefSets(pairs: unknown, actor: "human" | "agent"): void {
+  const list = Array.isArray(pairs) ? (pairs as Record<string, unknown>[]) : [];
+  if (list.length === 0) throw invalid("set", "Name the keys to set", "Pass set: [{key, value}].");
+  const seen = new Set<string>();
+  list.forEach((pair, k) => {
+    const at = `set.${String(k)}`;
+    const key = String(pair["key"]);
+    const declared = findPreference(key);
+    if (declared === undefined) throw unknownPref(`${at}.key`, key);
+    if (seen.has(key)) throw invalid(`${at}.key`, "This key is set twice");
+    seen.add(key);
+    if (declared.policy === true) {
+      throw new AppError({
+        code: "forbidden",
+        message: "This setting is policy: only the user changes it.",
+        hint: `Ask the user to change it in ${PRODUCT_NAME}'s settings.`,
+        data: { rule: "policy", issues: [{ path: `${at}.key`, message: "Policy key" }] },
+      });
+    }
+    if (!prefWritable(declared, actor)) {
+      throw new AppError({
+        code: "forbidden",
+        message: "Only the user can change this setting.",
+        hint: `Ask the user to change it in ${PRODUCT_NAME}.`,
+        data: { rule: "user_only", issues: [{ path: `${at}.key`, message: "The user's key" }] },
+      });
+    }
+    const value = pair["value"];
+    if (value !== null && !prefValueSchema(declared.value).safeParse(value).success) {
+      throw invalid(
+        `${at}.value`,
+        "Not a value of this key",
+        `It takes ${prefShape(declared.value)}.`,
+      );
+    }
+  });
+}
+
+/** A stored value as its key reads it (A1 3.16): the default when it is missing or unreadable. */
+function prefValue(p: PrefDeclaration, stored: string | undefined): PrefPlain {
+  if (stored === undefined) return p.default;
+  if (p.value.kind === "keys") {
+    const fallback = Array.isArray(p.default) ? (p.default as string[]) : [];
+    return keysOf(stored, fallback);
+  }
+  try {
+    const value: unknown = JSON.parse(stored);
+    return prefValueSchema(p.value).safeParse(value).success ? (value as PrefPlain) : p.default;
+  } catch {
+    return p.default;
+  }
+}
+
+const plain = (value: PrefPlain): PrefPlain =>
+  typeof value === "object" ? value.map(String) : value;
+
+function prefRow(
+  p: PrefDeclaration,
+  action: string,
+  stored: string | undefined,
+  actor: "human" | "agent",
+): Record<string, unknown> {
+  const value = prefValue(p, stored);
+  return {
+    key: p.key,
+    ...(action === "describe" ? { summary: p.summary, shape: prefShape(p.value) } : {}),
+    ...(action === "get"
+      ? { value: plain(value), is_default: JSON.stringify(value) === JSON.stringify(p.default) }
+      : {}),
+    default: plain(p.default),
+    writable: prefWritable(p, actor),
+    ...(p.policy === true ? { policy: true } : {}),
+  };
+}
 
 /** The search cursors of one service run (A3 3.9.5): a restart drops them with the host. */
 const searchCursors = new WeakMap<OpsHost, SearchCursors>();

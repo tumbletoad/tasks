@@ -261,6 +261,12 @@
       "verb": "add"
     },
     {
+      "actions": {
+        "field": "action",
+        "reads": [
+          "list"
+        ]
+      },
       "actors": "agent",
       "auto": [
         "base",
@@ -563,6 +569,13 @@
       "verb": "note"
     },
     {
+      "actions": {
+        "field": "action",
+        "reads": [
+          "describe",
+          "get"
+        ]
+      },
       "actors": "agent",
       "auto": [
         "base",

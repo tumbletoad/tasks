@@ -209,10 +209,20 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
     expect(text).toContain("get_task");
     expect(text).not.toContain("Counts:");
     expect(/^[\x20-\x7e\n·]*$/u.test(text)).toBe(true);
+    // M4.01 brings the triage guide; organize's waits for organize's changes.
+    const triage = (
+      await toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 })("status", {
+        guide: "triage",
+      })
+    ).content[0].text;
+    expect(resultTokens(triage)).toBeLessThanOrEqual(GUIDE_TOKENS);
+    expect(/^[\x20-\x7e\n·]*$/u.test(triage)).toBe(true);
+    for (const tool of ["status", "organize", "search", "update_task"]) {
+      expect(triage).toMatch(new RegExp(`\\b${tool}\\b`));
+    }
     for (const [guide, step] of [
       ["refresh", "M4.07"],
-      ["triage", "M4.01"],
-      ["organize", "M4.01"],
+      ["organize", "M4.01b"],
     ] as const) {
       const body = await refusal("space.status", { guide });
       expect(body).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "guide" }] } });

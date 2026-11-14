@@ -60,7 +60,7 @@ const row = (n: number, title: string) => ({
 
 describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget", () => {
   test("every listed tool has a compact rendering", () => {
-    expect(TOOLS.length).toBe(5);
+    expect(TOOLS.length).toBe(11);
     for (const tool of tools) expect(hasRenderer(tool.name), tool.name).toBe(true);
   });
 
