@@ -14,7 +14,7 @@ export const LINK_REL = ["noopener", "noreferrer"].join(" ");
 
 /** Inline tokens are looked for in this order at each place; the earliest match wins. */
 const INLINE =
-  /`([^`\n]+)`|\[([^\]\n]{1,500})\]\(([^()\s]{1,2000})\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|(?<![\w*])\*([^*\n]+)\*(?!\w)|(?<![\w_])_([^_\n]+)_(?!\w)|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/gu;
+  /`([^`\n]+)`|\[([^\]\n]{1,500})\]\(([^()\s]{1,2000})\)|\*\*([^*\n]+)\*\*|(?<![\w_])__([^_\n]+)__(?![\w_])|(?<![\w*])\*([^*\n]+)\*(?!\w)|(?<![\w_])_([^_\n]+)_(?!\w)|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/gu;
 
 /** How deep emphasis may nest inside emphasis: beyond it, the rest is text. */
 const MAX_DEPTH = 4;

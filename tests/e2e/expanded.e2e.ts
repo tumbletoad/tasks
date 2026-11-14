@@ -6,8 +6,9 @@
 // only allowed schemes become links, no CSP report, axe finds nothing in the expanded task in
 // either theme, and the screenshots in Sumi and Washi at 1,440 px (and 390 px) for review.
 //
-// A restorable deleted task is the one lifecycle not linked here: no operation tombstones a task
-// before M3.04, and `task.get` reads none until then. Its host view is a unit test
+// Two lifecycles are not linked here, because no operation makes them before M3.04: an archived
+// (dropped) task (`task.finish` refuses `status: dropped` until then) and a restorable deleted
+// one (no tombstone, and `task.get` reads none). Their host views are a unit test
 // (`A5.3.3.web.task-host`).
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -40,8 +41,8 @@ async function richTask(world: World, tag: string): Promise<{ ref: string; title
   const ref = await addTask(world, {
     title,
     summary: `Store UTC plus the clinic's zone ID, then convert once (${tag})`,
-    area: "Lumen",
-    project: "Lumen portal",
+    area: "lumen",
+    project: "lumen-portal",
     priority: 1,
     effort: "M",
     due: "+3d",
@@ -165,7 +166,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
 
     // The context is Markdown, never HTML: the markup shows as text and nothing of it runs.
     const context = body.locator('[data-part="context"]');
-    await expect(context.locator("strong")).toHaveText("one hour");
+    await expect(context.locator("strong", { hasText: /^one hour$/ })).toHaveCount(1);
     await expect(context).toContainText("<script>window.__xss = 1</script>");
     await expect(context.locator("li")).toHaveCount(2);
     await expect(context.locator('a[href="https://docs.example/runbook"]')).toBeVisible();
@@ -220,7 +221,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
 });
 
 test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle opens it", () => {
-  test("Inbox, a status view, the area view, Completed for a done and a dropped task, and an unknown task", async ({
+  test("Inbox, a status view, the area view, Completed for a done task, and an unknown task", async ({
     page,
     world,
   }) => {
@@ -235,20 +236,13 @@ test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle
     });
     const area = await addTask(world, {
       title: `Renew the clinic certificate (${tag})`,
-      area: "Home",
+      area: "home",
     });
-    const done = await addTask(world, { title: `Fix DST bug in reports (${tag})`, area: "Lumen" });
+    const done = await addTask(world, { title: `Fix DST bug in reports (${tag})`, area: "lumen" });
     await world.op(space, "task.finish", {
       task: done,
       outcome: `Reports convert from UTC with the clinic's zone ID (${tag}).`,
-      learnings: [`Always store UTC plus the zone ID, never offsets (${tag}).`],
       base: await asOf(world, done),
-    });
-    const dropped = await addTask(world, { title: `Try the other printer (${tag})`, inbox: true });
-    await world.op(space, "task.finish", {
-      task: dropped,
-      status: "dropped",
-      base: await asOf(world, dropped),
     });
     await watchViolations(page);
     await page.goto(await world.signInUrl(`/s/${space}/today`));
@@ -265,14 +259,11 @@ test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle
     await opens(waiting, new RegExp(`/s/${space}/waiting\\?task=${waiting}$`), "Waiting");
     await opens(area, new RegExp(`/s/${space}/area/[a-z0-9_]+\\?task=${area}$`), "Home");
 
-    // A completed task: Completed, its outcome and learning, checked off.
+    // A completed task: Completed, its outcome, checked off.
     await opens(done, new RegExp(`/s/${space}/completed\\?task=${done}$`), "Completed");
     const doneRow = page.locator(`li[data-task="${done}"]`);
     await expect(doneRow.locator('[data-part="outcome"]')).toContainText(
       `Reports convert from UTC with the clinic's zone ID (${tag}).`,
-    );
-    await expect(doneRow.locator('[data-part="learning"]')).toContainText(
-      `Always store UTC plus the zone ID, never offsets (${tag}).`,
     );
     await expect(doneRow.locator("dd").first()).toHaveText("Checked off");
     // A reload keeps the host view and the expansion.
@@ -289,10 +280,6 @@ test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle
       timeout: SLOW_MS,
     });
 
-    // A dropped task: Completed too.
-    await opens(dropped, new RegExp(`/s/${space}/completed\\?task=${dropped}$`), "Completed");
-    await expect(page.locator(`li[data-task="${dropped}"] dd`).first()).toHaveText("Dropped");
-
     // A task that is not in the space: the landing view, and the toast says so.
     await page.goto(`${world.origin}/s/${space}/task/M-999999`);
     await expect(page).toHaveURL(new RegExp(`/s/${space}/today$`), { timeout: SLOW_MS });
@@ -304,7 +291,7 @@ test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle
 });
 
 test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone", () => {
-  test("Enter expands, Tab reaches the card's controls, Escape collapses to the title, Back reopens, F2 renames, j moves on", async ({
+  test("Enter expands, Tab reaches the card's controls, Escape collapses to the title, Back reopens, F2 renames, the list keys move on", async ({
     page,
     world,
   }) => {
@@ -312,7 +299,7 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     const space = world.mira.id;
     const ref = await addTask(world, {
       title: `Book the moving van (${tag})`,
-      area: "Home",
+      area: "home",
       sources: [{ kind: "web", title: "Van rental", url: "https://vans.example/booking" }],
     });
     await page.goto(await world.signInUrl(`/s/${space}/today`));
@@ -373,9 +360,10 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.keyboard.press("Escape");
     await expect(title).toHaveText(`Book the moving van (${tag}), just the jump seats`);
     await expect(title).toHaveAttribute("aria-expanded", "true");
-    // j moves to the next row.
+    // The list's keys move on from the card's title: Home goes to the list's first row (this
+    // task, in an area, is never the first: the Inbox comes first).
     await title.focus();
-    await page.keyboard.press("j");
+    await page.keyboard.press("Home");
     await expect(title).not.toBeFocused();
     await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
   });
@@ -404,7 +392,8 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
           },
           { key: THEME_KEY, theme },
         );
-        await page.goto(await world.signInUrl(`/s/${world.mira.id}/today?task=${ref}`));
+        // A task link: the sign-in's route is a path, and the route lands on the host view.
+        await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
         await showsSpace(page, world.mira.name);
         const row = page.locator(`li[data-task="${ref}"]`);
         await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {

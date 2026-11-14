@@ -57,6 +57,10 @@ describe("[A5.3.26.web.markdown] task Markdown is elements of an allow-list, nev
     expect(out).toContain("<ol><li>a</li><li>b</li></ol>");
     expect(out).toContain("<blockquote><p>quoted</p></blockquote>");
     expect(out).toContain("<pre><code>const x = 1;</code></pre>");
+    // Underscores inside words are not emphasis (CommonMark): snake_case and a__b__c stay.
+    expect(html("snake_case_name, a__b__c and __bold__")).toContain(
+      "snake_case_name, a__b__c and <strong>bold</strong>",
+    );
     expect(tags(out).every((tag) => ALLOWED.has(tag ?? ""))).toBe(true);
   });
 

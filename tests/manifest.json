@@ -2723,7 +2723,7 @@
     },
     {
       "id": "A7.3.12.m5-06.e2e.task-links",
-      "title": "In Chromium and Firefox against the real service: a link to an Inbox task, a waiting task without an area, an area task, a completed task (with its outcome and learning) and a dropped task each opens on its host view expanded, with its sidebar item current; a reload keeps it, collapsing pushes the view so Back reopens it, and an unknown task lands on the landing view with a toast",
+      "title": "In Chromium and Firefox against the real service: a link to an Inbox task, a waiting task without an area, an area task and a completed task (with its outcome) each opens on its host view expanded, with its sidebar item current; a reload keeps it, collapsing pushes the view so Back reopens it, and an unknown task lands on the landing view with a toast",
       "source": "A5 3.3, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -2731,7 +2731,7 @@
     },
     {
       "id": "A7.3.12.m5-06.e2e.keyboard",
-      "title": "In Chromium and Firefox against the real service, by keyboard alone: Enter expands and puts the task in the URL, Tab reaches the star, the collapse button, a source link and the strip, Escape collapses to the title, Back reopens, F2 renames with Enter (kept after a reload) and Escape cancels, typed letters stay in the field, and j moves to the next row",
+      "title": "In Chromium and Firefox against the real service, by keyboard alone: Enter expands and puts the task in the URL, Tab reaches the star, the collapse button, a source link and the strip, Escape collapses to the title, Back reopens, F2 renames with Enter (kept after a reload) and Escape cancels, typed letters stay in the field, and the list keys move on from the card's title",
       "source": "A5 3.7, A5 3.21, A5 3.22, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
