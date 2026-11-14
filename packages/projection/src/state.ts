@@ -9,8 +9,8 @@
 //   task with a file, its catalogue line as rendered (the catalogue is assembled from these); the
 //   space it was made for; and the watermark last published. A file whose task no longer names it
 //   (the task moved or is gone) is retired: removed after the next publish, when it is still ours.
-// - **The journal** names, before a batch acts, the temporary files it may create and every file
-//   it is about to place with its hash, and the stem of its rescue folders. A kill leaves it; the
+// - **The journal** names, before a batch acts, the temporary files it may create, every file it
+//   is about to place with its hash, the tasks it found gone, and the stem of its rescue folders. A kill leaves it; the
 //   next start plays it forward against the disk (projector.ts) and removes the temporary files it
 //   names.
 //
@@ -58,6 +58,8 @@ export interface Journal {
   /** Temporary files this batch may create, by their path in the tree. */
   readonly temps: readonly string[];
   readonly placing: ReadonlyMap<string, Placing>;
+  /** Tasks the batch found gone: their lines go, their files retire. */
+  readonly gone: readonly string[];
   /** The watermark the batch publishes, when it publishes. */
   readonly watermark?: number;
 }
@@ -70,6 +72,8 @@ export const newRecord = (identity: SpaceIdentity): TrustedRecord => ({
 });
 
 const SHA256 = /^[0-9a-f]{64}$/;
+/** A task's ID (A1 3.3). */
+const TASK_ID = /^t_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 /** A rescue stem as the projector makes it: a time stamp and 16 random bits. */
 export const STEM = /^[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
 /** A record larger than this is not read (a design-scale record is about 30 MB). */
@@ -230,11 +234,13 @@ export class TrustedState {
   readJournal(): Journal | undefined {
     const value = this.#read(this.#journal);
     if (!isObject(value) || value["format"] !== FORMAT) return undefined;
-    const { stem, temps, watermark } = value;
+    const { stem, temps, watermark, gone } = value;
     if (
       typeof stem !== "string" ||
       !STEM.test(stem) ||
       !Array.isArray(temps) ||
+      !Array.isArray(gone) ||
+      !gone.every((id) => typeof id === "string" && TASK_ID.test(id)) ||
       !temps.every((t) => typeof t === "string" && isTempPath(t)) ||
       (watermark !== undefined && !isCount(watermark)) ||
       !isObject(value["placing"])
@@ -256,6 +262,7 @@ export class TrustedState {
     return {
       stem,
       temps: temps as string[],
+      gone: gone as string[],
       placing,
       ...(watermark === undefined ? {} : { watermark }),
     };
@@ -266,6 +273,7 @@ export class TrustedState {
       format: FORMAT,
       stem: journal.stem,
       temps: journal.temps,
+      gone: journal.gone,
       placing: sorted(journal.placing),
       ...(journal.watermark === undefined ? {} : { watermark: journal.watermark }),
     };

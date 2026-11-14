@@ -211,9 +211,10 @@ export const catalogOf = (dir: string): { id: string; path: string }[] =>
 /**
  * A1 3.13's guarantee, checked against the database, which the tree did not write: when the folder
  * claims a watermark W, every commit up to W is reflected in every task's file (its `seq` is at
- * least the task's last change up to W), every live task created up to W has a catalogue line, and
- * every path the catalogue names exists, reached through real folders. A folder without
- * `.projection.json` claims nothing. `skip` names task IDs not checked (a person changed them).
+ * least the task's last change up to W), every task live at W and still live has a catalogue line
+ * (one deleted or restored after W is not judged by W), and every path the catalogue names exists,
+ * reached through real folders. A folder without `.projection.json` claims nothing. `skip` names
+ * task IDs not checked (a person changed them).
  */
 export function checkWatermark(
   dir: string,
@@ -240,7 +241,8 @@ export function checkWatermark(
   const tasks = reader
     .prepare(
       "SELECT t.id, (SELECT max(seq) FROM changes c WHERE c.task_id = t.id AND c.seq <= $w) AS last " +
-        "FROM tasks t WHERE t.created_seq <= $w AND t.deleted_at IS NULL",
+        "FROM tasks t WHERE t.created_seq <= $w AND t.deleted_at IS NULL AND NOT EXISTS " +
+        "(SELECT 1 FROM changes d WHERE d.task_id = t.id AND d.field = 'deleted' AND d.seq > $w)",
     )
     .all<{ id: string; last: number }>({ w });
   for (const task of tasks) {

@@ -29,7 +29,8 @@
 //
 // **A kill** leaves temporary files and the journal. The next start plays the journal forward: a
 // file that reached its place with the journal's bytes goes into the record; a task whose file is
-// not there as the journal meant it is queued again, since the writer may have marked it rendered.
+// not there as the journal meant it, or that the batch found gone, is queued again, since the writer
+// may have marked it rendered.
 // Then it removes the temporary files (tree.ts, rule 4), writes the record, drops the journal and
 // reconciles. A record
 // that is missing or does not read back whole, or that was made for another identity of the space
@@ -214,7 +215,7 @@ export class Projector {
     const pending = readPending(this.#conn);
     const record = found ?? newRecord(identityOf(pending));
     let recovered = false;
-    /** Tasks the killed batch was placing whose files are not on disk as it meant them. */
+    /** Tasks of the killed batch whose outcome the record may not hold: queued again. */
     const unverified = new Set<string>();
     if (found !== undefined && journal !== undefined) {
       for (const [path, placing] of journal.placing) {
@@ -235,6 +236,8 @@ export class Projector {
           record.watermark = Math.max(record.watermark, journal.watermark);
         }
       }
+      // A task the batch found gone may be marked rendered while the record still has its line.
+      for (const id of journal.gone) unverified.add(id);
       recovered = true;
     }
     const rescued = journal === undefined ? [] : this.#tree.rescuedBy(journal.stem);
@@ -404,12 +407,16 @@ export class Projector {
     const plans = read.keys.flatMap((key) => this.#plan(read, key));
     const placing = new Map<string, Placing>();
     const temps: string[] = [];
+    const gone: string[] = [];
     for (const plan of plans) {
-      if (plan.next === null) continue;
+      if (plan.next === null) {
+        gone.push(plan.key);
+        continue;
+      }
       placing.set(plan.next.path, plan.next);
       temps.push(tempPathOf(plan.next.path, plan.next.sha256, tag));
     }
-    this.#state.writeJournal({ stem: rescues.stem, temps, placing });
+    this.#state.writeJournal({ stem: rescues.stem, temps, placing, gone });
     const counts = { written: 0, removed: 0, failed: 0 };
     let code: string | undefined;
     let published = false;
@@ -457,6 +464,7 @@ export class Projector {
           tag,
           temps,
           placing,
+          gone,
         });
         counts.removed = outcome.removed;
         counts.failed += outcome.failed;
@@ -552,6 +560,7 @@ export class Projector {
       readonly tag: string;
       readonly temps: readonly string[];
       readonly placing: ReadonlyMap<string, Placing>;
+      readonly gone: readonly string[];
     },
   ): { removed: number; failed: number; code?: string; published: boolean } {
     const record = this.#rec;
@@ -577,7 +586,13 @@ export class Projector {
       placing.set(path, file);
       temps.push(tempPathOf(path, file.sha256, batch.tag));
     }
-    this.#state.writeJournal({ stem: batch.rescues.stem, temps, placing, watermark: seq });
+    this.#state.writeJournal({
+      stem: batch.rescues.stem,
+      temps,
+      placing,
+      gone: batch.gone,
+      watermark: seq,
+    });
     for (const [path, content] of contents) {
       try {
         this.#tree.place(path, content, record.files.get(path), batch.rescues, batch.tag);

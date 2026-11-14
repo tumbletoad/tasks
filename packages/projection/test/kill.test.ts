@@ -47,7 +47,7 @@ function expectWholeFiles(dir: string): void {
 /** Changes that place, move and remove files: renames, a completion, a reopening, new tasks. */
 function change(w: World, round: number): void {
   const active = w.reader
-    .prepare("SELECT id FROM tasks WHERE lifecycle = 'active' ORDER BY ref")
+    .prepare("SELECT id FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL ORDER BY ref")
     .all<{ id: string }>()
     .map((row) => row.id);
   const pick = (k: number): string => active[(round * 7 + k) % active.length] ?? "";
@@ -60,6 +60,12 @@ function change(w: World, round: number): void {
     .prepare("SELECT id FROM tasks WHERE lifecycle = 'completed' ORDER BY ref LIMIT 1")
     .get()?.["id"];
   if (typeof done === "string") w.submit([{ kind: "task.reopen", task: done }]);
+  // A delete, and the restore of one deleted a round before: a file goes, another comes back.
+  const gone = w.reader
+    .prepare("SELECT id FROM tasks WHERE deleted_at IS NOT NULL ORDER BY ref LIMIT 1")
+    .get()?.["id"];
+  if (typeof gone === "string") w.submit([{ kind: "task.restore", task: gone }]);
+  w.submit([{ kind: "task.delete", task: pick(4) }]);
   w.submit([{ kind: "task.create", title: `Created in round ${String(round)}` }]);
 }
 
@@ -109,7 +115,7 @@ describe("[A1.5.projection.kill] a kill at any act of a start or a batch, rename
         // Every open task changes again, so each file the killed batch placed is replaced: one the
         // projection could not prove its own would be moved aside.
         for (const row of w.reader
-          .prepare("SELECT id FROM tasks WHERE lifecycle = 'active'")
+          .prepare("SELECT id FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL")
           .all<{ id: string }>()) {
           w.submit([
             { kind: "task.patch", task: row.id, set: { summary: `After kill ${String(kill)}` } },

@@ -133,7 +133,9 @@ describe("[A1.5.projection.fresh] after quiescence the projection equals a fresh
       checkWatermark(w.dir, w.reader);
       if (steps <= 3) {
         const active = w.reader
-          .prepare("SELECT id FROM tasks WHERE lifecycle = 'active' ORDER BY ref")
+          .prepare(
+            "SELECT id FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL ORDER BY ref",
+          )
           .all<{ id: string }>()
           .map((row) => row.id);
         const pick = (k: number): string => active[(steps * 97 + k) % active.length] ?? "";
@@ -145,13 +147,24 @@ describe("[A1.5.projection.fresh] after quiescence the projection equals a fresh
           .prepare("SELECT id FROM tasks WHERE lifecycle = 'completed' ORDER BY ref LIMIT 1")
           .get()?.["id"];
         if (typeof done === "string") w.submit([{ kind: "task.reopen", task: done }]);
+        // A delete, an archive, and a restore of what an earlier step deleted.
+        w.submit([{ kind: "task.delete", task: pick(3) }]);
+        w.submit([{ kind: "task.archive", task: pick(4) }]);
+        const gone = w.reader
+          .prepare("SELECT id FROM tasks WHERE deleted_at IS NOT NULL ORDER BY ref LIMIT 1")
+          .get()?.["id"];
+        if (typeof gone === "string" && steps > 1) w.submit([{ kind: "task.restore", task: gone }]);
         checkWatermark(w.dir, w.reader);
       }
       if (steps > 50) throw new Error("no quiescence");
     }
     expect(steps).toBeGreaterThanOrEqual(3);
     expectClean(w.dir);
-    expect(catalogOf(w.dir)).toHaveLength(ids.length);
+    const live = w.reader
+      .prepare("SELECT count(*) AS n FROM tasks WHERE deleted_at IS NULL")
+      .get()?.["n"];
+    expect(catalogOf(w.dir)).toHaveLength(Number(live));
+    expect(Number(live)).toBeLessThan(ids.length);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 

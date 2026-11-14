@@ -54,9 +54,15 @@ const FOLDERS = ["open", "completed", "completed/2026"] as const;
 /** A person swaps a folder for a link while a batch waits on the writer. */
 type During = "none" | "open-link" | "view-link";
 
+/** A commit to an existing task; "delete-task" tombstones it, "restore" brings a deleted one back. */
+type Commit = "rename" | "summary" | "complete" | "archive" | "reopen" | "delete-task" | "restore";
+
 type Action =
   | { readonly kind: "create"; readonly squat: boolean }
-  | { readonly kind: "rename" | "summary" | "complete" | "reopen"; readonly pick: number }
+  | {
+      readonly kind: Commit;
+      readonly pick: number;
+    }
   | {
       readonly kind: "run";
       readonly steps: number;
@@ -77,13 +83,16 @@ const action: fc.Arbitrary<Action> = fc.oneof(
     arbitrary: fc.record({ kind: fc.constant("create" as const), squat: fc.boolean() }),
   },
   {
-    weight: 6,
+    weight: 7,
     arbitrary: fc.record({
-      kind: fc.constantFrom(
-        "rename" as const,
-        "summary" as const,
-        "complete" as const,
-        "reopen" as const,
+      kind: fc.constantFrom<Commit>(
+        "rename",
+        "summary",
+        "complete",
+        "archive",
+        "reopen",
+        "delete-task",
+        "restore",
       ),
       pick: fc.nat(),
     }),
@@ -284,7 +293,7 @@ class Model {
 
   ids(lifecycle: "active" | "completed"): string[] {
     return this.w.reader
-      .prepare("SELECT id FROM tasks WHERE lifecycle = $l ORDER BY ref")
+      .prepare("SELECT id FROM tasks WHERE lifecycle = $l AND deleted_at IS NULL ORDER BY ref")
       .all<{ id: string }>({ l: lifecycle })
       .map((row) => row.id);
   }
@@ -574,15 +583,15 @@ class Model {
       w.submit([{ kind: "task.create", title }]);
       return;
     }
-    if (
-      a.kind !== "rename" &&
-      a.kind !== "summary" &&
-      a.kind !== "complete" &&
-      a.kind !== "reopen"
-    ) {
-      return;
-    }
-    const pool = this.ids(a.kind === "reopen" ? "completed" : "active");
+    if (!("pick" in a)) return;
+    const pool =
+      a.kind === "reopen"
+        ? this.ids("completed")
+        : a.kind === "restore"
+          ? this.deleted()
+          : a.kind === "delete-task"
+            ? [...this.ids("active"), ...this.ids("completed")]
+            : this.ids("active");
     const task = pool[a.pick % Math.max(1, pool.length)];
     if (task === undefined) return;
     this.n += 1;
@@ -591,7 +600,17 @@ class Model {
     } else if (a.kind === "summary") {
       w.submit([{ kind: "task.patch", task, set: { summary: `Summary ${String(this.n)}` } }]);
     } else if (a.kind === "complete") w.submit([{ kind: "task.complete", task }]);
-    else w.submit([{ kind: "task.reopen", task }]);
+    else if (a.kind === "archive") w.submit([{ kind: "task.archive", task }]);
+    else if (a.kind === "reopen") w.submit([{ kind: "task.reopen", task }]);
+    else if (a.kind === "delete-task") w.submit([{ kind: "task.delete", task }]);
+    else if (a.kind === "restore") w.submit([{ kind: "task.restore", task }]);
+  }
+
+  deleted(): string[] {
+    return this.w.reader
+      .prepare("SELECT id FROM tasks WHERE deleted_at IS NOT NULL ORDER BY ref")
+      .all<{ id: string }>()
+      .map((row) => row.id);
   }
 
   // ------------------------------------------------------------------------------------------
@@ -661,7 +680,10 @@ class Model {
       case "rename":
       case "summary":
       case "complete":
+      case "archive":
       case "reopen":
+      case "delete-task":
+      case "restore":
         this.commit(a);
         return;
       case "run":
