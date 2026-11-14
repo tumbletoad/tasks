@@ -1,5 +1,6 @@
 // task.add: create 1 to 25 tasks in one transaction, upserting by source key (A3 3.4.5). Its MCP
-// tool, add_tasks, arrives with the upsert in M4.01. Until then the CLI and the UI use the entry.
+// tool is add_tasks. Areas and projects match by name or slug, ignoring case, and an agent's task
+// without either goes to the Inbox.
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";
 import {
@@ -64,6 +65,12 @@ export const taskAdd = defineEntry({
   faces: {
     ui: true,
     cli: { verb: "add", positional: ["title"], item: "tasks", short: { priority: "p" } },
+    mcp: {
+      tool: "add_tasks",
+      title: "Add tasks",
+      description:
+        "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists, not a copy. Without area or project a task goes to the Inbox.",
+    },
   },
   budget: { typical: 80, max: 1500 },
   errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict"],
@@ -73,7 +80,7 @@ export const taskAdd = defineEntry({
       input: {
         tasks: [
           {
-            title: "Check the mobile app for the same time zone bug",
+            title: "Fix appointment time zones in the mobile app",
             area: "Client work",
             project: "Lumen Health",
             priority: 2,
@@ -99,7 +106,7 @@ export const taskAdd = defineEntry({
           {
             result: "created",
             ...M31,
-            title: "Check the mobile app for the same time zone bug",
+            title: "Fix appointment time zones in the mobile app",
             lifecycle: "active",
             log_added: false,
           },
@@ -112,7 +119,7 @@ export const taskAdd = defineEntry({
             log_added: true,
           },
         ],
-        warnings: ["M-31: possible duplicate of M-14 (same project, similar title)"],
+        warnings: ["tasks.0: possible duplicate of M-14 (same project, similar title)"],
       },
     },
   ],
