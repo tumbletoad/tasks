@@ -1,14 +1,41 @@
 // Checking a copy of a space database: a backup's snapshot before it is compressed, and a restored
 // database before it is used (A1 3.18). The copy opens read-only, passes PRAGMA integrity_check, and
 // gives the facts a sidecar records. Nothing here trusts the copy: every value is decoded.
-import { lstatSync } from "node:fs";
-import type { Connection } from "../driver.ts";
+import { lstatSync, statSync } from "node:fs";
+import { SINGLE_STEP, type Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
-import { removeQuietly } from "../files.ts";
+import { fsCall, removeQuietly } from "../files.ts";
 import { openReader } from "../open.ts";
 import { decodeSpaceRow, inRange, type SpaceRow } from "../rows.ts";
 import { APP_ID } from "../schema.ts";
 import type { CheckedDriver } from "../startup-check.ts";
+import { checkDatabaseSize, type BundlePolicy } from "./policy.ts";
+
+/**
+ * Copies the database on `source`, a read-only connection that holds no transaction, into the new
+ * file `dest` with the driver's backup API in ONE step: one consistent snapshot taken inside one
+ * read transaction, while WAL lets the writer go on (node:sqlite restarts a multi-step backup
+ * whenever another connection writes, A1 3.18). The driver creates `dest` exclusively and
+ * owner-only. A database over the policy's limit is refused before and after the copy.
+ */
+export async function copySnapshot(
+  checked: CheckedDriver,
+  source: Connection,
+  dest: string,
+  policy: BundlePolicy,
+): Promise<void> {
+  // The driver's backup() does not check its connection (A1 3.19): a closed or invalidated
+  // connection fails here instead.
+  source.pragma("user_version");
+  const pages = Number(source.pragma("page_count"));
+  const pageSize = Number(source.pragma("page_size"));
+  checkDatabaseSize(pages * pageSize, policy);
+  await checked.driver.backup(source, dest, { pagesPerStep: SINGLE_STEP });
+  checkDatabaseSize(
+    fsCall(() => statSync(dest).size),
+    policy,
+  );
+}
 
 /** What a checked snapshot holds. */
 export interface SnapshotFacts {

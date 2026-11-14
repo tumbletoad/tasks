@@ -2,6 +2,7 @@
 // listing and a clock, tested on built listings, then applied to real files once.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
 import { backupSpace } from "../src/backup/backup.ts";
 import {
@@ -378,5 +379,96 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const clock = { now, utcOffsetMinutes: 0 };
     expect(dailyBackupDue(ahead, clock, { atStart: false, spaceId: SPACE })).toBe(true);
     expect(dailyBackupDue(ahead, clock, { atStart: true, spaceId: SPACE })).toBe(true);
+  });
+});
+
+describe("[A1.5.backup.rotation] rotation removes only what A1's retention allows", () => {
+  const KINDS: BackupKind[] = ["daily", "manual", "pre-migrate"];
+  const STATES: ListedBackup["state"][] = ["ok", "ok", "ok", "missing_data", "invalid_sidecar"];
+
+  test("property: a plan never removes a manual backup, the newest complete one, a young pre-migration one, another space's or a damaged one", () => {
+    const backup = fc.record({
+      kind: fc.constantFrom(...KINDS),
+      // From two days ahead (a clock that ran ahead) to over a year back, in minutes.
+      age: fc.integer({ min: -2 * 24 * 60, max: 400 * 24 * 60 }),
+      state: fc.constantFrom(...STATES),
+      other: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(backup, { maxLength: 60, selector: (b) => `${b.kind}${String(b.age)}` }),
+        fc.integer({ min: -720, max: 840 }),
+        fc.integer({ min: 0, max: 7 * 24 * 60 }),
+        (drawn, offset, shift) => {
+          const now = WED + shift * 60_000;
+          const all = drawn.map((b) =>
+            listed(b.kind, now - b.age * 60_000, b.state, b.other ? OTHER_SPACE : SPACE),
+          );
+          const plan = planRetention(
+            listing(all),
+            { now, utcOffsetMinutes: offset },
+            {
+              spaceId: SPACE,
+            },
+          );
+          const complete = all.filter((b) => b.state === "ok" && b.sidecar?.space_id === SPACE);
+          const removed = new Set(plan.remove);
+          // Only complete backups of this space take part, each kept or removed, never both.
+          expect([...plan.keep, ...plan.remove].sort()).toEqual(complete.map((b) => b.name).sort());
+          for (const name of plan.keep) expect(removed.has(name)).toBe(false);
+          for (const b of complete) {
+            if (!removed.has(b.name)) continue;
+            expect(b.sidecar?.kind).not.toBe("manual");
+            const created = b.sidecar?.created_at ?? 0;
+            if (b.sidecar?.kind === "pre-migrate")
+              expect(now - created).toBeGreaterThanOrEqual(30 * DAY);
+          }
+          const newest = [...complete].sort(
+            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
+          )[0];
+          if (newest !== undefined) expect(removed.has(newest.name)).toBe(false);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  test("applied to real files: manual backups and the newest verified one stay, a damaged newer one too", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    const manual = [];
+    for (const days of [400, 200, 60]) {
+      manual.push(
+        await backupSpace(checked, folder, { kind: "manual", now: () => now - days * DAY }),
+      );
+    }
+    const dailies = [];
+    for (let i = 0; i < 12; i += 1) {
+      dailies.push(
+        await backupSpace(checked, folder, { kind: "daily", now: () => now - i * DAY - HOUR }),
+      );
+    }
+    // The newest backup no longer verifies, though its size is right.
+    const newest = dailies[0];
+    if (newest === undefined) throw new Error("no daily backup");
+    const bytes = readFileSync(newest.file);
+    bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
+    writeFileSync(newest.file, bytes);
+    const before = listBackups(dir);
+    const plan = planRetention(before, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const applied = await applyRetention(checked, before, plan);
+    expect(applied.verified).toBe(dailies[1]?.name);
+    expect(applied.unverified).toEqual([newest.name]);
+    expect(applied.removed.length).toBeGreaterThan(0);
+    const left = new Set(listBackups(dir).backups.map((b) => b.name));
+    for (const b of [...manual, newest, dailies[1]]) {
+      expect(b !== undefined && left.has(b.name), b?.name).toBe(true);
+    }
+    // Only dailies the plan named went.
+    for (const name of applied.removed) {
+      expect(dailies.some((d) => d.name === name) && plan.remove.includes(name), name).toBe(true);
+    }
   });
 });

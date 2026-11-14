@@ -1,6 +1,8 @@
-// Restoring a backup (A1 3.18, `tasks space restore <backup>` in M1.10), into a new folder or in
-// place. Both build the restored folder complete and verified next to its final place first
-// (unpack.ts), so a restore never exposes a half-built space under a space's name.
+// Restoring a backup or an export bundle (A1 3.18, `tasks space restore <backup>` in M1.10), into
+// a new folder or in place. Both build the restored folder complete and verified next to its final
+// place first (unpack.ts), so a restore never exposes a half-built space under a space's name. A
+// bundle restores as a backup does, whatever its mode: what a transfer or a fork bundle becomes on
+// import is M3.08's, and until then a bundle restored into a new folder is a read-only copy too.
 //
 // Into a new folder: the copy keeps the backup's identity (space ID, epoch, incarnation), so it is
 // a READ-ONLY COPY (A1 3.18 "Restore" step 3, A6 3.5): before the folder takes its name, the copy's
@@ -24,7 +26,6 @@
 // writer of this process that has the space open refuses it, and none opens meanwhile.
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { BackupSidecar } from "../backup/sidecar.ts";
 import type { Connection } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { FOLDER_MODE, fsCall, fsyncFolder, makeDirExact, removeQuietly } from "../files.ts";
@@ -50,7 +51,7 @@ import {
   type SwapNames,
   type SwapPoint,
 } from "./folders.ts";
-import { unpackBackup, type UnpackSeams } from "./unpack.ts";
+import { unpackAny, type RestoreSource, type UnpackSeams } from "./unpack.ts";
 
 export interface RestoreOptions {
   appVersion?: string;
@@ -88,7 +89,8 @@ export interface RestoredSpace {
   folder: string;
   space: SpaceRow;
   revision: Revision;
-  sidecar: BackupSidecar;
+  /** The backup's sidecar or the bundle's export.json. */
+  source: RestoreSource;
 }
 
 export interface RestoredInPlace extends RestoredSpace {
@@ -116,7 +118,10 @@ function cleanUp(names: SwapNames): void {
   if (!midSwap) removeQuietly(names.staging);
 }
 
-/** Restores `backupFile` (a `.db.gz` beside its sidecar) into the new space folder `target`. */
+/**
+ * Restores `backupFile` (a `.db.gz` beside its sidecar, or an export bundle `.zip`) into the new
+ * space folder `target`.
+ */
 export async function restoreBackup(
   checked: CheckedDriver,
   backupFile: string,
@@ -149,7 +154,7 @@ export async function restoreBackupWith(
     makeDirExact(names.staging, FOLDER_MODE);
   });
   try {
-    const unpacked = await unpackBackup(
+    const unpacked = await unpackAny(
       checked,
       backupFile,
       names.staging,
@@ -198,10 +203,10 @@ export function markReadOnlyCopy(conn: Connection, now: number): SpaceRow {
 const busy = (options: RestoreOptions): { busyTimeoutMs?: number } =>
   options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs };
 
-const pick = (u: { space: SpaceRow; revision: Revision; sidecar: BackupSidecar }) => ({
+const pick = (u: { space: SpaceRow; revision: Revision; source: RestoreSource }) => ({
   space: u.space,
   revision: u.revision,
-  sidecar: u.sidecar,
+  source: u.source,
 });
 
 /** What can be read of the live space: its ID, and every epoch it knows. */
@@ -281,7 +286,7 @@ export async function restoreInPlaceWith(
     makeDirExact(names.staging, FOLDER_MODE);
   });
   try {
-    const unpacked = await unpackBackup(
+    const unpacked = await unpackAny(
       checked,
       backupFile,
       names.staging,

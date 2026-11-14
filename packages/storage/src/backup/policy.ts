@@ -1,11 +1,16 @@
 // The shared bundle limits of A1 3.18 (DA-17). One BundlePolicy is used by every side that writes
-// or reads an archive: the backup writer, the restorer, and later the exporter and the importer
-// (M3), so Tasks never writes an archive it would refuse to read. Limits bound what extraction
-// actually produces, counted while streaming, never what a header or a sidecar claims.
+// or reads an archive: the backup writer, the exporter, the restorer and the importer, so Tasks
+// never writes an archive it would refuse to read. Limits bound what extraction actually produces,
+// counted while streaming, never what a header or a sidecar claims.
 //
 // A backup is one compressed database (`.db.gz`) beside its sidecar (`.json`): one entry of the
 // `space.db` kind and one JSON file. Its limits are the database's and the "any other file" one,
 // and its expansion counts against the total and the free disk space.
+//
+// An export bundle is a ZIP archive (bundle/zip.ts) whose entries each have a kind by their path
+// (bundleEntryKind): the database, an attachment, `data.jsonl`, or any other file (`export.json`,
+// `space.json`, `view/…`). Each kind has its limit, the entries together the policy's count and
+// total (ExpansionBudget), and what a restore unpacks the free disk space.
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -79,6 +84,77 @@ export function checkFreeSpace(bytes: number, free: number, policy: BundlePolicy
   }
 }
 
+/**
+ * What one archive's extraction may still produce: the policy's total, taken chunk by chunk as
+ * the entries stream, so the sum of every entry is bounded however their headers lie.
+ */
+export class ExpansionBudget {
+  #left: number;
+
+  constructor(policy: BundlePolicy) {
+    this.#left = policy.maxTotalBytes;
+  }
+
+  take(bytes: number): void {
+    this.#left -= bytes;
+    if (this.#left < 0) throw limitExceeded("the total expanded size");
+  }
+}
+
+/** The kinds of files an export bundle holds, each with its own limit. */
+export type BundleEntryKind = "database" | "attachment" | "jsonl" | "other";
+
+/** An attachment's blob: `attachments/sha256/<first two hex>/<hash>` (A1 3.18 "Attachments"). */
+export const ATTACHMENT_ENTRY = /^attachments\/sha256\/([0-9a-f]{2})\/([0-9a-f]{64})$/;
+
+/**
+ * The kind of a bundle entry by its path (A1 3.18's layout), or undefined for a path a bundle
+ * never holds: an importer refuses those. `view/` holds any relative path below it.
+ */
+export function bundleEntryKind(name: string): BundleEntryKind | undefined {
+  if (name === "space.db") return "database";
+  if (name === "data.jsonl") return "jsonl";
+  if (name === "export.json" || name === "space.json") return "other";
+  const attachment = ATTACHMENT_ENTRY.exec(name);
+  if (attachment !== null) {
+    return attachment[2]?.startsWith(attachment[1] ?? "-") === true ? "attachment" : undefined;
+  }
+  if (name.startsWith("view/") && name.length > "view/".length && !name.endsWith("/")) {
+    return "other";
+  }
+  return undefined;
+}
+
+/** Whether a folder entry (`name` ends with `/`) is one a bundle's files can sit in. */
+export function isBundleFolder(name: string): boolean {
+  return (
+    name === "attachments/" ||
+    name === "attachments/sha256/" ||
+    /^attachments\/sha256\/[0-9a-f]{2}\/$/.test(name) ||
+    (name.startsWith("view/") && name.endsWith("/"))
+  );
+}
+
+/** The limit of one file of `kind`. */
+export function entryLimit(kind: BundleEntryKind, policy: BundlePolicy): number {
+  switch (kind) {
+    case "database":
+      return policy.maxDatabaseBytes;
+    case "attachment":
+      return policy.maxAttachmentBytes;
+    case "jsonl":
+      return policy.maxJsonlBytes;
+    case "other":
+      return policy.maxOtherFileBytes;
+  }
+}
+
+/** The name a limit refusal gives for a kind: never the file's own name. */
+export const entryLabel = (kind: BundleEntryKind): string =>
+  ({ database: "space.db", attachment: "an attachment", jsonl: "data.jsonl", other: "a file" })[
+    kind
+  ];
+
 /** Size and SHA-256 of a database and of its compressed form. */
 export interface Digests {
   size: number;
@@ -129,7 +205,7 @@ class Tap extends Transform {
  * comes before any source stream is opened: a source stream made first would be left with no
  * listener, and its own error (which holds its path) would end the process.
  */
-function newPrivateFile(dest: string): WriteStream {
+export function newPrivateFile(dest: string): WriteStream {
   const fd = createFileExact(dest, FILE_MODE);
   try {
     return createWriteStream(dest, { fd, flush: true });
