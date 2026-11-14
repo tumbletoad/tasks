@@ -587,6 +587,53 @@ describe("[A1.5.bundle.export-restore] export bundles restore as read-only copie
     await expectCode(() => exportBundle(checked, folder, { mode: "backup" }), "BUNDLE_INVALID");
     expect(readdirSync(join(folder, "exports"))).toEqual([bundle.name]);
   });
+
+  test("attachments: a blob whose content is not its name's hash, or not its row's size, is refused", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const blob = Buffer.from("an attached file's content\n");
+    const hash = sha(blob);
+    const path = `attachments/sha256/${hash.slice(0, 2)}/${hash}`;
+    await addAttachment(folder, blob, null);
+    const bundle = await exportBundle(checked, folder, { mode: "backup" });
+    const unpacked = folders.make();
+    const { manifest } = await readBundle(bundle.file, BUNDLE_POLICY, {
+      extractTo: (name) => join(unpacked, ...name.split("/")),
+    });
+    /** The bundle again, with export.json's digests made to agree with each file as it is now. */
+    const rebuilt = (replace: Record<string, Buffer>): string => {
+      const file = join(folders.make(), "rebuilt.zip");
+      const writer = ZipWriter.create(file, 0);
+      const files: typeof manifest.files = {};
+      for (const name of Object.keys(manifest.files)) {
+        const data = replace[name] ?? readFileSync(join(unpacked, ...name.split("/")));
+        const entry = writer.addBytes(name, data);
+        files[name] = { size: entry.size, sha256: entry.sha256 };
+      }
+      writer.addBytes("export.json", Buffer.from(exportText({ ...manifest, files })));
+      writer.finish();
+      return file;
+    };
+    // Other bytes under the blob's name.
+    const swapped = rebuilt({ [path]: Buffer.from("other bytes, another length\n") });
+    await expectCode(
+      () => restoreBackup(checked, swapped, join(folders.make(), "mira")),
+      "BUNDLE_INVALID",
+    );
+    // The right bytes, but the row records another size.
+    const conn = await rawWriter(unpacked);
+    try {
+      conn.prepare("UPDATE attachments SET size = size + 1").run();
+    } finally {
+      conn.close();
+    }
+    const sized = rebuilt({ "space.db": readFileSync(join(unpacked, "space.db")) });
+    await expectCode(
+      () => restoreBackup(checked, sized, join(folders.make(), "mira")),
+      "BUNDLE_INVALID",
+    );
+  });
 });
 
 describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from a bundle", () => {

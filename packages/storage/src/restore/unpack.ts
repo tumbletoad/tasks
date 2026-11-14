@@ -167,7 +167,10 @@ export async function unpackBundle(
   return { space, revision: step.revision, step, source: { kind: "bundle", manifest } };
 }
 
-/** Every live attachment row's blob is in the bundle. */
+/**
+ * Every live attachment row's blob is in the bundle, with the row's size (read.ts checked that
+ * each blob's content is the hash its name and its row carry).
+ */
 function checkAttachments(
   checked: CheckedDriver,
   db: string,
@@ -184,11 +187,15 @@ function checkAttachments(
         .get()?.["n"] === 1;
     if (!has) return;
     for (const row of conn
-      .prepare("SELECT DISTINCT sha256 FROM attachments WHERE deleted_at IS NULL")
-      .iterate<{ sha256: unknown }>()) {
+      .prepare("SELECT DISTINCT sha256, size FROM attachments WHERE deleted_at IS NULL")
+      .iterate<{ sha256: unknown; size: unknown }>()) {
       const hash = String(row.sha256);
-      if (!Object.hasOwn(manifest.files, `attachments/sha256/${hash.slice(0, 2)}/${hash}`)) {
+      const path = `attachments/sha256/${hash.slice(0, 2)}/${hash}`;
+      if (!Object.hasOwn(manifest.files, path)) {
         throw bundleInvalid("an attachment of the space is missing from it");
+      }
+      if (manifest.files[path]?.size !== row.size) {
+        throw bundleInvalid("an attachment differs from its row");
       }
     }
   } finally {

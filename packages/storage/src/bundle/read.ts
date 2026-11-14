@@ -9,13 +9,15 @@
 //    file with the size its header claims, and every file it lists is there.
 // 4. What is unpacked fits the free disk space, less the reserve.
 // 5. Each file streams through its kind's limit and the archive's ExpansionBudget, into a new
-//    owner-only file or nowhere, and its size and SHA-256 must be export.json's.
+//    owner-only file or nowhere, and its size and SHA-256 must be export.json's. An attachment's
+//    SHA-256 must also be the hash its name carries.
 // Nothing is used before every file has passed. The caller removes what it unpacked on failure.
 import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { StorageError } from "../errors.ts";
 import { FOLDER_MODE, fsCall, makeDirExact } from "../files.ts";
 import {
+  ATTACHMENT_ENTRY,
   bundleEntryKind,
   checkFreeSpace,
   entryLabel,
@@ -126,6 +128,10 @@ export async function readBundle(
       }
       if (got.size !== digest.size || got.sha256 !== digest.sha256) {
         invalid("a file differs from export.json");
+      }
+      // An attachment's blob is named by its content's hash (A1 3.18 "Attachments").
+      if (kind === "attachment" && got.sha256 !== ATTACHMENT_ENTRY.exec(entry.name)?.[2]) {
+        invalid("an attachment's content differs from its name");
       }
     }
     return { manifest, kept };
