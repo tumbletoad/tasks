@@ -43,6 +43,9 @@ export const WRITE_LIMITS = {
   sourceKey: 512,
   /** Characters of a place's relative path (A1 3.15). */
   path: 1_024,
+  /** UTF-8 bytes of a learning, and the live learnings a task holds (A1 3.7, 3.11.2). */
+  learning: 1_024,
+  learnings: 20,
 } as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -101,9 +104,9 @@ export interface AsOf {
 }
 
 /**
- * The tables whose existing rows a request can change, and so conflict on. Undo and redo also
- * name the child rows that block a create's inversion (A1 3.10): notes, log entries, sources,
- * learnings, attachments and label links.
+ * The tables whose existing rows a request can change, and so conflict on: a wrap-up's removal of
+ * a learning among them. Undo and redo also name the child rows that block a create's inversion
+ * (A1 3.10): notes, log entries, sources, learnings, attachments and label links.
  */
 export type ConflictEntity =
   | "tasks"
@@ -337,12 +340,62 @@ export interface TaskComplete {
   kind: "task.complete";
   task: string;
   outcome?: string;
+  /**
+   * A task that is completed or archived already is left as it is (`unchanged`), instead of
+   * INVALID_TRANSITION: complete_task's way to finish a task whatever the user did first (A3 3.4.8).
+   */
+  if_active?: boolean;
 }
 
 export interface TaskReopen {
   kind: "task.reopen";
   task: string;
   reason?: string;
+}
+
+/** `task.archive` (A1 3.11.3): active → archived, for work that will not be done. */
+export interface TaskArchive {
+  kind: "task.archive";
+  task: string;
+  reason?: string;
+  /** As for `task.complete`: a finished task is left as it is. */
+  if_active?: boolean;
+}
+
+/**
+ * `task.wrap_up` (A1 3.11.2): additive. It writes the outcome, adds and removes learning rows and
+ * marks a completed or archived task wrapped; with `clear_planning` it also clears `focus_on` and
+ * `planned_for`. It never changes context, notes, log entries, sources or places.
+ */
+export interface TaskWrapUp {
+  kind: "task.wrap_up";
+  task: string;
+  outcome?: string;
+  learnings?: {
+    /** Texts of new learnings. One the task holds already is left as it is. */
+    add?: string[];
+    /** IDs of the task's learnings to remove: each is tombstoned, its text stays in history. */
+    remove?: Id<"lr">[];
+  };
+  clear_planning?: boolean;
+  /**
+   * complete_task's rule (A3 3.4.8): a task the request finds wrapped already is left as it is
+   * when this operation would change nothing, and is a conflict on its `wrap` field otherwise,
+   * whatever the base. Without it a later wrap-up rewrites the outcome, with a base.
+   */
+  once?: boolean;
+}
+
+/** `task.delete` (A1 3.11.4): sets the tombstone. Nothing is removed, and `task.restore` undoes it. */
+export interface TaskDelete {
+  kind: "task.delete";
+  task: string;
+}
+
+/** `task.restore` (A1 3.11.4): clears the tombstone of a deleted task. */
+export interface TaskRestore {
+  kind: "task.restore";
+  task: string;
 }
 
 /** Who a note is for (A1 3.4): the user, or the user's agents. */
@@ -568,6 +621,10 @@ export type Operation =
   | TaskMove
   | TaskComplete
   | TaskReopen
+  | TaskArchive
+  | TaskWrapUp
+  | TaskDelete
+  | TaskRestore
   | NoteAdd
   | LogAdd
   | SourceAdd
@@ -586,6 +643,10 @@ export const OPERATION_KINDS = [
   "task.move",
   "task.complete",
   "task.reopen",
+  "task.archive",
+  "task.wrap_up",
+  "task.delete",
+  "task.restore",
   "note.add",
   "log.add",
   "source.add",
@@ -1089,7 +1150,31 @@ function checkOperation(value: unknown, i: number): Operation {
       const complete: TaskComplete = { kind, task: f.reference("task") };
       const outcome = f.optText("outcome", { bytes: WRITE_LIMITS.outcome });
       if (outcome !== undefined) complete.outcome = outcome;
+      if (f.has("if_active")) complete.if_active = f.boolean("if_active");
       op = complete;
+      break;
+    }
+    case "task.archive": {
+      const archive: TaskArchive = { kind, task: f.reference("task") };
+      const reason = f.optText("reason", { chars: WRITE_LIMITS.reason });
+      if (reason !== undefined) archive.reason = reason;
+      if (f.has("if_active")) archive.if_active = f.boolean("if_active");
+      op = archive;
+      break;
+    }
+    case "task.wrap_up": {
+      const wrap: TaskWrapUp = { kind, task: f.reference("task") };
+      const outcome = f.optText("outcome", { bytes: WRITE_LIMITS.outcome });
+      if (outcome !== undefined) wrap.outcome = outcome;
+      if (f.has("learnings")) wrap.learnings = learningChanges(f.raw("learnings"), i);
+      if (f.has("clear_planning")) wrap.clear_planning = f.boolean("clear_planning");
+      if (f.has("once")) wrap.once = f.boolean("once");
+      op = wrap;
+      break;
+    }
+    case "task.delete":
+    case "task.restore": {
+      op = { kind, task: f.reference("task") };
       break;
     }
     case "task.reopen": {
@@ -1278,6 +1363,48 @@ function launchEvidence(f: Fields, key: string): LaunchEvidence {
     evidence[name] = item as string | number | boolean;
   }
   return evidence;
+}
+
+/**
+ * A wrap-up's learnings (A1 3.11.2): texts to add, each at most 1 KiB, and IDs of learnings to
+ * remove, at most a task's 20 of each. A problem names the list, never a text.
+ */
+function learningChanges(value: unknown, i: number): NonNullable<TaskWrapUp["learnings"]> {
+  const path = `ops[${String(i)}].learnings`;
+  const f = fields(value, path, i);
+  const list = (key: string): unknown[] | undefined => {
+    if (!f.has(key)) return undefined;
+    const items = f.raw(key);
+    if (!Array.isArray(items) || items.length > WRITE_LIMITS.learnings) {
+      return f.fail("VALIDATION_FAILED", "Expected a list of at most 20", key);
+    }
+    return items as unknown[];
+  };
+  const changes: NonNullable<TaskWrapUp["learnings"]> = {};
+  const add = list("add");
+  if (add !== undefined) {
+    changes.add = add.map((item) => {
+      if (typeof item !== "string") return f.fail("VALIDATION_FAILED", "Expected text", "add");
+      const text = normaliseStored(item);
+      if (text.trim() === "") f.fail("VALIDATION_FAILED", "Expected text that is not empty", "add");
+      if (utf8Bytes(text) > WRITE_LIMITS.learning) {
+        f.fail("TOO_LARGE", "A learning is larger than 1 KiB", "add");
+      }
+      return text;
+    });
+  }
+  const remove = list("remove");
+  if (remove !== undefined) {
+    if (!remove.every((id) => isId(id, "lr"))) {
+      f.fail("VALIDATION_FAILED", "Expected learning IDs", "remove");
+    }
+    if (new Set(remove).size !== remove.length) {
+      f.fail("VALIDATION_FAILED", "A learning is listed twice", "remove");
+    }
+    changes.remove = remove as Id<"lr">[];
+  }
+  f.done();
+  return changes;
 }
 
 /** A source's fields (A1 3.4, 3.6, 3.7). */

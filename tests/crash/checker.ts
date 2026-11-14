@@ -1078,6 +1078,7 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
   { table: "tasks", key: "id", fields: TASK_FIELDS },
   { table: "task_sources", key: "task_id || '|' || source_id", fields: CHILD_FIELDS.task_sources },
   { table: "places", key: "id", fields: CHILD_FIELDS.places },
+  { table: "learnings", key: "id", fields: CHILD_FIELDS.learnings },
   { table: "notes", key: "id", fields: {} },
   { table: "log_entries", key: "id", fields: {} },
   { table: "sources", key: "id", fields: {} },
@@ -1198,6 +1199,13 @@ function checkHistory(conn: Connection, history: History, found: Found): void {
   if (same !== 0) found.add("history", `${String(same)} change rows change nothing`);
   const rows = new Set<string>();
   for (const { table, key, fields } of HISTORY_TABLES) {
+    // A space at 0.1 (created, or a barrier backup restored) has none of 0.2's tables.
+    const present = one(
+      conn,
+      "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = $table",
+      { table },
+    );
+    if (present === 0) continue;
     for (const row of checkRows(conn, history, table, key, fields, found)) rows.add(row);
   }
   // And the other way: every row the history names is there. This build deletes no row, so a

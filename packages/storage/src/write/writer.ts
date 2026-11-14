@@ -109,7 +109,9 @@ import {
   type Operation,
   type Placement,
   type SourceFields,
+  type TaskLifecycle,
   type TaskValues,
+  type TaskWrapUp,
   type WriteErrorCode,
   type WriteProblem,
   type WriteResult,
@@ -221,7 +223,14 @@ function problem(code: WriteErrorCode, message: string, op?: number, field?: str
 
 /** The tables the write path writes rows of. */
 type Entity =
-  "tasks" | "notes" | "log_entries" | "sources" | "task_sources" | "places" | "launches";
+  | "tasks"
+  | "notes"
+  | "log_entries"
+  | "sources"
+  | "task_sources"
+  | "places"
+  | "launches"
+  | "learnings";
 
 /** A task row as the write path needs it, checked against its domain. */
 interface TaskRow extends RowState {
@@ -253,7 +262,10 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
   const fields: Readonly<Record<string, readonly string[]>> | undefined =
     entity === "tasks"
       ? TASK_FIELDS
-      : entity === "task_sources" || entity === "places" || entity === "launches"
+      : entity === "task_sources" ||
+          entity === "places" ||
+          entity === "launches" ||
+          entity === "learnings"
         ? CHILD_FIELDS[entity]
         : undefined;
   const columns = fields?.[field];
@@ -288,6 +300,11 @@ interface Touch {
   task: Id<"t"> | null;
   /** The link version the operation names instead of a base (A1 3.5). */
   linkVersion?: number;
+  /**
+   * The operation's own rule refuses the row as it stands, whatever the base: a conflict on this
+   * field (`task.wrap_up`'s `once` on a task wrapped already, A3 3.4.8).
+   */
+  held?: true;
 }
 
 interface StagedOp {
@@ -320,6 +337,10 @@ interface StagedOp {
    * matched task, and its result is `existing`.
    */
   existing?: { match?: Match };
+  /** `task.wrap_up`: the IDs of the learnings it adds, one per text of `learnings.add`. */
+  learnings?: Id<"lr">[];
+  /** `task.wrap_up` with `once` on a task wrapped already that it would not change: no write. */
+  skip?: true;
 }
 
 interface Plan {
@@ -520,6 +541,16 @@ const SQL = {
     "WHERE id = $id",
   clearPlace: "UPDATE places SET deleted_at = $at WHERE id = $id",
   placeVersions: "UPDATE places SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
+  // Learnings (A1 3.11.2): rows a wrap-up adds after the task's others, and tombstones to remove.
+  learning: "SELECT * FROM learnings WHERE id = $id",
+  liveLearnings: "SELECT body FROM learnings WHERE task_id = $task AND deleted_at IS NULL",
+  lastLearning: "SELECT max(position) AS p FROM learnings WHERE task_id = $task",
+  insertLearning:
+    "INSERT INTO learnings (id, task_id, position, body, created_by, created_at, deleted_at, " +
+    "created_seq, version, fv, fp) VALUES ($id, $task, $position, $body, $author, $at, NULL, " +
+    "$seq, $seq, '{}', '{}')",
+  removeLearning: "UPDATE learnings SET deleted_at = $at WHERE id = $id",
+  learningVersions: "UPDATE learnings SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
   areaVersion: "SELECT version FROM areas WHERE id = $id",
   projectVersion: "SELECT version FROM projects WHERE id = $id",
 } as const;
@@ -618,6 +649,7 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
       sources: SQL.source,
       places: SQL.place,
       launches: LAUNCH_SQL.launch,
+      learnings: SQL.learning,
     }[entity];
     row = conn.prepare(sql).get({ id });
   }
@@ -638,6 +670,8 @@ function setVersions(
   else if (row.entity === "places") conn.prepare(SQL.placeVersions).run({ ...maps, id: row.id });
   else if (row.entity === "launches") {
     conn.prepare(LAUNCH_SQL.versions).run({ ...maps, id: row.id });
+  } else if (row.entity === "learnings") {
+    conn.prepare(SQL.learningVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "task_sources") {
     const [task, source] = row.id.split("|");
     conn.prepare(SQL.linkVersions).run({ ...maps, task: task ?? "", source: source ?? "" });
@@ -1033,6 +1067,13 @@ export class SpaceWriter {
     /** Dedupe by source key (A1 3.6), and the drafts that matched a task, by the draft's ID. */
     const dedupe = new Dedupe(conn, request.ops, at);
     const matched = new Map<string, Match>();
+    /**
+     * The tombstones earlier operations set (`true`) or clear (`false`): a later operation sees
+     * the task as they leave it, so a restored task takes changes and a deleted one refuses them.
+     */
+    const tombstones = new Map<Id<"t">, boolean>();
+    /** The lifecycle earlier operations leave each task in, as execution will find it. */
+    const lifecycles = new Map<Id<"t">, TaskLifecycle>();
 
     const ops = request.ops.map((op, i): StagedOp => {
       const values: TaskValues =
@@ -1043,7 +1084,8 @@ export class SpaceWriter {
       if (typeof values.effort === "string" && !efforts.includes(values.effort)) {
         problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
       }
-      const task = (given: string, field: string): Id<"t"> => {
+      /** The task `given` names. Only `task.restore` (`restoring`) may name a deleted one. */
+      const task = (given: string, field: string, restoring = false): Id<"t"> => {
         // A matched draft's ID names the matched task, for an operation that follows it. Only its
         // entries and sources name it (checkRequest), and they follow one active match only.
         const rebound = matched.get(given);
@@ -1051,12 +1093,11 @@ export class SpaceWriter {
           throw misuse("Only an operation that follows a match names a matched draft");
         }
         const found = resolveTask(conn, space, rebound?.task ?? given, drafts, i, field);
-        if (found.row !== undefined) {
-          if (found.row.deleted) problem("DELETED", "The task is deleted", i, field);
-          if (!tasks.has(found.id)) {
-            tasks.set(found.id, found.row);
-            starts.set(rowKey("tasks", found.id), found.row);
-          }
+        const deleted = tombstones.get(found.id) ?? found.row?.deleted ?? false;
+        if (deleted && !restoring) problem("DELETED", "The task is deleted", i, field);
+        if (found.row !== undefined && !tasks.has(found.id)) {
+          tasks.set(found.id, found.row);
+          starts.set(rowKey("tasks", found.id), found.row);
         }
         return found.id;
       };
@@ -1242,26 +1283,121 @@ export class SpaceWriter {
           };
         }
         case "task.complete":
-        case "task.reopen": {
+        case "task.reopen":
+        case "task.archive": {
           const target = task(op.task, "task");
-          if (op.kind === "task.complete") affected.add(target);
-          // A later draft of the request sees the lifecycle this leaves (A1 3.6).
-          dedupe.lifecycle(target, op.kind === "task.complete" ? "completed" : "active");
-          const extra =
+          const next =
             op.kind === "task.complete"
-              ? op.outcome === undefined
-                ? {}
-                : { outcome: op.outcome }
-              : op.reason === undefined
-                ? {}
-                : { reason: op.reason };
+              ? "completed"
+              : op.kind === "task.archive"
+                ? "archived"
+                : "active";
+          // `if_active` on a task the request finds finished, as its earlier operations leave it,
+          // writes nothing, so it touches nothing: an earlier finish touched the same fields, and
+          // the base is checked once against the start (A1 3.7). Execution sees the same state, so
+          // what the brake counts is what the commit finishes (A3 3.8.3).
+          const kept =
+            op.kind !== "task.reopen" &&
+            op.if_active === true &&
+            (lifecycles.get(target) ?? tasks.get(target)?.lifecycle ?? "active") !== "active";
+          if (!kept) lifecycles.set(target, next);
+          if (next !== "active" && !kept) affected.add(target);
+          // A later draft of the request sees the lifecycle this leaves (A1 3.6).
+          dedupe.lifecycle(target, next);
           return {
             i,
             op,
             target,
             task: target,
-            touches: taskTouches(target, ["lifecycle", "wrap"]),
-            record: { task: target, ...extra },
+            // Archiving leaves the wrap-up alone: an active task has none waiting (A1 3.11.3).
+            touches: kept
+              ? []
+              : taskTouches(
+                  target,
+                  op.kind === "task.archive" ? ["lifecycle"] : ["lifecycle", "wrap"],
+                ),
+            record: { task: target, ...inputOf(op, "task") },
+          };
+        }
+        case "task.wrap_up": {
+          const target = task(op.task, "task");
+          // Like a finish: a later draft of the request is new work after it (A3 3.4.8).
+          dedupe.wrapped(target);
+          const record = { task: target, ...inputOf(op, "task") };
+          const learnings = (op.learnings?.add ?? []).map(() => newId("lr", random));
+          const touches: Touch[] = [];
+          for (const id of op.learnings?.remove ?? []) {
+            const row = conn.prepare(SQL.learning).get({ id });
+            if (row === undefined || row["task_id"] !== target) {
+              problem("NOT_FOUND", "No learning of this task has this ID", i, "learnings.remove");
+            }
+            // Removing it tombstones it: a base covers that it is still there. One removed at the
+            // start is left as it is. Each operation that removes a live one touches it, also
+            // after an earlier one of the request did, so `once` sees the change (A1 3.7).
+            if (row["deleted_at"] === null) {
+              const key = rowKey("learnings", id);
+              if (!starts.has(key)) {
+                starts.set(key, rowState("learnings", row, CHILD_FIELDS.learnings));
+              }
+              touches.push({ entity: "learnings", id, field: "deleted", task: target });
+            }
+          }
+          const start = tasks.get(target);
+          if (op.once === true && start?.raw["wrap_state"] === "wrapped") {
+            // complete_task's rule (A3 3.4.8), judged on the task as the request found it: a
+            // wrap-up that would change nothing is no change, any other is a conflict on `wrap`.
+            const live = new Set(
+              conn
+                .prepare(SQL.liveLearnings)
+                .all({ task: target })
+                .map((row) => row["body"]),
+            );
+            const same =
+              (op.outcome === undefined || op.outcome === start.raw["outcome"]) &&
+              touches.length === 0 &&
+              (op.clear_planning !== true ||
+                (start.raw["planned_for"] === null && start.raw["focus_on"] === null)) &&
+              (op.learnings?.add ?? []).every((body) => live.has(body));
+            return same
+              ? { i, op, target, task: target, touches: [], record, learnings, skip: true }
+              : {
+                  i,
+                  op,
+                  target,
+                  task: target,
+                  touches: [
+                    { entity: "tasks", id: target, field: "wrap", task: target, held: true },
+                  ],
+                  record,
+                  learnings,
+                };
+          }
+          const planning: TaskField[] = op.clear_planning === true ? ["planned_for", "focus"] : [];
+          return {
+            i,
+            op,
+            target,
+            task: target,
+            touches: [...taskTouches(target, ["wrap", ...planning]), ...touches],
+            record,
+            learnings,
+          };
+        }
+        case "task.delete":
+        case "task.restore": {
+          const deleting = op.kind === "task.delete";
+          const target = task(op.task, "task", !deleting);
+          if (deleting) affected.add(target);
+          tombstones.set(target, deleting);
+          // A deleted task holds no key, and a restored one holds its keys again (A1 3.6).
+          dedupe.deleted(target, deleting);
+          return {
+            i,
+            op,
+            target,
+            task: target,
+            touches: taskTouches(target, ["deleted"]),
+            record: { task: target },
           };
         }
         case "note.add":
@@ -1898,6 +2034,17 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           version: new RowReader("launches", launch).int("version", "seq"),
         };
       }
+      case "task.wrap_up": {
+        // Its target is the task: the learnings it adds change the task, they are not the result.
+        const task = readTask(conn, staged.target as Id<"t">);
+        return {
+          i,
+          status: status === "created" ? "updated" : status,
+          id: task.id,
+          ref: formatTaskRef(run.plan.refPrefix, task.ref),
+          version: task.version,
+        };
+      }
       default: {
         const task = readTask(conn, staged.target as Id<"t">);
         return {
@@ -2025,10 +2172,19 @@ function preconditions(
   for (const staged of plan.ops) {
     for (const touch of staged.touches) {
       const key = `${rowKey(touch.entity, touch.id)}|${touch.field}`;
-      if (checked.has(key)) continue;
-      checked.add(key);
       const start = plan.starts.get(rowKey(touch.entity, touch.id));
       if (start === undefined) throw misuse("A staged row has no start state");
+      if (touch.held === true) {
+        // The operation refuses the field as it stands, whatever the base: one conflict per field.
+        const reported = conflicts.some(
+          (c) => c.entity === touch.entity && c.id === touch.id && c.field === touch.field,
+        );
+        if (!reported) conflicts.push(conflictOf(staged, touch, start));
+        checked.add(key);
+        continue;
+      }
+      if (checked.has(key)) continue;
+      checked.add(key);
       if (touch.linkVersion !== undefined) {
         // The link version is the link row's version (A1 3.4, 3.5).
         if (touch.linkVersion !== start.version) conflicts.push(conflictOf(staged, touch, start));
@@ -2449,6 +2605,8 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.complete": {
       const target = staged.target as Id<"t">;
       if (readTask(conn, target).lifecycle !== "active") {
+        // complete_task leaves a task the user finished first as it is (A3 3.4.8).
+        if (op.if_active === true) return;
         problem("INVALID_TRANSITION", "Only an active task can be completed", i, "task");
       }
       // A1 3.11.1: with an outcome the task is wrapped at once, else it waits for its wrap-up.
@@ -2485,6 +2643,64 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         wrap_state: null,
       });
       wrote(run, i, "tasks", target, target, ["lifecycle", "wrap"]);
+      return;
+    }
+    case "task.archive": {
+      const target = staged.target as Id<"t">;
+      if (readTask(conn, target).lifecycle !== "active") {
+        if (op.if_active === true) return;
+        problem("INVALID_TRANSITION", "Only an active task can be archived", i, "task");
+      }
+      // A1 3.11.3: work that will not be done. No completion time, and no wrap-up waits for it;
+      // an earlier outcome stays as the previous result.
+      update(conn, target, {
+        lifecycle: "archived",
+        completed_at: null,
+        completed_by: null,
+        archived_reason: op.reason ?? null,
+      });
+      wrote(run, i, "tasks", target, target, ["lifecycle"]);
+      return;
+    }
+    case "task.wrap_up": {
+      const target = staged.target as Id<"t">;
+      if (readTask(conn, target).lifecycle === "active") {
+        problem("INVALID_TRANSITION", "Only a completed or archived task is wrapped up", i, "task");
+      }
+      if (staged.skip === true) return;
+      // A1 3.11.2: additive. The outcome, the mark and, when asked, the short planning scalars.
+      // Context, notes, log entries, sources and places are never written here.
+      const values: Record<string, SqlValue> = {
+        wrap_state: "wrapped",
+        wrapped_at: run.at,
+        wrapped_by: author,
+        ...(op.outcome === undefined ? {} : { outcome: op.outcome }),
+      };
+      const fields: TaskField[] = ["wrap"];
+      if (op.clear_planning === true) {
+        Object.assign(values, { planned_for: null, focus_on: null });
+        fields.push("planned_for", "focus");
+      }
+      update(conn, target, values);
+      wrote(run, i, "tasks", target, target, fields);
+      wrapLearnings(conn, run, staged, op, target, author);
+      return;
+    }
+    case "task.delete":
+    case "task.restore": {
+      // A1 3.11.4: the tombstone only. Every row of the task and its history stay.
+      const target = staged.target as Id<"t">;
+      if (op.kind === "task.restore" && !readTask(conn, target).deleted) {
+        problem("INVALID_TRANSITION", "Only a deleted task can be restored", i, "task");
+      }
+      update(
+        conn,
+        target,
+        op.kind === "task.delete"
+          ? { deleted_at: run.at, deleted_by: actor.principal_id }
+          : { deleted_at: null, deleted_by: null },
+      );
+      wrote(run, i, "tasks", target, target, ["deleted"]);
       return;
     }
     case "note.add": {
@@ -2662,6 +2878,53 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       wrote(run, i, "launches", staged.target, null, ["state"]);
       return;
     }
+  }
+}
+
+/**
+ * A wrap-up's learnings (A1 3.11.2): the removed ones are tombstoned, their text kept, and each new
+ * text the task does not hold yet becomes a row after its others. A task holds at most 20 live
+ * learnings (A1 3.7).
+ */
+function wrapLearnings(
+  conn: Connection,
+  run: Execution,
+  staged: StagedOp,
+  op: TaskWrapUp,
+  task: Id<"t">,
+  author: Id<"ac">,
+): void {
+  for (const id of op.learnings?.remove ?? []) {
+    // Staging found it under this task. One removed already is left as it is.
+    if (readRow(conn, "learnings", id)["deleted_at"] !== null) continue;
+    conn.prepare(SQL.removeLearning).run({ id, at: run.at });
+    wrote(run, staged.i, "learnings", id, task, ["deleted"]);
+  }
+  const live = conn.prepare(SQL.liveLearnings).all({ task });
+  const held = new Set(live.map((row) => row["body"]));
+  let count = live.length;
+  const ids = must(staged.learnings, "A wrap-up is staged with its learnings' IDs");
+  (op.learnings?.add ?? []).forEach((body, k) => {
+    if (held.has(body)) return;
+    held.add(body);
+    count += 1;
+    const last = conn.prepare(SQL.lastLearning).get({ task })?.["p"] ?? undefined;
+    if (last !== undefined && !isPosition(last)) throw invalidValue("learnings", "position");
+    const id = must(ids[k], "A learning to add has its ID");
+    conn.prepare(SQL.insertLearning).run({
+      id,
+      task,
+      position: positionBetween(last, undefined),
+      body,
+      author,
+      at: run.at,
+      seq: run.seq,
+    });
+    wrote(run, staged.i, "learnings", id, task, null);
+  });
+  // The limit refuses an addition past it, never a wrap-up that adds nothing.
+  if (count > WRITE_LIMITS.learnings && count > live.length) {
+    problem("TOO_LARGE", "A task holds at most 20 learnings", staged.i, "learnings.add");
   }
 }
 
