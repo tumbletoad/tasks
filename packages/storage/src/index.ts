@@ -120,6 +120,30 @@ export {
   type SpaceActors,
 } from "./space.ts";
 export { checkSpacePath, isSpaceSlug, SLUG_MAX, slugFromName } from "./space-path.ts";
+// The search index (A1 3.12): its tables, kept current by the writer once a space holds them, the
+// rebuild, and the pages by frozen IDs that A3's cursors read.
+export {
+  expectedDocuments,
+  indexChanges,
+  rebuildSearchIndex,
+  storedDocuments,
+  type IndexedChange,
+  type SearchDocument,
+  type StoredDocument,
+} from "./search/documents.ts";
+export {
+  decodeRowsByIds,
+  ROWS_BY_IDS_SQL,
+  type FrozenEntry,
+  type FrozenKind,
+} from "./search/rows.ts";
+export {
+  HAS_SEARCH_TABLES_SQL,
+  hasSearchTables,
+  SEARCH_DOC_KINDS,
+  SEARCH_TABLE_STATEMENTS,
+  type SearchDocKind,
+} from "./search/tables.ts";
 export { SCHEMA_STEPS } from "../migrations/index.ts";
 export {
   CheckedDriver,
@@ -222,6 +246,8 @@ export { FIRST_POSITION, isPosition, positionBetween } from "./write/positions.t
 export {
   ADDRESSEES,
   checkRequest,
+  DEDUPE_MODES,
+  DEDUPE_WINDOW_DAYS,
   formatAsOf,
   incarnationTag,
   isRelPath,
@@ -245,6 +271,7 @@ export {
   type Base,
   type ConflictEntity,
   type Credential,
+  type DedupeMode,
   type Due,
   type FieldConflict,
   type Intent,
@@ -270,6 +297,7 @@ export {
   type TaskComplete,
   type TaskContextAppend,
   type TaskCreate,
+  type TaskLifecycle,
   type TaskMove,
   type TaskPatch,
   type TaskReopen,

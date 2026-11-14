@@ -9,6 +9,7 @@ import { taskAdd } from "./entries/task-add.ts";
 import { taskFinish } from "./entries/task-finish.ts";
 import { taskGet } from "./entries/task-get.ts";
 import { taskReopen } from "./entries/task-reopen.ts";
+import { taskSearch } from "./entries/task-search.ts";
 import { taskUpdate } from "./entries/task-update.ts";
 
 /** Every entry. The generated files list them sorted by name, so the order here is free. */
@@ -22,6 +23,7 @@ export const registry = [
   taskReopen,
   receiptGet,
   launchOpen,
+  taskSearch,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];

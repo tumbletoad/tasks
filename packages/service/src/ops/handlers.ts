@@ -65,10 +65,13 @@ import {
   storageFailure,
   unsupported,
 } from "./errors.ts";
+import { SearchCursors } from "../search/cursors.ts";
+import { runSearch, type SearchInput } from "../search/search.ts";
 import {
   readCommit,
   readLaunch,
   readPlaced,
+  readPlacedAny,
   readReceipt,
   readLaunchTask,
   readSpace,
@@ -966,25 +969,58 @@ async function applied(call: Call): Promise<boolean> {
 
 /**
  * The warnings of drafts that asked for a place and got none: their folder is under no root. Read
- * from the writer's result (a place row under the created task), so a replay warns the same.
+ * from the writer's result (a place row under the created task), so a replay warns the same. A
+ * draft that matched an existing task binds no place (A1 3.6), and gets no warning for it.
  */
 function placeWarnings(
   result: WriteResult,
   drafts: readonly { readonly asked: boolean; readonly first: number; readonly at: string }[],
 ): string[] {
   return drafts.flatMap((draft) => {
-    if (!draft.asked) return [];
-    const created = opAt(result, draft.first).id;
-    const bound = result.results.some((r) => r.id.startsWith("pl_") && r.task === created);
+    const create = opAt(result, draft.first);
+    if (!draft.asked || create.status === "existing") return [];
+    const bound = result.results.some((r) => r.id.startsWith("pl_") && r.task === create.id);
     return bound ? [] : [outsideWarning(draft.at)];
   });
+}
+
+/**
+ * What happened to a draft (A3 3.4.5), from the writer's result for its task.create at `first`:
+ * `created`, or `exists` when its source keys matched a task (A1 3.6), with how it matched and the
+ * task's lifecycle. Several active matches name no task: their references are listed, and the
+ * caller picks one. From the result alone, so a replay says the same.
+ */
+function draftOutcome(
+  result: WriteResult,
+  first: number,
+): {
+  result: "created" | "exists";
+  id?: string;
+  ref?: string;
+  lifecycle: string;
+  matched_by?: "source_key";
+  ambiguous?: string[];
+} {
+  const create = opAt(result, first);
+  if (create.status !== "existing") {
+    return { result: "created", id: create.id, ref: refOf(create), lifecycle: "active" };
+  }
+  return {
+    result: "exists",
+    ...(create.ambiguous === undefined
+      ? { id: create.id, ref: refOf(create) }
+      : { ambiguous: create.ambiguous }),
+    lifecycle: create.lifecycle ?? "active",
+    matched_by: "source_key",
+  };
 }
 
 /**
  * A task draft (A3 3.4.5) as A1 operations: task.create, then its log entry and sources. Its place
  * is bound by `placeSets`, after every draft. `start` is the index its first operation gets in the
  * request; each source.add's index is recorded in `sourcePaths` with the source's input path, for
- * `source_differs`.
+ * `source_differs`. A draft with a keyed source upserts by it (A1 3.6): `on_existing` says what a
+ * match takes, and the writer's rebinding rules apply it.
  */
 function draftOps(
   draft: Record<string, unknown>,
@@ -994,10 +1030,11 @@ function draftOps(
   start: number,
   sourcePaths: Map<number, string>,
 ): Operation[] {
-  if (draft["on_existing"] === "add_sources") {
-    throw unsupported(`${path}.on_existing`, "M3.06 (source-key dedupe)");
-  }
   const create: TaskCreate = { kind: "task.create", id, title: String(draft["title"]) };
+  // `return`, the default, is A1's: an active match takes the draft's log entry, nothing else.
+  if (draft["on_existing"] === "add_sources") create.link_sources = true;
+  // A new task beside finished ones; refused against an active one (A3 3.4.5: invalid_input).
+  if (draft["on_existing"] === "create_new") create.dedupe = "new";
   for (const key of ["summary", "status", "effort", "waiting_on", "context"] as const) {
     if (typeof draft[key] === "string") create[key] = draft[key];
   }
@@ -1213,20 +1250,24 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       result,
       asks.map((ask, k) => ({ asked: ask.value !== undefined, first: firsts[k] ?? 0, at: ask.at })),
     );
+    const outcomes = list.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
+    // A matched draft binds no place, so the binding's warning for its place does not apply.
+    const unbound = asks.filter((_, k) => outcomes[k]?.result === "exists").map((a) => `${a.at}:`);
+    const bindings = result.warnings.filter((w) => !unbound.some((at) => w.startsWith(at)));
     return {
       as_of: result.as_of,
       tasks: list.map((draft, k) => {
-        const created = opAt(result, firsts[k] ?? 0);
+        const first = firsts[k] ?? 0;
+        // The log entry follows the draft's task.create (draftOps): added to a created task, or
+        // to an active match (A1 3.6), which the writer reports as created.
+        const log = typeof draft["log"] === "string" ? opAt(result, first + 1) : undefined;
         return {
-          result: "created",
-          id: created.id,
-          ref: refOf(created),
+          ...outcomes[k],
           title: String(draft["title"]),
-          lifecycle: "active",
-          log_added: typeof draft["log"] === "string",
+          log_added: log?.status === "created",
         };
       }),
-      warnings: [...differsWarnings(result, sourcePaths), ...placed, ...result.warnings],
+      warnings: [...differsWarnings(result, sourcePaths), ...placed, ...bindings],
       ...replayed(result),
     };
   },
@@ -1399,11 +1440,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       lifecycle: "completed",
       wrap_state: outcome === undefined ? "pending" : "wrapped",
       learnings: 0,
-      follow_ups: follow.map((draft, k) => ({
-        result: "created",
-        ref: refOf(opAt(result, firsts[k] ?? 0)),
-        title: String(draft["title"]),
-      })),
+      // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
+      follow_ups: follow.map((draft, k) => {
+        const outcome = draftOutcome(result, firsts[k] ?? 0);
+        return {
+          result: outcome.result,
+          ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
+          title: String(draft["title"]),
+        };
+      }),
       as_of: result.as_of,
       ...replayed(result),
     };
@@ -1501,7 +1546,59 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     return receiptResult(stored);
   },
+
+  "task.search": async (call) => {
+    // A read through the reader (A3 3.9): a read-only space answers too.
+    const reader = readerOf(call.space);
+    const { host } = call;
+    const space = call.space.id ?? "";
+    const platform = host.platform ?? process.platform;
+    const boundTask = call.caller.binding?.session?.task ?? undefined;
+    try {
+      // The input passed the entry's schema (TaskSearchInput) and its SafeText.
+      const input: SearchInput = call.input;
+      return await runSearch(reader, input, {
+        cursors: cursorsOf(host),
+        // A cursor serves the binding it was issued to (A3 3.9.5): the scope the call acts in.
+        owner: call.principal.scope,
+        space,
+        audience: call.principal.audience,
+        today: call.today,
+        now: (host.now ?? Date.now)(),
+        timeZone: (host.timeZone ?? localTimeZone)(),
+        machine: host.machine.id,
+        ...(boundTask === undefined ? {} : { boundTask }),
+        live: () =>
+          [...(host.bindings?.liveSessions(space) ?? new Map<string, number>())]
+            .filter(([, count]) => count > 0)
+            .map(([task]) => task),
+        here: async (cwd) => {
+          const roots = host.roots?.() ?? [];
+          const found = await hereOf(cwd, roots, platform);
+          if (found === undefined || found.roots.length === 0) return [];
+          // Every lifecycle: the search's scope and filters at S choose among them.
+          const placed = await readPlacedAny(reader, host.machine.id, found.roots);
+          const rows = await hereRows(placed, found, roots, platform);
+          return rows.map(({ row }) => String(row["id"]));
+        },
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
+  },
 };
+
+/** The search cursors of one service run (A3 3.9.5): a restart drops them with the host. */
+const searchCursors = new WeakMap<OpsHost, SearchCursors>();
+
+function cursorsOf(host: OpsHost): SearchCursors {
+  let cursors = searchCursors.get(host);
+  if (cursors === undefined) {
+    cursors = new SearchCursors(host.now ?? Date.now);
+    searchCursors.set(host, cursors);
+  }
+  return cursors;
+}
 
 /** The `since` of a changes section: 24h, 7d or an ISO time, in milliseconds. */
 /** The request ID of a click's over-budget note: derived, so a repeated click replays it. */

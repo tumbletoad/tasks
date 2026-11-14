@@ -175,7 +175,13 @@ const exampleStrings = allStrings(
   new Set(),
 );
 /** Patterns no example happens to use. */
-const extraSamples = ["24h", "pr_5k2m8q0w3z7r1c9d4f6h8j0n2p", "ui.theme"];
+const extraSamples = [
+  "24h",
+  "pr_5k2m8q0w3z7r1c9d4f6h8j0n2p",
+  "ui.theme",
+  "lr_6p1r4t7v0x3z6b9d2f5h8k1m4n",
+  "c_7m2k9q4w1z8r3c6d",
+];
 
 function sampleFor(pattern: string): string {
   const re = new RegExp(pattern, "u");

@@ -44,7 +44,10 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
+import { indexChanges } from "../search/documents.ts";
+import { hasSearchTables } from "../search/tables.ts";
 import type { OpenedSpace } from "../space.ts";
+import { Dedupe, type Match } from "./dedupe.ts";
 import {
   CHILD_FIELDS,
   columnsValue,
@@ -345,6 +348,12 @@ interface StagedOp {
    * on the same task and instance is in flight, which the operation returns instead (A4 3.9.1).
    */
   launch?: { task: Id<"t">; reference: string; existing: boolean };
+  /**
+   * A draft that matched a task by source key (with its match), or a later operation of such a
+   * draft that the rebinding rules leave out (A1 3.6): it writes nothing, its target is the
+   * matched task, and its result is `existing`.
+   */
+  existing?: { match?: Match };
 }
 
 interface Plan {
@@ -703,6 +712,11 @@ export class SpaceWriter {
   readonly #now: () => number;
   readonly #random: RandomSource;
   readonly #seams: WriteSeams;
+  /**
+   * Whether the space holds the search tables (A1 3.12), which a schema step after 0.2 adds: each
+   * commit then writes the documents it changed. A space without them keeps no index.
+   */
+  readonly #search: boolean;
   readonly spaceId: Id<"sp">;
   #registered = false;
   #closed = false;
@@ -714,6 +728,7 @@ export class SpaceWriter {
     this.#random = options.random ?? osRandom;
     this.#seams = seams;
     this.spaceId = opened.space.spaceId;
+    this.#search = hasSearchTables(opened.conn);
   }
 
   /**
@@ -1048,6 +1063,9 @@ export class SpaceWriter {
     const efforts = listPreference(conn, "tasks.effort_scale", DEFAULT_EFFORTS);
     const affected = new Set<Id<"t">>();
     const random = this.#random;
+    /** Dedupe by source key (A1 3.6), and the drafts that matched a task, by the draft's ID. */
+    const dedupe = new Dedupe(conn, request.ops, at);
+    const matched = new Map<string, Match>();
 
     const ops = request.ops.map((op, i): StagedOp => {
       const values: TaskValues =
@@ -1058,8 +1076,14 @@ export class SpaceWriter {
       if (typeof values.effort === "string" && !efforts.includes(values.effort)) {
         problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
       }
-      const task = (ref: string, field: string): Id<"t"> => {
-        const found = resolveTask(conn, space, ref, drafts, i, field);
+      const task = (given: string, field: string): Id<"t"> => {
+        // A matched draft's ID names the matched task, for an operation that follows it. Only its
+        // entries and sources name it (checkRequest), and they follow one active match only.
+        const rebound = matched.get(given);
+        if (rebound !== undefined && !rebound.follows) {
+          throw misuse("Only an operation that follows a match names a matched draft");
+        }
+        const found = resolveTask(conn, space, rebound?.task ?? given, drafts, i, field);
         if (found.row !== undefined) {
           if (found.row.deleted) problem("DELETED", "The task is deleted", i, field);
           if (!tasks.has(found.id)) {
@@ -1102,14 +1126,8 @@ export class SpaceWriter {
         drafts.has(target)
           ? []
           : fields.map((field) => ({ entity: "tasks", id: target, field, task: target }));
-      /** A place's owner, and the request's machine, which must have its record (A1 3.15). */
-      const ownerOf = (op: { task?: string; project?: string; area?: string }) => {
-        const owner =
-          op.task !== undefined
-            ? { kind: "task" as const, id: task(op.task, "task") as string }
-            : op.project !== undefined
-              ? { kind: "project" as const, id: resolveProject(conn, op.project, i).id as string }
-              : { kind: "area" as const, id: resolveArea(conn, op.area ?? "", i) as string };
+      /** The request's machine, which a place binds a folder on: it must have its record. */
+      const placeMachine = (): string => {
         const machine = request.actor.machine_id;
         if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
           problem(
@@ -1119,17 +1137,87 @@ export class SpaceWriter {
             "actor.machine_id",
           );
         }
+        return machine;
+      };
+      /** A place's owner, and the request's machine, which must have its record (A1 3.15). */
+      const ownerOf = (op: { task?: string; project?: string; area?: string }) => {
+        const owner =
+          op.task !== undefined
+            ? { kind: "task" as const, id: task(op.task, "task") as string }
+            : op.project !== undefined
+              ? { kind: "project" as const, id: resolveProject(conn, op.project, i).id as string }
+              : { kind: "area" as const, id: resolveArea(conn, op.area ?? "", i) as string };
+        const machine = placeMachine();
         return { owner, machine, key: `${owner.kind}|${owner.id}` };
       };
+
+      // A later operation of a matched draft: the rebinding rules (A1 3.6) either leave it out,
+      // or let it go on with the matched task, which `task` resolves the draft's ID to. Only the
+      // draft's entries, sources and place name it (checkRequest refuses the rest from the input
+      // alone). A place left out is still checked as a created draft's is, so whether a request
+      // is valid never depends on what dedupe finds.
+      const named = "task" in op ? op.task : undefined;
+      const match = named === undefined ? undefined : matched.get(named);
+      if (match !== undefined && !follows(op, match)) {
+        if (op.kind === "place.set") placeMachine();
+        return {
+          i,
+          op,
+          target: match.task,
+          task: match.task,
+          touches: [],
+          record: { existing: true },
+          existing: {},
+        };
+      }
 
       switch (op.kind) {
         case "task.create": {
           const id = op.id ?? newId("t", random);
-          if (drafts.has(id) || conn.prepare(SQL.task).get({ id }) !== undefined) {
+          if (
+            drafts.has(id) ||
+            matched.has(id) ||
+            conn.prepare(SQL.task).get({ id }) !== undefined
+          ) {
             problem("VALIDATION_FAILED", "A task with this ID exists", i, "id");
           }
+          // The draft's references are checked whatever dedupe finds, so whether a request is
+          // valid never depends on what the space holds under its keys.
           const { record, ...placed } = where(op);
+          // Dedupe by the keys of the draft's sources (A1 3.6). A draft without a client ID has
+          // no source operation that can name it, so it has no keys.
+          const keys = op.id === undefined ? [] : dedupe.keysOf(op.id);
+          const mode = op.dedupe ?? "source_key";
+          if (mode !== "none" && keys.length > 0) {
+            const found = dedupe.match(keys, op.link_sources === true);
+            if (mode === "new" && found.active.length > 0) {
+              problem(
+                "VALIDATION_FAILED",
+                "An active task holds a source key of this draft: return it or link to it",
+                i,
+                "dedupe",
+              );
+            }
+            const hit = mode === "source_key" ? found.match : undefined;
+            if (hit !== undefined) {
+              matched.set(id, hit);
+              // The draft's sources will link to the match: later drafts find it by them too.
+              if (hit.follows && hit.linkSources) {
+                for (const key of keys) dedupe.link(key, hit.task);
+              }
+              return {
+                i,
+                op,
+                target: hit.task,
+                task: hit.task,
+                touches: [],
+                record: { existing: true },
+                existing: { match: hit },
+              };
+            }
+          }
           drafts.add(id);
+          dedupe.created(id, keys);
           if (placed.sibling?.id === id) {
             problem(
               "VALIDATION_FAILED",
@@ -1190,6 +1278,8 @@ export class SpaceWriter {
         case "task.reopen": {
           const target = task(op.task, "task");
           if (op.kind === "task.complete") affected.add(target);
+          // A later draft of the request sees the lifecycle this leaves (A1 3.6).
+          dedupe.lifecycle(target, op.kind === "task.complete" ? "completed" : "active");
           const extra =
             op.kind === "task.complete"
               ? op.outcome === undefined
@@ -1224,6 +1314,7 @@ export class SpaceWriter {
         case "source.add": {
           const parent = task(op.task, "task");
           const { key } = op.source;
+          if (key !== undefined) dedupe.link(key, parent);
           let source: Id<"s"> | undefined = key === undefined ? undefined : draftSources.get(key);
           const touches: Touch[] = [];
           if (source === undefined) {
@@ -1516,6 +1607,8 @@ export class SpaceWriter {
       changes = coalesce(conn, run);
       if (changes.length > 0) {
         insertChanges(conn, seq, changes);
+        // The search rows, in the same transaction as the state they index (A1 3.7, 3.12).
+        if (this.#search) indexChanges(conn, seq, changes);
         const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
         for (const id of tasks) conn.prepare(SQL.outbox).run({ key: id, seq });
         // The projection renders tasks and their children. Launch records are not among them.
@@ -1582,6 +1675,29 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
   const refOf = (task: Id<"t">): string =>
     formatTaskRef(run.plan.refPrefix, readTask(conn, task).ref);
   return run.plan.ops.map((staged): OpResult => {
+    if (staged.existing !== undefined) {
+      // The matched task, as it stands after the request (A1 3.6). A matched draft's result
+      // says how it matched and the lifecycle it matched in.
+      const task = readTask(conn, staged.target as Id<"t">);
+      const { match } = staged.existing;
+      return {
+        i: staged.i,
+        status: "existing",
+        id: task.id,
+        task: task.id,
+        ref: formatTaskRef(run.plan.refPrefix, task.ref),
+        version: task.version,
+        ...(match === undefined
+          ? {}
+          : {
+              matched_by: "source_key",
+              lifecycle: match.lifecycle,
+              ...(match.ambiguous === undefined
+                ? {}
+                : { ambiguous: match.ambiguous.map((t) => refOf(t)) }),
+            }),
+      };
+    }
     const writes = run.opWrites.get(staged.i) ?? [];
     let status: OpResult["status"] = "unchanged";
     if (writes.some((w) => w.field === null)) status = "created";
@@ -1900,6 +2016,26 @@ function resolveProject(
 }
 
 /**
+ * Whether a later operation of a matched draft goes on with the matched task (A1 3.6): only to one
+ * active match, and only the draft's entries (`log.add`, `note.add`, `task.context_append`), with
+ * its sources too when the draft asked to link them. Its place is what it would have created, so
+ * it is left out. No other operation names a draft that may match (checkRequest).
+ */
+function follows(op: Operation, match: Match): boolean {
+  if (!match.follows) return false;
+  switch (op.kind) {
+    case "log.add":
+    case "note.add":
+    case "task.context_append":
+      return true;
+    case "source.add":
+      return match.linkSources;
+    default:
+      return false;
+  }
+}
+
+/**
  * An operation's input for `commits.ops`: its fields but `kind` and the references named, which
  * staging resolved and the record holds as IDs.
  */
@@ -2104,6 +2240,8 @@ function sourceDiffers(row: Row, source: SourceFields): string[] {
 }
 
 function apply(conn: Connection, run: Execution, staged: StagedOp): void {
+  // A matched draft, or an operation of it that the rebinding rules leave out: nothing to write.
+  if (staged.existing !== undefined) return;
   const { op, i } = staged;
   const { actor } = run.request;
   const author = actor.author_id ?? actor.principal_id;

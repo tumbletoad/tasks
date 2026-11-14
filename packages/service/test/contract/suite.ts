@@ -258,14 +258,24 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "launch_unknown" },
   },
   "task.add 0": {
-    owner: "M3.06 (source-key dedupe) and M4.01 (areas and projects by name)",
-    why: "an area and project by name, and a draft whose source key matches",
+    owner: "M4.01 (areas and projects by name, possible-duplicate warnings)",
+    why: "an area and project by name, and a similar title's warning",
     now: { error: "not_found" },
   },
   "task.finish 0": {
     owner: "M3.01 and M3.04 (learnings) and M4.01 (a follow-up's project by name)",
     why: "learnings, and a follow-up in a project by name",
     now: { error: "invalid_input" },
+  },
+  "task.search 0": {
+    owner: "the schema step that adds the search tables (A1 3.12), and M3.04 (learnings)",
+    why: "words need the search index, which schema 0.2 does not hold",
+    now: { error: "space_unavailable" },
+  },
+  "task.search 1": {
+    owner: "M3.04 (task.delete), with a cursor of the world's own search",
+    why: "the next page after a task was deleted, under the example's cursor",
+    now: { error: "cursor_expired" },
   },
 };
 

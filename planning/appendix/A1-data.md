@@ -34,7 +34,7 @@ For a part that is built, this text is the contract: the guarantee, the interfac
 | A1-8 | Precondition | One token, `base`: the `as_of` (epoch, incarnation, seq) of the caller's read. Each touched field must have a version ≤ base at the start of the request. Inserts of new rows need no base. Removing or reviving a link row carries its version. | Agents carry one token per read. |
 | A1-9 | Commit | `BEGIN IMMEDIATE` → space, authority and actor checks → receipt lookup → base → staged plan → policy → preconditions → execute → state, `commits`, `changes`, search rows, outbox rows, receipt → `COMMIT`. | R1. One transaction, so no crash window between state and history (X11). |
 | A1-10 | Receipts | A `receipts` table keyed by `(scope_id, request_id)`, one row for every outcome the writer decides, kept forever. The fingerprint covers the intent, never a base. | R3, X12: an unreceipted no-op can turn into a change on retry. |
-| A1-11 | Dedupe | `source_key` is unique per space on `sources`. `task.create` upserts by key against active tasks and tasks completed in the last 30 days. | R4. |
+| A1-11 | Dedupe | `source_key` is unique per space on `sources`. `task.create` upserts by its draft's keys against active tasks, then tasks finished within `tasks.dedupe_window_days` (30). A match takes only the draft's entries. | R4. |
 | A1-12 | Sets | Labels and source links are rows with their own versions. No set-valued fields. | A set-valued field has no associative merge. |
 | A1-13 | Undo | Per-actor stack stored as `undo_status` on commits. Each field keeps its physical version (`fv`) and its provenance (`fp`). Inverting a change is guarded by provenance. Atomic. Partial only on explicit choice. | R2. Survives restarts. Consecutive undos of one field both work without resetting versions. |
 | A1-14 | Revert | Any commit, or a whole agent session in one atomic commit with a preview. A session revert walks each field's provenance chain back and stops at the first foreign write. | Never overwrites intervening human work. |
@@ -212,7 +212,7 @@ Built in the write path (`write/request.ts` parses the base, `write/writer.ts` c
 
 A1's operations are the writer's internal interface, not Zod schemas. Each kind is listed once in `packages/contracts/src/operations.ts` with who may emit it, the scopes it may need and whether it always needs `base`, and a test checks the writer against that table. A registry handler (A3, R5) expands its input into operations, resolving relative dates, names and A3's `focus: true`; the writer takes ISO dates, IDs and slugs only.
 
-**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A3.3.7.actors.first-act]`): `task.create` (without dedupe), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `machine.register` and `actor.register`. What is not obvious from the code:
+**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A1.5.write.dedupe]`, `[A3.3.7.actors.first-act]`): `task.create` (with dedupe by source key), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `machine.register` and `actor.register`. What is not obvious from the code:
 - `task.context_append` writes the `context` field without a base, so two appends both land while a stale replace conflicts with it.
 - **Initial children** of a new task are child operations in the same request naming the draft's client ID. There is no nested form of `task.create`, so each row kind has one implementation.
 - `machine.register` runs once, when a space's writer first opens on its authority machine. A writer on another machine registers nothing and refuses every request (`not_authority`). The writer refuses a principal without an `actors` row; the CLI's `script` and `agent:unknown` actors and A4's session actors join a space with `actor.register` on their first act.
@@ -246,13 +246,26 @@ A1's operations are the writer's internal interface, not Zod schemas. Each kind 
 - The operation table records only unconditional preconditions. Handlers and the writer own the conditional ones (link versions, author rules, `pref.set`'s writers, a proposal's fresh base, `redact`'s confirmation, dedupe).
 - Exchange, launch, session, run, machine and actor operations are never on an undo stack.
 
-**Dedupe by source key (R4).** Not built yet (M3.06). It runs after the receipt lookup, while the request is staged (3.7). `task.create` uses `dedupe: "source_key"` by default when any source in the draft has a key.
-1. Look up each key in `sources` and follow `task_sources` to tasks that are not deleted.
-2. An `active` match returns op status `existing` with the task and `matched_by: "source_key"`, and writes nothing. Several active matches return `existing` with `ambiguous: [refs]`.
-3. Otherwise a match completed or archived in the last 30 days (`tasks.dedupe_window_days`) returns `existing` with its lifecycle. The caller decides whether to reopen it or create anew with `dedupe: "none"`.
+**Dedupe by source key (R4).** Built (`write/dedupe.ts`, staged in `write/writer.ts`; tests `[A1.5.write.dedupe]`, `[A1.5.write.dedupe-sessions]`). It runs after the receipt lookup, while the request is staged (3.7), so a retry replays its first answer whatever its keys hold now, also after the window. A draft's keys are those of the request's `source.add` operations that name its client ID; a draft without a client ID has none. `task.create.dedupe` picks the mode:
+- `source_key`, the default, matches by the steps below.
+- `new` creates a task beside finished matches, and refuses the request (`VALIDATION_FAILED` on `dedupe`) when an active task holds a key, so a caller never makes two active tasks for one item (A3's `create_new`).
+- `none` never looks, as the importer creates each legacy task (A7 3.15.3).
+
+1. A key's **holders** are the tasks linked to the live source with that key by a live link, that are not deleted: a removed link or a deleted task never matches. The request's own work counts as execution will see it: the links it adds before the draft, a draft it creates (which holds its keys from its create on, whatever the order of its source operations), and a task its earlier `task.reopen` makes active. A task its earlier `task.complete` finishes is the one finished last, and no match: a draft after it is new work, as `complete_task`'s follow-up of the same ticket is (A3 3.4.8), so it is created rather than matched to that task or to an earlier finish.
+2. One **active** holder is the match: op status `existing` with the task, `matched_by: "source_key"` and its `lifecycle`. Several active holders: `existing` naming the first by reference, with `ambiguous: [refs]` listing them all, lowest first.
+3. Otherwise a holder finished (completed or archived) within `tasks.dedupe_window_days` (default 30) of the request's instant is the match, the one finished last, with its lifecycle. A task finished at its `completed_at`, else at the commit that last wrote its lifecycle. Commit instants never go back (3.9), so two finishes can share one: the later commit is then the one finished last. The caller decides whether to reopen it or create anew with `new`.
 4. Otherwise the task is created. A source whose key exists is linked, never duplicated; the unique index guarantees one row per key.
 
-Later operations of the same request that name the draft's client ID are rebound to the matched task: append-only operations apply to it, and field changes need a base or the request conflicts. Policy sees the matched task and its actual area and project, never the area the draft named. "Create or find, then add a log entry" is therefore one request, which A4's refresh routine needs. The single writer makes it safe: two refresh runs that report the same email cannot both create a task.
+**Rebinding.** A draft **may match** when its create has a client ID, the default `dedupe` and a keyed `source.add` that names it. Only its entries (`log.add`, `note.add`, `task.context_append`), its sources (`source.add`) and its place (`place.set`) may name it, and never as a sibling (`after`, `before`). Any other operation that names it (`task.patch`, `task.move`, `task.complete`, `task.reopen`, `place.clear`) is `VALIDATION_FAILED` on its `task` or sibling field, checked from the input before the transaction, so whether a request is valid never depends on what the space holds under its keys. Applied to a match, such a change would hit a task the caller never read as this one, and left out it would be dropped unseen. A caller that wants both sends the change in a later request, or creates the draft with `new` or `none`.
+
+A matched draft writes nothing of its own: not its values, its place or its sources. Its later operations:
+- Its entries go on with the one active match. "Create or find, then add a log entry" is therefore one request, which A4's refresh routine needs.
+- Its `source.add` operations go on with it only when the create has `link_sources` (A3's `add_sources`). Reviving a removed link still needs its link version or a base (3.5).
+- Its `place.set` is left out, and still checked as a created draft's is (the request's machine has its record).
+- Nothing follows an ambiguous or a finished match: the caller picks one, or reopens or creates anew first.
+- A left-out operation's result is `existing` with the matched task. `commits.ops` records it and the matched create as `{existing: true}` with the matched task as target, holding no text of the draft. A request of only matched drafts writes no commit and is `unchanged`, with its receipt.
+
+Policy (M4.02) sees the matched task and its actual area and project (the staged operation's `existing.match`), never the area the draft named. The single writer makes it safe: two refresh runs that report the same email cannot both create a task. A request that names an existing key reads its holders once: the sources by their unique index, then one pass over `task_sources`, which has no index on `source_id` in schema 0.2 (open item 17).
 
 ### 3.7 The write path
 
@@ -265,7 +278,7 @@ All writes go through the space's writer. The only writes that bypass history ar
 - Checks that depend only on the input run before the transaction and store nothing. Checks that depend on the space run inside it, so their refusal is decided and has a receipt.
 - Every decided outcome is a value (`applied`, `unchanged`, `conflict`, `rejected`, later `proposed`), never an error. A conflict names the origin of the commit that set each field, so text applied through an import is labelled `import`, never the user. Storage failures stay `StorageError` and leave the request undecided.
 - Problems name the operation and the field, never a value or a key, because a key is input too.
-- Not built yet: `policy(plan, scope)` and proposals (M4.02), dedupe (M3.06), search rows (M3.05), the secret scan on written text (A6 3.16.4), and these limits: a learning at most 1 KiB and 20 per task, at most 20 labels per task, and internal importers (A7) committing up to 10,000 operations in one commit.
+- Not built yet: `policy(plan, scope)` and proposals (M4.02), search rows (M3.05), the secret scan on written text (A6 3.16.4), and these limits: a learning at most 1 KiB and 20 per task, at most 20 labels per task, and internal importers (A7) committing up to 10,000 operations in one commit.
 
 **Reasons and pitfalls.**
 - Stored text is normalised before its limit is checked (`normaliseStored`), lone surrogates first, because SQLite stores UTF-8 and the row would otherwise differ from `commits.ops`.
@@ -454,7 +467,7 @@ After the commit, the outbox topic `redact` finishes the rest, so a crash only d
 
 ### 3.12 Search index tables
 
-Not built yet (M3.05). A3 owns query syntax, ranking, result shape, budgets and cursors (R12). This appendix owns the tables and keeps them consistent.
+Built (M3.05) up to the schema step that creates the tables: released schemas are frozen and 0.2 does not hold them (3.4), so no space has an index until that step runs. The code is `packages/storage/src/search/`; tests `[A1.5.search.index]`, `[A1.5.search.rows-by-ids]`. A3 owns query syntax, ranking, result shape, budgets and cursors (R12). This appendix owns the tables and keeps them consistent.
 
 ```sql
 CREATE TABLE search_docs (
@@ -473,6 +486,12 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2',
   prefix = '2 3'
 );
+
+-- What a change to an existing source, area or project reads to find the tasks that show it
+-- (task_labels_label serves labels since 0.2).
+CREATE INDEX task_sources_source ON task_sources(source_id);
+CREATE INDEX tasks_area ON tasks(area_id);
+CREATE INDEX tasks_project ON tasks(project_id);
 ```
 
 | Document | `title` | `body` | `extra` |
@@ -482,13 +501,22 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 | learning | owning task title | body | project title |
 | project, area | title | brief | slug |
 
-- The FTS table stores its own copy of the text, so snippets and highlights work and deletes need no old values, unlike external-content tables.
-- The write handlers delete and re-insert each affected document in the write transaction. A lifecycle change updates `search_docs.lifecycle` for the task and its children. Tombstones and redaction remove documents; restore re-adds them.
+**What it guarantees.**
+- Once a space holds the tables (`hasSearchTables`, read when the writer attaches), every commit writes the documents its change rows reach, inside its own transaction (`indexChanges`). One function derives a document from the current state for both the commit and the rebuild, and a document whose content did not change keeps its row and its `seq`. So after any history the index equals a fresh rebuild, document numbers and seqs aside, and every FTS row has its `search_docs` row (`expectedDocuments`, `storedDocuments`).
+- A document exists for every live row and only for it: a tombstoned task has none, and neither have its notes, log entries and learnings, nor any deleted row. `lifecycle` is the owning task's (null for areas and projects) and `audience` the note's. A restore re-adds the documents.
+- What a change reaches: a task's title, lifecycle, tombstone or group (area and project) reaches its children's documents as well as its own, since a learning shows the task's project; its summary, context and outcome only its own; a source or a label every task that shows it; an area or a project its own document and its tasks' (a project's learnings too). A new source, label, area or project reaches no other task, because the links and tasks its commit adds have change rows of their own, so a commit that creates one reads no other task; a change to an existing one finds its tasks through the indexes above. Places, launches, preferences, proposals and exchanges hold no search text.
+- The FTS table stores its own copy of the text, so snippets and highlights work and deletes need no old values, unlike external-content tables. A rewritten document keeps its number, so `doc` stays its FTS rowid.
 - Agent queries join `search_docs` with `audience = 'all'`, so "only me" notes (D14) are excluded from agent search, agent reads and the projection with no migration.
-- `tasks index rebuild` empties and refills both tables in one transaction. The maintenance worker runs `INSERT INTO search_fts(search_fts, rank) VALUES ('merge', 500)` when idle and the FTS `integrity-check` weekly.
+- `rebuildSearchIndex` empties and refills both tables in the caller's write transaction, every document with the space's `last_seq`.
+- **Pages by frozen IDs** (`search/rows.ts`). A3's cursors freeze an ordered list of task or learning IDs at a snapshot. A1 serves each page with `rows_by_ids(ids)` (`ROWS_BY_IDS_SQL`, `decodeRowsByIds`) in one read transaction, which returns the page's own `as_of` and one entry per ID, in order, never fewer: the current row with its `version`, `touched` and lifecycle; `{id, ref, state: "deleted"}` for a tombstoned task, or a deleted learning or one whose task is tombstoned; `{id, state: "redacted"}` for an ID with no row, with no content. Only entity redaction removes a row (3.11.4), so a missing row is a redacted one without a `redactions` lookup, and every ID in `redactions` has no row. Rows may be newer than the cursor's snapshot; the page's `as_of` is the base for writes. A3 invalidates a cursor when the space's epoch or incarnation differs from the cursor's.
+
+**Limits.**
 - **Broad queries are the cost.** A broad term matches a median of about 36,000 of the 108,000 documents at design scale (p95 about 72,000), so bm25 ranking of every match and snippets dominate. Selective queries (p95 about 20 ms) and no-hit queries (under 0.1 ms) are far below the target. M3.16 chooses a query design for broad terms (3.20).
 - **Trigram.** An optional `search_tri` table with the `trigram` tokenizer, for substring and CJK search, stays behind `features.search_trigram`, off by default: its broad p95 is above the unicode61 index on Windows and Linux. Open item 4 decides the default.
-- **Pages by frozen IDs.** A3's cursors freeze an ordered list of IDs at a snapshot. A1 serves each later page with `rows_by_ids(ids)` in one read transaction, which returns the page's own `as_of` and one entry per ID, in order, never fewer: the current row with its `version` and lifecycle; `{id, ref, state: "deleted"}` for a tombstoned row; `{id, state: "redacted"}` for an ID in `redactions`, with no content. Rows may be newer than the cursor's snapshot; the page's `as_of` is the base for writes. A3 invalidates a cursor when the space's epoch or incarnation differs from the cursor's.
+
+**The schema step that adds the tables** runs `SEARCH_TABLE_STATEMENTS` (`search/tables.ts`, the DDL above) and then `rebuildSearchIndex` in its `up`, so a migrated space starts with a complete index, and adds `search_docs.kind` to `CLOSED_ENUMS`. Its `verify` counts `type = 'table'` rows only, as 0002's does, so FTS5's shadow tables are not judged as STRICT tables. Until it runs, the writer keeps no index and A3's search answers filters but not words (A3 3.9.2).
+
+**Not built yet.** The `tasks index rebuild` verb; the maintenance worker's `INSERT INTO search_fts(search_fts, rank) VALUES ('merge', 500)` when idle and the FTS `integrity-check` weekly; and, with `space.patch`, re-indexing every task document when the reference prefix changes (each task's `extra` holds its reference).
 
 ### 3.13 The projection (D10)
 
@@ -601,6 +629,7 @@ There is no fallback to another clone, a containing project, a parent folder, th
 - **Use.** A route whose process Tasks starts in the folder calls `resolvePlace` right before the launch and hands that process the folder and the check in its claim's reply (A4 3.6.3), never in argv, which a process listing shows, or the environment, which the agent inherits. Routes where none of our processes is in the folder get only the first part (A4).
 - **Windows** reads `.` and `..` through the path, not the held handle; what ties path to directory there is that a folder a process is in, and every folder above it, cannot be renamed or removed. Residual, asserted by a test: a junction put into the path before the process entered and removed before the check. The check passes, but the process holds the link's target, so a later change of the path could move a later child. Untested: a reparse point set on the held folder itself.
 - **Identity, never spelling.** Inside the root is confirmed by identity, so `C:\workshop` is never inside `C:\work`. A volume without file numbers gives `identity_unavailable`, and `tasks roots add` refuses it, because comparing paths instead would make two folders `A` and `a` one. Unstable file numbers (FAT) are not detected.
+- **A link to a file is `not_a_directory`** on every platform, and a dangling link `path_missing`: the reason is the one Linux's own stat gives. Linux and macOS follow a link to a file, so there a failed stat is `path_missing`. Windows cannot follow a junction or a directory link to a file, and its stat calls the path missing. So on Windows, after a failed stat, `resolvePlace` (for a folder place) and `placeOf` read the link's own chain with lstat and readlink, at most 40 links as Linux follows them (41 is a loop). A relative target is taken from the real folder its link lies in, never from the path's spelling, because a link reached through another link leads where the file system takes it. A chain that ends at something other than a folder is `not_a_directory`, anything else `path_missing`. That read only picks the refusal, so it never makes a place resolve. Links in the path's earlier segments are not counted toward the 40. Tests: `[A1.3.15.places.resolve]`, `[A1.3.15.places.prop]`.
 - **The Git remote is an observation, not an identity**, read by a port of git's own config parser (`git-remote.ts`); the product never starts git. What the parser cannot read exactly records no remote, never a guess, and the place is bound with a warning (A3). Credentials are removed as text and nothing else changes, so two addresses git keeps apart are never recorded as one.
 
 **Limits of exactness.** A process may change its own working directory after the check. Two names of one directory by a hard link cannot be told apart. The Windows residual above. A repository changed while its remote is read. A place bound by `{root, path}` is not checked against the folder, so its remote is recorded only when the folder resolves at bind time.
@@ -609,12 +638,13 @@ There is no fallback to another clone, a containing project, a parent folder, th
 
 ### 3.16 Preferences and feature flags
 
-Not built yet (M3.11), except that the writer already checks status and effort against `tasks.statuses` and `tasks.effort_scale` or their defaults. One registry in code declares every preference:
+Not built yet (M3.11), except that the writer already checks status and effort against `tasks.statuses` and `tasks.effort_scale` or their defaults, and reads `tasks.dedupe_window_days` for dedupe (3.6), taking its default for a value that is not a whole number of days from 0 to 3,650. One registry in code declares every preference:
 
 ```ts
 pref("ui.theme",              { scope: "space",   schema: { enum: ["sumi", "washi", "system"] }, default: "sumi", writers: ["human", "agent"], since: "0.1" });
 pref("tasks.statuses",        { scope: "space",   schema: StatusList, default: ["open", "waiting", "review", "backlog"], writers: ["human", "agent"] });
 pref("tasks.effort_scale",    { scope: "space",   schema: EffortScale, default: [{key: "S"}, {key: "M"}, {key: "L"}] });
+pref("tasks.dedupe_window_days", { scope: "space", schema: { type: "integer", minimum: 0, maximum: 3650 }, default: 30 });
 pref("grouping.names",        { scope: "space",   schema: GroupNames, default: {area: "Area", project: "Project"} });
 pref("autonomy.level",        { scope: "space",   policy: true, schema: { enum: ["full", "review", "suggest"] }, default: "review" });  // setup asks (D13)
 pref("targets.default",       { scope: "space",   schema: InstanceRef, default: null });       // A4: references only
@@ -816,8 +846,9 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.…]`, `[A1.3.15.�
 | One writer per file, file names, cross-process lock | `writer.*` | `test/writer-worker.test.ts`, `test/file-names.test.ts`, `test/writer-lock.test.ts` |
 | Space folder, manifest, IDs, references, row domain | `space.*`, `ids.property`, `refs.short` | `test/space.test.ts`, `test/manifest.test.ts`, `test/files.test.ts`, `test/refs.test.ts`, `src/*.test.ts` |
 | Schema lint | `schema.lint` | `test/schema-lint.test.ts` |
-| Write path, receipts, launches | `write.*` | `test/write-path.test.ts`, `children`, `clear-append`, `receipts`, `launches`, `write-model` |
+| Write path, receipts, launches, dedupe | `write.*` | `test/write-path.test.ts`, `children`, `clear-append`, `receipts`, `launches`, `write-model`, `dedupe` |
 | Errors | `errors.codes` | `test/errors.test.ts`, `packages/contracts/src/a1-errors.test.ts` |
+| Search index, pages by frozen IDs | `search.*` | `test/search-index.test.ts`, with the stand-ins of later operations in `test/search-helpers.ts` |
 | Migrations | `migration.*`; `A2.3.1.hub.failed-migration`, `A2.3.1.hub.migration-timeout` | `test/migrate.test.ts`, `tests/migration/`, `packages/service/test/migration-open.test.ts`, `packages/cli/test/migration-drill.test.ts` |
 | Backups and restore | `backup.*`, `restore.*` | `test/backup.test.ts`, `test/retention.test.ts`, `test/restore.test.ts` |
 | Synced and network folders | `sync.*` | `packages/service/test/sync-folders.test.ts`, `synced-spaces.test.ts` |
@@ -835,8 +866,8 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.…]`, `[A1.3.15.�
 
 **Still to add with their steps.**
 - **Schema lint:** every replicated column changes only through `changes` (an audit trigger log compared with the `changes` rows of a random workload). Every store that can hold task text has a registered redaction handler (M3.14).
-- **Staged execution (X11).** The import recipe `task.complete` then `task.wrap_up` with the exported base applies. A draft naming a Full area that dedupes to a task in a Suggest area becomes a proposal. A draft whose project belongs to another area than the one it names is judged by the project's area. A move between areas takes the more restrictive level. Proposals store resolved operations with fixed dates. Dedupe rebinding: later operations naming a deduped draft apply to the matched task, append-only ones without a base and field changes only with one.
-- **Receipts with dedupe and unlink.** A retry of an `existing` create after the 30-day window returns `existing` and creates nothing. A retry of a no-op `source.unlink` after someone relinked the source returns `unchanged` and leaves the new link.
+- **Staged execution (X11).** The import recipe `task.complete` then `task.wrap_up` with the exported base applies. A draft naming a Full area that dedupes to a task in a Suggest area becomes a proposal. A draft whose project belongs to another area than the one it names is judged by the project's area. A move between areas takes the more restrictive level. Proposals store resolved operations with fixed dates.
+- **Receipts with unlink.** A retry of a no-op `source.unlink` after someone relinked the source returns `unchanged` and leaves the new link.
 - **Link versions.** An agent reads, the user removes and re-adds a source, then the agent's delayed removal arrives: `VERSION_CONFLICT`, and the link stays.
 - **Change feed (X8).** A run of hidden-only commits produces empty batches that advance coverage. A batch whose `from` skips the cursor triggers `changes(after)`, then a snapshot. An epoch or incarnation change forces a snapshot. Every commit appears exactly once.
 - **Incarnations (X6).** A cursor from another incarnation returns `EPOCH_CHANGED`. A transfer bundle for another machine opens read-only. A second import of the same transfer bundle is refused.
@@ -869,3 +900,4 @@ Item numbers are stable and never reused, so a settled item leaves a gap.
 14. **A move command.** A space leaves a folder by backup, restore into a new folder and claim (3.2). A later step builds `tasks space move` on the transfer and claim primitives, under the five rules in 3.18, and decides how the `[[spaces]]` entry in `machine.toml` follows it.
 15. **Backups of a space whose migration keeps failing.** Retention never runs for a space whose migration failed, and a timeout records nothing because its outcome is not known when the open ends (3.17). So a migration that always runs past the open's bound and then fails adds a barrier backup at every open. Recording the late failure when it arrives would bound that case too.
 16. **Who else can write a space folder.** Storage writes `writer.lock`, `writer.json` and the databases into an existing space folder, and the folder that holds spaces, without judging their owner or mode (3.1), while A6's threat model expects space folders to be checked at start. That check needs its own step and a rule for spaces on removable or synced drives, where every file can show mode 0777 and another owner.
+17. **An index for a source's links.** Dedupe reads a key's holders through `task_sources`, whose key is `(task_id, source_id)`, so a request that names an existing key passes over every link once (3.6), and so will `source.patch` and the importer's shared sources. The default is to add `CREATE INDEX task_sources_source ON task_sources(source_id)` in the next schema step (0003); M3.16's scale run shows whether the pass matters before then.

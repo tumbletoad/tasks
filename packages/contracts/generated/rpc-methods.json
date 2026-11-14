@@ -548,6 +548,15 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "ambiguous": {
+                      "description": "Several active tasks matched, the named one first",
+                      "items": {
+                        "description": "Task reference",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
                     "differs": {
                       "description": "Fields of an existing source the input gave otherwise",
                       "items": {
@@ -587,6 +596,22 @@
                         }
                       ],
                       "description": "The row it acted on, or a preference's key"
+                    },
+                    "lifecycle": {
+                      "description": "The matched task's lifecycle",
+                      "enum": [
+                        "active",
+                        "completed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "matched_by": {
+                      "description": "A task draft that matched an existing task: how",
+                      "enum": [
+                        "source_key"
+                      ],
+                      "type": "string"
                     },
                     "ref": {
                       "description": "Task reference",
@@ -3528,6 +3553,336 @@
       "remote": "write",
       "scope": "space:write",
       "summary": "Reopen a completed or archived task. Its earlier outcome and learnings stay."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "cursor_expired",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page: the last page's cursor, alone",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "limit": {
+            "description": "Rows per page; default 15",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "q": {
+            "description": "Words, \"phrases\" and filters, such as status:open p<=2",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "scope": {
+            "description": "active by default; finished is completed or archived",
+            "enum": [
+              "active",
+              "finished",
+              "all",
+              "learnings"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "task.search",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Pass it for the next page",
+            "pattern": "^c_[0-9a-hjkmnp-tv-z]{16}$",
+            "type": "string"
+          },
+          "first": {
+            "description": "Position of the first row; 0 without rows",
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "parsed": {
+            "description": "How the query was read",
+            "type": "string"
+          },
+          "rows": {
+            "description": "This page's rows, in the search's order",
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "area": {
+                      "description": "Area name",
+                      "type": "string"
+                    },
+                    "changed": {
+                      "const": true,
+                      "description": "Changed since the search ran",
+                      "type": "boolean"
+                    },
+                    "completed": {
+                      "description": "When it was completed",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                      "type": "string"
+                    },
+                    "due": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                          "type": "string"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "description": "Due time, in UTC",
+                              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                              "type": "string"
+                            },
+                            "tz": {
+                              "description": "IANA time zone of the commitment",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "tz"
+                          ],
+                          "type": "object"
+                        }
+                      ],
+                      "description": "Due date, or a due time with its zone"
+                    },
+                    "effort": {
+                      "description": "Effort",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "Task ID",
+                      "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "inbox": {
+                      "description": "In the Inbox",
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "const": "task",
+                      "description": "A task",
+                      "type": "string"
+                    },
+                    "lifecycle": {
+                      "description": "Lifecycle",
+                      "enum": [
+                        "active",
+                        "completed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "priority": {
+                      "description": "1 highest, 4 none",
+                      "maximum": 4,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "project": {
+                      "description": "Project name",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Task reference",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "snippet": {
+                      "description": "Where it matched, else its summary",
+                      "type": "string"
+                    },
+                    "snippet_from": {
+                      "description": "The text the snippet comes from",
+                      "enum": [
+                        "task",
+                        "note",
+                        "log",
+                        "learning"
+                      ],
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "Status key",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ref",
+                    "title",
+                    "lifecycle",
+                    "status",
+                    "inbox",
+                    "priority",
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "area": {
+                      "description": "Area name",
+                      "type": "string"
+                    },
+                    "changed": {
+                      "const": true,
+                      "description": "Changed since the search ran",
+                      "type": "boolean"
+                    },
+                    "date": {
+                      "description": "When it was learned",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "Learning ID",
+                      "pattern": "^lr_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "learning",
+                      "description": "A learning",
+                      "type": "string"
+                    },
+                    "project": {
+                      "description": "Project name",
+                      "type": "string"
+                    },
+                    "task": {
+                      "description": "The task it was learned on",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "The learning, cut at 200 characters",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "That task's title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "task",
+                    "title",
+                    "date",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "description": "Task or learning ID",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "Removed since the search ran",
+                      "enum": [
+                        "deleted",
+                        "redacted"
+                      ],
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Task reference",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "ref"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "scope": {
+            "description": "The scope searched",
+            "enum": [
+              "active",
+              "finished",
+              "all",
+              "learnings"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "const": "1000+",
+                "type": "string"
+              }
+            ],
+            "description": "Matches: exact up to 1,000"
+          }
+        },
+        "required": [
+          "as_of",
+          "scope",
+          "parsed",
+          "total",
+          "first",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "Find active tasks, finished tasks and learnings: rows only, a page at a time."
     },
     {
       "actorKinds": [
