@@ -39,6 +39,12 @@ export interface Caller {
    * call's whose ticket maps to a live session. Absent: the connection cannot bind.
    */
   readonly binding?: Slot;
+  /**
+   * The call comes over a connection that carries several conversations and acts without its
+   * binding (A3 3.7.5): a launch reference or a bind resolves for this call only, and the result
+   * says so (`durable: false`).
+   */
+  readonly shared?: boolean;
 }
 
 export interface Principal {

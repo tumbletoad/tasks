@@ -168,7 +168,7 @@ Usage: `tasks show [<task>] [flags]`
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
 | `--launch` | `launch` | string | Launch reference from the Brief: bind, then load |
 | `--bind` | `bind` | boolean | With task: bind this session to it |
-| `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" | Return these in full instead of the digest (repeatable) |
+| `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" \| "sessions" | Return these in full instead of the digest (repeatable) |
 | `--log-limit` | `log_limit` | integer | Log entries per page; default 20 |
 | `--before` | `before` | string | With sections: the before token of the last page |
 

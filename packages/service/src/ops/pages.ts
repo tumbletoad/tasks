@@ -16,13 +16,13 @@
 //
 // The token names where the next page starts, in the order of SECTION_ORDER:
 //   `<s>`            the start of section s,
-//   `<s><k>`         after item k of section s (a note or log ordinal, or a source or history row
-//                    counted from 1),
+//   `<s><k>`         after item k of section s (a note or log ordinal, or a source, history or
+//                    session row counted from 1),
 //   `<s><k>.<o>`     item k of section s from code point o,
 //   `c.<o>`, `o.<o>` the context or the outcome from code point o,
-// where s is i (instructions), c (context), n (notes), l (log), s (sources), o (outcome) or h
-// (history). Notes and log entries are named by their ordinal, so a page read later still starts
-// where the last one ended, whatever was added since.
+// where s is i (instructions), c (context), n (notes), l (log), s (sources), o (outcome), h
+// (history) or e (sessions). Notes and log entries are named by their ordinal, so a page read
+// later still starts where the last one ended, whatever was added since.
 import { invalid } from "./errors.ts";
 
 export const SECTION_ORDER = [
@@ -33,6 +33,7 @@ export const SECTION_ORDER = [
   "sources",
   "outcome",
   "history",
+  "sessions",
 ] as const;
 
 export type Section = (typeof SECTION_ORDER)[number];
@@ -56,6 +57,7 @@ const LETTERS: Readonly<Record<Section, string>> = {
   sources: "s",
   outcome: "o",
   history: "h",
+  sessions: "e",
 };
 
 const SECTIONS_BY_LETTER = new Map(
@@ -76,7 +78,7 @@ export type Token =
       readonly offset: number;
     };
 
-const TOKEN = /^([icnlsoh])(?:([1-9][0-9]{0,8}))?(?:\.([1-9][0-9]{0,8}))?$/;
+const TOKEN = /^([icnlsohe])(?:([1-9][0-9]{0,8}))?(?:\.([1-9][0-9]{0,8}))?$/;
 
 /** A `before` token as the request path wrote it, or `invalid_input`. */
 export function parseToken(text: string): Token {

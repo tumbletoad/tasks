@@ -85,6 +85,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | yes | Entry kind |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `bound_task` | string | no | This session stays bound to this task |
 
 ### Examples
 
@@ -843,6 +844,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `proposal` | string | no | Proposal ID |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `bound_task` | string | no | This session stays bound to this task |
 
 ### Examples
 
@@ -930,7 +932,7 @@ MCP tool `get_task`, "Load a task": Use to load a task before working on it, or 
 | A1 operations | none |
 | Faces | MCP `get_task`, CLI `tasks show`, UI |
 | Errors | `invalid_input`, `unbound`, `not_found`, `ambiguous`, `already_bound`, `launch_unknown`, `launch_expired`, `launch_used`, `forbidden` |
-| Definition, estimated tokens | 690, reported |
+| Definition, estimated tokens | 695, reported |
 | Result budget, estimated tokens | typical 700, max 4000 |
 
 ### Input
@@ -940,7 +942,7 @@ MCP tool `get_task`, "Load a task": Use to load a task before working on it, or 
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: the bound task |
 | `launch` | string, max 6 | no | Launch reference from the Brief: bind, then load |
 | `bind` | boolean | no | With task: bind this session to it |
-| `sections` | ("instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history")[], max 7 items | no | Return these in full instead of the digest |
+| `sections` | ("instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" \| "sessions")[], max 8 items | no | Return these in full instead of the digest |
 | `log_limit` | integer, 1 to 50 | no | Log entries per page; default 20 |
 | `before` | string, max 200 | no | With sections: the before token of the last page |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
@@ -1032,6 +1034,9 @@ When `view` is `"digest"`:
 | `task.cut.context` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.outcome` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.version` | integer, 0 to 9007199254740991 | yes | Row version |
+| `durable` | false | no | The binding held for this call only |
+| `hint` | string | no | What to do next |
+| `bound_task` | string | no | This session stays bound to this task |
 
 When `view` is `"sections"`:
 
@@ -1112,7 +1117,22 @@ When `view` is `"sections"`:
 | `sections.history[].seq` | integer, 1 to 9007199254740991 | yes | Commit sequence number |
 | `sections.history[].actor` | string | yes | Actor that wrote it, from history |
 | `sections.history[].what` | string | yes | Operation kind and the fields it changed |
+| `sections.sessions` | object[], max 20 items | no | Agent sessions on the task, newest first: up to 20 |
+| `sections.sessions[].id` | string | yes | Session ID |
+| `sections.sessions[].state` | "opening" \| "live" \| "unknown" \| "ended" | yes | opening: no agent bound yet; live: a connection or its agent runs |
+| `sections.sessions[].instance` | string, max 64 | yes | The agent instance |
+| `sections.sessions[].via` | "ticket" \| "launch_ref" \| "task" \| "native_id" \| "rebind" | no | How it bound first |
+| `sections.sessions[].route` | "terminal" \| "link" \| "t3-mcp" \| "t3-cli" \| "clipboard" | no | How its launch opened |
+| `sections.sessions[].untracked` | true | no | Opened by reference on a shared connection: not tracked |
+| `sections.sessions[].started` | string | yes | When it was made, ISO date and time |
+| `sections.sessions[].last_seen` | string | yes | Its last bind or call, ISO date and time |
+| `sections.sessions[].ended` | string | no | When it ended, ISO date and time |
+| `sections.sessions[].end_reason` | "idle" \| "stale" \| "user" \| "unbound" \| "rebound" | no | Why it ended |
+| `sections.sessions[].resume` | boolean | yes | Resume is offered; otherwise Open starts a new session |
 | `before` | string | no | Paging token for the rest |
+| `durable` | false | no | The binding held for this call only |
+| `hint` | string | no | What to do next |
+| `bound_task` | string | no | This session stays bound to this task |
 
 When `view` is `"status"`:
 
@@ -1490,6 +1510,7 @@ Reopen a completed or archived task. Its earlier outcome and learnings stay.
 | `proposal` | string | no | Proposal ID |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `bound_task` | string | no | This session stays bound to this task |
 
 ### Examples
 
@@ -1586,6 +1607,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `proposal` | string | no | Proposal ID |
 | `warnings` | string[] | yes | Warnings, one sentence each |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `bound_task` | string | no | This session stays bound to this task |
 
 ### Examples
 

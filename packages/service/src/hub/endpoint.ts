@@ -35,6 +35,7 @@ import { rootVerbs, type RootsHost } from "./roots.ts";
 import { spaceVerbs, type SpaceVerbsHost } from "./space-verbs.ts";
 import { t3Verbs, type T3Host } from "./t3.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
+import { sessionVerbs } from "./session-verbs.ts";
 
 /** The protocols this build speaks (A2 3.6.6): the library's, listed in service.json too. */
 export const PROTOCOLS = { min: PROTOCOL, max: PROTOCOL } as const;
@@ -147,6 +148,10 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     ...(hub.defaults === undefined ? {} : defaultSpaceVerbs(hub.defaults)),
     ...(hub.t3 === undefined ? {} : t3Verbs(hub.t3)),
     ...(hub.agentHomes === undefined ? {} : agentHomeVerbs(hub.agentHomes)),
+    // `tasks session` (A3 3.7.3, M4.06): the user ends, unbinds or rebinds an agent session.
+    ...(hub.bindings === undefined || ops === undefined
+      ? {}
+      : sessionVerbs({ bindings: hub.bindings, ops })),
   };
   const verb = (name: string): RpcHandler | undefined => {
     const found = verbs[name];
@@ -251,6 +256,9 @@ const VERB_METHODS = [
   "setup/homes",
   "setup/home_grant",
   "setup/home_revoke",
+  "session/end",
+  "session/unbind",
+  "session/rebind",
 ] as const;
 
 /** The bind context's environment: only text values (the library already kept only listed names). */

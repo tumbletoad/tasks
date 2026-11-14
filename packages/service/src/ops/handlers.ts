@@ -301,7 +301,7 @@ async function callWith(
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
-  const result = await handler(call);
+  const result = await withBoundTask(call, await handler(call));
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
     throw new AppError({
@@ -310,6 +310,38 @@ async function callWith(
     });
   }
   return result;
+}
+
+/** Where each entry's result names the task it acted on, as a reference (A3 3.7.3). */
+const RESULT_TASK: Readonly<Record<string, (result: Record<string, unknown>) => unknown>> = {
+  "task.get": (result) => (isRecord(result["task"]) ? result["task"]["ref"] : undefined),
+  "task.update": (result) => result["task"],
+  "entry.add": (result) => result["task"],
+  "task.finish": (result) => result["task"],
+  "task.reopen": (result) => result["task"],
+};
+
+/**
+ * A3 3.7.3: an explicit `task` applies to its call only. When a bound connection's call named
+ * another task, its result says which task the session stays bound to (`bound_task`), read from
+ * the binding now: it is no part of a write's stored result, so a replay says the binding then.
+ */
+async function withBoundTask(call: Call, result: unknown): Promise<unknown> {
+  const bound = call.caller.binding?.session?.task;
+  const pick = RESULT_TASK[call.entry.name];
+  if (typeof bound !== "string" || pick === undefined || typeof call.input["task"] !== "string") {
+    return result;
+  }
+  if (!isRecord(result) || result["view"] === "status") return result;
+  const named = pick(result);
+  if (typeof named !== "string") return result;
+  let ref: string | undefined;
+  try {
+    ref = await readTaskRef(readerOf(call.space), bound);
+  } catch {
+    return result;
+  }
+  return ref === undefined || ref === named ? result : { ...result, bound_task: ref };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1139,6 +1171,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let task: string;
     // Whether this call bound the connection, or found it bound already to what it asked for.
     let bound = false;
+    // A3 3.7.5: a connection that carries several conversations binds for this call only.
+    const callOnly =
+      call.caller.shared === true &&
+      (typeof input["launch"] === "string" || input["bind"] === true);
     if (typeof input["launch"] === "string") {
       // A3 3.7.3: bind by the launch reference, then load its task. A connection that
       // cannot hold a binding resolves the reference for this call only.
@@ -1146,6 +1182,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       const launch = await launchOf(call, input["launch"]);
       if (slot !== undefined && bindings !== undefined) {
         bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
+      } else if (callOnly) {
+        // Opened by reference, not tracked: its session says so (A3 3.7.5).
+        bindings?.untracked(launch.id);
       }
       task = launch.task;
     } else {
@@ -1170,23 +1209,33 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
       }
     }
+    const row = taskRow(read.row, read.space.refPrefix);
+    const once = callOnly
+      ? { durable: false, hint: `Pass task "${String(row["ref"])}" on later calls.` }
+      : {};
     if (asked.length === 0) {
       return {
         view: "digest",
         as_of: read.space.asOf,
         bound,
         task: digestOf(read, call.today, await placeStateOf(call, read.place)),
+        ...once,
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
-    const page = sectionsOf(read, pagePlan(asked, input["before"], logLimit));
+    // The session list (A3 3.7, A4 3.10) is the binding service's: machine state, not the space.
+    const sessions = asked.includes("sessions")
+      ? (bindings?.sessionsOf(read.space.id, String(read.row["id"])) ?? [])
+      : [];
+    const page = sectionsOf(read, pagePlan(asked, input["before"], logLimit), sessions);
     return {
       view: "sections",
       as_of: read.space.asOf,
       bound,
-      task: taskRow(read.row, read.space.refPrefix),
+      task: row,
       sections: page.sections,
       ...(page.before === undefined ? {} : { before: page.before }),
+      ...once,
     };
   },
 

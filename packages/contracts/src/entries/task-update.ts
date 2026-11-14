@@ -12,6 +12,7 @@ import {
   PlaceInput,
   Priority,
   ProposalId,
+  BoundTask,
   Replayed,
   RequestId,
   SOURCE_AGENT_MAX,
@@ -77,6 +78,7 @@ export const TaskUpdateResult = z.strictObject({
   proposal: ProposalId.optional(),
   warnings: Warnings,
   replayed: Replayed.optional(),
+  bound_task: BoundTask.optional(),
 });
 
 export const taskUpdate = defineEntry({

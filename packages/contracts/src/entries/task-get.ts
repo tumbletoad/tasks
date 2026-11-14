@@ -4,7 +4,9 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import {
   AsOf,
+  BoundTask,
   Cwd,
+  idPattern,
   LOG_KINDS,
   PlaceOutput,
   SourceOutput,
@@ -17,9 +19,8 @@ import { STATUS_COUNTS, SpaceStatusResult } from "./space-status.ts";
 import { AS_OF, M14, M3, PORTAL, SPACE_ID } from "./fixture.ts";
 
 /**
- * The sections whose payload A3 3.4.4 defines. `sessions` and `proposals` arrive with the steps
- * that define their records: sessions with the session list (M4.06), proposals with autonomy and
- * proposals (M4.02). Inputs only grow (A3 3.2.4), so adding them later breaks no caller.
+ * The sections whose payload A3 3.4.4 defines. `proposals` arrives with autonomy and proposals
+ * (M4.02). Inputs only grow (A3 3.2.4), so adding it later breaks no caller.
  */
 const SECTIONS = [
   "instructions",
@@ -29,6 +30,7 @@ const SECTIONS = [
   "sources",
   "outcome",
   "history",
+  "sessions",
 ] as const;
 
 export const TaskGetInput = z.strictObject({
@@ -111,6 +113,39 @@ const HistoryRow = z.strictObject({
 const Learnings = z.array(z.string()).describe("Learnings");
 
 /**
+ * One agent session on the task (A3 3.7, A4 3.10): how it bound, whether something keeps it alive,
+ * and whether Resume is offered (only with a native ID Tasks trusts and an instance that exists
+ * here). IDs, words and times only: no native ID, folder or text.
+ */
+export const SessionRow = z.strictObject({
+  id: z.string().regex(idPattern("se")).describe("Session ID"),
+  state: z
+    .enum(["opening", "live", "unknown", "ended"])
+    .describe("opening: no agent bound yet; live: a connection or its agent runs"),
+  instance: z.string().max(64).describe("The agent instance"),
+  via: z
+    .enum(["ticket", "launch_ref", "task", "native_id", "rebind"])
+    .describe("How it bound first")
+    .optional(),
+  route: z
+    .enum(["terminal", "link", "t3-mcp", "t3-cli", "clipboard"])
+    .describe("How its launch opened")
+    .optional(),
+  untracked: z
+    .literal(true)
+    .describe("Opened by reference on a shared connection: not tracked")
+    .optional(),
+  started: z.string().describe("When it was made, ISO date and time"),
+  last_seen: z.string().describe("Its last bind or call, ISO date and time"),
+  ended: z.string().describe("When it ended, ISO date and time").optional(),
+  end_reason: z
+    .enum(["idle", "stale", "user", "unbound", "rebound"])
+    .describe("Why it ended")
+    .optional(),
+  resume: z.boolean().describe("Resume is offered; otherwise Open starts a new session"),
+});
+
+/**
  * The digest's task (A3 3.9.6), digest v0: A3's limits per part, with what each part left out
  * counted (`more`, `cut`), so every face gets the same bounded digest. v1 with provenance labels
  * and related learnings is M4.03's.
@@ -180,9 +215,25 @@ export const TaskSections = z.strictObject({
     .max(20)
     .describe("The last 20 operations on the task, newest first")
     .optional(),
+  sessions: z
+    .array(SessionRow)
+    .max(20)
+    .describe("Agent sessions on the task, newest first: up to 20")
+    .optional(),
 });
 
 const Bound = z.boolean().describe("This call bound the session");
+
+/**
+ * A3 3.7.5: on a connection that carries several conversations, a launch reference or a bind
+ * resolves for that call only: `durable: false` says so, and `hint` how to go on. A3 3.7.3: a call
+ * that named another task than the bound one says which task the session stays bound to.
+ */
+const CallOnly = {
+  durable: z.literal(false).describe("The binding held for this call only").optional(),
+  hint: z.string().describe("What to do next").optional(),
+  bound_task: BoundTask.optional(),
+};
 
 export const TaskGetResult = z.union([
   z.strictObject({
@@ -190,6 +241,7 @@ export const TaskGetResult = z.union([
     as_of: AsOf,
     bound: Bound,
     task: TaskDetail.describe("The task"),
+    ...CallOnly,
   }),
   z.strictObject({
     view: z.literal("sections").describe("The sections asked for, in full"),
@@ -198,6 +250,7 @@ export const TaskGetResult = z.union([
     task: TaskRow.describe("The task"),
     sections: TaskSections.describe("The sections asked for"),
     before: z.string().describe("Paging token for the rest").optional(),
+    ...CallOnly,
   }),
   SpaceStatusResult.extend({
     view: z.literal("status").describe("A routine's launch bound the space: the overview"),
@@ -386,6 +439,42 @@ export const taskGet = defineEntry({
           proposals: 0,
         },
         hint: "This session is bound to the space. Pass task on every task call.",
+      },
+    },
+    {
+      title: "List the agent sessions on M-14: one live, one that can be resumed",
+      input: { task: "M-14", sections: ["sessions"] },
+      output: {
+        view: "sections",
+        as_of: AS_OF,
+        bound: false,
+        task: m14Row,
+        sections: {
+          sessions: [
+            {
+              id: "se_0e4h8m2q6t0w4z8c2f6j0n4r8v",
+              state: "live",
+              instance: "claude-code",
+              via: "ticket",
+              route: "terminal",
+              started: "2026-11-12T10:01:00Z",
+              last_seen: "2026-11-12T10:03:00Z",
+              resume: true,
+            },
+            {
+              id: "se_0c2f6j0n4r8v2y6b0e4h8m2q6t",
+              state: "ended",
+              instance: "codex-work",
+              via: "launch_ref",
+              route: "clipboard",
+              started: "2026-11-11T16:30:00Z",
+              last_seen: "2026-11-11T16:40:00Z",
+              ended: "2026-11-12T16:40:00Z",
+              end_reason: "idle",
+              resume: false,
+            },
+          ],
+        },
       },
     },
   ],

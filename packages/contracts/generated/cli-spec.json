@@ -702,7 +702,8 @@
             "log",
             "sources",
             "outcome",
-            "history"
+            "history",
+            "sessions"
           ]
         },
         {

@@ -28,7 +28,25 @@ export interface BoundSession {
   readonly launches: readonly string[];
 }
 
-/** Where a native session ID came from (A3 3.7.2). Recorded, never used to bind before M4.06. */
+/**
+ * One row of a task's session list (`task.get`'s sessions section, A3 3.7, A4 3.10): the
+ * contract's `SessionRow`, IDs, words and times only.
+ */
+export type SessionRow = {
+  readonly id: string;
+  readonly state: "opening" | "live" | "unknown" | "ended";
+  readonly instance: string;
+  readonly via?: "ticket" | "launch_ref" | "task" | "native_id" | "rebind";
+  readonly route?: "terminal" | "link" | "t3-mcp" | "t3-cli" | "clipboard";
+  readonly untracked?: true;
+  readonly started: string;
+  readonly last_seen: string;
+  readonly ended?: string;
+  readonly end_reason?: "idle" | "stale" | "user" | "unbound" | "rebound";
+  readonly resume: boolean;
+};
+
+/** Where a native session ID came from (A3 3.7.2): Claude Code, T3 Code or Codex. */
 export const NATIVE_SOURCES = ["claude", "t3", "codex"] as const;
 export type NativeSource = (typeof NATIVE_SOURCES)[number];
 
@@ -137,4 +155,11 @@ export interface BindingPort {
   use(slot: Slot): Promise<void>;
   /** How many live sessions each task of the space has (A3 3.4.2 `live_sessions`). */
   liveSessions(space: string): ReadonlyMap<string, number>;
+  /** The task's sessions, newest first, for `task.get`'s sessions section (A3 3.4.4). */
+  sessionsOf(space: string, task: string): readonly SessionRow[];
+  /**
+   * A launch reference resolved on a shared connection for that call only (A3 3.7.5): its session
+   * says it was opened by reference and is not tracked.
+   */
+  untracked(launch: string): void;
 }

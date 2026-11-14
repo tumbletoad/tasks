@@ -53,6 +53,7 @@ import {
   type Instance,
   type AgentBase,
   type EnvironmentSource,
+  type ExecutionStore,
   type Spawner,
   type TerminalHost,
   type TerminalSettings,
@@ -217,6 +218,12 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly home?: string;
   /** machine.toml's `[[instance]]` (A4 3.2): what Open can open a task in. Default: none. */
   readonly instances?: readonly Instance[];
+  /**
+   * Session binding (A3 3.7.7): told of every launch record the launch machine writes, so a
+   * click's session exists before its dispatch and the native IDs a launch sets or receives
+   * reach its session (binding/bindings.ts `launched`).
+   */
+  readonly sessions?: { launched(space: string, intent: LaunchIntent): void };
 }
 
 interface Hosted {
@@ -1031,8 +1038,27 @@ export class LaunchService {
         origin: "ui",
       },
     });
+    // Every record the machine writes reaches session binding (A3 3.7.7): a click's session is
+    // made with its Prepared intent, before its dispatch, and a native ID the launch records joins
+    // its session. Binding never breaks a launch.
+    const sessions = this.#options.sessions;
+    const told = (intent: LaunchIntent): LaunchIntent => {
+      try {
+        sessions?.launched(space, intent);
+      } catch {
+        // Binding logs its own store's failures; the launch goes on without its session.
+      }
+      return intent;
+    };
+    const watched: ExecutionStore = {
+      createIntent: async (input, requestId) => told(await store.createIntent(input, requestId)),
+      transitionIntent: async (intent, expect, next, outcome) =>
+        told(await store.transitionIntent(intent, expect, next, outcome)),
+      readIntent: (intent) => store.readIntent(intent),
+      openWork: (on) => store.openWork(on),
+    };
     const machine = new LaunchMachine({
-      store,
+      store: watched,
       machine: id,
       steps: { dispatch: (intent) => this.#dispatchStep(intent) },
       recovery: {

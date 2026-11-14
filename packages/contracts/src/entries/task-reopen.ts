@@ -9,6 +9,7 @@ import {
   Lifecycle,
   Mode,
   ProposalId,
+  BoundTask,
   Replayed,
   RequestId,
   TaskRef,
@@ -34,6 +35,7 @@ export const TaskReopenResult = z.strictObject({
   proposal: ProposalId.optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),
+  bound_task: BoundTask.optional(),
 });
 
 export const taskReopen = defineEntry({

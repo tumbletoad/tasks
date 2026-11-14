@@ -95,6 +95,10 @@ export interface WorldLaunch {
 export interface LaunchAsks {
   readonly claimed?: boolean;
   readonly started?: boolean;
+  /** The launch's instance. Default: one of its own (`contract-agent-<n>`). */
+  readonly instance?: string;
+  /** A native session ID A4 preset (Claude Code's `--session-id`). */
+  readonly preset?: string;
 }
 
 /** The start time the world's process probe reports for every process. */
@@ -187,11 +191,14 @@ export async function contractWorld(
         task: read.task.id,
         // An instance of its own, so a second launch of a task within A4's 5 s focus is a launch
         // of its own rather than the first one again.
-        instance: `contract-agent-${String(launches)}`,
+        instance: launchOptions.instance ?? `contract-agent-${String(launches)}`,
         route: "terminal",
         place: null,
         taskVersion: 1,
         briefHash: "c".repeat(64),
+        ...(launchOptions.preset === undefined
+          ? {}
+          : { evidence: { preset: launchOptions.preset } }),
       },
       `contract-launch-${String(launches).padStart(6, "0")}`,
       WORLD_PLAN,
@@ -273,6 +280,7 @@ const VERIFIED = new Set([
   "space.status 0",
   "task.get 0",
   "task.get 1",
+  "task.get 4",
   "task.update 0",
   "entry.add 0",
   "entry.add 1",
@@ -329,6 +337,8 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         instructions: refs(sections["instructions"]),
         log: (sections["log"] as Value[] | undefined)?.map((e) => [e["ref"], e["kind"]]),
         history: Array.isArray(sections["history"]),
+        // The world's sessions are its own: the example documents the payload's shape.
+        sessions: Array.isArray(sections["sessions"]),
       };
     }
     case "entry.add":

@@ -410,9 +410,11 @@ export const EVENTS = {
   "binding.ignored": {
     lvl: "warn",
     c: "mcp",
-    fields: { input: ["ticket", "handle"], reason: IGNORED },
+    fields: { input: ["ticket", "handle", "native"], reason: IGNORED },
   },
   "binding.lost": { lvl: "info", c: "mcp", fields: {} },
+  // The user ended, unbound or rebound a session (A3 3.7.3, M4.06).
+  "binding.ended": { lvl: "info", c: "mcp", fields: { reason: ["user", "unbound", "rebound"] } },
   // Two conversations through one connection (A3 3.7.5): its calls bind only by their own ID.
   "binding.shared": { lvl: "info", c: "mcp", fields: {} },
   "binding.report_failed": { lvl: "warn", c: "mcp", fields: {} },

@@ -29,6 +29,7 @@ export {
   type BoundSession,
   type FoundLaunch,
   type NativeSource,
+  type SessionRow,
 } from "./binding.ts";
 export { readOnly } from "./errors.ts";
 export { grantRefused, MANUAL_INSTANCE, type HomeGate } from "./grant.ts";

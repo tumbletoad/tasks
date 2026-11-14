@@ -241,6 +241,11 @@ export const Lifecycle = z.enum(["active", "completed", "archived"]).describe("L
 export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state");
 export const Replayed = z.boolean().describe("True when a retry returned the stored result");
 export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
+/**
+ * A3 3.7.3: a call that named another task than the one its session is bound to applied to that
+ * call only, and its result says which task the session stays bound to.
+ */
+export const BoundTask = TaskRef.describe("This session stays bound to this task");
 
 /**
  * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a

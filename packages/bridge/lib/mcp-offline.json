@@ -419,11 +419,12 @@
                     "log",
                     "sources",
                     "outcome",
-                    "history"
+                    "history",
+                    "sessions"
                   ],
                   "type": "string"
                 },
-                "maxItems": 7,
+                "maxItems": 8,
                 "type": "array"
               },
               "task": {
@@ -1117,11 +1118,12 @@
                     "log",
                     "sources",
                     "outcome",
-                    "history"
+                    "history",
+                    "sessions"
                   ],
                   "type": "string"
                 },
-                "maxItems": 7,
+                "maxItems": 8,
                 "type": "array"
               },
               "task": {
