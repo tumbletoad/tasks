@@ -233,6 +233,7 @@ export {
   LINK_ROLES,
   LOG_KINDS,
   normaliseSourceKey,
+  normaliseStored,
   OPERATION_KINDS,
   parseAsOf,
   PLACE_KINDS,

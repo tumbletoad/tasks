@@ -29,7 +29,8 @@
 //   adapter's state (A4 3.11.12) needs no table rebuild. `runs` belongs to a task or a routine,
 //   exactly one (a CHECK).
 // - Indexes A1 leaves out, for the reads the execution store makes: a machine's open sessions and
-//   runs (`openWork`, A4 3.16.1) and a task's.
+//   runs (`openWork`, A4 3.16.1: also the `unknown` runs whose stop timed out, which a later exit
+//   still settles) and a task's.
 import type { Connection } from "../src/driver.ts";
 import { misuse } from "../src/errors.ts";
 import type { SchemaStep } from "../src/schema.ts";
@@ -82,7 +83,8 @@ export const SCHEMA_0_3_STATEMENTS: readonly string[] = [
 ) STRICT`,
   "CREATE INDEX runs_task ON runs(task_id, queued_at)",
   "CREATE INDEX runs_open ON runs(machine_id, queued_at) " +
-    "WHERE state IN ('queued','starting','running','waiting_for_input','cancelling','reconciling')",
+    "WHERE (state IN ('queued','starting','running','waiting_for_input','cancelling'," +
+    "'reconciling') OR (state = 'unknown' AND reason = 'stop_timed_out'))",
 ];
 
 /** The user tables of the main schema with whether each is STRICT. */

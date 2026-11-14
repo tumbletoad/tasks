@@ -2530,7 +2530,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       if (current.state !== op.expect) {
         problem("INVALID_TRANSITION", "The run moved on: read it again", i, "expect");
       }
-      if (op.expect_version !== undefined && current.version !== op.expect_version) {
+      if (current.version !== op.expect_version) {
         problem("INVALID_TRANSITION", "The run changed: read it again", i, "expect_version");
       }
       // Evidence only grows: a key the record holds keeps its value, so a claim is recorded once.

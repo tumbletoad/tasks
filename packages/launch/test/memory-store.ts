@@ -15,7 +15,7 @@ import {
 } from "../src/intents.ts";
 import {
   FINAL_RUN_STATES,
-  OPEN_RUN_STATES,
+  isOpenRun,
   type NewRun,
   type RunPatch,
   type RunRecord,
@@ -122,9 +122,8 @@ export class MemoryExecutionStore implements ExecutionStore {
       .filter((i) => i.machine === machine && open.has(i.state))
       .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
       .map(copy);
-    const openRuns = new Set<RunState>(OPEN_RUN_STATES);
     const runs = [...this.durable.runs.values()]
-      .filter((r) => r.machine === machine && openRuns.has(r.state))
+      .filter((r) => r.machine === machine && isOpenRun(r))
       .sort((a, b) => a.queuedAt - b.queuedAt || (a.id < b.id ? -1 : 1))
       .map((r) => structuredClone(r));
     return Promise.resolve({ intents, runs });
@@ -165,9 +164,8 @@ export class MemoryExecutionStore implements ExecutionStore {
       return structuredClone(found);
     }
     const now = durable.now();
-    // The request text as the space stores it (A1 3.7): LF line endings, NFC.
-    const request =
-      input.request === null ? null : input.request.replace(/\r\n?/g, "\n").normalize("NFC");
+    // checkNewRun gives the request text as the space stores it (A1 3.7).
+    const request = input.request;
     const run: RunRecord = {
       id: randomId("ru"),
       task: input.task,

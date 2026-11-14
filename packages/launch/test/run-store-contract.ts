@@ -12,7 +12,9 @@ import {
   FINAL_RUN_STATES,
   RUN_EDGES,
   RUN_LIMITS,
+  RUN_REQUEST_MAX_BYTES,
   RUN_STATES,
+  TEXT_CAP_BYTES,
   type NewRun,
   type RunPatch,
   type RunRecord,
@@ -279,19 +281,54 @@ export function runStoreContract(
       expect(FINAL_RUN_STATES).toContain(settled.state);
     });
 
-    test("openWork lists this machine's open runs, the same after a restart", async () => {
+    test("openWork lists this machine's open runs and the unknown ones that await their exit, the same after a restart", async () => {
       const expected: string[] = [];
       for (const state of RUN_STATES) {
         const run = await runIn(state);
         backend.advance(1);
         if (!(FINAL_RUN_STATES as readonly RunState[]).includes(state)) expected.push(run.id);
       }
+      // A stop that timed out: a later exit still settles it, so it stays on the list. The unknown
+      // run above is lost, which nothing settles any more.
+      const stopping = await runIn("cancelling");
+      const timedOut = await store.transitionRun(stopping.id, seenRun(stopping), "unknown", {
+        reason: "stop_timed_out",
+      });
+      expected.push(timedOut.id);
       const ids = (work: { runs: RunRecord[] }): string[] => work.runs.map((r) => r.id);
       expect(ids(await store.openWork(backend.machine))).toEqual(expected);
       expect((await store.openWork(OTHER_MACHINE)).runs).toEqual([]);
       const before = await store.openWork(backend.machine);
       const restarted = await backend.restart();
       expect((await restarted.openWork(backend.machine)).runs).toEqual(before.runs);
+    });
+
+    test("texts are kept as the space stores them: an agent's are cut, never refused, and a request is judged after normalising", async () => {
+      // U+0344 is 2 UTF-8 bytes and normalises to two marks of 2 bytes each: 8 KiB becomes 16.
+      const grows = "̈́".repeat(TEXT_CAP_BYTES / 2);
+      const run = await runIn("running");
+      const done = await store.transitionRun(run.id, seenRun(run), "succeeded", {
+        result: { ...RESULT, text: grows, error: "Stopped\r\nat a prompt\u0007" },
+      });
+      expect(done.result?.text).toBe("̈́".repeat(TEXT_CAP_BYTES / 4));
+      expect(done.result?.error).toBe("Stopped\nat a prompt");
+      expect(await store.readRun(run.id)).toEqual(done);
+      const kept = await store.createRun(
+        await runInput({ request: "Fix the export\r\nand the zone\u0007" }),
+        requestId(),
+      );
+      expect(kept.request).toBe("Fix the export\nand the zone");
+      const large = await refusal(
+        store.createRun(
+          await runInput({ request: "̈́".repeat(RUN_REQUEST_MAX_BYTES / 4 + 1) }),
+          requestId(),
+        ),
+      );
+      expect(large).toMatchObject({ code: "invalid", field: "request" });
+      const blank = await refusal(
+        store.createRun(await runInput({ request: "\u0007\r\n" }), requestId()),
+      );
+      expect(blank).toMatchObject({ code: "invalid", field: "request" });
     });
 
     test("a record's only texts are its request and its result's: everything else is an ID, a code or a state", async () => {

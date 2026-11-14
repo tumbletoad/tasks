@@ -291,6 +291,80 @@ describe("[A4.5.run.machine] the run machine's rules", () => {
     });
   });
 
+  test("restart recovery after the stop's time passed: exit.json settles a cancelling run cancelled, a gone shim is lost, a live one times out", async () => {
+    const seen = new Map<string, RunObservation>();
+    const b = bench((run) => seen.get(run.id) ?? { kind: "pending" });
+    const exited = await b.runIn("cancelling");
+    const gone = await b.runIn("cancelling");
+    const live = await b.runIn("cancelling");
+    seen.set(exited.id, {
+      kind: "exited",
+      exit: { result: { ...OK, ok: false, outcome: "interrupted" } },
+    });
+    seen.set(gone.id, { kind: "lost" });
+    // The service was down past the stop's time; the shim ended meanwhile and wrote exit.json.
+    b.clock.now += RUN_STOP_TIMEOUT_MS + 1_000;
+    const after = new Map((await b.make().recover()).map((r) => [r.id, r]));
+    expect(after.get(exited.id)).toMatchObject({ state: "cancelled", reason: null });
+    expect(after.get(exited.id)?.result?.outcome).toBe("interrupted");
+    expect(after.get(gone.id)).toMatchObject({ state: "unknown", reason: "lost" });
+    expect(after.get(live.id)).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
+  });
+
+  test("the stop's time counts from the first Stop: another Stop after a restart does not start it again", async () => {
+    const b = bench();
+    const run = await b.runIn("cancelling");
+    const restarted = b.make();
+    b.clock.now += RUN_STOP_TIMEOUT_MS - 1_000;
+    b.clock.mono += RUN_STOP_TIMEOUT_MS - 1_000;
+    let stops = 0;
+    const again = await restarted.cancel(run.id, () => {
+      stops += 1;
+      return Promise.resolve();
+    });
+    expect(again?.state).toBe("cancelling");
+    expect(stops).toBe(1);
+    b.clock.now += 2_000;
+    b.clock.mono += 2_000;
+    expect((await restarted.sweep()).map((r) => [r.id, r.state, r.reason])).toEqual([
+      [run.id, "unknown", "stop_timed_out"],
+    ]);
+  });
+
+  test("a run whose stop timed out stays on recovery's list until its exit.json settles it or its shim is found gone", async () => {
+    const seen = new Map<string, RunObservation>();
+    const b = bench((run) => seen.get(run.id) ?? { kind: "pending" });
+    const timedOut = async (): Promise<RunRecord> => {
+      const run = await b.runIn("cancelling");
+      b.clock.mono += RUN_STOP_TIMEOUT_MS;
+      await b.machine.sweep();
+      const after = await b.store.readRun(run.id);
+      expect(after).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
+      return after ?? run;
+    };
+    const exited = await timedOut();
+    const gone = await timedOut();
+    const live = await timedOut();
+    // The service stops; one shim then writes exit.json and ends, another ends without one.
+    seen.set(exited.id, {
+      kind: "exited",
+      exit: { result: { ...OK, ok: false, outcome: "interrupted" } },
+    });
+    seen.set(gone.id, { kind: "lost" });
+    const restarted = b.make();
+    const after = new Map((await restarted.recover()).map((r) => [r.id, r]));
+    expect(after.get(exited.id)).toMatchObject({ state: "cancelled", reason: null });
+    expect(after.get(exited.id)?.result?.outcome).toBe("interrupted");
+    expect(after.get(exited.id)?.at.reconciling).toBeDefined();
+    expect(after.get(gone.id)).toMatchObject({ state: "unknown", reason: "lost" });
+    expect(after.get(live.id)).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
+    // Only the live one is still listed: a lost run and a settled one have nothing more to wait for.
+    const open = (await b.store.openWork(MACHINE)).runs.map((r) => r.id);
+    expect(open).toContain(live.id);
+    expect(open).not.toContain(gone.id);
+    expect(open).not.toContain(exited.id);
+  });
+
   test("finalFor: cancelled after a stop, timed out at a limit, succeeded on success, failed with the outcome", () => {
     const run = { at: {} } as RunRecord;
     expect(finalFor(run, { result: OK })).toEqual({ next: "succeeded", patch: { result: OK } });

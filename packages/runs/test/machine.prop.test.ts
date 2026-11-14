@@ -79,6 +79,15 @@ const event: fc.Arbitrary<Event> = fc.oneof(
     }),
   },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("crash" as const) }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("down" as const),
+      pick,
+      ms: fc.constantFrom(1_000, 61_000, 121_000),
+      ends: fc.boolean(),
+    }),
+  },
 );
 
 const scenario = fc.array(event, { minLength: 4, maxLength: 40, size: "max" });

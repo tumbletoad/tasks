@@ -56,6 +56,7 @@ export {
 } from "@tasks/storage";
 /** Storage's copies of A4's run rules, which the launch package's tests compare with contracts'. */
 export {
+  normaliseStored as storageNormaliseText,
   FINAL_RUN_STATES as STORAGE_FINAL_RUN_STATES,
   OPEN_RUN_STATES as STORAGE_OPEN_RUN_STATES,
   RUN_APP_TOOLS as STORAGE_RUN_APP_TOOLS,

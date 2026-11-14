@@ -768,6 +768,9 @@ function generate(
       .prepare("SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = 'runs'")
       .get() !== undefined;
   if (!hasRuns) return;
+  // Every transition names the version it was decided on, as the execution store's do.
+  const runVersion = (run: string): number =>
+    Number(conn.prepare("SELECT version FROM runs WHERE id = $id").get({ id: run })?.["version"]);
   const limits = { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 };
   const queued = launch({
     kind: "run.create",
@@ -790,6 +793,7 @@ function generate(
       kind: "run.transition",
       run: queued as unknown as Id<"ru">,
       expect,
+      expect_version: runVersion(queued),
       next,
       ...more,
       ...(result === undefined ? {} : { result }),
@@ -836,6 +840,7 @@ function generate(
     kind: "run.transition",
     run: refresh as unknown as Id<"ru">,
     expect: "queued",
+    expect_version: runVersion(refresh),
     next: "cancelled",
   });
 }

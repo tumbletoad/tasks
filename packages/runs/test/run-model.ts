@@ -45,6 +45,8 @@ interface Processes {
   shimAlive: boolean;
   /** The claim ID a reply reached the shim with: only then may it start the agent. */
   replied?: string;
+  /** How many claim replies reached the shim: at most one per run (A4 3.11.2). */
+  replies: number;
   /** Claims the shim sent, for a repeat with the same ID. */
   claims: string[];
   agents: number;
@@ -68,7 +70,12 @@ export type Event =
   | { kind: "tick"; ms: number }
   | { kind: "step"; ms: number }
   | { kind: "arm"; after: number; late: boolean }
-  | { kind: "crash" };
+  | { kind: "crash" }
+  /**
+   * The service is down for `ms`: one shim's agent ends meanwhile and its shim writes exit.json and
+   * exits without reporting it, or with `ends` an idle shim gives up without one. Then a restart.
+   */
+  | { kind: "down"; pick: number; ms: number; ends: boolean };
 
 export interface ModelBackend {
   machine: string;
@@ -191,6 +198,7 @@ export class World {
         spawned: false,
         spawns: 0,
         shimAlive: false,
+        replies: 0,
         claims: [],
         agents: 0,
         agentRunning: false,
@@ -282,7 +290,9 @@ export class World {
         const id = this.#pick(event.pick);
         if (id === undefined) return;
         const p = this.#processes(id);
-        if (!p.shimAlive || p.replied !== undefined) return;
+        // A live shim may send its claim again, also after a reply reached it: the machine must
+        // refuse every claim but the first, so the invariants count the replies.
+        if (!p.shimAlive) return;
         const claim =
           event.same && p.claims.length > 0
             ? (p.claims.at(-1) ?? "")
@@ -292,7 +302,8 @@ export class World {
         const reply = (): Promise<void> =>
           this.#boundary(life, () => {
             // The reply is what lets the shim start its agent, whatever the record says.
-            p.replied = claim;
+            p.replies += 1;
+            p.replied ??= claim;
             return Promise.resolve();
           });
         await this.#service((m) => m.claim(id, claim, reply));
@@ -383,6 +394,23 @@ export class World {
       case "crash":
         await this.restart();
         return;
+      case "down": {
+        this.#life.dead = true;
+        this.now += event.ms;
+        this.mono += event.ms;
+        const id = this.#pick(event.pick);
+        const p = id === undefined ? undefined : this.#processes(id);
+        if (p?.agentRunning === true) {
+          // The agent ends, and its shim writes exit.json that no service hears of, and exits.
+          p.agentRunning = false;
+          p.exit = { result: p.stopped ? RESULTS.interrupted : RESULTS.ok };
+          p.shimAlive = false;
+        } else if (p?.shimAlive === true && event.ends) {
+          p.shimAlive = false;
+        }
+        await this.restart();
+        return;
+      }
     }
   }
 
@@ -417,6 +445,7 @@ export class World {
       // At most one agent per run, and none without a durable claim that its shim was replied with.
       if (p !== undefined && p.agents > 1) throw new Error(`two agents: ${where}`);
       if (p !== undefined && p.spawns > 1) throw new Error(`two spawns: ${where}`);
+      if (p !== undefined && p.replies > 1) throw new Error(`two claim replies: ${where}`);
       if (p !== undefined && p.agents > 0 && run.evidence.claim !== p.replied) {
         throw new Error(`an agent without its durable claim: ${where}`);
       }
@@ -467,6 +496,10 @@ export class World {
         const settled =
           (FINAL_RUN_STATES as readonly RunState[]).includes(run.state) || run.state === "queued";
         if (!settled) throw new Error(`not settled at the end: ${where}`);
+        // A definite exit settles a run, however the service heard of it: live or from exit.json.
+        if (run.state === "unknown" && p?.exit !== undefined && run.evidence.claim !== undefined) {
+          throw new Error(`unknown although its shim left exit.json: ${where}`);
+        }
       }
     }
   }

@@ -179,7 +179,10 @@ export const RUN_STATES = [
 ] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
-/** The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run a shim may hold. */
+/**
+ * The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run a shim may hold. It
+ * also lists the `unknown` runs that still wait for an exit (`awaitsExit`).
+ */
 export const OPEN_RUN_STATES = [
   "queued",
   "starting",
@@ -199,13 +202,26 @@ export const FINAL_RUN_STATES = [
 ] as const satisfies readonly RunState[];
 
 /**
+ * An `unknown` run whose stop timed out while its process may still run: a later exit settles it,
+ * live or from `exit.json` after a restart, and recovery looks at it until it settles or its shim
+ * is found gone (A4 3.11.2, 3.11.9).
+ */
+export const awaitsExit = (run: { state: RunState; reason: string | null }): boolean =>
+  run.state === "unknown" && run.reason === "stop_timed_out";
+
+/** Whether `openWork` lists the run: the open states, and an `unknown` run that awaits its exit. */
+export const isOpenRun = (run: { state: RunState; reason: string | null }): boolean =>
+  (OPEN_RUN_STATES as readonly RunState[]).includes(run.state) || awaitsExit(run);
+
+/**
  * The legal transitions (A4 3.11.2). A self edge records evidence and changes no state: the run
  * shim's claim on `starting`, the agent's PID and native ID on `running`. `starting → running`
  * needs a claim, which the store does not judge: the run machine does. A cancel of a queued run,
  * or of a starting one whose shim has not claimed it, is `cancelled` at once, because no agent can
  * start without a claim; every other cancel goes through `cancelling` and ends with the process.
  * A lost shim is recorded as `reconciling` before its files settle the run. `unknown` moves only
- * on a definite outcome, to a final state, and never back to one a process may still hold.
+ * on a definite outcome, to a final state, or to `reconciling` when recovery finds the shim of a
+ * run whose stop timed out gone, and never back to one a process may still hold.
  */
 export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
   queued: ["starting", "cancelled"],
@@ -226,7 +242,7 @@ export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
   failed: [],
   timed_out: [],
   cancelled: [],
-  unknown: ["succeeded", "failed", "timed_out", "cancelled"],
+  unknown: ["reconciling", "succeeded", "failed", "timed_out", "cancelled"],
 };
 
 /** Whether `from → to` is an edge of A4's run state machine. */
@@ -317,6 +333,42 @@ export const RUN_EVIDENCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 /** A signal's name as Node reports it, such as `SIGINT`. */
 export const SIGNAL_NAME = /^SIG[A-Z0-9]{1,12}$/u;
+
+/**
+ * A run's text as the space stores it (A1 3.7; storage's `normaliseStored`, which a test compares):
+ * well-formed, LF line endings, no C0 control but tab and line feed, NFC. Every execution store
+ * measures a run's texts in this form, as the writer does, so the size a store accepts is the size
+ * the writer stores. NFC can lengthen a text, so a raw size says nothing.
+ */
+export function normaliseRunText(text: string): string {
+  return (
+    text
+      .toWellFormed()
+      .replace(/\r\n?/gu, "\n")
+      // eslint-disable-next-line no-control-regex -- the C0 controls are what this removes.
+      .replace(/[\u0000-\u0008\u000b-\u001f]/gu, "")
+      .normalize("NFC")
+  );
+}
+
+const runTextEncoder = new TextEncoder();
+
+/**
+ * An agent's result text or error as a run record keeps it: normalised, then cut to at most `bytes`
+ * UTF-8 bytes on a code point boundary. A result is never refused for its texts, because what an
+ * agent wrote must never keep its run from settling (A4 3.11.5).
+ */
+export function cutRunText(text: string, bytes: number = TEXT_CAP_BYTES): string {
+  let out = normaliseRunText(text);
+  const buffer = new Uint8Array(bytes);
+  // A cut on a code point boundary of a normalised text is normalised; the loop only guards that.
+  for (let pass = 0; pass < 8; pass += 1) {
+    const { read } = runTextEncoder.encodeInto(out, buffer);
+    if (read >= out.length) return out;
+    out = normaliseRunText(out.slice(0, read));
+  }
+  return "";
+}
 
 /** A run's limits (A4 3.11.3, 3.11.7), fixed when it is queued. */
 export interface RunLimits {

@@ -10,8 +10,10 @@
 // (@tasks/runs) a RunStore. Sessions (`upsertSession`, with the session move of A4 3.10) and
 // occurrences (`decideOccurrence`, M9) join it with the steps that write those records.
 import {
+  cutRunText,
   FINAL_RUN_STATES,
   isRunEdge,
+  normaliseRunText,
   isRunReason,
   OUTCOME_REASONS,
   APP_TOOLS_STATES,
@@ -185,7 +187,10 @@ export interface RunStore {
   ): Promise<RunRecord>;
   /** The run as it is now, or undefined. */
   readRun(id: string): Promise<RunRecord | undefined>;
-  /** Every run of that machine that is not final (OPEN_RUN_STATES), oldest first. */
+  /**
+   * Every run of that machine that is not final (OPEN_RUN_STATES), and every `unknown` one that
+   * awaits its exit (`awaitsExit`), oldest first.
+   */
   openWork(machine: string): Promise<{ runs: RunRecord[] }>;
 }
 
@@ -480,11 +485,13 @@ export function checkNewRun(value: unknown): NewRun {
   if (session !== undefined && !matches(SESSION_ID, session)) {
     return refuseRun("session", "Expected a session ID");
   }
-  // A task's run needs the person's instruction (A4 3.11.7); a routine's takes its template.
-  if (routine !== null ? request !== null : typeof request !== "string" || request.trim() === "") {
+  // A task's run needs the person's instruction (A4 3.11.7); a routine's takes its template. The
+  // instruction is judged as the space stores it, so every backend keeps and refuses the same text.
+  const stored = typeof request === "string" ? normaliseRunText(request) : request;
+  if (routine !== null ? stored !== null : typeof stored !== "string" || stored.trim() === "") {
     return refuseRun("request", "A task's run takes an instruction, a routine's none");
   }
-  if (typeof request === "string" && utf8(request) > RUN_REQUEST_MAX_BYTES) {
+  if (typeof stored === "string" && utf8(stored) > RUN_REQUEST_MAX_BYTES) {
     return refuseRun("request", "The instruction is larger than its limit");
   }
   if (!matches(SHA256, briefHash)) {
@@ -501,7 +508,7 @@ export function checkNewRun(value: unknown): NewRun {
     adapter: adapter as NewRun["adapter"],
     place,
     ...(session === undefined ? {} : { session }),
-    request: request as string | null,
+    request: stored as string | null,
     briefHash,
     permission: permission as NewRun["permission"],
     limits: checkLimits(limits),
@@ -557,8 +564,15 @@ export function runResultProblem(result: unknown): string | undefined {
   if (typeof r["ok"] !== "boolean") return "patch.result.ok";
   if (!(OUTCOME_REASONS as readonly unknown[]).includes(r["outcome"]))
     return "patch.result.outcome";
+  // A signed or an unsigned 32-bit status (Windows reports NTSTATUS codes unsigned), as the writer.
   const code = r["exitCode"];
-  if (code !== null && (typeof code !== "number" || !Number.isSafeInteger(code))) {
+  if (
+    code !== null &&
+    (typeof code !== "number" ||
+      !Number.isSafeInteger(code) ||
+      code < -2_147_483_648 ||
+      code > 4_294_967_295)
+  ) {
     return "patch.result.exitCode";
   }
   const signal = r["signal"];
@@ -656,10 +670,14 @@ export function checkRunTransition(
   if (problem !== undefined)
     return refuseRun(problem, "Evidence holds IDs, instants, counts and flags only");
   const final = (FINAL_RUN_STATES as readonly RunState[]).includes(next);
+  let kept: RunResult | undefined;
   if (result !== undefined) {
     if (!entering || !final)
       return refuseRun("patch.result", "A result goes in entering a final state");
-    const resultProblem = runResultProblem(result);
+    // The agent's texts are cut, never refused, in the form the space stores them: what an agent
+    // wrote must not keep its run from settling, and normalising can lengthen a text (A4 3.11.5).
+    kept = cutResultTexts(result);
+    const resultProblem = runResultProblem(kept);
     if (resultProblem !== undefined) return refuseRun(resultProblem, "Not a run result");
   }
   const clean: Record<string, unknown> = {};
@@ -676,6 +694,14 @@ export function checkRunTransition(
     next,
     evidence: clean,
     ...(reason === undefined ? {} : { reason: reason }),
-    ...(result === undefined ? {} : { result: result as RunResult }),
+    ...(kept === undefined ? {} : { result: kept }),
   };
+}
+
+/** A result with its text and error normalised and cut to TEXT_CAP_BYTES (`cutRunText`). */
+function cutResultTexts(result: unknown): RunResult {
+  if (typeof result !== "object" || result === null) return result as RunResult;
+  const r = result as Record<string, unknown>;
+  const cut = (value: unknown): unknown => (typeof value === "string" ? cutRunText(value) : value);
+  return { ...r, text: cut(r["text"]), error: cut(r["error"]) } as unknown as RunResult;
 }

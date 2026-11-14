@@ -57,7 +57,7 @@ export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
   failed: [],
   timed_out: [],
   cancelled: [],
-  unknown: ["succeeded", "failed", "timed_out", "cancelled"],
+  unknown: ["reconciling", "succeeded", "failed", "timed_out", "cancelled"],
 };
 
 export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>> = {
@@ -180,9 +180,11 @@ export const RUN_SQL = {
     "UPDATE runs SET state = $state, reason = $reason, detail = $detail, result = $result, " +
     "started_at = $started_at, ended_at = $ended_at WHERE id = $id",
   versions: "UPDATE runs SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
+  // The same condition as the `runs_open` index's (0003), so the read uses that index.
   open:
-    "SELECT * FROM runs WHERE machine_id = $machine AND state IN ('queued','starting','running'," +
-    "'waiting_for_input','cancelling','reconciling') ORDER BY queued_at, id",
+    "SELECT * FROM runs WHERE machine_id = $machine AND (state IN ('queued','starting'," +
+    "'running','waiting_for_input','cancelling','reconciling') OR (state = 'unknown' AND " +
+    "reason = 'stop_timed_out')) ORDER BY queued_at, id",
 } as const;
 
 /** One spelling of a JSON object: keys in order, so the same value is the same text. */
@@ -285,7 +287,10 @@ export function readRun(conn: Connection, id: string): RunRow | undefined {
   return row === undefined ? undefined : decodeRun(row);
 }
 
-/** Every run of `machine` that is not final, oldest first (A4 3.11.9, 3.16.1 `openWork`). */
+/**
+ * Every run of `machine` that is not final, and every `unknown` one whose stop timed out, which a
+ * later exit still settles: oldest first (A4 3.11.9, 3.16.1 `openWork`).
+ */
 export function readOpenRuns(conn: Connection, machine: string): RunRow[] {
   if (!isId(machine, "m")) return [];
   return conn.prepare(RUN_SQL.open).all({ machine }).map(decodeRun);

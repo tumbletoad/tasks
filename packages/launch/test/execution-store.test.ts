@@ -1,9 +1,12 @@
 // The execution store's contract suite against each v1 backend (A4 3.16.1, 5.1), the space
 // database's through a storage worker as the service runs it, and the rules the writer keeps a
 // copy of, compared with A4's own.
+import fc from "fast-check";
 import {
   APP_TOOLS_STATES,
+  cutRunText,
   FINAL_RUN_STATES,
+  normaliseRunText,
   OPEN_RUN_STATES,
   OUTCOME_REASONS,
   RUN_ADAPTERS,
@@ -42,6 +45,7 @@ import {
   STORAGE_OPEN_SETS,
   STORAGE_REFERENCE_WINDOW_MS,
   storageIsLaunchRef,
+  storageNormaliseText,
   type LaunchSpace,
   type WorkerLaunchSpace,
 } from "@tasks/testkit";
@@ -247,5 +251,38 @@ describe("[A4.5.execution-store.contract] the writer's copy of A4's run rules", 
     expect([...STORAGE_RUN_APP_TOOLS]).toEqual([...APP_TOOLS_STATES]);
     expect(STORAGE_RUN_TEXT_MAX_BYTES).toBe(TEXT_CAP_BYTES);
     expect(STORAGE_RUN_REQUEST_MAX_BYTES).toBe(RUN_REQUEST_MAX_BYTES);
+  });
+
+  test("a run's texts are normalised as the writer stores them, and a cut text is one the writer keeps as it is", () => {
+    // Line breaks, C0 controls, lone surrogates and marks that NFC composes, reorders or expands.
+    const pieces = fc.constantFrom(
+      "a",
+      "é",
+      "̈́",
+      "क़",
+      "가",
+      "\r\n",
+      "\r",
+      "\u0007",
+      "\t",
+      "\ud800",
+      "\udc00",
+      "\u{1f600}",
+      "̣̇",
+    );
+    const text = fc.oneof(
+      fc.string({ unit: "binary" }),
+      fc.array(pieces, { maxLength: 400 }).map((p) => p.join("")),
+    );
+    fc.assert(
+      fc.property(text, fc.integer({ min: 1, max: 64 }), (value, bytes) => {
+        expect(normaliseRunText(value)).toBe(storageNormaliseText(value));
+        const cut = cutRunText(value, bytes);
+        expect(new TextEncoder().encode(cut).length).toBeLessThanOrEqual(bytes);
+        expect(storageNormaliseText(cut)).toBe(cut);
+        expect(normaliseRunText(value).startsWith(cut)).toBe(true);
+      }),
+      { numRuns: 2_000 },
+    );
   });
 });

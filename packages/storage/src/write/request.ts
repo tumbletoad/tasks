@@ -509,15 +509,15 @@ export interface RunCreate {
 }
 
 /**
- * `run.transition` (A4 3.11.2, 3.16.1): one compare-and-set step of a run, as a launch's. The run
- * must be in `expect`, and at `expect_version` when given; `expect → next` must be an edge of A4's
- * machine; evidence only grows; a result goes in once, entering a final state.
+ * `run.transition` (A4 3.11.2, 3.16.1): one compare-and-set step of a run. The run must be in
+ * `expect` and at `expect_version`, both required; `expect → next` must be an edge of A4's machine;
+ * evidence only grows; a result goes in once, entering a final state.
  */
 export interface RunTransition {
   kind: "run.transition";
   run: Id<"ru">;
   expect: RunState;
-  expect_version?: number;
+  expect_version: number;
   next: RunState;
   /** The reason code of `failed`, `timed_out` and `unknown`. */
   reason?: string;
@@ -1217,15 +1217,15 @@ function checkOperation(value: unknown, i: number): Operation {
       break;
     }
     case "run.transition": {
+      // The version is required: a claim moves a run's version and keeps its state, so a decision
+      // made on the state alone could cancel a run whose shim may already start its agent.
       const transition: RunTransition = {
         kind,
         run: f.id("run", "ru"),
         expect: f.oneOf("expect", RUN_STATES),
+        expect_version: f.int("expect_version", RANGES.seq.min, RANGES.seq.max),
         next: f.oneOf("next", RUN_STATES),
       };
-      if (f.has("expect_version")) {
-        transition.expect_version = f.int("expect_version", RANGES.seq.min, RANGES.seq.max);
-      }
       if (f.has("reason")) {
         const reason = f.raw("reason");
         if (typeof reason !== "string" || !CODE.test(reason)) {

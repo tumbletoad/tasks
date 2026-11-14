@@ -13,7 +13,9 @@
 //    each one by what it can observe: a live shim re-attaches (M6.03), a shim gone with `exit.json`
 //    finalizes from it, a shim gone without one is `unknown`, never respawned. A lost shim is
 //    recorded as `reconciling` first, so a crash while its files are read leaves a record that says
-//    so.
+//    so. What the shim left comes before any time limit, and an `unknown` run whose stop timed out
+//    stays on the list until its exit settles it or its shim is found gone, because an exit the
+//    service did not hear while it was down is still a definite exit.
 //
 // One call at a time per run: every call on a run (a start, a claim and its reply, a report, a
 // cancel, the sweep's or recovery's work on it) runs in that run's section, reads the record there,
@@ -28,6 +30,7 @@
 // passes the person's Stop to `cancel` with its stop step. The service runs `sweep` periodically
 // and `recover` once at start, with the observation of M6.03's records.
 import {
+  awaitsExit,
   FINAL_RUN_STATES,
   type NewRun,
   type RunEvidence,
@@ -293,7 +296,11 @@ export class RunMachine {
    */
   cancel(id: string, stop: (run: RunRecord) => Promise<void>): Promise<RunRecord | undefined> {
     return this.#section(id, async () => {
+      // Whether this call's commit entered `cancelling`: only then does the stop's time start on
+      // this service's monotonic clock. Another Stop keeps the first one's time.
+      const decision = { entered: false };
       const after = await this.#decide(id, (run) => {
+        decision.entered = false;
         if (run.state === "queued") return { next: "cancelled" };
         if (run.state === "starting" && run.evidence.claim === undefined) {
           return { next: "cancelled" };
@@ -303,13 +310,15 @@ export class RunMachine {
           run.state === "running" ||
           run.state === "waiting_for_input"
         ) {
+          decision.entered = true;
           return { next: "cancelling" };
         }
         return undefined;
       });
       if (after?.state !== "cancelling") return after;
-      if (this.#marks.get(id)?.cancelling === undefined)
+      if (decision.entered && this.#marks.get(id)?.cancelling === undefined) {
         this.#mark(id, { cancelling: this.#elapsed() });
+      }
       await this.#external(() => stop(after));
       return after;
     });
@@ -369,15 +378,21 @@ export class RunMachine {
   async #recoverOne(first: RunRecord): Promise<RunRecord | undefined> {
     let run: RunRecord | undefined = first;
     for (let attempt = 0; attempt < RETRIES && run !== undefined; attempt += 1) {
-      if (FINAL.has(run.state) || run.state === "queued") return run;
-      const timed = this.#timedOut(run);
-      if (timed !== undefined) return this.#decide(run.id, (r) => this.#timedOut(r), false, run);
+      // An `unknown` run whose stop timed out still settles on its exit, or is lost with its shim.
+      if ((FINAL.has(run.state) && !awaitsExit(run)) || run.state === "queued") return run;
       // An unclaimed starting run waits out its claim window: no agent starts without a claim.
-      if (run.state === "starting" && run.evidence.claim === undefined) return run;
+      if (run.state === "starting" && run.evidence.claim === undefined) {
+        return this.#decide(run.id, (r) => this.#timedOut(r), false, run);
+      }
+      // What the shim left comes first: a definite exit settles a run whose stop's time passed
+      // while the service was down, which a stop timeout would leave unknown.
       const held = run;
       const looked = await this.#external(() => this.#recovery.observe(held));
       const seen: RunObservation = looked.kind === "answered" ? looked.value : { kind: "pending" };
-      if (seen.kind === "pending") return run;
+      // A live shim, or one the OS could not tell: only a stop whose time has passed moves it.
+      if (seen.kind === "pending") {
+        return this.#decide(run.id, (r) => this.#timedOut(r), false, run);
+      }
       // A lost shim is recorded first, then its files settle the run.
       if (run.state !== "reconciling") {
         const marked = await this.#try(run, { next: "reconciling" });

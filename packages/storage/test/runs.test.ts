@@ -4,7 +4,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
-import { RUN_EDGES, RUN_REASONS, RUN_STATES, type RunState } from "../src/write/runs.ts";
+import { RUN_EDGES, RUN_REASONS, RUN_SQL, RUN_STATES, type RunState } from "../src/write/runs.ts";
 import { TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
 
@@ -58,12 +58,23 @@ function create(extra: Record<string, unknown> = { task: task() }): Id<"ru"> {
   return result.results[0]?.id as Id<"ru">;
 }
 
+/** A run.transition on the run's current version, unless `more` names another. */
 const move = (
   run: string,
   expect: RunState,
   next: RunState,
   more: Record<string, unknown> = {},
-): WriteResult => submit([{ kind: "run.transition", run: run as Id<"ru">, expect, next, ...more }]);
+): WriteResult =>
+  submit([
+    {
+      kind: "run.transition",
+      run: run as Id<"ru">,
+      expect,
+      expect_version: fx.writer.run(run)?.version ?? 1,
+      next,
+      ...more,
+    },
+  ]);
 
 const RESULT = {
   ok: true,
@@ -204,6 +215,20 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       code: "INVALID_TRANSITION",
       field: "expect_version",
     });
+    // A Stop decided on the unclaimed record is refused once the claim moved its version, even with
+    // the state unchanged, and a transition without a version is refused outright.
+    expect(move(id, "starting", "cancelled", { expect_version: version }).error).toMatchObject({
+      code: "INVALID_TRANSITION",
+      field: "expect_version",
+    });
+    const unversioned = submit([
+      { kind: "run.transition", run: id, expect: "starting", next: "cancelled" } as never,
+    ]);
+    expect(unversioned.error).toMatchObject({
+      code: "VALIDATION_FAILED",
+      field: "ops[0].expect_version",
+    });
+    expect(fx.writer.run(id)?.state).toBe("starting");
     expect(
       move(id, "starting", "starting", { evidence: { claim: "claim-2" } }).error,
     ).toMatchObject({ code: "INVALID_TRANSITION", field: "evidence.claim" });
@@ -276,6 +301,7 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     );
     const id = create({ task: taskId });
     expectStatus(move(id, "queued", "starting"), "applied");
+    const version = fx.writer.run(id)?.version;
     for (const [bad, field] of [
       [{ ...RESULT, cwd: "/home/x" }, "ops[0].result"],
       [{ ...RESULT, signal: "kill me" }, "ops[0].result.signal"],
@@ -289,6 +315,7 @@ describe("[A1.5.write.runs] run records through the write path", () => {
             kind: "run.transition",
             run: id,
             expect: "starting",
+            expect_version: version,
             next: "failed",
             reason: "spawn_failed",
             result: bad,
@@ -303,6 +330,7 @@ describe("[A1.5.write.runs] run records through the write path", () => {
           kind: "run.transition",
           run: id,
           expect: "starting",
+          expect_version: version,
           next: "starting",
           evidence: { cwd: "/home/x" },
         } as unknown as Operation,
@@ -327,10 +355,28 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     time += 1;
     const c = create({ task: taskId });
     expectStatus(move(c, "queued", "cancelled"), "applied");
-    expect(fx.writer.openRuns(TEST_MACHINE).map((r) => r.id)).toEqual([a, b]);
+    // A stop that timed out stays listed, because a later exit still settles it; a lost run not.
+    const stopped = (reason: string): Id<"ru"> => {
+      time += 1;
+      const id = create({ task: taskId });
+      expectStatus(move(id, "queued", "starting"), "applied");
+      expectStatus(move(id, "starting", "cancelling"), "applied");
+      expectStatus(move(id, "cancelling", "unknown", { reason }), "applied");
+      return id;
+    };
+    const waits = stopped("stop_timed_out");
+    stopped("lost");
+    expect(fx.writer.openRuns(TEST_MACHINE).map((r) => r.id)).toEqual([a, b, waits]);
     expect(fx.writer.openRuns(newId("m"))).toEqual([]);
     expect(fx.writer.openRuns("not a machine")).toEqual([]);
     expect(fx.writer.run("not a run")).toBeUndefined();
+    // The read uses the partial index 0003 made for it, whose condition it repeats.
+    const plan = fx.reader
+      .prepare(`EXPLAIN QUERY PLAN ${RUN_SQL.open}`)
+      .all<{ detail: string }>({ machine: TEST_MACHINE })
+      .map((row) => row.detail)
+      .join("\n");
+    expect(plan).toContain("USING INDEX runs_open");
   });
 
   test("a repeated run.create replays its run, and the request ID with other input is refused", () => {
