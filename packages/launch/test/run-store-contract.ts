@@ -6,10 +6,15 @@
 // It covers what the run machine relies on: one queued record per request ID and its replay, a
 // compare-and-set on the state and the version that moves nothing when it loses, only A4's edges
 // and each state's reasons, evidence that only grows, a result once and only entering a final
-// state, a time per state, openWork per machine after a restart, and records whose only texts are
-// the request and the result's.
+// state, a time per state, openWork per machine after a restart, records whose only texts are the
+// request and the result's, and every result value judged as the writer's own validation judges
+// it, kept as the writer keeps it (a property over every JSON shape).
+import fc from "fast-check";
 import {
+  APP_TOOLS_STATES,
+  cutRunText,
   FINAL_RUN_STATES,
+  OUTCOME_REASONS,
   RUN_EDGES,
   RUN_LIMITS,
   RUN_REQUEST_MAX_BYTES,
@@ -21,7 +26,12 @@ import {
   type RunResult,
   type RunState,
 } from "@tasks/contracts/runs";
+import { openLaunchSpace } from "@tasks/testkit";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { SpaceExecutionStore } from "../src/space-store.ts";
 import { RunRefused, seenRun, type ExecutionStore } from "../src/store.ts";
 import type { ContractBackend } from "./execution-store-contract.ts";
 
@@ -84,6 +94,210 @@ async function refusal(promise: Promise<unknown>): Promise<RunRefused> {
   }
   throw new Error("The call was not refused");
 }
+
+/** A store's or the writer's verdict on a result: refused as a result, or the result it kept. */
+type Verdict = { refused: true } | { kept: RunResult | null };
+
+/** The verdict of a transition that carries a result: any other refusal is not one. */
+async function verdictOf(transition: Promise<RunRecord>): Promise<Verdict> {
+  try {
+    return { kept: (await transition).result };
+  } catch (error) {
+    if (
+      error instanceof RunRefused &&
+      error.code === "invalid" &&
+      /^patch\.result(\.|$)/u.test(error.field ?? "")
+    ) {
+      return { refused: true };
+    }
+    throw error;
+  }
+}
+
+const RESULT_COLUMNS: Readonly<Record<string, string>> = {
+  exitCode: "exit_code",
+  nativeId: "native_id",
+  appTools: "app_tools",
+  permissionDenials: "permission_denials",
+  durationMs: "duration_ms",
+};
+
+const USAGE_COLUMNS: Readonly<Record<string, string>> = {
+  inputTokens: "input_tokens",
+  cachedInputTokens: "cached_input_tokens",
+  outputTokens: "output_tokens",
+  reasoningOutputTokens: "reasoning_output_tokens",
+  costUsd: "cost_usd",
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * A result value as every store sends it to the writer, and nothing more: the texts cut as every
+ * store cuts them (A4 3.11.2), the known keys in the column's snake case, every value and every
+ * other key as it is, so the writer judges the value itself.
+ */
+function writerForm(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      let out = item;
+      if ((key === "text" || key === "error") && typeof item === "string") out = cutRunText(item);
+      if (key === "usage" && isPlainObject(item)) {
+        out = Object.fromEntries(
+          Object.entries(item).map(([name, n]) => [USAGE_COLUMNS[name] ?? name, n]),
+        );
+      }
+      return [RESULT_COLUMNS[key] ?? key, out];
+    }),
+  );
+}
+
+/** Numbers at the edges of every range a result's fields have, and past them. */
+const EDGE_NUMBERS = [
+  0,
+  -0,
+  1,
+  -1,
+  1.5,
+  2 ** 31 - 1,
+  2 ** 31,
+  -(2 ** 31),
+  -(2 ** 31) - 1,
+  2 ** 32 - 1,
+  2 ** 32,
+  253_402_300_799_999,
+  253_402_300_800_000,
+  Number.MAX_SAFE_INTEGER,
+  Number.MAX_SAFE_INTEGER + 1,
+  Number.MIN_VALUE,
+  Number.MAX_VALUE,
+  -Number.MAX_VALUE,
+];
+const number = fc.oneof(
+  fc.constantFrom(...EDGE_NUMBERS),
+  fc.integer(),
+  fc.double({ noNaN: true, noDefaultInfinity: true }),
+);
+const text = fc.oneof(
+  fc.string(),
+  fc.string({ unit: "binary", maxLength: 40 }),
+  // Longer than the cap, and longer once normalised (U+0344 expands to two marks).
+  fc.constantFrom("x".repeat(TEXT_CAP_BYTES + 1), "̈́".repeat(TEXT_CAP_BYTES / 2), ""),
+);
+/** Every JSON shape: null, booleans, numbers, texts, lists and objects, nested. */
+const anyJson = fc.oneof(
+  fc.constant(null),
+  fc.boolean(),
+  number,
+  text,
+  fc.constant([]),
+  fc.constant({}),
+  fc.array(fc.jsonValue({ maxDepth: 2 }), { maxLength: 3 }),
+  fc.dictionary(fc.string({ maxLength: 8 }), fc.jsonValue({ maxDepth: 2 }), { maxKeys: 3 }),
+);
+/**
+ * A field's value: one the writer keeps most of the time, else one at or past the edge of what it
+ * keeps, or any JSON value.
+ */
+const field = (fits: fc.Arbitrary<unknown>, edge: fc.Arbitrary<unknown>): fc.Arbitrary<unknown> =>
+  fc.oneof(
+    { weight: 12, arbitrary: fits },
+    { weight: 1, arbitrary: edge },
+    { weight: 1, arbitrary: anyJson },
+  );
+const orNull = (fits: fc.Arbitrary<unknown>): fc.Arbitrary<unknown> =>
+  fc.oneof(fc.constant(null), fits);
+const edgeNumber = fc.oneof(
+  fc.constantFrom(...EDGE_NUMBERS),
+  fc.double({ noNaN: true, noDefaultInfinity: true }),
+);
+const count = fc.integer({ min: 0, max: 2 ** 31 - 1 });
+const usageKey = fc.constantFrom(...Object.keys(USAGE_COLUMNS));
+const RESULT_KEYS = [
+  "ok",
+  "outcome",
+  "exitCode",
+  "signal",
+  "nativeId",
+  "text",
+  "error",
+  "usage",
+  "appTools",
+  "declined",
+  "permissionDenials",
+  "durationMs",
+] as const;
+/** Result values: most of them objects of a result's keys, now and then one missing or added. */
+const resultValue: fc.Arbitrary<unknown> = fc.oneof(
+  {
+    weight: 9,
+    arbitrary: fc
+      .tuple(
+        fc.record({
+          ok: field(fc.boolean(), fc.constantFrom(0, 1, "true")),
+          outcome: field(
+            fc.constantFrom(...OUTCOME_REASONS),
+            fc.constantFrom("Success", "success ", "lost_track"),
+          ),
+          exitCode: field(orNull(fc.integer({ min: -(2 ** 31), max: 2 ** 32 - 1 })), edgeNumber),
+          signal: field(
+            fc.constantFrom(null, "SIGTERM", "SIGKILL", "SIGINT"),
+            fc.constantFrom("SIG", "SIGABCDEFGHIJKLM", "sigterm", "SIG-TERM"),
+          ),
+          nativeId: field(
+            fc.constantFrom(null, "thread-0001", "0199a3f2-7c41-7d20-9b6e-3f1c2a4b5d6e"),
+            fc.constantFrom("a".repeat(128), "a".repeat(129), "two words", "-x", ""),
+          ),
+          text: field(orNull(text), fc.constant(undefined)),
+          error: field(orNull(text), fc.constant(undefined)),
+          usage: field(
+            orNull(
+              fc.dictionary(
+                usageKey,
+                fc.oneof(fc.nat(), fc.double({ min: 0, max: 1e6, noNaN: true })),
+                { maxKeys: 5 },
+              ),
+            ),
+            fc.oneof(
+              fc.constant([]),
+              fc.constant([1, 2]),
+              fc.dictionary(
+                fc.oneof(usageKey, fc.constantFrom("tokens", "folder")),
+                fc.oneof(edgeNumber, anyJson),
+                { maxKeys: 4 },
+              ),
+            ),
+          ),
+          appTools: field(
+            fc.constantFrom(null, ...APP_TOOLS_STATES),
+            fc.constantFrom("Connected", "none"),
+          ),
+          declined: field(count, edgeNumber),
+          permissionDenials: field(count, edgeNumber),
+          durationMs: field(orNull(fc.integer({ min: 0, max: 253_402_300_799_999 })), edgeNumber),
+        }),
+        fc.oneof(
+          { weight: 12, arbitrary: fc.constant(undefined) },
+          { weight: 1, arbitrary: fc.constantFrom(...RESULT_KEYS) },
+        ),
+        fc.oneof(
+          { weight: 12, arbitrary: fc.constant(undefined) },
+          { weight: 1, arbitrary: fc.tuple(fc.constantFrom("folder", "extra"), anyJson) },
+        ),
+      )
+      .map(([value, missing, extra]) => {
+        // A key whose generated value is undefined is left out, as JSON leaves it out.
+        const out: Record<string, unknown> = Object.fromEntries(
+          Object.entries(value).filter(([key, item]) => item !== undefined && key !== missing),
+        );
+        if (extra !== undefined) out[extra[0]] = extra[1];
+        return out;
+      }),
+  },
+  { weight: 1, arbitrary: anyJson },
+);
 
 /** Every string a record holds but its request and its result's texts: IDs, codes and states. */
 function strings(value: unknown): string[] {
@@ -314,11 +528,12 @@ export function runStoreContract(
       expect(done.result?.error).toBe("Stopped\nat a prompt");
       expect(await store.readRun(run.id)).toEqual(done);
       // Every other field is judged as the writer judges it, so no backend accepts a result
-      // another refuses: a cost beyond a safe integer, a fractional duration.
+      // another refuses: a cost beyond a safe integer, a fractional duration, usage that is a list.
       for (const [bad, field] of [
         [{ ...RESULT, usage: { costUsd: 1e300 } }, "patch.result.usage"],
         [{ ...RESULT, durationMs: 1.5 }, "patch.result.durationMs"],
         [{ ...RESULT, exitCode: 2 ** 32 }, "patch.result.exitCode"],
+        [{ ...RESULT, usage: [] as unknown as RunResult["usage"] }, "patch.result.usage"],
       ] as const) {
         const other = await runIn("running");
         const refused = await refusal(
@@ -343,6 +558,78 @@ export function runStoreContract(
       );
       expect(blank).toMatchObject({ code: "invalid", field: "request" });
     });
+
+    test("every result value gets the writer's own verdict, and one that is kept reads back as the writer keeps it", async () => {
+      // The writer's verdict comes from a space of its own: the same value, as every store sends
+      // it (the texts cut, A4 3.11.2; the keys in the column's snake case), in a run.transition
+      // submitted to its writer directly. A result goes in entering any final state; this one
+      // takes a queued run to cancelled, one write per verdict.
+      const parent = mkdtempSync(join(tmpdir(), "tasks-run-judge-"));
+      try {
+        const judge = await openLaunchSpace(parent);
+        try {
+          const judgeStore = new SpaceExecutionStore({
+            writer: judge.writer,
+            spaceId: judge.spaceId,
+            credential: judge.credential,
+          });
+          const judgeInput = {
+            ...(await runInput()),
+            task: await judge.task(),
+            machine: judge.machine,
+          };
+          const input = await runInput();
+          let judged = 0;
+          const verdicts = { kept: 0, refused: 0 };
+          await fc.assert(
+            fc.asyncProperty(resultValue, async (value) => {
+              const run = await store.createRun(input, requestId());
+              const mine = await verdictOf(
+                store.transitionRun(run.id, seenRun(run), "cancelled", {
+                  result: value as RunResult,
+                }),
+              );
+              const target = await judgeStore.createRun(judgeInput, requestId());
+              const written = judge.writer.submit({
+                space_id: judge.spaceId,
+                request_id: `run-judge-${String((judged += 1)).padStart(8, "0")}`,
+                actor: judge.credential,
+                ops: [
+                  {
+                    kind: "run.transition",
+                    run: target.id,
+                    expect: "queued",
+                    expect_version: target.version,
+                    next: "cancelled",
+                    result: writerForm(value),
+                  },
+                ],
+              });
+              let writers: Verdict;
+              if (written.status === "applied") {
+                writers = { kept: (await judgeStore.readRun(target.id))?.result ?? null };
+              } else {
+                const field = written.error?.field ?? "";
+                expect(written.error?.code).toBe("VALIDATION_FAILED");
+                expect(field).toMatch(/^ops\[0\]\.result(\.|$)/u);
+                writers = { refused: true };
+              }
+              // As JSON, which is what the space keeps: -0 is 0 there.
+              expect(JSON.parse(JSON.stringify(mine))).toEqual(JSON.parse(JSON.stringify(writers)));
+              verdicts["refused" in writers ? "refused" : "kept"] += 1;
+            }),
+            { numRuns: 300 },
+          );
+          // The values reach both verdicts, so the property compares what is kept too.
+          expect(verdicts.kept).toBeGreaterThan(10);
+          expect(verdicts.refused).toBeGreaterThan(10);
+        } finally {
+          judge.close();
+        }
+      } finally {
+        rmSync(parent, { recursive: true, force: true });
+      }
+    }, 120_000);
 
     test("a record's only texts are its request and its result's: everything else is an ID, a code or a state", async () => {
       const run = await runIn("running");

@@ -540,9 +540,15 @@ const isText = (value: unknown): value is string | null =>
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_COUNT;
 
-/** The problem with a run result as a path, or undefined. Texts within TEXT_CAP_BYTES. */
+/**
+ * The problem with a run result as a path, or undefined. Texts within TEXT_CAP_BYTES. Every object
+ * it reads is a plain object, never a list, as the writer reads it: a list is an object with no
+ * keys to refuse, which one store would keep as a list and another as an empty object.
+ */
 export function runResultProblem(result: unknown): string | undefined {
-  if (typeof result !== "object" || result === null) return "patch.result";
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return "patch.result";
+  }
   const r = result as Record<string, unknown>;
   const keys = [
     "ok",
@@ -587,7 +593,7 @@ export function runResultProblem(result: unknown): string | undefined {
   if (!isText(r["error"])) return "patch.result.error";
   const usage = r["usage"];
   if (usage !== null) {
-    if (typeof usage !== "object") return "patch.result.usage";
+    if (typeof usage !== "object" || Array.isArray(usage)) return "patch.result.usage";
     const fields = [
       "inputTokens",
       "cachedInputTokens",
@@ -707,7 +713,9 @@ export function checkRunTransition(
 
 /** A result with its text and error normalised and cut to TEXT_CAP_BYTES (`cutRunText`). */
 function cutResultTexts(result: unknown): RunResult {
-  if (typeof result !== "object" || result === null) return result as RunResult;
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return result as RunResult;
+  }
   const r = result as Record<string, unknown>;
   const cut = (value: unknown): unknown => (typeof value === "string" ? cutRunText(value) : value);
   return { ...r, text: cut(r["text"]), error: cut(r["error"]) } as unknown as RunResult;
