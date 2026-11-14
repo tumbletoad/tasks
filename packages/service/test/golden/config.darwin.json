@@ -65,7 +65,12 @@
         "enabled": true
       }
     ],
-    "approvals": {}
+    "approvals": {},
+    "setup": {
+      "managedPaths": [
+        "/Users/mira/.codex/AGENTS.md"
+      ]
+    }
   },
   "problems": []
 }

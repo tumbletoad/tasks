@@ -80,7 +80,13 @@ const recordFile = () => join(stateOf(home), "setup", "agents.json");
 
 /** `tasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
 const run = (argv: string[], tty = true, env: Record<string, string> = {}) =>
-  runMain(argv, { home, tty, env, main: { agents: { env: fakes.env, home: user } } });
+  runMain(argv, {
+    home,
+    tty,
+    env,
+    // macOS: never the machine's own Applications folder.
+    main: { agents: { env: fakes.env, home: user, systemApplications: join(user, "Apps") } },
+  });
 
 /** The live agent-home rows, as any CLI may read them. */
 async function rows(): Promise<
@@ -139,7 +145,8 @@ describe("[A3.3.13.setup.cli] tasks setup agents through the CLI and the service
       }
       const text = await run(["setup", "agents"], false);
       expect(text.code).toBe(0);
-      expect(text.stdout).toContain(`mcp add ${MCP_SERVER_KEY} --`);
+      // PowerShell drops a bare -- before an npm .ps1 shim, so on Windows it is quoted (A3 3.13.7).
+      expect(text.stdout).toContain(`mcp add ${MCP_SERVER_KEY} ${windows ? "'--'" : "--"} `);
       // The command as the person's shell takes it literally, the home's variable first.
       const codexHome = join(user, ".codex");
       expect(text.stdout).toContain(

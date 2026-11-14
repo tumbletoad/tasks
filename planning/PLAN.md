@@ -38,6 +38,7 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | D23 | Tool definitions | **No forced size limit on MCP tool definitions.** They stay lean, with every exception that is needed or makes sense. Their size is measured and reported. Limits on what a tool returns stay. |
 | D24 | Name | **TT Tasks**, **by TumbleToad**, called **Tasks** inside the app, at `tumbletoad.com/tasks`. |
 | D25 | Identifier and folders | The identifier is **`tasks`** everywhere. All of a person's data and configuration live in `~/.tasks` (`%USERPROFILE%\.tasks`). The program is installed elsewhere, and removing it never removes data. |
+| D26 | Limits | **Limits are guidelines until real use.** The targets for performance, latency, memory and token counts were chosen by feel. Implementers aim for them and reviewers flag a breach, but no feature is cut or reworked for a limit unless the result is clearly bad or damaging, and a feature that is better or more complete while over a limit stays. **Functionality, usability, stability, flexibility and maintainability come before performance.** The limits are re-evaluated when the product is close to maturity and can be tested for its final look and feel. |
 
 ### A.2 Architecture decisions
 

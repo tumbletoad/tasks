@@ -66,6 +66,7 @@ import { readAccounts, type AccountFacts } from "./accounts.ts";
 import { accountsCheck, httpCheck, type HttpStatusView } from "./doctor-http.ts";
 import type { Io } from "./io.ts";
 import { bodyOf, printUsage } from "./output.ts";
+import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
 
 export type CheckStatus = "ok" | "warn" | "fail" | "skip";
@@ -618,6 +619,8 @@ const SKIPPED: readonly Check[] = [
 export interface DoctorOptions extends ConnectOptions {
   /** The machine's accounts. Tests inject them: the real read is accounts.ts readAccounts. */
   readonly accounts?: () => AccountFacts | undefined;
+  /** Tests only: the agent environment and home the agent checks read (doctor-agents.ts). */
+  readonly agents?: AgentsSetupOptions;
 }
 
 export async function doctor(
@@ -627,14 +630,17 @@ export async function doctor(
   connect: DoctorOptions & { readonly versionFolder?: string },
   now: number = Date.now(),
 ): Promise<number> {
-  const unknown = args.filter((a) => a !== "--self-test");
+  const unknown = args.filter((a) => a !== "--self-test" && a !== "--live");
   if (unknown.length > 0) {
-    return printUsage(io, globals.json, "tasks doctor takes --self-test and --json only");
+    return printUsage(io, globals.json, "tasks doctor takes --self-test, --live and --json only");
   }
   // stateDir names a layout that cannot be resolved; past it, the layout is this install's.
   const state = stateDir(io);
   const layout = resolveLayout(hostFacts(io.env, io.platform));
-  const accounts = (connect.accounts ?? (() => readAccounts(io.platform, io.env)))();
+  const accounts =
+    connect.accounts === undefined
+      ? await readAccounts(io.platform, io.env, io.cwd)
+      : connect.accounts();
   const checks = [
     ...localChecks(io, layout, now),
     configCheck(io),
@@ -643,6 +649,10 @@ export async function doctor(
     ...(io.platform === "win32" ? [supervisorCheck(state, layout.crash)] : []),
     ...(await serviceChecks(io, state, connect)),
     ...(await candidateRows(io, connect.versionFolder, args.includes("--self-test"), state)),
+    // The agent side (A3 3.14), loaded only here: it loads setup's engine.
+    ...(await (
+      await import("./doctor-agents.ts")
+    ).agentChecks(io, state, args.includes("--live"), connect)),
     ...SKIPPED,
   ];
   const failed = checks.some((c) => c.status === "fail");
