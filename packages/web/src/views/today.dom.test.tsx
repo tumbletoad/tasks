@@ -238,6 +238,27 @@ describe("[A5.3.4.web.today-page] Today's strip and sections in a DOM", () => {
     expect(onDay).toHaveBeenLastCalledWith("2026-11-14");
   });
 
+  test("a tab that wakes on a later day moves on to it when it is shown again", () => {
+    mount(<TodayPage onExpand={() => undefined} onDay={() => undefined} />);
+    apply(snapshot([...TASKS, task(6, { title: "Pay the deposit", due_date: "2026-11-19" })]));
+    expect(container.querySelector("[aria-current='date']")?.getAttribute("data-date")).toBe(
+      "2026-11-12",
+    );
+    expect(sections()[2]).toEqual(["Next", ["Book the moving van", "Pay the deposit"]]);
+    // The machine slept past midnight: the midnight timer has not fired yet.
+    vi.setSystemTime(NOW + 86_400_000);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(container.querySelector("[aria-current='date']")?.getAttribute("data-date")).toBe(
+      "2026-11-13",
+    );
+    expect(container.querySelectorAll("[data-date]")[6]?.getAttribute("data-date")).toBe(
+      "2026-11-19",
+    );
+    expect(sections()[1]).toEqual(["This week", ["Sign the lease", "Pay the deposit"]]);
+  });
+
   test("the chosen day narrows Focus and This week, and Escape clears it", () => {
     const onDay = vi.fn<(day: string | undefined) => void>();
     mount(<TodayPage day="2026-11-14" onExpand={() => undefined} onDay={onDay} />);
