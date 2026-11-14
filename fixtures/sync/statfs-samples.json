@@ -1,5 +1,5 @@
 {
-  "about": "File system samples for the synced-folder and network check (A1 3.2, M3.09). 'captured' samples were read on a real machine with fs.statfs and the mount table (Node 26.13.1), keeping only the file system's type, never a source or a person's path. 'constructed' samples carry the values of the Linux kernel's include/uapi/linux/magic.h and the file systems' own sources, or macOS mount(8)'s output format, for file systems no machine here mounts. 'expect' is what the check reports: 'local', or the network file system's word.",
+  "about": "File system samples for the synced-folder and network check (A1 3.2, M3.09). 'captured' samples were read on a real machine with fs.statfs and the mount table (Node 26.13.1), keeping only the file system's type, never a source or a person's path. 'constructed' samples carry the values of the Linux kernel's include/uapi/linux/magic.h and the file systems' own sources, or macOS mount(8)'s output format, for file systems no machine here mounts. 'expect' is what the check reports: 'local' for a file system known to keep its files on this machine, the network file system's word, or 'unchecked' for any other.",
   "linux": [
     {
       "source": "captured: WSL2 on the Windows lab machine, kernel 6.18 (/)",
@@ -41,25 +41,25 @@
       "source": "captured: WSL2 on the Windows lab machine (/sys)",
       "fstype": "sysfs",
       "statfs_type": "0x62656572",
-      "expect": "local"
+      "expect": "unchecked"
     },
     {
       "source": "captured: WSL2 on the Windows lab machine (/proc)",
       "fstype": "proc",
       "statfs_type": "0x9fa0",
-      "expect": "local"
+      "expect": "unchecked"
     },
     {
       "source": "captured: WSL2 on the Windows lab machine (/dev/pts)",
       "fstype": "devpts",
       "statfs_type": "0x1cd1",
-      "expect": "local"
+      "expect": "unchecked"
     },
     {
       "source": "captured: WSL2 on the Windows lab machine (/sys/fs/cgroup)",
       "fstype": "cgroup2",
       "statfs_type": "0x63677270",
-      "expect": "local"
+      "expect": "unchecked"
     },
     {
       "source": "constructed: NFS_SUPER_MAGIC",
@@ -162,6 +162,24 @@
       "fstype": "vfat",
       "statfs_type": "0x4d44",
       "expect": "local"
+    },
+    {
+      "source": "constructed: ZFS_SUPER_MAGIC",
+      "fstype": "zfs",
+      "statfs_type": "0x2fc12fc1",
+      "expect": "local"
+    },
+    {
+      "source": "constructed: ECRYPTFS_SUPER_MAGIC (stacked on a folder that may be anywhere)",
+      "fstype": "ecryptfs",
+      "statfs_type": "0xf15f",
+      "expect": "unchecked"
+    },
+    {
+      "source": "constructed: FUSE_SUPER_MAGIC with the document portal (serves files from anywhere)",
+      "fstype": "fuse.portal",
+      "statfs_type": "0x65735546",
+      "expect": "unchecked"
     }
   ],
   "windows": [
