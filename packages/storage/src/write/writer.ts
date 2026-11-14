@@ -2747,16 +2747,14 @@ function wrapLearnings(
     conn.prepare(SQL.removeLearning).run({ id, at: run.at });
     wrote(run, staged.i, "learnings", id, task, ["deleted"]);
   }
-  const held = new Set(
-    conn
-      .prepare(SQL.liveLearnings)
-      .all({ task })
-      .map((row) => row["body"]),
-  );
+  const live = conn.prepare(SQL.liveLearnings).all({ task });
+  const held = new Set(live.map((row) => row["body"]));
+  let count = live.length;
   const ids = must(staged.learnings, "A wrap-up is staged with its learnings' IDs");
   (op.learnings?.add ?? []).forEach((body, k) => {
     if (held.has(body)) return;
     held.add(body);
+    count += 1;
     const last = conn.prepare(SQL.lastLearning).get({ task })?.["p"] ?? undefined;
     if (last !== undefined && !isPosition(last)) throw invalidValue("learnings", "position");
     const id = must(ids[k], "A learning to add has its ID");
@@ -2771,7 +2769,8 @@ function wrapLearnings(
     });
     wrote(run, staged.i, "learnings", id, task, null);
   });
-  if (held.size > WRITE_LIMITS.learnings) {
+  // The limit refuses an addition past it, never a wrap-up that adds nothing.
+  if (count > WRITE_LIMITS.learnings && count > live.length) {
     problem("TOO_LARGE", "A task holds at most 20 learnings", staged.i, "learnings.add");
   }
 }
