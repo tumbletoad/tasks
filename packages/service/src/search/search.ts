@@ -100,6 +100,9 @@ const VOCABULARY: readonly SqlQuery[] = [
   },
   { sql: "SELECT id, name FROM machines ORDER BY name, id", mode: "all" },
   { sql: HAS_SEARCH_TABLES_SQL, mode: "get" },
+  // A stamp of every place: a place write makes its row the newest (its version is the commit's
+  // seq), and a removal lowers the count, so any change to the places changes the stamp.
+  { sql: "SELECT count(*) AS n, coalesce(max(version), 0) AS v FROM places", mode: "get" },
 ];
 
 /**
@@ -123,18 +126,23 @@ export function cut(text: string, max: number): string {
   return chars.length <= max ? line : `${chars.slice(0, max - 1).join("")}…`;
 }
 
-function vocabularyOf(results: readonly unknown[]): {
+/** What a search plans from: the space's values and the stamp of its places. */
+interface Known {
   space: SpaceRow;
   vocabulary: Vocabulary;
   indexed: boolean;
-} {
-  const [space, statuses, efforts, areas, projects, machines, indexed] = results;
+  places: string;
+}
+
+function vocabularyOf(results: readonly unknown[]): Known {
+  const [space, statuses, efforts, areas, projects, machines, indexed, places] = results;
   const decoded = decodeSpaceRow(space as Row);
   const groups = (value: unknown) =>
     rows(value).map((r) => ({ id: str(r["id"]), slug: str(r["slug"]), title: str(r["title"]) }));
   return {
     space: decoded,
     indexed: (indexed as Row | null)?.["n"] === 2,
+    places: `${String((places as Row | null)?.["n"])}:${String((places as Row | null)?.["v"])}`,
     vocabulary: {
       refPrefix: decoded.refPrefix,
       statuses: keysOf((statuses as Row | null)?.["value"], DEFAULT_STATUS_ORDER),
@@ -149,19 +157,23 @@ function vocabularyOf(results: readonly unknown[]): {
 /** How often a search plans again when the space's values change under it. */
 const PLAN_ROUNDS = 3;
 
-/** Whether two reads of the vocabulary would plan the same statement. */
-function sameVocabulary(
-  a: { vocabulary: Vocabulary; indexed: boolean },
-  b: { vocabulary: Vocabulary; indexed: boolean },
-): boolean {
-  return a.indexed === b.indexed && JSON.stringify(a.vocabulary) === JSON.stringify(b.vocabulary);
+/**
+ * Whether two reads would plan the same statement: the same values, and the same places when the
+ * plan holds the tasks placed at the caller's folder.
+ */
+function samePlan(a: Known, b: Known, placed: boolean): boolean {
+  return (
+    a.indexed === b.indexed &&
+    (!placed || a.places === b.places) &&
+    JSON.stringify(a.vocabulary) === JSON.stringify(b.vocabulary)
+  );
 }
 
 /** The space's values kept changing between a search's reads: a retry will find them settled. */
 function vocabularyChanging(): AppError {
   return new AppError({
     code: "space_unavailable",
-    message: "The space's statuses, areas or projects changed while searching.",
+    message: "The space's statuses, areas, projects or places changed while searching.",
     hint: "Search again.",
     data: { reason: "busy", retryable: true },
   });
@@ -192,13 +204,15 @@ export async function runSearch(
   }
   const query = parseQuery(input.q ?? "");
   const scope: Scope = input.scope ?? (namesLifecycle(query) ? "all" : "active");
-  const here =
-    input.cwd !== undefined && needsHere(query, scope) ? await env.here(input.cwd) : undefined;
+  const cwd = input.cwd !== undefined && needsHere(query, scope) ? input.cwd : undefined;
   const live = termsOf(query).some((t) => t.type === "filter" && t.key === "is") ? env.live() : [];
-  // The plan names the space's values (a status, an area's ID), so it is made from a vocabulary
-  // read first and checked against the vocabulary of the query's own read transaction at S: a
-  // rename between the two reads plans again, so S never mixes with an earlier state.
+  // The plan names the space's values (a status, an area's ID) and the tasks placed at `cwd`, so
+  // it is made from reads before the query and checked against the same reads in the query's own
+  // read transaction at S: a change between them plans again, so S never mixes with an earlier
+  // state. The places are read after the stamp they are checked by, and every change to them
+  // changes the stamp.
   let known = vocabularyOf(await reader.transaction("deferred", [...VOCABULARY]));
+  let here = cwd === undefined ? undefined : await env.here(cwd);
   let settled: { space: SpaceRow; plan: SearchPlan; ranked: unknown } | undefined;
   for (let round = 0; round < PLAN_ROUNDS && settled === undefined; round += 1) {
     const plan = planSearch(query, {
@@ -219,8 +233,12 @@ export async function runSearch(
       { sql: plan.sql, params: plan.params, mode: "all" },
     ]);
     const atS = vocabularyOf(results);
-    if (sameVocabulary(atS, known)) settled = { space: atS.space, plan, ranked: results.at(-1) };
-    else known = atS;
+    if (samePlan(atS, known, cwd !== undefined)) {
+      settled = { space: atS.space, plan, ranked: results.at(-1) };
+    } else {
+      known = atS;
+      if (cwd !== undefined) here = await env.here(cwd);
+    }
   }
   if (settled === undefined) throw vocabularyChanging();
   const { space, plan } = settled;

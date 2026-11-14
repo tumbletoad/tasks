@@ -390,6 +390,36 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(busy.data).toMatchObject({ reason: "busy", retryable: true });
   });
 
+  test("on:cwd resolves places in the query's own snapshot too", async () => {
+    const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Oldcwdword" }]));
+    submit(fx, [{ kind: "place.set", task, root: "probe", path: "here" }]);
+    const placedHere = () =>
+      fx.reader
+        .prepare(
+          "SELECT owner_id FROM places WHERE root_id = 'probe' AND rel_path = 'here' " +
+            "AND deleted_at IS NULL",
+        )
+        .all()
+        .map((row) => String(row["owner_id"]));
+    let calls = 0;
+    // The tasks placed here are read; then, before the query, one commit renames the task and
+    // moves its place: no state had it both here and named newcwdword.
+    const here = () => {
+      calls += 1;
+      const placed = placedHere();
+      if (calls === 1) {
+        submit(fx, [
+          { kind: "task.patch", task, set: { title: "Newcwdword" } },
+          { kind: "place.set", task, root: "probe", path: "elsewhere" },
+        ]);
+      }
+      return Promise.resolve(placed);
+    };
+    const found = await search({ q: "newcwdword on:cwd", cwd: "/" }, { here });
+    expect(ids(found)).toEqual([]);
+    expect(calls).toBe(2);
+  });
+
   test("without text: due date (none last), then priority, then the latest change", async () => {
     const [late, soon, none] = created(
       submit(fx, [
@@ -556,6 +586,18 @@ describe("[A3.5.search.find] task.search through the request path", () => {
     const first = await call(host(), user, { q: "findword", limit: 2 });
     const error = await refusal(call(host(), user, { cursor: first.cursor }));
     expect(error.data).toEqual({ reason: "restart" });
+  });
+
+  test("on:cwd finds a completed task placed here, in the scope that holds it", async () => {
+    const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Finishedcwdword" }]));
+    submit(fx, [{ kind: "place.set", task, root: "probe", path: "" }]);
+    submit(fx, [{ kind: "task.complete", task, outcome: "Completed." }]);
+    const root = { id: "probe", label: "Probe", path: temp.root, runs: false };
+    const h: OpsHost = { ...host(), roots: () => [root] };
+    const find = (q: string) => call(h, user, { q, scope: "finished", cwd: temp.root });
+    expect(ids(await find("finishedcwdword on:this-machine"))).toEqual([task]);
+    expect(ids(await find("finishedcwdword on:cwd"))).toEqual([task]);
+    expect(ids(await find("on:cwd is:completed"))).toContain(task);
   });
 });
 

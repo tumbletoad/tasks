@@ -71,6 +71,7 @@ import {
   readCommit,
   readLaunch,
   readPlaced,
+  readPlacedAny,
   readReceipt,
   readLaunchTask,
   readSpace,
@@ -1533,7 +1534,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           const roots = host.roots?.() ?? [];
           const found = await hereOf(cwd, roots, platform);
           if (found === undefined || found.roots.length === 0) return [];
-          const { placed } = await readPlaced(reader, host.machine.id, found.roots);
+          // Every lifecycle: the search's scope and filters at S choose among them.
+          const placed = await readPlacedAny(reader, host.machine.id, found.roots);
           const rows = await hereRows(placed, found, roots, platform);
           return rows.map(({ row }) => String(row["id"]));
         },
