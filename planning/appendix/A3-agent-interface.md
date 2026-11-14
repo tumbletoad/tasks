@@ -719,7 +719,7 @@ A1 fixes the format, `<namespace>:<id>` with a lower-case namespace `[a-z0-9.-]+
 | Jira issue | `jira:<KEY>`, or `jira.<site>:<KEY>` when a user has several sites | `jira:LUM-212` |
 | GitHub or GitLab issue or pull request | `github:<owner>/<repo>#<n>`, `gitlab:<group>/<project>#<n>` (`!<n>` for a merge request) | `github:tidy-logs/tidy-logs#139` |
 | Drive document, calendar event | `gdrive:<file id>`, `gcal:<event id>` | |
-| Anything else | `url:<normalised URL>` | scheme and host lowercased, fragment and `utm_*` removed |
+| Anything else | `url:<normalised URL>` | scheme and host lowercased, `utm_*` removed (a name read percent-decoded), and the fragment removed unless it holds a `/`: such a fragment is an app's route that names the item, as a webmail's `#inbox/<id>` names its thread |
 
 - **Normalisation.** A1 lower-cases the namespace and trims spaces. Agents upper-case Jira keys. Other IDs keep the case the source shows.
 - **Threads, not messages.** One email or chat thread is one item, so a reply in the same thread matches the same task.
