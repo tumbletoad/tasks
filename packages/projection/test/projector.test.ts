@@ -252,6 +252,56 @@ describe("[A1.5.projection.rescue] a file a person edited is moved to exchange/r
     refused(join(space, "backups"));
     refused(join(space, "view", "deeper"));
     refused("relative/view");
+    // A name that starts with two dots is a name, not the way up.
+    refused(join(space, "..fixture"));
+    expect(projectionFolder(space, join(root, "..fixture"))).toBe(join(root, "..fixture"));
+  });
+
+  test("a write that fails after a person's file was found leaves that file where the catalogue names it", async () => {
+    const projector = w.projector();
+    await projector.start();
+    await settle(projector);
+    const [first] = catalog(w.dir).slice(1);
+    const path = first?.path ?? "";
+    const abs = join(w.dir, ...path.split("/"));
+    chmodSync(abs, 0o600);
+    writeFileSync(abs, "Edited by a person.\n");
+    w.submit([{ kind: "task.patch", task: first?.id ?? "", set: { summary: "Rendered later" } }]);
+    const named = (): void => {
+      for (const line of catalog(w.dir).slice(1)) {
+        expect(existsSync(join(w.dir, ...(line.path ?? "").split("/"))), line.path).toBe(true);
+      }
+    };
+    const fail = (at: "rename" | "rescued") =>
+      w.projector({
+        at: (point, p) => {
+          if (point === at && p === path) {
+            throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
+          }
+        },
+      });
+    // Failing before the rename, the new file written: nothing is moved aside yet.
+    const early = fail("rename");
+    await early.start();
+    expect((await early.step()).failed).toBe(1);
+    expect(readFileSync(abs, "utf8")).toBe("Edited by a person.\n");
+    named();
+    // Failing after the person's file was moved aside: it is put back.
+    const late = fail("rescued");
+    await late.start();
+    const report = await late.step();
+    expect(report.failed).toBe(1);
+    expect(report.rescued).toBe(0);
+    expect(readFileSync(abs, "utf8")).toBe("Edited by a person.\n");
+    named();
+    expectClean(w.dir);
+    // Then it goes through: the edit is rescued, the file replaced.
+    const again = w.projector();
+    await again.start();
+    const reports = await settle(again);
+    expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(1);
+    expect(readFileSync(abs, "utf8")).toContain("Rendered later");
+    named();
   });
 
   test("projection.dir is checked where its folders are on disk: a link to the space's folder, or to a folder holding it, changes nothing", () => {

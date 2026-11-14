@@ -2827,7 +2827,7 @@
     },
     {
       "id": "A1.5.projection.rescue",
-      "title": "A file a person edited, a person's file at a task's path and a link where a folder goes are moved to exchange/rescued/<stamp>/, never lost and never followed; a file the projection did not write is otherwise left alone; a tree of another incarnation is rebuilt, removing only its own unchanged files; projection.dir is outside the space's folder and does not hold it",
+      "title": "A file a person edited, a person's file at a task's path and a link where a folder goes are moved to exchange/rescued/<stamp>/, never lost and never followed; a file the projection did not write is otherwise left alone; a write that fails before or after the rescue leaves the person's file where the catalogue names it; a tree of another incarnation is rebuilt, removing only its own unchanged files; projection.dir is outside the space's folder and does not hold it, also through a link, and a name starting with two dots is inside",
       "source": "A1 3.13, A1 3.1, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2859,7 +2859,7 @@
     },
     {
       "id": "A1.5.projection.recovery",
-      "title": "The projection's record describes the disk: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a journal that cannot be read rebuilds the tree; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "title": "The projection's record describes the disk: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing, and never through a link in place of the projection's folder; a journal that cannot be read rebuilds the tree; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2867,7 +2867,7 @@
     },
     {
       "id": "A1.5.projection.folders",
-      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a removal or a read through it touches nothing behind it, a link is rescued, and the tree is rebuilt, also when the folder or the projection's own folder is removed while nothing changes, and when it is removed during a batch killed before its rebuild, so the catalogue names only files in the tree; a rebuild removes the old claim, catalogue and index first",
+      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a removal or a read through it touches nothing behind it, a link is rescued, and the tree is rebuilt, also when the folder or the projection's own folder is removed while nothing changes, when it is removed during a batch killed before its rebuild, and when it becomes a link while a batch waits on the writer, so the catalogue names only files in the tree; a rebuild removes the old claim, catalogue and index first",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2875,7 +2875,7 @@
     },
     {
       "id": "A1.5.projection.escape",
-      "title": "Task text in the projection's Markdown is text, never markup: a one-line text has HTML, links, entity references, block markers and a heading's closing run escaped, a text of more lines is verbatim in a fence none of its lines closes, index.md escapes task, area and project titles, the catalogue keeps the exact text, and front-matter values YAML 1.2 reads as numbers are quoted",
+      "title": "Task text in the projection's Markdown is shown, never run: a one-line text has HTML, links, entity references, block markers and a heading's closing run escaped, a text of more lines is verbatim in a fence none of its lines closes, index.md escapes task, area and project titles, the catalogue keeps the exact text, and front-matter values YAML 1.2 reads as numbers are quoted",
       "source": "A1 3.13, A3 3.9.8, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",

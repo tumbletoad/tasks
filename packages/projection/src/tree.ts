@@ -227,8 +227,11 @@ const pause = (ms: number): Promise<void> =>
 type Found =
   { kind: "missing" } | { kind: "file"; sha256: string; stats: Stats } | { kind: "other" };
 
-/** The named points a batch's file work passes, for the crash tests (projector.ts). */
-export type FilePoint = "rename" | "renamed";
+/**
+ * The named points a batch's file work passes, for the crash tests (projector.ts): before a
+ * file's rename (its new content written), after what stood there was rescued, after the rename.
+ */
+export type FilePoint = "rename" | "rescued" | "renamed";
 
 export interface TreeOptions {
   /** The space's folder: rescued files go to its `exchange/rescued/`. */
@@ -248,8 +251,6 @@ export class Tree {
   readonly #now: () => number;
   readonly #win: boolean;
   readonly #at: TreeOptions["at"];
-  /** Folders found real in this batch, or made by it. */
-  #folders = new Set<string>();
   /** Folders of the tree found missing, or not real (a link, a file), in this batch. */
   #lost = new Set<string>();
   /** The folders the record has files in (projector.ts): a write never makes one of them again. */
@@ -266,9 +267,8 @@ export class Tree {
     this.#at = options.at;
   }
 
-  /** Starts a batch: folders are checked again, and rescues go to a new folder. */
+  /** Starts a batch: lost folders are counted afresh, and rescues go to a new folder. */
   newBatch(): void {
-    this.#folders = new Set();
     this.#lost = new Set();
     this.#box = undefined;
     this.#rescued = 0;
@@ -331,20 +331,20 @@ export class Tree {
   }
 
   /**
-   * Whether every folder of `path` is a real folder of the tree, each checked with lstat. The first
-   * that is not (missing, a link, a file) is reported lost, and nothing below it is looked at.
+   * Whether every folder of `path` is a real folder of the tree, each checked with lstat at every
+   * access, never from an earlier look: a batch awaits the writer, and a folder can become a link
+   * meanwhile. The first that is not (missing, a link, a file) is reported lost, and nothing below
+   * it is looked at.
    */
   #inTree(path: string): boolean {
     let rel = "";
     for (const part of path.split("/").slice(0, -1)) {
       rel = rel === "" ? part : `${rel}/${part}`;
-      if (this.#folders.has(rel)) continue;
       const stats = lstatSync(join(this.#dir, ...rel.split("/")), { throwIfNoEntry: false });
       if (stats?.isDirectory() !== true) {
         this.#lost.add(rel);
         return false;
       }
-      this.#folders.add(rel);
     }
     return true;
   }
@@ -410,7 +410,6 @@ export class Tree {
     let rel = "";
     for (const part of folder.split("/")) {
       rel = rel === "" ? part : `${rel}/${part}`;
-      if (this.#folders.has(rel)) continue;
       const abs = join(this.#dir, ...rel.split("/"));
       const stats = lstatSync(abs, { throwIfNoEntry: false });
       // lstat: a link, a junction included, is never a folder here.
@@ -424,14 +423,15 @@ export class Tree {
       }
       if (stats !== undefined && !real) this.#rescueAt(rel, abs);
       if (!real) makeDir(abs, FOLDER_MODE, { recursive: false });
-      this.#folders.add(rel);
     }
   }
 
   /**
    * Writes `content` at `path`, read-only. What is there is replaced only when its hash is one
-   * `ours` accepts or the new content's own; anything else is rescued first. Returns whether it
-   * wrote (`same`: the file already held exactly this).
+   * `ours` accepts or the new content's own; anything else is rescued first. The new file is
+   * written before anything is rescued, and a rescued file is put back when the rename then fails,
+   * so a failed write leaves the path as it was: a path the catalogue names stays there. Returns
+   * whether it wrote (`same`: the file already held exactly this).
    */
   async place(
     path: string,
@@ -449,7 +449,6 @@ export class Tree {
       return "same";
     }
     const replacing = found.kind === "file" && ours(found.sha256);
-    if (found.kind !== "missing" && !replacing) this.#rescueAt(path, abs);
     const temp = join(dirname(abs), `.${basename(abs)}.tmp-${hex()}`);
     // Exclusive and read-only from the start: the creating descriptor still writes (POSIX), and
     // Windows sets the read-only attribute on the new file.
@@ -467,19 +466,39 @@ export class Tree {
       throw error;
     }
     closeSync(fd);
+    let rescued: string | undefined;
     try {
       await this.#at?.("rename", path);
+      if (found.kind !== "missing" && !replacing) {
+        rescued = this.#rescueAt(path, abs);
+        await this.#at?.("rescued", path);
+      }
       if (replacing) this.#writable(abs);
       await this.#rename(temp, abs);
     } catch (error) {
       this.#unlink(temp);
-      if (replacing && lstatSync(abs, { throwIfNoEntry: false })?.isFile() === true) {
+      if (rescued !== undefined) this.#putBack(rescued, abs);
+      else if (replacing && lstatSync(abs, { throwIfNoEntry: false })?.isFile() === true) {
         this.#readOnlyAgain(abs);
       }
       throw error;
     }
     await this.#at?.("renamed", path);
     return "written";
+  }
+
+  /**
+   * Puts what was rescued from `abs` back, when what was to replace it could not be placed. When
+   * that fails too it stays in the rescue folder, kept and counted.
+   */
+  #putBack(rescued: string, abs: string): void {
+    try {
+      if (lstatSync(abs, { throwIfNoEntry: false }) !== undefined) return;
+      renameSync(rescued, abs);
+      this.#rescued -= 1;
+    } catch {
+      // Kept where it was rescued to.
+    }
   }
 
   /**
@@ -583,7 +602,7 @@ export class Tree {
    * file is copied, then removed, and the copy goes again when the original cannot; anything else
    * there fails the move.
    */
-  #rescueAt(path: string, abs: string): void {
+  #rescueAt(path: string, abs: string): string {
     const box = this.#rescueBox();
     let at = box;
     for (const part of path.split("/").slice(0, -1)) {
@@ -615,6 +634,7 @@ export class Tree {
     }
     if (stats.isFile()) chmodSync(dest, 0o600);
     this.#rescued += 1;
+    return dest;
   }
 
   // -------------------------------------------------------------------------------------------

@@ -169,7 +169,8 @@ export function projectionFolder(
     platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
   const within = (inner: string, outer: string): boolean => {
     const rel = relative(fold(outer), fold(inner));
-    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    // Only a `..` component is the way up: `..fixture` is a name inside.
+    return rel === "" || (!/^\.\.([\\/]|$)/.test(rel) && !isAbsolute(rel));
   };
   const realSpace = physical(space);
   for (const [s, t] of [
@@ -406,11 +407,13 @@ export class Projector {
 
   /** One batch (see the header). Throws when the batch could not run, or its record not be written. */
   async step(): Promise<StepReport> {
-    if (this.#unsaved) {
+    // The folder first: nothing, the record included, is written where a link stands, and a folder
+    // made again holds no record to bring up to date: the tree is rebuilt.
+    const made = this.#tree.prepare();
+    if (this.#unsaved && !made) {
       this.#save();
       this.#tree.dropJournal();
     }
-    const made = this.#tree.prepare();
     const read = readBatch(this.#conn, this.#batch);
     this.#tree.newBatch();
     if (

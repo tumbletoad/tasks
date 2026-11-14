@@ -364,7 +364,7 @@ function fences(text: string): { outside: string[]; blocks: string[][]; closed: 
 /** A line with its backslash escapes taken out: what is left is what CommonMark reads as markup. */
 const unescaped = (line: string): string => line.replace(/\\[!-/:-@[-`{-~]/g, "");
 
-describe("[A1.5.projection.escape] task text is text in the view, never markup: one line escaped, more lines fenced, the catalogue exact", () => {
+describe("[A1.5.projection.escape] task text in the view is shown, never run: one line escaped, more lines fenced, the catalogue exact", () => {
   const hostile = task({
     title: "Fixture <img src=x onerror=fixture()> [link](javascript:fixture()) &#8238; \\<b> #",
     summary: "```js",

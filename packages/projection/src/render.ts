@@ -12,10 +12,13 @@
 // - Then the title as H1, the summary, and the sections Context, Sources, Notes and Log. A
 //   completed or archived task leads with Outcome and Learnings and keeps the rest under Record.
 //   Only notes for every audience are read (read.ts), so no other note is ever written.
-// - **Task text is text, never markup** (A1 3.13 "Task text"): agents write most of it, some from
-//   mail and tickets, and a Markdown viewer would run or load what it says. A text of one line is
-//   written with what could start markup escaped (mdLine); a text of more lines goes verbatim into a
-//   fenced block that no line of it can close (fenced). The catalogue holds every text exactly.
+// - **Task text is shown, never run** (A1 3.13): agents write most of it, some from mail and
+//   tickets, so a Markdown viewer must run or load nothing it says: no HTML, no link or image whose
+//   target is not the text shown, no entity, no structure the projection did not write. A text of
+//   one line is written with what could start those escaped (mdLine); a text of more lines goes
+//   verbatim into a fenced block that no line of it can close (fenced). Emphasis, code spans and a
+//   GFM viewer's link on a bare URL, which shows its own target, may still render. The catalogue
+//   holds every text exactly.
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { formatEntryRef, formatTaskRef } from "@tasks/storage";
 

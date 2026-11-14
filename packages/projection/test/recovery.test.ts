@@ -54,6 +54,23 @@ afterEach(() => {
 
 const LINK = process.platform === "win32" ? "junction" : "dir";
 
+/**
+ * Moves a folder. Windows refuses while another program (a virus scanner) holds a file in it that
+ * was just written, so it is tried again, up to 50 times over at least 5 s.
+ */
+async function moveFolder(from: string, to: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      if (attempt >= 50 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
+
 interface Line {
   readonly id: string;
   readonly path: string;
@@ -137,6 +154,36 @@ describe("[A1.5.projection.recovery] the record describes the disk: an unwritten
     await after.start();
     await settle(after);
     expectClean(w.dir);
+    expectCatalogInTree(w.dir);
+    checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  test("a record still to be written goes nowhere but the projection's folder: a link in its place is refused, a removed folder rebuilt", async () => {
+    const first = w.projector();
+    await first.start();
+    await settle(first);
+    const [a, b] = activeIds();
+    w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Unsaved fixture" } }]);
+    vi.spyOn(Tree.prototype, "writeRecord").mockImplementationOnce(() => {
+      throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
+    });
+    await expect(first.step()).rejects.toMatchObject({ code: "ENOSPC" });
+    vi.restoreAllMocks();
+    // The projection's folder moved away and a link put in its place.
+    const moved = join(root, `moved-view-${String(n)}`);
+    await moveFolder(w.dir, moved);
+    symlinkSync(moved, w.dir, LINK);
+    const record = readFileSync(join(moved, RECORD_FILE), "utf8");
+    await expect(first.step()).rejects.toMatchObject({ code: "ENOTDIR" });
+    expect(readFileSync(join(moved, RECORD_FILE), "utf8")).toBe(record);
+    expect(existsSync(join(moved, JOURNAL_FILE))).toBe(true);
+    // The link gone, and the folder with it: the projection makes it again and rebuilds.
+    // Not recursive: only the link goes, never what it points to.
+    rmSync(w.dir, { force: true });
+    expect(existsSync(w.dir)).toBe(false);
+    w.submit([{ kind: "task.patch", task: b ?? "", set: { summary: "After the link" } }]);
+    await settle(first);
     expectCatalogInTree(w.dir);
     checkWatermark(w.dir, w.reader);
     expectSameTree(treeOf(w.dir), await freshRender());
@@ -228,7 +275,7 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     await projector.start();
     await settle(projector);
     const outside = join(root, `moved-open-${String(n)}`);
-    renameSync(join(w.dir, "open"), outside);
+    await moveFolder(join(w.dir, "open"), outside);
     const before = readdirSync(outside).sort();
     symlinkSync(outside, join(w.dir, "open"), LINK);
     const [a] = activeIds();
@@ -287,6 +334,36 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     expectClean(w.dir);
     expectCatalogInTree(w.dir);
     checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  test("open/ swapped for a link while a batch waits on the writer: the batch's removals never go through it", async () => {
+    const first = w.projector();
+    await first.start();
+    await settle(first);
+    const [a] = activeIds();
+    const old = recordTasks(w.dir)[a ?? ""]?.path ?? "";
+    // Renamed: the batch writes its new file in open/, then retires the old one there.
+    w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Swapped mid-batch" } }]);
+    const outside = join(root, `swapped-open-${String(n)}`);
+    let swapped = false;
+    const projector = w.projector({
+      at: async (point) => {
+        // Once, in the first batch, while it waits on the writer.
+        if (point !== "reported" || swapped) return;
+        swapped = true;
+        await moveFolder(join(w.dir, "open"), outside);
+        symlinkSync(outside, join(w.dir, "open"), LINK);
+      },
+    });
+    await projector.start();
+    await projector.step();
+    // The old file the rename left behind is still where the link points: nothing was removed there.
+    expect(existsSync(join(outside, old.split("/").at(-1) ?? ""))).toBe(true);
+    await settle(projector);
+    expect(lstatSync(join(w.dir, "open")).isDirectory()).toBe(true);
+    expect(existsSync(join(outside, old.split("/").at(-1) ?? ""))).toBe(true);
+    expectCatalogInTree(w.dir);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
