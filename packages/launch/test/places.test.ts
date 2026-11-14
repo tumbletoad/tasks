@@ -266,6 +266,16 @@ describe("[A1.3.15.places.resolve] resolve(): one folder or a reason, never anot
       expect(await resolvePlace({ root: "work", path: "lumen/portal" }, shouting)).toEqual(
         resolved(portal, "work"),
       );
+      // Two spellings of one root folder are one folder: `tasks roots add` finds it named, and
+      // two such roots written by hand leave the folder no one place.
+      const loud = join(base.toUpperCase(), "WORK");
+      expect(await rootNaming(loud, roots)).toEqual({ status: "named", root: "work" });
+      const twice: RootFolder[] = [...roots, { id: "loud", path: loud }];
+      expect(await placeOf(portal, twice)).toEqual({
+        status: "failed",
+        reason: "ambiguous_root",
+        roots: ["loud", "work"],
+      });
       // A sibling whose name only starts like the root's is not inside it.
       const workshop = folder(base, "WorkShop");
       expect(await placeOf(workshop, roots)).toMatchObject({ reason: "outside_roots" });
