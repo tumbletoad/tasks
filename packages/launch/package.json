@@ -6,8 +6,10 @@
   "exports": {
     ".": "./src/index.ts",
     "./execution-store": "./src/store.ts",
+    "./helpers": "./src/helpers.ts",
     "./places": "./src/places.ts",
     "./process": "./src/process.ts",
+    "./shell-line": "./src/shell-line.ts",
     "./shim-wire": "./src/shim/wire.ts",
     "./execution-store-contract": "./test/execution-store-contract.ts",
     "./memory-store": "./test/memory-store.ts"

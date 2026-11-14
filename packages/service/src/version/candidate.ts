@@ -17,11 +17,11 @@
 // touches a running service, its socket, its spaces or its files, so an update (M6) can test its
 // candidate while the old version still serves. Details name codes and fixed sentences only, never
 // a path or a value of the environment.
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { ENV_PREFIX } from "@tasks/brand";
+import { startHelper, type Helper } from "@tasks/launch/helpers";
 import { openRpc } from "@tasks/bridge/protocol";
 import {
   DEFAULT_DRIVER,
@@ -343,28 +343,40 @@ export async function bridgeCheck(options: CandidateOptions): Promise<CandidateC
   } catch (error) {
     return { id, status: "fail", detail: `No temporary folder for the check: ${codeOf(error)}.` };
   }
-  const child = spawn(file, [...args, "mcp"], {
-    env: bridgeEnv(options.env ?? process.env, join(dir, "home")),
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
-    cwd: dir,
-  });
-  const exit = new Promise<number | null>((resolve) => {
-    child.once("exit", (code) => {
-      resolve(code);
+  // A helper of the runner (@tasks/launch helpers.ts, A3 3.14), as every program doctor starts: it
+  // ends with what it started at its deadline and when this process exits.
+  let helper: Helper;
+  try {
+    helper = startHelper([file, ...args, "mcp"], {
+      env: bridgeEnv(options.env ?? process.env, join(dir, "home")),
+      cwd: dir,
+      deadlineMs: (options.timeoutMs ?? CANDIDATE_TIMEOUT_MS) + 5_000,
+      stdin: true,
+      stdout: true,
+      stderr: true,
     });
-    child.once("error", () => {
-      resolve(null);
-    });
-  });
+  } catch (error) {
+    remove(dir);
+    return { id, status: "fail", detail: `The bridge check failed: ${codeOf(error)}.` };
+  }
+  const { child } = helper;
+  const { stdin, stdout, stderr } = child;
+  const exit = helper.ended;
+  if (stdin === null || stdout === null || stderr === null) {
+    // Asked for as pipes, so never: the check fails rather than guess.
+    helper.stop();
+    await exit;
+    remove(dir);
+    return { id, status: "fail", detail: "The bridge check failed: no_pipes." };
+  }
   try {
     const run = async (): Promise<CandidateCheck> => {
       const replies = new Map<unknown, Message>();
       const waiting = new Map<unknown, () => void>();
       const seen = { stray: false };
       let pending = "";
-      child.stderr.resume();
-      child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr.resume();
+      stdout.setEncoding("utf8").on("data", (chunk: string) => {
         pending += chunk;
         for (let end = pending.indexOf("\n"); end !== -1; end = pending.indexOf("\n")) {
           const line = pending.slice(0, end).replace(/\r$/, "");
@@ -385,13 +397,13 @@ export async function bridgeCheck(options: CandidateOptions): Promise<CandidateC
           }
         }
       });
-      child.stdin.on("error", () => undefined);
+      stdin.on("error", () => undefined);
       const ask = async (message: Message): Promise<Message | undefined> => {
         const replied =
           message["id"] === undefined
             ? Promise.resolve()
             : new Promise<void>((resolve) => waiting.set(message["id"], resolve));
-        child.stdin.write(`${JSON.stringify(message)}\n`);
+        stdin.write(`${JSON.stringify(message)}\n`);
         await Promise.race([replied, exit]);
         return replies.get(message["id"]);
       };
@@ -407,7 +419,7 @@ export async function bridgeCheck(options: CandidateOptions): Promise<CandidateC
       });
       await ask({ jsonrpc: "2.0", method: "notifications/initialized" });
       const tools = await ask({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-      child.stdin.end();
+      stdin.end();
       const code = await exit;
       if (init?.["result"] === undefined) {
         return { id, status: "fail", detail: "The bridge did not answer initialize." };
@@ -435,7 +447,7 @@ export async function bridgeCheck(options: CandidateOptions): Promise<CandidateC
   } catch (error) {
     return { id, status: "fail", detail: `The bridge check failed: ${codeOf(error)}.` };
   } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) helper.stop();
     await exit;
     remove(dir);
   }

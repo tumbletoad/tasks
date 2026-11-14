@@ -42,6 +42,11 @@ export interface LiveState {
 export interface Touched {
   readonly tasks: ReadonlySet<string>;
   readonly launches: boolean;
+  /**
+   * A snapshot replaced the working set: what changed before it is unknown, so a view of a task
+   * the working set does not hold (a completed one) reads it again too.
+   */
+  readonly reset: boolean;
 }
 
 /**
@@ -292,7 +297,7 @@ export class LiveStore {
         if (change.task !== undefined) touched.add(change.task);
         if (change.type === "launch") launches = true;
       }
-      for (const listener of this.#touchListeners) listener({ tasks: touched, launches });
+      for (const listener of this.#touchListeners) listener({ tasks: touched, launches, reset });
       for (const listener of this.#changeListeners) listener({ changes, reset });
     }
   }

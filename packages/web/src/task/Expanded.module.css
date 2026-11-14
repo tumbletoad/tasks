@@ -1,32 +1,430 @@
 /*
- * The expanded row's body until M5.06 (A5 3.7, 3.9): the strip of instances and Copy, then the
- * thread of log entries and launch receipts, oldest first. Tokens only.
+ * The expanded task's body (A5 3.7, 3.20): content 1fr and facts 252 px with a 40 px gap, then
+ * the composer's place across both. The facts come first in the document, so below 1,024 px the
+ * one column reads header, facts, content, composer in document order; at full width the grid
+ * places them, and `order` is never used. Tokens only.
  */
+
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 252px;
+  grid-template-areas:
+    "content facts"
+    "composer composer";
+  column-gap: 40px;
+  padding-top: 6px;
+}
+
+.content {
+  grid-area: content;
+  min-width: 0;
+}
+
+/* Context: the agent's understanding, in text-2, clamped at ten lines until More. */
+.context {
+  max-width: 62ch;
+  color: var(--k-text-2);
+  line-height: 1.3125rem;
+}
+
+.context > [data-clamped="true"] {
+  max-height: calc(10 * 1.3125rem);
+  overflow: hidden;
+}
+
+.outcome {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: 62ch;
+  margin-bottom: 12px;
+  color: var(--k-text);
+  line-height: 1.3125rem;
+}
+
+/* Markdown from a task: calm, small blocks; never larger than the body text (A5 3.1 item 6). */
+.body [data-md] > :first-child {
+  margin-top: 0;
+}
+
+.body [data-md] > :last-child {
+  margin-bottom: 0;
+}
+
+.body [data-md] p,
+.body [data-md] ul,
+.body [data-md] ol,
+.body [data-md] blockquote,
+.body [data-md] pre {
+  margin: 0 0 8px;
+}
+
+.body [data-md] ul,
+.body [data-md] ol {
+  padding-inline-start: 20px;
+}
+
+.body [data-md] blockquote {
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--k-line-strong);
+  color: var(--k-muted);
+}
+
+.body [data-md] code,
+.mono {
+  font-family: var(--k-font-mono);
+  font-size: 0.78125rem;
+  font-variant-ligatures: none;
+}
+
+.body [data-md] pre {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--k-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.body [data-md] a,
+.links a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--k-line-strong);
+  text-underline-offset: 2px;
+}
+
+.body [data-md] a:hover,
+.links a:hover {
+  text-decoration-color: currentColor;
+}
+
+.more {
+  margin-top: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font-size: 0.8125rem;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.more:hover {
+  color: var(--k-text);
+}
+
+/* Links: one line each, icon first. */
+.links {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.links:empty {
+  display: none;
+}
+
+.link {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--k-text);
+  line-height: 1.3125rem;
+}
+
+.link > [data-fact] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--k-muted);
+  transform: translateY(3px);
+}
+
+.icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.key {
+  margin-inline-end: 6px;
+  color: var(--k-muted);
+}
+
+.muted {
+  color: var(--k-muted);
+}
+
+.muted + .muted,
+a + .muted,
+[dir] + .muted {
+  margin-inline-start: 4px;
+}
+
+.acts {
+  display: inline-flex;
+  gap: 2px;
+  margin-inline-start: 4px;
+  transform: translateY(3px);
+}
+
+.act {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 0.75rem;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.act:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.act svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hairline {
+  height: 1px;
+  margin: 18px 0 14px;
+  border: 0;
+  background: var(--k-line);
+}
+
+.line {
+  margin: 0;
+  color: var(--k-muted);
+}
+
+/* The thread: entries oldest first, the last six until Earlier. */
+.earlier {
+  margin: 0 0 10px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font-size: 0.8125rem;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.earlier:hover:not(:disabled) {
+  color: var(--k-text);
+}
+
+.earlier:disabled {
+  cursor: default;
+}
+
+.thread {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: start;
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--k-line-strong);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 0.75rem;
+  color: var(--k-text-2);
+}
+
+/* A session's mark is its instance's monogram in a small box, outlined in its ring colour. */
+.entry[data-entry="session"] .mark {
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--k-ring, var(--k-control));
+}
+
+.entry[data-ring="1"] {
+  --k-ring: var(--k-slot-1);
+}
+.entry[data-ring="2"] {
+  --k-ring: var(--k-slot-2);
+}
+.entry[data-ring="3"] {
+  --k-ring: var(--k-slot-3);
+}
+.entry[data-ring="4"] {
+  --k-ring: var(--k-slot-4);
+}
+.entry[data-ring="5"] {
+  --k-ring: var(--k-slot-5);
+}
+.entry[data-ring="6"] {
+  --k-ring: var(--k-slot-6);
+}
+.entry[data-ring="7"] {
+  --k-ring: var(--k-slot-7);
+}
+.entry[data-ring="8"] {
+  --k-ring: var(--k-slot-8);
+}
+
+.entry[data-state="confirmed"] .mark {
+  box-shadow: inset 0 0 0 1px var(--k-accent);
+  color: var(--k-accent);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+}
+
+.meta > * + *::before {
+  content: "·";
+  margin-inline-end: 6px;
+}
+
+.who {
+  font-weight: 500;
+  color: var(--k-text-2);
+}
+
+.when {
+  font-variant-numeric: tabular-nums;
+}
+
+.text {
+  margin: 1px 0 0;
+  color: var(--k-text);
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.state {
+  color: var(--k-text-2);
+}
+
+.entry[data-state="confirmed"] .state::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 8px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background: var(--k-accent);
+}
+
+.entry[data-state="failed"] .state {
+  color: var(--k-late);
+}
+
+.entry[data-state="unknown"] .state {
+  color: var(--k-due);
+}
+
+/* Entry actions show on hover and on focus (A5 3.7, 3.22: what hover shows, focus shows). */
+.entry .acts {
+  opacity: 0;
+  transform: none;
+}
+
+.entry:hover .acts,
+.entry:focus-within .acts {
+  opacity: 1;
+}
+
+/* Facts: short muted labels, values in text-2. Nothing is outlined until it can be edited. */
+.facts {
+  grid-area: facts;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  row-gap: 10px;
+  column-gap: 8px;
+  align-content: start;
+  align-items: baseline;
+  margin: 0;
+  padding-top: 2px;
+}
+
+.facts dt {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--k-muted);
+}
+
+.facts dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k-text-2);
+  overflow-wrap: anywhere;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 7px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--k-slot);
+}
+
+/* The composer's place, across both columns. Until M5.07: a button per instance, then Copy. */
+.composer {
+  grid-area: composer;
+  margin-top: 18px;
+}
 
 .strip {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 4px 0 12px;
 }
 
 .button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
-  padding: 2px 12px 2px 6px;
-  border: 1px solid var(--k-line-strong);
-  border-radius: 999px;
+  min-height: 30px;
+  padding: 2px 12px 2px 8px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--k-line-strong);
   background: transparent;
   font-size: 0.8125rem;
   color: var(--k-text-2);
   cursor: pointer;
   transition: background-color var(--k-fast) var(--k-ease);
-}
-
-.button:last-child {
-  padding-inline-start: 12px;
 }
 
 .button:hover {
@@ -38,127 +436,98 @@
   cursor: default;
 }
 
+.button svg {
+  width: 14px;
+  height: 14px;
+}
+
 .glyph {
   display: inline-grid;
   place-items: center;
   min-width: 24px;
   height: 18px;
   padding: 0 3px;
-  border: 1px solid var(--k-control);
   border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--k-ring, var(--k-control));
   font-size: 0.625rem;
   font-weight: 700;
   line-height: 0.75rem;
 }
 
-.button[data-ring="1"] .glyph {
-  border-color: var(--k-slot-1);
+.button[data-ring="1"] {
+  --k-ring: var(--k-slot-1);
 }
-.button[data-ring="2"] .glyph {
-  border-color: var(--k-slot-2);
+.button[data-ring="2"] {
+  --k-ring: var(--k-slot-2);
 }
-.button[data-ring="3"] .glyph {
-  border-color: var(--k-slot-3);
+.button[data-ring="3"] {
+  --k-ring: var(--k-slot-3);
 }
-.button[data-ring="4"] .glyph {
-  border-color: var(--k-slot-4);
+.button[data-ring="4"] {
+  --k-ring: var(--k-slot-4);
 }
-.button[data-ring="5"] .glyph {
-  border-color: var(--k-slot-5);
+.button[data-ring="5"] {
+  --k-ring: var(--k-slot-5);
 }
-.button[data-ring="6"] .glyph {
-  border-color: var(--k-slot-6);
+.button[data-ring="6"] {
+  --k-ring: var(--k-slot-6);
 }
-.button[data-ring="7"] .glyph {
-  border-color: var(--k-slot-7);
+.button[data-ring="7"] {
+  --k-ring: var(--k-slot-7);
 }
-.button[data-ring="8"] .glyph {
-  border-color: var(--k-slot-8);
+.button[data-ring="8"] {
+  --k-ring: var(--k-slot-8);
 }
 
 .button[data-state="connected"] .glyph {
-  border-color: var(--k-accent);
+  box-shadow: inset 0 0 0 1px var(--k-accent);
   color: var(--k-accent);
 }
 
-.line {
-  margin: 12px 0;
-  color: var(--k-muted);
+/* Below 1,024 px: one column in document order, the facts as a wrapping line of pills. */
+@media (max-width: 1023px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "facts"
+      "content"
+      "composer";
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .facts dt {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .facts dd {
+    padding: 2px 10px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--k-line-strong);
+  }
 }
 
-.thread {
-  list-style: none;
-  margin: 0;
-  padding: 12px 0 0;
-  border-top: 1px solid var(--k-line);
-}
-
-.entry {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  column-gap: 12px;
-  padding: 6px 0;
-}
-
-.mark {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--k-line-strong);
-  border-radius: 6px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: var(--k-text-2);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.8125rem;
-}
-
-.who {
-  font-weight: 500;
-}
-
-.when {
-  color: var(--k-muted);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.text {
-  margin: 2px 0 0;
-  color: var(--k-text-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.entry[data-state="confirmed"] .text::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-inline-end: 8px;
-  border-radius: 50%;
-  vertical-align: 0.1em;
-  background: var(--k-accent);
-}
-
-.entry[data-state="failed"] .text {
-  color: var(--k-late);
-}
-
-.entry[data-state="unknown"] .text {
-  color: var(--k-due);
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
 }
 
 @media (forced-colors: active) {
   .glyph,
-  .mark {
-    border-color: ButtonText;
+  .mark,
+  .button {
+    border: 1px solid ButtonText;
+    box-shadow: none;
   }
 }
