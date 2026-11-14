@@ -404,6 +404,20 @@ describe("[A1.3.15.roots.add] tasks roots add: the user's, through machine.toml'
       expect(error).toMatchObject({ code: "invalid_input", data: { issues: [{ path: field }] } });
       expect(JSON.stringify(error)).not.toContain(basename(root));
     }
+    // The root's folder spelled in another case: where the volume folds case it is the same
+    // folder, which a root names already; where it keeps case it is not there.
+    const loud = join(root, basename(work).toUpperCase());
+    let folds = false;
+    try {
+      const [a, b] = [statSync(loud, { bigint: true }), statSync(work, { bigint: true })];
+      folds = a.dev === b.dev && a.ino === b.ino;
+    } catch {
+      // Not there: the volume keeps case.
+    }
+    expect(await refusal(user.call("roots/add", { id: "loud", path: loud }))).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "path" }], ...(folds ? { roots: ["work"] } : {}) },
+    });
     expect(readFileSync(file, "utf8")).toBe(before);
     expect(statSync(file).mtimeMs).toBe(mtime);
   });
