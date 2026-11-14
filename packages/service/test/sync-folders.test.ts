@@ -627,6 +627,10 @@ describe("[A1.5.sync.statfs] network types from captured statfs samples", () => 
       driveFsTargets: "",
       drives: [{ root: "C:\\", type: "Fixed", format: "NTFS", label: "" }],
     });
+    // Each field is its exact text: a leading U+FEFF is part of it, not a byte order mark.
+    expect(parseWindowsFacts(output(`onedrive ${b64("\uFEFFC:\\x")}`))?.oneDriveAccounts).toEqual([
+      "\uFEFFC:\\x",
+    ]);
     // Anything else is no facts, so the folder is unchecked, never local.
     for (const bad of [
       "not the run's output",

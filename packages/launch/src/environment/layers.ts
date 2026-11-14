@@ -353,11 +353,16 @@ export const REGISTRY_SCRIPT =
 
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
-/** A base64 field of a helper's line: its UTF-8 text, or undefined when it is not exactly that. */
+/**
+ * A base64 field of a helper's line: its UTF-8 text, or undefined when it is not exactly that. A
+ * leading U+FEFF is the field's own character, not a byte order mark (`ignoreBOM`), so it is kept.
+ */
 export function base64Text(field: string): string | undefined {
   if (!BASE64.test(field)) return undefined;
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(field, "base64"));
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      Buffer.from(field, "base64"),
+    );
   } catch {
     return undefined;
   }
@@ -365,7 +370,8 @@ export function base64Text(field: string): string | undefined {
 
 /**
  * The reader's output, checked: both keys' values, or undefined when it is not exactly that (a
- * line of another shape, a field that is not base64 of UTF-8, or no `end`: a cut-off run).
+ * line of another shape or with a field missing, a field that is not base64 of UTF-8, or no `end`:
+ * a cut-off run). An empty name or value is still a field: the empty string's base64.
  */
 export function parseRegistryOutput(
   text: string,
@@ -377,11 +383,13 @@ export function parseRegistryOutput(
     user: new Map<string, RegistryValue>(),
   };
   for (const line of lines) {
-    const [section, kind, name, value, ...rest] = line.split(" ");
-    if (rest.length > 0 || (section !== "system" && section !== "user")) return undefined;
+    const fields = line.split(" ");
+    if (fields.length !== 4) return undefined;
+    const [section = "", kind = "", name = "", value = ""] = fields;
+    if (section !== "system" && section !== "user") return undefined;
     if (kind !== "String" && kind !== "ExpandString") return undefined;
-    const decodedName = base64Text(name ?? "");
-    const decodedValue = base64Text(value ?? "");
+    const decodedName = base64Text(name);
+    const decodedValue = base64Text(value);
     if (decodedName === undefined || decodedValue === undefined) return undefined;
     sections[section].set(decodedName, { kind, value: decodedValue });
   }

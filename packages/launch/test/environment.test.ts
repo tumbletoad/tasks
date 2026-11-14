@@ -347,10 +347,19 @@ describe("[A4.5.environment.layers] the session layer, the snapshot's parse and 
     expect(read?.system.get("Path")).toEqual({ kind: "ExpandString", value: "C:\\é" });
     expect(read?.user.get("TOOL")).toEqual({ kind: "String", value: "" });
     expect(parseRegistryOutput(output())).toEqual({ system: new Map(), user: new Map() });
+    // Each field is its exact text: a leading U+FEFF is part of a name or a value, not a byte
+    // order mark, so two names never fold into one.
+    const marked = parseRegistryOutput(
+      output(`user String ${b64("﻿TOOL")} ${b64("﻿x")}`, `user String ${b64("TOOL")} ${b64("y")}`),
+    );
+    expect(marked?.user.get("﻿TOOL")).toEqual({ kind: "String", value: "﻿x" });
+    expect(marked?.user.get("TOOL")).toEqual({ kind: "String", value: "y" });
     for (const bad of [
       "not the reader's output",
       // Cut off before its end.
       `system String ${b64("A")} ${b64("1")}`,
+      // A field missing, not empty: an empty one is still written, as an empty field.
+      output(`user String ${b64("X")}`),
       output(`user Binary ${b64("X")} ${b64("")}`),
       output(`machine String ${b64("X")} ${b64("1")}`),
       output(`user String ${b64("X")} ${b64("1")} extra`),
