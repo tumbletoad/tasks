@@ -98,6 +98,7 @@ import {
   type Operation,
   type Placement,
   type SourceFields,
+  type TaskLifecycle,
   type TaskValues,
   type TaskWrapUp,
   type WriteErrorCode,
@@ -1087,6 +1088,8 @@ export class SpaceWriter {
      * the task as they leave it, so a restored task takes changes and a deleted one refuses them.
      */
     const tombstones = new Map<Id<"t">, boolean>();
+    /** The lifecycle earlier operations leave each task in, as execution will find it. */
+    const lifecycles = new Map<Id<"t">, TaskLifecycle>();
 
     const ops = request.ops.map((op, i): StagedOp => {
       const values: TaskValues =
@@ -1305,12 +1308,15 @@ export class SpaceWriter {
               : op.kind === "task.archive"
                 ? "archived"
                 : "active";
-          // `if_active` on a task finished at the start writes nothing, so it touches nothing. An
-          // earlier operation that makes it active again touched the same fields (A1 3.7).
+          // `if_active` on a task the request finds finished, as its earlier operations leave it,
+          // writes nothing, so it touches nothing: an earlier finish touched the same fields, and
+          // the base is checked once against the start (A1 3.7). Execution sees the same state, so
+          // what the brake counts is what the commit finishes (A3 3.8.3).
           const kept =
             op.kind !== "task.reopen" &&
             op.if_active === true &&
-            (tasks.get(target)?.lifecycle ?? "active") !== "active";
+            (lifecycles.get(target) ?? tasks.get(target)?.lifecycle ?? "active") !== "active";
+          if (!kept) lifecycles.set(target, next);
           if (next !== "active" && !kept) affected.add(target);
           // A later draft of the request sees the lifecycle this leaves (A1 3.6).
           dedupe.lifecycle(target, next);

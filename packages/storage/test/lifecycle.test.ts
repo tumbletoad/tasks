@@ -110,6 +110,29 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     const other = create();
     expectStatus(submit([{ kind: "task.archive", task: other, if_active: true }]), "applied");
     expect(task(other)["lifecycle"]).toBe("archived");
+    // It judges the task as the request's earlier operations leave it: reopened, the task is
+    // finished, and the finish counts for the burst brake (A3 3.8.3).
+    for (const kind of ["task.complete", "task.archive"] as const) {
+      const done = create();
+      expectStatus(submit([{ kind: "task.complete", task: done }]), "applied");
+      const result = submit([
+        { kind: "task.reopen", task: done },
+        { kind, task: done, if_active: true },
+      ]);
+      expectStatus(result, "applied");
+      expect(task(done)["lifecycle"]).toBe(kind === "task.complete" ? "completed" : "archived");
+      expect(one("SELECT affected FROM commits WHERE seq = $seq", { seq: result.seq })).toBe(1);
+    }
+    // Finished by an earlier operation, the task is left as that one leaves it.
+    const twice = create();
+    const result = submit([
+      { kind: "task.complete", task: twice },
+      { kind: "task.archive", task: twice, if_active: true },
+    ]);
+    expectStatus(result, "applied");
+    expect(result.results.map((r) => r.status)).toEqual(["updated", "unchanged"]);
+    expect(task(twice)["lifecycle"]).toBe("completed");
+    expect(one("SELECT affected FROM commits WHERE seq = $seq", { seq: result.seq })).toBe(1);
   });
 
   test("wrap-up: outcome, learnings and the mark on a completed or archived task, never an active one", () => {
