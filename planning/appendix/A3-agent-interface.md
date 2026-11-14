@@ -199,7 +199,7 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 
 - Every variant carries `bound`. A connection that cannot hold a binding (the UI, the CLI) loads the task with `bound: false` and uses nothing up (3.7.3).
 - A routine's launch reference binds the space, not a task, so its result is the status overview (`view: "status"`, M6).
-- The `outcome` section holds the outcome, the wrap-up state and the task's own learnings in their order (A1 3.11.2). The learnings go on the page that starts the outcome: a page that continues a long outcome has none, so each learning comes back once. The digest's `learnings` are related learnings from other tasks (3.9.7, M4.03), never the task's own.
+- The `outcome` section holds the outcome, the wrap-up state and the task's own learnings in their order (A1 3.11.2). The learnings follow the outcome's text and page like a list, each whole (at most 1 KiB, so a fresh page always holds it), keyed by its rank among all the task's learnings, removed ones included, so each comes back once and a page stays within its budget. A page that holds learnings without the outcome's text shows them under their own heading. The digest's `learnings` are related learnings from other tasks (3.9.7, M4.03), never the task's own.
 - `sessions` and `proposals` become section values with the session list (M4.06) and proposals (M4.02). Provenance labels on context and summary arrive with digest v1 (M4.03).
 - A launch reference or task in a space the agent home is not granted is `forbidden` with `rule: "grant"`, and binds and reads nothing (3.7.8).
 

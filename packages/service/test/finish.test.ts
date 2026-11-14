@@ -4,6 +4,7 @@
 // this process, fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, TaskFinishResult, TaskGetResult, type ErrorBody } from "@tasks/contracts";
+import { renderResult } from "../src/mcp/render.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -162,35 +163,67 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
   );
 
   test(
-    "the outcome section pages a long outcome with many learnings: every character and every learning once",
+    "the outcome section pages a long outcome with many learnings: every character and every learning once, and no MCP page is cut",
     async () => {
+      /** Every page of a sections read: the outcome's parts, the learnings and the pages' MCP text. */
+      const pagesOf = async (task: string, sections: string[]) => {
+        const parts: string[] = [];
+        const seen: string[] = [];
+        const texts: string[] = [];
+        const tokens: string[] = [];
+        let before: string | undefined;
+        do {
+          const result = await call("task.get", {
+            task,
+            sections,
+            ...(before === undefined ? {} : { before }),
+          });
+          const read = TaskGetResult.parse(result);
+          if (read.view !== "sections") throw new Error("not a sections read");
+          parts.push(read.sections.outcome?.outcome ?? "");
+          seen.push(...(read.sections.outcome?.learnings ?? []));
+          texts.push(renderResult("task.get", result));
+          before = read.before;
+          if (before !== undefined) tokens.push(before);
+        } while (before !== undefined && texts.length < 20);
+        expect(before).toBeUndefined();
+        // A page fits the agent's budget whole (A3 3.4.4): nothing it holds is cut.
+        for (const text of texts) {
+          expect(text).not.toMatch(/cut to fit|\(\+\d+ chars\)|not shown/);
+        }
+        return { outcome: parts.join(""), learnings: seen, pages: texts.length, tokens };
+      };
       const task = await add("Fixture task with a long wrap-up");
       const outcome = Array.from({ length: 64 }, (_, k) => `Line ${String(k)} of the outcome.`)
         .join("\n")
         .padEnd(4_000, ".");
       const learnings = Array.from({ length: 20 }, (_, k) => `${String(k)} `.padEnd(1_000, "l"));
       expect(await finish({ task, outcome, learnings }, USER)).toMatchObject({ learnings: 20 });
-      const parts: string[] = [];
-      const seen: string[] = [];
-      let before: string | undefined;
-      let pages = 0;
-      do {
-        const read = TaskGetResult.parse(
-          await call("task.get", {
-            task,
-            sections: ["outcome"],
-            ...(before === undefined ? {} : { before }),
-          }),
-        );
-        if (read.view !== "sections") throw new Error("not a sections read");
-        parts.push(read.sections.outcome?.outcome ?? "");
-        seen.push(...(read.sections.outcome?.learnings ?? []));
-        before = read.before;
-        pages += 1;
-      } while (before !== undefined && pages < 10);
-      expect(before).toBeUndefined();
-      expect(parts.join("")).toBe(outcome);
-      expect(seen).toEqual(learnings);
+      const read = await pagesOf(task, ["outcome"]);
+      expect(read).toMatchObject({ outcome, learnings });
+      expect(read.pages).toBeGreaterThan(5);
+
+      // A short outcome after a long context: the page ends after the outcome's text, and the
+      // learnings go on from the first. Learnings without an outcome page the same way.
+      const short = await add("Fixture task with a short outcome", {
+        context: "Fixture context. ".repeat(180),
+      });
+      await finish(
+        { task: short, outcome: "Short outcome.", learnings: learnings.slice(0, 5) },
+        USER,
+      );
+      const after = await pagesOf(short, ["context", "outcome"]);
+      expect(after).toMatchObject({
+        outcome: "Short outcome.",
+        learnings: learnings.slice(0, 5),
+      });
+      expect(after.tokens[0]).toBe("o0");
+      const bare = await add("Fixture task with learnings only");
+      await finish({ task: bare, learnings: learnings.slice(5, 12) }, USER);
+      expect(await pagesOf(bare, ["outcome"])).toMatchObject({
+        outcome: "",
+        learnings: learnings.slice(5, 12),
+      });
     },
     LONG,
   );

@@ -182,11 +182,13 @@ const PLACE: Statement = {
     `AND deleted_at IS NULL AND owner_id = ${MATCH}`,
   mode: "get",
 };
-/** The task's own learnings in their order, those its wrap-ups left (A1 3.11.2). */
+/**
+ * The task's own learnings in their order, removed ones too (A1 3.11.2): a learning's rank among
+ * them is its key on a page, which no later wrap-up moves, because a new learning goes after the
+ * others and a removed one keeps its row.
+ */
 const LEARNINGS: Statement = {
-  sql:
-    `SELECT body FROM learnings WHERE task_id = ${MATCH} AND deleted_at IS NULL ` +
-    "ORDER BY position",
+  sql: `SELECT body, deleted_at FROM learnings WHERE task_id = ${MATCH} ORDER BY position, id`,
   mode: "all",
 };
 const LEARNINGS_TABLE: Statement = {
@@ -322,8 +324,8 @@ export interface TaskRead {
   readonly sources: Row[];
   readonly place: Row | undefined;
   readonly history: Row[];
-  /** The task's own learnings, in their order. */
-  readonly learnings: string[];
+  /** The task's own learnings in their order, each with its rank among all of them (`key`). */
+  readonly learnings: readonly { readonly key: number; readonly text: string }[];
   /** How many of each the task holds in all. */
   readonly counts: {
     readonly instructions: number;
@@ -415,7 +417,9 @@ export async function readTask(
     sources: sourceRows,
     place: (place as Row | null) ?? undefined,
     history: history as Row[],
-    learnings: ((learnings ?? []) as Row[]).map((learning) => text(learning["body"])),
+    learnings: ((learnings ?? []) as Row[]).flatMap((learning, k) =>
+      learning["deleted_at"] === null ? [{ key: k + 1, text: text(learning["body"]) }] : [],
+    ),
     counts: {
       instructions: Number(noteCounts?.["i"] ?? 0),
       notes: Number(noteCounts?.["n"] ?? 0),
