@@ -227,14 +227,41 @@
   color: var(--k-muted);
 }
 
-/* The expanded task's body owns these facts: the slots go, the star stays (A5 3.7). */
+/* The expanded task's body owns these facts: the slots go, the star stays, and the collapse
+   button takes the launch tile's column (A5 3.7). The chip and the area and project prefix go
+   too: the facts say them. */
 .row[data-expanded="true"] .due,
 .row[data-expanded="true"] .age,
 .row[data-expanded="true"] .prio,
 .row[data-expanded="true"] .sources,
-.row[data-expanded="true"] .folder,
-.row[data-expanded="true"] .launch {
+.row[data-expanded="true"] .folder {
   visibility: hidden;
+}
+
+.row[data-expanded="true"] .launch,
+.row[data-expanded="true"] .chip,
+.row[data-expanded="true"] .prefix {
+  display: none;
+}
+
+.row[data-expanded="true"] .prefix + .text::before {
+  content: none;
+}
+
+/* The title, edited in place (F2 or a double-click): the title's own size and place. */
+.edit {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: -3px 0 -3px -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  background: var(--k-sunken);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.25rem;
+  color: var(--k-text);
 }
 
 .due,
