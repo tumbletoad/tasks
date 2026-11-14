@@ -810,6 +810,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.15.importer.dry-run",
+      "title": "tasks import planning <fixture> --dry-run --json reports the fixture index's counts with zero source-hash changes and a preview token, writes no operation and only its run folder in the space, adds the actions export's events, gives no token when an error blocks, and refuses an agent and a script",
+      "source": "A7 3.14 (M7.04), A7 3.15.1, A7 3.15.4",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.preview",
+      "title": "The dry run's report and token: every error blocks and no warning does, the counts reconcile, proposed roots are named, report.md escapes the person's own text, and the token changes with the run, the space's authority, every input and the actions export, each option, the plan and every row the plan meets, and with nothing else",
+      "source": "A7 3.15.4",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.3.seed.deterministic",
       "title": "pnpm seed with a fixed seed builds the same Mira sample space twice, proven by a content digest over every row that equals a fixed value on every OS",
       "source": "A7 3.3, A7 3.8 M1.03",

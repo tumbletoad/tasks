@@ -2,6 +2,7 @@
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
 import { entryAdd } from "./entries/entry-add.ts";
+import { importPlanningPreview } from "./entries/import-planning-preview.ts";
 import { launchOpen } from "./entries/launch-open.ts";
 import { receiptGet } from "./entries/receipt-get.ts";
 import { spaceStatus } from "./entries/space-status.ts";
@@ -24,6 +25,7 @@ export const registry = [
   receiptGet,
   launchOpen,
   taskSearch,
+  importPlanningPreview,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];

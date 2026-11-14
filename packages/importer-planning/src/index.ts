@@ -109,6 +109,18 @@ export {
   nineOClock,
 } from "./local-time.ts";
 export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
+export {
+  canonicalJson,
+  planHash,
+  previewOf,
+  previewToken,
+  proposeRoots,
+  type Preview,
+  type PreviewRoot,
+  type PreviewRun,
+  type SpaceState,
+} from "./preview.ts";
+export { renderPreview } from "./report-md.ts";
 export { groupKey, groupSlug, numberedSlug, SLUG_MAX } from "./slug.ts";
 export { exactNumber } from "./json.ts";
 export {

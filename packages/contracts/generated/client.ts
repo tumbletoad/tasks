@@ -13,6 +13,12 @@ export function createClient(transport: ClientTransport) {
       /** Append to a task's log, or record a note for the user. */
       add: (input: InputOf<"entry.add">): Promise<OutputOf<"entry.add">> => call("entry.add", input),
     },
+    import: {
+      planning: {
+        /** Dry run of the Planning prototype import: a report and a preview token. */
+        preview: (input: InputOf<"import.planning.preview">): Promise<OutputOf<"import.planning.preview">> => call("import.planning.preview", input),
+      },
+    },
     launch: {
       /** Open a task in an agent app on this machine, or Copy its pointer brief. */
       open: (input: InputOf<"launch.open">): Promise<OutputOf<"launch.open">> => call("launch.open", input),

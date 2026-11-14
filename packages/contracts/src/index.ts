@@ -30,6 +30,15 @@ export { definitionReport, type DefinitionReport } from "./gen/report.ts";
 export { createCaller, type Caller, type ClientTransport } from "./client-runtime.ts";
 export { entryAdd, EntryAddInput, EntryAddResult } from "./entries/entry-add.ts";
 export {
+  IMPORT_RUN,
+  ImportPlanningCounts,
+  importPlanningPreview,
+  ImportPlanningPreviewInput,
+  ImportPlanningPreviewResult,
+  PREVIEW_ROWS,
+  PREVIEW_TOKEN,
+} from "./entries/import-planning-preview.ts";
+export {
   receiptGet,
   ReceiptGetInput,
   ReceiptGetResult,

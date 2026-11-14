@@ -19,6 +19,7 @@
 //   example to VERIFIED. No example can be left out: the suite fails on an example in neither list.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@tasks/brand";
 import { registry, type ErrorBody } from "@tasks/contracts";
@@ -289,7 +290,45 @@ const VERIFIED = new Set([
   "receipt.get 1",
   "receipt.get 2",
   "launch.open 0",
+  "import.planning.preview 0",
 ]);
+
+/**
+ * The prototype folder an import example names: the committed synthetic prototype (A7 3.14), as
+ * `cwd` stands for the world's portal. Its `roots` are left out: the world's machine has its own.
+ */
+const PLANNING_FIXTURE = fileURLToPath(
+  new URL("../../../../fixtures/planning-prototype", import.meta.url),
+);
+
+/** The report's counts that only the prototype folder decides: places depend on the roots. */
+const FOLDER_COUNTS = [
+  "todo_task_lines",
+  "done_task_lines",
+  "task_lines",
+  "metadata_entries",
+  "metadata_orphans",
+  "task_lines_without_metadata",
+  "event_files",
+  "ready_files",
+  "counted_event_files",
+  "events_not_ready",
+  "actions_events",
+  "actions_added",
+  "tasks",
+  "active",
+  "completed",
+  "wrapped",
+  "aliases",
+  "areas",
+  "projects",
+  "sources",
+  "links",
+  "duplicates_left_out",
+  "orphans_included",
+  "text_sanitised",
+  "source_changes",
+] as const;
 
 type Value = Record<string, unknown>;
 
@@ -386,6 +425,16 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         copy: copy
           .replaceAll(reference, "{ref}")
           .replace(/^(Folder: work › lumen\/portal) \(.*\)$/mu, "$1 ({folder})"),
+      };
+    }
+    case "import.planning.preview": {
+      // The run, its folder and token, and the places are the world's: compared by form above.
+      const counts = value["counts"] as Value;
+      return {
+        blocked: value["blocked"],
+        reconciled: value["reconciled"],
+        token: typeof value["token"] === "string",
+        counts: Object.fromEntries(FOLDER_COUNTS.map((k) => [k, counts[k]])),
       };
     }
     case "receipt.get":
@@ -583,6 +632,11 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             if (typeof input["base"] === "string") input["base"] = await world.asOf();
             // An example's working folder is the world's portal, where M-14 and M-15 are placed.
             if (typeof input["cwd"] === "string") input["cwd"] = transport.portal;
+            // An import example's prototype folder is the committed synthetic prototype.
+            if (entry.name === "import.planning.preview") {
+              input["folder"] = PLANNING_FIXTURE;
+              delete input["roots"];
+            }
             // A verified example's launch reference stands for a launch of its task in the world:
             // `task.get 0` loads M-14 by the reference its Brief gave.
             if (typeof input["launch"] === "string" && VERIFIED.has(key)) {

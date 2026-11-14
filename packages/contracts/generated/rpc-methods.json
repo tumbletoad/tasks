@@ -151,6 +151,908 @@
         "human"
       ],
       "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "forbidden",
+        "space_unavailable",
+        "read_only"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "description": "The page's actions export, an absolute path",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "checked_as": {
+            "description": "A checked task: completed (default) or kept in Review",
+            "enum": [
+              "completed",
+              "review"
+            ],
+            "type": "string"
+          },
+          "folder": {
+            "description": "The prototype folder, an absolute path",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "include_orphans": {
+            "description": "Create metadata entries without a task line, in Backlog",
+            "type": "boolean"
+          },
+          "me": {
+            "description": "The owner name that is you: no owner",
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roots": {
+            "description": "Roots for places, beside this machine's own",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Its folder on this machine, an absolute path",
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The root's ID",
+                  "maxLength": 32,
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 64,
+            "type": "array"
+          }
+        },
+        "required": [
+          "folder"
+        ],
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "import.planning.preview",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "attention": {
+            "description": "Needs attention: every problem code found, errors first",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "description": "Problem code",
+                  "enum": [
+                    "file-missing",
+                    "file-too-large",
+                    "invalid-utf8",
+                    "byte-order-mark",
+                    "line-too-long",
+                    "too-many-task-lines",
+                    "too-many-entries",
+                    "too-many-items",
+                    "too-many-event-files",
+                    "duplicate-id",
+                    "open-copy-hidden",
+                    "date-invalid",
+                    "date-trimmed",
+                    "json-invalid",
+                    "json-wrong-shape",
+                    "entry-not-object",
+                    "field-type",
+                    "status-unknown",
+                    "priority-invalid",
+                    "source-invalid",
+                    "path-not-absolute",
+                    "metadata-orphan",
+                    "jira-row-without-key",
+                    "event-invalid",
+                    "event-too-large",
+                    "event-not-ready",
+                    "event-duplicate-id",
+                    "event-unknown-task",
+                    "actions-invalid",
+                    "actions-conflict",
+                    "not-a-regular-file",
+                    "destination-exists",
+                    "destination-inside-source",
+                    "read-failed",
+                    "write-failed",
+                    "source-changed",
+                    "fallback-id",
+                    "title-cut",
+                    "title-empty",
+                    "text-cut",
+                    "text-sanitised",
+                    "checked-item",
+                    "ticked-in-file",
+                    "ticked-unchecked",
+                    "metadata-state-key",
+                    "done-date-unknown",
+                    "date-out-of-range",
+                    "path-outside-roots",
+                    "paths-extra",
+                    "source-title-generic",
+                    "source-key-shared",
+                    "source-key-unavailable",
+                    "source-dropped",
+                    "source-file-link",
+                    "source-not-shown",
+                    "extra-key-reserved",
+                    "extra-dropped",
+                    "orphan-id-invalid",
+                    "source-key-exists",
+                    "place-missing",
+                    "legacy-id-imported"
+                  ],
+                  "type": "string"
+                },
+                "count": {
+                  "description": "How often",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "severity": {
+                  "description": "An error blocks",
+                  "enum": [
+                    "error",
+                    "warning"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "severity",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "blocked": {
+            "description": "An error blocks the preview: no token",
+            "type": "boolean"
+          },
+          "counts": {
+            "additionalProperties": false,
+            "description": "Counts and reconciliation",
+            "properties": {
+              "actions_added": {
+                "description": "Of those, events added to those of events/",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "actions_events": {
+                "description": "Events in the actions export",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "active": {
+                "description": "Of those, active",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "aliases": {
+                "description": "Legacy IDs kept as aliases",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "areas": {
+                "description": "Areas the import names",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "areas_existing": {
+                "description": "Of those, ones the space has: reused",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "completed": {
+                "description": "Of those, completed",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "counted_event_files": {
+                "description": "Event files that count by the .ready rule",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "done_task_lines": {
+                "description": "Task lines in DONE.md",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "duplicates_left_out": {
+                "description": "Task lines left out for an ID another line has",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "event_files": {
+                "description": "events/*.json files",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "events_not_ready": {
+                "description": "web- event files without .ready: skipped",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "links": {
+                "description": "Links from tasks to sources",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "metadata_entries": {
+                "description": "Entries of data/metadata.json",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "metadata_orphans": {
+                "description": "Metadata entries without a task line",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "orphans_included": {
+                "description": "Metadata entries without a task line, created",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "places": {
+                "description": "Tasks with a place",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "places_missing": {
+                "description": "Of those, folders missing on this machine",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "projects": {
+                "description": "Projects the import names",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "projects_existing": {
+                "description": "Of those, ones the space has: reused",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ready_files": {
+                "description": "events/*.ready files",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_changes": {
+                "description": "Inputs that changed during the run: must be 0",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "sources": {
+                "description": "Distinct sources",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "sources_existing": {
+                "description": "Of those, keys the space holds: linked",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "task_lines": {
+                "description": "Task lines in both",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "task_lines_without_metadata": {
+                "description": "Task lines without a metadata entry",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tasks": {
+                "description": "Tasks to create",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text_sanitised": {
+                "description": "Fields whose text the sanitiser changed",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "todo_task_lines": {
+                "description": "Task lines in TODO.md",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "wrapped": {
+                "description": "Of the completed, wrapped up with an outcome",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "todo_task_lines",
+              "done_task_lines",
+              "task_lines",
+              "metadata_entries",
+              "metadata_orphans",
+              "task_lines_without_metadata",
+              "event_files",
+              "ready_files",
+              "counted_event_files",
+              "events_not_ready",
+              "actions_events",
+              "actions_added",
+              "tasks",
+              "active",
+              "completed",
+              "wrapped",
+              "aliases",
+              "areas",
+              "areas_existing",
+              "projects",
+              "projects_existing",
+              "sources",
+              "sources_existing",
+              "links",
+              "places",
+              "places_missing",
+              "duplicates_left_out",
+              "orphans_included",
+              "text_sanitised",
+              "source_changes"
+            ],
+            "type": "object"
+          },
+          "folder": {
+            "description": "The run's folder in the space: input copy and reports",
+            "type": "string"
+          },
+          "not_imported": {
+            "description": "Not imported, with A7 3.15.7's reasons",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "description": "How many, where counted",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "what": {
+                  "description": "What is not imported (A7 3.15.7)",
+                  "enum": [
+                    "code",
+                    "agent_rules",
+                    "snapshots",
+                    "notes",
+                    "ticket_inventory",
+                    "audit",
+                    "unready_events",
+                    "raw_events",
+                    "orphans"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "what"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "options": {
+            "additionalProperties": false,
+            "description": "The options the plan was made with; its roots are under roots",
+            "properties": {
+              "checked_as": {
+                "description": "--checked-as",
+                "enum": [
+                  "completed",
+                  "review"
+                ],
+                "type": "string"
+              },
+              "include_orphans": {
+                "description": "--include-orphans",
+                "type": "boolean"
+              },
+              "me": {
+                "description": "--me",
+                "type": "string"
+              }
+            },
+            "required": [
+              "checked_as",
+              "include_orphans"
+            ],
+            "type": "object"
+          },
+          "owners": {
+            "description": "Every distinct owner",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "me": {
+                  "description": "It is you (--me): no owner",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "As first written",
+                  "type": "string"
+                },
+                "tasks": {
+                  "description": "Tasks",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "me",
+                "tasks"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "problems": {
+            "description": "Every problem, up to 2,000",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "description": "A code of the fixed table",
+                  "enum": [
+                    "file-missing",
+                    "file-too-large",
+                    "invalid-utf8",
+                    "byte-order-mark",
+                    "line-too-long",
+                    "too-many-task-lines",
+                    "too-many-entries",
+                    "too-many-items",
+                    "too-many-event-files",
+                    "duplicate-id",
+                    "open-copy-hidden",
+                    "date-invalid",
+                    "date-trimmed",
+                    "json-invalid",
+                    "json-wrong-shape",
+                    "entry-not-object",
+                    "field-type",
+                    "status-unknown",
+                    "priority-invalid",
+                    "source-invalid",
+                    "path-not-absolute",
+                    "metadata-orphan",
+                    "jira-row-without-key",
+                    "event-invalid",
+                    "event-too-large",
+                    "event-not-ready",
+                    "event-duplicate-id",
+                    "event-unknown-task",
+                    "actions-invalid",
+                    "actions-conflict",
+                    "not-a-regular-file",
+                    "destination-exists",
+                    "destination-inside-source",
+                    "read-failed",
+                    "write-failed",
+                    "source-changed",
+                    "fallback-id",
+                    "title-cut",
+                    "title-empty",
+                    "text-cut",
+                    "text-sanitised",
+                    "checked-item",
+                    "ticked-in-file",
+                    "ticked-unchecked",
+                    "metadata-state-key",
+                    "done-date-unknown",
+                    "date-out-of-range",
+                    "path-outside-roots",
+                    "paths-extra",
+                    "source-title-generic",
+                    "source-key-shared",
+                    "source-key-unavailable",
+                    "source-dropped",
+                    "source-file-link",
+                    "source-not-shown",
+                    "extra-key-reserved",
+                    "extra-dropped",
+                    "orphan-id-invalid",
+                    "source-key-exists",
+                    "place-missing",
+                    "legacy-id-imported"
+                  ],
+                  "type": "string"
+                },
+                "field": {
+                  "description": "The field it is about",
+                  "enum": [
+                    "category",
+                    "project",
+                    "status",
+                    "owner",
+                    "priority",
+                    "rank",
+                    "next",
+                    "evidence",
+                    "source_date",
+                    "reviewed",
+                    "confidence",
+                    "due",
+                    "sources",
+                    "paths",
+                    "added",
+                    "done",
+                    "title",
+                    "body",
+                    "group",
+                    "check",
+                    "focus",
+                    "extra"
+                  ],
+                  "type": "string"
+                },
+                "file": {
+                  "description": "The file in the prototype folder, with forward slashes",
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "index": {
+                  "description": "0-based position in a list",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "line": {
+                  "description": "1-based line of a ledger",
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "severity": {
+                  "description": "An error blocks the preview",
+                  "enum": [
+                    "error",
+                    "warning"
+                  ],
+                  "type": "string"
+                },
+                "task": {
+                  "description": "The task ID, only of the event grammar",
+                  "maxLength": 100,
+                  "pattern": "^[a-zA-Z0-9_-]{1,100}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "severity",
+                "file"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "problems_more": {
+            "description": "Problems beyond those, in report.json",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reconciled": {
+            "description": "Every task line is one task or a left-out duplicate",
+            "type": "boolean"
+          },
+          "roots": {
+            "description": "Roots",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Its folder on this machine",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Root ID",
+                  "type": "string"
+                },
+                "missing": {
+                  "description": "Of those, missing on this machine",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "origin": {
+                  "description": "machine.toml's, --roots, or proposed: name it with --roots",
+                  "enum": [
+                    "machine",
+                    "given",
+                    "proposed"
+                  ],
+                  "type": "string"
+                },
+                "places": {
+                  "description": "Task folders under it",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "folder",
+                "origin",
+                "places",
+                "missing"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "run": {
+            "description": "The run: --apply names it",
+            "pattern": "^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "type": "string"
+          },
+          "sources_by_kind": {
+            "description": "Sources per kind",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "description": "Sources",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "description": "Source kind",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "statuses": {
+            "description": "Status mapping",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "description": "Tasks",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "prototype": {
+                  "description": "The prototype's status, none without one",
+                  "enum": [
+                    "open",
+                    "waiting",
+                    "needs_review",
+                    "delegated",
+                    "backlog",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "status": {
+                  "description": "Its status here",
+                  "enum": [
+                    "open",
+                    "waiting",
+                    "review",
+                    "backlog"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "prototype",
+                "status",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "tasks": {
+            "description": "Per task, in creation order, up to 2,000",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "description": "Area title",
+                  "type": "string"
+                },
+                "due": {
+                  "description": "Due date",
+                  "type": "string"
+                },
+                "focus": {
+                  "description": "Starred: focus_on",
+                  "type": "string"
+                },
+                "imported": {
+                  "description": "The space already holds its legacy ID",
+                  "type": "boolean"
+                },
+                "legacy_id": {
+                  "description": "The prototype's ID",
+                  "type": "string"
+                },
+                "lifecycle": {
+                  "description": "Lifecycle",
+                  "enum": [
+                    "active",
+                    "completed"
+                  ],
+                  "type": "string"
+                },
+                "place": {
+                  "additionalProperties": false,
+                  "description": "Its folder",
+                  "properties": {
+                    "path": {
+                      "description": "Path below the root, with forward slashes",
+                      "type": "string"
+                    },
+                    "root": {
+                      "description": "Root ID",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "root",
+                    "path"
+                  ],
+                  "type": "object"
+                },
+                "place_missing": {
+                  "description": "The folder is not on this machine",
+                  "type": "boolean"
+                },
+                "project": {
+                  "description": "Project title",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Its reference, if nothing else is created first",
+                  "type": "string"
+                },
+                "status": {
+                  "description": "Status",
+                  "enum": [
+                    "open",
+                    "waiting",
+                    "review",
+                    "backlog"
+                  ],
+                  "type": "string"
+                },
+                "wrap": {
+                  "description": "Wrap-up of a completed task",
+                  "enum": [
+                    "pending",
+                    "wrapped"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "legacy_id",
+                "ref",
+                "area",
+                "status",
+                "lifecycle"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "tasks_more": {
+            "description": "Tasks beyond those, in report.json",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time_zone": {
+            "description": "IANA zone the days are placed in",
+            "type": "string"
+          },
+          "token": {
+            "description": "The preview token --apply needs",
+            "pattern": "^pv1_[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run",
+          "folder",
+          "blocked",
+          "time_zone",
+          "options",
+          "counts",
+          "reconciled",
+          "sources_by_kind",
+          "statuses",
+          "roots",
+          "owners",
+          "attention",
+          "problems",
+          "problems_more",
+          "tasks",
+          "tasks_more",
+          "not_imported"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "space:read",
+      "summary": "Dry run of the Planning prototype import: a report and a preview token."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
       "audience": "none",
       "errors": [
         "invalid_input",
