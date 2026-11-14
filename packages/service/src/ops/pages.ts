@@ -16,13 +16,16 @@
 //
 // The token names where the next page starts, in the order of SECTION_ORDER:
 //   `<s>`            the start of section s,
-//   `<s><k>`         after item k of section s (a note or log ordinal, or a source or history row
-//                    counted from 1),
+//   `<s><k>`         after item k of section s (a note or log ordinal, a source or history row
+//                    counted from 1, or a learning's rank),
 //   `<s><k>.<o>`     item k of section s from code point o,
-//   `c.<o>`, `o.<o>` the context or the outcome from code point o,
+//   `c.<o>`, `o.<o>` the context or the outcome's text from code point o,
+//   `o0`             after the outcome's text, before the task's first learning,
 // where s is i (instructions), c (context), n (notes), l (log), s (sources), o (outcome) or h
-// (history). Notes and log entries are named by their ordinal, so a page read later still starts
-// where the last one ended, whatever was added since.
+// (history). Notes and log entries are named by their ordinal, and learnings by their rank among
+// all the task's learnings, removed ones included, so a page read later still starts where the
+// last one ended, whatever was added since. The outcome section is its text (item 0) followed by
+// the learnings, each whole: a learning is at most 1 KiB, so a fresh page always holds it.
 import { invalid } from "./errors.ts";
 
 export const SECTION_ORDER = [
@@ -62,8 +65,11 @@ const SECTIONS_BY_LETTER = new Map(
   Object.entries(LETTERS).map(([section, letter]) => [letter, section as Section]),
 );
 
-/** Sections that hold one text, and those that hold a list. */
-const SINGLE: ReadonlySet<Section> = new Set(["context", "outcome"]);
+/**
+ * Sections whose item 0 is a text: the context, which is nothing else, and the outcome, whose
+ * learnings follow its text. The other sections are lists keyed from 1.
+ */
+const TEXT_FIRST: ReadonlySet<Section> = new Set(["context", "outcome"]);
 
 /** Where a page starts. `after` and `at` are ordinals or 1-based rows; `offset` code points. */
 export type Token =
@@ -76,7 +82,7 @@ export type Token =
       readonly offset: number;
     };
 
-const TOKEN = /^([icnlsoh])(?:([1-9][0-9]{0,8}))?(?:\.([1-9][0-9]{0,8}))?$/;
+const TOKEN = /^([icnlsoh])(?:(0|[1-9][0-9]{0,8}))?(?:\.([1-9][0-9]{0,8}))?$/;
 
 /** A `before` token as the request path wrote it, or `invalid_input`. */
 export function parseToken(text: string): Token {
@@ -86,16 +92,20 @@ export function parseToken(text: string): Token {
   if (match === null || section === undefined) throw bad();
   const item = match[2] === undefined ? undefined : Number(match[2]);
   const offset = match[3] === undefined ? undefined : Number(match[3]);
-  if (SINGLE.has(section)) {
-    if (item !== undefined) throw bad();
-    return offset === undefined
-      ? { section, kind: "start" }
-      : { section, kind: "at", item: 0, offset };
-  }
   if (item === undefined) {
-    if (offset !== undefined) throw bad();
-    return { section, kind: "start" };
+    // A section's start, or its text from a code point.
+    if (offset === undefined) return { section, kind: "start" };
+    if (!TEXT_FIRST.has(section)) throw bad();
+    return { section, kind: "at", item: 0, offset };
   }
+  // The context has no items after its text; the outcome's learnings are never split; a list's
+  // items are keyed from 1.
+  if (section === "context") throw bad();
+  if (section === "outcome") {
+    if (offset !== undefined) throw bad();
+    return { section, kind: "after", item };
+  }
+  if (item === 0) throw bad();
   return offset === undefined
     ? { section, kind: "after", item }
     : { section, kind: "at", item, offset };
@@ -105,7 +115,7 @@ export function formatToken(token: Token): string {
   const letter = LETTERS[token.section];
   if (token.kind === "start") return letter;
   if (token.kind === "after") return `${letter}${String(token.item)}`;
-  return SINGLE.has(token.section)
+  return token.item === 0
     ? `${letter}.${String(token.offset)}`
     : `${letter}${String(token.item)}.${String(token.offset)}`;
 }
@@ -221,13 +231,9 @@ export function buildPage(inputs: readonly SectionInput<unknown>[]): Page {
         continue;
       }
       placed.push(partOf(item, chars, offset, end));
-      return stop(
-        SINGLE.has(section)
-          ? { section, kind: "at", item: 0, offset: end }
-          : { section, kind: "at", item: item.key, offset: end },
-      );
+      return stop({ section, kind: "at", item: item.key, offset: end });
     }
-    if (items.length > 0 || SINGLE.has(section)) shown = true;
+    if (items.length > 0) shown = true;
   }
   return { sections };
 }

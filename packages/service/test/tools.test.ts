@@ -673,18 +673,6 @@ describe("[A3.3.4.tools.five] update_task, add_entry and complete_task", () => {
         "mode",
         "M4.02",
       ],
-      [
-        "task.finish",
-        { task, outcome: "Done.", status: "dropped", base, request_id: rid() },
-        "status",
-        "M3.04",
-      ],
-      [
-        "task.finish",
-        { task, outcome: "Done.", learnings: ["x"], base, request_id: rid() },
-        "learnings",
-        "M3.01",
-      ],
     ];
     for (const [op, input, path, step] of cases) {
       const body = await refusal(op, input);

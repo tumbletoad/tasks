@@ -420,14 +420,17 @@ function sectionsRendered(
   }
   if (sections.outcome !== undefined) {
     const { outcome, wrap_state: wrap, learnings, slice } = sections.outcome;
+    const state = wrap === undefined ? "" : ` (${wrap})`;
+    // A page that holds learnings without the outcome's text may continue an earlier page, so it
+    // names them alone rather than saying there is no outcome.
+    const text = outcome !== undefined || slice !== undefined || learnings.length === 0;
     parts.push({
       data: true,
       clip: true,
       units: [
-        entryLines(
-          `Outcome${wrap === undefined ? "" : ` (${wrap})`}: ${rangeOf(slice)}`,
-          outcome ?? "none",
-        ),
+        text
+          ? entryLines(`Outcome${state}: ${rangeOf(slice)}`, outcome ?? "none")
+          : [`Learnings${state}:`],
         ...learnings.map((learning) => entryLines("- learning: ", learning)),
       ],
     });

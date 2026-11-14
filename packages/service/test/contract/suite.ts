@@ -247,11 +247,6 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "a routine's session",
     now: { result: "schema" },
   },
-  "task.get 2": {
-    owner: "M3.01 and M3.04 (the learnings table and task.wrap_up)",
-    why: "learnings are not stored in schema 0.1",
-    now: { result: "schema" },
-  },
   "task.get 3": {
     owner: "M6 (a routine's launch reference binds the space)",
     why: "a routine's launch reference",
@@ -263,8 +258,8 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "invalid_input" },
   },
   "task.finish 0": {
-    owner: "M3.01 and M3.04 (learnings) and M4.01b (a follow-up's new project by name)",
-    why: "learnings, and a follow-up in a project the world does not have",
+    owner: "M4.01b (creating a follow-up's new project by name)",
+    why: "a follow-up in a project the world does not have",
     now: { error: "invalid_input" },
   },
   "group.manage 0": {
@@ -288,12 +283,13 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "not_permitted" },
   },
   "task.search 0": {
-    owner: "the schema step that adds the search tables (A1 3.12), and M3.04 (learnings)",
+    owner: "the schema step that adds the search tables (A1 3.12)",
     why: "words need the search index, which schema 0.2 does not hold",
     now: { error: "space_unavailable" },
   },
   "task.search 1": {
-    owner: "M3.04 (task.delete), with a cursor of the world's own search",
+    owner:
+      "the step that gives task.delete a face (A5's Trash, M5), with a cursor of the world's own search",
     why: "the next page after a task was deleted, under the example's cursor",
     now: { error: "cursor_expired" },
   },
@@ -303,6 +299,7 @@ const VERIFIED = new Set([
   "space.status 0",
   "task.get 0",
   "task.get 1",
+  "task.get 2",
   "task.update 0",
   "entry.add 0",
   "entry.add 1",
@@ -360,6 +357,14 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         instructions: refs(sections["instructions"]),
         log: (sections["log"] as Value[] | undefined)?.map((e) => [e["ref"], e["kind"]]),
         history: Array.isArray(sections["history"]),
+        // The task's own learnings and its wrap-up state, as its wrap-up left them.
+        outcome:
+          sections["outcome"] === undefined
+            ? undefined
+            : [
+                (sections["outcome"] as Value)["wrap_state"],
+                (sections["outcome"] as Value)["learnings"],
+              ],
       };
     }
     case "entry.add":
@@ -683,7 +688,7 @@ async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<strin
     );
   }
 
-  // M-3: completed, with its context, a note and its ticket.
+  // M-3: completed and wrapped up with a learning, with its context, a note and its ticket.
   await t.call(
     "task.update",
     {
@@ -710,6 +715,7 @@ async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<strin
     {
       task: "M-3",
       outcome: "Reports convert from UTC with the clinic's zone ID.",
+      learnings: ["Always store UTC plus the clinic's zone ID, never offsets."],
       base: await asOf(),
       request_id: rid(),
     },
