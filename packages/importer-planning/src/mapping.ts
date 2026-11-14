@@ -462,6 +462,12 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   const sourceAt = at(meta?.sourceDate, e.metaAt, "source_date");
   const reviewedAt = at(meta?.reviewed, e.metaAt, "reviewed");
   const createdAt = at(line?.added?.date, e.at, "added");
+  // A due date is a day, held to the same range: the writer refuses a year before 100.
+  let due = meta?.due;
+  if (due !== undefined && (due < "1970-01-01" || due > "9999-12-31")) {
+    report.add("date-out-of-range", e.metaAt, "due");
+    due = undefined;
+  }
 
   // The star: the day of the last focus event's instant in the import's zone.
   const state = cx.parse.events.state.get(e.id);
@@ -576,7 +582,7 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
     ...people,
     ...(sourceAt === undefined ? {} : { source_at: sourceAt }),
     ...(reviewedAt === undefined ? {} : { reviewed_at: reviewedAt }),
-    ...(meta?.due === undefined ? {} : { due: { date: meta.due } }),
+    ...(due === undefined ? {} : { due: { date: due } }),
     ...(focus === undefined ? {} : { focus }),
     area: group.area,
     ...(group.project === undefined ? {} : { project: group.project }),

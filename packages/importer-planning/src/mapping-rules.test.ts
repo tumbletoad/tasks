@@ -201,6 +201,26 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     for (const zone of ["+01:00", "Nowhere/City", "", 7]) expect(isTimeZone(zone)).toBe(false);
   });
 
+  test("a day outside the space's range is dropped and reported wherever it appears", () => {
+    const p = plan({
+      todo: line("A", "x1", "(added 1969-12-31, codex)") + line("B", "x2"),
+      metadata: metadata({
+        x1: { due: "0099-05-01", source_date: "1969-01-01", reviewed: "2026-11-01" },
+        x2: { due: "2026-11-20" },
+      }),
+    });
+    const create = createOf(p, "x1");
+    expect(create.due).toBeUndefined();
+    expect(create.source_at).toBeUndefined();
+    expect(create.created_at).toBeUndefined();
+    expect(create.reviewed_at).toBe(Date.parse("2026-11-01T08:00:00Z"));
+    expect(create.ext.planning["added_by"]).toBe("codex");
+    expect(codes(p, "x1").sort()).toEqual(
+      ["date-out-of-range added", "date-out-of-range due", "date-out-of-range source_date"].sort(),
+    );
+    expect(createOf(p, "x2").due).toEqual({ date: "2026-11-20" });
+  });
+
   test("a cut keeps whole words within the limit, counting characters or UTF-8 bytes", () => {
     expect(cutAtWord("aaa bbb ccc", 9, "chars")).toBe("aaa bbb");
     expect(cutAtWord("aaa bbb ccc", 100, "chars")).toBe("aaa bbb ccc");
