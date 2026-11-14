@@ -30,6 +30,7 @@ import { ENV_PREFIX, PRODUCT_ID } from "../../../packages/brand/src/index.ts";
 import { isAgentMarker } from "../../../packages/bridge/src/protocol/index.ts";
 import { findMsvc } from "../../../packages/launcher-win/src/build.ts";
 import { buildWeb } from "../../../packages/web/build.ts";
+import { windowsElevated } from "../../../packages/service/src/hub/identity.ts";
 import {
   listFolder,
   sha256File,
@@ -57,6 +58,15 @@ import { installerName, renderTestInstaller, type InstallerKind } from "../rende
 export const windows = process.platform === "win32";
 export const KIND: InstallerKind = windows ? "ps1" : "sh";
 export const HOME_VAR = `${ENV_PREFIX}HOME`;
+
+/**
+ * Whether this process runs elevated on Windows, by the service's own check (identity.ts). An
+ * installed service started from an elevated process inherits the token and refuses to run (exit
+ * 64, A2 3.3.1), so a test that runs one is skipped there and runs on a Windows machine that is not
+ * elevated (A7 3.18.4). An elevation the check cannot read is not skipped: the test then fails
+ * with the service's own refusal.
+ */
+export const runsElevated = (): boolean => windows && windowsElevated() === true;
 
 /** The verifier paths of A2 3.12.4 on this system: the OS's ssh-keygen, then the fallback. */
 export const VERIFIERS: readonly string[] = windows
