@@ -206,14 +206,24 @@ export async function opCall(
   if (typeof params.op !== "string") throw invalid("op", "Expected an operation name");
   const entry = findEntry(params.op);
   if (entry === undefined) throw opUnknown();
-  const runOnly = entry.actors === "run";
-  if (!runOnly) checkExposure(entry, caller.class);
-  // The call reads a settled binding (binding/bindings.ts `use`).
   const slot = caller.binding;
+  if (entry.actors === "run") {
+    // A run-only entry needs a run's or a routine's binding, which none is before M6 (A3 3.4.12).
+    // The refusal names the binding it found, read once any bind in progress settles but without
+    // `use`, which records the call (a last use, an unbound write): the call leaves no trace, and
+    // it reads neither its input nor a space.
+    const bound =
+      slot === undefined
+        ? false
+        : host.bindings === undefined
+          ? slot.session !== undefined
+          : await host.bindings.holds(slot);
+    checkExposure(entry, caller.class, bound ? "task" : "none");
+  } else {
+    checkExposure(entry, caller.class);
+  }
+  // The call reads a settled binding (binding/bindings.ts `use`).
   if (slot !== undefined && host.bindings !== undefined) await host.bindings.use(slot);
-  // A run-only entry needs a run's or a routine's binding, which none is before M6 (A3 3.4.12):
-  // refused here, before the input or the space is read, so nothing is written.
-  if (runOnly) checkExposure(entry, caller.class, slot?.session === undefined ? "none" : "task");
   return callAs(host, caller, entry, params);
 }
 
@@ -1078,11 +1088,16 @@ function destinationOf(draft: Record<string, unknown>, agent: boolean): Destinat
   };
 }
 
+/** The area or project of a stand-in in a request the writer replays (`resolvedDrafts`). */
+const REPLAY_GROUP = "replay";
+
 /**
  * The drafts (or `update_task`'s `set`) with their area and project names resolved to IDs
  * (groups.ts, A3 3.4.5), as the writer takes them; `path` gives each item's input path. A request
  * ID with a receipt is the writer's to replay: its names are not resolved then, so a group renamed
- * since never refuses a retry of a call that applied (as `placeSets` does for folders). Without
+ * since never refuses a retry of a call that applied (as `placeSets` does for folders), and each
+ * one is a stand-in the writer's shape check takes (a name may be longer than its group field),
+ * which the writer never resolves, because it finds the receipt before it stages anything. Without
  * names to resolve, nothing is read.
  */
 async function resolvedDrafts(
@@ -1091,7 +1106,14 @@ async function resolvedDrafts(
   path: (k: number) => string,
 ): Promise<Record<string, unknown>[]> {
   const named = list.some((d) => d["area"] !== undefined || d["project"] !== undefined);
-  if (!named || (await applied(call))) return [...list];
+  if (!named) return [...list];
+  const standIns = (): Record<string, unknown>[] =>
+    list.map((draft) => ({
+      ...draft,
+      ...(typeof draft["area"] === "string" ? { area: REPLAY_GROUP } : {}),
+      ...(typeof draft["project"] === "string" ? { project: REPLAY_GROUP } : {}),
+    }));
+  if (await applied(call)) return standIns();
   let names: GroupNames;
   try {
     names = await readGroupNames(readerOf(call.space));
@@ -1116,7 +1138,7 @@ async function resolvedDrafts(
     });
   } catch (error) {
     // A retry racing its first call: the request may have been decided meanwhile.
-    if (error instanceof AppError && (await applied(call))) return [...list];
+    if (error instanceof AppError && (await applied(call))) return standIns();
     throw error;
   }
 }

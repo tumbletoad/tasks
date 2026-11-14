@@ -25,7 +25,7 @@ import {
   type ContractTransport,
   type GrantTransport,
 } from "./contract/suite.ts";
-import { diagnostics, readLog } from "./harness.ts";
+import { diagnostics, readLog, stateOf } from "./harness.ts";
 import {
   bridgeContext,
   libOffline,
@@ -182,7 +182,9 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
         op: "task.add",
         input: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-rr-0001" },
       });
-      const before = await asOf();
+      // Each call carries a thread ID of its own, as Codex sends one with every call: recording it
+      // would change the binding records, so they must come out byte for byte as they were.
+      const thread = (n: number) => `019a0000-0000-7000-8000-${String(n).padStart(12, "0")}`;
       const report = (n: number) => ({
         name: "run_report",
         arguments: {
@@ -191,30 +193,52 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
           request_id: `fixture-request-rr-${String(n).padStart(4, "0")}`,
         },
       });
+      const legacyReport = (n: number) => ({ ...report(n), _meta: { threadId: thread(n) } });
+      const modernReport = (n: number) => {
+        const params = modern("2026-07-28", report(n));
+        return { ...params, _meta: { ...(params["_meta"] as Json), threadId: thread(n) } };
+      };
       const refused = (reply: { result?: string | undefined }) => {
         const result = JSON.parse(reply.result ?? "{}") as { isError?: boolean };
         expect(result.isError).toBe(true);
         return textOf(result);
       };
-      // Unbound, in both eras.
-      const unbound = await raw(w, bridgeContext({ space: w.space }));
-      await unbound.initialize();
-      expect(refused(await unbound.request("tools/call", report(2)))).toMatch(
-        /^error not_permitted: This works only in a run or routine\. Nothing to report outside a run\./u,
-      );
-      const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
-      expect(
-        refused(await modernUnbound.request("tools/call", modern("2026-07-28", report(3)))),
-      ).toMatch(/^error not_permitted: /u);
-      // Bound to a task by get_task {task, bind: true}.
+      // Connections bound to a task by get_task {task, bind: true}, in both eras, and two unbound
+      // ones, all opened before the binding records are read.
+      const bind = { name: "get_task", arguments: { task: "M-1", bind: true } };
       const bound = await raw(w, bridgeContext({ space: w.space }));
       await bound.initialize();
-      await bound.request("tools/call", {
-        name: "get_task",
-        arguments: { task: "M-1", bind: true },
-      });
-      expect(refused(await bound.request("tools/call", report(4)))).toMatch(
+      expect(
+        textOf(JSON.parse((await bound.request("tools/call", bind)).result ?? "{}")),
+      ).toContain("Session: bound to this task");
+      const boundModern = await raw(w, bridgeContext({ space: w.space }));
+      expect(
+        textOf(
+          JSON.parse(
+            (await boundModern.request("tools/call", modern("2026-07-28", bind))).result ?? "{}",
+          ),
+        ),
+      ).toContain("Session: bound to this task");
+      const unbound = await raw(w, bridgeContext({ space: w.space }));
+      await unbound.initialize();
+      const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
+      w.service.bindings.flush();
+      const records = join(stateOf(w.home), "sessions.json");
+      const kept = readFileSync(records);
+      const before = await asOf();
+      // Unbound, in both eras.
+      expect(refused(await unbound.request("tools/call", legacyReport(2)))).toMatch(
+        /^error not_permitted: This works only in a run or routine\. Nothing to report outside a run\./u,
+      );
+      expect(refused(await modernUnbound.request("tools/call", modernReport(3)))).toMatch(
+        /^error not_permitted: .* Nothing to report outside a run\./u,
+      );
+      // Bound to a task, in both eras.
+      expect(refused(await bound.request("tools/call", legacyReport(4)))).toMatch(
         /^error not_permitted: This works only in a run or routine\. This session is bound to a task, not a run\./u,
+      );
+      expect(refused(await boundModern.request("tools/call", modernReport(7)))).toMatch(
+        /^error not_permitted: .* This session is bound to a task, not a run\./u,
       );
       // The CLI: a person's terminal and an agent's shell are no run either.
       for (const cls of ["cli-interactive", "cli-agent"] as const) {
@@ -237,13 +261,37 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
           session.close();
         }
       }
-      // Nothing was written: not a report, not even the agent's first act in the space.
+      // Nothing was written: not a report, not even the agent's first act in the space, and nothing
+      // of the calls in the binding records (a thread ID, a last use, an unbound write).
       expect(await asOf()).toBe(before);
-      const receipt = (await user.call("op/call", {
+      w.service.bindings.flush();
+      expect(readFileSync(records).equals(kept)).toBe(true);
+      // No receipt in the unbound connections' writer scope, which is the agent home's (A3 3.7.9).
+      const agent = {
+        class: "bridge" as const,
+        env: {},
+        principal: bridgePrincipal(bridgeContext(), w.service.ops.machine.id),
+        home: "test-agent",
+      };
+      for (const request of ["fixture-request-rr-0002", "fixture-request-rr-0003"]) {
+        const receipt = (await opCall(w.service.ops, agent, {
+          op: "receipt.get",
+          input: { request },
+          space: w.space,
+        })) as { found: boolean };
+        expect(receipt.found, request).toBe(false);
+      }
+      // The lookup finds that scope's receipt: a write through the same connection has one.
+      await unbound.request("tools/call", {
+        name: "add_tasks",
+        arguments: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-rr-0010" },
+      });
+      const written = (await opCall(w.service.ops, agent, {
         op: "receipt.get",
-        input: { request: "fixture-request-rr-0002" },
+        input: { request: "fixture-request-rr-0010" },
+        space: w.space,
       })) as { found: boolean };
-      expect(receipt.found).toBe(false);
+      expect(written.found).toBe(true);
     },
     LONG,
   );

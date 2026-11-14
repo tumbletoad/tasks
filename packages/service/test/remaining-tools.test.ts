@@ -27,7 +27,9 @@ import type {
   WorkerConnection,
   WriteRequest,
 } from "@tasks/storage";
+import { openSpaceConnection } from "@tasks/storage";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+import { checkedDriver } from "@tasks/testkit";
 import { bridgePrincipal, renderError, renderResult, TOOLS } from "../src/mcp/index.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
@@ -37,20 +39,23 @@ let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
 let indexed: Fixture;
 let plain: Fixture;
+let long: Fixture;
 const clock = Date.UTC(2026, 10, 12, 9, 0, 0);
 
 beforeAll(async () => {
   temp = tempRoot("m401");
-  for (const name of ["fx", "indexed", "plain"]) mkdirSync(join(temp.root, name));
+  for (const name of ["fx", "indexed", "plain", "long"]) mkdirSync(join(temp.root, name));
   fx = await writeFixture(join(temp.root, "fx"));
   indexed = await writeFixture(join(temp.root, "indexed"), { search: true });
   plain = await writeFixture(join(temp.root, "plain"));
+  long = await writeFixture(join(temp.root, "long"));
 }, 60_000);
 
 afterAll(() => {
   fx.close();
   indexed.close();
   plain.close();
+  long.close();
   temp.cleanup();
 });
 
@@ -227,6 +232,44 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
     const again = await add(fx, script, [{ title: "Keyed fixture task", sources: [source] }]);
     expect(again.tasks[0]).toMatchObject({ result: "exists", ref: made?.ref });
     expect(again.warnings).toEqual([]);
+  });
+
+  test("a retry replays when the name it gave is longer than the writer's group field", async () => {
+    // 61 code points, within the input's 120, but 122 UTF-16 units, past the writer's 120: only
+    // the first call resolves it to an ID, so the retry must not send the name itself.
+    const name = "🙂".repeat(61);
+    const conn = openSpaceConnection(
+      await checkedDriver(),
+      join(long.folder, "space.db"),
+      "writer",
+    );
+    try {
+      conn.prepare("UPDATE areas SET title = $title WHERE id = $id").run({
+        title: name,
+        id: long.areas.home,
+      });
+    } finally {
+      conn.close();
+    }
+    const request = rid();
+    const drafts = [{ title: "Long area name", area: name }];
+    const first = await add(long, script, drafts, request);
+    expect(first.tasks.map((t) => t.result)).toEqual(["created"]);
+    const again = await add(long, script, drafts, request);
+    expect(again.replayed).toBe(true);
+    expect(again.tasks.map((t) => t.ref)).toEqual(first.tasks.map((t) => t.ref));
+    // update_task's set takes names the same way, and replays the same way.
+    const update = {
+      task: first.tasks[0]?.ref ?? "",
+      set: { area: name, summary: "Fixture summary." },
+      base: long.base(),
+      request_id: rid(),
+    };
+    const updated = await call(long, script, "task.update", update);
+    expect(await call(long, script, "task.update", update)).toEqual({
+      ...(updated as object),
+      replayed: true,
+    });
   });
 
   test("update_task and complete_task's follow-ups take names as add_tasks does", async () => {

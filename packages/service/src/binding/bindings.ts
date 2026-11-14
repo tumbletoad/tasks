@@ -697,15 +697,27 @@ export class Bindings implements BindingPort {
    * the session's last use. The call reads the slot's binding after this.
    */
   async use(slot: Slot): Promise<void> {
-    for (;;) {
-      const id = slot.session?.id;
-      const pending = id === undefined ? undefined : this.#provisional.get(id);
-      if (pending === undefined) break;
-      await pending;
-    }
+    await this.#settled(slot);
     this.#current(slot);
     if (slot.session !== undefined) this.seen(slot);
     else this.wroteUnbound(slot);
+  }
+
+  async holds(slot: Slot): Promise<boolean> {
+    await this.#settled(slot);
+    const id = slot.session?.id;
+    const session = id === undefined ? undefined : this.#sessions.get(id);
+    return session !== undefined && session.ended_at === undefined;
+  }
+
+  /** Waits while the slot's session's bind still waits on a launch. */
+  async #settled(slot: Slot): Promise<void> {
+    for (;;) {
+      const id = slot.session?.id;
+      const pending = id === undefined ? undefined : this.#provisional.get(id);
+      if (pending === undefined) return;
+      await pending;
+    }
   }
 
   pin(slot: Slot, space: string): void {
