@@ -39,6 +39,7 @@ import {
   InstallError,
   placeStable,
   readCurrent,
+  stableFiles,
   stablePlan,
   UPDATE_LOCK,
   writeCurrent,
@@ -175,6 +176,11 @@ export interface FinishOptions {
    * written, as a client starting the new stable command at that moment would.
    */
   readonly afterSwitch?: () => void | Promise<void>;
+  /**
+   * Tests only: runs after each launcher of the stable command is put in place and after each step
+   * of an undo, as a stable launcher started at that moment would (its sibling repair, launcher.c).
+   */
+  readonly afterStep?: () => void;
 }
 
 export interface Finished {
@@ -246,19 +252,27 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
     const plan = stablePlan(target.root, options.versionFolder, platform);
     checkStable(plan);
     const before = readCurrent(target.root, platform);
+    // Before the switch: a launcher that appears after it was put there by a stable launcher's
+    // sibling repair (launcher.c), from the version this install switches to.
+    const stableBefore = stableFiles(plan);
     // From the switch on, all or nothing: a failure puts back current and the stable command, so
     // the install script can remove the new version and leave the previous install working.
-    const undo: Undo[] = [
-      {
-        what: "current",
-        run: () => {
-          writeCurrent(target.root, before, platform);
-        },
+    // current goes back first: from then on a stable launcher's sibling repair copies from the
+    // version current named before, or with none from nothing, and never brings back a launcher
+    // the undo removes.
+    const putBackCurrent: Undo = {
+      what: "current",
+      run: () => {
+        writeCurrent(target.root, before, platform);
       },
-    ];
+    };
+    const undo: Undo[] = [];
     try {
       writeCurrent(target.root, currentFor(target.version, platform), platform);
-      const placed = placeStable(target.root, plan, undo);
+      const placed = placeStable(target.root, plan, undo, {
+        before: stableBefore,
+        ...(options.afterStep === undefined ? {} : { afterStep: options.afterStep }),
+      });
       await options.afterSwitch?.();
       const previous =
         before.kind === "value"
@@ -287,9 +301,10 @@ export async function finishInstall(options: FinishOptions): Promise<Finished> {
       };
     } catch (error) {
       const left: string[] = [];
-      for (const step of undo.reverse()) {
+      for (const step of [putBackCurrent, ...undo.reverse()]) {
         try {
           step.run();
+          options.afterStep?.();
         } catch (undoError) {
           left.push(`${step.what}: ${(undoError as NodeJS.ErrnoException).code ?? "an error"}`);
         }

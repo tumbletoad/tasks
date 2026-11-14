@@ -301,6 +301,94 @@ describe("[A2.3.12.6.install.finish] tasks install --finish switches current onl
     60_000,
   );
 
+  test.runIf(windows)(
+    "a launcher that a sibling repair puts back during the finish is this install's: recorded as created, and undone with current first, so no repair brings it back",
+    async () => {
+      const launchers = [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`];
+      /**
+       * What a stable launcher started at this moment does first (launcher.c repair_sibling) while
+       * an update's journal is there, as a stuck update's journal is through the finish: a missing
+       * sibling is put back from the version current names. Its own tests are in
+       * packages/launcher-win/test/sibling.test.ts.
+       */
+      const siblingRepair = (root: string) => () => {
+        if (!existsSync(join(root, "current"))) return;
+        const version = readFileSync(join(root, "current"), "utf8");
+        const present = launchers.filter((name) => existsSync(join(root, "bin", name)));
+        if (present.length !== 1) return;
+        for (const name of launchers.filter((n) => !present.includes(n))) {
+          copyFileSync(join(root, "versions", version, "bin", name), join(root, "bin", name));
+        }
+      };
+
+      // A fresh install: tasksw.exe appears from the repair while tasks.exe is in place.
+      const fresh = install();
+      await finishInstall({
+        versionFolder: fresh.folder,
+        facts: facts(fresh.root),
+        created: ["."],
+        afterStep: siblingRepair(fresh.root),
+      });
+      expect(record(fresh.root).created).toEqual(
+        expect.arrayContaining(launchers.map((name) => `bin/${name}`)),
+      );
+
+      // One that fails after the switch leaves nothing: no launcher, no bin, no current, also
+      // with a launcher started after every step of the undo.
+      const failing = install();
+      mkdirSync(join(failing.root, "state", "install.json", "taken"), {
+        recursive: true,
+        mode: 0o700,
+      });
+      const failed = await refusal(
+        finishInstall({
+          versionFolder: failing.folder,
+          facts: facts(failing.root),
+          afterStep: siblingRepair(failing.root),
+        }),
+      );
+      expect(failed.message).toMatch(/current and the stable command were put back as they were/);
+      expect(existsSync(join(failing.root, "current"))).toBe(false);
+      expect(existsSync(join(failing.root, "bin"))).toBe(false);
+
+      // One whose check of the launcher that appeared fails (its source cannot be read): that
+      // launcher is undone too.
+      const broken = install();
+      let steps = 0;
+      const unread = await refusal(
+        finishInstall({
+          versionFolder: broken.folder,
+          facts: facts(broken.root),
+          afterStep: () => {
+            steps += 1;
+            if (steps !== 1) return;
+            siblingRepair(broken.root)();
+            rmSync(join(broken.folder, "bin", launchers[1] ?? ""));
+          },
+        }),
+      );
+      expect(unread.message).toMatch(/current and the stable command were put back as they were/);
+      expect(existsSync(join(broken.root, "current"))).toBe(false);
+      expect(existsSync(join(broken.root, "bin"))).toBe(false);
+
+      // A second version that fails: the first one's launchers and current come back.
+      const { root, folder } = install();
+      await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
+      rmSync(join(root, "state", "install.json"));
+      mkdirSync(join(root, "state", "install.json", "taken"), { recursive: true, mode: 0o700 });
+      const next = addVersion(root, "0.2.0", "launcher two");
+      await refusal(
+        finishInstall({ versionFolder: next, facts: facts(root), afterStep: siblingRepair(root) }),
+      );
+      expect(currentOf(root)).toBe("0.1.0");
+      expect(readdirSync(join(root, "bin")).sort()).toEqual(launchers);
+      expect(readFileSync(join(root, "bin", launchers[0] ?? ""), "utf8")).toBe(
+        "launcher one console",
+      );
+      expect(readFileSync(join(root, "bin", launchers[1] ?? ""), "utf8")).toBe("launcher one gui");
+    },
+  );
+
   test("while another install or update holds update.lock, it stops with nothing changed", async () => {
     const { root, folder } = install();
     mkdirSync(join(root, "state"), { recursive: true, mode: 0o700 });
