@@ -455,7 +455,7 @@ export async function agentsCommand(
     const mode: Mode = parsed.mode;
     switch (mode) {
       case "status":
-        return await status(io, globals, input, selected, call);
+        return await status(io, globals, await withRows(input, call), selected, call);
       case "preview":
         return await preview(io, globals, await withRows(input, call), selected, parsed, spaceOf);
       case "print":
