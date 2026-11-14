@@ -811,7 +811,7 @@ function printCommand(io: Io, globals: Globals, input: SetupInput, app: PrintApp
     if (!(error instanceof PrintRefused)) throw error;
     throw new AppError({
       code: "invalid_input",
-      message: `${PRODUCT_NAME}'s command path holds a character that no line pasted into ${error.runIn} keeps as it is (on Windows % ! ^ & | < > ", anywhere a control character), so no command is printed.`,
+      message: `${PRODUCT_NAME}'s command path holds a character that no line pasted into ${error.runIn} keeps as it is (a control character, and on Windows % ! ^ & | < > "), so no command is printed.`,
       hint: `Run ${CLI_NAME} setup agents: it runs the app's own command without a shell.`,
       data: { issues: [{ path: "command", message: "Cannot be quoted for a shell" }] },
     });

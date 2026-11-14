@@ -4,21 +4,23 @@
 // takes it literally, else quoted so that it does:
 //
 // - POSIX: in single quotes, where nothing is expanded. A single quote closes the quotes, is
-//   escaped and opens them again ('\'').
+//   escaped and opens them again ('\''). A newline stays inside the quotes: the shell takes it
+//   literally, and a terminal shows and copies it as the line break it is.
 // - PowerShell: in single quotes, where nothing is expanded. Each single quote is doubled,
 //   typographic ones too (‘ ’ ‚ ‛), because PowerShell ends a quoted string at any of them. A bare
 //   `--`, `,` and a leading `@` are always quoted: PowerShell drops `--` before a script (the npm
 //   `.ps1` shims), joins `a,b` into one array, and splats `@name`. A line whose command is a path
-//   starts with `&`, which runs a quoted command.
+//   starts with `&`, which runs a quoted command, and a variable's value is always quoted.
 //
 // A word no quoting keeps literal is refused (`undefined`), and the caller prints no line:
-// - anywhere: a control character (C0, DEL, C1, a line or paragraph separator), which a terminal
-//   shows otherwise than it pastes;
-// - Windows: `% ! ^ & | < > "`, because PowerShell runs an npm `.cmd` shim through cmd, which
-//   expands or acts on them inside PowerShell's own quotes; an empty word, and one with a space or
-//   tab that ends in a backslash, which Windows PowerShell 5.1 hands on wrongly.
+// - anywhere: a control character other than a POSIX newline (C0, DEL, C1, a line or paragraph
+//   separator), which a terminal shows otherwise than it pastes;
+// - Windows: every control character, a newline too (cmd ends a command at it, and Windows file
+//   names hold none); `% ! ^ & | < > "`, because PowerShell runs an npm `.cmd` shim through cmd,
+//   which expands or acts on them inside PowerShell's own quotes; an empty word, and one with a
+//   space or tab that ends in a backslash, which Windows PowerShell 5.1 hands on wrongly.
 //
-// Pure: no I/O. Tests: `A3.3.13.setup.print-quoting` (packages/launch/test/shell-line.test.ts),
+// Pure: no I/O. Tests: `A3.3.13.setup.print-quoting` (packages/service/test/print-quoting.test.ts),
 // which feeds the lines to the real shells.
 
 /** The shell a printed line is for, as the person reads it. */
@@ -26,9 +28,11 @@ export function pasteShell(platform: NodeJS.Platform): string {
   return platform === "win32" ? "PowerShell" : "a POSIX shell (sh, bash, zsh)";
 }
 
-/** Characters no line to paste can show as they are. */
+/** Characters no line to paste can show as they are; a POSIX line keeps a newline. */
 // eslint-disable-next-line no-control-regex -- the control characters are what it finds
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
+// eslint-disable-next-line no-control-regex -- the control characters are what it finds
+const POSIX_CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/u;
 /** Windows: what cmd acts on inside PowerShell's quotes, when the command is a `.cmd` shim. */
 const CMD_SPECIAL = /[%!^&|<>"]/u;
 
@@ -41,11 +45,14 @@ const POWERSHELL_PLAIN =
 const POWERSHELL_QUOTES = /['\u2018\u2019\u201a\u201b]/gu;
 
 const refused = (platform: NodeJS.Platform, word: string): boolean =>
-  CONTROL.test(word) ||
-  (platform === "win32" &&
-    (word === "" || CMD_SPECIAL.test(word) || (/\s/u.test(word) && word.endsWith("\\"))));
+  platform === "win32"
+    ? CONTROL.test(word) ||
+      word === "" ||
+      CMD_SPECIAL.test(word) ||
+      (/\s/u.test(word) && word.endsWith("\\"))
+    : POSIX_CONTROL.test(word);
 
-/** One word quoted for the shell, always: what an assignment's value needs. */
+/** One word quoted for the shell, always. */
 function quotedWord(platform: NodeJS.Platform, word: string): string | undefined {
   if (refused(platform, word)) return undefined;
   return platform === "win32"
@@ -65,8 +72,9 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 /**
  * An argv as one line to paste, with `env` set for the command first: PowerShell sets each
- * variable with `$env:NAME = '…';` and runs a command given by its path with `&`; a POSIX shell
- * takes `NAME='…'` before the command. Undefined when a word or a value cannot be quoted.
+ * variable with `$env:NAME = '…';` (always quoted: a bare path there would run as a command) and
+ * runs a command given by its path with `&`; a POSIX shell takes `NAME=value` before the command,
+ * the value as any word. Undefined when a word or a value cannot be quoted.
  */
 export function shellLine(
   platform: NodeJS.Platform,
@@ -77,7 +85,7 @@ export function shellLine(
   if (words.length === 0 || words.some((word) => word === undefined)) return undefined;
   const sets: string[] = [];
   for (const [name, value] of Object.entries(env)) {
-    const quoted = quotedWord(platform, value);
+    const quoted = platform === "win32" ? quotedWord(platform, value) : shellWord(platform, value);
     if (!NAME.test(name) || quoted === undefined) return undefined;
     sets.push(platform === "win32" ? `$env:${name} = ${quoted};` : `${name}=${quoted}`);
   }

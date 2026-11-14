@@ -147,7 +147,18 @@ const WORDS = [
   "",
   ...(windows
     ? ["C:\\Program Files (x86)\\x", "C:\\a\\tasks.exe"]
-    : ["back\\slash", '"dq"', "!bang", "%pct", "a&b", "a|b", "<lt>", "^caret", "/opt/a b/tasks"]),
+    : [
+        "back\\slash",
+        '"dq"',
+        "!bang",
+        "%pct",
+        "a&b",
+        "a|b",
+        "<lt>",
+        "^caret",
+        "/opt/a b/tasks",
+        "new\nline",
+      ]),
 ].filter((word) => shellWord(process.platform, word) !== undefined);
 
 describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste gives the command exactly its words", () => {
@@ -166,20 +177,23 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
     for (const word of ["a%b", "a!b", "a^b", "a&b", "a|b", "a<b", "a>b", 'a"b', "", "C:\\a b\\"]) {
       expect([word, shellWord("win32", word)]).toEqual([word, undefined]);
     }
-    for (const word of ["a\nb", "a\rb", "\u001b[31m", "a\u0085b", "a\u2028b", "a\u007fb"]) {
+    for (const word of ["a\rb", "a\tb", "\u001b[31m", "a\u0085b", "a\u2028b", "a\u007fb"]) {
       expect(shellWord("linux", word)).toBeUndefined();
       expect(shellWord("win32", word)).toBeUndefined();
     }
+    // A POSIX shell takes a newline inside single quotes literally; cmd ends a command at it.
+    expect(shellWord("linux", "a\nb")).toBe("'a\nb'");
+    expect(shellWord("win32", "a\nb")).toBeUndefined();
     for (const word of ["a!b", "a&b", 'a"b', "a%b", ""]) {
       expect(shellWord("linux", word)).not.toBeUndefined();
     }
     expect(shellLine("win32", ["C:\\a b\\claude.exe", "mcp"], { CODEX_HOME: "C:\\h" })).toBe(
       "$env:CODEX_HOME = 'C:\\h'; & 'C:\\a b\\claude.exe' mcp",
     );
-    expect(shellLine("linux", ["/a b/claude", "mcp"], { CODEX_HOME: "/h" })).toBe(
-      "CODEX_HOME='/h' '/a b/claude' mcp",
+    expect(shellLine("linux", ["/a b/claude", "mcp"], { CODEX_HOME: "/h", X: "a b" })).toBe(
+      "CODEX_HOME=/h X='a b' '/a b/claude' mcp",
     );
-    expect(shellLine("linux", ["claude", "a\nb"])).toBeUndefined();
+    expect(shellLine("linux", ["claude", "a\rb"])).toBeUndefined();
     expect(shellLine("linux", ["claude"], { "BAD NAME": "x" })).toBeUndefined();
   });
 
@@ -249,7 +263,7 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
             platform: process.platform,
             userHome: base,
             env: {},
-            tasks: windows ? "C:\\a%PATH%\\tasks.exe" : "/opt/a\nb/tasks",
+            tasks: windows ? "C:\\a%PATH%\\tasks.exe" : "/opt/a\rb/tasks",
           },
           "claude-code",
         ),

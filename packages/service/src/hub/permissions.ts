@@ -230,7 +230,8 @@ export function repairOf(facts: PathFacts, problem: Unsafe): Repair {
 /**
  * A path as a person types it in a POSIX shell: `~/` for the home folder, quoted when needed by
  * launch's shell-line.ts (the rule for every line setup and doctor print to paste, A3 3.13.7).
- * Undefined when no quoting keeps it literal (a control character). POSIX paths only (the rule
+ * Undefined when no quoting keeps it literal (a control character other than a newline). POSIX
+ * paths only (the rule
  * applies on Linux and macOS), so the separator is `/` on every OS.
  */
 export function shellArg(
