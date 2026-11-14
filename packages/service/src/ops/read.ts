@@ -570,7 +570,8 @@ export async function readPlaced(
 
 export const DEFAULT_STATUS_ORDER = ["open", "waiting", "review", "backlog"] as const;
 
-function keysOf(value: unknown, fallback: readonly string[]): string[] {
+/** The keys of a list preference's stored value (A1 3.16), or `fallback`. */
+export function keysOf(value: unknown, fallback: readonly string[]): string[] {
   if (typeof value !== "string") return [...fallback];
   try {
     const parsed = JSON.parse(value) as unknown;

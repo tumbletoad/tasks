@@ -2,6 +2,7 @@
 // document: the operation's result, or `{"error": {code, class, message, hint, data}}`. Without
 // it, stdout holds plain text for a person and every write names its space. Diagnostics go to
 // stderr. The exit code follows the error's class.
+import { CLI_NAME } from "@tasks/brand";
 import { RpcError } from "@tasks/bridge/protocol";
 import {
   errorClass,
@@ -92,6 +93,65 @@ function taskLine(task: Result): string {
   if (task["inbox"] === true) parts.push("inbox");
   if (task["lifecycle"] !== "active") parts.push(String(task["lifecycle"]));
   return `${String(task["ref"])}  ${String(task["title"])}  (${parts.join(", ")})`;
+}
+
+/**
+ * A search page (A3 3.9.4): a header with the positions, the scope, how the query was read and the
+ * page's as_of, then one line per row. A row changed since the search ran ends with `*`; one
+ * deleted or redacted since keeps its place without its content.
+ */
+function searchLines(result: Result): string[] {
+  const rows = (result["rows"] as Result[] | undefined) ?? [];
+  const first = Number(result["first"]);
+  const span = rows.length === 0 ? "0" : `${String(first)}–${String(first + rows.length - 1)}`;
+  const parsed = str(result["parsed"]);
+  const lines = [
+    `${span} of ${str(result["total"])} · scope ${str(result["scope"])}` +
+      `${parsed === "" ? "" : ` · parsed: ${parsed}`} · as of ${str(result["as_of"])}`,
+  ];
+  for (const row of rows) {
+    const mark = row["changed"] === true ? " *" : "";
+    const group = str(row["project"]) || str(row["area"]);
+    switch (row["kind"]) {
+      case "deleted":
+      case "redacted":
+        lines.push(`${str(row["ref"])} · ${str(row["kind"])} since this search`);
+        break;
+      case "learning":
+        lines.push(
+          [str(row["task"]), str(row["date"]), group, `"${str(row["text"])}"`]
+            .filter((part) => part !== "")
+            .join(" · ") + mark,
+        );
+        break;
+      default: {
+        const state =
+          row["lifecycle"] === "active"
+            ? str(row["status"])
+            : `${str(row["lifecycle"])}${typeof row["completed"] === "string" ? ` ${row["completed"]}` : ""}`;
+        const due = row["due"];
+        const parts = [
+          str(row["ref"]),
+          state,
+          row["priority"] === 4 ? "" : `P${str(row["priority"])}`,
+          str(row["effort"]),
+          typeof due === "string" ? `due ${due}` : "",
+          group,
+          str(row["title"]),
+        ].filter((part) => part !== "");
+        const from = str(row["snippet_from"]);
+        const snippet =
+          typeof row["snippet"] === "string"
+            ? ` — ${from === "" || from === "task" ? "" : `${from}: `}${row["snippet"]}`
+            : "";
+        lines.push(`${parts.join(" · ")}${snippet}${mark}`);
+      }
+    }
+  }
+  if (typeof result["cursor"] === "string") {
+    lines.push(`More: ${CLI_NAME} find --cursor ${result["cursor"]}`);
+  }
+  return lines;
 }
 
 /** Plain text for a person, per entry. `space` names the space a write went to (A2 3.10.2). */
@@ -193,6 +253,9 @@ export function render(entry: string, result: Result, space: string): string {
           ? `${String(result["status"])} at ${String(result["decided_at"])}, as of ${String(result["as_of"])}`
           : "No receipt for that request ID in this writer scope.",
       );
+      break;
+    case "task.search":
+      lines.push(...searchLines(result));
       break;
     case "launch.open": {
       // `tasks brief`: the pointer brief itself, ready to paste, or how the launch stands.

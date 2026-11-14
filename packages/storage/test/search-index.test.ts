@@ -1,27 +1,32 @@
 // The search index tables (A1 3.12; A7 3.10 M3.05 Verify: "Search rows equal a fresh rebuild").
 // The fixture space gets the search tables before its writer opens, as the schema step that adds
 // them will do, so every commit maintains the index. Tombstones (M3.04), redaction (M3.14),
-// learnings and area renames have no operation yet: they are played directly on the database, with
-// the change rows their operations will write passed to the index as the writer passes them.
-// Fixture text only.
+// learnings and area renames have no operation yet: they are played directly on the database
+// (search-helpers.ts), with the change rows their operations will write passed to the index as the
+// writer passes them. Fixture text only.
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { Connection, NotPromise } from "../src/driver.ts";
-import { newId, type Id } from "../src/ids.ts";
+import type { Id } from "../src/ids.ts";
 import {
   expectedDocuments,
   indexChanges,
   rebuildSearchIndex,
   storedDocuments,
-  type IndexedChange,
   type SearchDocument,
 } from "../src/search/documents.ts";
 import { decodeRowsByIds, ROWS_BY_IDS_SQL } from "../src/search/rows.ts";
 import { hasSearchTables } from "../src/search/tables.ts";
-import { decodeSpaceRow } from "../src/rows.ts";
-import { openSpace } from "../src/space.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
-import { checkedDriver, tempFolders } from "./space-helpers.ts";
+import {
+  addLearning,
+  directly,
+  lastSeq,
+  redactTask,
+  redactText,
+  restore,
+  tombstone,
+} from "./search-helpers.ts";
+import { tempFolders } from "./space-helpers.ts";
 import { writeFixture, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("search-index");
@@ -72,97 +77,6 @@ function expectRebuildEqual(f: Fixture): void {
   expect(stray).toBe(0);
   expect(plainDocs(docs.values())).toEqual(plainDocs(expectedDocuments(f.reader).values()));
 }
-
-/**
- * Runs `fn` on the space's writable connection in one transaction, with the writer closed around
- * it: the stand-in for operations later steps add. Returns what `fn` returns.
- */
-async function directly<T>(f: Fixture, fn: (conn: Connection) => NotPromise<T>): Promise<T> {
-  f.writer.close();
-  const opened = openSpace(await checkedDriver(), f.folder, { role: "writer" });
-  try {
-    return opened.conn.transaction("immediate", () => fn(opened.conn));
-  } finally {
-    opened.conn.close();
-    f.reopen();
-  }
-}
-
-const lastSeq = (conn: Connection): number =>
-  decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get()).lastSeq;
-
-const taskChange = (id: string, field: string): IndexedChange => ({
-  entity: "tasks",
-  entityId: id,
-  taskId: id,
-  action: "set",
-  field,
-});
-
-/** A tombstone, as M3.04's `task.delete` will write it, with its change row passed to the index. */
-function tombstone(conn: Connection, id: string, human: string): void {
-  conn
-    .prepare("UPDATE tasks SET deleted_at = 1, deleted_by = $by WHERE id = $id")
-    .run({ id, by: human });
-  indexChanges(conn, lastSeq(conn), [taskChange(id, "deleted")]);
-}
-
-function restore(conn: Connection, id: string): void {
-  conn.prepare("UPDATE tasks SET deleted_at = NULL, deleted_by = NULL WHERE id = $id").run({ id });
-  indexChanges(conn, lastSeq(conn), [taskChange(id, "deleted")]);
-}
-
-/**
- * Entity redaction's effect on state (A1 3.11.4): the task and its children leave every table. The
- * redaction's own pass over the search tables (M3.14) deletes their documents; the write path's
- * rule does the same here.
- */
-function redactTask(conn: Connection, id: string): void {
-  for (const table of ["task_sources", "task_labels", "notes", "log_entries", "learnings"]) {
-    conn.prepare(`DELETE FROM ${table} WHERE task_id = $id`).run({ id });
-  }
-  conn.prepare("DELETE FROM places WHERE owner_kind = 'task' AND owner_id = $id").run({ id });
-  conn.prepare("DELETE FROM tasks WHERE id = $id").run({ id });
-  indexChanges(conn, lastSeq(conn), [taskChange(id, "deleted")]);
-}
-
-/** Text redaction's effect: `word` becomes `[redacted]` in every text, then a re-index. */
-function redactText(conn: Connection, word: string): void {
-  for (const [table, column] of [
-    ["tasks", "title"],
-    ["tasks", "summary"],
-    ["tasks", "context"],
-    ["notes", "body"],
-    ["log_entries", "body"],
-    ["learnings", "body"],
-    ["sources", "title"],
-  ] as const) {
-    conn
-      .prepare(`UPDATE ${table} SET ${column} = replace(${column}, $word, '[redacted]')`)
-      .run({ word });
-  }
-  const ids = conn.prepare("SELECT id FROM tasks").all<{ id: string }>();
-  indexChanges(
-    conn,
-    lastSeq(conn),
-    ids.map((t) => taskChange(t.id, "title")),
-  );
-}
-
-function addLearning(conn: Connection, task: string, body: string, human: string): string {
-  const id = newId("lr");
-  conn
-    .prepare(
-      "INSERT INTO learnings (id, task_id, position, body, created_by, created_at, created_seq, " +
-        "version) VALUES ($id, $task, 'a0', $body, $by, 1, $seq, $seq)",
-    )
-    .run({ id, task, body, by: human, seq: lastSeq(conn) });
-  indexChanges(conn, lastSeq(conn), [
-    { entity: "learnings", entityId: id, taskId: task, action: "create", field: null },
-  ]);
-  return id;
-}
-
 describe("[A1.5.search.index] the search tables are written in the commit", () => {
   test("each document holds A1 3.12's fields", () => {
     const task = created(

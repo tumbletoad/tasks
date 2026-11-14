@@ -10,6 +10,7 @@ export const httpRoutes = [
   { entry: "task.finish", method: "POST", path: "/api/v1/op/task.finish" },
   { entry: "task.get", method: "POST", path: "/api/v1/op/task.get" },
   { entry: "task.reopen", method: "POST", path: "/api/v1/op/task.reopen" },
+  { entry: "task.search", method: "POST", path: "/api/v1/op/task.search" },
   { entry: "task.update", method: "POST", path: "/api/v1/op/task.update" },
 ] as const;
 
