@@ -41,6 +41,7 @@ import { unpackBackup } from "../src/restore/unpack.ts";
 import { openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
+import { STEPS_0_1 } from "./revisions.ts";
 import { STEPS_MARK_GUARD, STEPS_SEARCH } from "./stand-in-steps.ts";
 
 const folders = tempFolders("bundle");
@@ -946,6 +947,20 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
         undefined,
       );
     }
+  });
+
+  test("a backup at an older revision verifies, restores into a new folder and in place: the trial claim runs on the copy's own revision, as the real claim does", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, STEPS_0_1);
+    await writeCommits(folder, 2, "s", STEPS_0_1);
+    const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps: STEPS_0_1 });
+    const listed = listBackups(join(folder, "backups")).backups[0];
+    if (listed === undefined) throw new Error("the backup is listed");
+    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+    const copy = await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
+    expect(copy.revision).toEqual({ major: 0, minor: 1 });
+    const inPlace = await restoreInPlace(checked, backup.file, folder, { machineId: TEST_MACHINE });
+    expect(inPlace.claim.epoch).toBe(backup.sidecar.epoch + 1);
   });
 
   test("an object under SQLite's reserved prefix is compared like any other: one planted in the file is refused by the export, a verification, a restore and retention", async () => {
