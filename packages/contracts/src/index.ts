@@ -5,6 +5,7 @@ export * from "./define.ts";
 export * from "./errors.ts";
 export * from "./http.ts";
 export * from "./operations.ts";
+export * from "./preferences.ts";
 export * from "./registry.ts";
 export * from "./safe-text.ts";
 export * from "./schemas.ts";
