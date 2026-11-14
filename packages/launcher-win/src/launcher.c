@@ -4,11 +4,13 @@
  *               Node's exit code. If Windows refuses any step of the job, Node never runs (70).
  *   tasksw.exe  GUI subsystem (TASKS_GUI). No console window and no job object. With no
  *               arguments, from the stable bin folder, it supervises `tasks serve`.
+ * From the stable bin folder, each one puts back its sibling when an update was cut off between
+ * the two renames of that launcher (repair_sibling).
  * TASKS_TEST_HOOKS builds a test-only launcher: it can simulate a refused job step, shorten the
  * supervisor's time unit and trace the supervisor's decisions. Release builds never define it.
  *
  * README.md in this package describes the two modes, the environment, the supervisor, the exit
- * codes and every trust assumption. A2 3.12.3 states the rules.
+ * codes and every trust assumption. A2 3.12.3 states the rules, and A2 3.12.6 the update's side.
  */
 #define WIN32_LEAN_AND_MEAN
 #ifndef UNICODE
@@ -37,6 +39,17 @@
 #define CMDLINE_CAP 32767
 /* The longest version name that <root>\current may hold. */
 #define VERSION_MAX 64
+
+/* The stable launchers' file names in the command folder (A2 3.12.2). Each repairs the other. */
+#define CONSOLE_LAUNCHER L"tasks.exe"
+#define GUI_LAUNCHER L"tasksw.exe"
+#ifdef TASKS_GUI
+#define SIBLING_LAUNCHER CONSOLE_LAUNCHER
+#else
+#define SIBLING_LAUNCHER GUI_LAUNCHER
+#endif
+/* A launcher is a few hundred KB: the sibling repair copies nothing larger than this. */
+#define LAUNCHER_MAX_BYTES (16LL * 1024 * 1024)
 
 #ifdef TASKS_GUI
 /*
@@ -170,6 +183,53 @@ static int require(const wchar_t *path, int kind) {
     return 0;
 }
 
+/* ---- New files in the install ---------------------------------------------------------------- */
+
+/*
+ * A new, empty file in dir, <dir>\<stem>.<pid>-<tick>-<attempt>.tmp, under a name no other file
+ * has: CREATE_NEW never opens, follows or truncates anything that exists, so a link or file
+ * planted at a predicted name is left alone. No sharing: nothing else can open, rename or delete
+ * it while it is written. path holds PATH_CAP characters.
+ */
+static HANDLE new_temp_file(const wchar_t *dir, const wchar_t *stem, wchar_t *path) {
+    int attempt;
+    for (attempt = 0; attempt < 16; attempt++) {
+        HANDLE h;
+        if (_snwprintf_s(path, PATH_CAP, _TRUNCATE, L"%s\\%s.%lu-%llu-%d.tmp", dir, stem,
+                         GetCurrentProcessId(), GetTickCount64(), attempt) < 0) {
+            break;
+        }
+        h = CreateFileW(path, GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
+                        NULL);
+        if (h != INVALID_HANDLE_VALUE || GetLastError() != ERROR_FILE_EXISTS) return h;
+    }
+    return INVALID_HANDLE_VALUE;
+}
+
+/*
+ * Renames the open file h to target through its own handle, so the file that gets the name is
+ * the one written. replace: whether a file at target is replaced; otherwise the rename fails.
+ */
+static BOOL rename_open_file(HANDLE h, const wchar_t *target, BOOL replace) {
+    size_t bytes = wcslen(target) * sizeof(wchar_t);
+    size_t size = sizeof(FILE_RENAME_INFO) + bytes;
+    FILE_RENAME_INFO *info = (FILE_RENAME_INFO *)must_alloc(1, size);
+    BOOL ok;
+    info->ReplaceIfExists = replace ? TRUE : FALSE;
+    info->RootDirectory = NULL;
+    info->FileNameLength = (DWORD)bytes;
+    memcpy(info->FileName, target, bytes);
+    ok = SetFileInformationByHandle(h, FileRenameInfo, info, (DWORD)size);
+    free(info);
+    return ok;
+}
+
+/* Deletes the open file h when it is closed: a temporary file that did not get its name. */
+static void discard_open_file(HANDLE h) {
+    FILE_DISPOSITION_INFO remove = {TRUE};
+    SetFileInformationByHandle(h, FileDispositionInfo, &remove, sizeof remove);
+}
+
 /* ---- The version in <root>\current ----------------------------------------------------------- */
 
 static int is_alnum(char c) {
@@ -221,22 +281,25 @@ static int valid_version(const char *s, DWORD n) {
     return !reserved_device(s, n);
 }
 
-/* Reads and validates <root>\current into version (VERSION_MAX + 1 characters). */
-static int read_current(const wchar_t *root, wchar_t *version) {
+/*
+ * Reads and validates <root>\current into version (VERSION_MAX + 1 characters). quiet: say
+ * nothing when it fails (the sibling repair, before resolve reports the same problem).
+ */
+static int read_current(const wchar_t *root, wchar_t *version, int quiet) {
     wchar_t *path = join(root, L"current");
     char buf[VERSION_MAX + 1];
     DWORD n = 0, i;
     HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        say(L"tasks: cannot read %s (error %lu)\n", path, GetLastError());
+        if (!quiet) say(L"tasks: cannot read %s (error %lu)\n", path, GetLastError());
         free(path);
         return 0;
     }
     if (!ReadFile(h, buf, (DWORD)sizeof buf, &n, NULL)) n = 0;
     CloseHandle(h);
     if (!valid_version(buf, n)) {
-        say(L"tasks: %s does not hold a valid version\n", path);
+        if (!quiet) say(L"tasks: %s does not hold a valid version\n", path);
         free(path);
         return 0;
     }
@@ -369,7 +432,7 @@ static int resolve(const Place *place, Target *t) {
             free(share);
             if (!ok) return 0;
         }
-        if (!read_current(place->root, version)) return 0;
+        if (!read_current(place->root, version, 0)) return 0;
         folder = join(place->root, L"versions");
         version_dir = join(folder, version);
         free(folder);
@@ -393,6 +456,173 @@ static int resolve(const Place *place, Target *t) {
     free(lib);
     if (!ok) release_target(t);
     return ok;
+}
+
+/* ---- Sibling repair (A2 3.12.3 step 10) ------------------------------------------------------ */
+
+/* Copies exactly size bytes from in to out: a source that is shorter or longer fails. */
+static int copy_bytes(HANDLE in, HANDLE out, LONGLONG size) {
+    const DWORD chunk = 64 * 1024;
+    char *buffer = (char *)must_alloc(chunk, 1);
+    LONGLONG done = 0;
+    int ok = 1;
+    for (;;) {
+        DWORD n = 0, written = 0;
+        if (!ReadFile(in, buffer, chunk, &n, NULL)) {
+            ok = 0;
+            break;
+        }
+        if (n == 0) break;
+        if (done + n > size || !WriteFile(out, buffer, n, &written, NULL) || written != n) {
+            ok = 0;
+            break;
+        }
+        done += n;
+    }
+    free(buffer);
+    return ok && done == size;
+}
+
+/*
+ * Puts a copy of <root>\versions\<version>\bin\<sibling> at sibling (in bin). versions, the
+ * version folder, its bin and the file must be plain (no link or junction, as in resolve). The
+ * copy goes to a new temporary file in bin, is flushed, and is renamed into place through its own
+ * handle without replacing anything: a sibling that appeared meanwhile (an updater's rename,
+ * another launcher's repair) is kept and the copy deleted. Returns 1 when sibling is there after.
+ */
+static int restore_sibling(const wchar_t *root, const wchar_t *version, const wchar_t *bin,
+                           const wchar_t *sibling) {
+    wchar_t *versions = join(root, L"versions");
+    wchar_t *folder = join(versions, version);
+    wchar_t *own_bin = join(folder, L"bin");
+    wchar_t *source = join(own_bin, SIBLING_LAUNCHER);
+    wchar_t *temp = new_path();
+    HANDLE in = INVALID_HANDLE_VALUE;
+    HANDLE out = INVALID_HANDLE_VALUE;
+    LARGE_INTEGER size;
+    int ok = path_kind(versions) == KIND_FOLDER && path_kind(folder) == KIND_FOLDER &&
+             path_kind(own_bin) == KIND_FOLDER && path_kind(source) == KIND_FILE;
+    size.QuadPart = 0;
+    if (ok) {
+        in = CreateFileW(source, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                         FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+        ok = in != INVALID_HANDLE_VALUE && GetFileSizeEx(in, &size) && size.QuadPart > 0 &&
+             size.QuadPart <= LAUNCHER_MAX_BYTES;
+    }
+    if (ok) {
+        out = new_temp_file(bin, L"." SIBLING_LAUNCHER, temp);
+        ok = out != INVALID_HANDLE_VALUE && copy_bytes(in, out, size.QuadPart) &&
+             FlushFileBuffers(out) && rename_open_file(out, sibling, FALSE);
+    }
+    if (out != INVALID_HANDLE_VALUE) {
+        if (!ok) discard_open_file(out);
+        CloseHandle(out);
+    }
+    if (in != INVALID_HANDLE_VALUE) CloseHandle(in);
+    if (ok) {
+        say(L"tasks: put %s back from versions\\%s: an update of this install was cut off\n",
+            sibling, version);
+    } else {
+        ok = path_kind(sibling) == KIND_FILE; /* put there by someone else meanwhile */
+        if (!ok) say(L"tasks: %s is missing and could not be put back\n", sibling);
+    }
+    free(versions);
+    free(folder);
+    free(own_bin);
+    free(source);
+    free(temp);
+    return ok;
+}
+
+/*
+ * The data folder, where the service keeps <state> (A2 3.2.1, 3.2.2 rule 1): the
+ * root of a TASKS_HOME install, else %USERPROFILE%\.tasks, as the service finds it. NULL when
+ * USERPROFILE is not a full path (a drive letter and a backslash, or a UNC share).
+ */
+static wchar_t *data_folder(const Place *place) {
+    wchar_t *profile;
+    wchar_t *data = NULL;
+    DWORD n;
+    if (place->separate) return copy_path(place->root);
+    profile = new_path();
+    n = GetEnvironmentVariableW(L"USERPROFILE", profile, PATH_CAP);
+    if (n > 3 && n < PATH_CAP && profile[n - 1] == L'\\') profile[--n] = L'\0';
+    if (n >= 3 && n < PATH_CAP &&
+        (((profile[0] | 0x20) >= L'a' && (profile[0] | 0x20) <= L'z' && profile[1] == L':' &&
+          profile[2] == L'\\') ||
+         (profile[0] == L'\\' && profile[1] == L'\\' && profile[2] != L'?' && profile[2] != L'.'))) {
+        data = join(profile, L"." PRODUCT_FOLDER);
+    }
+    free(profile);
+    return data;
+}
+
+/*
+ * Whether an update of this install was cut off: its journal, <state>\update.json (the data
+ * folder's state, as the service keeps it), is there, in a plain state folder (A2 3.12.6). Only its
+ * existence is read, never its contents.
+ */
+static int update_journal(const Place *place) {
+    wchar_t *data = data_folder(place);
+    wchar_t *state;
+    wchar_t *journal;
+    int found;
+    if (data == NULL) return 0;
+    state = join(data, L"state");
+    journal = join(state, L"update.json");
+    found = path_kind(state) == KIND_FOLDER && path_kind(journal) == KIND_FILE;
+    free(data);
+    free(state);
+    free(journal);
+    return found;
+}
+
+/*
+ * Sibling repair (A2 3.12.3 step 10). An update swaps the stable launchers one at a time, and one
+ * that runs can only be renamed aside, not replaced (A2 3.12.6), so an update cut off between the
+ * two renames of a launcher leaves the command folder without it. Before anything else, a stable
+ * launcher in the command folder checks that its sibling is there: one file-attribute call, the
+ * only cost on a normal start. When it is missing while an update's journal is there, the launcher
+ * puts back the sibling of the version current names, a copy of <root>\versions\<v>\bin\<sibling>:
+ * the folder it already runs Node and the bundle from. So the repair reads nothing else (not the
+ * journal's contents, no .new or .old-<n> file in the command folder) and can only ever place that
+ * version's own launcher, which is the side the update's journal names for it (the swap comes
+ * after current changed, and a rollback points current back before it restores the launchers).
+ * Node's repair reconciles the rest from the journal (A2 3.12.6). Without a journal nothing is
+ * repaired: then no update is under way, and whatever else manages the command folder (install
+ * --finish and its undo, an uninstall) is never raced. From the daily install's command folder,
+ * share and share\tasks must be plain folders before current is read, as resolve requires. A repair
+ * that cannot be made is reported, and the launcher goes on as it would have: it never changes
+ * what it runs.
+ */
+static void repair_sibling(const Place *place) {
+    wchar_t version[VERSION_MAX + 1];
+    wchar_t *bin;
+    wchar_t *sibling;
+    if (place->version_local) return;
+    bin = copy_path(place->self);
+    if (!cut_last(bin) || _wcsicmp(last_name(bin), L"bin") != 0) {
+        free(bin);
+        return;
+    }
+    if (place->command_folder) {
+        wchar_t *share = copy_path(place->root);
+        int plain = cut_last(share) && path_kind(share) == KIND_FOLDER &&
+                    path_kind(place->root) == KIND_FOLDER;
+        free(share);
+        if (!plain) {
+            free(bin);
+            return;
+        }
+    }
+    sibling = join(bin, SIBLING_LAUNCHER);
+    /* A folder or a link there is not what an install writes: it is left alone. */
+    if (path_kind(sibling) == KIND_MISSING && update_journal(place) &&
+        read_current(place->root, version, 1)) {
+        restore_sibling(place->root, version, bin, sibling);
+    }
+    free(sibling);
+    free(bin);
 }
 
 /* ---- Environment (A2 3.12.3 step 3) ---------------------------------------------------------- */
@@ -889,63 +1119,6 @@ static int plain_folder(const wchar_t *path) {
 }
 
 /*
- * A new, empty file in dir under a name no other file has: CREATE_NEW never opens, follows or
- * truncates anything that exists, so a link or file planted at a predicted name is left alone.
- */
-static HANDLE new_temp_file(const wchar_t *dir, wchar_t *path) {
-    int attempt;
-    for (attempt = 0; attempt < 16; attempt++) {
-        HANDLE h;
-        if (_snwprintf_s(path, PATH_CAP, _TRUNCATE, L"%s\\supervisor-gave-up.%lu-%llu-%d.tmp", dir,
-                         GetCurrentProcessId(), GetTickCount64(), attempt) < 0) {
-            break;
-        }
-        h = CreateFileW(path, GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
-                        NULL);
-        if (h != INVALID_HANDLE_VALUE || GetLastError() != ERROR_FILE_EXISTS) return h;
-    }
-    return INVALID_HANDLE_VALUE;
-}
-
-/* Renames the open file h to target, replacing what is there: the file itself, by its handle. */
-static BOOL rename_open_file(HANDLE h, const wchar_t *target) {
-    size_t bytes = wcslen(target) * sizeof(wchar_t);
-    size_t size = sizeof(FILE_RENAME_INFO) + bytes;
-    FILE_RENAME_INFO *info = (FILE_RENAME_INFO *)must_alloc(1, size);
-    BOOL ok;
-    info->ReplaceIfExists = TRUE;
-    info->RootDirectory = NULL;
-    info->FileNameLength = (DWORD)bytes;
-    memcpy(info->FileName, target, bytes);
-    ok = SetFileInformationByHandle(h, FileRenameInfo, info, (DWORD)size);
-    free(info);
-    return ok;
-}
-
-/*
- * The data folder, where the service keeps <state> (A2 3.2.1, 3.2.2 rule 1): the
- * root of a TASKS_HOME install, else %USERPROFILE%\.tasks, as the service finds it. NULL when
- * USERPROFILE is not a full path (a drive letter and a backslash, or a UNC share).
- */
-static wchar_t *data_folder(const Place *place) {
-    wchar_t *profile;
-    wchar_t *data = NULL;
-    DWORD n;
-    if (place->separate) return copy_path(place->root);
-    profile = new_path();
-    n = GetEnvironmentVariableW(L"USERPROFILE", profile, PATH_CAP);
-    if (n > 3 && n < PATH_CAP && profile[n - 1] == L'\\') profile[--n] = L'\0';
-    if (n >= 3 && n < PATH_CAP &&
-        (((profile[0] | 0x20) >= L'a' && (profile[0] | 0x20) <= L'z' && profile[1] == L':' &&
-          profile[2] == L'\\') ||
-         (profile[0] == L'\\' && profile[1] == L'\\' && profile[2] != L'?' && profile[2] != L'.'))) {
-        data = join(profile, L"." PRODUCT_FOLDER);
-    }
-    free(profile);
-    return data;
-}
-
-/*
  * Writes <state>\crash\supervisor-gave-up.json (A2 3.3.2, 3.13), <state> being the data folder's
  * state: the time, the window and each failure of the window, oldest first. No paths and no
  * environment. state and crash must be plain folders, so no link redirects the record elsewhere.
@@ -1008,23 +1181,107 @@ static void write_give_up(const Place *place, const Failure *ring, int count, in
 
     ok = plain_folder(state) && plain_folder(crash);
     if (ok) {
-        h = new_temp_file(crash, temp);
+        h = new_temp_file(crash, L"supervisor-gave-up", temp);
         ok = h != INVALID_HANDLE_VALUE &&
              WriteFile(h, json, (DWORD)strlen(json), &written, NULL) && FlushFileBuffers(h) &&
-             rename_open_file(h, file);
+             rename_open_file(h, file, TRUE);
         if (!ok) say(L"tasks: cannot write %s (error %lu)\n", file, GetLastError());
     }
     if (h != INVALID_HANDLE_VALUE) {
-        if (!ok) {
-            FILE_DISPOSITION_INFO remove = {TRUE};
-            SetFileInformationByHandle(h, FileDispositionInfo, &remove, sizeof remove);
-        }
+        if (!ok) discard_open_file(h);
         CloseHandle(h);
     }
     free(state);
     free(crash);
     free(file);
     free(temp);
+}
+
+/*
+ * A file's identity: its volume's serial number and its index there. Every name of one file shares
+ * it; a new file put at a name has another.
+ */
+typedef struct {
+    DWORD volume;
+    DWORD high;
+    DWORD low;
+    int known;
+} FileId;
+
+static FileId file_id(const wchar_t *path) {
+    FileId id;
+    BY_HANDLE_FILE_INFORMATION info;
+    HANDLE h = CreateFileW(path, FILE_READ_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                           OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    ZeroMemory(&id, sizeof id);
+    if (h == INVALID_HANDLE_VALUE) return id;
+    if (GetFileInformationByHandle(h, &info)) {
+        id.volume = info.dwVolumeSerialNumber;
+        id.high = info.nFileIndexHigh;
+        id.low = info.nFileIndexLow;
+        id.known = 1;
+    }
+    CloseHandle(h);
+    return id;
+}
+
+/*
+ * Whether the command folder's tasksw.exe is now another plain file than the one this supervisor
+ * started from: an update, or the service's repair of an interrupted one, put a new supervisor
+ * there while this one ran from the old file, which Windows let it rename aside (A2 3.12.6).
+ */
+static int supervisor_replaced(const Place *place, const FileId *own) {
+    FileId now;
+    if (!own->known || path_kind(place->self) != KIND_FILE) return 0;
+    now = file_id(place->self);
+    return now.known && (now.volume != own->volume || now.high != own->high || now.low != own->low);
+}
+
+/*
+ * Starts the supervisor that is now at the command folder's tasksw.exe, with no arguments and no
+ * inherited handle, to supervise in this one's place. It cleans the environment and finds its install by
+ * its own location, as every launcher does. Returns 0 when it could not be started: this one then
+ * goes on supervising.
+ */
+static int hand_over(const Place *place) {
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    wchar_t *cmdline = (wchar_t *)must_alloc(CMDLINE_CAP, sizeof(wchar_t));
+    BOOL started = FALSE;
+    ZeroMemory(&si, sizeof si);
+    ZeroMemory(&pi, sizeof pi);
+    si.cb = sizeof si;
+    if (_snwprintf_s(cmdline, CMDLINE_CAP, _TRUNCATE, L"\"%s\"", place->self) >= 0) {
+        started = CreateProcessW(place->self, cmdline, NULL, NULL, FALSE,
+                                 CREATE_UNICODE_ENVIRONMENT, NULL, NULL, &si, &pi);
+    }
+    free(cmdline);
+    if (!started) {
+        say(L"tasksw: cannot start the new supervisor %s (error %lu)\n", place->self,
+            GetLastError());
+        return 0;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return 1;
+}
+
+/*
+ * Before each start of the service but the first: when bin\tasksw.exe is another file than the one
+ * this supervisor runs from, starts that one in its place. Every restart checks, whatever ended the
+ * service, so a service that dies after its repair replaced the supervisor, before it could ask
+ * for the restart (exit 75), still leaves the service to the new one. Returns 1 when it handed
+ * over: this one then exits 0.
+ */
+static int handed_over(const Place *place, const FileId *own) {
+    if (!supervisor_replaced(place, own)) return 0;
+    if (hand_over(place)) {
+        trace(L"hand-over");
+        return 1;
+    }
+    trace(L"hand-over-failed");
+    return 0;
 }
 
 /*
@@ -1036,6 +1293,9 @@ static void write_give_up(const Place *place, const Failure *ring, int count, in
  *   other      a failure, as is a start that fails: restart after 1, 2, 4 and 8 units. The
  *              GIVE_UP_FAILURES-th failure within the window writes the give-up record and the
  *              supervisor exits 70
+ * Before any restart, when bin\tasksw.exe is no longer the file this supervisor runs from (an
+ * update or a repair replaced it), the new one is started in its place, and this one exits 0
+ * (handed_over).
  */
 static int supervise(const Place *place) {
     Failure failures[GIVE_UP_FAILURES];
@@ -1043,6 +1303,8 @@ static int supervise(const Place *place) {
     int failure_count = 0, failure_next = 0, quick_next = 0;
     const ULONGLONG unit = time_unit_ms();
     const ULONGLONG window = (ULONGLONG)FAILURE_WINDOW_UNITS * unit;
+    /* The file this supervisor runs from, while it is still at its name. */
+    const FileId own = file_id(place->self);
     int i;
     ZeroMemory(failures, sizeof failures);
     ZeroMemory(quick, sizeof quick);
@@ -1067,6 +1329,8 @@ static int supervise(const Place *place) {
             }
             if (code == EXIT_RESTART) {
                 int quick_recent = 0;
+                /* The service restarts after an update: a replaced supervisor hands over. */
+                if (handed_over(place, &own)) return 0;
                 for (i = 0; i < QUICK_RESTART_LIMIT; i++) {
                     if (quick[i] != 0 && is_recent(quick[i], now, window)) quick_recent++;
                 }
@@ -1096,6 +1360,7 @@ static int supervise(const Place *place) {
         }
         trace(L"wait %lu", RESTART_DELAY_UNITS[recent - 1]);
         Sleep((DWORD)(RESTART_DELAY_UNITS[recent - 1] * unit));
+        if (handed_over(place, &own)) return 0;
     }
 }
 #endif /* TASKS_GUI */
@@ -1115,7 +1380,10 @@ int wmain(int argc, wchar_t **argv) {
         }
         return package_info();
     }
-    if (!locate(&place) || !set_environment(&place)) return EXIT_SOFTWARE;
+    if (!locate(&place)) return EXIT_SOFTWARE;
+    /* Before anything runs: a sibling an interrupted update left missing is put back. */
+    repair_sibling(&place);
+    if (!set_environment(&place)) return EXIT_SOFTWARE;
 
 #ifdef TASKS_GUI
     if (argc < 2) {

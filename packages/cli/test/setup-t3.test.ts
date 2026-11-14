@@ -4,12 +4,13 @@
 // answer). Only the user pairs. A real service in this process, the CLI in this process with an
 // injected browser, a fake T3 on a loopback port the OS assigns, fixture data and a temporary
 // folder only; nothing reaches a real T3.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FakeT3 } from "@tasks/testkit/fake-t3";
+import { FAKE_T3_CLI, FakeT3 } from "@tasks/testkit/fake-t3";
 import { startService, type RunningService } from "@tasks/service/hub";
 import {
+  configOf,
   removeRuntimeDir,
   serviceEnv,
   stateOf,
@@ -31,6 +32,29 @@ beforeAll(async () => {
   cleanup = temp.cleanup;
   home = join(temp.root, "h");
   fake = await FakeT3.start(join(temp.root, "t3home"));
+  // A T3 instance whose `t3` is the fake CLI (M6.10), and one without a command.
+  mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(configOf(home), "machine.toml"),
+    [
+      "[[instance]]",
+      'id = "t3-codex"',
+      'target = "t3"',
+      'label = "T3 Codex"',
+      `exec = '${process.execPath}'`,
+      `args_prefix = ['${FAKE_T3_CLI}']`,
+      't3_provider_instance = "codex"',
+      't3_model = "fixture-model"',
+      'open_permission = "full-access"',
+      "",
+      "[[instance]]",
+      'id = "t3-plain"',
+      'target = "t3"',
+      'label = "T3 plain"',
+      "",
+    ].join("\n"),
+    { mode: 0o600 },
+  );
   service = await startService({
     env: serviceEnv(home, { T3CODE_HOME: fake.home }),
     identity: () => ({ root: false, elevated: false, package: null }),
@@ -72,6 +96,22 @@ function filesBelow(dir: string): string[] {
 
 const pairingFile = () => join(stateOf(home), "t3", "pairing.json");
 const pairing = () => JSON.parse(readFileSync(pairingFile(), "utf8")) as Record<string, unknown>;
+const logFile = () => join(stateOf(home), "logs", "service.log");
+/** How many pairings the service has logged: it logs one after the pairing file is written. */
+const pairedLines = () =>
+  readFileSync(logFile(), "utf8")
+    .split("\n")
+    .filter((line) => line.includes('"setup.paired"')).length;
+/**
+ * The new pairing and its log line: an attempt nobody waits for logs after it writes the file,
+ * and a line written after `afterAll` removed the folder would create it again.
+ */
+const newPairing = (before: unknown, lines: number) =>
+  waitFor(
+    () => (pairing()["grant"] !== before && pairedLines() > lines ? true : undefined),
+    30_000,
+    "the new pairing and its log line",
+  );
 
 describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
   test(
@@ -85,9 +125,25 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
       });
       expect(browsed).toHaveLength(0);
 
+      // Not paired: the instance with a `t3` command opens through the CLI (M6.10).
       expect(JSON.parse((await run(["setup", "t3", "--status", "--json"], false)).stdout)).toEqual({
         state: "not_paired",
         message: "Pair TT Tasks with T3 Code first: tasks setup t3",
+        running: true,
+        instances: [
+          {
+            id: "t3-codex",
+            route: "t3-cli",
+            message:
+              "Not paired: opens through T3's command line, which sends the brief. Pair for an unsent draft: tasks setup t3",
+          },
+          {
+            id: "t3-plain",
+            route: null,
+            reason: "not_paired",
+            message: "Pair TT Tasks with T3 Code first: tasks setup t3",
+          },
+        ],
       });
 
       const paired = await run(["setup", "t3", "--json"]);
@@ -119,13 +175,18 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
         expect(text).not.toContain(token);
         expect(text).not.toContain(refresh);
       }
-      const log = readFileSync(join(stateOf(home), "logs", "service.log"), "utf8");
+      const log = readFileSync(logFile(), "utf8");
       expect(log).toContain('"setup.paired"');
 
       const status = await run(["setup", "t3", "--status", "--json"], false);
       expect(JSON.parse(status.stdout)).toMatchObject({
         state: "ready",
         message: "Paired with T3 Code.",
+        running: true,
+        instances: [
+          { id: "t3-codex", route: "t3-mcp" },
+          { id: "t3-plain", route: "t3-mcp" },
+        ],
       });
       expect(status.stdout).not.toContain(token);
     },
@@ -162,7 +223,16 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
       expect(JSON.parse((await run(["setup", "t3", "--status", "--json"])).stdout)).toMatchObject({
         state: "not_running",
         message: "Start T3 Code",
+        running: false,
+        instances: [
+          { id: "t3-codex", route: null, reason: "not_running", message: "Start T3 Code" },
+          { id: "t3-plain", route: null, reason: "not_running", message: "Start T3 Code" },
+        ],
       });
+      const words = await run(["setup", "t3", "--status"]);
+      expect(words.stdout).toBe(
+        "Start T3 Code\n  t3-codex: Start T3 Code\n  t3-plain: Start T3 Code\n",
+      );
       await fake.restart();
       expect(pairing()["grant"]).toBe(after["grant"]);
     },
@@ -173,6 +243,7 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
     "an approval is kept when T3 answers, even when nothing waits for it any more",
     async () => {
       const before = pairing()["grant"];
+      const lines = pairedLines();
       const user = await classSession(home, service.endpoint.path, "cli-interactive");
       try {
         const started = (await user.call("t3/pair", {}, { timeoutMs: 30_000 })) as {
@@ -180,11 +251,7 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
         };
         // The CLI went away: nobody calls t3/pair_wait. The person approves anyway.
         expect(await fake.approveInBrowser(started.url)).toBe(200);
-        await waitFor(
-          () => (pairing()["grant"] !== before ? true : undefined),
-          30_000,
-          "the new pairing",
-        );
+        await newPairing(before, lines);
       } finally {
         user.close();
       }
@@ -195,6 +262,7 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
     "two pairings started at once leave one attempt: the older is cancelled before it hands out a page",
     async () => {
       const before = pairing()["grant"];
+      const lines = pairedLines();
       const one = await classSession(home, service.endpoint.path, "cli-interactive");
       const two = await classSession(home, service.endpoint.path, "cli-interactive");
       let open!: () => void;
@@ -226,11 +294,7 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
         // The older attempt was set up (registered) and closed again; the newer one pairs.
         expect(fake.registrations.length).toBeGreaterThanOrEqual(2);
         expect(await fake.approveInBrowser(started[0]?.url ?? "")).toBe(200);
-        await waitFor(
-          () => (pairing()["grant"] !== before ? true : undefined),
-          30_000,
-          "the new pairing",
-        );
+        await newPairing(before, lines);
       } finally {
         fake.registrationGate = undefined;
         open();
