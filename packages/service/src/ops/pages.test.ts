@@ -33,12 +33,32 @@ describe("[A3.3.4.tools.five] pages of a sections read", () => {
       "n12.9",
       "l1",
       "s3",
+      "o",
       "o.17",
+      "o0",
+      "o2",
       "h20",
     ]) {
       expect(formatToken(parseToken(token))).toBe(token);
     }
-    for (const bad of ["", "x", "l0", "l-1", "c3", "c3.1", "o2", "l.5", "n1.0", "l1.2.3", "L1"]) {
+    // The outcome's learnings are whole on a page, and only its text and the context are item 0.
+    for (const bad of [
+      "",
+      "x",
+      "l0",
+      "l-1",
+      "c0",
+      "c3",
+      "c3.1",
+      "o2.5",
+      "o0.3",
+      "o.0",
+      "n0",
+      "l.5",
+      "n1.0",
+      "l1.2.3",
+      "L1",
+    ]) {
       expect(() => parseToken(bad), bad).toThrow();
     }
   });
