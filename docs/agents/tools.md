@@ -1473,6 +1473,68 @@ Result:
 }
 ```
 
+#### List the agent sessions on M-14: one live, one that can be resumed
+
+Called by the agent.
+
+```json
+{
+  "task": "M-14",
+  "sections": [
+    "sessions"
+  ]
+}
+```
+
+Result:
+
+```json
+{
+  "view": "sections",
+  "as_of": "1.1046.5n0w8k3q",
+  "bound": false,
+  "task": {
+    "id": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
+    "ref": "M-14",
+    "title": "Fix appointment time zones",
+    "lifecycle": "active",
+    "status": "open",
+    "inbox": false,
+    "priority": 1,
+    "effort": "M",
+    "due": "2026-11-13",
+    "area": "Client work",
+    "project": "Lumen Health"
+  },
+  "sections": {
+    "sessions": [
+      {
+        "id": "se_0e4h8m2q6t0w4z8c2f6j0n4r8v",
+        "state": "live",
+        "instance": "claude-code",
+        "via": "ticket",
+        "route": "terminal",
+        "started": "2026-11-12T10:01:00Z",
+        "last_seen": "2026-11-12T10:03:00Z",
+        "resume": true
+      },
+      {
+        "id": "se_0c2f6j0n4r8v2y6b0e4h8m2q6t",
+        "state": "ended",
+        "instance": "codex-work",
+        "via": "launch_ref",
+        "route": "clipboard",
+        "started": "2026-11-11T16:30:00Z",
+        "last_seen": "2026-11-11T16:40:00Z",
+        "ended": "2026-11-12T16:40:00Z",
+        "end_reason": "idle",
+        "resume": false
+      }
+    ]
+  }
+}
+```
+
 ## `task.reopen`
 
 Reopen a completed or archived task. Its earlier outcome and learnings stay.
