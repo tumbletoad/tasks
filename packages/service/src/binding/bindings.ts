@@ -1371,7 +1371,10 @@ export class Bindings implements BindingPort {
       }
       this.#sessions.delete(session.id);
     } else if (before.via === null) {
-      this.#sessions.set(before.id, before);
+      // As it was, with any ID its launch recorded meanwhile (`launched`), not this slot's.
+      const now = this.#sessions.get(before.id);
+      const learned = (now?.native ?? []).filter((n) => BINDS_ALONE.has(n.trust));
+      this.#sessions.set(before.id, this.#joined(before, learned));
     }
     // A session an agent bound before this call stays: only this binding goes.
     this.#dirty = true;
