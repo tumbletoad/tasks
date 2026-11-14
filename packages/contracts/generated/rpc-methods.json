@@ -553,6 +553,15 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "ambiguous": {
+                      "description": "Several active tasks matched, the named one first",
+                      "items": {
+                        "description": "Task reference",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
                     "differs": {
                       "description": "Fields of an existing source the input gave otherwise",
                       "items": {
@@ -592,6 +601,22 @@
                         }
                       ],
                       "description": "The row it acted on, or a preference's key"
+                    },
+                    "lifecycle": {
+                      "description": "The matched task's lifecycle",
+                      "enum": [
+                        "active",
+                        "completed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "matched_by": {
+                      "description": "A task draft that matched an existing task: how",
+                      "enum": [
+                        "source_key"
+                      ],
+                      "type": "string"
                     },
                     "ref": {
                       "description": "Task reference",
