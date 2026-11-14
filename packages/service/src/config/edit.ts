@@ -373,6 +373,24 @@ function readIfPresent(path: string, maxBytes?: number): Buffer | undefined | "p
   return read.kind === "bytes" ? read.bytes : "problem";
 }
 
+/** Whether `dir` itself is a link (a junction on Windows too). A missing folder is none. */
+function isLinkedFolder(dir: string): boolean {
+  try {
+    return lstatSync(dir).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * machine.toml's rule for an edit: the folder is no link, on every OS (the reader's own check
+ * of a link folder needs an owner, which Windows does not give it), and the loader finds neither
+ * the folder nor the file unsafe.
+ */
+function unsafeMachineToml(configDir: string): boolean {
+  return isLinkedFolder(configDir) || loadMachineConfig(configDir).unsafe !== undefined;
+}
+
 /** Reads `<config>/machine.toml` and works out `edits` on it. Writes nothing. */
 export function prepareEdit(
   configDir: string,
@@ -380,7 +398,7 @@ export function prepareEdit(
 ): { ok: true; edit: PreparedEdit } | { ok: false; reason: EditRefusal } {
   const path = join(configDir, MACHINE_TOML);
   // The service's own rule: nothing is written into a config folder or machine.toml that fails it.
-  if (loadMachineConfig(configDir).unsafe !== undefined) return { ok: false, reason: "unsafe" };
+  if (unsafeMachineToml(configDir)) return { ok: false, reason: "unsafe" };
   const before = readIfPresent(path);
   if (before === "problem") return { ok: false, reason: "invalid_file" };
   let text = "";
@@ -431,8 +449,7 @@ export function commitEdit(edit: PreparedEdit, options: CommitOptions = {}): Edi
       ? again === undefined
       : again !== undefined && edit.before.equals(again);
   };
-  const unsafe =
-    options.unsafe ?? ((path: string) => loadMachineConfig(dirname(path)).unsafe !== undefined);
+  const unsafe = options.unsafe ?? ((path: string) => unsafeMachineToml(dirname(path)));
   if (unsafe(edit.path)) return { ok: false, reason: "unsafe" };
   if (!unchanged()) return { ok: false, reason: "changed_meanwhile" };
   let mode = 0o600;

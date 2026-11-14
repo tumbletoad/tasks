@@ -1,10 +1,10 @@
 // Machine preferences (A1 3.16, A2 3.2.4; A7 3.10 M3.11): machine.toml's `[preferences]`, read with
 // the registry's validation, and set or reset by one splice that keeps every other byte.
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { applyEdits } from "./edit.ts";
+import { applyEdits, prepareEdit } from "./edit.ts";
 import { loadMachineConfig, MACHINE_TOML, parseMachineConfig } from "./machine-toml.ts";
 import { readMachinePreferences, setMachinePreference } from "./preferences.ts";
 
@@ -114,6 +114,24 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
       });
     }
     expect(readFileSync(path, "utf8")).toBe("");
+  });
+
+  test("a config folder that is a link (a junction on Windows) is refused, and its target is left alone", () => {
+    const target = tempDir();
+    const before = '[preferences]\n"projection.dir" = "' + here.replaceAll("\\", "\\\\") + '"\n';
+    writeFileSync(join(target, MACHINE_TOML), before, { mode: 0o600 });
+    const link = join(tempDir(), "config");
+    symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+    expect(setMachinePreference(link, "projection.dir", `${here}2`)).toEqual({
+      ok: false,
+      reason: "unsafe",
+    });
+    expect(setMachinePreference(link, "projection.dir", null)).toEqual({
+      ok: false,
+      reason: "unsafe",
+    });
+    expect(prepareEdit(link, [])).toEqual({ ok: false, reason: "unsafe" });
+    expect(readFileSync(join(target, MACHINE_TOML), "utf8")).toBe(before);
   });
 
   test("unset removes only its own line, and a key set another way is refused", () => {

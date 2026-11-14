@@ -148,7 +148,7 @@ One machine-local file, `<config>/machine.toml`, never synced or exported. This 
 - **Reading is strict and content-free** (the key and a fixed code, never the value). A bad entry is dropped, so a half-understood instance is never offered and an approval that is not exactly `allow` approves nothing. A problem in the file itself or in `[[spaces]]` refuses the start, because hosting another set of spaces than the person wrote is worse than not starting.
 - The file names commands that run as this user, so its folder and the file follow 3.2.2 rule 5, and **a configuration file or folder that is a link is refused**: it would take the file out of the folder whose owner and mode are checked.
 - **Reload** is not built: the file is read once per start, except that `tasks roots add` replaces the service's roots at once. The planned rule: watch, reload changed sections after 500 ms of quiet, keep the last good version.
-- **Editing never rewrites the file**: `editMachineToml` splices one change into the file's own text and refuses what it cannot place exactly.
+- **Editing never rewrites the file**: `editMachineToml` splices one change into the file's own text and refuses what it cannot place exactly. It refuses a config folder that is a link on every OS (`unsafe`), a junction on Windows included, where the reader has no owner to judge the link by.
 - **The product never writes `machine.toml` on its own**, apart from the UI port the first start persists (3.8.2). Every other edit is a user-only operation that runs in the service under `service.lock`.
 
 #### 3.2.5 The `grants` table
