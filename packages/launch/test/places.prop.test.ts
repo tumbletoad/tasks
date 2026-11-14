@@ -304,6 +304,44 @@ function property(resolve: Resolver) {
   });
 }
 
+const link = (path: string[], to: "inside" | "outside", target: string[]): Spec => ({
+  kind: "link",
+  path,
+  to,
+  target,
+});
+const file = (path: string[]): Spec => ({ kind: "file", path });
+
+/**
+ * Worlds that once failed on Windows, shrunk from the seeds 1802256153, -24590030, 591581345,
+ * -287201831 and -1371263580: a link whose target is a file (a junction to a file, which Windows
+ * cannot follow, so its stat says the path is missing). The model says `not_a_directory`, as Linux
+ * does, and so must the resolver. Run first, before the random worlds.
+ */
+const LINK_TO_FILE: [[Spec[], string[]]][] = [
+  [[[file(["c d", "e.f"]), link(["a"], "inside", ["c d", "e.f"])], ["a"]]],
+  [[[file(["c d", "a"]), link(["a"], "inside", ["c d", "a"])], ["a"]]],
+  // On Windows `e.f/a` is the file `e.f/A`; elsewhere the model makes it a folder.
+  [
+    [
+      [file(["e.f", "A"]), link(["c d", "a"], "inside", ["e.f", "a"])],
+      ["c d/a", "c d"],
+    ],
+  ],
+  [
+    [
+      [file(["a", "e.f"]), link(["a", "a"], "inside", ["a", "e.f"])],
+      ["a/a", "a"],
+    ],
+  ],
+  [
+    [
+      [file(["c d"]), link(["e.f", "b"], "inside", ["c d"])],
+      ["e.f/b", "A"],
+    ],
+  ],
+];
+
 describe("[A1.3.15.places.prop] resolve returns exactly the directory a model of the tree names, or its reason", () => {
   test("random trees with links, random paths, checked against the model", async () => {
     // The real resolver, counting its outcomes.
@@ -314,7 +352,11 @@ describe("[A1.3.15.places.prop] resolve returns exactly the directory a model of
       seen.set(k, (seen.get(k) ?? 0) + 1);
       return r;
     };
-    await fc.assert(property(counting), { numRuns: 100 });
+    // fast-check counts the examples among the runs: 100 random worlds still run after them.
+    await fc.assert(property(counting), {
+      numRuns: 100 + LINK_TO_FILE.length,
+      examples: LINK_TO_FILE,
+    });
     // The trees reach every outcome, so the property is not met by trees that never escape.
     for (const outcome of [
       "ok",
