@@ -199,7 +199,8 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(fact("Priority")).toHaveText("P1");
     await expect(fact("Effort")).toHaveText("M");
     await expect(fact("Area")).toHaveText("Lumen › Lumen portal");
-    await expect(fact("Created")).toContainText("· today");
+    // Created today: "today" alone, so today's date stays the strip's (A5 U1).
+    await expect(fact("Created")).toHaveText("today");
     await expect(fact("Due")).not.toHaveText("");
     expect(await facts.count()).toBe(6);
 

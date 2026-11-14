@@ -232,7 +232,7 @@ The row becomes a card on `--k-raised` (radius 12) in place. The mockup shows th
 | Effort | Segmented: the space's effort scale (`tasks.effort_scale`, default S, M, L). Clicking the active one clears it |  |
 | Due | A pill button ("Fri 13 Nov") that opens the date popover (3.11) | Relative words are in the tooltip, so the date is not shown twice |
 | Area | A pill button with the area dot ("Client work › Lumen Health") that opens a type-ahead |  |
-| Created | "9 Nov · 3d" | Read-only. The only place age appears while expanded |
+| Created | "9 Nov · 3d" | Read-only. The only place age appears while expanded. A task created today shows "today" alone, so today's date stays the strip's (U1) |
 
 Editable values sit in outlined controls. Agent-only text has no outline. That outline is the only hint that a value can be changed by hand.
 
