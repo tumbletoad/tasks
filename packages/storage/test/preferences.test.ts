@@ -140,12 +140,11 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("a preference request holds pref.set operations only, so no operation reads a preference the request changes", () => {
-    const create = (status?: string): Operation =>
-      ({
-        kind: "task.create",
-        title: "Ask",
-        ...(status === undefined ? {} : { status }),
-      }) as Operation;
+    const create = (status?: string): Operation => ({
+      kind: "task.create",
+      title: "Ask",
+      ...(status === undefined ? {} : { status }),
+    });
     for (const ops of [
       // A status the request adds, or the default status of a list without `open`.
       [set("tasks.statuses", ["doing"]), create("doing")],
