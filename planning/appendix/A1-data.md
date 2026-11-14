@@ -133,7 +133,7 @@ Never put a live space in a folder a sync client copies: a client can copy `spac
 
 ### 3.4 Schema
 
-Schemas 0.1 and 0.2 are built and frozen (3.17). The SQL in `packages/storage/migrations/` (`0001-schema-0.1.ts`, `0002-schema-0.2.ts`) is the definition, and the facts code branches on (`APP_ID`, `FORBIDDEN_COLUMN_WORDS`, `CLOSED_ENUMS`, `OPEN_SETS`) are in `src/schema.ts`. The schema lint (`[A1.5.schema.lint]`) checks each against a fresh database, including STRICT, the foreign keys and the closed sets. Schema 0.2's tables `attachments`, `proposals`, `exchanges`, `exchange_items`, `labels`, `task_labels` and `learnings` exist, but no operation writes them yet (3.6).
+Schemas 0.1 and 0.2 are built and frozen (3.17). The SQL in `packages/storage/migrations/` (`0001-schema-0.1.ts`, `0002-schema-0.2.ts`) is the definition, and the facts code branches on (`APP_ID`, `FORBIDDEN_COLUMN_WORDS`, `CLOSED_ENUMS`, `OPEN_SETS`) are in `src/schema.ts`. The schema lint (`[A1.5.schema.lint]`) checks each against a fresh database, including STRICT, the foreign keys and the closed sets. Schema 0.2's tables `attachments`, `proposals`, `exchanges`, `exchange_items`, `labels` and `task_labels` exist, but no operation writes them yet (3.6). `learnings` is written by `task.wrap_up` (3.11.2).
 
 **Conventions.**
 - Every mutable row has `created_seq`, `version` and two JSON maps over its logical fields: `fv`, each field's physical version, and `fp`, its provenance (3.5, 3.10). A missing key means `created_seq`. The planned `sessions` and `runs` tables have no maps yet and `routines` only `fv` (open item 13). The logical fields are `TASK_FIELDS` and `CHILD_FIELDS` in `write/fields.ts`; `ext.<key>` is one field per key, and writers keep `ext` keys they do not know.
@@ -213,8 +213,10 @@ Built in the write path (`write/request.ts` parses the base, `write/writer.ts` c
 
 A1's operations are the writer's internal interface, not Zod schemas. Each kind is listed once in `packages/contracts/src/operations.ts` with who may emit it, the scopes it may need and whether it always needs `base`, and a test checks the writer against that table. A registry handler (A3, R5) expands its input into operations, resolving relative dates, names and A3's `focus: true`; the writer takes ISO dates, IDs and slugs only.
 
-**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A1.5.write.dedupe]`, `[A3.3.7.actors.first-act]`): `task.create` (with dedupe by source key), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `machine.register` and `actor.register`. What is not obvious from the code:
+**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A1.5.write.dedupe]`, `[A1.5.write.lifecycle]`, `[A3.3.7.actors.first-act]`): `task.create` (with dedupe by source key), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `task.archive`, `task.wrap_up`, `task.delete`, `task.restore`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `machine.register` and `actor.register`. What is not obvious from the code:
 - `task.context_append` writes the `context` field without a base, so two appends both land while a stale replace conflicts with it.
+- The lifecycle operations are 3.11's. `task.complete` and `task.archive` take `if_active`: a task finished at the start of the request is left as it is and touched by nothing, so no base is checked for it, instead of `INVALID_TRANSITION`. `task.wrap_up` takes `once`, complete_task's rule (A3 3.4.8): a task the request finds wrapped is left as it is when the operation would change nothing, and is otherwise a conflict on `wrap` whatever the base. Both exist so that complete_task's operations follow from its input alone.
+- A request sees its own tombstones: an operation after a `task.delete` of its task is `DELETED`, and one after a `task.restore` takes the task as live. Only `task.restore` may name a deleted task.
 - **Initial children** of a new task are child operations in the same request naming the draft's client ID. There is no nested form of `task.create`, so each row kind has one implementation.
 - `machine.register` runs once, when a space's writer first opens on its authority machine. A writer on another machine registers nothing and refuses every request (`not_authority`). The writer refuses a principal without an `actors` row; the CLI's `script` and `agent:unknown` actors and A4's session actors join a space with `actor.register` on their first act.
 - **Launch operations** (A4 3.9, 3.16) write `launches` with history, but a launch is not a child of its task: it moves neither the task's `touched` nor its projection. Only a human or the system writes them, and they are never undoable (R7). The focus rule (a second click within `FOCUS_MS` returns the intent in flight) is checked in the transaction, because two tabs could both create an intent, and is measured on the wall clock, because commit instants stand still while the clock is behind the newest commit (3.9). A launch request stores no free text, so it never goes through the request path's `submit` (A3).
@@ -223,9 +225,6 @@ A1's operations are the writer's internal interface, not Zod schemas. Each kind 
 
 | Operation | Main input | Precondition | Effect |
 |---|---|---|---|
-| `task.wrap_up` | `outcome`, `learnings {add[], remove[]}`, `clear_planning` | base | 3.11.2. Only for completed or archived tasks. |
-| `task.archive` | `reason` | base on `lifecycle` | `active` → `archived` (won't do). |
-| `task.delete`, `task.restore` | | base on `deleted` | Tombstone, or clear it. |
 | `note.patch`, `note.delete` | body, addressee | base | Edit or tombstone. An agent changes only notes it wrote. |
 | `log.delete` | | base | Tombstone. An agent deletes only its own entries. |
 | `source.patch` | fields | base | Affects every task linked to that source. |
@@ -252,7 +251,7 @@ A1's operations are the writer's internal interface, not Zod schemas. Each kind 
 - `new` creates a task beside finished matches, and refuses the request (`VALIDATION_FAILED` on `dedupe`) when an active task holds a key, so a caller never makes two active tasks for one item (A3's `create_new`).
 - `none` never looks, as the importer creates each legacy task (A7 3.15.3).
 
-1. A key's **holders** are the tasks linked to the live source with that key by a live link, that are not deleted: a removed link or a deleted task never matches. The request's own work counts as execution will see it: the links it adds before the draft, a draft it creates (which holds its keys from its create on, whatever the order of its source operations), and a task its earlier `task.reopen` makes active. A task its earlier `task.complete` finishes is the one finished last, and no match: a draft after it is new work, as `complete_task`'s follow-up of the same ticket is (A3 3.4.8), so it is created rather than matched to that task or to an earlier finish.
+1. A key's **holders** are the tasks linked to the live source with that key by a live link, that are not deleted: a removed link or a deleted task never matches. The request's own work counts as execution will see it: the links it adds before the draft, a draft it creates (which holds its keys from its create on, whatever the order of its source operations), a task its earlier `task.reopen` makes active, a task its earlier `task.delete` tombstones (it holds no key) and one its earlier `task.restore` brings back (it holds its keys again; `[A1.5.write.dedupe-lifecycle]`). A task its earlier `task.complete`, `task.archive` or `task.wrap_up` finishes or wraps up is the one finished last, and no match: a draft after it is new work, as `complete_task`'s follow-up of the same ticket is (A3 3.4.8), so it is created rather than matched to that task or to an earlier finish.
 2. One **active** holder is the match: op status `existing` with the task, `matched_by: "source_key"` and its `lifecycle`. Several active holders: `existing` naming the first by reference, with `ambiguous: [refs]` listing them all, lowest first.
 3. Otherwise a holder finished (completed or archived) within `tasks.dedupe_window_days` (default 30) of the request's instant is the match, the one finished last, with its lifecycle. A task finished at its `completed_at`, else at the commit that last wrote its lifecycle. Commit instants never go back (3.9), so two finishes can share one: the later commit is then the one finished last. The caller decides whether to reopen it or create anew with `new`.
 4. Otherwise the task is created. A source whose key exists is linked, never duplicated; the unique index guarantees one row per key.
@@ -279,7 +278,8 @@ All writes go through the space's writer. The only writes that bypass history ar
 - Checks that depend only on the input run before the transaction and store nothing. Checks that depend on the space run inside it, so their refusal is decided and has a receipt.
 - Every decided outcome is a value (`applied`, `unchanged`, `conflict`, `rejected`, later `proposed`), never an error. A conflict names the origin of the commit that set each field, so text applied through an import is labelled `import`, never the user. Storage failures stay `StorageError` and leave the request undecided.
 - Problems name the operation and the field, never a value or a key, because a key is input too.
-- Not built yet: `policy(plan, scope)` and proposals (M4.02), search rows (M3.05), the secret scan on written text (A6 3.16.4), and these limits: a learning at most 1 KiB and 20 per task, at most 20 labels per task, and internal importers (A7) committing up to 10,000 operations in one commit.
+- A learning is at most 1 KiB, and a task holds at most 20 live learnings (3.11.2).
+- Not built yet: `policy(plan, scope)` and proposals (M4.02), search rows (M3.05), the secret scan on written text (A6 3.16.4), and these limits: at most 20 labels per task, and internal importers (A7) committing up to 10,000 operations in one commit.
 
 **Reasons and pitfalls.**
 - Stored text is normalised before its limit is checked (`normaliseStored`), lone surrogates first, because SQLite stores UTF-8 and the row would otherwise differ from `commits.ops`.
@@ -402,27 +402,29 @@ Not built yet (M4.02). When A3's policy decides `propose`, the writer stages the
 
 ### 3.11 Completion, wrap-up, deletion and retention
 
+Built: `task.complete`, `task.reopen`, `task.archive`, `task.wrap_up`, `task.delete` and `task.restore` (`write/writer.ts`; tests `[A1.5.write.lifecycle]`, `[A1.5.write.wrap-up-additive]`, `[A1.5.write.tombstone]`, `[A1.5.write.dedupe-lifecycle]`). Each needs a base, on the fields it writes. Not built yet: `redact` (M3.14), undo of a check-off (M3.02), and A5's Trash and the read of a deleted task (M5).
+
 #### 3.11.1 Check-off (D12)
 
-`task.complete` (built) sets `lifecycle = 'completed'`, `completed_at`, `completed_by` and `wrap_state`: `wrapped` at once when the call carries an outcome (Full autonomy, D13), else `pending`. The task leaves every active view and every default agent query in the same commit. Not built yet: a human check-off is on the undo stack, so Ctrl+Z reopens the task under the usual guard; an agent completion is reverted from the history. A5's "checked off" list shows completed tasks with `pending`, and Completed shows the rest. Under Review autonomy, A3 turns an agent completion into a proposal and the task stays active until accepted.
+`task.complete` sets `lifecycle = 'completed'`, `completed_at`, `completed_by` and `wrap_state`: `wrapped` at once when the call carries an outcome (Full autonomy, D13), else `pending`. The task leaves every active view and every default agent query in the same commit. Only an active task is completed (`INVALID_TRANSITION`), except with `if_active`, which leaves a finished task as it is (3.6). Not built yet: a human check-off is on the undo stack, so Ctrl+Z reopens the task under the usual guard; an agent completion is reverted from the history. A5's "checked off" list shows completed tasks with `pending`, and Completed shows the rest. Under Review autonomy, A3 turns an agent completion into a proposal and the task stays active until accepted.
 
 #### 3.11.2 Wrap-up
 
-`task.wrap_up` is additive.
-- It writes `outcome` (at most 4 KiB) and adds or removes learning rows, then sets `wrap_state = 'wrapped'`, `wrapped_at` and `wrapped_by`.
+`task.wrap_up` (`task`, `outcome`, `learnings {add[], remove[]}`, `clear_planning`, `once`) is additive, and only for a completed or archived task (`INVALID_TRANSITION`).
+- It writes `outcome` (at most 4 KiB) when given, and adds or removes learning rows, then sets `wrap_state = 'wrapped'`, `wrapped_at` and `wrapped_by`.
+- A learning added is a row after the task's others, at most 1 KiB. A text the task holds already is not added twice. A learning removed (by its `lr_` ID, a learning of this task, else `NOT_FOUND`) gets its tombstone, and its text stays in its row and in history. A task holds at most 20 live learnings (`TOO_LARGE`).
 - With `clear_planning: true` it also clears the short planning scalars `focus_on` and `planned_for`. Their old values stay in `changes`.
-- It never changes `context`, notes, log entries, sources, places or attachments. A later wrap-up may rewrite the outcome or learnings with a base.
+- It never changes `context`, notes, log entries, sources, places or attachments. A later wrap-up may rewrite the outcome or learnings with a base. With `once` it never rewrites: a task found wrapped is left as it is or is a conflict (3.6).
 
 The vision's "planning context can be cleared" is met by retrieval, not by removal. For completed tasks, A3's default retrieval and the projection lead with outcome and learnings, and put context, notes and log under a "Record" section fetched only on request. A4's wrap-up routine calls this operation once per task.
 
 #### 3.11.3 Reopen and archive
 
-`task.reopen` (built) returns the task to `active`, clears `wrap_state`, `completed_at` and `completed_by`, and keeps the outcome and learnings as the previous result, which A5 shows as such. `task.archive` (not built) sets `archived` with a reason for work that will not be done; an archived task may be wrapped up like a completed one. Both keep the same ID and reference.
+`task.reopen` returns the task to `active`, clears `wrap_state`, `completed_at`, `completed_by` and `archived_reason`, and keeps the outcome and learnings as the previous result, which A5 shows as such. `task.archive` takes an active task to `archived` with an optional reason for work that will not be done. It has no completion time, and it leaves `wrap_state` empty: nothing waits for a wrap-up of work the user decided not to do. An archived task may be wrapped up like a completed one. Both keep the same ID and reference.
 
 #### 3.11.4 Deletion and redaction
 
-Not built yet (M3.04, M3.14).
-- `task.delete` sets a tombstone. The task leaves views, search, the projection and the catalogue; its rows and history stay, and `task.restore` brings it back at any time. Trash lists tombstoned tasks. Nothing empties it automatically.
+- `task.delete` sets the tombstone (`deleted_at`, `deleted_by`) and nothing else: every row of the task and its history stay, and `task.restore` clears it at any time, which only a deleted task takes (`INVALID_TRANSITION`). A deleted task takes no other operation (`DELETED`), holds no source key (3.6), and leaves views, search, the projection and the catalogue. Trash lists tombstoned tasks. Nothing empties it automatically.
 - Under Full autonomy an agent may delete, because deletion is recoverable. A6's destructive-burst brake turns a burst into proposals. It counts affected tasks per writer scope, not commits: each commit stores `affected`, `commits_scope` sums them over the window, and the staged plan's own count is added before the decision (3.7, X13).
 - `redact` is the only destructive operation: human-only (UI with a typed confirmation, or an interactive CLI), never available to agents, never automatic.
   - **Entity mode** removes a task or note and its children from state. Launch, session and run rows keep their history with `task_id` set to null. The task's reference is never reused, and its IDs go into `redactions`.
