@@ -22,7 +22,9 @@
 //   under that guard.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
-//   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
+//   tombstoned, and that row is the conflict: the unique indexes allow one live row each. A task
+//   or a link that would make an active task hold a source key another active task holds stays
+//   too, and that task's link is the conflict: dedupe never makes two active tasks for one item.
 // - Launch, session, run and machine records are never inverted (A1 3.6, 3.10.3).
 //
 // A task's lifecycle and wrap-up obey one CHECK (an active task has no wrap state). An inversion of
@@ -239,6 +241,22 @@ const SQL = {
   placeTaken:
     "SELECT * FROM places WHERE owner_kind = $kind AND owner_id = $owner " +
     "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
+  /** The links to keyed sources of tasks a plan brings back or relinks, with their tasks' state. */
+  keyedLinks:
+    "SELECT ts.task_id AS task_id, ts.source_id AS source_id, ts.removed_at AS removed_at, " +
+    "s.source_key AS source_key, t.lifecycle AS lifecycle, t.deleted_at AS deleted_at " +
+    "FROM task_sources ts JOIN sources s ON s.id = ts.source_id JOIN tasks t ON t.id = ts.task_id " +
+    "WHERE ts.task_id IN (SELECT value FROM json_each($tasks)) AND s.source_key IS NOT NULL",
+  liveSources:
+    "SELECT id, source_key FROM sources WHERE deleted_at IS NULL " +
+    "AND source_key IN (SELECT value FROM json_each($keys))",
+  /** The live links of live tasks to these sources: one pass, as `task_sources` has no index. */
+  keyHolders:
+    "SELECT ts.task_id AS task_id, ts.source_id AS source_id, ts.created_seq AS created_seq, " +
+    "ts.version AS version, ts.fv AS fv, ts.fp AS fp, t.lifecycle AS lifecycle " +
+    "FROM task_sources ts JOIN tasks t ON t.id = ts.task_id " +
+    "WHERE ts.source_id IN (SELECT value FROM json_each($sources)) AND ts.removed_at IS NULL " +
+    "AND t.deleted_at IS NULL",
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
 } as const;
 
@@ -589,9 +607,14 @@ export function planInversions(
     });
   }
   if (options.partial) keepTogether(plan, read);
-  keepActiveUnwrapped(plan, read, (where, version) => {
+  const name = (
+    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
+    version: number,
+  ): void => {
     blocked(conflict(where, version));
-  });
+  };
+  keepActiveUnwrapped(plan, read, name);
+  keepOneActiveHolder(conn, plan, name);
   return plan;
 }
 
@@ -739,6 +762,110 @@ function keepActiveUnwrapped(
         unsafe.has(i.id)
       ),
   );
+}
+
+/**
+ * A restore never makes a second active holder of a source key (A1 3.6, 3.10). A row the plan
+ * brings back, a task's tombstone cleared or a task's link to a keyed source revived, takes the
+ * place of the create or the link that made it, and dedupe never creates a task, or links a key
+ * to one, beside an active task that holds that key. So when the task is active after the plan
+ * and another active task outside the restore holds one of its keys by a live link, the restore
+ * stays undone and that holder's link is the conflict, named with who created or revived it. A
+ * finished holder never blocks: a task beside a finished one is what `dedupe: "new"` makes.
+ * Setting a lifecycle back is not a restore: it repeats a complete or a reopen, which dedupe does
+ * not guard either.
+ *
+ * The plan as it will stand decides: rows it tombstones hold nothing, lifecycles it sets back
+ * count with their new value. A task's keys are those of the sources its live links name, whatever
+ * the source's own state, so a source that a unique key keeps tombstoned still names the holder.
+ * Three statements, whatever the plan's size: a redo of an importer's commit restores thousands.
+ */
+function keepOneActiveHolder(
+  conn: Connection,
+  plan: InversionPlan,
+  name: (
+    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
+    version: number,
+  ) => void,
+): void {
+  const planned = new Map<string, Inversion>();
+  for (const i of plan.inversions) planned.set(`${i.entity}|${i.id}|${i.field}`, i);
+  /** Whether a row is live once the plan applies: what it sets its tombstone to, else as now. */
+  const liveAfter = (entity: InvertibleEntity, id: string, now: boolean): boolean => {
+    const i = planned.get(`${entity}|${id}|${TABLES[entity].tombstone}`);
+    if (i === undefined) return now;
+    return i.kind === "restore" && isLive(parsed(i.value));
+  };
+  const activeAfter = (task: string, now: unknown): boolean => {
+    const i = planned.get(`tasks|${task}|lifecycle`);
+    return (i?.kind === "restore" ? columnOf(i.value, "lifecycle") : now) === "active";
+  };
+  /** What the plan brings back: tasks by ID, links by `task|source`. */
+  const tasks = new Map<string, Inversion>();
+  const links = new Map<string, Inversion>();
+  for (const i of plan.inversions) {
+    if (i.kind !== "restore" || !isLive(parsed(i.value))) continue;
+    if (i.entity === "tasks" && i.field === "deleted") tasks.set(i.id, i);
+    if (i.entity === "task_sources" && i.field === "removed") links.set(i.id, i);
+  }
+  if (tasks.size === 0 && links.size === 0) return;
+  const owners = new Set(tasks.keys());
+  for (const link of links.keys()) owners.add(keyOf("task_sources", link)["task"] ?? "");
+  /** Each key a restore makes an active task hold, with the inversions that make it. */
+  const claims = new Map<string, { tasks: Set<string>; by: Set<Inversion> }>();
+  for (const row of conn.prepare(SQL.keyedLinks).all({ tasks: JSON.stringify([...owners]) })) {
+    const r = new RowReader("task_sources", row);
+    const task = r.text("task_id");
+    const link = `${task}|${r.text("source_id")}`;
+    const restored = tasks.get(task);
+    const revived = links.get(link);
+    const by = restored ?? revived;
+    if (by === undefined) continue;
+    if (!liveAfter("task_sources", link, r.optInt("removed_at", "instant") === null)) continue;
+    if (!liveAfter("tasks", task, r.optInt("deleted_at", "instant") === null)) continue;
+    if (!activeAfter(task, r.text("lifecycle"))) continue;
+    const key = r.text("source_key");
+    const claim = claims.get(key) ?? { tasks: new Set<string>(), by: new Set<Inversion>() };
+    claim.tasks.add(task);
+    claim.by.add(by);
+    claims.set(key, claim);
+  }
+  if (claims.size === 0) return;
+  const sources = new Map<string, string>();
+  for (const row of conn
+    .prepare(SQL.liveSources)
+    .all({ keys: JSON.stringify([...claims.keys()]) })) {
+    const r = new RowReader("sources", row);
+    const id = r.text("id");
+    if (liveAfter("sources", id, true)) sources.set(id, r.text("source_key"));
+  }
+  if (sources.size === 0) return;
+  const blocking = new Set<Inversion>();
+  for (const row of conn
+    .prepare(SQL.keyHolders)
+    .all({ sources: JSON.stringify([...sources.keys()]) })) {
+    const r = new RowReader("task_sources", row);
+    const task = r.text("task_id");
+    const source = r.text("source_id");
+    const claim = claims.get(sources.get(source) ?? "");
+    if (claim === undefined || claim.tasks.has(task)) continue;
+    const link = `${task}|${source}`;
+    if (!liveAfter("task_sources", link, true) || !liveAfter("tasks", task, true)) continue;
+    if (!activeAfter(task, r.text("lifecycle"))) continue;
+    for (const by of claim.by) blocking.add(by);
+    const state = rowState("task_sources", row, TABLES.task_sources.fields);
+    name(
+      {
+        entity: "task_sources",
+        id: link,
+        task: task as Id<"t">,
+        field: TABLES.task_sources.tombstone,
+        value: null,
+      },
+      versionOf(state, TABLES.task_sources.tombstone),
+    );
+  }
+  if (blocking.size > 0) plan.inversions = plan.inversions.filter((i) => !blocking.has(i));
 }
 
 // ---------------------------------------------------------------------------------------------
