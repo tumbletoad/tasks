@@ -172,9 +172,21 @@ export interface Today {
   readonly sections: readonly TodaySectionRows[];
 }
 
+/**
+ * The day of each row's due time, by time zone: reading a calendar date through `Intl` is the
+ * costly part of Today, and a row is a new object whenever it changes, so each is read once.
+ */
+const dueDays = new WeakMap<TaskRow, { readonly zone: string; readonly day: string }>();
+
 /** A task's due day on the viewer's calendar: its date, or the day of its due time. */
 export function dueDayOf(task: TaskRow, clock: Clock): string | undefined {
-  if (task.due_at !== undefined) return localDate(task.due_at, clock.timeZone);
+  if (task.due_at !== undefined) {
+    const known = dueDays.get(task);
+    if (known?.zone === clock.timeZone) return known.day;
+    const day = localDate(task.due_at, clock.timeZone);
+    dueDays.set(task, { zone: clock.timeZone, day });
+    return day;
+  }
   if (task.due_date !== undefined && dayNumber(task.due_date) !== undefined) return task.due_date;
   return undefined;
 }
@@ -440,10 +452,10 @@ export interface HeldTask {
 
 /**
  * Today's sections with the expanded task kept where it was shown (A5 3.3, 3.15: nothing moves
- * under focus). An update that moves the expanded task to another section, or off Today, leaves
- * it at its place in the section it was in until it is collapsed, with its latest data. An
- * expanded task Today has not shown (a link or a reload names it) sits at the top of Focus. Still
- * disjoint: the held task leaves the section the update put it in.
+ * under focus). An update that moves the expanded task inside its section, to another section,
+ * or off Today, leaves it at its place in the section it was in until it is collapsed, with its
+ * latest data. An expanded task Today has not shown (a link or a reload names it) sits at the top
+ * of Focus. Still disjoint: the held task leaves the place the update put it in.
  */
 export function holdExpanded(
   sections: readonly TodaySectionRows[],
@@ -451,8 +463,14 @@ export function holdExpanded(
 ): readonly TodaySectionRows[] {
   if (held === undefined) return sections;
   const id = held.task.id;
-  const now = sections.find((s) => s.tasks.some((t) => t.id === id))?.key;
-  if (now !== undefined && (held.section === undefined || now === held.section)) return sections;
+  const now = sections.find((s) => s.tasks.some((t) => t.id === id));
+  if (now !== undefined && held.section === undefined) return sections;
+  if (now !== undefined && now.key === held.section) {
+    const at = now.tasks.findIndex((t) => t.id === id);
+    if (held.index === undefined || at === Math.min(held.index, now.tasks.length - 1)) {
+      return sections;
+    }
+  }
   const target: TodaySection = held.section ?? "focus";
   const out: TodaySectionRows[] = [];
   for (const key of TODAY_SECTIONS) {

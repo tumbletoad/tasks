@@ -310,6 +310,20 @@ describe("[A5.3.4.web.today] Today's sections and week strip", () => {
     expect(linked.map((s) => s.tasks.map((t) => t.title))).toEqual([["backlog", "a"]]);
     const there = todayOf([a, b], CLOCK).sections;
     expect(holdExpanded(there, { task: b })).toBe(there);
+    expect(holdExpanded(there, { task: b, section: "focus", index: 1 })).toBe(there);
+  });
+
+  test("an expanded task an update re-sorts inside its section stays at its place", () => {
+    const a = task({ title: "a", focus_on: "2026-11-12", priority: 1 });
+    const b = task({ title: "b", focus_on: "2026-11-12", priority: 2 });
+    const c = task({ title: "c", focus_on: "2026-11-12", priority: 3 });
+    // An agent lowers a's priority: Focus would put it last.
+    const lowered = { ...a, priority: 4 };
+    const after = todayOf([lowered, b, c], CLOCK).sections;
+    expect(after.map((s) => s.tasks.map((t) => t.title))).toEqual([["b", "c", "a"]]);
+    const held = holdExpanded(after, { task: lowered, section: "focus", index: 0 });
+    expect(held.map((s) => s.tasks.map((t) => t.title))).toEqual([["a", "b", "c"]]);
+    expect(held[0]?.tasks[0]).toBe(lowered);
   });
 });
 
@@ -363,10 +377,32 @@ const arbTask = fc.record({
   planned_for: arbDay,
   focus_on: arbDay,
   area_id: maybe(fc.constantFrom("ar_a", "ar_b")),
-  lifecycle: fc.constantFrom("active", "active", "active", "completed"),
+  lifecycle: fc.constantFrom("active", "active", "active", "completed", "archived"),
   created_at: fc.integer({ min: 0, max: 1_000 }),
   position: fc.constantFrom("a", "b", "c"),
 });
+
+/** A task's due day and planned day, read plainly: the due time's day on the viewer's calendar. */
+function daysOf(t: TaskRow, clock: Clock): string[] {
+  const due = t.due_at !== undefined ? localDate(t.due_at, clock.timeZone) : t.due_date;
+  return [due, t.planned_for].filter((d): d is string => d !== undefined);
+}
+
+/**
+ * The oracle: A5 3.4's table written again from the specification, not from views.ts. The section
+ * whose rule selects a task before Next's limit and Changes, or none.
+ */
+function ruleOf(t: TaskRow, clock: Clock): "focus" | "week" | "next" | undefined {
+  if (t.lifecycle !== "active") return undefined;
+  if (t.focus_on !== undefined && t.focus_on <= clock.today) return "focus";
+  if (t.status === "backlog") return undefined;
+  const days = daysOf(t, clock);
+  if (days.some((d) => d <= clock.today)) return "focus";
+  const last = dateOf((dayNumber(clock.today) ?? 0) + 6);
+  if (days.some((d) => d > clock.today && d <= last)) return "week";
+  if (t.status === "open" && !t.inbox) return "next";
+  return undefined;
+}
 
 describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => {
   test("every task is in at most one section, and each selected task meets its section's rule", () => {
@@ -432,40 +468,45 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
           }
           const sectionOf = (key: TodaySection) =>
             today.sections.find((s) => s.key === key)?.tasks ?? [];
-          for (const t of sectionOf("focus")) {
-            expect(inFocus(t, CLOCK)).toBe(true);
-            if (day !== undefined) expect(onDay(t, day, CLOCK)).toBe(true);
-          }
-          for (const t of sectionOf("week")) {
-            expect(inFocus(t, CLOCK)).toBe(false);
-            expect(inWeek(t, CLOCK)).toBe(true);
-            if (day !== undefined) expect(onDay(t, day, CLOCK)).toBe(true);
+          // Every task against the oracle: Focus and This week hold exactly what their rule
+          // selects (narrowed by the chosen day), Next only its candidates, Changes nothing above.
+          const candidates = tasks.filter((t) => ruleOf(t, CLOCK) === "next");
+          for (const t of tasks) {
+            const rule = ruleOf(t, CLOCK);
+            const shown = seen.get(t.id);
+            if (rule === "focus" || rule === "week") {
+              const visible = day === undefined || daysOf(t, CLOCK).includes(day);
+              expect(shown, `${t.id} by rule ${rule}`).toBe(visible ? rule : undefined);
+            } else if (rule === "next") {
+              expect([undefined, "next", "changes"]).toContain(shown);
+            } else if (t.lifecycle === "active") {
+              expect([undefined, "changes"]).toContain(shown);
+            } else {
+              expect(shown).toBeUndefined();
+            }
           }
           // Next is full whenever it has candidates: none of them is lost to a section above.
-          const candidates = tasks.filter(
-            (t) => t.lifecycle === "active" && inNext(t) && !inFocus(t, CLOCK) && !inWeek(t, CLOCK),
-          );
           expect(sectionOf("next").length).toBe(Math.min(nextLimit, candidates.length));
-          for (const t of sectionOf("next")) {
-            expect(inFocus(t, CLOCK) || inWeek(t, CLOCK)).toBe(false);
-            expect(inNext(t)).toBe(true);
-          }
           expect(sectionOf("changes").length).toBeLessThanOrEqual(CHANGES_LIMIT);
           for (const t of sectionOf("changes")) {
-            expect(inFocus(t, CLOCK) || inWeek(t, CLOCK)).toBe(false);
             const change = changes.find((c) => c.task === t.id);
             expect(change?.at ?? 0).toBeGreaterThanOrEqual(CLOCK.now - 7 * 86_400_000);
           }
-          // Without a filter, every task Focus or This week selects is shown; a starred one in Focus.
-          if (day === undefined) {
-            for (const t of tasks) {
-              if (inFocus(t, CLOCK)) expect(seen.get(t.id)).toBe("focus");
-              else if (inWeek(t, CLOCK)) expect(seen.get(t.id)).toBe("week");
-              if (t.lifecycle === "active" && isStarred(t, CLOCK.today))
-                expect(seen.get(t.id)).toBe("focus");
-            }
+          // The production predicates agree with the oracle.
+          for (const t of tasks) {
+            if (t.lifecycle !== "active") continue;
+            const rule = ruleOf(t, CLOCK);
+            expect(inFocus(t, CLOCK)).toBe(rule === "focus");
+            expect(!inFocus(t, CLOCK) && inWeek(t, CLOCK)).toBe(rule === "week");
+            expect(!inFocus(t, CLOCK) && !inWeek(t, CLOCK) && inNext(t)).toBe(rule === "next");
+            if (isStarred(t, CLOCK.today)) expect(rule).toBe("focus");
+            const due = dueDayOf(t, CLOCK);
+            if (due !== undefined) expect(daysOf(t, CLOCK)[0]).toBe(due);
+            if (day !== undefined)
+              expect(onDay(t, day, CLOCK)).toBe(daysOf(t, CLOCK).includes(day));
           }
-          // The strip: seven days from today; each mark is a Focus or This week task's due or plan.
+          // The strip: seven days from today; its marks are exactly the Focus and This week
+          // tasks' days in it, a task's planned day only when it is not its due day.
           expect(today.strip.map((d) => d.date)).toEqual(DAYS.slice(10, 17));
           expect(today.strip.map((d) => d.today)).toEqual([
             true,
@@ -477,13 +518,12 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
             false,
           ]);
           for (const cell of today.strip) {
-            for (const mark of cell.marks) {
-              const t = tasks.find((x) => x.id === mark.task);
-              expect(t !== undefined && (inFocus(t, CLOCK) || inWeek(t, CLOCK))).toBe(true);
-              if (t !== undefined) {
-                expect(dueDayOf(t, CLOCK) === cell.date || t.planned_for === cell.date).toBe(true);
-              }
-            }
+            const want = tasks
+              .filter((t) => ruleOf(t, CLOCK) === "focus" || ruleOf(t, CLOCK) === "week")
+              .filter((t) => daysOf(t, CLOCK).includes(cell.date))
+              .map((t) => t.id)
+              .sort();
+            expect(cell.marks.map((m) => m.task).sort()).toEqual(want);
           }
           // Holding the expanded task keeps every section disjoint and puts it where it was.
           if (holdDraft !== undefined) {
@@ -496,8 +536,14 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
               });
               const ids = held.flatMap((s) => s.tasks.map((t) => t.id));
               expect(new Set(ids).size).toBe(ids.length);
-              const at = held.find((s) => s.tasks.some((t) => t.id === heldTask.id))?.key;
-              expect(at).toBe(holdDraft.section ?? seen.get(heldTask.id) ?? "focus");
+              const home = held.find((s) => s.tasks.some((t) => t.id === heldTask.id));
+              expect(home?.key).toBe(holdDraft.section ?? seen.get(heldTask.id) ?? "focus");
+              // At its place there, as near as the section's length allows.
+              if (holdDraft.section !== undefined && home !== undefined) {
+                expect(home.tasks.findIndex((t) => t.id === heldTask.id)).toBe(
+                  Math.min(holdDraft.index, home.tasks.length - 1),
+                );
+              }
               for (const s of held) expect(s.tasks.length).toBeGreaterThan(0);
             }
           }

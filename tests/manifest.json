@@ -2923,7 +2923,7 @@
     },
     {
       "id": "A5.3.22.web.list-keys",
-      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, or is the view's last row, and a held row stays the current row for the tab order and the keys",
+      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, is re-sorted inside its list, or is the view's last row, and a held row stays the current row for the tab order and the keys",
       "source": "A5 3.22, A5 3.21, A5 3.15, A7 3.12 M5.03",
       "owner": "M5",
       "kind": "ci",
@@ -2995,7 +2995,7 @@
     },
     {
       "id": "A5.3.4.web.today-disjoint",
-      "title": "Property test over generated tasks, changes, days, Next limits and held tasks: no task is in two sections, every selected task meets its section's rule, every task Focus or This week selects is shown without a day filter, the strip's marks are those tasks' due and planned days, and holding the expanded task keeps the sections disjoint",
+      "title": "Property test over generated clocks (time zones, instants around midnights and daylight-saving changes), tasks of every lifecycle, changes, days, Next limits and held tasks: no task is in two sections, each task is where an oracle written from the specification puts it (narrowed by the chosen day), Next is full whenever it has candidates, the strip's marks are exactly the Focus and This week tasks' due and planned days, and holding the expanded task keeps the sections disjoint and the task at its place",
       "source": "A5 3.4, A5 5, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
@@ -3003,7 +3003,7 @@
     },
     {
       "id": "A5.3.4.web.today-page",
-      "title": "Today in a DOM with the real live store: the strip shows today's date once with one cell in the tab order, the sections are section elements under their headings with no view heading, the chosen day narrows Focus and This week and Escape clears it, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "title": "Today in a DOM with the real live store: the strip shows today's date once with one cell in the tab order, a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, the chosen day narrows Focus and This week and Escape clears it, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
       "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",

@@ -88,8 +88,9 @@ const estimate = (item: Item | undefined, expanded: string | undefined): number 
  * The items to show. Nothing moves under focus (A5 3.15 item 6): while a row holds focus it keeps
  * its place and its group, so its element (and the focus in it) survives, whatever the update did.
  * A focused row the update took out of the view stays with its last data; one the update moved to
- * another group or project stays under its old heading with its new data. It goes where the view
- * puts it once focus leaves.
+ * another group or project stays under its old heading with its new data; one the update re-sorted
+ * inside its list keeps its place there with its new data. It goes where the view puts it once
+ * focus leaves.
  */
 function withHeld(items: Items, before: Items | undefined, focused: string | undefined): Items {
   if (focused === undefined || before === undefined) return items;
@@ -99,7 +100,7 @@ function withHeld(items: Items, before: Items | undefined, focused: string | und
   const now = items.index.get(focused);
   const moved = now === undefined ? undefined : items.items[now];
   if (moved?.kind === "row" && moved.group === held.group && moved.section === held.section) {
-    return items;
+    return moved.posinset === held.posinset ? items : inPlace(items, moved, held.posinset);
   }
   const kept: RowItem =
     moved?.kind === "row"
@@ -111,6 +112,38 @@ function withHeld(items: Items, before: Items | undefined, focused: string | und
   const index = new Map<string, number>();
   list.forEach((item, i) => index.set(item.key, i));
   return { items: list, index, rows: now === undefined ? items.rows + 1 : items.rows };
+}
+
+/**
+ * The items with a row put back at its old place (1-based) in its own list, the rows of that list
+ * numbered again in the order shown, so each still announces its place.
+ */
+function inPlace(items: Items, row: RowItem, posinset: number): Items {
+  const same = (item: Item | undefined): item is RowItem =>
+    item?.kind === "row" && item.group === row.group && item.section === row.section;
+  const rest = items.items.filter((item) => item.key !== row.key);
+  let place = -1;
+  let seen = 0;
+  for (let i = 0; i < rest.length; i += 1) {
+    if (!same(rest[i])) continue;
+    seen += 1;
+    place = i + 1;
+    if (seen === posinset - 1) break;
+  }
+  // The first of its list: before the list's first row.
+  if (posinset <= 1) place = rest.findIndex(same);
+  if (place < 0) return items;
+  const list: Item[] = [...rest.slice(0, place), row, ...rest.slice(place)];
+  let n = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    if (!same(item)) continue;
+    n += 1;
+    if (item.posinset !== n) list[i] = { ...item, posinset: n };
+  }
+  const index = new Map<string, number>();
+  list.forEach((item, i) => index.set(item.key, i));
+  return { items: list, index, rows: items.rows };
 }
 
 interface Bucket<T> {

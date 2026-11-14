@@ -6,7 +6,15 @@
 // What it holds itself: which task is expanded (one at a time) and which row is current, the launch
 // receipts of the tasks this tab follows, the rows an agent has just added (they fade in), and the
 // screen reader's summary of agents' changes in the view (A5 3.15 items 7 and 10).
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { requestId, type Instance, type Receipt } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
@@ -134,7 +142,6 @@ export function TaskList({
       : (state.tasks.get(expanded) ??
         (injected?.id === expanded ? injected : undefined) ??
         (held.current?.id === expanded ? held.current : undefined));
-  held.current = expandedRow;
 
   /** Where the expanded row was shown last: its group and its place there. */
   const place = useRef<{ id: string; group: string; index: number } | undefined>(undefined);
@@ -166,15 +173,19 @@ export function TaskList({
     return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
   }, [state.tasks, state.areas, state.projects, filter, groupsOf, expandedRow]);
 
-  // Where the expanded row is now, for the next update (a view's own groups keep it there).
+  // Where the expanded row is now, for the next update (a view's own groups keep it there). Taken
+  // after the commit, so a render React throws away (a transition it interrupted, a StrictMode
+  // second render) never moves the place the next update keeps the row at.
   const shownAt = expanded === undefined ? undefined : items.index.get(expanded);
   const shownItem = shownAt === undefined ? undefined : items.items[shownAt];
-  place.current =
-    shownItem?.kind === "row"
-      ? { id: shownItem.key, group: shownItem.group, index: shownItem.posinset - 1 }
-      : expanded === undefined
-        ? undefined
-        : place.current;
+  useLayoutEffect(() => {
+    held.current = expandedRow;
+    if (shownItem?.kind === "row") {
+      place.current = { id: shownItem.key, group: shownItem.group, index: shownItem.posinset - 1 };
+    } else if (expanded === undefined) {
+      place.current = undefined;
+    }
+  });
 
   const timed = useMemo(
     () => items.items.some((item) => item.kind === "row" && item.task.due_at !== undefined),
