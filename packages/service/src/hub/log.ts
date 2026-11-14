@@ -291,6 +291,38 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", space: "space", code: "error_code" },
   },
+  // The projection (A1 3.13): counts, the watermark and codes, never a path (a file's name holds a
+  // task's title).
+  "space.projection_started": {
+    lvl: "info",
+    c: "space",
+    fields: { entry: "int", space: "space", rebuild: "bool", recovered: "bool", temps: "int" },
+  },
+  "space.projected": {
+    lvl: "debug",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      written: "int",
+      removed: "int",
+      failed: "int",
+      watermark: "int",
+      backlog: "bool",
+      rebuilding: "bool",
+      ms: "int",
+    },
+  },
+  "space.projection_rescued": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", files: "int" },
+  },
+  "space.projection_failed": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", code: "error_code" },
+  },
   "space.ownership_lost": {
     lvl: "error",
     c: "space",

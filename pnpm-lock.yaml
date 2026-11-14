@@ -359,6 +359,9 @@ importers:
       '@tasks/launch':
         specifier: workspace:*
         version: link:../launch
+      '@tasks/projection':
+        specifier: workspace:*
+        version: link:../projection
       '@tasks/storage':
         specifier: workspace:*
         version: link:../storage

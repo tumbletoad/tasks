@@ -2730,6 +2730,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.projection.service",
+      "title": "The service keeps each space open as this machine's projected in a worker of its own: the first render of the sample space, a task added through the request path in its file and the catalogue, projection.dir taking the tree out of the space's folder, and a projection.dir inside the space's folder refused with nothing written",
+      "source": "A1 3.9, A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.projection.latency",
       "title": "One new task's file shows in the folder within 1 s of its commit; a batch waits 500 ms after the last change and at most 5 s while changes keep coming, a backlog runs at once, and a failing batch pauses longer each time",
       "source": "A1 3.13, A1 3.20, A7 3.10 M3.10",

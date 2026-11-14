@@ -52,7 +52,9 @@
 //    per state of the database, and per retry the person asks for.
 // 3. Once open as this machine's: one maintenance run (maintenance.ts): leftovers in the space's
 //    own backups folder, the daily backup when due, retention. Then a check every hour whether the
-//    next daily backup is due.
+//    next daily backup is due. And the projection (projection.ts, A1 3.13) in a worker of its own,
+//    into the space's `view/` or the machine-local `projection.dir`, until the space closes: a
+//    close stops it first, before the writer it asks for its bookkeeping.
 // The highest epoch this machine has seen for a space is recorded when its writer opens as the
 // authority (space-settings.ts), and a claim or a restore in place goes above it.
 //
@@ -94,15 +96,18 @@ import {
   type OwnershipLoss,
   type OwnershipWatch,
 } from "./lock.ts";
+import { projectionFolder } from "@tasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
+import { ProjectionRunner } from "./projection.ts";
 import {
   clearFailedMigrations,
   failedOn,
   knownEpochs,
   readSpaceSettings,
   recordFailedMigration,
+  recordProjectionRescue,
   recordSeen,
   recordSyncedConfirmed,
   type BuildIdentity,
@@ -129,6 +134,8 @@ export const SPACE_OPEN_TIMEOUT_MS = 30_000;
 export const SPACE_CLOSE_TIMEOUT_MS = 10_000;
 /** How often an open space checks whether its next daily backup is due (A1 3.18: after 03:00). */
 export const DAILY_CHECK_MS = 3_600_000;
+/** A space's projection gets this long to end its batch when the space closes, then it is stopped. */
+export const PROJECTION_STOP_MS = 5_000;
 
 /** One registered space (A2 3.2.4 `[[spaces]]`): its folder opens only as the space `id` names. */
 export interface SpaceEntry {
@@ -192,6 +199,11 @@ export interface SpaceManagerOptions {
   readonly onLockLost: (entry: number, what: OwnershipLoss, via: OwnershipCheck) => void;
   /** The backup upkeep (maintenance.ts). Without it, no space is maintained. */
   readonly maintenance?: Maintenance;
+  /**
+   * Whether each space open as this machine's keeps its projection (A1 3.13) in a worker of its
+   * own. Default false: tests that look at a space's folder.
+   */
+  readonly projection?: boolean;
   readonly now?: () => Date;
   /**
    * Where the synced-folder check reads its facts (A1 3.2, sync-folders.ts). Default: this machine
@@ -332,6 +344,10 @@ class Hosted {
   reader: WorkerConnection | undefined;
   /** The space's machine-local backup folder, when one is set. */
   backupDir: string | undefined;
+  /** The space's machine-local projection folder, when one is set. */
+  projectionDir: string | undefined;
+  /** The projection's worker while the space is open as this machine's. */
+  projection: ProjectionRunner | undefined;
   /** The hourly check whether the next daily backup is due. */
   daily: NodeJS.Timeout | undefined;
   /** The maintenance run in progress. */
@@ -826,6 +842,7 @@ export class SpaceManager {
     }
     const settings = this.#settingsOf(space.folder);
     space.backupDir = settings.backupDir;
+    space.projectionDir = settings.projectionDir;
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
     // written; a synced folder is read-only until the person confirmed it is excluded from sync,
@@ -931,6 +948,76 @@ export class SpaceManager {
     }, DAILY_CHECK_MS);
     timer.unref();
     space.daily = timer;
+    this.#project(space);
+  }
+
+  /**
+   * The space's projection (A1 3.13), in a worker of its own while the space is open as this
+   * machine's. Its outcome is logged, counts and codes only; it never fails the space. A
+   * `projection.dir` inside the space's folder, or holding it, is refused, and nothing is written.
+   */
+  #project(space: Hosted): void {
+    const { log } = this.#options;
+    const spaceId = space.id;
+    const writer = space.writer;
+    if (this.#options.projection !== true || spaceId === undefined || writer === undefined) return;
+    const entry = space.index;
+    let dir: string;
+    try {
+      dir = projectionFolder(space.folder, space.projectionDir);
+    } catch (error) {
+      log.log("space.projection_failed", {
+        entry,
+        space: spaceId,
+        code: codeOf(error) ?? "EINVAL",
+      });
+      return;
+    }
+    const rescued = (files: number, folder: string | undefined): void => {
+      if (files === 0 || folder === undefined) return;
+      log.log("space.projection_rescued", { entry, space: spaceId, files });
+      try {
+        recordProjectionRescue(this.#options.settingsDir, spaceId, { folder, files });
+      } catch {
+        // The log has it; the UI does not show this one.
+      }
+    };
+    space.projection = new ProjectionRunner({ folder: space.folder, dir }, writer, {
+      started: (report) => {
+        log.log("space.projection_started", {
+          entry,
+          space: spaceId,
+          rebuild: report.rebuild,
+          recovered: report.recovered,
+          temps: report.temps,
+        });
+        rescued(report.rescued, report.rescuedFolder);
+      },
+      step: (report, ms) => {
+        log.log("space.projected", {
+          entry,
+          space: spaceId,
+          written: report.written,
+          removed: report.removed,
+          failed: report.failed,
+          watermark: report.watermark,
+          backlog: report.backlog,
+          rebuilding: report.rebuilding,
+          ms,
+        });
+        rescued(report.rescued, report.rescuedFolder);
+        if (report.code !== undefined) {
+          log.log("space.projection_failed", { entry, space: spaceId, code: report.code });
+        }
+      },
+      failed: (code) => {
+        log.log("space.projection_failed", {
+          entry,
+          space: spaceId,
+          ...(code === undefined ? {} : { code }),
+        });
+      },
+    });
   }
 
   /**
@@ -1347,13 +1434,17 @@ export class SpaceManager {
    * closed within the bound.
    */
   async #release(space: Hosted, ms: number = this.#closeMs): Promise<boolean> {
-    const { writer, reader, worker } = space;
+    const { writer, reader, worker, projection } = space;
     space.writer = undefined;
     space.reader = undefined;
     space.worker = undefined;
+    space.projection = undefined;
     clearInterval(space.daily);
     space.daily = undefined;
     const work = (async () => {
+      // The projection first: its batch in progress asks the writer for its bookkeeping, and its
+      // reader holds the database open (a restore in place swaps the folder after this).
+      await projection?.stop(Math.min(PROJECTION_STOP_MS, ms));
       for (const connection of [writer, reader]) {
         if (connection === undefined) continue;
         try {

@@ -3,6 +3,12 @@
 //
 // - `backup.dir`: the machine-local backup folder (A1 3.18). The service only reads it: a later
 //   step that owns the space's settings writes it. Default: the space's own `backups/`.
+// - `projection.dir`: the machine-local folder of the projection (A1 3.13), read like `backup.dir`
+//   and written by the preferences step (M3.11). Default: the space's own `view/`.
+// - `projection_rescues`: each batch of the projection that moved files a person edited aside
+//   (A1 3.13 step 3): when, how many and the rescue folder relative to the space's folder (a time
+//   stamp, never a task's name). The UI shows each once and removes it (A5). The newest
+//   MAX_RESCUES are kept.
 // - `seen`: A6 3.5's `spaces_seen` entry, `{epoch, incarnation}`: the highest epoch this machine
 //   has seen for the space. A claim and a restore in place go above it (A1 3.18,
 //   `knownEpochs`). The service records it when a writer opens the space as its authority and
@@ -71,6 +77,8 @@ export const FAILED_MIGRATION_CODES: readonly string[] = [
 export interface SpaceSettings {
   /** The machine-local backup folder, when one is set and is an absolute path. */
   readonly backupDir?: string;
+  /** The machine-local projection folder, when one is set and is an absolute path. */
+  readonly projectionDir?: string;
   readonly seen?: Seen;
   /** The canonical folder the person confirmed is excluded from sync (A1 3.2). */
   readonly syncedFolderConfirmed?: string;
@@ -172,6 +180,8 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
   const record = readRecord(fileOf(state, spaceId));
   const backup = record["backup"];
   const dir = isRecord(backup) ? backup["dir"] : undefined;
+  const projection = record["projection"];
+  const viewDir = isRecord(projection) ? projection["dir"] : undefined;
   const seen = record["seen"];
   const epoch = isRecord(seen) ? seen["epoch"] : undefined;
   const incarnation = isRecord(seen) ? seen["incarnation"] : undefined;
@@ -181,6 +191,9 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
   return {
     ...(typeof dir === "string" && dir.length <= MAX_PATH && isAbsolute(dir)
       ? { backupDir: dir }
+      : {}),
+    ...(typeof viewDir === "string" && viewDir.length <= MAX_PATH && isAbsolute(viewDir)
+      ? { projectionDir: viewDir }
       : {}),
     ...(typeof epoch === "number" &&
     Number.isSafeInteger(epoch) &&
@@ -214,6 +227,46 @@ export function recordSyncedConfirmed(
     format: 1,
     ...record,
     synced_folder_confirmed: { path: canonicalPath, at: now.toISOString() },
+  };
+  atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
+/** The projection's rescues kept for the UI. */
+export const MAX_RESCUES = 20;
+
+/** A rescue folder as the projection names it, relative to the space's folder. */
+const RESCUE_FOLDER = /^exchange\/rescued\/[0-9]{8}T[0-9]{9}Z(-[0-9]{1,3})?$/;
+
+/**
+ * Records that the projection moved `files` files a person edited into `folder` (relative to the
+ * space's folder), for the UI to show once (A1 3.13 step 3). Other fields are kept.
+ */
+export function recordProjectionRescue(
+  state: string,
+  spaceId: Id<"sp">,
+  rescue: { readonly folder: string; readonly files: number },
+  now: Date = new Date(),
+): void {
+  if (!RESCUE_FOLDER.test(rescue.folder) || !isCount(rescue.files)) return;
+  const path = fileOf(state, spaceId);
+  const record = readRecord(path);
+  const listed: unknown = record["projection_rescues"];
+  const kept = (Array.isArray(listed) ? (listed as unknown[]) : []).filter(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry["folder"] === "string" &&
+      RESCUE_FOLDER.test(entry["folder"]) &&
+      isCount(entry["files"]) &&
+      typeof entry["at"] === "string",
+  );
+  makeDir(join(state, SPACES_FOLDER), 0o700);
+  const next = {
+    format: 1,
+    ...record,
+    projection_rescues: [
+      ...kept,
+      { at: now.toISOString(), folder: rescue.folder, files: rescue.files },
+    ].slice(-MAX_RESCUES),
   };
   atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
 }
