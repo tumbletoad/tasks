@@ -1207,8 +1207,12 @@ function checkOperation(value: unknown, i: number): Operation {
       if (f.has("task")) create.task = f.id("task", "t");
       if (f.has("routine")) create.routine = f.id("routine", "ro");
       if (f.has("session")) create.session = f.id("session", "se");
-      const request = f.optText("request", { bytes: RUN_REQUEST_MAX_BYTES });
-      if (request !== undefined) create.request = request;
+      // A task's run takes the person's instruction (A4 3.11.7); a routine's takes its template.
+      if (create.task !== undefined) {
+        create.request = f.text("request", { bytes: RUN_REQUEST_MAX_BYTES });
+      } else if (f.has("request")) {
+        f.fail("VALIDATION_FAILED", "A routine's run takes no instruction", "request");
+      }
       op = create;
       break;
     }

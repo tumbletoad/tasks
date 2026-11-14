@@ -178,6 +178,8 @@ export function runStoreContract(
         ),
       );
       expect(inherit).toMatchObject({ code: "invalid", field: "permission" });
+      const silent = await refusal(store.createRun(await runInput({ request: null }), requestId()));
+      expect(silent).toMatchObject({ code: "invalid", field: "request" });
     });
 
     test("only A4's edges, with each state's reasons, and every one read back as returned", async () => {

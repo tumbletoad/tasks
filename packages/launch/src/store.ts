@@ -480,8 +480,9 @@ export function checkNewRun(value: unknown): NewRun {
   if (session !== undefined && !matches(SESSION_ID, session)) {
     return refuseRun("session", "Expected a session ID");
   }
-  if (request !== null && (typeof request !== "string" || request.trim() === "")) {
-    return refuseRun("request", "Expected the instruction, or null for a routine");
+  // A task's run needs the person's instruction (A4 3.11.7); a routine's takes its template.
+  if (routine !== null ? request !== null : typeof request !== "string" || request.trim() === "") {
+    return refuseRun("request", "A task's run takes an instruction, a routine's none");
   }
   if (typeof request === "string" && utf8(request) > RUN_REQUEST_MAX_BYTES) {
     return refuseRun("request", "The instruction is larger than its limit");
@@ -500,7 +501,7 @@ export function checkNewRun(value: unknown): NewRun {
     adapter: adapter as NewRun["adapter"],
     place,
     ...(session === undefined ? {} : { session }),
-    request,
+    request: request as string | null,
     briefHash,
     permission: permission as NewRun["permission"],
     limits: checkLimits(limits),

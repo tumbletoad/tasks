@@ -440,8 +440,11 @@ export function decodeLaunch(row: SpaceLaunchRow): LaunchIntent {
 /** The refusal a rejected run request means: as a launch's, for a run record. */
 function runRefusal(result: SpaceWriteResult): RunRefused {
   const launch = refusal(result);
+  // The writer names a run's patch fields bare; a result the record holds is held data, as
+  // evidence is, not a record that moved on.
+  const held = launch.code === "stale" && launch.field === "result";
   const field = launch.field === "result" ? "patch.result" : launch.field;
-  return new RunRefused(launch.code, launch.message, field);
+  return new RunRefused(held ? "evidence" : launch.code, launch.message, field);
 }
 
 /** A run result as the writer stores it, in its column's snake case. */

@@ -132,6 +132,11 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     const routine = newId("ro");
     const id = create({ routine, request: undefined, limits: { ...LIMITS, max_turns: 150 } });
     expect(fx.writer.run(id)).toMatchObject({ task_id: null, routine_id: routine, request: null });
+    // A task's run takes the person's instruction; a routine's takes none (A4 3.11.7).
+    expect(submit([createOp({ task: task(), request: undefined })]).error).toMatchObject({
+      field: "ops[0].request",
+    });
+    expect(submit([createOp({ routine })]).error).toMatchObject({ field: "ops[0].request" });
     for (const extra of [{}, { task: task(), routine }]) {
       const refused = submit([createOp(extra)]);
       expectStatus(refused, "rejected");
