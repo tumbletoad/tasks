@@ -11,7 +11,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -644,6 +644,48 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
       );
       expect(restored.space.lastSeq, way).toBe(2);
     }
+  });
+
+  test("a sidecar copy that fails after its last byte, and cannot be removed again, keeps the data with it", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const dir = join(folder, "backups");
+    // The sidecar under its own name (not the temporary file), its descriptor, and the faults: its
+    // flush fails, and so does its removal.
+    const isSidecar = (path: string): boolean =>
+      path.startsWith(dir) && path.endsWith(".json") && !basename(path).startsWith(".");
+    let sidecarFd: number | undefined;
+    let faults = 0;
+    const io: FileIo = {
+      ...noLinks,
+      openSync: (path, flags, mode) => {
+        const fd = NODE_IO.openSync(path, flags, mode);
+        if (isSidecar(path)) sidecarFd = fd;
+        return fd;
+      },
+      fsyncSync: (fd) => {
+        if (fd === sidecarFd) {
+          faults += 1;
+          throw Object.assign(new Error("injected"), { code: "EIO" });
+        }
+        NODE_IO.fsyncSync(fd);
+      },
+      rmSync: (path, options) => {
+        if (isSidecar(path)) {
+          faults += 1;
+          throw Object.assign(new Error("injected"), { code: "EPERM" });
+        }
+        NODE_IO.rmSync(path, options);
+      },
+    };
+    await expectCode(
+      () => backupSpaceWith(checked, folder, { kind: "manual" }, { io }),
+      "BACKUP_FAILED",
+    );
+    expect(faults).toBe(2);
+    // The complete sidecar stayed, so its data stayed too: a pair for the reader's checks.
+    expect(listBackups(dir).backups.map((b) => b.state)).toEqual(["ok"]);
   });
 
   test("without hard links the pair is published by exclusive copies, and restores", async () => {

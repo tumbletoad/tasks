@@ -358,8 +358,9 @@ export function publishExclusive(
     }
     io.fsyncSync(out);
     const id = fstatSync(out, { bigint: true });
+    // Complete and flushed: the name is published, so nothing after this may fail.
     open = false;
-    io.closeSync(out);
+    closeQuietly(out, io);
     return { how: "copy", id };
   } catch (error) {
     if (open) closeQuietly(out, io);

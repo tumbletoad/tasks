@@ -298,14 +298,22 @@ export async function writeBackup(
     // sidecar without data, and a migration would commit behind a backup that is not there.
     if (!sameFile(file, data.id, digests.compressedSize)) throw dataGone();
     const published = data.id;
-    publish(() =>
-      writeFileExclusive(backupDir, `${name}${SIDECAR_SUFFIX}`, text, io, () => {
-        // The pair is published, before the folder's sync: from here on nothing of it is
-        // removed, whatever fails.
-        data = undefined;
-        own.length = 0;
-      }),
-    );
+    const pairPublished = (): void => {
+      data = undefined;
+      own.length = 0;
+    };
+    try {
+      // The pair is published the moment the sidecar takes its name, before the folder's sync:
+      // from then on nothing of it is removed, whatever fails.
+      writeFileExclusive(backupDir, `${name}${SIDECAR_SUFFIX}`, text, io, pairPublished);
+    } catch (error) {
+      // Only another file at the name (EEXIST) means this backup's sidecar is not there. After any
+      // other failure its sidecar may be, complete or cut short (a copy that could not be removed
+      // again), so the data stays with it for the reader's checks; without one it is a leftover
+      // that cleanup removes after an hour (list.ts).
+      if (errnoCode(error) !== "EEXIST") pairPublished();
+      throw errnoCode(error) === "EEXIST" ? taken() : fsError(error);
+    }
     seams.at?.("sidecar-published");
     // The backup exists only if its data is still the file it published. If not, the pair stays
     // for the reader's checks, which list it by state and never restore it.
