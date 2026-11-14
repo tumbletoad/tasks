@@ -59,9 +59,17 @@ function userHome(name: string): { home: string; codex: string; file: string } {
   return { home, codex, file: join(codex, "config.toml") };
 }
 
-/** Setup's answer, asking the git on this test's PATH (or the one `ask` names). */
+/**
+ * Setup's answer, asking the git on this test's PATH (or the one `ask` names). A clear answer
+ * here must not depend on how fast a loaded machine starts git, so its deadline is generous; only
+ * the case of a git that never answers sets its own.
+ */
 const tracked = (file: string, home: string, ask: Partial<GitAsk> = {}) =>
-  trackedByAnotherRepository(process.platform, file, home, { env: GIT_ENV, ...ask });
+  trackedByAnotherRepository(process.platform, file, home, {
+    env: GIT_ENV,
+    deadlineMs: 120_000,
+    ...ask,
+  });
 
 /** Whether git itself, run in the file's folder, lists the file. */
 const gitTracks = (folder: string, name: string): boolean =>
