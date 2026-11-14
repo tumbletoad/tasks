@@ -105,23 +105,31 @@ export function parseWindowsFacts(output: string): WindowsSyncFacts | undefined 
     driveFsTargets: "",
     drives: [] as WindowsSyncFacts["drives"][number][],
   };
+  let drivefsSeen = false;
   for (const line of lines) {
     const [kind = "", ...fields] = line.split(" ");
     if (!Object.hasOwn(FIELDS, kind) || fields.length !== FIELDS[kind as keyof typeof FIELDS]) {
       return undefined;
     }
     if (kind === "drivefs") {
-      // Kept as base64: readDriveFs decodes the bytes, which are no text.
+      // Kept as base64: readDriveFs decodes the bytes, which are no text. The script writes one
+      // value at most: a second line is output of another shape, never a value that replaces one.
       const [value = ""] = fields;
-      if (!isBase64(value)) return undefined;
+      if (!isBase64(value) || drivefsSeen) return undefined;
+      drivefsSeen = true;
       facts.driveFsTargets = value;
       continue;
     }
     const texts = fields.map(base64Text);
     if (texts.some((t) => t === undefined)) return undefined;
     const [a = "", b = "", c = "", d = ""] = texts as string[];
-    if (kind === "drive") facts.drives.push({ root: a, type: b, format: c, label: d });
-    else if (kind === "onedrive") {
+    if (kind === "drive") {
+      // Windows lists a drive once: a second line for its root is output of another shape.
+      if (facts.drives.some((drive) => drive.root.toUpperCase() === a.toUpperCase())) {
+        return undefined;
+      }
+      facts.drives.push({ root: a, type: b, format: c, label: d });
+    } else if (kind === "onedrive") {
       if (a !== "") facts.oneDriveAccounts.push(a);
     } else if (a !== "" && b !== "") facts.syncRoots.push({ id: a, path: b });
   }

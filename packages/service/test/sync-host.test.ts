@@ -247,6 +247,21 @@ describe("[A1.5.sync.windows-facts] the Windows facts run: .NET only, shared whi
     }
   });
 
+  test("a second line for one drive, or a second Drive for desktop value, is output of another shape: no facts, never one line replacing another (review round 2)", () => {
+    const b64 = (text: string): string => Buffer.from(text, "utf8").toString("base64");
+    const drive = (root: string, label: string) =>
+      `drive ${b64(root)} ${b64("Fixed")} ${b64("NTFS")} ${b64(label)}\n`;
+    const value = (text: string) => `drivefs ${Buffer.from(text, "utf16le").toString("base64")}\n`;
+    const one = `${drive("C:\\", "")}${value("D:\\mirror")}end`;
+    expect(windowsFactsOf(Buffer.from(one, "latin1"))?.drives).toHaveLength(1);
+    for (const bad of [
+      `${drive("Q:\\", "Google Drive")}${drive("q:\\", "")}end`,
+      `${value("D:\\mirror")}${value("D:\\other")}end`,
+    ]) {
+      expect(windowsFactsOf(Buffer.from(bad, "latin1")), bad).toBeUndefined();
+    }
+  });
+
   // The drives' line on fake drives that answer the accessors the function calls: .NET's DriveType
   // answers Unknown or NoRootDirectory when the system cannot tell, and IsReady answers false when
   // it fails, so neither may stand in for a drive's type. No drive is read.

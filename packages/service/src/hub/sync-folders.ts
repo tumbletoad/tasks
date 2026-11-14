@@ -43,11 +43,15 @@
 // or leaves the folder unchecked. Signals found before a step stopped still count.
 //
 // The runner proves completion, not that what a step read was whole and current, so three rules
-// hold for that (A1 3.2, "How the code holds it"): a decoder answers only from input it read whole,
-// never from the part before a point it could not read; a kept fact counts only for what it was
-// read from (the Windows facts for the volumes they read at the drives' roots); and a look is made
-// at what the folder is now (its real path, with the names below it not there yet).
-import { basename, dirname, join, resolve } from "node:path";
+// hold for that (A1 3.2, "How the code holds it"):
+// - A decoder answers only from input it read whole, never from the part before a point it could
+//   not read. The SyncTargets value is judged by its bytes: every path in them must be a field the
+//   walk read.
+// - A kept fact counts only for what it was read from: the Windows drive facts for the volumes
+//   they read at the drives' roots.
+// - A look is made at where the folder and each root lead now (the real path, with the names below
+//   it not there yet), and on Linux not through a bind mount's other name.
+import { basename, dirname, join, posix, resolve } from "node:path";
 
 /** The sync clients and folder kinds A1 3.2 names. */
 export const SYNC_PROVIDERS = [
@@ -189,10 +193,14 @@ export interface SyncHost {
 function fold(platform: NodeJS.Platform, path: string): string {
   const trimmed = path.length > 3 ? path.replace(/[\\/]+$/, "") : path;
   if (platform === "win32") return trimmed.replaceAll("/", "\\").toLowerCase();
-  return platform === "darwin" ? trimmed.toLowerCase() : trimmed;
+  // macOS volumes ignore case and Unicode normalization (é as one character or as e and an accent).
+  return platform === "darwin" ? trimmed.normalize("NFC").toLowerCase() : trimmed;
 }
 
-/** Whether `path` is `root` or inside it, by its text (case-insensitive on Windows and macOS). */
+/**
+ * Whether `path` is `root` or inside it, by its text (case-insensitive on Windows and macOS, and
+ * normalization-insensitive on macOS).
+ */
 export function isInside(platform: NodeJS.Platform, path: string, root: string): boolean {
   const separator = platform === "win32" ? "\\" : "/";
   const p = fold(platform, path);
@@ -243,23 +251,39 @@ export function cloudFilesProvider(id: string): SyncProvider {
   return "cloud_files";
 }
 
-/** A whole drive or UNC path, as a path field holds it, up to Windows's longest path. */
-const WHOLE_PATH = /^(?:[A-Za-z]:\\|\\\\)[^"*<>?|\p{Cc}\uFFFD]{1,32767}$/u;
+/** A path character: none of `"*<>?|`, no control character and no replacement character. */
+const PATH_CHAR = String.raw`[^"*<>?|\p{Cc}\uFFFD]`;
+/** A whole drive path (a drive's root included) or UNC path, up to Windows's longest path. */
+const WHOLE_PATH = new RegExp(
+  String.raw`^(?:[A-Za-z]:\\${PATH_CHAR}{0,32767}|\\\\${PATH_CHAR}{1,32767})$`,
+  "u",
+);
 /** Drive and UNC paths inside other text. */
-const PATHS_IN_TEXT = /(?:[A-Za-z]:\\|\\\\)[^"*<>?|\p{Cc}\uFFFD]{1,32767}/gu;
-/** The fields read from a SyncTargets value at most, nested ones included. */
+const PATHS_IN_TEXT = new RegExp(
+  String.raw`[A-Za-z]:\\${PATH_CHAR}{0,32767}|\\\\${PATH_CHAR}{1,32767}`,
+  "gu",
+);
+/** The fields a SyncTargets value is parsed into at most, scalars and nested ones included. */
 const MAX_FIELDS = 100_000;
+/** The levels of nested messages the walk reads. */
+const MAX_DEPTH = 8;
+
+/** A path without its trailing separators, a drive's root (`Q:\`) kept whole. */
+function trimSeparators(path: string): string {
+  const trimmed = path.replace(/\\+$/, "");
+  return /^[A-Za-z]:$/.test(trimmed) ? `${trimmed}\\` : trimmed;
+}
 
 /**
- * A varint at `at` (up to ten bytes, a uint64's longest): its value and the next offset, or
- * undefined when it runs past the end or past ten bytes. The value is exact up to 2^53, which is
- * all a key or a length can be.
+ * A varint at `at`: its value and the next offset, or undefined when it runs past the end or is
+ * not a uint64 (more than ten bytes, or a tenth byte above 1). The value is exact up to 2^53, which
+ * is all a key or a length can be.
  */
 function varint(bytes: Uint8Array, at: number): [number, number] | undefined {
   let value = 0;
   for (let i = 0; i < 10; i += 1) {
     const byte = bytes[at + i];
-    if (byte === undefined) return undefined;
+    if (byte === undefined || (i === 9 && byte > 1)) return undefined;
     value += (byte & 0x7f) * 2 ** (7 * i);
     if ((byte & 0x80) === 0) return [value, at + i + 1];
   }
@@ -269,13 +293,15 @@ function varint(bytes: Uint8Array, at: number): [number, number] | undefined {
 /**
  * The length-delimited payloads of `message` when it is one protobuf message read whole: every
  * field has a field number, a known wire type and its full length, and the last one ends exactly
- * at the message's end. Undefined otherwise: bytes that are not a message (a string), or a message
- * that cannot be read to its end. Never the fields before a point it could not read.
+ * at the message's end. Undefined otherwise: bytes that are not a message (a string), a message
+ * that cannot be read to its end, or a field past the budget, which every field read takes one of.
  */
-function messageFields(message: Uint8Array): Uint8Array[] | undefined {
+function messageFields(message: Uint8Array, budget: { left: number }): Uint8Array[] | undefined {
   const payloads: Uint8Array[] = [];
   let at = 0;
   while (at < message.length) {
+    if (budget.left <= 0) return undefined;
+    budget.left -= 1;
     const key = varint(message, at);
     // Field numbers run from 1 to 2^29 - 1.
     if (key === undefined || key[0] < 8 || key[0] >= 2 ** 32) return undefined;
@@ -298,29 +324,23 @@ function messageFields(message: Uint8Array): Uint8Array[] | undefined {
 }
 
 /**
- * Every length-delimited field of a protobuf message and of the messages inside it, down to 8
- * levels, at most MAX_FIELDS of them. A payload that is itself a message read whole is walked; any
- * other payload is a leaf (a string, bytes). `complete` is false when the value is not one message
- * read whole, when a message lies deeper than the walk goes, or when the budget ran out: a field
- * the walk did not reach may be a root (A1 3.2: a decoder answers only from what it read whole).
- * Iterative, so no value's shape can exhaust the stack.
+ * The length-delimited fields of a protobuf message and of the messages inside it, down to
+ * MAX_DEPTH levels, within MAX_FIELDS fields read. A payload that is itself a message read whole is
+ * walked; any other payload is a leaf. Whether the walk found every root is not its own answer:
+ * readDriveFs checks it against the bytes. Iterative, so no value's shape can exhaust the stack.
  */
-function protoFields(bytes: Uint8Array): { fields: Uint8Array[]; complete: boolean } {
-  const top = messageFields(bytes);
-  if (top === undefined) return { fields: [], complete: false };
+function protoFields(bytes: Uint8Array): Uint8Array[] {
+  const budget = { left: MAX_FIELDS };
   const fields: Uint8Array[] = [];
-  const pending: { bytes: Uint8Array; depth: number }[] = top.map((b) => ({ bytes: b, depth: 1 }));
-  let complete = true;
+  const pending = (messageFields(bytes, budget) ?? []).map((b) => ({ bytes: b, depth: 1 }));
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    if (fields.length >= MAX_FIELDS) return { fields, complete: false };
     fields.push(next.bytes);
-    const inner = messageFields(next.bytes);
-    if (inner === undefined || inner.length === 0) continue;
-    // A message deeper than 8 levels is read as a field only, not walked: not complete.
-    if (next.depth >= 8) complete = false;
-    else for (const b of inner) pending.push({ bytes: b, depth: next.depth + 1 });
+    if (next.depth >= MAX_DEPTH) continue;
+    for (const b of messageFields(next.bytes, budget) ?? []) {
+      pending.push({ bytes: b, depth: next.depth + 1 });
+    }
   }
-  return { fields, complete };
+  return fields;
 }
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
@@ -331,7 +351,7 @@ function pathOf(field: Uint8Array): string | undefined {
   for (const decoder of [utf8, ...(field.length % 2 === 0 ? [utf16] : [])]) {
     try {
       const text = decoder.decode(field);
-      if (WHOLE_PATH.test(text)) return text.replace(/\\+$/, "");
+      if (WHOLE_PATH.test(text)) return trimSeparators(text);
     } catch {
       // Not text in this encoding.
     }
@@ -339,28 +359,71 @@ function pathOf(field: Uint8Array): string | undefined {
   return undefined;
 }
 
+const isLetter = (b: number | undefined): boolean =>
+  b !== undefined && ((b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <= 0x7a));
+/** A character that may follow a UNC path's `\\`: none of a control character, a space or `\`. */
+const uncNext = (code: number): boolean => code > 0x20 && code !== 0x5c;
+
 /**
- * The folders inside Drive for desktop's SyncTargets value (A1 3.2). On the Windows reference machine it is a
- * protobuf message: each target holds the account, the virtual drive's letter and the mirror root
- * as length-delimited fields, so each field is read on its own, as UTF-8 or UTF-16, wherever it
- * starts. A value of another shape, or one the walk cut short, is searched as UTF-8 text too. Only
- * drive and UNC paths count. `complete` is false when the value is not one message read whole, or
- * the walk ran out of depth or of its field budget: a UTF-16 root it did not reach is not found by
- * the text search, so the value was not read whole, and a folder judged by it is unchecked, never
- * local (A1 3.2's rule for a fact the check cannot read).
+ * Every offset in `bytes` where a drive path (`X:\`) or a UNC path (`\\` and a name) starts, in
+ * UTF-8 or in UTF-16LE, at any offset: wherever a root may lie, whatever the bytes around it are.
+ */
+function pathStarts(bytes: Uint8Array): number[] {
+  const starts: number[] = [];
+  // A byte past the end reads as -1, which matches nothing.
+  const at = (i: number): number => bytes[i] ?? -1;
+  for (let i = 0; i < bytes.length; i += 1) {
+    const utf8Drive = isLetter(at(i)) && at(i + 1) === 0x3a && at(i + 2) === 0x5c;
+    const utf8Unc = at(i) === 0x5c && at(i + 1) === 0x5c && uncNext(at(i + 2));
+    const utf16Drive =
+      isLetter(at(i)) &&
+      at(i + 1) === 0 &&
+      at(i + 2) === 0x3a &&
+      at(i + 3) === 0 &&
+      at(i + 4) === 0x5c &&
+      at(i + 5) === 0;
+    const utf16Unc =
+      at(i) === 0x5c &&
+      at(i + 1) === 0 &&
+      at(i + 2) === 0x5c &&
+      at(i + 3) === 0 &&
+      at(i + 5) >= 0 &&
+      uncNext(at(i + 4) | (at(i + 5) << 8));
+    if (utf8Drive || utf8Unc || utf16Drive || utf16Unc) starts.push(i);
+  }
+  return starts;
+}
+
+/**
+ * The folders inside Drive for desktop's SyncTargets value (A1 3.2). On the Windows reference
+ * machine it is a protobuf message: each target holds the account, the virtual drive's letter and
+ * the mirror root as length-delimited fields, so each field is read on its own, as UTF-8 or
+ * UTF-16. Only drive and UNC paths count.
+ *
+ * `complete`: whether the value was read whole, decided by its bytes, not by the walk's shape:
+ * every place in the value where a drive or UNC path starts, in UTF-8 or UTF-16 at any offset,
+ * lies in a field the walk read as a whole path. A root inside bytes the walk could not read (a
+ * malformed message, one nested too deep, one past the field budget, a value of another shape)
+ * makes it false, so a folder judged by the value is unchecked, never local (A1 3.2: a decoder
+ * answers only from input it read whole). A value not read whole is also searched as UTF-8 text,
+ * so a root found there still counts as a signal.
  */
 export function readDriveFs(base64: string): { paths: string[]; complete: boolean } {
   if (base64 === "") return { paths: [], complete: true };
   const bytes = Buffer.from(base64, "base64");
   const found = new Set<string>();
-  const { fields, complete } = protoFields(bytes);
-  for (const field of fields) {
+  const read = new Uint8Array(bytes.length);
+  for (const field of protoFields(bytes)) {
     const path = pathOf(field);
-    if (path !== undefined) found.add(path);
+    if (path === undefined) continue;
+    found.add(path);
+    const start = field.byteOffset - bytes.byteOffset;
+    read.fill(1, start, start + field.length);
   }
+  const complete = pathStarts(bytes).every((at) => read[at] === 1);
   if (found.size === 0 || !complete) {
     for (const m of bytes.toString("utf8").matchAll(PATHS_IN_TEXT)) {
-      found.add(m[0].replace(/\\+$/, ""));
+      found.add(trimSeparators(m[0]));
     }
   }
   return { paths: [...found], complete };
@@ -591,40 +654,61 @@ export interface MountEntry {
   readonly type: string;
   /** What is mounted (macOS): a device, `//user@server/share`, `user@host:/path` … */
   readonly source?: string;
+  /** Linux: the folder of its file system the mount shows (`/` for the whole file system). */
+  readonly root?: string;
+  /** Linux: the file system's device (`major:minor`), the same for every mount of it. */
+  readonly device?: string;
 }
 
 const unescapeMount = (s: string): string =>
   s.replace(/\\([0-7]{3})/g, (_, o: string) => String.fromCharCode(Number.parseInt(o, 8)));
 
 /**
- * /proc/self/mountinfo: each line's mount point and type (`fuse.sshfs` for a FUSE subtype), or
- * undefined when a line is not of that shape: a table not read whole may lack the mount that holds
- * a path, which would then be judged by the mount above it.
+ * /proc/self/mountinfo: each line's device, root, mount point and type (`fuse.sshfs` for a FUSE
+ * subtype), or undefined when a line is not of the shape the kernel writes (`<id> <parent>
+ * <major:minor> <root> <mount point> <options> [optional fields] - <type> <source> <super
+ * options>`): a table not read whole may lack the mount that holds a path, which would then be
+ * judged by the mount above it.
  */
 export function parseMountinfo(text: string): MountEntry[] | undefined {
   const entries: MountEntry[] = [];
   for (const line of text.split("\n")) {
     if (line === "") continue;
     const [left, right, ...more] = line.split(" - ");
-    const mountPoint = left?.split(" ")[4];
-    const type = right?.split(" ")[0];
-    if (more.length > 0 || mountPoint === undefined || type === undefined || type === "") {
+    const head = left?.split(" ") ?? [];
+    const tail = right?.split(" ") ?? [];
+    const [, , device = "", root, mountPoint] = head;
+    const [type = ""] = tail;
+    if (
+      more.length > 0 ||
+      head.length < 6 ||
+      tail.length !== 3 ||
+      !/^\d+:\d+$/.test(device) ||
+      root === undefined ||
+      mountPoint === undefined ||
+      type === ""
+    ) {
       return undefined;
     }
-    entries.push({ mountPoint: unescapeMount(mountPoint), type });
+    entries.push({
+      mountPoint: unescapeMount(mountPoint),
+      type,
+      root: unescapeMount(root),
+      device,
+    });
   }
   return entries;
 }
 
 /**
  * macOS `mount` output: `<source> on <mount point> (<type>, <options>)`, or undefined when a line
- * is not of that shape (parseMountinfo says why).
+ * is not of that shape, its closing parenthesis included (parseMountinfo says why).
  */
 export function parseMacMounts(text: string): MountEntry[] | undefined {
   const entries: MountEntry[] = [];
   for (const line of text.split("\n")) {
     if (line === "") continue;
-    const m = /^(.*) on (\/.*) \(([^,)]+)[,)]/.exec(line);
+    const m = /^(.*) on (\/.*) \(([^,()]+)(?:, [^()]*)?\)$/.exec(line);
     if (m?.[1] === undefined || m[2] === undefined || m[3] === undefined) return undefined;
     entries.push({ source: m[1], mountPoint: m[2], type: m[3].trim() });
   }
@@ -632,21 +716,57 @@ export function parseMacMounts(text: string): MountEntry[] | undefined {
 }
 
 /**
- * The mount that holds `path`: the longest mount point that is the path or an ancestor, its case
- * folded on macOS, whose volumes ignore case by default, so a path spelled in another case than the
- * mount table's is still under its mount.
+ * The mount that holds `path`: the longest mount point that is the path or an ancestor. On Linux
+ * the last of equal mount points is the one on top. macOS folds case and Unicode normalization, as
+ * its volumes do by default, so a path spelled otherwise than the mount table is still under its
+ * mount; of mount points that differ only in that spelling (possible on a case-sensitive volume),
+ * the one spelled as the path is wins, then a network one, so a local mount never stands in for a
+ * network one it may hide.
  */
 export function mountOf(
   entries: readonly MountEntry[],
   path: string,
   platform: "linux" | "darwin" = "linux",
 ): MountEntry | undefined {
-  let best: MountEntry | undefined;
+  let longest = -1;
+  let tied: MountEntry[] = [];
   for (const e of entries) {
     if (!isInside(platform, path, e.mountPoint)) continue;
-    if (best === undefined || e.mountPoint.length >= best.mountPoint.length) best = e;
+    const length = fold(platform, e.mountPoint).length;
+    if (length > longest) {
+      longest = length;
+      tied = [e];
+    } else if (length === longest) tied.push(e);
   }
-  return best;
+  if (platform === "linux") return tied.at(-1);
+  return (
+    tied.findLast((e) => isInside("linux", path, e.mountPoint)) ??
+    tied.findLast((e) => macNetwork(e) !== undefined) ??
+    tied.at(-1)
+  );
+}
+
+/**
+ * Whether the Linux real path `path` lies on a mount that shows a folder of a file system which
+ * another mount shows higher up under another name: a bind mount of `~/Dropbox/sub` at `/srv/x`.
+ * The markers and sync roots above that folder apply to it, and this path does not pass them, so
+ * the folder is unchecked. A mount that shows its file system's root has every folder above the
+ * path on the path. A bind of a folder onto itself (as systemd makes for ReadWritePaths) has no
+ * other name. A path the table holds no mount for cannot be told.
+ */
+export function boundElsewhere(entries: readonly MountEntry[], path: string): boolean {
+  const own = mountOf(entries, path);
+  if (own?.root === undefined || own.device === undefined) return true;
+  if (own.root === "/") return false;
+  const shown = own.root;
+  return entries.some(
+    (e) =>
+      e !== own &&
+      e.device === own.device &&
+      e.root !== undefined &&
+      isInside("linux", shown, e.root) &&
+      posix.join(e.mountPoint, posix.relative(e.root, shown)) !== own.mountPoint,
+  );
 }
 
 /**
@@ -695,15 +815,23 @@ const MAC_LOCAL: ReadonlySet<string> = new Set([
   "udf",
 ]);
 
+/**
+ * The network file system a macOS mount is, by its type, or undefined. A macFUSE mount reaches
+ * another host when its source names one (sshfs: `user@host:/path`).
+ */
+function macNetwork(entry: MountEntry): string | undefined {
+  if (MAC_NETWORK.has(entry.type)) return entry.type;
+  const fuse = entry.type.startsWith("macfuse") || entry.type.startsWith("osxfuse");
+  return fuse && /^(?:\/\/|[^/\s]+:)/.test(entry.source ?? "") ? entry.type : undefined;
+}
+
 /** The volume a macOS real path is on, from the mount table's entry that holds it. */
 export function macVolume(mounts: string, path: string): Volume {
   const entries = parseMacMounts(mounts);
   const entry = entries === undefined ? undefined : mountOf(entries, path, "darwin");
   if (entry === undefined) return UNKNOWN;
-  if (MAC_NETWORK.has(entry.type)) return network(entry.type);
-  // A macFUSE mount reaches another host when its source names one (sshfs: `user@host:/path`).
-  const fuse = entry.type.startsWith("macfuse") || entry.type.startsWith("osxfuse");
-  if (fuse && /^(?:\/\/|[^/\s]+:)/.test(entry.source ?? "")) return network(entry.type);
+  const fs = macNetwork(entry);
+  if (fs !== undefined) return network(fs);
   return MAC_LOCAL.has(entry.type) ? LOCAL : UNKNOWN;
 }
 
@@ -920,6 +1048,32 @@ async function windowsFactsFor(
   return facts;
 }
 
+/**
+ * Where `chain[0]` leads when `chain[found]` (one of its ancestors) has the real path `real`: that
+ * real path with the names below it, which are not there yet.
+ */
+function below(real: string, chain: readonly string[], found: number): string {
+  const names = chain
+    .slice(0, found)
+    .reverse()
+    .map((p) => basename(p));
+  return names.length === 0 ? real : join(real, ...names);
+}
+
+/**
+ * Where `path` leads: its real path, or when it is not there, its nearest existing ancestor's real
+ * path with the names below it. Undefined when nothing above it is there either. A real path that
+ * fails throws.
+ */
+async function whereItLeads(host: SyncHost, path: string): Promise<string | undefined> {
+  const chain = ancestors(path);
+  for (let i = 0; i < chain.length; i += 1) {
+    const real = await host.realpath(chain[i] ?? "");
+    if (real !== undefined) return below(real, chain, i);
+  }
+  return undefined;
+}
+
 async function check(target: string, host: SyncHost, evidence: Evidence): Promise<void> {
   const path = resolve(target);
   const chain = ancestors(path);
@@ -952,21 +1106,16 @@ async function check(target: string, host: SyncHost, evidence: Evidence): Promis
   // 3. Windows: the registry's and the drives' facts, all or none.
   const windows = await evidence.run("windows_facts", () => windowsFactsFor(host, real));
 
-  // 4. The sync clients' roots: the path as given and its real path, under each root as given and
-  //    as its real path. A root that is not there (a stale %OneDrive%) counts by its text, so the
-  //    real path keeps the names below the existing folder that are not there yet: a new space's
-  //    folder lies where they lead.
-  const below = chain
-    .slice(0, found ?? 0)
-    .reverse()
-    .map((p) => basename(p));
+  // 4. The sync clients' roots: the path as given and where it leads, under each root as given and
+  //    where it leads. A path or a root that is not there (a new space's folder, a stale
+  //    %OneDrive%) leads where its nearest existing folder's real path and the names below it do.
   const realTarget =
-    real === undefined ? undefined : below.length === 0 ? real : join(real, ...below);
+    real === undefined || found === undefined ? undefined : below(real, chain, found);
   const paths = realTarget === undefined ? [path] : [path, realTarget];
   await evidence.run("sync_clients", async () => {
     if (host.platform === "win32" && windows === undefined) unseen();
     for (const r of await providerRoots(host, windows)) {
-      const realRoot = await host.realpath(r.root);
+      const realRoot = await whereItLeads(host, r.root);
       for (const root of realRoot === undefined ? [r.root] : [r.root, realRoot]) {
         if (!paths.some((p) => isInside(host.platform, p, root))) continue;
         signal({
@@ -1043,7 +1192,18 @@ async function check(target: string, host: SyncHost, evidence: Evidence): Promis
     } else if (host.platform === "linux") {
       if (real === undefined) return unseen();
       const type = await host.statfsType(real);
-      volume = linuxVolume(type, type === FUSE_MAGIC ? await host.mountTable() : undefined, real);
+      const named = linuxVolume(type, undefined, real);
+      if (named.kind === "network") volume = named;
+      else {
+        // FUSE is decided by the table, and a local folder must not be on a bind mount whose
+        // other name passes markers and roots this path does not.
+        const table = await host.mountTable();
+        const entries = parseMountinfo(table);
+        volume = linuxVolume(type, table, real);
+        if (volume.kind === "local" && (entries === undefined || boundElsewhere(entries, real))) {
+          volume = UNKNOWN;
+        }
+      }
     } else if (host.platform === "darwin") {
       if (real === undefined) return unseen();
       volume = macVolume(await host.mountTable(), real);

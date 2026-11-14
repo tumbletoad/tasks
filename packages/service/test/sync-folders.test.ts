@@ -302,7 +302,15 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
     expect(folderMessage(nfs)).toBe(
       "This space is on a network file system. A live database there can be corrupted. It is never written there. Move it to a local folder.",
     );
-    const ext4 = await checkFolder(space, fixtureHost(root, { platform: "linux", statfs: 0xef53 }));
+    // A Linux real path, so the fixture's mount table at / holds it on any OS.
+    const ext4 = await checkFolder(
+      space,
+      fixtureHost(root, {
+        platform: "linux",
+        statfs: 0xef53,
+        realpath: (p) => (resolve(p) === space ? "/mnt/mira" : undefined),
+      }),
+    );
     expect(ext4.verdict).toBe("local");
 
     // A mapped drive's real path is its UNC path (captured: fixtures/sync/statfs-samples.json).
@@ -461,8 +469,13 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
       "G:\\other-mirror",
     ]);
 
-    // The check goes on: a Syncthing marker beside that value still counts. The value was too
-    // large to read whole, so the folder is unchecked too (the next test).
+    // The field budget ran out in the part of the value that holds no path, and every root in it
+    // was read: the value is read whole (A1 3.2: whole is decided by the bytes). A root in the
+    // part the budget did not reach is the next test.
+    expect(readDriveFs(value.toString("base64")).complete).toBe(true);
+
+    // The check goes on: a Syncthing marker beside that value still counts, and the value leaves
+    // no step undone.
     const root = tree();
     dir(join(root, "Sync", ".stfolder"));
     const check = await checkFolder(
@@ -474,7 +487,7 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
     );
     expect(check).toMatchObject({ verdict: "synced", provider: "syncthing" });
     expect(check.signals.some((s) => s.rule === "marker" && s.provider === "syncthing")).toBe(true);
-    expect(check.signals.some((s) => s.rule === "unchecked")).toBe(true);
+    expect(unseenSteps(check)).not.toContain("sync_clients");
   });
 
   test("a SyncTargets value the walk cuts short leaves the folder unchecked, never local", async () => {
@@ -484,13 +497,15 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
     let deep = field(3, Buffer.from("D:\\deep-mirror", "utf16le"));
     for (let i = 0; i < 10; i += 1) deep = field(1, deep);
     expect(driveFsPaths(deep.toString("base64"))).not.toContain("D:\\deep-mirror");
-    // Past the field budget: the same.
-    const many = field(
-      1,
-      Buffer.concat(Array.from({ length: 100_001 }, () => field(1, Buffer.from([0x0a, 0x00])))),
-    );
+    // A UTF-16 root past the field budget: the same.
+    const fields = Array.from({ length: 100_001 }, () => field(1, Buffer.from([0x0a, 0x00])));
+    const hidden = field(3, Buffer.from("D:\\hidden-mirror", "utf16le"));
+    const pastBudget = field(1, Buffer.concat([...fields, hidden]));
+    expect(readDriveFs(pastBudget.toString("base64")).complete).toBe(false);
+    // And a value of many fields that holds no path at all: no root can be read in it.
+    const many = field(1, Buffer.concat(fields));
     const root = tree();
-    for (const value of [deep, many]) {
+    for (const value of [deep, pastBudget, many]) {
       const check = await checkFolder(
         dir(join(root, "Tasks", "mira")),
         fixtureHost(root, {
@@ -997,6 +1012,114 @@ describe("[A1.5.sync.fails-closed] local only from positive evidence of every st
       }),
     );
     expect(check).toMatchObject({ verdict: "network", fs: "smbfs" });
+  });
+
+  test("a SyncTargets value is read whole only when every path in its bytes lies in a field read as a whole path (review round 2: roots hidden in a malformed nested message, a drive's root, past the budget)", () => {
+    const other = field(1, Buffer.from("D:\\other", "utf8"));
+    const mirror = field(3, Buffer.from("Q:\\mirror", "utf16le"));
+    // A nested message that does not parse to its end: the walk takes it for a string, and the
+    // root inside it is not read.
+    const malformed = Buffer.concat([
+      other,
+      field(2, Buffer.concat([mirror, Buffer.from([0x07])])),
+    ]);
+    expect(readDriveFs(malformed.toString("base64")).complete).toBe(false);
+    // The same in UTF-8, and a UNC root in UTF-16: found in the bytes whatever the walk took.
+    for (const root of [
+      Buffer.from("Q:\\mirror", "utf8"),
+      Buffer.from("\\\\fileserver\\mirror", "utf16le"),
+    ]) {
+      const value = Buffer.concat([
+        other,
+        field(2, Buffer.concat([field(3, root), Buffer.from([0x07])])),
+      ]);
+      expect(readDriveFs(value.toString("base64")).complete, root.toString("hex")).toBe(false);
+    }
+    // A drive's root is a path, and stays a root.
+    const whole = readDriveFs(
+      Buffer.concat([other, field(3, Buffer.from("Q:\\", "utf16le"))]).toString("base64"),
+    );
+    expect(whole.complete).toBe(true);
+    expect(whole.paths.sort()).toEqual(["D:\\other", "Q:\\"]);
+    // A tenth varint byte past a uint64, and scalar fields past the budget: not read, so the path
+    // after them is not read either.
+    const tooLong = Buffer.from([0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]);
+    expect(readDriveFs(Buffer.concat([tooLong, other]).toString("base64")).complete).toBe(false);
+    const scalars = Buffer.alloc(200_002);
+    for (let i = 0; i < scalars.length; i += 2) {
+      scalars[i] = 0x08;
+      scalars[i + 1] = 0x01;
+    }
+    expect(readDriveFs(Buffer.concat([scalars, other]).toString("base64")).complete).toBe(false);
+    // Bytes that are no path, and a drive letter alone, hide no root.
+    const letter = Buffer.concat([
+      other,
+      field(2, Buffer.from("G:", "utf8")),
+      field(4, Buffer.from([0x5c, 0x5c, 0x5c])),
+    ]);
+    expect(readDriveFs(letter.toString("base64")).complete).toBe(true);
+  });
+
+  test("Linux: a folder on a bind mount whose file system is mounted higher up under another name is unchecked (review round 2: a bind of a Dropbox folder)", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    const judge = (mounts: string) =>
+      checkFolder(space, fixtureHost(root, { ...localOn("linux", space), mounts }));
+    const top = "1 0 8:1 / / rw - ext4 /dev/fixture rw\n";
+    // `/srv/tasks` shows /home/fixture/Dropbox/sub of the file system at /.
+    const bound = await judge(
+      `${top}2 1 8:1 /home/fixture/Dropbox/sub /srv/tasks rw - ext4 /dev/fixture rw\n`,
+    );
+    expect(unseenSteps(bound)).toEqual(["volume"]);
+    // A bind of a folder onto itself (systemd's ReadWritePaths) has no other name.
+    const self = await judge(`${top}2 1 8:1 /srv/tasks /srv/tasks rw - ext4 /dev/fixture rw\n`);
+    expect(self.verdict).toBe("local");
+    // Btrfs subvolumes beside each other (/ shows /@, /srv shows /@srv): no other name either.
+    const subvolumes = await judge(
+      "1 0 0:30 /@ / rw - btrfs /dev/fixture rw\n2 1 0:30 /@srv /srv rw - btrfs /dev/fixture rw\n",
+    );
+    expect(subvolumes.verdict).toBe("local");
+    // Another file system's mount at the same path is not this one's other name.
+    const other = await judge(`${top}2 1 8:2 /data/sub /srv/tasks rw - ext4 /dev/fixture2 rw\n`);
+    expect(other.verdict).toBe("local");
+    // A line of another shape (no source and super options): the table was not read whole.
+    expect(unseenSteps(await judge(`${top}2 1 8:1 / /srv rw - ext4\n`))).toEqual(["volume"]);
+    // A network type needs no table to be network.
+    const nfs = await checkFolder(
+      space,
+      fixtureHost(root, { ...localOn("linux", space), statfs: 0x6969, mounts: null }),
+    );
+    expect(nfs).toMatchObject({ verdict: "network", fs: "nfs" });
+  });
+
+  test("macOS: of mount points that differ only in case, the one spelled as the path wins, then a network one; Unicode normalization is folded (review round 2)", () => {
+    const mounts =
+      "/dev/disk3s1 on / (apfs, local, journaled)\n//fixture@nas/share on /Volumes/Share (smbfs, nodev, nosuid)\n/dev/disk4s1 on /Volumes/share (apfs, local, journaled)\n";
+    expect(macVolume(mounts, "/Volumes/Share/mira")).toEqual({ kind: "network", fs: "smbfs" });
+    expect(macVolume(mounts, "/Volumes/share/mira")).toEqual({ kind: "local" });
+    expect(macVolume(mounts, "/volumes/SHARE/mira")).toEqual({ kind: "network", fs: "smbfs" });
+    const cafe =
+      "/dev/disk3s1 on / (apfs, local)\n//fixture@nas/share on /Volumes/Caf\u00e9 (smbfs, nodev)\n";
+    expect(macVolume(cafe, "/Volumes/Cafe\u0301/mira")).toEqual({ kind: "network", fs: "smbfs" });
+    // A line cut off before its closing parenthesis is a line of another shape.
+    expect(macVolume("/dev/disk3s1 on / (apfs,", "/mira")).toEqual({ kind: "unknown" });
+    expect(
+      macVolume(
+        "/dev/disk3s1 on /Volumes/Untitled (1) (apfs, local)",
+        "/Volumes/Untitled (1)/mira",
+      ),
+    ).toEqual({ kind: "local" });
+  });
+
+  test("a sync client's root that is not there is matched where it leads through its existing folders (review round 2: a stale root through a link)", async () => {
+    const root = tree();
+    const parent = dir(join(root, "parent"));
+    const alias = join(root, "alias");
+    symlinkSync(parent, alias, WINDOWS ? "junction" : "dir");
+    const host = fixtureHost(root, { env: { OneDrive: join(alias, "missing") } });
+    const check = await checkFolder(join(parent, "missing", "mira"), host);
+    expect(check).toMatchObject({ verdict: "synced", provider: "onedrive" });
+    expect(unseenSteps(check)).toEqual([]);
   });
 
   test("Linux: a statfs type in signed 32-bit form is the same type (review finding: CIFS read as unknown)", () => {

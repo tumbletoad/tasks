@@ -8,7 +8,7 @@ import { realSyncHost } from "../src/hub/sync-host.ts";
 
 /**
  * The machine's facts. Each one left out is read as found and holding nothing (no registry
- * values, ext4 everywhere, one volume, an empty mount table on Linux and APFS at / on macOS);
+ * values, ext4 everywhere, one volume, one ext4 file system at / on Linux and APFS at / on macOS);
  * `null` is a fact that cannot be read.
  */
 export interface SyncFacts {
@@ -34,6 +34,9 @@ const EXT4 = 0xef53;
 
 /** macOS's mount table on a machine whose every folder is on its APFS system volume. */
 const MAC_MOUNTS = "/dev/disk3s1 on / (apfs, local, journaled)\n";
+
+/** Linux's mount table on a machine whose every folder is on one ext4 file system. */
+export const LINUX_MOUNTS = "1 0 8:1 / / rw,relatime shared:1 - ext4 /dev/fixture rw\n";
 
 export const NO_WINDOWS: WindowsSyncFacts = {
   oneDriveAccounts: [],
@@ -81,8 +84,11 @@ export function fixtureHost(root: string, facts: SyncFacts = {}): SyncHost {
     windowsFacts: () => Promise.resolve(windows),
   });
   const statfs = facts.statfs === undefined ? EXT4 : facts.statfs;
-  const mounts =
-    facts.mounts === undefined ? (platform === "darwin" ? MAC_MOUNTS : "") : facts.mounts;
+  const tables: Partial<Record<NodeJS.Platform, string>> = {
+    darwin: MAC_MOUNTS,
+    linux: LINUX_MOUNTS,
+  };
+  const mounts = facts.mounts === undefined ? (tables[platform] ?? "") : facts.mounts;
   return {
     ...real,
     kind: (path) => (inside(path) ? real.kind(path) : Promise.resolve("absent")),
