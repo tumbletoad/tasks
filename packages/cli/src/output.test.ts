@@ -224,3 +224,76 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     }
   });
 });
+
+describe("[A3.5.search.find] tasks find prints a search page", () => {
+  test("a header, task and learning rows, placeholders, the changed marker and the next page", () => {
+    const text = render(
+      "task.search",
+      {
+        as_of: "1.1046.5n0w8k3q",
+        scope: "all",
+        parsed: 'zone OR "time zone"',
+        total: 37,
+        first: 16,
+        rows: [
+          {
+            kind: "task",
+            id: "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
+            ref: "M-14",
+            title: "Fix appointment time zones",
+            lifecycle: "active",
+            status: "open",
+            inbox: false,
+            priority: 1,
+            effort: "M",
+            due: "2026-11-13",
+            area: "Client work",
+            project: "Lumen Health",
+            snippet: "…stored without zone…",
+            snippet_from: "task",
+            changed: true,
+          },
+          {
+            kind: "task",
+            id: "t_3a9c7e1g5j2k4m6n8p0q1r3s5t",
+            ref: "M-3",
+            title: "Fix DST bug in reports",
+            lifecycle: "completed",
+            status: "review",
+            inbox: false,
+            priority: 4,
+            completed: "2026-04-03",
+            snippet: "Always store UTC",
+            snippet_from: "learning",
+          },
+          { kind: "deleted", id: "t_7d3n9p1q5s0v2w4x6y8z0a2b4c", ref: "M-22" },
+          { kind: "redacted", id: "t_2h6k0m4p8r1t5v9x3z7b1d5f9g", ref: "M-9" },
+        ],
+        cursor: "c_7m2k9q4w1z8r3c6d",
+      },
+      "Mira",
+    );
+    expect(text.split("\n")).toEqual([
+      '16–19 of 37 · scope all · parsed: zone OR "time zone" · as of 1.1046.5n0w8k3q',
+      "M-14 · open · P1 · M · due 2026-11-13 · Lumen Health · Fix appointment time zones — …stored without zone… *",
+      "M-3 · completed 2026-04-03 · Fix DST bug in reports — learning: Always store UTC",
+      "M-22 · deleted since this search",
+      "M-9 · redacted since this search",
+      "More: tasks find --cursor c_7m2k9q4w1z8r3c6d",
+      "",
+    ]);
+    const learnings = render(
+      "task.search",
+      {
+        as_of: "1.1046.5n0w8k3q",
+        scope: "learnings",
+        parsed: "",
+        total: 0,
+        first: 0,
+        rows: [],
+      },
+      "Mira",
+    );
+    expect(learnings).toBe("0 of 0 · scope learnings · as of 1.1046.5n0w8k3q\n");
+  });
+});

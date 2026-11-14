@@ -27,6 +27,9 @@ import {
   tombstone,
 } from "@tasks/storage/search-helpers";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+import type { WorkerConnection } from "@tasks/storage";
+import type { Caller } from "../src/ops/caller.ts";
+import { opCall, type OpsHost } from "../src/ops/index.ts";
 import { SearchCursors, CURSOR_LIMITS } from "../src/search/cursors.ts";
 import {
   runSearch,
@@ -345,6 +348,63 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(Array.from(String(row?.["title"]))).toHaveLength(90);
     expect(String(row?.["title"]).endsWith("…")).toBe(true);
     expect(Array.from(String(row?.["snippet"])).length).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("[A3.5.search.find] task.search through the request path", () => {
+  /** A host serving the indexed fixture space through the in-thread reader. */
+  const host = (): OpsHost => ({
+    machine: { id: MACHINE.id },
+    spaces: () => [
+      {
+        id: fx.spaceId,
+        name: "Mira",
+        state: "open",
+        writer: undefined,
+        reader: readerOf(fx) as unknown as WorkerConnection,
+      },
+    ],
+    now: () => clock,
+    timeZone: () => "Europe/Lisbon",
+  });
+  const user: Caller = { class: "cli-interactive", env: {} };
+  const script: Caller = { class: "cli-script", env: {} };
+  const call = (h: OpsHost, caller: Caller, input: Record<string, unknown>) =>
+    opCall(h, caller, { op: "task.search", input }) as Promise<SearchResult>;
+
+  test("the entry's schema, its default page of 15 and its cursor, for the user and a script", async () => {
+    created(
+      submit(
+        fx,
+        Array.from({ length: 20 }, (_, i) => ({
+          kind: "task.create" as const,
+          title: `findword ${String(i)}`,
+        })),
+      ),
+    );
+    const h = host();
+    const first = await call(h, user, { q: "findword" });
+    expect(TaskSearchResult.parse(first).rows).toHaveLength(15);
+    expect(first).toMatchObject({ scope: "active", total: 20, first: 1, parsed: "findword" });
+    const second = await call(h, user, { cursor: first.cursor, q: "ignored" });
+    expect(second.rows).toHaveLength(5);
+    expect(second.first).toBe(16);
+    expect(second).not.toHaveProperty("cursor");
+    // A script is another binding: the user's cursor is not its own.
+    const error = await refusal(call(h, script, { cursor: first.cursor }));
+    expect(error.code).toBe("cursor_expired");
+    expect(error.data).toEqual({ reason: "binding" });
+    expect(
+      TaskSearchResult.parse(await call(h, script, { q: "findword", limit: 3 })).rows,
+    ).toHaveLength(3);
+    // The schema's limits come first: too long a query is too_large.
+    expect((await refusal(call(h, user, { q: "x".repeat(501) }))).code).toBe("too_large");
+  });
+
+  test("a restart drops every cursor", async () => {
+    const first = await call(host(), user, { q: "findword", limit: 2 });
+    const error = await refusal(call(host(), user, { cursor: first.cursor }));
+    expect(error.data).toEqual({ reason: "restart" });
   });
 });
 
