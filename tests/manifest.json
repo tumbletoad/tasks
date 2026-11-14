@@ -3024,6 +3024,46 @@
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.lifecycle",
+      "title": "The lifecycle through the write path: archive takes an active task to archived with its reason and no wrap-up waiting, if_active leaves a finished task as it is without touching it, wrap-up writes the outcome, adds and tombstones learnings within 20 of 1 KiB, clears the planning scalars on request and refuses an active task, once is no change on a wrapped task it would not change and a conflict on wrap otherwise, and delete and restore set and clear the tombstone, which later operations of the same request see; in a space with the search tables each of them leaves the index equal to a fresh rebuild",
+      "source": "A1 3.6, A1 3.11.1, A1 3.11.2, A1 3.11.3, A1 3.11.4, A3 3.4.8, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.wrap-up-additive",
+      "title": "Property test: random wrap-ups across completions, archives and reopens never change the context, the other task fields, notes, log entries, sources, links, places or attachments, and leave the outcome, the learnings, the mark and the planning scalars as a model predicts",
+      "source": "A1 3.11.2, A1 5, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.tombstone",
+      "title": "Property test: after a random history, a deleted task keeps its row, every row under it and its history, and restore brings it back as it was with two tombstone changes added, taking changes again",
+      "source": "A1 3.11.4, A1 5, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.dedupe-lifecycle",
+      "title": "Dedupe sees the request's own archive, wrap-up, delete and restore: an archived task within the window matches with lifecycle archived, finished at the instant of the commit that archived it; a task the request archives or wraps up is no match for a later draft; one it deletes holds no key and one it restores holds its keys again",
+      "source": "A1 3.6, A1 3.11.3, A1 3.11.4, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.finish.lifecycle",
+      "title": "complete_task through the request path: dropped archives and wraps up, learnings are recorded and read back in get_task's outcome section, a task the user checked off is wrapped up, an already wrapped task is no_change with the same outcome and a conflict naming the stored outcome otherwise, follow-ups after a wrap-up are new work, and a replay answers what the first answer said",
+      "source": "A3 3.4.4, A3 3.4.8, A1 3.11, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }
