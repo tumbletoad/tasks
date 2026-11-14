@@ -95,11 +95,25 @@ async function raw(fn: (conn: Connection) => void): Promise<void> {
   }
 }
 
+/** The columns of a task's lifecycle and wrap fields (fields.ts: TASK_FIELDS). */
+const LONE_COLUMNS = {
+  lifecycle: ["lifecycle", "completed_at", "completed_by", "archived_reason"],
+  wrap: ["wrap_state", "outcome", "wrapped_at", "wrapped_by"],
+} as const;
+
 /**
- * Codex's wrap-up as M3.04's `task.wrap_up` will write it: a commit that sets the task's wrap field
- * to `wrapped` with an outcome, with its change row, versions, touched mark and outbox row.
+ * A commit that writes a task's lifecycle or its wrap field alone, as M3.04's `task.archive` and
+ * `task.wrap_up` will: its change row, versions, touched mark and outbox row, on `who`'s undo
+ * stack when `undoable`. `values` gets the commit's instant.
  */
-async function codexWrapUp(id: Id<"t">): Promise<number> {
+async function loneWrite(
+  id: Id<"t">,
+  field: "lifecycle" | "wrap",
+  values: (at: number) => Record<string, unknown>,
+  who: Credential,
+  op: string,
+  undoable = false,
+): Promise<number> {
   let done = 0;
   await raw((conn) => {
     const seq = Number(conn.prepare("SELECT last_seq FROM space").get()?.["last_seq"]) + 1;
@@ -109,25 +123,15 @@ async function codexWrapUp(id: Id<"t">): Promise<number> {
     if (space === undefined || t === undefined) throw new Error("no task");
     const fv = JSON.parse(String(t["fv"])) as Record<string, number>;
     const fp = JSON.parse(String(t["fp"])) as Record<string, number>;
-    const wrap = (r: Row) =>
-      JSON.stringify({
-        wrap_state: r["wrap_state"] ?? null,
-        outcome: r["outcome"] ?? null,
-        wrapped_at: r["wrapped_at"] ?? null,
-        wrapped_by: r["wrapped_by"] ?? null,
-      });
-    const after = {
-      wrap_state: "wrapped",
-      outcome: "Shipped",
-      wrapped_at: at,
-      wrapped_by: fx.codex.principal_id,
-    };
+    const columns = LONE_COLUMNS[field];
+    const given = values(at);
+    const after = Object.fromEntries(columns.map((c) => [c, given[c] ?? null]));
     conn
       .prepare(
         "INSERT INTO commits (seq, id, epoch, incarnation, at, actor_kind, principal_id, " +
-          "author_id, scope_id, machine_id, origin, request_id, kind, ops) VALUES ($seq, $op, " +
-          "$epoch, $incarnation, $at, 'agent', $codex, $codex, 'grant:codex', $machine, 'mcp', " +
-          "$request, 'ops', $ops)",
+          "author_id, scope_id, machine_id, origin, request_id, kind, ops, undo_status) VALUES " +
+          "($seq, $op, $epoch, $incarnation, $at, $kind, $actor, $actor, $scope, $machine, " +
+          "$origin, $request, 'ops', $ops, $status)",
       )
       .run({
         seq,
@@ -135,36 +139,41 @@ async function codexWrapUp(id: Id<"t">): Promise<number> {
         epoch: space["authority_epoch"] as number,
         incarnation: space["authority_incarnation"] as string,
         at,
-        codex: fx.codex.principal_id,
+        kind: who.actor_kind,
+        actor: who.principal_id,
+        scope: who.scope_id,
         machine: TEST_MACHINE,
+        origin: who.origin,
         request: newId("op").slice(3),
-        ops: JSON.stringify([{ v: 1, op: "task.wrap_up", target: id, input: { task: id } }]),
+        ops: JSON.stringify([{ v: 1, op, target: id, input: { task: id } }]),
+        status: undoable ? "done" : null,
       });
     conn
       .prepare(
         "INSERT INTO changes (seq, n, op, entity, entity_id, task_id, action, field, before, " +
           "after, before_ver, before_prov, after_prov) VALUES ($seq, 1, 0, 'tasks', $id, $id, " +
-          "'set', 'wrap', $before, $after, $ver, $prov, $seq)",
+          "'set', $field, $before, $after, $ver, $prov, $seq)",
       )
       .run({
         seq,
         id,
-        before: wrap(t),
+        field,
+        before: JSON.stringify(Object.fromEntries(columns.map((c) => [c, t[c] ?? null]))),
         after: JSON.stringify(after),
-        ver: fv["wrap"] ?? (t["created_seq"] as number),
-        prov: fp["wrap"] ?? (t["created_seq"] as number),
+        ver: fv[field] ?? (t["created_seq"] as number),
+        prov: fp[field] ?? (t["created_seq"] as number),
       });
     conn
       .prepare(
-        "UPDATE tasks SET wrap_state = $wrap_state, outcome = $outcome, wrapped_at = $wrapped_at, " +
-          "wrapped_by = $wrapped_by, version = $seq, touched = $seq, fv = $fv, fp = $fp WHERE id = $id",
+        `UPDATE tasks SET ${columns.map((c) => `${c} = $${c}`).join(", ")}, version = $seq, ` +
+          "touched = $seq, fv = $fv, fp = $fp WHERE id = $id",
       )
       .run({
         ...after,
         seq,
         id,
-        fv: JSON.stringify({ ...fv, wrap: seq }),
-        fp: JSON.stringify({ ...fp, wrap: seq }),
+        fv: JSON.stringify({ ...fv, [field]: seq }),
+        fp: JSON.stringify({ ...fp, [field]: seq }),
       });
     conn
       .prepare(
@@ -176,6 +185,46 @@ async function codexWrapUp(id: Id<"t">): Promise<number> {
     done = seq;
   });
   return done;
+}
+
+/** Codex's wrap-up as M3.04's `task.wrap_up` will write it: `wrapped`, with an outcome. */
+const codexWrapUp = (id: Id<"t">): Promise<number> =>
+  loneWrite(
+    id,
+    "wrap",
+    (at) => ({
+      wrap_state: "wrapped",
+      outcome: "Shipped",
+      wrapped_at: at,
+      wrapped_by: fx.codex.principal_id,
+    }),
+    fx.codex,
+    "task.wrap_up",
+  );
+
+/** Mira's archive as M3.04's `task.archive` will write it: the lifecycle alone, on her stack. */
+const archive = (id: Id<"t">): Promise<number> =>
+  loneWrite(
+    id,
+    "lifecycle",
+    () => ({ lifecycle: "archived", archived_reason: "Not needed now" }),
+    fx.human,
+    "task.archive",
+    true,
+  );
+
+/** A second human of the space, with a stack of its own. */
+async function partner(): Promise<Credential> {
+  const id = newId("ac");
+  await raw((conn) => {
+    conn
+      .prepare(
+        "INSERT INTO actors (id, kind, label, instance_id, routine_id, created_at) " +
+          "VALUES ($id, 'human', 'Fixture partner', NULL, NULL, 0)",
+      )
+      .run({ id });
+  });
+  return { ...fx.human, principal_id: id, scope_id: "cli:partner" };
 }
 
 describe("[A1.5.history.undo-redo] undo and redo through the write path", () => {
@@ -394,6 +443,65 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
       ["lifecycle", wrapped],
     ]);
     expect(commitAt(done.seq)["undo_status"]).toBe("undone");
+  });
+
+  test("an undo never leaves a task active with a wrap-up its commit did not write", async () => {
+    const id = create();
+    const archived = await archive(id);
+    // Codex wraps the archived task up: the archive's lifecycle still holds Mira's write and
+    // passes its own guard, but an active task with a wrap state breaks the row's CHECK.
+    const wrapped = await codexWrapUp(id);
+    const before = lastSeq();
+    const refused = undo();
+    expectStatus(refused, "conflict");
+    expect(refused.error).toMatchObject({ code: "UNDO_CONFLICT" });
+    expect(refused.conflicts).toMatchObject([
+      {
+        entity: "tasks",
+        id,
+        field: "lifecycle",
+        value: { lifecycle: "archived" },
+        wrote: { lifecycle: "archived" },
+        restore: { lifecycle: "active" },
+        version: wrapped,
+        by: { label: "Codex · work" },
+      },
+    ]);
+    expect(refused.conflicts).toHaveLength(1);
+    expect(lastSeq()).toBe(before);
+    const u = applied(undo({ partial: true }));
+    expect(changesAt(u.seq)).toEqual([]);
+    expect(u.conflicts).toMatchObject([{ field: "lifecycle", version: wrapped }]);
+    expect(task(id)).toMatchObject({ lifecycle: "archived", wrap_state: "wrapped" });
+    expect(commitAt(archived)["undo_status"]).toBe("undone");
+  });
+
+  test("a redo never leaves a task active with a wrap-up: another's undo is the conflict", async () => {
+    const id = create();
+    await archive(id);
+    const other = await partner();
+    await loneWrite(
+      id,
+      "wrap",
+      (at) => ({
+        wrap_state: "wrapped",
+        outcome: "Shipped",
+        wrapped_at: at,
+        wrapped_by: other.principal_id,
+      }),
+      other,
+      "task.wrap_up",
+      true,
+    );
+    applied(history({ kind: "undo" }, other));
+    const u = applied(undo());
+    expect(task(id)).toMatchObject({ lifecycle: "active", wrap_state: null });
+    const refused = history({ kind: "redo" }, other);
+    expectStatus(refused, "conflict");
+    expect(refused.conflicts).toMatchObject([
+      { field: "wrap", restore: { wrap_state: "wrapped" }, version: u.seq, by: { kind: "human" } },
+    ]);
+    expect(task(id)).toMatchObject({ lifecycle: "active", wrap_state: null });
   });
 
   test("a check-off is undone and redone as one", () => {

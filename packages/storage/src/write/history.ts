@@ -589,6 +589,9 @@ export function planInversions(
     });
   }
   if (options.partial) keepTogether(plan, read);
+  keepActiveUnwrapped(plan, read, (where, version) => {
+    blocked(conflict(where, version));
+  });
   return plan;
 }
 
@@ -658,6 +661,84 @@ function keepTogether(
     });
     return false;
   });
+}
+
+/** A column of a lifecycle or wrap value, as `changes` holds the field. */
+function columnOf(json: string, column: string): unknown {
+  const value = parsed(json);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalidValue("changes", "after");
+  }
+  return (value as Record<string, unknown>)[column] ?? null;
+}
+
+/**
+ * No inversion leaves a task active with a wrap state (the row CHECK), in a full inversion or a
+ * partial one. Its lifecycle and wrap-up can come from different commits: an archive writes the
+ * lifecycle alone and a later wrap-up the wrap alone, so undoing the archive would make the task
+ * active under that wrap-up. Each of the two the plan would set back is then a conflict, named
+ * with the write that holds its partner (unless that partner is a conflict already: the refusal
+ * names it), and the plan sets back neither. A refusal here, rather than a failed UPDATE, keeps
+ * the request decided: a storage error would leave the change on top of the stack for good.
+ */
+function keepActiveUnwrapped(
+  plan: InversionPlan,
+  read: (entity: InvertibleEntity, id: string) => RowState,
+  name: (
+    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
+    version: number,
+  ) => void,
+): void {
+  const planned = new Map<string, Restore[]>();
+  for (const inversion of plan.inversions) {
+    if (inversion.kind !== "restore" || inversion.entity !== "tasks") continue;
+    if (PAIR[inversion.field] === undefined) continue;
+    const list = planned.get(inversion.id);
+    if (list === undefined) planned.set(inversion.id, [inversion]);
+    else list.push(inversion);
+  }
+  const unsafe = new Set<string>();
+  for (const [id, restores] of planned) {
+    const row = read("tasks", id);
+    const lifecycle = restores.find((r) => r.field === "lifecycle");
+    const wrap = restores.find((r) => r.field === "wrap");
+    const state =
+      lifecycle === undefined ? row.raw["lifecycle"] : columnOf(lifecycle.value, "lifecycle");
+    const wrapState =
+      wrap === undefined ? (row.raw["wrap_state"] ?? null) : columnOf(wrap.value, "wrap_state");
+    if (state !== "active" || wrapState === null) continue;
+    unsafe.add(id);
+    for (const restore of restores) {
+      const partner = PAIR[restore.field] ?? restore.field;
+      const named = plan.conflicts.some(
+        (c) => c.entity === "tasks" && c.id === id && c.field === partner,
+      );
+      if (named) continue;
+      const holder = restores.some((r) => r.field === partner) ? restore.field : partner;
+      name(
+        {
+          entity: "tasks",
+          id,
+          ...(restore.task === null ? {} : { task: restore.task }),
+          field: restore.field,
+          value: columnsValue(row.raw, TABLES.tasks.fields[restore.field] ?? []),
+          wrote: parsed(restore.change.after),
+          restore: parsed(restore.value),
+        },
+        versionOf(row, holder),
+      );
+    }
+  }
+  if (unsafe.size === 0) return;
+  plan.inversions = plan.inversions.filter(
+    (i) =>
+      !(
+        i.kind === "restore" &&
+        i.entity === "tasks" &&
+        PAIR[i.field] !== undefined &&
+        unsafe.has(i.id)
+      ),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
