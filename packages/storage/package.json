@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./driver-contract": "./test/driver-contract.ts",
-    "./revisions": "./test/revisions.ts"
+    "./revisions": "./test/revisions.ts",
+    "./search-helpers": "./test/search-helpers.ts",
+    "./write-helpers": "./test/write-helpers.ts"
   },
   "dependencies": {
     "@tasks/files": "workspace:*"
