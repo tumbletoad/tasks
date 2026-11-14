@@ -19,8 +19,9 @@
 //   no file's name is another entry's folder.
 // - Each entry is a regular file or a folder: a link, a device, a pipe or a socket in its
 //   attributes is refused. No encryption, and only the methods stored and deflate.
-// - Each local header repeats its central record's name and method, and the entries' data do not
-//   overlap one another or the central directory (the overlapping-entry bomb).
+// - Each local header repeats its central record's name, method, CRC and sizes (checkLocalFacts),
+//   and the entries' data do not overlap one another or the central directory (the
+//   overlapping-entry bomb).
 // - Extraction (ZipReader.read) counts what it produces while it streams and stops at the first
 //   byte past the caller's limit (BUNDLE_LIMIT_EXCEEDED), past the archive's total (the policy's
 //   ExpansionBudget) or past the size the entry claims (BUNDLE_INVALID). Then the size and the
@@ -848,6 +849,41 @@ function lookAt(path: string): BigIntStats {
 const sameId = (a: BigIntStats, b: BigIntStats): boolean =>
   a.dev === b.dev && a.ino === b.ino && a.size === b.size;
 
+/** A data descriptor follows the data, and the local header may hold zeros for its CRC and sizes. */
+const FLAG_DESCRIPTOR = 0x0008;
+
+/**
+ * The local header's CRC and sizes repeat the central record's (APPNOTE 4.4.4, 4.5.3): a reader
+ * that trusts the local header, as a streaming unzip tool does, then sees the same archive Tasks
+ * checked. Where a size field holds ZIP64's mark, the local ZIP64 field carries both sizes. With a
+ * data descriptor (flag bit 3) the three may be zero instead, as streaming writers leave them.
+ */
+function checkLocalFacts(
+  local: Buffer,
+  extra: Buffer,
+  record: { crc32: number; size: number; compressedSize: number },
+): void {
+  const crc = local.readUInt32LE(14);
+  let packed = local.readUInt32LE(18);
+  let size = local.readUInt32LE(22);
+  if ((local.readUInt16LE(6) & FLAG_DESCRIPTOR) !== 0 && crc === 0 && packed === 0 && size === 0) {
+    return;
+  }
+  const differs = invalidArchive("a local header differs from its central record");
+  if (crc !== record.crc32 >>> 0) throw differs;
+  if (packed === MAX32 || size === MAX32) {
+    let big: { size?: number; packed?: number } = {};
+    try {
+      big = zip64Values(extra, { size: true, packed: true, offset: false, disk: false });
+    } catch {
+      throw differs;
+    }
+    size = big.size ?? -1;
+    packed = big.packed ?? -1;
+  }
+  if (size !== record.size || packed !== record.compressedSize) throw differs;
+}
+
 function readEntries(fd: number, fileSize: number, policy: BundlePolicy): ZipEntry[] {
   const directory = findDirectory(fd, fileSize);
   if (directory.count > policy.maxEntries) throw limitExceeded("the number of entries");
@@ -947,6 +983,7 @@ function readEntries(fd: number, fileSize: number, policy: BundlePolicy): ZipEnt
     const localMethod = local.readUInt16LE(8);
     const localName = local.readUInt16LE(26);
     const localExtra = local.readUInt16LE(28);
+    if (localExtra > MAX_FIELD_BYTES) throw invalidArchive("a local header is too large");
     if ((localFlags & FLAG_ENCRYPTED) !== 0 || localMethod !== record.method) {
       throw invalidArchive("a local header differs from its central record");
     }
@@ -954,6 +991,8 @@ function readEntries(fd: number, fileSize: number, policy: BundlePolicy): ZipEnt
     if (!nameBytes.equals(Buffer.from(record.name, "utf8"))) {
       throw invalidArchive("a local header differs from its central record");
     }
+    const extra = readExactly(fd, localExtra, record.localOffset + LOCAL_FIXED + localName);
+    checkLocalFacts(local, extra, record);
     const dataStart = record.localOffset + LOCAL_FIXED + localName + localExtra;
     const dataEnd = dataStart + record.compressedSize;
     if (dataEnd > directory.start) throw invalidArchive("an entry overlaps the central directory");

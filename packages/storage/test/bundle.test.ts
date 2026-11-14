@@ -70,6 +70,8 @@ interface Craft {
   external?: number;
   madeBy?: number;
   flags?: number;
+  /** What the local header alone says, where it differs from the central record. */
+  local?: { crc?: number; packed?: number; size?: number; flags?: number };
 }
 
 /** Writes a ZIP archive as the entries say, lies included. */
@@ -88,11 +90,11 @@ function craftZip(path: string, entries: readonly Craft[]): void {
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(flags, 6);
+    local.writeUInt16LE(e.local?.flags ?? flags, 6);
     local.writeUInt16LE(method, 8);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(packed.length, 18);
-    local.writeUInt32LE(size, 22);
+    local.writeUInt32LE(e.local?.crc ?? crc, 14);
+    local.writeUInt32LE(e.local?.packed ?? e.packed ?? packed.length, 18);
+    local.writeUInt32LE(e.local?.size ?? size, 22);
     local.writeUInt16LE(name.length, 26);
     const record = Buffer.alloc(46);
     record.writeUInt32LE(0x02014b50, 0);
@@ -282,6 +284,37 @@ describe("[A1.5.bundle.zip-hardening] a restore refuses an archive that breaks a
       craftZip(zip, [...entries, { name: "export.json", data: exportJson({}) }]);
       await refused(zip, "BUNDLE_INVALID");
     }
+  });
+
+  test("a local header that does not repeat its central record: its CRC, its sizes, a ZIP64 mark without its field", async () => {
+    const src = folders.make();
+    const data = Buffer.from("text");
+    const listed = { "view/a.md": data };
+    const cases: NonNullable<Craft["local"]>[] = [
+      { crc: 0x12345678 },
+      { size: 5 },
+      { packed: 1 },
+      // ZIP64's mark, but no ZIP64 field in the local header to carry the size.
+      { size: 0xffffffff },
+      // A data descriptor's flag with the CRC still set but wrong.
+      { flags: 0x0808, crc: 1 },
+    ];
+    for (const [i, local] of cases.entries()) {
+      const zip = join(src, `local-${String(i)}.zip`);
+      craftZip(zip, [
+        { name: "view/a.md", data, local },
+        { name: "export.json", data: exportJson(listed) },
+      ]);
+      const error = await refused(zip, "BUNDLE_INVALID");
+      expect(error.message, JSON.stringify(local)).toContain("local header");
+    }
+    // A data descriptor's flag with zeros in the local header, as streaming tools write it, reads.
+    const streamed = join(src, "streamed.zip");
+    craftZip(streamed, [
+      { name: "view/a.md", data, local: { flags: 0x0808, crc: 0, packed: 0, size: 0 } },
+      { name: "export.json", data: exportJson(listed) },
+    ]);
+    await readBundle(streamed, BUNDLE_POLICY);
   });
 
   test("a file a bundle never holds, a missing or unlisted file, a wrong checksum, and no archive at all", async () => {
