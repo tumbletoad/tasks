@@ -1,15 +1,17 @@
-// The record describes the disk (A1 3.13 "The record", "A kill", "Folders of the tree"): when the
-// projection cannot be sure it does, it does not go on as if it did. A record that could not be
-// written holds back the next batch, an unreadable journal rebuilds, a retired file that could not
-// go is tried again, and a folder of the tree that went missing or became a link is never followed
-// and rebuilds the tree, so no catalogue names a file that is not there. Fixture text only.
+// The trusted state and the tree's folders (A1 3.13 rules 1, 2, 3 and 5): the record lives in
+// machine state; one the projection could not write holds back the next batch; one that is missing,
+// unreadable or of another identity starts a reconciliation from scratch that deletes nothing on
+// its word; a retired file that could not go is tried again; and a folder of the tree that went
+// missing or became a link is never followed, its link moved aside as it is, and what the record
+// had below it rendered again. Fixture text only.
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -18,13 +20,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { JOURNAL_FILE, RECORD_FILE, sha256 } from "../src/index.ts";
-import { Tree } from "../src/tree.ts";
+import { Tree, TrustedState } from "../src/index.ts";
 import {
+  catalogOf,
   checkWatermark,
   expectClean,
   expectSameTree,
   filesOf,
+  inTree,
   settle,
   treeOf,
   world,
@@ -71,47 +74,14 @@ async function moveFolder(from: string, to: string): Promise<void> {
   }
 }
 
-interface Line {
-  readonly id: string;
-  readonly path: string;
-}
-
-const catalog = (dir: string): Line[] =>
-  readFileSync(join(dir, "catalog.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .slice(1)
-    .map((line) => JSON.parse(line) as Line);
-
 /** Every path the catalogue names is a file in the tree, reached through real folders only. */
 function expectCatalogInTree(dir: string): void {
-  for (const line of catalog(dir)) {
-    const parts = line.path.split("/");
-    for (let i = 1; i < parts.length; i += 1) {
-      const folder = lstatSync(join(dir, ...parts.slice(0, i)), { throwIfNoEntry: false });
-      expect(folder?.isDirectory(), `${line.path}: a real folder`).toBe(true);
-    }
-    expect(lstatSync(join(dir, ...parts), { throwIfNoEntry: false })?.isFile(), line.path).toBe(
-      true,
-    );
-  }
+  for (const line of catalogOf(dir)) expect(inTree(dir, line.path), line.path).toBe(true);
 }
 
-async function freshRender(): Promise<Map<string, string>> {
-  const dir = join(root, `fresh-${String(n)}`);
-  const fresh = w.projector({ dir });
-  await fresh.start();
-  await settle(fresh);
-  return treeOf(dir);
-}
+const freshRender = (): Promise<Map<string, string>> => w.fresh(join(root, `fresh-${String(n)}`));
 
-/** The tree without the rescue's traces: what the database alone gives. */
-const recordTasks = (dir: string): Record<string, { path: string; sha256: string }> =>
-  (
-    JSON.parse(readFileSync(join(dir, RECORD_FILE), "utf8")) as {
-      tasks: Record<string, { path: string; sha256: string }>;
-    }
-  ).tasks;
+const rescuedOf = (): Map<string, string> => filesOf(join(w.folder, "exchange", "rescued"));
 
 const activeIds = (): string[] =>
   w.reader
@@ -119,109 +89,88 @@ const activeIds = (): string[] =>
     .all<{ id: string }>()
     .map((row) => row.id);
 
-describe("[A1.5.projection.recovery] the record describes the disk: an unwritten record holds back the next batch, an unreadable journal rebuilds, a retired file that could not go is tried again", () => {
+describe("[A1.5.projection.recovery] the trusted state: an unwritten record holds back the next batch; a record missing, unreadable or of another identity reconciles from scratch and deletes nothing on its word; a retired file that could not go is tried again", () => {
   test("a record that could not be written is written before the next batch, and a kill then loses nothing", async () => {
     const first = w.projector();
     await first.start();
     await settle(first);
     const [a, b] = activeIds();
     w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "First renamed fixture" } }]);
-    const write = vi.spyOn(Tree.prototype, "writeRecord").mockImplementationOnce(() => {
+    const write = vi.spyOn(TrustedState.prototype, "writeRecord").mockImplementationOnce(() => {
       throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
     });
     // The batch placed its files and reported them; only the record failed. It says so.
     await expect(first.step()).rejects.toMatchObject({ code: "ENOSPC" });
     expect(write).toHaveBeenCalled();
     // The journal stays until the record is written, and the projection has work to do.
-    expect(existsSync(join(w.dir, JOURNAL_FILE))).toBe(true);
+    expect(existsSync(w.journal)).toBe(true);
     expect(first.pending().dirty).toBe(true);
     w.submit([{ kind: "task.patch", task: b ?? "", set: { summary: "Second fixture change" } }]);
-    // The next batch is killed right after it wrote its own journal.
-    let hit: () => void = () => undefined;
-    const killed = new Promise<void>((resolve) => {
-      hit = resolve;
-    });
-    vi.spyOn(Tree.prototype, "writeJournal").mockImplementationOnce(function (this: Tree, j) {
-      // The inner call is the spy's own implementation again: the original.
-      this.writeJournal(j);
-      hit();
+    // The next batch writes the record first, then is killed right after its own journal.
+    vi.spyOn(TrustedState.prototype, "writeJournal").mockImplementationOnce(() => {
       throw new Error("fixture kill");
     });
-    await Promise.race([first.step().catch(() => undefined), killed]);
+    await expect(first.step()).rejects.toThrow("fixture kill");
     vi.restoreAllMocks();
-
-    const after = w.projector();
-    await after.start();
-    await settle(after);
-    expectClean(w.dir);
-    expectCatalogInTree(w.dir);
-    checkWatermark(w.dir, w.reader);
-    expectSameTree(treeOf(w.dir), await freshRender());
-  });
-
-  test("a record still to be written goes nowhere but the projection's folder: a link in its place is refused, a removed folder rebuilt", async () => {
-    const first = w.projector();
-    await first.start();
-    await settle(first);
-    const [a, b] = activeIds();
-    w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Unsaved fixture" } }]);
-    vi.spyOn(Tree.prototype, "writeRecord").mockImplementationOnce(() => {
-      throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
-    });
-    await expect(first.step()).rejects.toMatchObject({ code: "ENOSPC" });
-    vi.restoreAllMocks();
-    // The projection's folder moved away and a link put in its place.
-    const moved = join(root, `moved-view-${String(n)}`);
-    await moveFolder(w.dir, moved);
-    symlinkSync(moved, w.dir, LINK);
-    const record = readFileSync(join(moved, RECORD_FILE), "utf8");
-    await expect(first.step()).rejects.toMatchObject({ code: "ENOTDIR" });
-    expect(readFileSync(join(moved, RECORD_FILE), "utf8")).toBe(record);
-    expect(existsSync(join(moved, JOURNAL_FILE))).toBe(true);
-    // The link gone, and the folder with it: the projection makes it again and rebuilds.
-    // Not recursive: only the link goes, never what it points to.
-    rmSync(w.dir, { force: true });
-    expect(existsSync(w.dir)).toBe(false);
-    w.submit([{ kind: "task.patch", task: b ?? "", set: { summary: "After the link" } }]);
-    await settle(first);
-    expectCatalogInTree(w.dir);
-    checkWatermark(w.dir, w.reader);
-    expectSameTree(treeOf(w.dir), await freshRender());
-  });
-
-  test("a journal that cannot be read rebuilds the tree: the task the killed batch reported shows as it is now", async () => {
-    const first = w.projector();
-    await first.start();
-    await settle(first);
-    const [a] = activeIds();
-    w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Journal fixture changed" } }]);
-    let hit: () => void = () => undefined;
-    const killed = new Promise<void>((resolve) => {
-      hit = resolve;
-    });
-    const doomed = w.projector({
-      at: (point) => {
-        if (point !== "reported") return;
-        hit();
-        return new Promise<void>(() => undefined);
-      },
-    });
-    await doomed.start();
-    void doomed.step();
-    await killed;
-    writeFileSync(join(w.dir, JOURNAL_FILE), "{");
-
     const after = w.projector();
     const start = await after.start();
-    expect(start.rebuild).toBe(true);
-    expect(existsSync(join(w.dir, ".projection.json"))).toBe(false);
+    expect(start.rescued).toBe(0);
     const reports = await settle(after);
-    expect(reports.reduce((sum, r) => sum + r.failed, 0)).toBe(0);
-    const line = catalog(w.dir).find((entry) => entry.id === a);
-    expect(line?.path).toMatch(/-journal-fixture-changed\.md$/);
+    expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(0);
     expectClean(w.dir);
     expectCatalogInTree(w.dir);
     checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  for (const lost of ["missing", "unreadable"] as const) {
+    test(`a ${lost} record: the tree is reconciled from scratch; files that hold what would be written are kept, an edited one is moved aside, nothing is deleted`, async () => {
+      const first = w.projector();
+      await first.start();
+      await settle(first);
+      const [line] = catalogOf(w.dir);
+      const edited = join(w.dir, ...(line?.path ?? "").split("/"));
+      chmodSync(edited, 0o600);
+      writeFileSync(edited, "Edited while the record was lost.\n");
+      // A file the projection wrote that no task names any more: unknown without the record.
+      const stray = join(w.dir, "open", "M-999-an-older-render.md");
+      writeFileSync(stray, "---\ngenerated: true\n---\n");
+      if (lost === "missing") rmSync(w.record);
+      else writeFileSync(w.record, "{ not json");
+      const before = filesOf(w.dir).size;
+      const after = w.projector();
+      const start = await after.start();
+      expect(start.rebuild).toBe(true);
+      const reports = await settle(after);
+      expect(reports.reduce((sum, r) => sum + r.removed, 0)).toBe(0);
+      // Moved aside: the edited file, and the two root files whose header carries the time of
+      // their render, so a fresh render never holds their bytes. The rest held exactly them.
+      const rescued = rescuedOf();
+      expect([...rescued.keys()].map((path) => path.split("/").slice(2).join("/")).sort()).toEqual(
+        [".projection.json", "catalog.jsonl", line?.path ?? ""].sort(),
+      );
+      expect([...rescued.values()]).toContain("Edited while the record was lost.\n");
+      expect(readFileSync(stray, "utf8")).toBe("---\ngenerated: true\n---\n");
+      expect(filesOf(w.dir).size).toBe(before);
+      checkWatermark(w.dir, w.reader);
+    });
+  }
+
+  test("a record of another incarnation (a restore): every task again, the record's own unchanged files replaced or removed, an edited one moved aside", async () => {
+    const first = w.projector();
+    await first.start();
+    await settle(first);
+    const record = JSON.parse(readFileSync(w.record, "utf8")) as Record<string, unknown>;
+    writeFileSync(w.record, JSON.stringify({ ...record, incarnation: "ai_other" }));
+    const [, second] = catalogOf(w.dir);
+    const edited = join(w.dir, ...(second?.path ?? "").split("/"));
+    chmodSync(edited, 0o600);
+    writeFileSync(edited, "Edited before the rebuild.\n");
+    const again = w.projector();
+    const start = await again.start();
+    expect(start.rebuild).toBe(true);
+    const reports = await settle(again);
+    expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(1);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
@@ -230,7 +179,7 @@ describe("[A1.5.projection.recovery] the record describes the disk: an unwritten
     await projector.start();
     await settle(projector);
     const [a] = activeIds();
-    const old = recordTasks(w.dir)[a ?? ""]?.path ?? "";
+    const old = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
     w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Retirement fixture" } }]);
     // The only removal of the batch is the old file's: it fails as a file held open on Windows does.
     const remove = vi.spyOn(Tree.prototype, "remove").mockImplementation(() => {
@@ -255,8 +204,8 @@ describe("[A1.5.projection.recovery] the record describes the disk: an unwritten
   });
 });
 
-describe("[A1.5.projection.folders] a folder of the tree that went missing or became a link is never followed, and the tree is rebuilt so the catalogue names only files that are there", () => {
-  test("a link where a folder of the tree was: a removal never goes through it", () => {
+describe("[A1.5.projection.folders] a folder of the tree that went missing or became a link is never followed: its link is moved aside as it is, and what the record had below it is rendered again", () => {
+  test("a link where a folder of the tree was: a look or a removal never goes through it", () => {
     const space = join(root, `space-${String(n)}`);
     const dir = join(root, `view-${String(n)}`);
     const outside = join(root, `outside-${String(n)}`);
@@ -264,13 +213,14 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     const name = "M-1-fixture.md";
     writeFileSync(join(outside, name), "fixture");
     symlinkSync(outside, join(dir, "open"), LINK);
-    const tree = new Tree({ spaceFolder: space, dir, now: () => 0 });
-    expect(tree.hashOf(`open/${name}`)).toBeUndefined();
-    expect(tree.remove(`open/${name}`, (hash) => hash === sha256("fixture"))).toBe("missing");
+    const tree = new Tree({ spaceFolder: space, dir });
+    expect(tree.look(`open/${name}`)).toEqual({ kind: "unreachable" });
+    const owned = { sha256: "", size: 7 };
+    expect(tree.remove(`open/${name}`, owned)).toBe("not-ours");
     expect(readFileSync(join(outside, name), "utf8")).toBe("fixture");
   });
 
-  test("open/ moved away and a link put in its place: the link is rescued, never followed, and every task is rendered again", async () => {
+  test("open/ moved away and a link put in its place while the projection runs: the link is moved aside, never followed, and every task in open/ is rendered again", async () => {
     const projector = w.projector();
     await projector.start();
     await settle(projector);
@@ -282,6 +232,7 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     w.submit([{ kind: "task.patch", task: a ?? "", set: { summary: "Folder fixture" } }]);
     const reports = await settle(projector);
     expect(reports.reduce((sum, r) => sum + r.failed, 0)).toBe(0);
+    expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(1);
     expect(lstatSync(join(w.dir, "open")).isDirectory()).toBe(true);
     // Nothing was written, moved or removed through the link.
     expect(readdirSync(outside).sort()).toEqual(before);
@@ -291,45 +242,14 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
-  test("open/ removed while the projection runs: the tree is rebuilt, not left naming files that are gone", async () => {
+  test("open/ removed while nothing changes: the next start renders its files again", async () => {
     const projector = w.projector();
     await projector.start();
     await settle(projector);
     rmSync(join(w.dir, "open"), { recursive: true, force: true });
-    // Nothing changed in the space: the projection notices the folder by itself.
-    expect(projector.pending().dirty).toBe(true);
-    await settle(projector);
-    expectClean(w.dir);
-    expectCatalogInTree(w.dir);
-    checkWatermark(w.dir, w.reader);
-    expectSameTree(treeOf(w.dir), await freshRender());
-  });
-
-  test("open/ removed during a batch, and the run killed before its rebuild: the loss is still seen at the next start", async () => {
-    const projector = w.projector();
-    await projector.start();
-    await settle(projector);
-    const [a] = activeIds();
-    w.submit([{ kind: "task.patch", task: a ?? "", set: { summary: "Removed mid-batch" } }]);
-    let hit: () => void = () => undefined;
-    const killed = new Promise<void>((resolve) => {
-      hit = resolve;
-    });
-    const doomed = w.projector({
-      at: (point) => {
-        // After the batch's own check of its folders, before it places anything.
-        if (point === "journal") rmSync(join(w.dir, "open"), { recursive: true, force: true });
-        if (point !== "record") return;
-        hit();
-        return new Promise<void>(() => undefined);
-      },
-    });
-    await doomed.start();
-    void doomed.step();
-    await killed;
-
     const after = w.projector();
-    expect((await after.start()).rebuild).toBe(true);
+    const start = await after.start();
+    expect(start.reconciled.queued).toBeGreaterThan(0);
     await settle(after);
     expectClean(w.dir);
     expectCatalogInTree(w.dir);
@@ -337,63 +257,58 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
-  test("open/ swapped for a link while a batch waits on the writer: the batch's removals never go through it", async () => {
+  test("open/ swapped for a link while a batch waits on the writer: nothing is removed through it, and the tree is rendered again", async () => {
     const first = w.projector();
     await first.start();
     await settle(first);
     const [a] = activeIds();
-    const old = recordTasks(w.dir)[a ?? ""]?.path ?? "";
+    const old = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
     // Renamed: the batch writes its new file in open/, then retires the old one there.
     w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Swapped mid-batch" } }]);
     const outside = join(root, `swapped-open-${String(n)}`);
     let swapped = false;
     const projector = w.projector({
-      at: async (point) => {
-        // Once, in the first batch, while it waits on the writer.
-        if (point !== "reported" || swapped) return;
-        swapped = true;
-        await moveFolder(join(w.dir, "open"), outside);
-        symlinkSync(outside, join(w.dir, "open"), LINK);
+      writer: {
+        projected: async (batch) => {
+          const answer = w.writer.projected(batch);
+          if (!swapped) {
+            swapped = true;
+            await moveFolder(join(w.dir, "open"), outside);
+            symlinkSync(outside, join(w.dir, "open"), LINK);
+          }
+          return answer;
+        },
+        queueProjection: (keys) => Promise.resolve(w.writer.queueProjection(keys)),
       },
     });
     await projector.start();
     await projector.step();
+    const kept = join(outside, old.split("/").at(-1) ?? "");
     // The old file the rename left behind is still where the link points: nothing was removed there.
-    expect(existsSync(join(outside, old.split("/").at(-1) ?? ""))).toBe(true);
+    expect(existsSync(kept)).toBe(true);
+    const contents = readdirSync(outside).sort();
     await settle(projector);
     expect(lstatSync(join(w.dir, "open")).isDirectory()).toBe(true);
-    expect(existsSync(join(outside, old.split("/").at(-1) ?? ""))).toBe(true);
-    expectCatalogInTree(w.dir);
-    expectSameTree(treeOf(w.dir), await freshRender());
-  });
-
-  test("the projection's folder removed while it runs: it is made again and rebuilt", async () => {
-    const projector = w.projector();
-    await projector.start();
-    await settle(projector);
-    rmSync(w.dir, { recursive: true, force: true });
-    expect(projector.pending().dirty).toBe(true);
-    await settle(projector);
+    expect(readdirSync(outside).sort()).toEqual(contents);
     expectCatalogInTree(w.dir);
     checkWatermark(w.dir, w.reader);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
-  test("during a rebuild the folder holds no catalogue or index that names the old tree", async () => {
+  test("the tree's own folder replaced by a link: the link is moved aside, never followed, and the tree made again", async () => {
     const projector = w.projector();
     await projector.start();
     await settle(projector);
-    const recordPath = join(w.dir, RECORD_FILE);
-    const record = JSON.parse(readFileSync(recordPath, "utf8")) as Record<string, unknown>;
-    writeFileSync(recordPath, JSON.stringify({ ...record, incarnation: "ai_other" }));
-    const again = w.projector();
-    const start = await again.start();
-    expect(start.rebuild).toBe(true);
-    const files = [...filesOf(w.dir).keys()];
-    expect(files).not.toContain(".projection.json");
-    expect(files).not.toContain("catalog.jsonl");
-    expect(files).not.toContain("index.md");
-    await settle(again);
+    const outside = join(root, `moved-view-${String(n)}`);
+    await moveFolder(w.dir, outside);
+    const before = [...filesOf(outside).keys()].sort();
+    symlinkSync(outside, w.dir, LINK);
+    const after = w.projector();
+    await after.start();
+    const reports = await settle(after);
+    expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(1);
+    expect(lstatSync(w.dir).isDirectory()).toBe(true);
+    expect([...filesOf(outside).keys()].sort()).toEqual(before);
     expectCatalogInTree(w.dir);
     expectSameTree(treeOf(w.dir), await freshRender());
   });

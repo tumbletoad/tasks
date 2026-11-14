@@ -66,6 +66,7 @@ const SQL = {
   projects:
     "SELECT p.slug, p.title, a.slug AS area FROM projects p LEFT JOIN areas a " +
     "ON a.id = p.area_id WHERE p.deleted_at IS NULL ORDER BY p.position, p.id",
+  missing: `SELECT value AS id FROM json_each($ids) WHERE value NOT IN (SELECT id FROM tasks)`,
 } as const;
 
 /** What one batch reads at its snapshot. */
@@ -141,6 +142,18 @@ export function readPending(conn: Connection): Pending {
       newest: num(row?.["newest"]),
     };
   });
+}
+
+/**
+ * Of `ids`, those no task row has: tasks the projection's record names that the space no longer
+ * has (another identity of it, a redaction), so a full rebuild queues them and their files retire.
+ */
+export function missingTasks(conn: Connection, ids: readonly string[]): string[] {
+  if (ids.length === 0) return [];
+  return conn
+    .prepare(SQL.missing)
+    .all({ ids: JSON.stringify(ids) })
+    .map((row) => str(row["id"]));
 }
 
 /** One batch at one snapshot: at most `limit` dirty tasks, oldest first (A1 3.13 step 2). */

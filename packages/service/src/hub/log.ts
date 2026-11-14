@@ -317,8 +317,19 @@ export const EVENTS = {
       failed: "int",
       watermark: "int",
       backlog: "bool",
-      rebuilding: "bool",
       ms: "int",
+    },
+  },
+  "space.projection_reconciled": {
+    lvl: "info",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      full: "bool",
+      checked: "int",
+      queued: "int",
+      forgotten: "int",
     },
   },
   "space.projection_rescued": {

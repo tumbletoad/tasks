@@ -90,6 +90,37 @@ describe("[A1.5.projection.outbox] the projection marks what it rendered, and th
     expect(fx.writer.projected({ seq: t, keys: [b, PROJECTION_ALL] })).toBe(t);
   });
 
+  test("a reconciliation queues only the tasks it names, an ID without a task row included, each from commit 1", () => {
+    const a = create("Fix appointment time zones");
+    const b = create("Review the invoice export");
+    const t = lastSeq();
+    fx.writer.projected({ seq: t, keys: [a, b, PROJECTION_ALL] });
+    expect(rows()).toEqual([]);
+    // A task the projection's record still names, but the space no longer has.
+    const gone = `t_${"0".repeat(25)}1`;
+    expect(fx.writer.queueProjection([a, gone])).toBe(2);
+    expect(rows()).toEqual(
+      [
+        { key: PROJECTION_ALL, first_seq: 1, seq: t },
+        { key: a, first_seq: 1, seq: t },
+        { key: gone, first_seq: 1, seq: t },
+      ].sort((x, y) => (x.key < y.key ? -1 : 1)),
+    );
+    // b was not named: it stays rendered, and the watermark waits only for a and the gone one.
+    expect(fx.writer.projected({ seq: t, keys: [a] })).toBe(0);
+    expect(fx.writer.projected({ seq: t, keys: [gone, PROJECTION_ALL] })).toBe(t);
+    const refused = (keys: unknown): void => {
+      expect(() => fx.writer.queueProjection(keys as never)).toThrow(
+        expect.objectContaining({ code: "STORAGE_MISUSE" }),
+      );
+    };
+    refused(["../space.db"]);
+    refused([a, a]);
+    refused(PROJECTION_ALL);
+    refused([PROJECTION_ALL]);
+    refused(Array.from({ length: 1_001 }, () => a));
+  });
+
   test("a batch from another thread is checked: its snapshot, its keys and their number", () => {
     const t = lastSeq();
     const refused = (batch: unknown): void => {

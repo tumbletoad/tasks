@@ -196,8 +196,8 @@ export interface Calls {
   openLaunches: { args: { handle: number; machine: string }; result: LaunchRecord[] };
   /** The projection rendered a batch (A1 3.13): its outbox rows, and the watermark back. */
   projected: { args: { handle: number; batch: ProjectedBatch }; result: number };
-  /** Every task queued for the projection: a full rebuild. The tasks queued. */
-  queueProjection: { args: { handle: number }; result: number };
+  /** Tasks queued for the projection: every one (a full rebuild), or `keys`. The tasks queued. */
+  queueProjection: { args: { handle: number; keys?: string[] }; result: number };
   exec: { args: { handle: number; sql: string }; result: null };
   query: { args: { handle: number; query: Query }; result: QueryResult };
   /** The queries in one transaction: all apply, or none. */

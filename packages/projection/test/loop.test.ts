@@ -25,7 +25,6 @@ const REPORT: StepReport = {
   failed: 0,
   rescued: 0,
   published: true,
-  rebuilding: false,
 };
 
 /**
@@ -41,7 +40,14 @@ function scripted(changes: number[], options: { backlogBatches?: number; failing
   let owed = false;
   const batches: number[] = [];
   const projector = {
-    start: () => Promise.resolve({ rebuild: false, temps: 0, recovered: false, rescued: 0 }),
+    start: () =>
+      Promise.resolve({
+        rebuild: false,
+        temps: 0,
+        recovered: false,
+        rescued: 0,
+        reconciled: { full: false, checked: 0, queued: 0, forgotten: 0 },
+      }),
     pending: () => {
       const arrived = changes.filter((at) => at <= clock).length;
       return { dirty: arrived > seen || owed, mark: String(arrived) };

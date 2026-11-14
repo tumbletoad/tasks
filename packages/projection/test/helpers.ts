@@ -1,6 +1,7 @@
 // Shared set-up for the projection's tests: the Mira sample space with its writer in this thread,
-// a reader for the projector, and the checks every test runs on a tree. Fixture text only.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+// a reader for the projector, a machine-state folder of its own for the trusted record and journal,
+// and the checks every test runs on a tree. Fixture text only.
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { expect } from "vitest";
 import {
@@ -15,13 +16,22 @@ import {
   type WriteResult,
 } from "@tasks/storage";
 import { checkedDriver, MIRA, seedMira } from "@tasks/testkit";
-import { Projector, type ProjectorOptions, type StepReport } from "../src/index.ts";
-import { JOURNAL_FILE, RECORD_FILE } from "../src/tree.ts";
+import {
+  Projector,
+  type Act,
+  type Hook,
+  type ProjectorOptions,
+  type StepReport,
+} from "../src/index.ts";
 
 export interface World {
   readonly folder: string;
-  /** The projection's folder: the space's view/. */
+  /** The tree: the space's view/. */
   readonly dir: string;
+  /** The machine-state folder that holds the trusted record and journal. */
+  readonly state: string;
+  readonly record: string;
+  readonly journal: string;
   readonly writer: SpaceWriter;
   readonly reader: Connection;
   readonly human: Credential;
@@ -29,6 +39,8 @@ export interface World {
   submit(ops: Operation[]): WriteResult;
   /** A projector on the space, its writer this thread's. */
   projector(options?: Partial<ProjectorOptions>): Projector;
+  /** A fresh render of the space as it is now, into `dir` with a state of its own. */
+  fresh(dir: string): Promise<Map<string, string>>;
   close(): void;
 }
 
@@ -51,9 +63,30 @@ export async function world(root: string, tasks = 24): Promise<World> {
   const spaceId = writer.spaceId;
   let n = 0;
   const dir = join(seeded.folder, "view");
+  const state = join(root, "state", "spaces");
+  const record = join(state, `${spaceId}.projection.json`);
+  const journal = join(state, `${spaceId}.projection-journal.json`);
+  const make = (options: Partial<ProjectorOptions> = {}): Projector =>
+    new Projector({
+      conn: reader,
+      spaceFolder: seeded.folder,
+      dir,
+      record,
+      journal,
+      writer: {
+        projected: (batch) => Promise.resolve(writer.projected(batch)),
+        queueProjection: (keys) => Promise.resolve(writer.queueProjection(keys)),
+      },
+      timeZone: "UTC",
+      ...options,
+    });
+  let fresh = 0;
   return {
     folder: seeded.folder,
     dir,
+    state,
+    record,
+    journal,
     writer,
     reader,
     human,
@@ -69,18 +102,21 @@ export async function world(root: string, tasks = 24): Promise<World> {
       expect(result.status, JSON.stringify(result.error ?? result.conflicts)).toBe("applied");
       return result;
     },
-    projector(options = {}) {
-      return new Projector({
-        conn: reader,
-        spaceFolder: seeded.folder,
-        dir,
-        writer: {
-          projected: (batch) => Promise.resolve(writer.projected(batch)),
-          queueProjection: () => Promise.resolve(writer.queueProjection()),
-        },
-        timeZone: "UTC",
-        ...options,
+    projector: make,
+    async fresh(at) {
+      fresh += 1;
+      const own = join(root, "state", `fresh-${String(fresh)}`);
+      mkdirSync(own, { recursive: true });
+      // No record of its own: its start queues every task, and it renders them all. The tasks it
+      // marks rendered were rendered by the projector under test already, which has settled.
+      const projector = make({
+        dir: at,
+        record: join(own, "record.json"),
+        journal: join(own, "journal.json"),
       });
+      await projector.start();
+      await settle(projector);
+      return treeOf(at);
     },
     close() {
       reader.close();
@@ -107,14 +143,17 @@ export async function settle(projector: Projector, limit = 1_000): Promise<StepR
   return reports;
 }
 
-/** Every file under `dir`, relative with `/`, mapped to its text. */
+/** Every file under `dir`, relative with `/`, mapped to its text. Links are not followed. */
 export function filesOf(dir: string): Map<string, string> {
   const files = new Map<string, string>();
   const walk = (folder: string): void => {
     for (const name of readdirSync(folder)) {
       const path = join(folder, name);
-      if (statSync(path).isDirectory()) walk(path);
-      else files.set(relative(dir, path).split(sep).join("/"), readFileSync(path, "utf8"));
+      const stats = lstatSync(path);
+      if (stats.isDirectory()) walk(path);
+      else if (stats.isFile()) {
+        files.set(relative(dir, path).split(sep).join("/"), readFileSync(path, "utf8"));
+      }
     }
   };
   if (existsSync(dir)) walk(dir);
@@ -127,48 +166,19 @@ export function filesOf(dir: string): Map<string, string> {
  */
 export function treeOf(dir: string): Map<string, string> {
   const files = filesOf(dir);
-  const timed = ["catalog.jsonl", ".projection.json"];
-  for (const name of timed) {
+  for (const name of ["catalog.jsonl", ".projection.json"]) {
     const text = files.get(name);
     if (text !== undefined) {
       files.set(name, text.replace(/"generated_at": ?"[^"]*"/g, '"generated_at":"-"'));
     }
   }
-  // The record holds those two files' hashes, which the instants change.
-  const record = files.get(RECORD_FILE);
-  if (record !== undefined) {
-    const value = JSON.parse(record) as { files: Record<string, string> };
-    for (const name of timed) {
-      if (name in value.files) value.files[name] = "-";
-    }
-    files.set(RECORD_FILE, JSON.stringify(value));
-  }
   return files;
 }
 
-/**
- * Two trees are the same: the same paths with the same text. A difference names the paths, and
- * for the record its fields, never a wall of JSON.
- */
+/** Two trees are the same: the same paths with the same text. A difference names the paths. */
 export function expectSameTree(actual: Map<string, string>, expected: Map<string, string>): void {
   const paths = [...new Set([...actual.keys(), ...expected.keys()])].sort();
-  const differ = paths.filter((path) => actual.get(path) !== expected.get(path));
-  const detail = differ.map((path) => {
-    if (path !== ".projection-files.json" || !actual.has(path) || !expected.has(path)) return path;
-    const a = JSON.parse(actual.get(path) ?? "{}") as Record<string, unknown>;
-    const b = JSON.parse(expected.get(path) ?? "{}") as Record<string, unknown>;
-    const fields = Object.keys({ ...a, ...b }).filter(
-      (key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]),
-    );
-    const tasks = (r: Record<string, unknown>) => (r["tasks"] ?? {}) as Record<string, unknown>;
-    const ids = Object.keys({ ...tasks(a), ...tasks(b) }).filter(
-      (id) => JSON.stringify(tasks(a)[id]) !== JSON.stringify(tasks(b)[id]),
-    );
-    return `${path} fields ${fields.join(",")} tasks ${ids.slice(0, 5).join(",")} ${JSON.stringify(
-      Object.fromEntries(fields.filter((f) => f !== "tasks").map((f) => [f, [a[f], b[f]]])),
-    )}`;
-  });
-  expect(detail).toEqual([]);
+  expect(paths.filter((path) => actual.get(path) !== expected.get(path))).toEqual([]);
 }
 
 /** A file's front matter, as key to raw value. */
@@ -190,13 +200,26 @@ interface CatalogLine {
   readonly kind?: string;
 }
 
+/** The catalogue's task lines. */
+export const catalogOf = (dir: string): { id: string; path: string }[] =>
+  readFileSync(join(dir, "catalog.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .slice(1)
+    .map((line) => JSON.parse(line) as { id: string; path: string });
+
 /**
  * A1 3.13's guarantee, checked against the database, which the tree did not write: when the folder
  * claims a watermark W, every commit up to W is reflected in every task's file (its `seq` is at
  * least the task's last change up to W), every live task created up to W has a catalogue line, and
- * every path the catalogue names exists. A folder without `.projection.json` claims nothing.
+ * every path the catalogue names exists, reached through real folders. A folder without
+ * `.projection.json` claims nothing. `skip` names task IDs not checked (a person changed them).
  */
-export function checkWatermark(dir: string, reader: Connection): number | undefined {
+export function checkWatermark(
+  dir: string,
+  reader: Connection,
+  skip: ReadonlySet<string> = new Set(),
+): number | undefined {
   const claimPath = join(dir, ".projection.json");
   if (!existsSync(claimPath)) return undefined;
   const claim = JSON.parse(readFileSync(claimPath, "utf8")) as { seq: number };
@@ -211,10 +234,8 @@ export function checkWatermark(dir: string, reader: Connection): number | undefi
   expect(header?.seq ?? -1).toBeGreaterThanOrEqual(w);
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   for (const entry of entries) {
-    expect(
-      existsSync(join(dir, ...(entry.path ?? "").split("/"))),
-      `${entry.path ?? ""} exists`,
-    ).toBe(true);
+    if (skip.has(entry.id ?? "")) continue;
+    expect(inTree(dir, entry.path ?? ""), `${entry.path ?? ""} exists`).toBe(true);
   }
   const tasks = reader
     .prepare(
@@ -223,6 +244,7 @@ export function checkWatermark(dir: string, reader: Connection): number | undefi
     )
     .all<{ id: string; last: number }>({ w });
   for (const task of tasks) {
+    if (skip.has(task.id)) continue;
     const entry = byId.get(task.id);
     expect(entry, `${task.id} is in the catalogue`).toBeDefined();
     const text = readFileSync(join(dir, ...(entry?.path ?? "").split("/")), "utf8");
@@ -234,10 +256,46 @@ export function checkWatermark(dir: string, reader: Connection): number | undefi
   return w;
 }
 
-/** No temporary file and no journal in the tree. */
-export function expectClean(dir: string): void {
-  for (const path of filesOf(dir).keys()) {
-    expect(path, "no temporary file").not.toMatch(/\.tmp/);
-    expect(path).not.toBe(JOURNAL_FILE);
+/** Whether `path` is a regular file of the tree, reached through real folders only. */
+export function inTree(dir: string, path: string): boolean {
+  const parts = path.split("/");
+  for (let i = 0; i <= parts.length - 1; i += 1) {
+    const at = join(dir, ...parts.slice(0, i));
+    if (lstatSync(at, { throwIfNoEntry: false })?.isDirectory() !== true) return false;
   }
+  return lstatSync(join(dir, ...parts), { throwIfNoEntry: false })?.isFile() === true;
+}
+
+/** No temporary file in the tree. */
+export function expectClean(dir: string): void {
+  for (const path of filesOf(dir).keys()) expect(path, "no temporary file").not.toMatch(/\.tmp$/);
+}
+
+/** The end of a process: thrown at the kill and at every act after it. */
+export class Killed extends Error {
+  override readonly name = "Killed";
+}
+
+/** A hook that kills the run at its `at`-th act: that act and every later one never happen. */
+export function killAt(at: number): {
+  hook: Hook;
+  dead: () => boolean;
+  act: () => Act | undefined;
+} {
+  let count = 0;
+  let dead = false;
+  let act: Act | undefined;
+  return {
+    hook: (what) => {
+      if (dead) throw new Killed();
+      count += 1;
+      if (count === at) {
+        dead = true;
+        act = what;
+        throw new Killed();
+      }
+    },
+    dead: () => dead,
+    act: () => act,
+  };
 }

@@ -53,8 +53,8 @@
 // 3. Once open as this machine's: one maintenance run (maintenance.ts): leftovers in the space's
 //    own backups folder, the daily backup when due, retention. Then a check every hour whether the
 //    next daily backup is due. And the projection (projection.ts, A1 3.13) in a worker of its own,
-//    into the space's `view/` or the machine-local `projection.dir`, until the space closes: a
-//    close stops it first, before the writer it asks for its bookkeeping.
+//    into the space's `view/`, until the space closes: a close stops it first, before the writer
+//    it asks for its bookkeeping. `tasks view rebuild` reaches it through rebuildView.
 // The highest epoch this machine has seen for a space is recorded when its writer opens as the
 // authority (space-settings.ts), and a claim or a restore in place goes above it.
 //
@@ -96,7 +96,7 @@ import {
   type OwnershipLoss,
   type OwnershipWatch,
 } from "./lock.ts";
-import { projectionFolder } from "@tasks/projection";
+import type { Reconciled } from "@tasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
@@ -105,6 +105,7 @@ import {
   clearFailedMigrations,
   failedOn,
   knownEpochs,
+  projectionStateOf,
   readSpaceSettings,
   recordFailedMigration,
   recordProjectionRescue,
@@ -344,8 +345,6 @@ class Hosted {
   reader: WorkerConnection | undefined;
   /** The space's machine-local backup folder, when one is set. */
   backupDir: string | undefined;
-  /** The space's machine-local projection folder, when one is set. */
-  projectionDir: string | undefined;
   /** The projection's worker while the space is open as this machine's. */
   projection: ProjectionRunner | undefined;
   /** The hourly check whether the next daily backup is due. */
@@ -642,6 +641,16 @@ export class SpaceManager {
   }
 
   /**
+   * `tasks view rebuild` (A1 3.13 rule 5): the space's projection looks at every file it placed
+   * and queues every task again, removing nothing it cannot prove it wrote. Resolves with what the
+   * reconciliation found, or undefined while the space has no projection running (it is not open
+   * as this machine's).
+   */
+  rebuildView(entry: number): Promise<Reconciled> | undefined {
+    return this.#space(entry).projection?.rebuild();
+  }
+
+  /**
    * Restores `backupFile` in place of the space (A1 3.18): the space closes first, the
    * restore claims the backup with an epoch above every one this machine has seen, under the
    * space's writer.lock in a worker of its own, and the space opens again, also when the restore
@@ -842,7 +851,6 @@ export class SpaceManager {
     }
     const settings = this.#settingsOf(space.folder);
     space.backupDir = settings.backupDir;
-    space.projectionDir = settings.projectionDir;
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
     // written; a synced folder is read-only until the person confirmed it is excluded from sync,
@@ -952,9 +960,9 @@ export class SpaceManager {
   }
 
   /**
-   * The space's projection (A1 3.13), in a worker of its own while the space is open as this
-   * machine's. Its outcome is logged, counts and codes only; it never fails the space. A
-   * `projection.dir` inside the space's folder, or holding it, is refused, and nothing is written.
+   * The space's projection (A1 3.13), into its `view/`, in a worker of its own while the space is
+   * open as this machine's. Its trusted state is beside the space's machine-local settings. Its
+   * outcome is logged, counts and codes only; it never fails the space.
    */
   #project(space: Hosted): void {
     const { log } = this.#options;
@@ -962,27 +970,27 @@ export class SpaceManager {
     const writer = space.writer;
     if (this.#options.projection !== true || spaceId === undefined || writer === undefined) return;
     const entry = space.index;
-    let dir: string;
-    try {
-      dir = projectionFolder(space.folder, space.projectionDir);
-    } catch (error) {
-      log.log("space.projection_failed", {
-        entry,
-        space: spaceId,
-        code: codeOf(error) ?? "EINVAL",
-      });
-      return;
-    }
-    const rescued = (files: number, folder: string | undefined): void => {
-      if (files === 0 || folder === undefined) return;
+    const rescued = (files: number, stem: string | undefined): void => {
+      if (files === 0 || stem === undefined) return;
       log.log("space.projection_rescued", { entry, space: spaceId, files });
       try {
-        recordProjectionRescue(this.#options.settingsDir, spaceId, { folder, files });
+        recordProjectionRescue(this.#options.settingsDir, spaceId, { stem, files });
       } catch {
         // The log has it; the UI does not show this one.
       }
     };
-    space.projection = new ProjectionRunner({ folder: space.folder, dir }, writer, {
+    const reconciled = (r: Reconciled): void => {
+      log.log("space.projection_reconciled", {
+        entry,
+        space: spaceId,
+        full: r.full,
+        checked: r.checked,
+        queued: r.queued,
+        forgotten: r.forgotten,
+      });
+    };
+    const state = projectionStateOf(this.#options.settingsDir, spaceId);
+    space.projection = new ProjectionRunner({ folder: space.folder, ...state }, writer, {
       started: (report) => {
         log.log("space.projection_started", {
           entry,
@@ -991,9 +999,11 @@ export class SpaceManager {
           recovered: report.recovered,
           temps: report.temps,
         });
-        rescued(report.rescued, report.rescuedFolder);
+        reconciled(report.reconciled);
+        rescued(report.rescued, report.rescueStem);
       },
       step: (report, ms) => {
+        if (report.reconciled !== undefined) reconciled(report.reconciled);
         log.log("space.projected", {
           entry,
           space: spaceId,
@@ -1002,10 +1012,9 @@ export class SpaceManager {
           failed: report.failed,
           watermark: report.watermark,
           backlog: report.backlog,
-          rebuilding: report.rebuilding,
           ms,
         });
-        rescued(report.rescued, report.rescuedFolder);
+        rescued(report.rescued, report.rescueStem);
         if (report.code !== undefined) {
           log.log("space.projection_failed", { entry, space: spaceId, code: report.code });
         }

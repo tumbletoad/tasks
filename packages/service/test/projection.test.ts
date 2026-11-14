@@ -1,9 +1,19 @@
 // The projection in the service (A1 3.13, A1 3.9's maintenance worker): each space open as this
-// machine's keeps its `view/` in a worker of its own, or the folder `projection.dir` names; a
-// projection.dir among the space's own files is refused; a close stops the worker. Services run
-// in this process on temporary homes; fixture spaces only.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+// machine's keeps its `view/` in a worker of its own, with its trusted record beside the space's
+// machine-local settings; `tasks view rebuild` (`view/rebuild`) renders what is missing or
+// different again, for the user only; a close stops the worker. Services run in this process on
+// temporary homes; fixture spaces only.
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { RpcError } from "@tasks/bridge/protocol";
 import { backupSpace, newId, type Id } from "@tasks/storage";
 import { checkedDriver, seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
@@ -17,7 +27,7 @@ import {
   tempRoot,
   waitFor,
 } from "./harness.ts";
-import { classSession } from "./ops-helpers.ts";
+import { classSession, errorOf } from "./ops-helpers.ts";
 
 const running: RunningService[] = [];
 const cleanups: (() => void)[] = [];
@@ -54,14 +64,6 @@ async function setUp(label: string) {
   return { root, home, folder: seeded.folder, spaceId: manifest.space_id };
 }
 
-/** This machine's settings for a space, as the preferences step will write them. */
-function writeSettings(home: string, spaceId: Id<"sp">, value: object): void {
-  mkdirSync(join(stateOf(home), "spaces"), { recursive: true, mode: 0o700 });
-  writeFileSync(join(stateOf(home), "spaces", `${spaceId}.json`), JSON.stringify(value), {
-    mode: 0o600,
-  });
-}
-
 async function start(home: string, folder: string): Promise<RunningService> {
   registerSpaces(home, [folder]);
   const service = await startService({
@@ -74,16 +76,16 @@ async function start(home: string, folder: string): Promise<RunningService> {
   return service;
 }
 
-const catalogIds = (dir: string): string[] =>
+const catalog = (dir: string): { id: string; path: string }[] =>
   readFileSync(join(dir, "catalog.jsonl"), "utf8")
     .trim()
     .split("\n")
     .slice(1)
-    .map((line) => (JSON.parse(line) as { id: string }).id);
+    .map((line) => JSON.parse(line) as { id: string; path: string });
 
-describe("[A1.5.projection.service] the service keeps each open space's projection in a worker of its own, in view/ or projection.dir", () => {
-  test("an open space gets its view/, and a task added through the request path shows in it", async () => {
-    const { home, folder } = await setUp("proj");
+describe("[A1.5.projection.service] the service keeps each open space's projection in a worker of its own, in its view/, with its trusted state in machine state", () => {
+  test("an open space gets its view/ and its record beside its settings, and a task added through the request path shows in it", async () => {
+    const { home, folder, spaceId } = await setUp("proj");
     const service = await start(home, folder);
     const view = join(folder, "view");
     await waitFor(
@@ -91,7 +93,10 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       30_000,
       "the first render",
     );
-    expect(catalogIds(view)).toHaveLength(12);
+    expect(catalog(view)).toHaveLength(12);
+    // The record that authorizes the projection's acts is the product's state, not the tree's.
+    expect(existsSync(join(stateOf(home), "spaces", `${spaceId}.projection.json`))).toBe(true);
+    expect(readdirSync(view).filter((name) => name.startsWith(".projection-"))).toEqual([]);
     const s = await classSession(home, service.endpoint.path, "cli-script");
     try {
       await s.call(
@@ -123,45 +128,67 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     // The Verify line's 1 s is asserted where nothing but the projection runs (loop.test.ts);
     // here the request path's answer and the worker's hops come on top, on a loaded machine.
     expect(ms).toBeLessThan(10_000);
-    await waitFor(
-      () => (catalogIds(view).length === 13 ? true : undefined),
-      10_000,
-      "the catalogue",
-    );
+    await waitFor(() => (catalog(view).length === 13 ? true : undefined), 10_000, "the catalogue");
     const events = readLog(home).map((e) => e["ev"]);
     expect(events).toContain("space.projection_started");
+    expect(events).toContain("space.projection_reconciled");
   });
 
-  test("projection.dir moves the projection out of the space's folder; one inside it is refused and writes nothing", async () => {
-    const { root, home, folder, spaceId } = await setUp("projdir");
-    const elsewhere = join(root, "synced", "Mira view");
-    writeSettings(home, spaceId, { format: 1, projection: { dir: elsewhere } });
-    await start(home, folder);
+  test("tasks view rebuild: a deleted file comes back and an edited one is moved aside and rendered again; only the user may ask", async () => {
+    const { home, folder } = await setUp("projreb");
+    const service = await start(home, folder);
+    const view = join(folder, "view");
     await waitFor(
-      () => (existsSync(join(elsewhere, ".projection.json")) ? true : undefined),
+      () => (existsSync(join(view, ".projection.json")) ? true : undefined),
       30_000,
-      "the render in projection.dir",
+      "the first render",
     );
-    expect(catalogIds(elsewhere)).toHaveLength(12);
-    expect(existsSync(join(folder, "view"))).toBe(false);
-    for (const service of running.splice(0)) {
-      await service.stop();
-      removeRuntimeDir(service);
+    const [first, second] = catalog(view);
+    const deleted = join(view, ...(first?.path ?? "").split("/"));
+    const edited = join(view, ...(second?.path ?? "").split("/"));
+    chmodSync(deleted, 0o600);
+    rmSync(deleted);
+    chmodSync(edited, 0o600);
+    writeFileSync(edited, "A person's edit.\n");
+    for (const cls of ["cli-script", "cli-agent"] as const) {
+      const s = await classSession(
+        home,
+        service.endpoint.path,
+        cls,
+        cls === "cli-agent" ? { CLAUDECODE: "1" } : {},
+      );
+      try {
+        const error = await s.call("view/rebuild", { space: folder }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(RpcError);
+        expect(errorOf(error)).toMatchObject({ code: "forbidden" });
+      } finally {
+        s.close();
+      }
     }
-
-    // Inside the space's folder, beside its backups: refused.
-    const inside = join(folder, "backups", "view");
-    writeSettings(home, spaceId, { format: 1, projection: { dir: inside } });
-    await start(home, folder);
+    const user = await classSession(home, service.endpoint.path, "cli-interactive");
+    try {
+      const result = (await user.call(
+        "view/rebuild",
+        { space: folder },
+        { timeoutMs: 30_000 },
+      )) as Record<string, unknown>;
+      expect(result).toMatchObject({ checked: 16, queued: 12, forgotten: 0 });
+    } finally {
+      user.close();
+    }
     await waitFor(
       () =>
-        readLog(home).some((e) => e["ev"] === "space.projection_failed" && e["code"] === "EINVAL")
+        existsSync(deleted) && readFileSync(edited, "utf8").startsWith("---\ngenerated: true\n")
           ? true
           : undefined,
-      10_000,
-      "the refusal",
+      30_000,
+      "the rebuild",
     );
-    expect(existsSync(inside)).toBe(false);
+    const rescued = join(folder, "exchange", "rescued");
+    const [box] = readdirSync(rescued);
+    expect(
+      readFileSync(join(rescued, box ?? "", "view", ...(second?.path ?? "").split("/")), "utf8"),
+    ).toBe("A person's edit.\n");
   });
 
   test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {
@@ -185,6 +212,6 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       30_000,
       "the restored space's render",
     );
-    expect(catalogIds(join(folder, "view"))).toHaveLength(12);
+    expect(catalog(join(folder, "view"))).toHaveLength(12);
   });
 });

@@ -908,10 +908,13 @@ export class SpaceWriter {
     return conn.transaction("immediate", () => markProjected(conn, batch));
   }
 
-  /** Queues every task for the projection: a full rebuild (outbox.ts). Returns the tasks queued. */
-  queueProjection(): number {
+  /**
+   * Queues tasks for the projection (outbox.ts): every task, a full rebuild, or only `keys`, the
+   * tasks a reconciliation found missing or different. Returns the tasks queued.
+   */
+  queueProjection(keys?: readonly string[]): number {
     const conn = this.#usable();
-    return conn.transaction("immediate", () => queueProjection(conn));
+    return conn.transaction("immediate", () => queueProjection(conn, keys));
   }
 
   /**

@@ -715,6 +715,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             spaceManager().restoreInPlace(entry, file),
           recover: (entry: number) => spaceManager().recover(entry),
           folderOf: (entry: number) => spaceManager().folderOf(entry),
+          rebuildView: (entry: number) => spaceManager().rebuildView(entry),
         },
       },
     };

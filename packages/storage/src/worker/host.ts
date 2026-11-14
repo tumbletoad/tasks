@@ -569,7 +569,7 @@ export function serve(
         launch: ({ handle, launch }) => writer(handle).launch(launch) ?? null,
         openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),
         projected: ({ handle, batch }) => writer(handle).projected(batch),
-        queueProjection: ({ handle }) => writer(handle).queueProjection(),
+        queueProjection: ({ handle, keys }) => writer(handle).queueProjection(keys),
         exec: ({ handle, sql }) => {
           connection(handle).exec(sql);
           return null;

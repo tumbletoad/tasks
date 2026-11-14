@@ -154,6 +154,31 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 
+/**
+ * The space a command names, in A2 3.10.5's order as op/call takes it: its argument, --space,
+ * TASKS_SPACE, else the one space the service has. That one is sent by its folder, never its ID: a
+ * restored copy shares its original's ID, and the service must act on the space that was chosen
+ * here. `tasks view` names its space the same way.
+ */
+export async function whichSpace(
+  io: Io,
+  globals: Globals,
+  given: string | undefined,
+  call: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>,
+): Promise<string> {
+  const fromEnv = io.env["TASKS_SPACE"];
+  const named = given ?? globals.space ?? (fromEnv === "" ? undefined : fromEnv);
+  if (named !== undefined)
+    return isAbsolute(named) || named.includes("/") || named.includes("\\")
+      ? absolute(io, named)
+      : named;
+  const listed = (await call("space/list", {}))["spaces"] as SpaceRow[];
+  const only = listed.filter((s) => s.state !== "closed");
+  const folder = only.length === 1 ? only[0]?.folder : undefined;
+  if (folder !== undefined) return folder;
+  throw new UsageError("Name the space: an ID, a name or a folder");
+}
+
 export async function spaceCommand(
   io: Io,
   globals: Globals,
@@ -171,25 +196,8 @@ export async function spaceCommand(
       timeoutMs: Math.max(globals.timeoutS, 120) * 1000,
     })) as Record<string, unknown>;
   };
-  /**
-   * The space a command names, in A2 3.10.5's order as op/call takes it: its argument, --space,
-   * TASKS_SPACE, else the one space the service has. That one is sent by its folder, never its
-   * ID: a restored copy shares its original's ID, and the service must act on the space that was
-   * chosen here.
-   */
-  const which = async (given: string | undefined): Promise<string> => {
-    const fromEnv = io.env["TASKS_SPACE"];
-    const named = given ?? globals.space ?? (fromEnv === "" ? undefined : fromEnv);
-    if (named !== undefined)
-      return isAbsolute(named) || named.includes("/") || named.includes("\\")
-        ? absolute(io, named)
-        : named;
-    const listed = (await call("space/list", {}))["spaces"] as SpaceRow[];
-    const only = listed.filter((s) => s.state !== "closed");
-    const folder = only.length === 1 ? only[0]?.folder : undefined;
-    if (folder !== undefined) return folder;
-    throw new UsageError("Name the space: an ID, a name or a folder");
-  };
+  const which = (given: string | undefined): Promise<string> =>
+    whichSpace(io, globals, given, call);
   const out = (result: Record<string, unknown>, text: () => void): void => {
     if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
     else text();

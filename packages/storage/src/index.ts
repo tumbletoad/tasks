@@ -313,6 +313,7 @@ export {
   markProjected,
   PROJECTION_ALL,
   PROJECTION_BATCH,
+  PROJECTION_QUEUE_KEYS,
   queueProjection,
   type ProjectedBatch,
 } from "./write/outbox.ts";

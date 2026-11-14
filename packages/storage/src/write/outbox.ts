@@ -14,6 +14,9 @@
 // so W moves only through a fully rendered prefix. It is computed here, in the transaction that
 // deleted the rows, so no commit can slip between the two.
 //
+// The projection also queues tasks itself: every task for a full rebuild, or the tasks whose files
+// its reconciliation found missing or different, each from commit 1 (queueProjection).
+//
 // These are bookkeeping writes (A1 3.7): they write no commit, no change row and no receipt, and
 // they change nothing the space's history or its readers depend on. Every statement is a constant.
 import type { Connection } from "../driver.ts";
@@ -27,6 +30,9 @@ export const PROJECTION_ALL = "*";
 /** A1 3.13: a batch renders at most 200 tasks, and reports them with `*`. */
 export const PROJECTION_BATCH = 200;
 
+/** A1 3.13: one call queues at most this many named tasks; a reconciliation queues in parts. */
+export const PROJECTION_QUEUE_KEYS = 1_000;
+
 const SQL = {
   space: "SELECT * FROM space WHERE one = 1",
   done: "DELETE FROM outbox WHERE topic = 'projection' AND key = $key AND seq <= $seq",
@@ -38,8 +44,8 @@ const SQL = {
   queueTasks:
     "INSERT INTO outbox (topic, key, first_seq, seq) SELECT 'projection', id, 1, touched " +
     "FROM tasks WHERE true ON CONFLICT (topic, key) DO UPDATE SET first_seq = 1",
-  queueAll:
-    "INSERT INTO outbox (topic, key, first_seq, seq) VALUES ('projection', '*', 1, $seq) " +
+  queueKey:
+    "INSERT INTO outbox (topic, key, first_seq, seq) VALUES ('projection', $key, 1, $seq) " +
     "ON CONFLICT (topic, key) DO UPDATE SET first_seq = 1",
 } as const;
 
@@ -88,16 +94,41 @@ export function markProjected(conn: Connection, input: unknown): number {
   return typeof first === "number" && first <= seq ? first - 1 : seq;
 }
 
+/** The keys of a queue call from another thread, checked at run time: task IDs, each once. */
+function checkKeys(keys: unknown): string[] {
+  if (!Array.isArray(keys) || keys.length > PROJECTION_QUEUE_KEYS) {
+    throw misuse("A projection queue names at most 1,000 tasks");
+  }
+  const seen = new Set<string>();
+  for (const key of keys as unknown[]) {
+    if (typeof key !== "string" || !isId(key, "t") || seen.has(key)) {
+      throw misuse("A projection queue names task IDs, each once");
+    }
+    seen.add(key);
+  }
+  return [...seen];
+}
+
 /**
- * Queues every task and the catalogue for the projection (A1 3.13 "A full rebuild"): each gets a
- * row whose `first_seq` is 1, so the watermark stays at 0 until every task is rendered again.
- * Returns the tasks queued. Runs in the caller's IMMEDIATE transaction.
+ * Queues tasks and the catalogue for the projection (A1 3.13 "Reconciliation"): every task, a full
+ * rebuild, or only `keys`, the tasks whose files a reconciliation found missing or different (an
+ * ID no task row has is queued too: the projection then finds it gone and retires its file). Each
+ * gets a row whose `first_seq` is 1, so the watermark the writer answers stays at 0 until every
+ * one is rendered again. Returns the tasks queued. Runs in the caller's IMMEDIATE transaction.
  */
-export function queueProjection(conn: Connection): number {
+export function queueProjection(conn: Connection, keys?: unknown): number {
   if (!conn.inTransaction) throw misuse("The outbox is written inside a write transaction");
   const space = decodeSpaceRow(conn.prepare(SQL.space).get());
-  const queued = conn.prepare(SQL.queueTasks).run().changes;
+  const named = keys === undefined ? undefined : checkKeys(keys);
   // A space without commits has nothing to render, and `first_seq <= seq` needs a commit.
-  if (space.lastSeq >= 1) conn.prepare(SQL.queueAll).run({ seq: space.lastSeq });
+  if (space.lastSeq < 1) return 0;
+  let queued: number;
+  if (named === undefined) queued = conn.prepare(SQL.queueTasks).run().changes;
+  else {
+    const one = conn.prepare(SQL.queueKey);
+    for (const key of named) one.run({ key, seq: space.lastSeq });
+    queued = named.length;
+  }
+  conn.prepare(SQL.queueKey).run({ key: PROJECTION_ALL, seq: space.lastSeq });
   return queued;
 }

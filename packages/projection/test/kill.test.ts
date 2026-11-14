@@ -1,19 +1,22 @@
-// A kill during a batch (A7 3.10 M3.10's Verify line, A1 5 "Crash points": the projection rename):
-// at every point of a batch, renames included, the run stops for good, as a killed process does (a
-// seam whose promise never settles, so no cleanup runs). A new projector then starts on the same
-// folder. The tree must be valid at once: complete files only, no temporary file, and a watermark
-// that covers no unrendered task. Nothing may be rescued, since nobody edited anything, and once it
-// settles the tree equals a fresh render. Fixture text only.
+// A kill at every act on disk (A7 3.10 M3.10's Verify line, A1 5 "Crash points": the projection
+// rename): at the n-th act of a start and a batch, renames, temporary files, the record and the
+// journal included, the run stops for good, as a killed process does: that act and every one after
+// it never happen, and the writer answers nothing more. A new projector then starts on the same
+// folder and state. The tree must be valid at once: complete files only, no temporary file, and a
+// watermark that covers no unrendered task. Nothing may be rescued, since nobody changed anything,
+// and once it settles the tree equals a fresh render. Fixture text only.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { ProjectionPoint } from "../src/index.ts";
+import type { Act } from "../src/index.ts";
 import {
   checkWatermark,
   expectClean,
   expectSameTree,
   filesOf,
+  killAt,
+  Killed,
   settle,
   treeOf,
   world,
@@ -56,8 +59,8 @@ function change(w: World, round: number): void {
   w.submit([{ kind: "task.create", title: `Created in round ${String(round)}` }]);
 }
 
-describe("[A1.5.projection.kill] a kill at any point of a batch, renames included, leaves a valid tree, and the watermark never covers an unrendered task", () => {
-  test("every point of a batch, one kill each", async () => {
+describe("[A1.5.projection.kill] a kill at any act of a start or a batch, renames included, leaves a valid tree, and the watermark never covers an unrendered task", () => {
+  test("every act, one kill each", async () => {
     const folder = join(root, "space");
     mkdirSync(folder);
     const w = await world(folder);
@@ -66,53 +69,61 @@ describe("[A1.5.projection.kill] a kill at any point of a batch, renames include
       await first.start();
       await settle(first);
       let fresh = 0;
-      const seen = new Set<ProjectionPoint>();
+      let kills = 0;
+      const seen = new Set<Act>();
       for (let kill = 1; ; kill += 1) {
         change(w, kill);
-        let count = 0;
-        let hit: () => void = () => undefined;
-        const killed = new Promise<"killed">((resolve) => {
-          hit = () => {
-            resolve("killed");
-          };
-        });
+        const killer = killAt(kill);
+        const refuse = (): Promise<never> => Promise.reject(new Killed());
         const doomed = w.projector({
-          at: (point) => {
-            count += 1;
-            if (count !== kill) return;
-            seen.add(point);
-            hit();
-            // The run stops here for good: no finally, no cleanup.
-            return new Promise<void>(() => undefined);
+          at: killer.hook,
+          writer: {
+            projected: (batch) =>
+              killer.dead() ? refuse() : Promise.resolve(w.writer.projected(batch)),
+            queueProjection: (keys) =>
+              killer.dead() ? refuse() : Promise.resolve(w.writer.queueProjection(keys)),
           },
         });
-        await doomed.start();
-        const outcome = await Promise.race([doomed.step().then(() => "done" as const), killed]);
-        // A batch with fewer points than `kill` ran to its end: every point was a kill once.
-        if (outcome === "done") break;
+        try {
+          await doomed.start();
+          await doomed.step();
+        } catch {
+          // The kill, or what it made fail: the process is gone either way.
+        }
+        // A start and a batch with fewer acts than `kill` ran to their end: every act was a kill.
+        if (!killer.dead()) break;
+        seen.add(killer.act() ?? "record");
+        kills += 1;
 
         const after = w.projector();
         const start = await after.start();
         expectClean(w.dir);
         expectWholeFiles(w.dir);
         checkWatermark(w.dir, w.reader);
-        expect(start.rescued, `nothing rescued after a kill at point ${String(kill)}`).toBe(0);
+        expect(start.rescued, `nothing rescued after a kill at act ${String(kill)}`).toBe(0);
         const reports = await settle(after);
         expect(reports.reduce((sum, r) => sum + r.rescued + r.failed, 0)).toBe(0);
         expectClean(w.dir);
         checkWatermark(w.dir, w.reader);
         fresh += 1;
-        const dir = join(root, `fresh-${String(fresh)}`);
-        const render = w.projector({ dir });
-        await render.start();
-        await settle(render);
-        expectSameTree(treeOf(w.dir), treeOf(dir));
-        if (kill > 200) throw new Error("the batch has no end");
+        expectSameTree(treeOf(w.dir), await w.fresh(join(root, `fresh-${String(fresh)}`)));
+        if (kill > 400) throw new Error("the batch has no end");
       }
-      // The batch's own points and the publish's were all killed at.
-      expect([...seen].sort()).toEqual(["journal", "record", "rename", "renamed", "reported"]);
+      expect(kills).toBeGreaterThan(30);
+      // Every kind of act a batch does was killed at, renames and the trusted state included.
+      for (const act of [
+        "journal",
+        "temp",
+        "write",
+        "rename",
+        "unlink",
+        "record",
+        "journal-drop",
+      ]) {
+        expect(seen.has(act as Act), act).toBe(true);
+      }
     } finally {
       w.close();
     }
-  });
+  }, 240_000);
 });

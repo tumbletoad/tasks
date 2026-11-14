@@ -893,9 +893,18 @@ export class SpaceWriterHandle {
     return this.#queued(() => this.#worker.call("projected", { handle: this.handle, batch }));
   }
 
-  /** Queues every task for the projection, a full rebuild. Returns the tasks queued. */
-  queueProjection(): Promise<number> {
-    return this.#queued(() => this.#worker.call("queueProjection", { handle: this.handle }));
+  /**
+   * Queues tasks for the projection: every task, a full rebuild, or only `keys` (at most
+   * PROJECTION_QUEUE_KEYS), the tasks a reconciliation found missing or different. Returns the
+   * tasks queued.
+   */
+  queueProjection(keys?: readonly string[]): Promise<number> {
+    return this.#queued(() =>
+      this.#worker.call("queueProjection", {
+        handle: this.handle,
+        ...(keys === undefined ? {} : { keys: [...keys] }),
+      }),
+    );
   }
 
   /** One call to the writer, within the queue limit and the time limit (A1 3.9). */

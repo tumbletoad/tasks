@@ -1,82 +1,100 @@
-// The projection's files on disk (A1 3.13 steps 3 and 4): every file it writes, removes or rescues,
-// and its record of them. Nothing here reads the database.
+// The projection's acts on its tree, the space's `view/` (A1 3.13 rules 2, 3, 4 and 6). Nothing
+// here reads the database or the trusted state: the caller hands in what the record holds for a
+// path (state.ts).
 //
-// Rules:
-// - **Only inside its folder.** Every path is relative, `/`-separated and matches the tree's
-//   grammar (isTreePath) before it is joined to the folder, also a path read back from the record,
-//   so neither a title nor an edited record can reach outside it. Every read, removal and write
-//   first checks each folder of the path with lstat: a link (a junction included) or a file where a
-//   folder belongs is never followed. A write rescues it and makes the folder; a read or a removal
-//   finds nothing there. Either way the folder is reported lost (lostFolders): the files the record
-//   placed in it are no longer in the tree, and the projector rebuilds (projector.ts).
-// - **A person's edit is never lost.** The record (`.projection-files.json`, what A1 3.4 calls
-//   `projection_files`) holds the SHA-256 of each file as written. A file that is replaced or
-//   removed must hash to a value the caller knows as its own; anything else at that path (an edited
-//   file, a file of the person's, a folder, a link) is moved to the space's
-//   `exchange/rescued/<stamp>/` under its path in the tree first, and counted. Best effort, as A1
-//   says: a save between the hash and the rename is lost.
-// - **Read-only.** A file is created with mode 0400 (POSIX) or the read-only attribute (Windows),
-//   through @tasks/files' exact-mode create, and renamed over the old one. Windows refuses a rename
-//   over a read-only file, so the old one is made writable just before, and read-only again when
-//   the rename fails.
-// - **Crash-safe.** A file is written to `.<name>.tmp-<16 hex>` beside its place and renamed; a
-//   kill leaves the old file or the new one and at most a temporary file, which `cleanTemps`
-//   removes at start. The record and the journal are written atomically and flushed. A projected
-//   file is not flushed: it is derived, and one a power cut tore fails its hash and is rendered
-//   again (rescued first, as an unknown file is), so a rebuild of 55,000 files does not pay one
-//   flush each (A1 3.20).
+// - **One proof of ownership** (rule 2), for every replace and every delete, decided right before
+//   the act in one synchronous stretch, with no await between the check and the act: each folder
+//   from the tree's root to the entry is a real folder (lstat: a link or a junction is not), and the
+//   entry is a regular file with exactly one link whose bytes, read through one descriptor that is
+//   checked to be the entry lstat saw, hash to what the record holds for that path. Anything else
+//   is not ours. A file that already holds exactly the bytes about to be placed is left as it is:
+//   nothing is replaced, so nothing can be lost.
+// - **What is not ours** is never written through, overwritten, deleted, and its mode never changed
+//   (rule 3). Where the projection needs its path, it is rescued by one rename of the entry itself
+//   (never followed) into a folder made for that one rescue: `exchange/rescued/<stem>-<n>/view/` in
+//   the space's folder, under its path in the tree. `exchange/` and `exchange/rescued/` must be
+//   real folders, checked first; the rescue folder is made exclusively, never reused. The rename
+//   happened or it did not.
+// - **A placement** (rule 6): the folders on the way are made (a non-folder there is rescued), the
+//   new content goes to a temporary file beside its place, ownership of what is at the path is
+//   decided, what is not ours is rescued, and the temporary file is renamed to the path. A file is
+//   read-only from its creation (0400, or the Windows read-only attribute). Windows refuses a
+//   rename over a read-only file, so the attribute of a proven file of ours is cleared through the
+//   descriptor that proved it; on a sharing violation the check and the act run again, up to 5
+//   times over 1 s.
+// - **Temporary files prove themselves** (rule 4): `.<name>.<32 hex>.<8 hex>.tmp`, the first part
+//   the start of the content's SHA-256, the second a random tag of the batch. Clean-up removes one
+//   only when the trusted journal names it, or when its content hashes to its name; an unknown
+//   leftover stays where it is.
+//
+// Not covered, and the contract says so (A1 3.13): a program that replaces a folder of the tree
+// with a link between the check and the act (the runtime has no handle-anchored file operations),
+// and a save that lands between the ownership check and the rename.
 import { createHash, randomBytes } from "node:crypto";
 import {
-  chmodSync,
   closeSync,
-  copyFileSync,
   constants,
+  fchmodSync,
+  fstatSync,
   lstatSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
-  rmSync,
+  rmdirSync,
+  unlinkSync,
   writeSync,
-  type Stats,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { atomicWrite, createFile, makeDir, removeStaleTemps } from "@tasks/files";
-import {
-  FORMAT,
-  LIFECYCLES,
-  type CatalogEntry,
-  type Lifecycle,
-  type SpaceIdentity,
-} from "./render.ts";
+import { join } from "node:path";
+import { createFile, makeDir } from "@tasks/files";
 
-/** The record of the files the projection wrote (A1 3.4's `projection_files`). */
-export const RECORD_FILE = ".projection-files.json";
-/** What a batch is about to write, so a kill in the middle loses nothing (projector.ts). */
-export const JOURNAL_FILE = ".projection-journal.json";
-
-/** The files at the tree's root besides the tasks', in the order a publish writes them. */
+/** The files at the tree's root besides the tasks', in the order a publish places them. */
 export const ROOT_FILES = ["README.md", "index.md", "catalog.jsonl", ".projection.json"] as const;
 
-const TASK_FILE =
+/** A task's file: `open/`, `completed/<year>/` or `archived/<year>/`, then `<ref>-<slug>.md`. */
+export const TASK_FILE =
   /^(open|completed\/[0-9]{4}|archived\/[0-9]{4})\/[A-Z]{1,6}-[1-9][0-9]{0,9}-[a-z0-9-]{1,48}\.md$/;
-const TEMP = /^\..+\.tmp-[0-9a-f]{16}$/;
-const SHA256 = /^[0-9a-f]{64}$/;
+const TASK_FOLDER = /^(open|completed\/[0-9]{4}|archived\/[0-9]{4})$/;
+/** A temporary file's name: the file's own, the start of the content's hash, the batch's tag. */
+const TEMP_NAME = /^\.(.+)\.([0-9a-f]{32})\.([0-9a-f]{8})\.tmp$/;
 /** A file larger than this is no file the projection wrote: a task's file is far smaller. */
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
-/** A record or a journal larger than this is not read (a design-scale record is about 30 MB). */
-const MAX_RECORD_BYTES = 256 * 1024 * 1024;
 const FILE_MODE = 0o400;
 const FOLDER_MODE = 0o700;
-/** A1 3.13 step 4: a rename is tried 5 times over 1 s on Windows sharing violations. */
-const RENAME_TRIES = 5;
-const RENAME_PAUSE_MS = 200;
+/** A1 3.13: on a Windows sharing violation the check and the act run again, 5 times over 1 s. */
+const TRIES = 5;
+const PAUSE_MS = 200;
+const NOFOLLOW = (constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
 
 /** Whether `path` is a path the projection writes: a task's file or a root file. */
 export const isTreePath = (path: string): boolean =>
   TASK_FILE.test(path) || (ROOT_FILES as readonly string[]).includes(path);
 
-export const sha256 = (text: string | Uint8Array): string =>
-  createHash("sha256").update(text).digest("hex");
+const split = (path: string): { folder: string; name: string } => {
+  const slash = path.lastIndexOf("/");
+  return slash < 0
+    ? { folder: "", name: path }
+    : { folder: path.slice(0, slash), name: path.slice(slash + 1) };
+};
+
+/** Whether `path` is a temporary file of a path the projection writes. */
+export function isTempPath(path: string): boolean {
+  const { folder, name } = split(path);
+  const match = TEMP_NAME.exec(name);
+  if (match === null) return false;
+  const inner = match[1] ?? "";
+  return isTreePath(folder === "" ? inner : `${folder}/${inner}`);
+}
+
+/** The temporary file of `path` for content hashing to `sha256`, in a batch tagged `tag`. */
+export function tempPathOf(path: string, sha256: string, tag: string): string {
+  const { folder, name } = split(path);
+  const temp = `.${name}.${sha256.slice(0, 32)}.${tag}.tmp`;
+  return folder === "" ? temp : `${folder}/${temp}`;
+}
+
+export const sha256 = (data: string | Uint8Array): string =>
+  createHash("sha256").update(data).digest("hex");
 
 /** A failure with an errno-style code and no path: a path holds a task's title. */
 export class ProjectionError extends Error {
@@ -99,645 +117,545 @@ export function codeOf(error: unknown, code = "EIO"): string {
     : code;
 }
 
-/** A task's place in the tree, as the record keeps it. */
-export interface TaskRecord {
-  readonly path: string;
-  readonly sha256: string;
-  /** Its catalogue line as rendered: the catalogue is assembled from these (A1 3.13 step 6). */
-  readonly entry: CatalogEntry;
-}
-
-/** The record of a tree (A1 3.13): what it was written for, and every file of it. */
-export interface TreeRecord {
-  readonly identity: SpaceIdentity;
-  /** A full rebuild runs: the tree claims nothing (no `.projection.json`) until it ends. */
-  rebuilding: boolean;
-  /** During a rebuild: every task was queued. */
-  queued: boolean;
-  /** The watermark last published. */
-  watermark: number;
-  readonly tasks: Map<string, TaskRecord>;
-  /** The root files: path to hash. */
-  readonly files: Map<string, string>;
-  /** Files of the tree no longer in use, removed once verified (an older tree's, a failed removal). */
-  readonly retired: Map<string, string>;
-}
-
-/** What a batch is about to do: each task's new record, or null when its file goes. */
-export interface Journal {
-  readonly tasks: ReadonlyMap<string, TaskRecord | null>;
-  readonly files: ReadonlyMap<string, string>;
-}
-
-export const newRecord = (identity: SpaceIdentity): TreeRecord => ({
-  identity,
-  rebuilding: true,
-  queued: false,
-  watermark: 0,
-  tasks: new Map(),
-  files: new Map(),
-  retired: new Map(),
-});
-
-const isRecordObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-const isCount = (value: unknown): value is number =>
-  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-const isText = (value: unknown): value is string => typeof value === "string";
-const isTextOrNull = (value: unknown): value is string | null =>
-  value === null || typeof value === "string";
-
-/** A catalogue line read back, or undefined when any part of it is not one. */
-function entryOf(value: unknown, path: string): CatalogEntry | undefined {
-  if (!isRecordObject(value)) return undefined;
-  const e = value;
-  const labels = e["labels"];
-  if (
-    !isText(e["ref"]) ||
-    !isText(e["id"]) ||
-    !isText(e["title"]) ||
-    !isText(e["summary"]) ||
-    !isText(e["status"]) ||
-    !(LIFECYCLES as readonly unknown[]).includes(e["lifecycle"]) ||
-    !isCount(e["priority"]) ||
-    !isTextOrNull(e["effort"]) ||
-    !isTextOrNull(e["due"]) ||
-    !isTextOrNull(e["area"]) ||
-    !isTextOrNull(e["project"]) ||
-    !Array.isArray(labels) ||
-    !labels.every(isText) ||
-    e["path"] !== path ||
-    !isCount(e["version"])
-  ) {
-    return undefined;
-  }
-  return {
-    ref: e["ref"],
-    id: e["id"],
-    title: e["title"],
-    summary: e["summary"],
-    status: e["status"],
-    lifecycle: e["lifecycle"] as Lifecycle,
-    priority: e["priority"],
-    effort: e["effort"],
-    due: e["due"],
-    area: e["area"],
-    project: e["project"],
-    labels,
-    path,
-    version: e["version"],
-  };
-}
-
-function taskRecordOf(value: unknown): TaskRecord | undefined {
-  if (!isRecordObject(value)) return undefined;
-  const { path, sha256: hash, entry } = value;
-  if (typeof path !== "string" || !TASK_FILE.test(path)) return undefined;
-  if (typeof hash !== "string" || !SHA256.test(hash)) return undefined;
-  const read = entryOf(entry, path);
-  return read === undefined ? undefined : { path, sha256: hash, entry: read };
-}
-
-/** A map of tree paths to hashes, or undefined when one entry is not. */
-function hashesOf(value: unknown): Map<string, string> | undefined {
-  if (!isRecordObject(value)) return undefined;
-  const map = new Map<string, string>();
-  for (const [path, hash] of Object.entries(value)) {
-    if (!isTreePath(path) || typeof hash !== "string" || !SHA256.test(hash)) return undefined;
-    map.set(path, hash);
-  }
-  return map;
-}
-
-/** Sorted keys, so the same record is the same bytes. */
-const sorted = <V>(map: ReadonlyMap<string, V>): Record<string, V> =>
-  Object.fromEntries([...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-
-const isBusy = (error: unknown): boolean => {
+const codeIs = (error: unknown, ...codes: string[]): boolean => {
   const code = (error as { code?: unknown } | null)?.code;
-  return code === "EPERM" || code === "EBUSY" || code === "EACCES";
+  return typeof code === "string" && codes.includes(code);
 };
 
-const pause = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+const pauseSync = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
 
-/** What is at a path: nothing, a regular file and its hash, or anything else. */
-type Found =
-  { kind: "missing" } | { kind: "file"; sha256: string; stats: Stats } | { kind: "other" };
+/** Every act on disk, named for the crash tests: a hook runs before each. */
+export type Act =
+  | "mkdir"
+  | "temp"
+  | "write"
+  | "chmod"
+  | "rename"
+  | "rescue"
+  | "unlink"
+  | "rmdir"
+  | "record"
+  | "journal"
+  | "journal-drop";
 
-/**
- * The named points a batch's file work passes, for the crash tests (projector.ts): before a
- * file's rename (its new content written), after what stood there was rescued, after the rename.
- */
-export type FilePoint = "rename" | "rescued" | "renamed";
+/** Tests only: runs before every act on disk. Throwing is a kill: the act does not happen. */
+export type Hook = (act: Act, path: string) => void;
 
-export interface TreeOptions {
-  /** The space's folder: rescued files go to its `exchange/rescued/`. */
-  readonly spaceFolder: string;
-  /** The projection's folder, checked by the caller (checkProjectionDir). */
-  readonly dir: string;
-  readonly now: () => number;
-  readonly platform?: NodeJS.Platform;
-  /** Tests only: called before and after each rename. A promise that never settles is a kill. */
-  readonly at?: (point: FilePoint, path: string) => Promise<void> | void;
+/** What the record holds for a path: what the projection placed there. */
+export interface Owned {
+  readonly sha256: string;
+  readonly size: number;
 }
 
-/** The projection's folder on disk. */
+/** What is at a path of the tree, looked at without acting. */
+export type Look =
+  | { readonly kind: "missing" }
+  /** A folder on the way is not a real folder: nothing behind it is the tree's. */
+  | { readonly kind: "unreachable" }
+  | {
+      readonly kind: "file";
+      readonly sha256: string;
+      readonly size: number;
+      readonly links: number;
+    }
+  /** A folder, a link, a file too large or unreadable: never a file of the projection's. */
+  | { readonly kind: "other" };
+
+/** A regular file read through one descriptor, still open. */
+interface Opened {
+  readonly kind: "file";
+  readonly fd: number;
+  readonly sha256: string;
+  readonly size: number;
+  readonly links: number;
+  readonly ino: bigint;
+  readonly dev: bigint;
+}
+
+/** The rescue folders of one batch: `exchange/rescued/<stem>-<n>`, each made for one rescue. */
+export class Rescues {
+  readonly stem: string;
+  /** The rescue folders that hold what was rescued, relative to the space's folder. */
+  readonly made: string[] = [];
+  #n = 0;
+  constructor(stem: string) {
+    this.stem = stem;
+  }
+  next(): string {
+    this.#n += 1;
+    return `${this.stem}-${String(this.#n)}`;
+  }
+}
+
+/** A new batch's rescue stem: the time, and 16 random bits so two batches in one millisecond differ. */
+export const newStem = (now: number): string =>
+  `${new Date(now).toISOString().replace(/[-:.]/g, "")}-${randomBytes(2).toString("hex")}`;
+
+/** A new batch's tag for its temporary files. */
+export const newTag = (): string => randomBytes(4).toString("hex");
+
+export interface TreeOptions {
+  /** The space's folder: rescued entries go to its `exchange/rescued/`. */
+  readonly spaceFolder: string;
+  /** The tree's root: the space's `view/`. */
+  readonly dir: string;
+  readonly platform?: NodeJS.Platform;
+  readonly at?: Hook;
+}
+
+/** The outcome of a placement. */
+export type Placed = "written" | "same";
+
+/** The projection's tree on disk. */
 export class Tree {
   readonly #dir: string;
   readonly #space: string;
-  readonly #now: () => number;
   readonly #win: boolean;
-  readonly #at: TreeOptions["at"];
-  /** Folders of the tree found missing, or not real (a link, a file), in this batch. */
-  #lost = new Set<string>();
-  /** The folders the record has files in (projector.ts): a write never makes one of them again. */
-  #known: ReadonlySet<string> = new Set();
-  /** This batch's rescue folder, relative to the space's folder, once one was made. */
-  #box: string | undefined;
-  #rescued = 0;
+  readonly #at: Hook | undefined;
+  #troubled = false;
 
   constructor(options: TreeOptions) {
     this.#dir = options.dir;
     this.#space = options.spaceFolder;
-    this.#now = options.now;
     this.#win = (options.platform ?? process.platform) === "win32";
     this.#at = options.at;
   }
 
-  /** Starts a batch: lost folders are counted afresh, and rescues go to a new folder. */
+  /**
+   * Since the last newBatch, a folder of the tree was found missing or not a real folder: files the
+   * record holds below it may be gone, so the projector reconciles (projector.ts).
+   */
+  get troubled(): boolean {
+    return this.#troubled;
+  }
+
   newBatch(): void {
-    this.#lost = new Set();
-    this.#box = undefined;
-    this.#rescued = 0;
+    this.#troubled = false;
   }
 
-  /** What this batch rescued: how many, and where (relative to the space's folder). */
-  get rescued(): { files: number; folder?: string } {
-    return this.#box === undefined
-      ? { files: this.#rescued }
-      : { files: this.#rescued, folder: this.#box };
+  #act(act: Act, path: string): void {
+    this.#at?.(act, path);
   }
 
-  /** The folders of the tree this batch found missing or not real: what the record had there is gone. */
-  get lostFolders(): ReadonlySet<string> {
-    return this.#lost;
-  }
-
-  /**
-   * The folders the record has files in, each with its parents. A write that finds one of them
-   * missing or not real fails instead of making it again: the folder stays lost until the tree is
-   * rebuilt, so a kill before the rebuild cannot hide the loss from the next start.
-   */
-  setKnownFolders(folders: ReadonlySet<string>): void {
-    this.#known = folders;
-  }
-
+  /** A path of the tree on disk; "" is the root. Only paths of the tree's grammar reach here. */
   #abs(path: string): string {
-    if (!isTreePath(path)) throw new ProjectionError("EINVAL", "Not a path of the projection");
-    return join(this.#dir, ...path.split("/"));
+    return path === "" ? this.#dir : join(this.#dir, ...path.split("/"));
+  }
+
+  /** The folders from the root to `path`'s folder, the root ("") first. */
+  static foldersOf(path: string): string[] {
+    const parts = path.split("/").slice(0, -1);
+    return ["", ...parts.map((_, i) => parts.slice(0, i + 1).join("/"))];
+  }
+
+  #realFolder(rel: string): boolean {
+    return lstatSync(this.#abs(rel), { throwIfNoEntry: false })?.isDirectory() === true;
+  }
+
+  /** Whether every folder on the way to `path` is a real folder now. lstat: nothing is followed. */
+  #reachable(path: string): boolean {
+    return Tree.foldersOf(path).every((rel) => this.#realFolder(rel));
   }
 
   /**
-   * Creates the projection's folder when it is missing, and says so: whatever the record says is in
-   * it is gone. A link or a file there is refused.
+   * What a regular file at `abs` holds, read through one descriptor that is checked to be the entry
+   * lstat saw (the same device and file), so a link swapped in between is never read as ours. The
+   * descriptor stays open for the caller.
    */
-  prepare(): boolean {
-    const stats = lstatSync(this.#dir, { throwIfNoEntry: false });
-    if (stats === undefined) {
-      makeDir(this.#dir, FOLDER_MODE);
-      return true;
+  #open(abs: string): { kind: "missing" } | { kind: "other" } | Opened {
+    const seen = lstatSync(abs, { bigint: true, throwIfNoEntry: false });
+    if (seen === undefined) return { kind: "missing" };
+    if (!seen.isFile() || seen.size > BigInt(MAX_FILE_BYTES)) return { kind: "other" };
+    let fd: number;
+    try {
+      fd = openSync(abs, constants.O_RDONLY | NOFOLLOW);
+    } catch (error) {
+      if (codeIs(error, "ENOENT")) return { kind: "missing" };
+      if (codeIs(error, "ELOOP", "EISDIR")) return { kind: "other" };
+      throw error;
     }
-    if (!stats.isDirectory()) {
-      throw new ProjectionError("ENOTDIR", "The projection's folder is not a folder");
+    try {
+      const stats = fstatSync(fd, { bigint: true });
+      if (!stats.isFile() || stats.ino !== seen.ino || stats.dev !== seen.dev) {
+        closeSync(fd);
+        return { kind: "other" };
+      }
+      const data = readFileSync(fd);
+      return {
+        kind: "file",
+        fd,
+        sha256: sha256(data),
+        size: data.length,
+        links: Number(stats.nlink),
+        ino: stats.ino,
+        dev: stats.dev,
+      };
+    } catch (error) {
+      closeSync(fd);
+      throw error;
     }
-    return false;
   }
 
   /**
-   * Whether any of `folders` (relative, `/`-separated, each with its parents listed too), or the
-   * projection's folder itself, is not a real folder now: missing, a link or a file. Only lstat,
-   * so nothing is followed.
+   * What is at `path`, without acting: for the reconciliation and the start. `folders` caches the
+   * look at each folder for one pass: no act depends on it, every act checks again.
    */
-  missing(folders: Iterable<string>): boolean {
-    if (lstatSync(this.#dir, { throwIfNoEntry: false })?.isDirectory() !== true) return true;
-    for (const folder of folders) {
-      const abs = join(this.#dir, ...folder.split("/"));
-      if (lstatSync(abs, { throwIfNoEntry: false })?.isDirectory() !== true) return true;
+  look(path: string, folders?: Map<string, boolean>): Look {
+    for (const rel of Tree.foldersOf(path)) {
+      let real = folders?.get(rel);
+      if (real === undefined) {
+        real = this.#realFolder(rel);
+        folders?.set(rel, real);
+      }
+      if (!real) return { kind: "unreachable" };
     }
-    return false;
+    try {
+      const found = this.#open(this.#abs(path));
+      if (found.kind !== "file") return found;
+      closeSync(found.fd);
+      return { kind: "file", sha256: found.sha256, size: found.size, links: found.links };
+    } catch {
+      return { kind: "other" };
+    }
   }
 
   /**
-   * Whether every folder of `path` is a real folder of the tree, each checked with lstat at every
-   * access, never from an earlier look: a batch awaits the writer, and a folder can become a link
-   * meanwhile. The first that is not (missing, a link, a file) is reported lost, and nothing below
-   * it is looked at.
+   * Places `content` at `path` (rule 6). `owned` is what the record holds for the path, if
+   * anything: only a file that proves itself ours by it is replaced; anything else is rescued
+   * first. Throws when the file is not placed; a rescue that happened stays done, and counted in
+   * `rescues`.
    */
-  #inTree(path: string): boolean {
-    let rel = "";
-    for (const part of path.split("/").slice(0, -1)) {
-      rel = rel === "" ? part : `${rel}/${part}`;
-      const stats = lstatSync(join(this.#dir, ...rel.split("/")), { throwIfNoEntry: false });
-      if (stats?.isDirectory() !== true) {
-        this.#lost.add(rel);
-        return false;
+  place(
+    path: string,
+    content: string,
+    owned: Owned | undefined,
+    rescues: Rescues,
+    tag: string,
+  ): Placed {
+    const data = Buffer.from(content, "utf8");
+    const hash = sha256(data);
+    const abs = this.#abs(path);
+    this.#folders(path, rescues);
+    const temp = tempPathOf(path, hash, tag);
+    const tempAbs = this.#abs(temp);
+    this.#act("temp", temp);
+    // Exclusive: an entry already there is never written through, replaced or removed.
+    const fd = createFile(tempAbs, FILE_MODE);
+    try {
+      try {
+        this.#act("write", temp);
+        let offset = 0;
+        while (offset < data.length) {
+          const n = writeSync(fd, data, offset, data.length - offset);
+          if (n <= 0) throw new ProjectionError("EIO", "A projected file's write made no progress");
+          offset += n;
+        }
+      } finally {
+        closeSync(fd);
+      }
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return this.#swap(path, abs, temp, tempAbs, hash, owned, rescues);
+        } catch (error) {
+          if (!this.#win || !codeIs(error, "EPERM", "EBUSY", "EACCES") || attempt >= TRIES) {
+            throw error;
+          }
+          pauseSync(PAUSE_MS);
+        }
+      }
+    } catch (error) {
+      this.#dropTemp(temp, tempAbs);
+      throw error;
+    }
+  }
+
+  /** The check and the act of a placement: one synchronous stretch (see the header). */
+  #swap(
+    path: string,
+    abs: string,
+    temp: string,
+    tempAbs: string,
+    hash: string,
+    owned: Owned | undefined,
+    rescues: Rescues,
+  ): Placed {
+    if (!this.#reachable(path)) {
+      this.#troubled = true;
+      throw new ProjectionError("ENOTDIR", "A folder of the tree is not a real folder");
+    }
+    const found = this.#open(abs);
+    if (found.kind === "missing") {
+      this.#act("rename", path);
+      renameSync(tempAbs, abs);
+      return "written";
+    }
+    if (found.kind === "file") {
+      let ours: boolean;
+      try {
+        if (found.links === 1 && found.sha256 === hash) {
+          this.#dropTemp(temp, tempAbs);
+          return "same";
+        }
+        ours =
+          found.links === 1 &&
+          owned !== undefined &&
+          found.size === owned.size &&
+          found.sha256 === owned.sha256;
+        if (ours && this.#win) {
+          // Windows refuses a rename over a read-only file: the attribute of this file, the one
+          // just proved ours, goes through its own descriptor, never through the path.
+          this.#act("chmod", path);
+          fchmodSync(found.fd, 0o600);
+        }
+      } finally {
+        closeSync(found.fd);
+      }
+      if (ours) {
+        try {
+          this.#act("rename", path);
+          renameSync(tempAbs, abs);
+        } catch (error) {
+          this.#readOnlyAgain(abs, found);
+          throw error;
+        }
+        return "written";
       }
     }
-    return true;
+    // Not ours: one rename takes it aside, then the new file takes its place.
+    this.#rescue(path, abs, rescues);
+    this.#act("rename", path);
+    renameSync(tempAbs, abs);
+    return "written";
+  }
+
+  /** Windows: a proven file of ours whose replacement failed gets its read-only attribute back. */
+  #readOnlyAgain(abs: string, proved: Opened): void {
+    if (!this.#win) return;
+    try {
+      const fd = openSync(abs, constants.O_RDONLY);
+      try {
+        const stats = fstatSync(fd, { bigint: true });
+        if (stats.ino === proved.ino && stats.dev === proved.dev) {
+          this.#act("chmod", "");
+          fchmodSync(fd, 0o444);
+        }
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      // It stays writable: its hash still guards it.
+    }
+  }
+
+  /** Removes a temporary file this placement made, while its folder is still a real one of the tree. */
+  #dropTemp(temp: string, tempAbs: string): void {
+    try {
+      if (!this.#reachable(temp)) return;
+      if (lstatSync(tempAbs, { throwIfNoEntry: false })?.isFile() !== true) return;
+      this.#act("unlink", temp);
+      unlinkSync(tempAbs);
+    } catch {
+      // Left: the journal names it, and its content proves it ours at the next clean-up.
+    }
   }
 
   /**
-   * Removes the temporary files a kill left in the tree's folders (A1 3.7 "Crash behaviour"): the
-   * projected files' `.<name>.tmp-<hex>`, and the record's and the journal's atomic-write leftovers.
-   * Only those names, only regular files, only in the folders the tree writes.
+   * Makes each folder from the root to `path`'s folder a real folder: a missing one is made with
+   * mode 0700, anything else there (a file, a link, a junction) is rescued first. Either way the
+   * tree was not what the record says, so it is reported (troubled).
    */
-  cleanTemps(): number {
-    let removed = removeStaleTemps(this.#dir, [RECORD_FILE, JOURNAL_FILE]);
-    const folders = [this.#dir, join(this.#dir, "open")];
-    for (const state of ["completed", "archived"]) {
-      const parent = join(this.#dir, state);
-      for (const year of this.#list(parent)) {
-        if (/^[0-9]{4}$/.test(year)) folders.push(join(parent, year));
+  #folders(path: string, rescues: Rescues): void {
+    for (const rel of Tree.foldersOf(path)) {
+      const abs = this.#abs(rel);
+      const stats = lstatSync(abs, { throwIfNoEntry: false });
+      if (stats?.isDirectory() === true) continue;
+      this.#troubled = true;
+      if (stats !== undefined) this.#rescue(rel, abs, rescues);
+      this.#act("mkdir", rel);
+      makeDir(abs, FOLDER_MODE, { recursive: false });
+    }
+  }
+
+  /**
+   * Moves the entry at `abs` (tree path `rel`, "" for the root) by one rename into a rescue folder
+   * made for it: `exchange/rescued/<stem>-<n>/view/<rel>` (rule 3). Never followed, never copied,
+   * its mode never changed. Throws when it did not move; the folders made for it go again.
+   */
+  #rescue(rel: string, abs: string, rescues: Rescues): void {
+    const exchange = join(this.#space, "exchange");
+    const rescued = join(exchange, "rescued");
+    for (const folder of [exchange, rescued]) {
+      const stats = lstatSync(folder, { throwIfNoEntry: false });
+      if (stats === undefined) {
+        this.#act("mkdir", "");
+        makeDir(folder, FOLDER_MODE, { recursive: false });
+      } else if (!stats.isDirectory()) {
+        throw new ProjectionError("ENOTDIR", "The space's rescue folder is not a real folder");
       }
     }
-    for (const folder of folders) {
-      for (const name of this.#list(folder)) {
-        if (!TEMP.test(name)) continue;
-        const path = join(folder, name);
-        if (lstatSync(path, { throwIfNoEntry: false })?.isFile() !== true) continue;
-        this.#unlink(path);
+    const name = this.#freshFolder(rescued, rescues);
+    const box = join(rescued, name);
+    const made = [box];
+    try {
+      let at = join(box, "view");
+      if (rel !== "") {
+        this.#act("mkdir", "");
+        makeDir(at, FOLDER_MODE, { recursive: false });
+        made.push(at);
+        for (const part of rel.split("/").slice(0, -1)) {
+          at = join(at, part);
+          this.#act("mkdir", "");
+          makeDir(at, FOLDER_MODE, { recursive: false });
+          made.push(at);
+        }
+        at = join(at, rel.split("/").at(-1) ?? "");
+      }
+      this.#act("rescue", rel);
+      renameSync(abs, at);
+    } catch (error) {
+      for (const folder of made.reverse()) {
+        try {
+          this.#act("rmdir", "");
+          rmdirSync(folder);
+        } catch {
+          // Not empty, or gone: left.
+        }
+      }
+      throw error;
+    }
+    rescues.made.push(`exchange/rescued/${name}`);
+  }
+
+  /** Makes the next rescue folder of the batch in `rescued`, exclusively: never one made before. */
+  #freshFolder(rescued: string, rescues: Rescues): string {
+    for (let tries = 1; ; tries += 1) {
+      const name = rescues.next();
+      try {
+        this.#act("mkdir", "");
+        makeDir(join(rescued, name), FOLDER_MODE, { recursive: false });
+        return name;
+      } catch (error) {
+        if (!codeIs(error, "EEXIST") || tries >= 100) throw error;
+      }
+    }
+  }
+
+  /**
+   * Removes the file at `path` when it proves itself ours by `owned` (rule 2), in one synchronous
+   * stretch. Anything else is not ours and is left where it is; a folder on the way that is not a
+   * real folder means nothing behind it is the tree's.
+   */
+  remove(path: string, owned: Owned): "removed" | "not-ours" | "missing" {
+    const abs = this.#abs(path);
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        if (!this.#reachable(path)) {
+          this.#troubled = true;
+          return "not-ours";
+        }
+        const found = this.#open(abs);
+        if (found.kind === "missing") return "missing";
+        if (found.kind !== "file") return "not-ours";
+        let ours: boolean;
+        try {
+          ours = found.links === 1 && found.size === owned.size && found.sha256 === owned.sha256;
+        } finally {
+          closeSync(found.fd);
+        }
+        if (!ours) return "not-ours";
+        // Node's unlink on Windows clears a read-only attribute through its own handle, opened
+        // without following a link.
+        this.#act("unlink", path);
+        unlinkSync(abs);
+        return "removed";
+      } catch (error) {
+        if (!this.#win || !codeIs(error, "EPERM", "EBUSY", "EACCES") || attempt >= TRIES) {
+          throw error;
+        }
+        pauseSync(PAUSE_MS);
+      }
+    }
+  }
+
+  /**
+   * Removes the temporary files a kill left (rule 4): those `named` by the trusted journal, and in
+   * every folder the tree writes those whose content hashes to their name. Each must be a regular
+   * file with one link, reached through real folders. Anything else stays. Returns how many went.
+   */
+  cleanTemps(named: readonly string[]): number {
+    let removed = 0;
+    const tryRemove = (temp: string, proves: (hash: string) => boolean): void => {
+      if (!this.#reachable(temp)) return;
+      const abs = this.#abs(temp);
+      try {
+        const found = this.#open(abs);
+        if (found.kind !== "file") return;
+        let ours: boolean;
+        try {
+          ours = found.links === 1 && proves(found.sha256);
+        } finally {
+          closeSync(found.fd);
+        }
+        if (!ours) return;
+        this.#act("unlink", temp);
+        unlinkSync(abs);
         removed += 1;
+      } catch {
+        // Held, or gone: the next clean-up looks again.
+      }
+    };
+    for (const temp of named) {
+      if (isTempPath(temp)) tryRemove(temp, () => true);
+    }
+    for (const folder of this.#tempFolders()) {
+      let names: string[];
+      try {
+        names = readdirSync(this.#abs(folder));
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const temp = folder === "" ? name : `${folder}/${name}`;
+        const match = TEMP_NAME.exec(name);
+        if (match === null || !isTempPath(temp)) continue;
+        const prefix = match[2] ?? "";
+        tryRemove(temp, (hash) => hash.startsWith(prefix));
       }
     }
     return removed;
   }
 
-  /** The entries of a real folder, or none. */
-  #list(folder: string): string[] {
-    const stats = lstatSync(folder, { throwIfNoEntry: false });
-    if (stats === undefined || !stats.isDirectory()) return [];
-    return readdirSync(folder);
-  }
-
-  #look(abs: string): Found {
-    const stats = lstatSync(abs, { throwIfNoEntry: false });
-    if (stats === undefined) return { kind: "missing" };
-    if (!stats.isFile() || stats.size > MAX_FILE_BYTES) return { kind: "other" };
-    return { kind: "file", sha256: sha256(readFileSync(abs)), stats };
+  /** The folders the tree writes, where they are real folders: the root, open/, the year folders. */
+  #tempFolders(): string[] {
+    if (!this.#realFolder("")) return [];
+    const folders = [""];
+    if (this.#realFolder("open")) folders.push("open");
+    for (const state of ["completed", "archived"]) {
+      if (!this.#realFolder(state)) continue;
+      for (const year of readdirSync(this.#abs(state))) {
+        const rel = `${state}/${year}`;
+        if (TASK_FOLDER.test(rel) && this.#realFolder(rel)) folders.push(rel);
+      }
+    }
+    return folders;
   }
 
   /**
-   * The hash of the file at `path`, undefined when nothing is there (a folder of it that is not a
-   * real folder included), `other` for anything else.
+   * The rescue folders of the batch `stem` that hold what it rescued, relative to the space's
+   * folder: what a killed batch rescued before it could report it.
    */
-  hashOf(path: string): string | undefined {
-    const abs = this.#abs(path);
-    if (!this.#inTree(path)) return undefined;
-    const found = this.#look(abs);
-    return found.kind === "missing" ? undefined : found.kind === "file" ? found.sha256 : "other";
-  }
-
-  /**
-   * Makes sure every folder of `folder` (relative, `/`-separated) is a real folder of the tree. A
-   * file or a link where one belongs is rescued, then the folder is made with mode 0700. A folder
-   * that was missing or not real is reported lost; one the record has files in is left as it is,
-   * and the write fails (setKnownFolders).
-   */
-  #folder(folder: string): void {
-    let rel = "";
-    for (const part of folder.split("/")) {
-      rel = rel === "" ? part : `${rel}/${part}`;
-      const abs = join(this.#dir, ...rel.split("/"));
-      const stats = lstatSync(abs, { throwIfNoEntry: false });
-      // lstat: a link, a junction included, is never a folder here.
-      const real = stats?.isDirectory() === true;
-      if (!real) this.#lost.add(rel);
-      if (!real && this.#known.has(rel)) {
-        throw new ProjectionError(
-          stats === undefined ? "ENOENT" : "ENOTDIR",
-          "A folder of the tree is gone: the tree is rebuilt first",
-        );
-      }
-      if (stats !== undefined && !real) this.#rescueAt(rel, abs);
-      if (!real) makeDir(abs, FOLDER_MODE, { recursive: false });
-    }
-  }
-
-  /**
-   * Writes `content` at `path`, read-only. What is there is replaced only when its hash is one
-   * `ours` accepts or the new content's own; anything else is rescued first. The new file is
-   * written before anything is rescued, and a rescued file is put back when the rename then fails,
-   * so a failed write leaves the path as it was: a path the catalogue names stays there. Returns
-   * whether it wrote (`same`: the file already held exactly this).
-   */
-  async place(
-    path: string,
-    content: string,
-    ours: (hash: string) => boolean,
-  ): Promise<"written" | "same"> {
-    const abs = this.#abs(path);
-    const slash = path.lastIndexOf("/");
-    if (slash > 0) this.#folder(path.slice(0, slash));
-    const data = Buffer.from(content, "utf8");
-    const hash = sha256(data);
-    const found = this.#look(abs);
-    if (found.kind === "file" && found.sha256 === hash) {
-      this.#markReadOnly(abs, found.stats);
-      return "same";
-    }
-    const replacing = found.kind === "file" && ours(found.sha256);
-    const temp = join(dirname(abs), `.${basename(abs)}.tmp-${hex()}`);
-    // Exclusive and read-only from the start: the creating descriptor still writes (POSIX), and
-    // Windows sets the read-only attribute on the new file.
-    const fd = createFile(temp, FILE_MODE);
-    try {
-      let offset = 0;
-      while (offset < data.length) {
-        const n = writeSync(fd, data, offset, data.length - offset);
-        if (n <= 0) throw new ProjectionError("EIO", "A projected file's write made no progress");
-        offset += n;
-      }
-    } catch (error) {
-      closeSync(fd);
-      this.#unlink(temp);
-      throw error;
-    }
-    closeSync(fd);
-    let rescued: string | undefined;
-    try {
-      await this.#at?.("rename", path);
-      if (found.kind !== "missing" && !replacing) {
-        rescued = this.#rescueAt(path, abs);
-        await this.#at?.("rescued", path);
-      }
-      if (replacing) this.#writable(abs);
-      await this.#rename(temp, abs);
-    } catch (error) {
-      this.#unlink(temp);
-      if (rescued !== undefined) this.#putBack(rescued, abs);
-      else if (replacing && lstatSync(abs, { throwIfNoEntry: false })?.isFile() === true) {
-        this.#readOnlyAgain(abs);
-      }
-      throw error;
-    }
-    await this.#at?.("renamed", path);
-    return "written";
-  }
-
-  /**
-   * Puts what was rescued from `abs` back, when what was to replace it could not be placed. When
-   * that fails too it stays in the rescue folder, kept and counted.
-   */
-  #putBack(rescued: string, abs: string): void {
-    try {
-      if (lstatSync(abs, { throwIfNoEntry: false }) !== undefined) return;
-      renameSync(rescued, abs);
-      this.#rescued -= 1;
-    } catch {
-      // Kept where it was rescued to.
-    }
-  }
-
-  /**
-   * Removes the file at `path` when its hash is one `ours` accepts; rescues anything else there.
-   * Nothing there is fine, and so is a folder of it that is not a real folder: what is behind it is
-   * not in the tree, and is never touched.
-   */
-  remove(path: string, ours: (hash: string) => boolean): "removed" | "rescued" | "missing" {
-    const abs = this.#abs(path);
-    if (!this.#inTree(path)) return "missing";
-    const found = this.#look(abs);
-    if (found.kind === "missing") return "missing";
-    if (found.kind === "file" && ours(found.sha256)) {
-      this.#unlink(abs);
-      return "removed";
-    }
-    this.#rescueAt(path, abs);
-    return "rescued";
-  }
-
-  async #rename(from: string, to: string): Promise<void> {
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        renameSync(from, to);
-        return;
-      } catch (error) {
-        if (!this.#win || !isBusy(error) || attempt >= RENAME_TRIES) throw error;
-        await pause(RENAME_PAUSE_MS);
-      }
-    }
-  }
-
-  /** Removes a file. Windows refuses to delete a read-only one, so its attribute goes first. */
-  #unlink(abs: string): void {
-    if (this.#win) {
-      try {
-        chmodSync(abs, 0o600);
-      } catch {
-        // Gone already, or not ours to change: the removal below says which.
-      }
-    }
-    rmSync(abs, { force: true });
-  }
-
-  #writable(abs: string): void {
-    if (this.#win) chmodSync(abs, 0o600);
-  }
-
-  #readOnlyAgain(abs: string): void {
-    if (!this.#win) return;
-    try {
-      chmodSync(abs, 0o444);
-    } catch {
-      // The file stays writable: its hash still guards it.
-    }
-  }
-
-  /** Marks a file that already holds the right bytes read-only again, if a person changed that. */
-  #markReadOnly(abs: string, stats: Stats): void {
-    const writable = this.#win ? (stats.mode & 0o200) !== 0 : (stats.mode & 0o777) !== FILE_MODE;
-    if (!writable) return;
-    try {
-      chmodSync(abs, this.#win ? 0o444 : FILE_MODE);
-    } catch {
-      // Its hash still guards it.
-    }
-  }
-
-  /** This batch's rescue folder, `exchange/rescued/<stamp>/` in the space's folder, made once. */
-  #rescueBox(): string {
-    if (this.#box !== undefined) return join(this.#space, ...this.#box.split("/"));
-    const exchange = join(this.#space, "exchange");
-    const rescued = join(exchange, "rescued");
-    for (const folder of [exchange, rescued]) {
-      const stats = lstatSync(folder, { throwIfNoEntry: false });
-      if (stats === undefined) makeDir(folder, FOLDER_MODE, { recursive: false });
-      else if (!stats.isDirectory()) {
-        throw new ProjectionError("ENOTDIR", "The space's exchange folder is not a folder");
-      }
-    }
-    const stamp = new Date(this.#now()).toISOString().replace(/[-:.]/g, "");
-    for (let n = 1; n <= 100; n += 1) {
-      const name = n === 1 ? stamp : `${stamp}-${String(n)}`;
-      try {
-        makeDir(join(rescued, name), FOLDER_MODE, { recursive: false });
-      } catch (error) {
-        if ((error as { code?: unknown }).code === "EEXIST") continue;
-        throw error;
-      }
-      this.#box = `exchange/rescued/${name}`;
-      return join(rescued, name);
-    }
-    throw new ProjectionError("EEXIST", "No free rescue folder");
-  }
-
-  /**
-   * Moves what is at `abs` (tree path `path`) into this batch's rescue folder under the same path,
-   * and makes a rescued file writable: it is the person's now (A1 3.13 step 3). The destination's
-   * folders in the rescue folder must be real folders and the destination free: a link rescued
-   * earlier in the batch is never moved into, and nothing rescued is replaced. Across volumes a
-   * file is copied, then removed, and the copy goes again when the original cannot; anything else
-   * there fails the move.
-   */
-  #rescueAt(path: string, abs: string): string {
-    const box = this.#rescueBox();
-    let at = box;
-    for (const part of path.split("/").slice(0, -1)) {
-      at = join(at, part);
-      const stats = lstatSync(at, { throwIfNoEntry: false });
-      if (stats === undefined) break;
-      if (!stats.isDirectory()) {
-        throw new ProjectionError("ENOTDIR", "A rescued link stands where a rescue goes");
-      }
-    }
-    const dest = join(box, ...path.split("/"));
-    makeDir(dirname(dest), FOLDER_MODE);
-    if (lstatSync(dest, { throwIfNoEntry: false }) !== undefined) {
-      throw new ProjectionError("EEXIST", "Something was rescued there already");
-    }
-    const stats = lstatSync(abs);
-    try {
-      renameSync(abs, dest);
-    } catch (error) {
-      if ((error as { code?: unknown }).code !== "EXDEV" || !stats.isFile()) throw error;
-      copyFileSync(abs, dest, constants.COPYFILE_EXCL);
-      try {
-        this.#unlink(abs);
-      } catch (failed) {
-        // The original stays where it was: a second copy would be made at every retry.
-        this.#unlink(dest);
-        throw failed;
-      }
-    }
-    if (stats.isFile()) chmodSync(dest, 0o600);
-    this.#rescued += 1;
-    return dest;
-  }
-
-  // -------------------------------------------------------------------------------------------
-  // The record and the journal
-
-  #readJson(name: string): unknown {
-    const abs = join(this.#dir, name);
-    const stats = lstatSync(abs, { throwIfNoEntry: false });
-    if (stats === undefined) return undefined;
-    if (!stats.isFile() || stats.size > MAX_RECORD_BYTES) return null;
-    try {
-      return JSON.parse(readFileSync(abs, "utf8")) as unknown;
-    } catch {
-      return null;
-    }
-  }
-
-  /** The tree's record: undefined when there is none, null when it cannot be trusted. */
-  readRecord(): TreeRecord | undefined | null {
-    const value = this.#readJson(RECORD_FILE);
-    if (value === undefined || value === null) return value;
-    if (!isRecordObject(value) || value["format"] !== FORMAT) return null;
-    const { space_id, epoch, incarnation, rebuilding, queued, watermark } = value;
-    const files = hashesOf(value["files"]);
-    const retired = hashesOf(value["retired"]);
-    const tasks = new Map<string, TaskRecord>();
-    if (!isRecordObject(value["tasks"])) return null;
-    for (const [id, item] of Object.entries(value["tasks"])) {
-      const record = taskRecordOf(item);
-      if (record === undefined || record.entry.id !== id) return null;
-      tasks.set(id, record);
-    }
-    if (
-      typeof space_id !== "string" ||
-      !isCount(epoch) ||
-      typeof incarnation !== "string" ||
-      typeof rebuilding !== "boolean" ||
-      typeof queued !== "boolean" ||
-      !isCount(watermark) ||
-      files === undefined ||
-      retired === undefined ||
-      [...files.keys()].some((p) => TASK_FILE.test(p))
-    ) {
-      return null;
-    }
-    return {
-      identity: { spaceId: space_id, epoch, incarnation },
-      rebuilding,
-      queued,
-      watermark,
-      tasks,
-      files,
-      retired,
-    };
-  }
-
-  writeRecord(record: TreeRecord): void {
-    const value = {
-      format: FORMAT,
-      space_id: record.identity.spaceId,
-      epoch: record.identity.epoch,
-      incarnation: record.identity.incarnation,
-      rebuilding: record.rebuilding,
-      queued: record.queued,
-      watermark: record.watermark,
-      tasks: sorted(record.tasks),
-      files: sorted(record.files),
-      retired: sorted(record.retired),
-    };
-    atomicWrite(join(this.#dir, RECORD_FILE), `${JSON.stringify(value)}\n`, 0o600);
-  }
-
-  /**
-   * The journal a kill left: undefined when there is none, null when there is one that cannot be
-   * read. That one may name files a reported batch placed, so the record cannot be trusted.
-   */
-  readJournal(): Journal | undefined | null {
-    const value = this.#readJson(JOURNAL_FILE);
-    if (value === undefined) return undefined;
-    if (!isRecordObject(value) || value["format"] !== FORMAT) return null;
-    const files = hashesOf(value["files"]);
-    if (files === undefined || !isRecordObject(value["tasks"])) return null;
-    const tasks = new Map<string, TaskRecord | null>();
-    for (const [id, item] of Object.entries(value["tasks"])) {
-      if (item === null) {
-        tasks.set(id, null);
-        continue;
-      }
-      const record = taskRecordOf(item);
-      if (record === undefined || record.entry.id !== id) return null;
-      tasks.set(id, record);
-    }
-    return { tasks, files };
-  }
-
-  writeJournal(journal: Journal): void {
-    const value = { format: FORMAT, tasks: sorted(journal.tasks), files: sorted(journal.files) };
-    atomicWrite(join(this.#dir, JOURNAL_FILE), `${JSON.stringify(value)}\n`, 0o600);
-  }
-
-  dropJournal(): void {
-    rmSync(join(this.#dir, JOURNAL_FILE), { force: true });
+  rescuedBy(stem: string): string[] {
+    const rescued = join(this.#space, "exchange", "rescued");
+    if (lstatSync(rescued, { throwIfNoEntry: false })?.isDirectory() !== true) return [];
+    return readdirSync(rescued)
+      .filter(
+        (name) =>
+          name.startsWith(`${stem}-`) &&
+          /^[0-9]{1,6}$/.test(name.slice(stem.length + 1)) &&
+          lstatSync(join(rescued, name, "view"), { throwIfNoEntry: false }) !== undefined,
+      )
+      .map((name) => `exchange/rescued/${name}`);
   }
 }
-
-const hex = (): string => randomBytes(8).toString("hex");

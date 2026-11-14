@@ -2,23 +2,27 @@
 // machine's (projection-entry.ts): the main thread holds no SQLite connection (A1 3.9), and a
 // batch writes up to 200 files. The worker reads the space through its own reader connection and
 // asks this thread for the two writes it needs, which only the space's writer makes: marking a
-// batch rendered (and the watermark back) and queueing every task for a rebuild. Everything that
-// crosses is counts, codes and the batch's task IDs, never a path or a task's text.
+// batch rendered (and the watermark back) and queueing tasks to render again. Everything that
+// crosses is counts, codes and task IDs, never a task's text.
+//
+// `tasks view rebuild` asks the worker for a full reconciliation (rebuild): the answer is what the
+// reconciliation found, once it ran before the worker's next batch.
 //
 // Stopping asks the worker to end after the batch in progress, and stops the thread when it has
 // not ended within the bound: a batch cut off is a kill, which the next start recovers from
-// (@tasks/projection).
+// (@tasks/projection). A rebuild still waiting then fails with `STORAGE_WORKER_FAILED`.
 import { Worker } from "node:worker_threads";
-import type { StartReport, StepReport } from "@tasks/projection";
+import type { Reconciled, StartReport, StepReport } from "@tasks/projection";
 import type { ProjectedBatch, SpaceWriterHandle } from "@tasks/storage";
 import { within } from "./wait.ts";
 
 /** What a projection worker is given. */
 export interface ProjectionJob {
-  /** The space's folder: its database, and `exchange/rescued/` for rescued files. */
+  /** The space's folder: its database, its `view/`, and `exchange/rescued/` for rescues. */
   readonly folder: string;
-  /** The projection's folder, checked (projectionFolder). */
-  readonly dir: string;
+  /** The projection's trusted record and journal, in the machine state (space-settings.ts). */
+  readonly record: string;
+  readonly journal: string;
 }
 
 /** Worker to this thread. */
@@ -29,7 +33,12 @@ export type ProjectionMessage =
       readonly method: "projected";
       readonly batch: ProjectedBatch;
     }
-  | { readonly kind: "call"; readonly id: number; readonly method: "queue" }
+  | {
+      readonly kind: "call";
+      readonly id: number;
+      readonly method: "queue";
+      readonly keys?: readonly string[];
+    }
   | { readonly kind: "started"; readonly report: StartReport }
   | { readonly kind: "step"; readonly report: StepReport; readonly ms: number }
   | { readonly kind: "error"; readonly code: string };
@@ -38,6 +47,7 @@ export type ProjectionMessage =
 export type ProjectionCommand =
   | { readonly kind: "reply"; readonly id: number; readonly ok: true; readonly value: number }
   | { readonly kind: "reply"; readonly id: number; readonly ok: false; readonly code: string }
+  | { readonly kind: "rebuild" }
   | { readonly kind: "stop" };
 
 export interface ProjectionEvents {
@@ -54,11 +64,20 @@ const codeOf = (error: unknown): string => {
   return typeof code === "string" && CODE.test(code) ? code : "STORAGE_WORKER_FAILED";
 };
 
+/** A rebuild that could not be answered: the worker ended first. */
+export class ProjectionGone extends Error {
+  override readonly name = "ProjectionGone";
+  readonly code = "STORAGE_WORKER_FAILED";
+}
+
 /** One space's projection worker. */
 export class ProjectionRunner {
   readonly #worker: Worker;
   readonly #exited: Promise<void>;
   #stopping: Promise<void> | undefined;
+  #ended = false;
+  /** Rebuilds asked for, answered by the next full reconciliation the worker reports. */
+  #rebuilds: { resolve: (r: Reconciled) => void; reject: (e: Error) => void }[] = [];
 
   constructor(
     job: ProjectionJob,
@@ -68,6 +87,10 @@ export class ProjectionRunner {
     this.#worker = new Worker(ENTRY, { workerData: job });
     this.#exited = new Promise((resolve) => {
       this.#worker.once("exit", () => {
+        this.#ended = true;
+        for (const waiting of this.#rebuilds.splice(0)) {
+          waiting.reject(new ProjectionGone("The projection ended before its rebuild ran"));
+        }
         resolve();
       });
     });
@@ -84,7 +107,7 @@ export class ProjectionRunner {
           const work =
             message.method === "projected"
               ? writer.projected(message.batch)
-              : writer.queueProjection();
+              : writer.queueProjection(message.keys);
           work.then(
             (value) => {
               reply({ kind: "reply", id: message.id, ok: true, value });
@@ -99,6 +122,10 @@ export class ProjectionRunner {
           events.started(message.report);
           return;
         case "step":
+          if (message.report.reconciled?.full === true) {
+            const reconciled = message.report.reconciled;
+            for (const waiting of this.#rebuilds.splice(0)) waiting.resolve(reconciled);
+          }
           events.step(message.report, message.ms);
           return;
         case "error":
@@ -108,6 +135,24 @@ export class ProjectionRunner {
     });
     this.#worker.on("error", () => {
       events.failed("STORAGE_WORKER_FAILED");
+    });
+  }
+
+  /**
+   * A full rebuild (`tasks view rebuild`, A1 3.13 rule 5): every file of the record is looked at,
+   * and every task queued. Resolves with what the reconciliation found.
+   */
+  rebuild(): Promise<Reconciled> {
+    if (this.#ended || this.#stopping !== undefined) {
+      return Promise.reject(new ProjectionGone("The projection is not running"));
+    }
+    return new Promise((resolve, reject) => {
+      this.#rebuilds.push({ resolve, reject });
+      try {
+        this.#worker.postMessage({ kind: "rebuild" } satisfies ProjectionCommand);
+      } catch {
+        // The exit handler answers it.
+      }
     });
   }
 
