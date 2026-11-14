@@ -88,6 +88,8 @@ export const RPC_METHODS = {
   "setup/homes": CLI,
   "setup/home_grant": USER,
   "setup/home_revoke": USER,
+  // `tasks doctor --live` (A3 3.14, M4.05): which instances' tool calls this start saw.
+  "setup/seen": CLI,
   "launch.claim": SHIM,
   "launch.attach": SHIM,
   "launch.started": SHIM,

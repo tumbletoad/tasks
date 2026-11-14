@@ -77,7 +77,7 @@ const LOCAL: readonly [string, string][] = [
     "Connect this machine's agent apps: their MCP entries (setup agents), T3 Code (setup t3)",
   ],
   ["mcp", "Connect an agent app to the service over stdio (its MCP server entry runs this)"],
-  ["doctor", "Check the install and the service (--self-test, --json)"],
+  ["doctor", "Check the install, the service and the agent apps (--self-test, --live, --json)"],
   ["install", "Finish an install: the install scripts run tasks install --finish"],
   ["update", "Update from a signed release archive (--from <archive>), --rollback or --repair"],
   ["serve", "Run the service (for service managers)"],
