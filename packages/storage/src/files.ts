@@ -319,16 +319,23 @@ const COPY_CHUNK = 4 * 1024 * 1024;
  * Node's EEXIST and stays as it is. `source` keeps its name: the caller removes it. A copy that
  * fails midway removes its partial file while that is still the file it created. Returns the
  * identity of the file now at `dest`, as the publication left it.
+ *
+ * It throws only when it published nothing: once `dest` holds the complete file nothing in it can
+ * fail, so a caller that sees it return knows the name is taken, and one that sees it throw knows
+ * it is not (a partial copy it could not remove again is a leftover, never a complete file).
  */
 export function publishExclusive(
   source: string,
   dest: string,
   io: FileIo = NODE_IO,
 ): { how: Published; id: BigIntStats } {
+  // The source's identity before the link: a link changes none of what a caller compares (the
+  // file number, volume, size and modification time), and nothing may fail once it is made.
+  const id = lstatSync(source, { bigint: true });
   try {
     io.linkSync(source, dest);
     // The new name is the source file itself, which is this caller's own.
-    return { how: "link", id: lstatSync(source, { bigint: true }) };
+    return { how: "link", id };
   } catch (error) {
     const code = errnoCode(error);
     if (code !== undefined && NO_FALLBACK.has(code)) throw error;
@@ -382,13 +389,15 @@ function sameFileId(path: string, before: BigIntStats): boolean {
  * `.<name>.tmp-<random>` (the same pattern writeFileAtomic uses, so a crash leaves a leftover the
  * listings know), every byte written, fsync, then publishExclusive, the temporary name removed, and
  * the folder synced. Anything at `name` fails with Node's EEXIST and stays. Returns the identity
- * of the published file.
+ * of the published file. `onPublished` runs the moment the name is taken, before the folder sync,
+ * which can still fail: a caller learns there that its file is published whatever follows.
  */
 export function writeFileExclusive(
   folder: string,
   name: string,
   text: string,
   io: FileIo = NODE_IO,
+  onPublished?: () => void,
 ): BigIntStats {
   const temporary = join(folder, `.${name}.tmp-${randomHex()}`);
   const data = Buffer.from(text, "utf8");
@@ -400,6 +409,7 @@ export function writeFileExclusive(
     open = false;
     io.closeSync(fd);
     const { id } = publishExclusive(temporary, join(folder, name), io);
+    onPublished?.();
     fsyncFolder(folder, io);
     return id;
   } finally {

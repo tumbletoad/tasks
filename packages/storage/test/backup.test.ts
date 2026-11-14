@@ -580,6 +580,69 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
     }
   });
 
+  test("a failure after the sidecar took its name (the folder's sync) removes nothing of the pair", async () => {
+    const checked = await checkedDriver();
+    for (const [way, base] of WAYS) {
+      const { folder } = await createFixtureSpace(folders.make());
+      await writeCommits(folder, 2);
+      const dir = join(folder, "backups");
+      // The folder sync is POSIX's (files.ts fsyncFolder): run it on every OS from the data's
+      // publication on, and fail it once the sidecar has its name.
+      const FOLDER_FD = -4242;
+      let failed = false;
+      const io: FileIo = {
+        ...base,
+        openSync: (path, flags, mode) =>
+          path === dir ? FOLDER_FD : base.openSync(path, flags, mode),
+        closeSync: (fd) => {
+          if (fd !== FOLDER_FD) base.closeSync(fd);
+        },
+        fsyncSync: (fd) => {
+          if (fd !== FOLDER_FD) {
+            base.fsyncSync(fd);
+            return;
+          }
+          if (readdirSync(dir).some((n) => n.endsWith(".json") && !n.startsWith("."))) {
+            failed = true;
+            throw Object.assign(new Error("injected"), { code: "EIO" });
+          }
+        },
+      };
+      const platform = Object.getOwnPropertyDescriptor(process, "platform");
+      try {
+        await expectCode(
+          () =>
+            backupSpaceWith(
+              checked,
+              folder,
+              { kind: "manual" },
+              {
+                io,
+                at: (p) => {
+                  if (p === "data-published") {
+                    Object.defineProperty(process, "platform", { value: "linux" });
+                  }
+                },
+              },
+            ),
+          "BACKUP_FAILED",
+        );
+      } finally {
+        if (platform !== undefined) Object.defineProperty(process, "platform", platform);
+      }
+      expect(failed, way).toBe(true);
+      // The pair stays for the reader's checks, and it is a complete backup that restores.
+      const listing = listBackups(dir);
+      expect(listing.backups.map((b) => b.state), way).toEqual(["ok"]);
+      const restored = await restoreBackup(
+        checked,
+        listing.backups[0]?.file ?? "",
+        join(folders.make(), "mira"),
+      );
+      expect(restored.space.lastSeq, way).toBe(2);
+    }
+  });
+
   test("without hard links the pair is published by exclusive copies, and restores", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());

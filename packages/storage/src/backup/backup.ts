@@ -297,11 +297,15 @@ export async function writeBackup(
     // A cleanup that judged the data a leftover (a backup stopped for over an hour) would leave a
     // sidecar without data, and a migration would commit behind a backup that is not there.
     if (!sameFile(file, data.id, digests.compressedSize)) throw dataGone();
-    publish(() => writeFileExclusive(backupDir, `${name}${SIDECAR_SUFFIX}`, text, io));
-    // The pair is published: from here on nothing of it is removed, whatever fails.
     const published = data.id;
-    data = undefined;
-    own.length = 0;
+    publish(() =>
+      writeFileExclusive(backupDir, `${name}${SIDECAR_SUFFIX}`, text, io, () => {
+        // The pair is published, before the folder's sync: from here on nothing of it is
+        // removed, whatever fails.
+        data = undefined;
+        own.length = 0;
+      }),
+    );
     seams.at?.("sidecar-published");
     // The backup exists only if its data is still the file it published. If not, the pair stays
     // for the reader's checks, which list it by state and never restore it.
