@@ -96,3 +96,6 @@ argv = ["{exec}", "--workspace", "{cwd}", "{extra_args}", "--", "{brief}"]
 
 [override.claude-desktop.link]
 budget = 1500
+
+[setup.managed]
+paths = ["/home/mira/.claude/CLAUDE.md", "/home/mira/dotfiles/codex"]
