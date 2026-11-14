@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 53 of 104, and the grant gate M2.04b outside the base count.
+**Done so far:** 54 of 104, and the grant gate M2.04b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 8 · M5 13 · M6 15 · M7 10 · total 104. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -137,10 +137,13 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | M4.02 | Autonomy and proposals | M3.01 | M | ready |
 | M4.03 | Digest v1 and framing | M3.01, M3.05 | M | ready |
 | M4.04 | Final server instructions | M4.01 | S | todo |
-| M4.05 | Setup for remaining apps, doctor | M2.14 | M | doing |
+| M4.05 | Setup for remaining apps, doctor | M2.14 | M | done |
+| M4.05b | What M4.05 left: doctor's launch rows and sessions row, a free instance ID in setup | M4.05, M2.04b | S | ready |
 | M4.06 | Binding complete | M2.04, M2.04b | M | doing |
 | M4.07 | Source ingestion | M4.01 | S | todo |
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
+
+M4.05b is not in the base count.
 
 ## M5: the planner UI (parallel with M6 and the importer)
 

@@ -155,6 +155,7 @@ export const TaskDetail = TaskRow.extend({
   context: z.string().describe("Markdown context: the first 800 characters"),
   waiting_on: z.string().describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Starred for today"),
+  created: z.string().regex(patterns.instant).describe("When it was created").optional(),
   place: DigestPlace.describe("Its place on this machine").optional(),
   wrap_state: WrapState.optional(),
   outcome: z.string().describe("Outcome of the last completion").optional(),
