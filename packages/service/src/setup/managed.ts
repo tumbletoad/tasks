@@ -6,37 +6,42 @@
 //   3. A git repository other than the home tracks the file.
 //   4. machine.toml lists it, or a folder above it, under `[setup.managed] paths`.
 //
-// Git is read from its files, never started (A1 3.15). Setup finds the repository git itself would
-// find: it walks up from the file's folder as the OS resolves it (links, junctions, short names),
-// and the first folder that holds an entry named `.git`, of any kind, is the work tree. Its `.git`
-// is read through links, as git reads it: a folder is the repository's metadata, and a file names
-// it on a `gitdir:` line (a linked worktree, a submodule, `--separate-git-dir`). Any other `.git`
-// (a link whose target is gone, a file without that line, something that is neither) cannot be
-// read for certain. A repository at the home itself, or inside it, is the person's own record of
-// that home, not another tool's. "Tracks" means the work tree's index has an entry for the file.
-// The index is read only when every byte adds up: its trailing checksum (which also tells SHA-1
-// from SHA-256 names), its entries, its extensions. Whatever cannot be read for certain (such a
-// `.git`, a split index, an index over the bound, a damaged one) counts as tracked: the safe side
-// for a write is to make none. A repository git finds only through GIT_DIR, `--git-dir` or
-// `core.worktree` leaves no `.git` beside the file, so setup cannot see it: rule 4 lists such files.
-import { createHash } from "node:crypto";
-import {
-  closeSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  readSync,
-  realpathSync,
-  statSync,
-} from "node:fs";
+// Rule 3 asks git and never reads git's files: how git finds a repository (gitfiles, `core.worktree`,
+// folders it skips) and what its index holds are git's to know, and a second reader gets them wrong.
+// 1. The walk: from the file's folder as the OS resolves it (links, junctions, short names) up to
+//    the root of its file system, with no level limit, setup notes whether any folder holds an
+//    entry named `.git`, of any kind. It reads nothing inside one, and an error while looking
+//    counts as one being there. With none, the file is in no repository git can find from it.
+// 2. The question: git, run in that folder as a helper of the runner (@tasks/launch helpers.ts,
+//    GIT_MS each, its output bounded), lists the file if it tracks it (`ls-files -z`, the name as a
+//    literal pathspec, without case on Windows and macOS). Exit 0 with nothing listed is git's "a
+//    repository, and not tracked": the file is not managed. Something listed is tracked, and then
+//    git names the work tree (`rev-parse --show-toplevel`): one that is the home or inside it is the
+//    person's own record of that home, not another tool's. Everything else is managed, the safe side
+//    for a write: no git, a failure, the deadline, an answer of another form, a folder that is no
+//    repository after all. The answer is read from the exit status and the output's bytes, never
+//    from git's words.
+// 3. Looking changes and starts nothing: the calling environment's GIT_ variables are left out (they
+//    name a repository for the caller, not for the file), optional locks are off, git looks across
+//    file systems as the walk does, never prompts, runs with no pager and in the C locale, and the
+//    file-system monitor (`core.fsmonitor`; older Git for Windows `core.useBuiltinFSMonitor`), the
+//    one configured program these two commands start, is switched off on the command line, which
+//    wins over every configuration file. No shell: the name is passed after `--`.
+//
+// A repository found only through GIT_DIR or `--git-dir` (a bare dotfiles repository) leaves no
+// `.git` above the file, so setup cannot see it: rule 4 lists such files.
+import { lstatSync, realpathSync } from "node:fs";
 import { posix, win32 } from "node:path";
+import { helperOutput, nodeDetectHost, onPath, type Env } from "@tasks/launch";
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
 
 /** Paths compare without case on Windows and macOS, as their file systems do by default. */
+const caseless = (platform: NodeJS.Platform): boolean =>
+  platform === "win32" || platform === "darwin";
+
 const fold = (platform: NodeJS.Platform, path: string): string =>
-  platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
+  caseless(platform) ? path.toLowerCase() : path;
 
 /** Whether `inner` is `outer` or lies inside it. */
 export function within(platform: NodeJS.Platform, outer: string, inner: string): boolean {
@@ -54,17 +59,32 @@ export function listedAsManaged(
   return paths.some((listed) => within(platform, listed, file));
 }
 
-/** How far up the folders the search for a work tree goes. */
-const MAX_LEVELS = 64;
-/** An index past this size is not read: it counts as tracking the file. */
-const MAX_INDEX_BYTES = 64 * 1024 * 1024;
+/** How long one git run may take. */
+export const GIT_MS = 10_000;
+/** At most this much of git's output is read: more is no answer. */
+const GIT_OUTPUT_CHARS = 64 * 1024;
+
+/** How setup asks git (rule 3). */
+export interface GitAsk {
+  /** The person's environment: git runs in it, without its GIT_ variables. */
+  readonly env: Env;
+  /** git's command as an argv prefix. Default: `git` on `env`'s PATH (gitOnPath). */
+  readonly git?: readonly string[];
+  /** How long one git run may take. Default: GIT_MS. */
+  readonly deadlineMs?: number;
+}
 
 /**
- * Whether an entry named `.git` is at `path`, whatever its kind (a link, a junction, a file, a
- * folder). Only "nothing there" lets the search go on: an entry that cannot be looked at is there
- * as far as the search knows.
+ * `git` on the PATH as the OS finds it (launch's `onPath`), or undefined. A `.cmd` shim found
+ * there is never run (the runner refuses it), so it is no git either.
  */
-function boundary(path: string): boolean {
+export function gitOnPath(platform: NodeJS.Platform, env: Env): readonly string[] | undefined {
+  const found = onPath(nodeDetectHost({ platform, env, home: "" }), "git");
+  return found === undefined ? undefined : [found];
+}
+
+/** Whether an entry named `.git` is at `path`. Only "nothing there" is no; an error is yes. */
+function gitEntry(path: string): boolean {
   try {
     lstatSync(path);
     return true;
@@ -74,13 +94,14 @@ function boundary(path: string): boolean {
   }
 }
 
-/** What `path` is, links followed as git follows them; undefined when it is neither or unreadable. */
-function kindOf(path: string): "dir" | "file" | undefined {
-  try {
-    const s = statSync(path);
-    return s.isDirectory() ? "dir" : s.isFile() ? "file" : undefined;
-  } catch {
-    return undefined;
+/** Whether `folder` or a folder above it, up to the root, holds an entry named `.git`. */
+function underGitEntry(platform: NodeJS.Platform, folder: string): boolean {
+  const p = pathOf(platform);
+  for (let dir = folder; ;) {
+    if (gitEntry(p.join(dir, ".git"))) return true;
+    const up = p.dirname(dir);
+    if (up === dir) return false;
+    dir = up;
   }
 }
 
@@ -93,243 +114,66 @@ function resolved(path: string): string {
   }
 }
 
-/**
- * A small text file of git's (`.git` as a file, `commondir`, `config`), or undefined. Only a
- * regular file is opened: reading through a link must never wait on a pipe.
- */
-function smallText(path: string): string | undefined {
-  if (kindOf(path) !== "file") return undefined;
-  try {
-    const bytes = readFileSync(path);
-    return bytes.length > 64 * 1024 ? undefined : bytes.toString("utf8");
-  } catch {
-    return undefined;
+/** The environment git runs in: the person's, without the GIT_ variables, with setup's own. */
+export function gitEnv(platform: NodeJS.Platform, env: Env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) continue;
+    const key = platform === "win32" ? name.toUpperCase() : name;
+    if (key.startsWith("GIT_") || key === "LC_ALL") continue;
+    out[name] = value;
   }
+  return {
+    ...out,
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_DISCOVERY_ACROSS_FILESYSTEM: "1",
+    LC_ALL: "C",
+  };
 }
 
-/**
- * The bytes of a file up to `max`. Undefined only when the file is not there; "unknown" when it is
- * there but cannot be read for certain: past the bound, not a regular file, no access, locked.
- */
-function boundedBytes(path: string, max: number): Buffer | undefined | "unknown" {
-  // Something there that is not a regular file (a pipe would block the open) is not opened.
-  try {
-    if (!statSync(path).isFile()) return "unknown";
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : "unknown";
-  }
-  let fd: number;
-  try {
-    fd = openSync(path, "r");
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : "unknown";
-  }
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.size > max) return "unknown";
-    const size = stat.size;
-    const buffer = Buffer.alloc(size);
-    let read = 0;
-    while (read < size) {
-      const n = readSync(fd, buffer, read, size - read, read);
-      if (n === 0) break;
-      read += n;
-    }
-    return buffer.subarray(0, read);
-  } catch {
-    return "unknown";
-  } finally {
-    closeSync(fd);
-  }
-}
+/** git's options before every question: nothing configured is started, no pager. */
+const GIT_OPTIONS = [
+  "--no-pager",
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.useBuiltinFSMonitor=false",
+] as const;
 
-class Unreadable extends Error {}
-
-type HashBytes = 20 | 32;
+/** The file's name as a pathspec that matches only that name: literal, caseless where paths are. */
+const pathspec = (platform: NodeJS.Platform, name: string): string =>
+  `:(${caseless(platform) ? "literal,icase" : "literal"})${name}`;
 
 /**
- * The object format git's config names (`[extensions] objectFormat`), read with git's own syntax:
- * section and key in any case, the value quoted or not, a `#` or `;` comment after it, the last
- * one winning. Undefined when it names none or one this reader does not know.
+ * Rule 3: a git repository other than the home tracks `file`, by git's own answer (the header).
+ * True on the safe side whenever git gives no clear answer.
  */
-export function configuredFormat(config: string): HashBytes | undefined {
-  let section = "";
-  let value: string | undefined;
-  for (const raw of config.split(/\r?\n/u)) {
-    let line = raw.trim();
-    const header = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"(?:[^"\\]|\\.)*")?\s*\]/u.exec(line);
-    if (header !== null) {
-      section = (header[1] ?? "").toLowerCase();
-      line = line.slice(header[0].length).trim();
-    }
-    if (section !== "extensions") continue;
-    const entry = /^objectformat\s*=\s*(.*)$/iu.exec(line);
-    if (entry === null) continue;
-    // The value up to a comment outside quotes, without its quotes.
-    let text = "";
-    let quoted = false;
-    for (const c of entry[1] ?? "") {
-      if (c === '"') quoted = !quoted;
-      else if (!quoted && (c === "#" || c === ";")) break;
-      else text += c;
-    }
-    value = text.trim().toLowerCase();
-  }
-  return value === "sha256" ? 32 : value === "sha1" || value === undefined ? 20 : undefined;
-}
-
-/**
- * The size of the object names in an index, from its trailing checksum: SHA-1 or SHA-256 of every
- * byte before it. An index written without one (git's `index.skipHash`) ends in zeros: the
- * repository's configured format then decides. Anything else is a damaged index: Unreadable.
- */
-export function indexHashBytes(index: Buffer, configured: HashBytes | undefined): HashBytes {
-  for (const [bytes, algorithm] of [
-    [20, "sha1"],
-    [32, "sha256"],
-  ] as const) {
-    if (index.length < 12 + bytes) continue;
-    const body = index.subarray(0, index.length - bytes);
-    const trailer = index.subarray(index.length - bytes);
-    if (createHash(algorithm).update(body).digest().equals(trailer)) return bytes;
-  }
-  if (
-    configured !== undefined &&
-    index.length >= 12 + configured &&
-    index.subarray(index.length - configured).every((b) => b === 0)
-  ) {
-    return configured;
-  }
-  throw new Unreadable();
-}
-
-/**
- * The paths an index lists (`/`-separated, relative to the work tree), and the folders a sparse
- * index keeps as one entry (ending in `/`). Versions 2, 3 and 4; SHA-1 or SHA-256 object names.
- * Every byte must add up: the entries, then whole extensions up to the trailing checksum. A split
- * index (`link` extension) keeps entries in another file: Unreadable.
- */
-export function indexPaths(index: Buffer, hashBytes: HashBytes): string[] {
-  if (index.length < 12 || index.toString("latin1", 0, 4) !== "DIRC") throw new Unreadable();
-  const version = index.readUInt32BE(4);
-  if (version < 2 || version > 4) throw new Unreadable();
-  const count = index.readUInt32BE(8);
-  const end = index.length - hashBytes;
-  if (end < 12) throw new Unreadable();
-  const paths: string[] = [];
-  let at = 12;
-  let previous: Buffer = Buffer.alloc(0);
-  for (let n = 0; n < count; n += 1) {
-    const start = at;
-    at += 40 + hashBytes;
-    if (at + 2 > end) throw new Unreadable();
-    const flags = index.readUInt16BE(at);
-    at += 2;
-    if ((flags & 0x4000) !== 0) {
-      if (version < 3) throw new Unreadable();
-      at += 2;
-    }
-    let name: Buffer;
-    if (version === 4) {
-      // The number of bytes to drop from the end of the previous name, then the rest of this one.
-      let c = index[at] ?? 0;
-      at += 1;
-      let drop = c & 0x7f;
-      while ((c & 0x80) !== 0) {
-        if (at >= end) throw new Unreadable();
-        c = index[at] ?? 0;
-        at += 1;
-        drop = ((drop + 1) << 7) + (c & 0x7f);
-      }
-      const nul = index.indexOf(0, at);
-      if (nul === -1 || nul >= end || drop > previous.length) throw new Unreadable();
-      name = Buffer.concat([previous.subarray(0, previous.length - drop), index.subarray(at, nul)]);
-      at = nul + 1;
-    } else {
-      const nul = index.indexOf(0, at);
-      if (nul === -1 || nul >= end) throw new Unreadable();
-      name = index.subarray(at, nul);
-      // Padded with NULs to a multiple of eight bytes from the entry's start.
-      const length = nul - start;
-      at = start + (Math.floor(length / 8) + 1) * 8;
-    }
-    if (at > end) throw new Unreadable();
-    previous = name;
-    paths.push(name.toString("utf8"));
-  }
-  // Extensions, each whole, ending exactly at the trailing checksum.
-  while (at < end) {
-    if (at + 8 > end) throw new Unreadable();
-    const signature = index.toString("latin1", at, at + 4);
-    const size = index.readUInt32BE(at + 4);
-    if (signature === "link") throw new Unreadable();
-    at += 8 + size;
-  }
-  if (at !== end) throw new Unreadable();
-  return paths;
-}
-
-/**
- * Whether the repository whose work tree is `top` tracks `file` (inside `top`). A `.git` that is
- * neither a folder nor a file naming one counts as tracking it.
- */
-function tracks(platform: NodeJS.Platform, top: string, file: string): boolean {
-  const p = pathOf(platform);
-  const dotGit = p.join(top, ".git");
-  let gitDir: string;
-  const kind = kindOf(dotGit);
-  if (kind === "dir") gitDir = dotGit;
-  else if (kind === "file") {
-    const pointer = /^gitdir:\s*(.+?)\s*$/mu.exec(smallText(dotGit) ?? "")?.[1];
-    if (pointer === undefined) return true;
-    gitDir = p.resolve(top, pointer);
-    if (kindOf(gitDir) !== "dir") return true;
-  } else return true;
-  const commonDir = smallText(p.join(gitDir, "commondir"))?.trim();
-  const common =
-    commonDir === undefined || commonDir === "" ? gitDir : p.resolve(gitDir, commonDir);
-  const index = boundedBytes(p.join(gitDir, "index"), MAX_INDEX_BYTES);
-  // No index yet: a repository where nothing was ever added tracks nothing. An index that is there
-  // but cannot be read (past the bound, no access, locked) is no proof either way.
-  if (index === undefined) return false;
-  if (index === "unknown") return true;
-  let paths: string[];
-  try {
-    const configured = configuredFormat(smallText(p.join(common, "config")) ?? "");
-    paths = indexPaths(index, indexHashBytes(index, configured));
-  } catch (error) {
-    if (error instanceof Unreadable || error instanceof RangeError) return true;
-    throw error;
-  }
-  const rel = fold(platform, p.relative(top, file).split(p.sep).join("/"));
-  return paths.some((path) => {
-    const entry = fold(platform, path);
-    return entry === rel || (entry.endsWith("/") && rel.startsWith(entry));
-  });
-}
-
-/**
- * Rule 3: a git repository other than the home tracks `file`. The work tree git would find from
- * the file's folder decides (the header); one at the home or inside it is the home's own.
- */
-export function trackedByAnotherRepository(
+export async function trackedByAnotherRepository(
   platform: NodeJS.Platform,
   file: string,
   home: string,
-): boolean {
+  ask: GitAsk,
+): Promise<boolean> {
   const p = pathOf(platform);
   const absolute = p.resolve(file);
   const folder = resolved(p.dirname(absolute));
-  const real = p.join(folder, p.basename(absolute));
-  const realHome = resolved(p.resolve(home));
-  let dir = folder;
-  for (let level = 0; level < MAX_LEVELS; level += 1) {
-    if (boundary(p.join(dir, ".git"))) {
-      return within(platform, realHome, dir) ? false : tracks(platform, dir, real);
-    }
-    const up = p.dirname(dir);
-    if (up === dir) return false;
-    dir = up;
-  }
-  return false;
+  if (!underGitEntry(platform, folder)) return false;
+  const git = ask.git ?? gitOnPath(platform, ask.env);
+  if (git === undefined || git.length === 0) return true;
+  const run = (args: readonly string[]) =>
+    helperOutput([...git, ...GIT_OPTIONS, ...args], {
+      env: gitEnv(platform, ask.env),
+      cwd: folder,
+      deadlineMs: ask.deadlineMs ?? GIT_MS,
+      maxChars: GIT_OUTPUT_CHARS,
+    });
+  const listed = await run(["ls-files", "-z", "--", pathspec(platform, p.basename(absolute))]);
+  if (listed === undefined) return true;
+  if (listed === "") return false;
+  // Tracked: by the home's own repository, or by another one.
+  const top = await run(["rev-parse", "--show-toplevel"]);
+  const line = top?.endsWith("\n") === true ? top.slice(0, -1) : undefined;
+  if (line === undefined || line === "" || line.includes("\n") || !p.isAbsolute(line)) return true;
+  return !within(platform, resolved(p.resolve(home)), resolved(p.resolve(line)));
 }

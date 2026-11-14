@@ -31,6 +31,7 @@ import {
   claudeDesktopFolders,
   codexAppEngines,
   codexEngines,
+  gitOnPath,
   planChange,
   planOf,
   readRecords,
@@ -51,8 +52,13 @@ const BOM = "\u{FEFF}";
 const SENTINEL = "sentinel-secret-5b1c";
 
 let base: string;
+/** The git on this test's PATH, which rule 3 of A3 3.12 asks (the fakes' PATH has none). */
+let gitCommand: readonly string[];
 beforeAll(() => {
   base = mkdtempSync(join(tmpdir(), "tasks-setup-apps-"));
+  const found = gitOnPath(process.platform, process.env);
+  if (found === undefined) throw new Error("these tests need git on the PATH");
+  gitCommand = found;
 });
 afterAll(() => {
   // This file's own folder, by its full name. Retried: on Windows a fake's working folder can stay
@@ -159,7 +165,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const before = readFileSync(file);
       const input = await inputOf(w, place.env);
 
-      const view = only(survey(input), "claude-desktop");
+      const view = only(await survey(input), "claude-desktop");
       expect(view.home).toMatchObject({ instance: "claude-desktop", file, hosts: [] });
       expect(view.state).toBe("not_registered");
       const change = planChange(input, view, SPACE);
@@ -217,7 +223,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       });
       expect(JSON.stringify(readRecords(w.state))).not.toContain(SENTINEL);
 
-      const registered = only(survey(input), "claude-desktop");
+      const registered = only(await survey(input), "claude-desktop");
       expect(registered.state).toBe("registered");
       expect((await applyHome(input, registered, SPACE, GRANT)).result).toBe("unchanged");
       expect(await removeHome(input, registered)).toMatchObject({ result: "removed" });
@@ -238,7 +244,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const file = join(place.folder, "claude_desktop_config.json");
 
       // The app has not made its file yet: setup does not create it.
-      const unset = only(survey(input), "claude-desktop");
+      const unset = only(await survey(input), "claude-desktop");
       expect(planChange(input, unset, SPACE)).toBe("not_set_up");
       expect(await applyHome(input, unset, SPACE, null)).toMatchObject({
         result: "left",
@@ -249,22 +255,22 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       // A file without servers: the table comes and goes with the entry.
       const bare = '{\n  "preferences": {\n    "menuBarEnabled": true\n  }\n}\n';
       writeFileSync(file, bare);
-      const view = only(survey(input), "claude-desktop");
+      const view = only(await survey(input), "claude-desktop");
       const change = planChange(input, view, SPACE);
       expect(typeof change !== "string" && change.diff[0]).toBe("+ mcpServers = {}");
       expect((await applyHome(input, view, SPACE, null)).result).toBe("applied");
-      expect(await removeHome(input, only(survey(input), "claude-desktop"))).toMatchObject({
+      expect(await removeHome(input, only(await survey(input), "claude-desktop"))).toMatchObject({
         result: "removed",
       });
       expect(readFileSync(file, "utf8")).toBe(bare);
 
       // Changed by hand after apply: left alone, and its record kept for status.
       expect(
-        (await applyHome(input, only(survey(input), "claude-desktop"), SPACE, null)).result,
+        (await applyHome(input, only(await survey(input), "claude-desktop"), SPACE, null)).result,
       ).toBe("applied");
       const edited = readFileSync(file, "utf8").replace('"--app"', '"--app-x"');
       writeFileSync(file, edited);
-      const changed = only(survey(input), "claude-desktop");
+      const changed = only(await survey(input), "claude-desktop");
       expect(changed.state).toBe("edited");
       expect(await removeHome(input, changed)).toMatchObject({ result: "left", reason: "edited" });
       expect(readFileSync(file, "utf8")).toBe(edited);
@@ -280,9 +286,12 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       writeFileSync(bigFile, large);
       const bigInput = await inputOf(big, bigPlace.env);
       expect(
-        (await applyHome(bigInput, only(survey(bigInput), "claude-desktop"), SPACE, null)).result,
+        (await applyHome(bigInput, only(await survey(bigInput), "claude-desktop"), SPACE, null))
+          .result,
       ).toBe("applied");
-      expect(await removeHome(bigInput, only(survey(bigInput), "claude-desktop"))).toMatchObject({
+      expect(
+        await removeHome(bigInput, only(await survey(bigInput), "claude-desktop")),
+      ).toMatchObject({
         result: "removed",
       });
       expect(readFileSync(bigFile, "utf8")).toBe(large);
@@ -303,7 +312,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         writeFileSync(join(place.second, "claude_desktop_config.json"), "{}");
       }
       const input = await inputOf(w, place.env);
-      const found = survey(input).filter((v) => v.home.app === "claude-desktop");
+      const found = (await survey(input)).filter((v) => v.home.app === "claude-desktop");
       const [first] = found;
       if (first === undefined) throw new Error("no Claude Desktop home");
       if (place.second !== undefined) {
@@ -333,7 +342,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
           : join(w.root, "other", "c.json");
       mkdirSync(dirname(brokenFile), { recursive: true });
       writeFileSync(brokenFile, "{ not json");
-      const again = survey(input).filter((v) => v.home.app === "claude-desktop");
+      const again = (await survey(input)).filter((v) => v.home.app === "claude-desktop");
       const broken: HomeView = again[1] ?? {
         ...first,
         home: { ...first.home, home: dirname(brokenFile), file: brokenFile },
@@ -383,7 +392,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       );
       const before = readFileSync(settings);
       const input = await inputOf(w);
-      const views = survey(input);
+      const views = await survey(input);
       expect(
         views.map((v) => [v.home.app, v.home.instance, v.home.hosts, v.home.isDefault]).sort(),
       ).toEqual(
@@ -413,7 +422,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
           ["codex", null, join(w.home, ".codex-personal")],
         ].sort(),
       );
-      for (const view of survey(input)) {
+      for (const view of await survey(input)) {
         expect((await removeHome(input, view)).result, view.home.instance).toBe("removed");
       }
       // T3's own file was read, never written, and its values went nowhere.
@@ -435,22 +444,22 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       );
       const named = await inputOf(w, { T3CODE_HOME: join(w.root, "t3-elsewhere") });
       expect(
-        survey(named)
+        (await survey(named))
           .filter((v) => v.home.hosts.includes("t3"))
           .map((v) => v.home.instance),
       ).toEqual(["codex-personal"]);
       if (!windows) {
         // A settings file anyone can change, or a link, is not believed: what it says about its
         // instances is not used, and only T3's default homes are taken as its (here `.codex`).
-        const t3Hosted = () =>
-          survey(named)
+        const t3Hosted = async () =>
+          (await survey(named))
             .filter((v) => v.home.hosts.includes("t3"))
             .map((v) => v.home.instance);
         chmodSync(join(elsewhere, "settings.json"), 0o646);
-        expect(t3Hosted()).toEqual(["codex"]);
+        expect(await t3Hosted()).toEqual(["codex"]);
         rmSync(join(elsewhere, "settings.json"));
         symlinkSync(settings, join(elsewhere, "settings.json"));
-        expect(t3Hosted()).toEqual(["codex"]);
+        expect(await t3Hosted()).toEqual(["codex"]);
       }
 
       // T3 names Claude Code's default folder by its path: its Claude then reads `.claude.json`
@@ -469,7 +478,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         { mode: 0o600 },
       );
       const explicit = await inputOf(w, { T3CODE_HOME: join(w.root, "t3-explicit") });
-      expect(byFolder(survey(explicit), "claude-code", ".claude").home).toMatchObject({
+      expect(byFolder(await survey(explicit), "claude-code", ".claude").home).toMatchObject({
         isDefault: true,
         file: join(w.home, ".claude.json"),
         hosts: [],
@@ -490,7 +499,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         // The app has no build here: no engine, no host.
         const input = await inputOf(w);
         expect(codexAppEngines(input)).toEqual([]);
-        expect(only(survey(input), "codex").home.hosts).toEqual([]);
+        expect(only(await survey(input), "codex").home.hosts).toEqual([]);
         return;
       }
       const local = join(w.root, "local");
@@ -519,7 +528,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
           found.run(argv[0] === engine ? [process.execPath, fake, ...argv.slice(1)] : argv, env),
       };
       expect(codexAppEngines(input)).toEqual([engine]);
-      const view = only(survey(input), "codex");
+      const view = only(await survey(input), "codex");
       expect(view.home).toMatchObject({ instance: "codex", hosts: ["codex-app"] });
       const change = planChange(input, view, SPACE);
       expect(typeof change !== "string" && change.exec).toEqual([engine]);
@@ -528,7 +537,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       expect(readFileSync(join(w.home, ".codex", "config.toml"), "utf8")).toContain(
         `[mcp_servers.${MCP_SERVER_KEY}]`,
       );
-      expect(await removeHome(input, only(survey(input), "codex"))).toMatchObject({
+      expect(await removeHome(input, only(await survey(input), "codex"))).toMatchObject({
         result: "removed",
       });
       // The file the engine's add made, emptied by its remove, is gone again.
@@ -551,7 +560,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         managedPaths: [join(w.home, ".codex"), join(place.folder, "claude_desktop_config.json")],
       };
       for (const app of ["codex", "claude-desktop"]) {
-        const view = only(survey(input), app);
+        const view = only(await survey(input), app);
         expect([app, view.state, view.refusal]).toEqual([app, "refused", "managed"]);
         expect(await applyHome(input, view, SPACE, null)).toMatchObject({
           result: "left",
@@ -575,9 +584,12 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const file = join(place.folder, "claude_desktop_config.json");
       writeFileSync(file, DESKTOP_JSON);
       const before = readFileSync(file);
-      linkedRepository(w.root, file);
-      const input = await inputOf(w, place.env);
-      const view = only(survey(input), "claude-desktop");
+      const repo = linkedRepository(w.root);
+      const input: SetupInput = { ...(await inputOf(w, place.env)), git: gitCommand };
+      // In the repository, not tracked: git says so, and setup goes on.
+      expect(only(await survey(input), "claude-desktop").state).toBe("not_registered");
+      repo(["add", pathIn(w.root, file)]);
+      const view = only(await survey(input), "claude-desktop");
       expect([view.state, view.refusal]).toEqual(["refused", "managed"]);
       expect(await applyHome(input, view, SPACE, null)).toMatchObject({
         result: "left",
@@ -592,13 +604,13 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       mkdirSync(at.folder, { recursive: true });
       const registered = join(at.folder, "claude_desktop_config.json");
       writeFileSync(registered, DESKTOP_JSON);
-      const later = await inputOf(r, at.env);
+      const later: SetupInput = { ...(await inputOf(r, at.env)), git: gitCommand };
       expect(
-        await applyHome(later, only(survey(later), "claude-desktop"), SPACE, null),
+        await applyHome(later, only(await survey(later), "claude-desktop"), SPACE, null),
       ).toMatchObject({ result: "applied" });
       const applied = readFileSync(registered);
-      linkedRepository(r.root, registered);
-      const now = only(survey(later), "claude-desktop");
+      linkedRepository(r.root)(["add", pathIn(r.root, registered)]);
+      const now = only(await survey(later), "claude-desktop");
       expect([now.state, now.refusal]).toEqual(["refused", "managed"]);
       expect(await removeHome(later, now)).toMatchObject({ result: "left", reason: "managed" });
       expect(readFileSync(registered)).toEqual(applied);
@@ -608,11 +620,14 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
   );
 });
 
+/** A file's path in the work tree at `root`, as git names it. */
+const pathIn = (root: string, file: string): string => relative(root, file).split(sep).join("/");
+
 /**
  * Makes `root` a git work tree whose `.git` is a link (a junction on Windows) to its metadata in a
- * sibling folder, and has git track `file`. Git runs with no system or global configuration.
+ * sibling folder, and returns git run there, with no system or global configuration.
  */
-function linkedRepository(root: string, file: string): void {
+function linkedRepository(root: string): (args: string[]) => void {
   const global = `${root}-gitconfig`;
   writeFileSync(global, "");
   const env = {
@@ -630,5 +645,5 @@ function linkedRepository(root: string, file: string): void {
   git(["init", "-q", `--separate-git-dir=${meta}`, root]);
   rmSync(join(root, ".git"));
   symlinkSync(meta, join(root, ".git"), windows ? "junction" : "dir");
-  git(["add", relative(root, file).split(sep).join("/")]);
+  return git;
 }

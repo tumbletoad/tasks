@@ -12,7 +12,14 @@ export {
 } from "./hosts.ts";
 export { addEntry, removeEntry, type JsonEdit } from "./json-edit.ts";
 export { parseStrictJson, type StrictJson } from "./json.ts";
-export { indexPaths, listedAsManaged, trackedByAnotherRepository } from "./managed.ts";
+export {
+  GIT_MS,
+  gitEnv,
+  gitOnPath,
+  listedAsManaged,
+  trackedByAnotherRepository,
+  type GitAsk,
+} from "./managed.ts";
 export * from "./print.ts";
 export * from "./run.ts";
 export * from "./state.ts";

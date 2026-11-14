@@ -163,7 +163,7 @@ export async function agentChecks(
 
   const { input } = await setupInputOf(io, options);
   const resolve = (argv: readonly string[]) => options.agents?.resolve?.(argv) ?? argv;
-  const views = survey(input).filter((view) => view.record !== undefined);
+  const views = (await survey(input)).filter((view) => view.record !== undefined);
   let session: Session | undefined;
   try {
     session = await connectService(io, options);
@@ -220,7 +220,7 @@ export async function agentChecks(
       }
     }
     checks.push(grantsCheck(input, views, rows));
-    checks.push(t3Check(input, survey(input)));
+    checks.push(t3Check(input, await survey(input)));
     checks.push(...SKIPPED_ROWS);
     if (!live) checks.push(liveSkipped(false, ""));
     else {

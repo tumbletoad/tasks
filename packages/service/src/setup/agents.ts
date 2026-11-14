@@ -269,6 +269,8 @@ export interface SetupInput {
   readonly instances: readonly Instance[];
   /** machine.toml's `[setup.managed] paths` (A3 3.12 rule 4). Default: none. */
   readonly managedPaths?: readonly string[];
+  /** git's command for A3 3.12 rule 3, as an argv prefix. Default: `git` on `env`'s PATH. */
+  readonly git?: readonly string[];
   /** macOS: the system's Applications folder (the Codex app's engine). Default: /Applications. */
   readonly systemApplications?: string;
   isFolder(path: string): boolean;
@@ -317,11 +319,14 @@ function fileOf(input: SetupInput, app: AgentApp, home: string, isDefault: boole
   return isDefault ? p.join(input.userHome, CLAUDE_FILE) : p.join(home, CLAUDE_FILE);
 }
 
-/** Rules 3 and 4 of A3 3.12, judged once per home and run. */
-function managedFile(input: SetupInput, file: string, home: string): boolean {
+/** Rules 3 and 4 of A3 3.12, judged once per home and run. Rule 3 asks git (managed.ts). */
+async function managedFile(input: SetupInput, file: string, home: string): Promise<boolean> {
   return (
     listedAsManaged(input.platform, file, input.managedPaths ?? []) ||
-    trackedByAnotherRepository(input.platform, file, home)
+    (await trackedByAnotherRepository(input.platform, file, home, {
+      env: input.env,
+      ...(input.git === undefined ? {} : { git: input.git }),
+    }))
   );
 }
 
@@ -386,11 +391,20 @@ function hostsOf(
  * home an instance names takes the instance's ID and account; any other takes detection's
  * proposal (T3's from its folder or provider key, Claude Desktop's from the catalogue).
  */
-export function agentHomes(input: SetupInput, found: Discovered = discover(input)): AgentHome[] {
+export async function agentHomes(
+  input: SetupInput,
+  found: Discovered = discover(input),
+): Promise<AgentHome[]> {
   const { platform, userHome, instances } = input;
   const p = pathOf(platform);
   const homes: AgentHome[] = [];
-  const add = (app: AgentApp, path: string, found_: boolean, id: string, account: string) => {
+  const add = async (
+    app: AgentApp,
+    path: string,
+    found_: boolean,
+    id: string,
+    account: string,
+  ): Promise<void> => {
     if (homes.some((h) => h.app === app && samePath(platform, h.home, path))) return;
     const rule = targetDef(APPS[app].target).detect.homes;
     const owner = instances.find(
@@ -417,13 +431,13 @@ export function agentHomes(input: SetupInput, found: Discovered = discover(input
       instance: owner?.id ?? id,
       account: owner?.account ?? account,
       hosts: hostsOf(input, found, app, home, isDefault),
-      managed: managedFile(input, file, home),
+      managed: await managedFile(input, file, home),
     });
   };
   for (const home of input.detection.homes) {
     const app: AgentApp = home.target === "codex-cli" ? "codex" : "claude-code";
     const def = targetDef(home.target);
-    add(
+    await add(
       app,
       home.path,
       home.suffix === "" && home.source === "home",
@@ -439,16 +453,16 @@ export function agentHomes(input: SetupInput, found: Discovered = discover(input
     if (app === undefined) continue;
     const { path, isDefault } = homeOf(instance, app, userHome, platform);
     if (!p.isAbsolute(path) || !input.isFolder(path)) continue;
-    add(app, path, isDefault, instance.id, instance.account);
+    await add(app, path, isDefault, instance.id, instance.account);
   }
   // T3's homes (A3 3.13.6 step 2): the same homes as the CLIs on most machines, so usually only
   // their host changes; a home only T3 uses is offered like any other.
   for (const t3 of found.t3) {
     if (!input.isFolder(t3.home)) continue;
-    add(t3.app, t3.home, t3.isDefault, t3InstanceId(t3, platform), proposedAccount(""));
+    await add(t3.app, t3.home, t3.isDefault, t3InstanceId(t3, platform), proposedAccount(""));
   }
   for (const folder of found.desktop) {
-    add("claude-desktop", folder, true, "claude-desktop", proposedAccount(""));
+    await add("claude-desktop", folder, true, "claude-desktop", proposedAccount(""));
   }
   return homes;
 }
@@ -766,7 +780,11 @@ export function inspectHome(home: AgentHome, record: HomeRecord | undefined): Ho
 }
 
 /** A home rebuilt from its record, for a home that detection no longer finds. */
-function homeOfRecord(input: SetupInput, found: Discovered, record: HomeRecord): AgentHome {
+async function homeOfRecord(
+  input: SetupInput,
+  found: Discovered,
+  record: HomeRecord,
+): Promise<AgentHome> {
   return {
     app: record.app,
     home: record.home,
@@ -776,7 +794,7 @@ function homeOfRecord(input: SetupInput, found: Discovered, record: HomeRecord):
     instance: record.instance,
     account: record.account,
     hosts: hostsOf(input, found, record.app, record.home, record.is_default),
-    managed: managedFile(input, record.file, record.home),
+    managed: await managedFile(input, record.file, record.home),
   };
 }
 
@@ -790,19 +808,23 @@ const recordOf = (records: readonly HomeRecord[], home: AgentHome, platform: Nod
  * there is what it checks, takes back and renews a row for, even when machine.toml now names the
  * home otherwise. Remove, then apply, moves an entry to what the machine says now.
  */
-export function survey(input: SetupInput): HomeView[] {
+export async function survey(input: SetupInput): Promise<HomeView[]> {
   const records = readRecords(input.stateDir);
   const found = discover(input);
-  const homes = agentHomes(input, found);
+  const homes = await agentHomes(input, found);
   for (const record of records) {
     if (!homes.some((h) => h.app === record.app && samePath(input.platform, h.home, record.home))) {
-      homes.push(homeOfRecord(input, found, record));
+      homes.push(await homeOfRecord(input, found, record));
     }
   }
-  return homes.map((home) => {
+  const views: HomeView[] = [];
+  for (const home of homes) {
     const record = recordOf(records, home, input.platform);
-    return inspectHome(record === undefined ? home : homeOfRecord(input, found, record), record);
-  });
+    views.push(
+      inspectHome(record === undefined ? home : await homeOfRecord(input, found, record), record),
+    );
+  }
+  return views;
 }
 
 /** The homes T3's provider instances use (A3 3.13.6), for doctor's `t3.homes`. */

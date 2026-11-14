@@ -447,7 +447,7 @@ export async function agentsCommand(
         const outcomes = await withSetupLock(input.stateDir, async () => {
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
-          const views = parsed.parts.includes("mcp") ? survey(input).filter(selected) : [];
+          const views = parsed.parts.includes("mcp") ? (await survey(input)).filter(selected) : [];
           const space = needsSpace(views) ? await spaceOf() : "";
           const items = planOf(input, views, space);
           if (planToken(space, items) !== parsed.plan) {
@@ -465,7 +465,9 @@ export async function agentsCommand(
       }
       case "remove": {
         const { outcomes, notes } = await withSetupLock(input.stateDir, async () => {
-          const views = survey(input).filter((view) => selected(view) && view.record !== undefined);
+          const views = (await survey(input)).filter(
+            (view) => selected(view) && view.record !== undefined,
+          );
           // Reverse order (A3 3.13.1): the latest apply first.
           views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
           const done: Outcome[] = [];
@@ -600,7 +602,7 @@ async function revokeLeftRows(
       `${PRODUCT_NAME}'s service is not running, so the homes' grant rows stay. Run ${CLI_NAME} setup agents --remove again once it runs.`,
     ];
   }
-  const views = survey(input);
+  const views = await survey(input);
   const stale = rows.filter((row) => {
     if (!(AGENT_APPS as readonly string[]).includes(row.app)) return false;
     const view = views.find(
@@ -632,7 +634,7 @@ async function status(
   selected: Selected,
   call: Call,
 ): Promise<number> {
-  const views = survey(input).filter(selected);
+  const views = (await survey(input)).filter(selected);
   let rows: { grant: string; app: string; home: string; spaces: string[] }[] | undefined;
   try {
     rows = ((await call("setup/homes", {}))["homes"] ?? []) as typeof rows;
@@ -681,7 +683,7 @@ async function preview(
   parsed: Parsed,
   spaceOf: () => Promise<string>,
 ): Promise<number> {
-  const all = survey(input).filter(selected);
+  const all = (await survey(input)).filter(selected);
   const views = parsed.parts.includes("mcp") ? all : [];
   const registers = needsSpace(views);
   const anything = applies(views);

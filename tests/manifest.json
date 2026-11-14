@@ -1987,7 +1987,7 @@
     },
     {
       "id": "A3.3.12.setup.managed",
-      "title": "A file another git repository tracks is managed (index versions 2 and 4, SHA-256, a linked worktree; a split or damaged index counts as tracked), found as git finds it: through a .git file, git metadata behind a link or junction, and a linked folder above the file, while a .git that cannot be read for certain counts as tracked; a repository at the home itself is not, and a path machine.toml lists under [setup.managed] covers the file and the files below it",
+      "title": "A file another git repository tracks is managed, by git's own answer: through a .git file, git metadata behind a link or junction, a linked folder above the file, a linked worktree and a submodule, past an empty .git folder git skips, 66 folders below its repository and with core.worktree, while a repository's file-system monitor is never started; no clear answer is managed (a .git git refuses, a 16 MiB .git file setup never reads, no git on the PATH, a git that times out or answers otherwise); a repository at the home itself is not, and a path machine.toml lists under [setup.managed] covers the file and the files below it",
       "source": "A3 3.12, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
