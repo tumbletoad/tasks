@@ -474,6 +474,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.search.index",
+      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
+      "source": "A1 3.12, A1 5, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.search.rows-by-ids",
+      "title": "Pages by frozen IDs return one entry per ID, in order: the current row, a tombstoned task or deleted learning as a deleted placeholder with its reference, an ID without a row as a redacted placeholder, neither with content, and a result that lost an entry is refused",
+      "source": "A1 3.12, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.new-folder",
       "title": "Restore into a new folder verifies sizes, SHA-256, integrity_check, revision and the sidecar's facts before the folder appears; a tampered, mismatched, linked or newer backup is refused and leaves nothing",
       "source": "A1 3.18",
@@ -1550,6 +1566,46 @@
       "title": "The five tools through the request path: status's here (exact, inside, below, across nested roots, best first, with a hint), its session and the work guide; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its place resolved now, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
       "source": "A3 3.4.2, A3 3.4.4, A3 3.4.6, A3 3.4.7, A3 3.4.8, A3 3.5, A3 3.9.6, A7 3.9 M2.03",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.parser",
+      "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
+      "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.query",
+      "title": "Random query strings, scopes, audiences and a cwd against a real index never raise an SQLite or FTS5 error: every query gives rows that match the contract or invalid_input, and many find rows; a space without the search tables answers filters and refuses words with space_unavailable not_indexed",
+      "source": "A3 3.9.2, A3 5, A1 3.12, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.ranking",
+      "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
+      "source": "A3 3.9.1, A3 3.9.2, A3 3.9.3, A3 3.9.4, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.find",
+      "title": "task.search through the request path for the user and a script: the entry's schema and limits, a default page of 15, the next page by its cursor alone, another binding's cursor refused and a restart dropping every cursor; and tasks find printing a page's header, task and learning rows, placeholders, the changed marker and the next page",
+      "source": "A3 3.4.3, A3 3.4.13, A3 3.9.4, A3 3.9.5, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.cursors",
+      "title": "Cursor pages under random writes, tombstones, entity and text redactions and new matches have no gaps or duplicates and keep the snapshot's order, and a removed entry is a placeholder without its old text; a retried cursor gives the same page with a changed row marked and the page's own as_of; more than 1,000 matches freeze the first 1,000; an epoch, incarnation, binding, idle time, eviction or restart ends a cursor with its reason",
+      "source": "A3 3.9.5, A3 3.5, A3 5, A1 3.12, A7 3.10 M3.05",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
