@@ -47,4 +47,15 @@ export {
   TaskSections,
 } from "./entries/task-get.ts";
 export { taskReopen, TaskReopenInput, TaskReopenResult } from "./entries/task-reopen.ts";
+export {
+  CURSOR_PATTERN,
+  SEARCH_SCOPES,
+  SearchGoneRow,
+  SearchLearningRow,
+  SearchRow,
+  SearchTaskRow,
+  taskSearch,
+  TaskSearchInput,
+  TaskSearchResult,
+} from "./entries/task-search.ts";
 export { taskUpdate, TaskUpdateInput, TaskUpdateResult } from "./entries/task-update.ts";
