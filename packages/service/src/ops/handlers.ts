@@ -51,6 +51,7 @@ import {
   type OpenTaskResult,
 } from "../launch/open.ts";
 import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
+import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, placeState, type Match, type PlaceState } from "./here.ts";
@@ -116,6 +117,11 @@ export interface OpsHost {
    * person and a new tab use. Default: none.
    */
   readonly defaultSpace?: () => string | undefined;
+  /**
+   * The agent homes' grant rows (grant.ts, A3 3.7.8): which spaces an agent home's calls may use.
+   * Without it, every agent home's call is refused.
+   */
+  readonly homes?: HomeGate;
   /** Launching (`launch.open`): the hub's launch service. None: no task opens here. */
   readonly launches?: LaunchPort;
 }
@@ -337,12 +343,18 @@ export function defaultOf<S extends { readonly id: string | undefined }>(
 
 function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
   const slot = caller.binding;
+  // The agent home the call comes from (grant.ts): its space must be one its row grants, checked
+  // on the space the call would use and before anything is read from it (A3 3.7.8).
+  const homes = homesOf(caller);
   // A binding carries its space (A3 3.7.8): a bound connection's calls go to its session's space,
   // an unbound one's to the space it pinned, whichever space anything else names or shows. A call
   // that names another space is refused (A2 3.10.3: "wrong space for this binding"), never sent to
   // either; a space no longer served is `space_unavailable`, never another space.
   const pinned = slot?.session?.space ?? slot?.space;
   if (slot !== undefined && pinned !== undefined) {
+    // The grant comes first: a home that may not use the space its binding pins can do nothing
+    // here, whatever the call names, so `binding` (leave out the space) would not help it.
+    checkGrant(host.homes, homes, pinned);
     const live = host.spaces().filter((s) => s.state !== "closed");
     if (named !== undefined && named !== pinned) {
       const other = findSpace(live, named);
@@ -360,11 +372,49 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
     if (found[0] === undefined) throw spaceUnavailable("not_served", false);
     return found[0];
   }
-  const picked = pickByRule(host, caller, named ?? slot?.named);
+  const wanted = named ?? slot?.named;
+  let picked: ServedSpace;
+  try {
+    picked = pickByRule(host, caller, wanted);
+  } catch (error) {
+    // An agent home learns nothing of a space it may not use (A3 3.7.8): a target that does not
+    // resolve (not served, a name or ID two spaces share, none chosen) is the grant refusal, unless
+    // it is a space the home is granted, whose own answer (`space_unavailable`, `ambiguous`) helps.
+    if (homes.length > 0 && !grantedTarget(host, homes, wanted)) throw grantRefused();
+    throw error;
+  }
+  // Refused before it is pinned: a connection keeps no space it may not use.
+  checkGrant(host.homes, homes, picked.id);
   // An unbound connection pins the space of its first call when its bind frame could not name one
   // (A2 3.7.1: it never follows a later change of the default).
   if (slot !== undefined && picked.id !== undefined) host.bindings?.pin(slot, picked.id);
   return picked;
+}
+
+/**
+ * Whether the target of an agent home's call, the space it named or else the machine's default, is
+ * the home's own: every live space it matches as `pickByRule` matches (a named space by ID, else by
+ * name; the default by ID only), or the ID itself when none is live, is granted to every home of
+ * the call. One match the home may not use is enough to say no, so `ambiguous` never tells a home of
+ * another space with its space's name.
+ */
+function grantedTarget(
+  host: OpsHost,
+  homes: readonly string[],
+  wanted: string | undefined,
+): boolean {
+  const target = wanted ?? host.defaultSpace?.();
+  if (target === undefined) return false;
+  const live = host.spaces().filter((s) => s.state !== "closed");
+  const byId = live.filter((s) => s.id === target);
+  const matched =
+    byId.length > 0 || wanted === undefined
+      ? byId
+      : live.filter((s) => s.name?.toLowerCase() === target.toLowerCase());
+  const candidates = matched.length > 0 ? matched.map((s) => s.id) : [target];
+  return candidates.every(
+    (id) => id !== undefined && homes.every((home) => host.homes?.may(home, id) === true),
+  );
 }
 
 /** The live space whose ID or name is `wanted`, when exactly one has it. */
@@ -513,6 +563,10 @@ async function submit(
   }
   let result: WriteResult;
   try {
+    // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
+    // read and staged stops it before its actor is registered, and once more (below) before the
+    // writer gets the request.
+    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
@@ -538,6 +592,9 @@ async function submit(
       intent: { entry: call.entry.name, input: intentInput(input) },
       ops,
     };
+    // The last step before the writer: no write is handed over after the revoke took effect. Only
+    // a request the writer holds already can still commit.
+    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
     // An unbound connection's write was registered when its call started (`opCall`), so a retry
     // after a lost reply, once bound, still finds this receipt.
     result = await writer.submit(request);

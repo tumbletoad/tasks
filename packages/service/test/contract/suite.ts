@@ -20,13 +20,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { CLI_NAME } from "@tasks/brand";
 import { registry, type ErrorBody } from "@tasks/contracts";
 import { SHIM_METHODS, type Attachment, type SpawnPlan } from "@tasks/launch";
 import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
+import { renderError } from "../../src/mcp/index.ts";
 import { opCall } from "../../src/ops/index.ts";
 import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
-import { classSession } from "../ops-helpers.ts";
+import { classSession, grantHome, revokeHome } from "../ops-helpers.ts";
 
 /** The request IDs of the registry's examples (contracts' entries/fixture.ts). */
 const requestIdOf = (n: number): string =>
@@ -172,10 +174,11 @@ export async function contractWorld(
   const space = created.space?.id ?? created.id ?? "";
   let launches = 0;
   const launch = async (task: string, launchOptions: LaunchAsks = {}): Promise<WorldLaunch> => {
+    // In the world's space by its ID: a test may serve more spaces beside it.
     const read = (await opCall(
       service.ops,
       { class: "cli-interactive", env: {} },
-      { op: "task.get", input: { task, sections: ["history"] } },
+      { op: "task.get", input: { task, sections: ["history"] }, space },
     )) as { task: { id: string } };
     launches += 1;
     const intent = await service.launches.open(
@@ -392,6 +395,146 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
 }
 
 const AS_OF = /^[0-9]{1,10}\.[0-9]{1,15}\.[0-9a-hjkmnp-tv-z]{8}$/;
+
+// ---------------------------------------------------------------------------------------------
+// The grant gate on every face that carries an agent home's call (A3 3.7.8)
+
+/** A3 3.5's body for a space the agent home is not granted: one body, whatever the face. */
+export const GRANT_BODY: ErrorBody = {
+  code: "forbidden",
+  message: "This agent is not registered for this space.",
+  hint: `Ask the user to run: ${CLI_NAME} setup agents`,
+  data: { rule: "grant" },
+};
+
+/**
+ * A face's calls as an agent home that is not granted the world's space. A face that cannot carry
+ * an agent home's call has none: HTTP is the UI's, and the UI is the user.
+ */
+export interface GrantTransport {
+  /**
+   * One call through the face: the refusal's body, or the text where the face gives only text
+   * (MCP's tool result). Undefined when the call was not refused.
+   */
+  refused(entry: string, input: Record<string, unknown>): Promise<ErrorBody | string | undefined>;
+  close(): Promise<void>;
+}
+
+/** A base the gate refuses before it is ever compared: the call reads nothing. */
+const ANY_BASE = "1.1.00000000";
+
+/** Every agent tool's entry, with an input its agent audience accepts. */
+const GRANT_CALLS: readonly [string, (n: number) => Record<string, unknown>][] = [
+  ["space.status", () => ({})],
+  ["task.get", () => ({ task: "M-1" })],
+  [
+    "task.update",
+    (n) => ({
+      task: "M-1",
+      set: { summary: "Fixture summary, refused." },
+      base: ANY_BASE,
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
+  [
+    "entry.add",
+    (n) => ({
+      task: "M-1",
+      kind: "progress",
+      text: "Fixture progress, refused.",
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
+  [
+    "task.finish",
+    (n) => ({
+      task: "M-1",
+      outcome: "Fixture outcome, refused.",
+      base: ANY_BASE,
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
+  [
+    "task.reopen",
+    (n) => ({
+      task: "M-1",
+      reason: "Fixture reason, refused.",
+      base: ANY_BASE,
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
+];
+
+/**
+ * `forbidden` with rule `grant` through one face (A3 3.7.8, 3.5): every agent tool's call from an
+ * agent home that is not granted the world's space gives A3's body, or its text form where the
+ * face has only text, and changes nothing.
+ */
+export function grantSuite(name: string, open: () => Promise<GrantTransport>): void {
+  describe(name, () => {
+    test(
+      "[A3.3.7.grant.faces] every agent tool's call from a home that is not granted the space: forbidden, rule grant, A3's body",
+      { timeout: 180_000 },
+      async () => {
+        const transport = await open();
+        try {
+          let n = 0;
+          for (const [entry, input] of GRANT_CALLS) {
+            const refused = await transport.refused(entry, input((n += 1)));
+            if (typeof refused === "string") {
+              expect(refused, entry).toBe(renderError(GRANT_BODY));
+            } else {
+              expect(refused, entry).toEqual(GRANT_BODY);
+            }
+          }
+        } finally {
+          await transport.close();
+        }
+      },
+    );
+  });
+}
+
+/**
+ * A launched agent's session in the world's space whose agent home's row was revoked (A3 3.7.8):
+ * the home registered as setup does, the agent's bridge bound by its ticket, then the row revoked
+ * as `tasks setup agents --remove` does. A CLI call carrying the ticket acts as that session, so
+ * every one of them is refused with rule grant. The world gets a task M-1 if it has none.
+ */
+export async function revokedSession(world: ContractWorld): Promise<{ readonly ticket: string }> {
+  const added = (await opCall(
+    world.service.ops,
+    { class: "cli-interactive", env: {} },
+    {
+      op: "task.add",
+      input: { tasks: [{ title: "Fixture task" }], request_id: rid() },
+      space: world.space,
+    },
+  )) as { tasks: { ref: string }[] };
+  const task = added.tasks[0]?.ref ?? "M-1";
+  const instance = "revoked-agent";
+  const row = await grantHome(world.home, world.path, { instance, space: world.space });
+  const launch = await world.launch(task);
+  const connection = {
+    context: {
+      space: world.space,
+      instance,
+      app: "test",
+      cwd: null,
+      env: { TASKS_TICKET: launch.ticket },
+      parent: { pid: process.pid },
+    },
+  };
+  const bound = await world.service.bindings.bridge(connection);
+  if (bound["state"] !== "bound") throw new Error("the agent's bridge did not bind by its ticket");
+  // The bridge goes; its session lives on while the agent runs, and its ticket maps to it.
+  const slot = world.service.bindings.attach(connection);
+  if (slot !== undefined) world.service.bindings.closed(slot);
+  if ((await revokeHome(world.home, world.path, [row])) !== 1) {
+    throw new Error("the home's row was not revoked");
+  }
+  return { ticket: launch.ticket };
+}
 
 /** The body of a transport's failure, or the failure itself when it is no ContractError. */
 function bodyOf(error: unknown): ErrorBody {

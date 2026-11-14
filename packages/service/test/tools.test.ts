@@ -13,6 +13,7 @@ import { toolCaller } from "../src/mcp/index.ts";
 import { opCall, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { GUIDE_TOKENS } from "../src/mcp/render.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
+import { grantHome } from "./ops-helpers.ts";
 
 type Json = Record<string, unknown>;
 let w: ContractWorld & { root: string };
@@ -21,6 +22,9 @@ const LONG = 120_000;
 beforeAll(async () => {
   // A root nested in `work`: a task placed through it is found from the portal too.
   w = await contractWorld("tools", { roots: { lumen: join("work", "lumen") } });
+  // The MCP entry that names an instance: its home registered for the space as setup does. The
+  // entries without one are hand-made (agent:manual), in the machine's default space.
+  await grantHome(w.home, w.path, { instance: "codex-work", space: w.space });
 }, LONG);
 afterAll(async () => {
   await w.close();

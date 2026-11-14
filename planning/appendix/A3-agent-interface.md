@@ -84,7 +84,7 @@ Tests: `check.test.ts`, `define.test.ts`, `parity.test.ts`, `soundness.test.ts` 
 
 `pnpm gen` (`packages/contracts/src/gen/`) runs the registry check, refuses to render a registry that fails it, and writes `packages/contracts/generated/` and `docs/agents/tools.md` and `cli.md`. The output is checked in, so reviewers and agents see the real tool text, and `pnpm verify` fails on any diff. Those generated files carry every shape, tool text, HTTP route and CLI verb, so this appendix does not repeat them. The server instructions are not generated (3.6).
 
-**The contract suite** (`packages/service/test/contract/suite.ts`, `A3.3.2.ops.contract`) runs every example of every entry over every face: in-process, `tasks-local/1`, HTTP as the UI, the CLI's `--json` and MCP in both eras. A new face opens its world with `contractWorld`. Each example is VERIFIED or LATER (naming its owning step), and an example in neither list fails. The typed client is pinned by `A3.3.2.2.client`.
+**The contract suite** (`packages/service/test/contract/suite.ts`, `A3.3.2.ops.contract`) runs every example of every entry over every face: in-process, `tasks-local/1`, HTTP as the UI, the CLI's `--json` and MCP in both eras. A new face opens its world with `contractWorld`. Each example is VERIFIED or LATER (naming its owning step), and an example in neither list fails. Its `grantSuite` sends every agent tool's call from a home that is not granted the world's space through every face that carries an agent home's call (in-process, `tasks-local/1` and the CLI's `--json` for a CLI call acting as a session of a revoked home, MCP in both eras) and expects 3.5's grant refusal (`A3.3.7.grant.faces`). HTTP is the UI's and carries none. The typed client is pinned by `A3.3.2.2.client`.
 
 #### 3.2.3 Exposure
 
@@ -200,7 +200,7 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 - Every variant carries `bound`. A connection that cannot hold a binding (the UI, the CLI) loads the task with `bound: false` and uses nothing up (3.7.3).
 - A routine's launch reference binds the space, not a task, so its result is the status overview (`view: "status"`, M6).
 - `sessions` and `proposals` become section values with the session list (M4.06) and proposals (M4.02). Provenance labels on context and summary arrive with digest v1 (M4.03).
-- `forbidden` with `rule: "grant"` arrives with the grant gate (3.7.8).
+- A launch reference or task in a space the agent home is not granted is `forbidden` with `rule: "grant"`, and binds and reads nothing (3.7.8).
 
 #### 3.4.5 `add_tasks`
 
@@ -316,10 +316,11 @@ The catalogue is `packages/contracts/src/errors.ts` (each code with its A2 class
 - A conflict names its fields and versions outside the data block, so a cut never hides which fields changed. Their values come inside the block while they fit. A replayed conflict has no values, because a receipt holds no task text.
 - **Transport reasons** (`packages/bridge/src/protocol/errors.ts`) carry `retryable`. `true` means retry the same call with the same `request_id` after a short wait. `false` means the agent stops and tells the user. `untrusted_endpoint` means nothing was sent: no bind context, credential or MCP request. `connection_lost` comes after the proof verified: the call may or may not have applied, and the receipt makes the retry safe.
 - **`read_only`** answers every write to a space that takes no write on this machine, with `retryable: false` and the space's reason in A1's words, so the agent passes it on and does not retry.
+- **The grant refusal** (3.7.8) is one body on every face that carries an agent home's call: `{code: "forbidden", message: "This agent is not registered for this space.", hint: "Ask the user to run: tasks setup agents", data: {rule: "grant"}}`, with the command from the brand package. It names no space, home, folder, task or reference, and is the same for an ungranted space, a revoked row and no row, so the agent passes on the one command that fixes each. It carries no action key: it comes before staging, for reads too.
 
 Still to build:
 
-- `forbidden` rules `grant` (3.7.8) and `proposal_limit` (3.8.4); `not_permitted` carries the binding kind; `cursor_expired` carries `reason`: `idle`, `restart`, `epoch`, `incarnation` or `binding`, with the hint to run the search again; `not_found` carries up to 3 similar rows.
+- `forbidden` rule `proposal_limit` (3.8.4); `not_permitted` carries the binding kind; `cursor_expired` carries `reason`: `idle`, `restart`, `epoch`, `incarnation` or `binding`, with the hint to run the search again; `not_found` carries up to 3 similar rows.
 - `read_only` also carries A6's `space_transferred` and `space_superseded`, the reasons `held` and `transfer_pending` arrive with their steps, and `STORAGE_OVERLOADED` needs a `retry_after_ms`.
 
 ### 3.6 Server instructions
@@ -384,7 +385,7 @@ Still to build:
 | Credential | Owner | Held by | Gives |
 |---|---|---|---|
 | OS identity and the `ipc.key` handshake | A2 | Every local client | A connection class |
-| Registration grant: one live agent-home row per app and home in A2's `grants` table | A3 | Named by `--space` and `--instance`, no secret | The unbound actor `agent:<instance>` in the granted spaces, once the grant gate reads the row (3.7.8) |
+| Registration grant: one live agent-home row per app and home, and one home per instance, in A2's `grants` table | A3 | Named by `--space` and `--instance`, no secret | The unbound actor `agent:<instance>` in the spaces the row names, checked at every call by the grant gate (3.7.8) |
 | Ticket (`TASKS_TICKET`, 120 bits, hash stored) | A4 | The agent process environment | Binds a bridge connection, or maps a CLI call, to one session record |
 | Launch reference (`L7KQ2M`) | A4 | The Brief text | Binds one connection once. A correlation code, not a secret and not an ID. |
 | Binding handle (`bh_`, 128 bits, stored hashed) | A2 | The bridge's memory, never shown to the model | Restores a binding and its space after a restart or reconnect |
@@ -433,13 +434,26 @@ Built in `pickSpace` (`packages/service/src/ops/handlers.ts`). Tests: `A3.3.7.bi
 
 A binding carries its space for the session's whole life, and no tool takes a `space` argument. A connection's calls go to its session's space, or to the space it pinned at bind or at its first call, whichever space the UI shows, and never follow a later change of the default (A2 3.7.1). A call that names another space is `forbidden` with `rule: "binding"`. A space no longer served gives `space_unavailable` (`not_served`), never another space. The environment's space hint never chooses a space over MCP. An agent's CLI (`cli-agent`) gets no default space, so an unbound agent never writes into the default space by accident.
 
-**The grant gate is not built yet.** Until it is, the agent-home rows restrict nothing: an instance granted one space can write into another over MCP. Its step must:
+**The grant gate.** An agent home's calls reach only the spaces its live agent-home rows name. Built in `ops/grant.ts` (the check and the refusal) and `hub/home-gate.ts` (the answer from the `grants` table), called by `pickSpace`, `submit` and `Bindings`. Tests: `A3.3.7.grant.*` (`packages/service/test/grant-gate.test.ts`, `src/binding/bindings.test.ts`, the contract suite's `grantSuite`, and `tests/forwarder/grant.test.ts` through real bridges and a real service restart).
 
-- make the agent home's row the unbound writer scope (3.7.9) and the unbound principal, replacing `bridgePrincipal`'s `bridge:<instance>:<machine_id>`;
-- answer a call into a space the home is not granted with `forbidden` and `rule: "grant"`, a launch reference of such a space included, and refuse writes as soon as the row is revoked;
-- read the rows in the request path (`pickSpace` and the unbound principal), beside the pinning above.
+- **The home is the instance the connection presents.** The bind frame carries no home folder (3.7.2), so the home is the entry's `--instance`, which setup wrote into the app's own configuration. Sending `CLAUDE_CONFIG_DIR` or `CODEX_HOME` instead would not help: Claude Code's allow-list mode drops the first, a default home has neither, and neither is stronger than `--instance`. An MCP call's home is its entry's instance, or `manual` for an entry without one. A call on a slot (a bound session, or a CLI call whose ticket maps to a live session) is the slot's instance and its session's, and must pass as both. The user's classes, `script` and an agent's CLI without a session (`agent:unknown`) are no home's calls and are not gated.
+- **A session is its home's.** It is made for the instance of the connection that binds it. A ticket presented again by a connection of another instance is ignored (`binding.ignored`, reason `instance`), as a handle of another instance is, so a session's calls stop with its home's row whichever connection carries them.
+- **The rule.** A home may use a space when one live `agent_home` row with its `attrs.instance` names the space. The service reads the table at each call. Under `tasks serve` the table is in `service.sqlite`, so the rows outlive a restart. A home with no live row is refused, never sent to the default space, which a revoked row would then fall back to. That covers a hand-written entry with an instance, a revoked row and a row lost with the state folder.
+- **One home per instance.** A connection shows only its instance, so two homes of one instance could not be told apart, and revoking one would leave its entry working through the other's row. Setup refuses an instance another home's live row holds (3.13.1), and the gate refuses an instance that two live rows hold rather than give it the union.
+- **The hand-made entry** (no `--instance`, `agent:manual`, 3.7.4) has no row and may use the machine's default space only: `service.default_space` by its ID, whether or not it is served now (a call on it then hears `space_unavailable` or `ambiguous`), else the one space served. `manual` is reserved for it (`MANUAL_INSTANCE` in `@tasks/launch`): `machine.toml` refuses it as an instance ID (A4 3.2), setup refuses to register it, and the gate counts no row of it. Otherwise an instance called `manual` would share the hand-made entry's actor, writer scope and rows.
+- **Never open by omission.** A host without the gate refuses every home's call, and an MCP caller that names no home is refused.
+- **Where.** In `pickSpace`, on the space the call would use, before the handler reads anything, receipts included (3.8.3). On a pinned slot the grant comes before `binding` and `space_unavailable`: a home that may not use its own space can do nothing here, so "leave out the space" would only lead to a second refusal. A slot whose space is granted and whose call names another space gets `binding`. A refused space is not pinned, so the person's fix (a registration, another default) takes effect at the next call. At the bind frame, a connection without `--space` pins the one space served only when its home may use it.
+- **An unresolved target tells nothing.** When a home's call names a space that is not served or that two spaces share, or names none while the machine has no default, the answer is the grant refusal. The exception is a target whose every live match (a named space by ID, else by name, and the default by ID only), or the ID itself when none is live, is granted to the home: then `space_unavailable` or `ambiguous` is the useful answer. One match the home may not use is enough to say no, so `ambiguous` never tells a home of another space with its space's name.
+- **Checked again before each durable effect.** `submit` checks before it registers the call's actor in the space and again just before it hands the request to the writer. A bind (a ticket at the bind frame, `get_task {launch}`, `get_task {task, bind: true}`) asks inside its serialized section, right before it makes a session, spends a ticket or records `bound_at`. So after a revoke no new call, no write handed to the writer and no binding goes through. A request the writer already holds can still commit, and a read already admitted still returns.
+- **Tickets and handles.** At the bind frame a ticket of a space the home may not use is ignored (`binding.ignored`, reason `grant`): no session is made and the launch records nothing. A binding restored by its handle stays, its calls are refused while its home is not granted, and it goes on once the home is registered again.
+- **What it promises.** An agent that uses the entry its app was given reaches only the spaces its home's live rows name, whatever its calls carry, and its next call fails once its row is revoked. It is policy against mistakes and against a prompt-injected agent that stays inside its app (3.7.4, honesty), not a defence against code that rewrites the app's configuration or starts `tasks mcp` with another `--instance`. An agent with a shell can also reach any space through the CLI as `agent:unknown`, which has no home.
+- **Tests register their homes.** A test that opens MCP connections registers its agent homes as setup does (`grantHome` in `packages/service/test/ops-helpers.ts`, `hubGrant` in `mcp-hub.ts`). A service started without its UI listener keeps its grants in memory, so a test that restarts one registers again.
 
-A4 is to refuse a launch into a space that the agent home is not granted, with its other checks before dispatch.
+Still to build:
+
+- A4 refuses a launch into a space the instance's home is not granted, with its other checks before dispatch (A4 3.9). Today such a launch goes out, its ticket binds nothing and its agent's calls are refused.
+- Setup (M4.05) proposes for a detected home an instance ID that no configured instance and no other home holds, and names the service's refusal of a taken instance instead of the generic `grant_failed`. Until then such a home fails at apply, visibly, and the other homes are unaffected.
+- Doctor (M4.05) warns about an entry without `--instance`, and the preview's `foreign_entry` text says how to take a hand-written entry out (the app's own `mcp remove`), because the refusal sends the person to `tasks setup agents`.
 
 #### 3.7.9 Writer scope: receipts and rate limits
 
@@ -447,7 +461,8 @@ Every writer has a durable **writer scope** from its first write call (X12, X13)
 
 - Every scope is stable across processes, so `--request-id` finds its receipt from a new process. Every scope that is not a single session record or UI grant names the machine, because receipts live in the space, which can move.
 - **Binding later never resets anything.** A connection that was unbound at any time keeps its unbound scope as a second receipt lookup (`Principal.earlierScope`), so a retry after binding still finds the first result, and a write with an earlier scope waits for that scope's writes with the same request ID (`writesInFlight`). Counts carry into the session's scope, and the agent home's counts stay as they are.
-- **Unbound conversations of one agent home share a scope.** That is the conservative fallback for shared hosts, where conversations cannot be told apart. Two conversations that pick the same `request_id` for different changes get `request_id_conflict`, never each other's result. The grant gate makes the agent home's row this scope (3.7.8).
+- **Unbound conversations of one agent home share a scope.** That is the conservative fallback for shared hosts, where conversations cannot be told apart. Two conversations that pick the same `request_id` for different changes get `request_id_conflict`, never each other's result.
+- **That scope is the agent home's row**, named by what the row and the connection share: `bridge:<instance>:<machine>`. The grant gate (3.7.8) lets a connection write only while a live row of its instance grants the space, so every unbound write is under the scope of the row that allowed it. The scope is not the row's ID, because setup replaces a row whenever its answer changes (an account label, the hosts), and a scope that changed with it would lose the receipts a retry must find. It stays the same across bridge processes, restarts, a replaced row and a row revoked and made again, and a connection that binds keeps it as its earlier scope.
 - **Counts are affected records, not commits** (with the brake, 3.8.3). Each task completed, archived, moved or deleted counts once, including every draft and follow-up in a bundle. The brake checks the incoming staged plan before it applies, so one large call cannot slip past the limit.
 
 ### 3.8 Autonomy and proposals
@@ -494,7 +509,7 @@ For each write call from an agent actor, inside A1's writer transaction (X11), t
 
 1. The receipt check (3.4.1) runs first. A stored result is replayed and nothing below runs.
 2. A user-only entry gives `forbidden` (`user_only`).
-3. A task in a space not granted to the agent home gives `forbidden` (`grant`).
+3. A task in a space not granted to the agent home gives `forbidden` (`grant`). The grant gate (3.7.8) already refused such a call before step 1, because a refused call reads nothing from the space, receipts included.
 4. A policy key gives `forbidden` (`policy`).
 5. **Stage.** A1 resolves the request into a staged plan: references, the actual area and project of every task it touches, dedupe targets and every operation it would emit. Policy runs between staging and the preconditions.
 6. `mode: "propose"` makes the call a proposal.
@@ -783,6 +798,7 @@ Built for Claude Code's user scope and every Codex home. The engine is `packages
 - The whole entry is the unit of removal, not the file's hash, because Claude Code rewrites `.claude.json` while it runs. For the same reason that file's hash is not in the plan token, and setup never edits it.
 - The app's own `mcp remove` takes whatever entry of the server's name is there, so it runs only right after a fresh read shows an entry that is provably setup's (`ownEntry`). A failed apply follows the same rule on every path. The moment between that read and the app's command remains, and only the app could close it.
 - The agent-home row is made before the home is changed, so the service's class check stands in front of every write.
+- `setup/home_grant` refuses `manual` and an instance another home's live row holds (`invalid_input` on `instance`), because the grant gate tells homes apart by their instance only (3.7.8). Setup then reports `grant_failed` for that home and leaves it unchanged.
 - Group write is allowed on the apps' files, unlike for the product's own configuration (A2), because with a per-user group and umask 002 it is the norm for files the apps make. The folders above the home are the person's own layout and are not judged.
 - A JSON key twice in one object is refused, because `JSON.parse` silently keeps the last.
 
@@ -913,7 +929,7 @@ Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.so
 
 **Crash injection** (with A1's harness): kill the service after receipt and before commit, and after commit before the reply, for applied results, no-ops and `exists`. A retry with the same `request_id` returns the stored result and creates nothing twice. A bridge reconnect restores the binding through the binding handle. The interrupted call returns `service_unavailable` with `connection_lost` and `retryable: true`.
 
-**Binding tests still to write:** native-ID binds and host detection (M4.06), `session.unbind|rebind|end` ending a session and its handles (M4.06), a routine's reference binding the space (M6), and the grant gate (3.7.8): a home writing into a space it is not granted, and after its row is revoked.
+**Binding tests still to write:** native-ID binds and host detection (M4.06), `session.unbind|rebind|end` ending a session and its handles (M4.06), and a routine's reference binding the space (M6).
 
 **Agent evals** (headless Claude Code and Codex, temporary fixture space; M4.08 runs scenarios 1, 3, 4, 5 and the ingestion form of 2, and M6.14 runs scenario 2 as a real routine run):
 

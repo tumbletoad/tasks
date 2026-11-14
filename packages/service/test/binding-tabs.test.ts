@@ -10,7 +10,7 @@ import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { post } from "./http-client.ts";
 import { openFeed, signIn, type FeedClient } from "./http-world.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
-import { classSession } from "./ops-helpers.ts";
+import { classSession, grantHome } from "./ops-helpers.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 180_000;
@@ -43,6 +43,8 @@ beforeAll(async () => {
       { timeoutMs: 60_000 },
     );
   }
+  // The agent's home, registered for Mira as setup does.
+  await grantHome(w.home, w.path, { instance: "tabs-agent", space: w.space });
 }, LONG);
 afterAll(async () => {
   for (const session of sessions) session.close();

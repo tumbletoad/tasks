@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { hubSpace, spaceOpen } from "../../packages/service/test/mcp-hub.ts";
+import { hubGrant, hubSpace, spaceOpen } from "../../packages/service/test/mcp-hub.ts";
 import {
   Procs,
   alive,
@@ -196,8 +196,10 @@ describe("[A2.3.7.bridge.hygiene] what the forwarder writes, copies and leaves b
       const log = readFileSync(join(where.state, "logs", "service.log"), "utf8");
       expect(log).toMatch(/"ev":"local\.bind_refused".*"reason":"service_too_old"/);
       expect(bridge.stray).toEqual([]);
-      // A forwarder of this build binds in mcp mode, and its stdout stays MCP frames only.
+      // A forwarder of this build binds in mcp mode, and its stdout stays MCP frames only. Its
+      // entry's agent home is registered for the space, as setup does.
       await spaceOpen(where.root);
+      await hubGrant(where.root, "test-agent", space.id);
       const current = procs.bridge(where, {
         args: ["--space", space.id, "--instance", "test-agent", "--app", "test"],
       });

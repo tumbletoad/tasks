@@ -1,5 +1,7 @@
 // Test helpers for the request path: an rpc session of a chosen CLI class with a running service,
-// and the error body of a failed call. Tests only.
+// the error body of a failed call, and agent homes registered and revoked as setup does. Tests
+// only.
+import { join } from "node:path";
 import { openRpc, RpcError, type RpcSession } from "@tasks/bridge/protocol";
 import type { ErrorBody } from "@tasks/contracts";
 import { keyOf, within } from "./harness.ts";
@@ -40,4 +42,51 @@ export function classSession(
 export function errorOf(error: unknown): ErrorBody {
   if (!(error instanceof RpcError)) throw new Error(`expected an rpc error, got ${String(error)}`);
   return error.data as ErrorBody;
+}
+
+/** An agent home to register: its instance and the space its entry names. */
+export interface HomeRow {
+  readonly instance: string;
+  readonly space: string;
+  /** The account label; default none. Another label replaces the home's row. */
+  readonly account?: string;
+}
+
+/**
+ * Registers an agent home for a space as `tasks setup agents --apply` does, through the user's
+ * `setup/home_grant` (A3 3.7.4): one live agent-home row of the instance naming the space, so its
+ * MCP connections pass the grant gate. The home folder is a name of the test's home that nothing
+ * reads; one per instance, so granting the instance again replaces its row. Returns the row's ID.
+ */
+export async function grantHome(home: string, path: string, row: HomeRow): Promise<string> {
+  const user = await classSession(home, path, "cli-interactive");
+  try {
+    const answer = (await user.call(
+      "setup/home_grant",
+      {
+        app: "codex",
+        home: join(home, "agent-homes", row.instance),
+        instance: row.instance,
+        account: row.account ?? "",
+        space: row.space,
+      },
+      { timeoutMs: 60_000 },
+    )) as { grant: { grant: string } };
+    return answer.grant.grant;
+  } finally {
+    user.close();
+  }
+}
+
+/** Revokes agent-home rows as `tasks setup agents --remove` does (`setup/home_revoke`). */
+export async function revokeHome(home: string, path: string, grants: string[]): Promise<number> {
+  const user = await classSession(home, path, "cli-interactive");
+  try {
+    const answer = (await user.call("setup/home_revoke", { grants }, { timeoutMs: 60_000 })) as {
+      revoked: number;
+    };
+    return answer.revoked;
+  } finally {
+    user.close();
+  }
 }

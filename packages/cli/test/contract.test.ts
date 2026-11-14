@@ -2,11 +2,16 @@
 // M2.03): every example goes in as `tasks <verb> --input - --json`, the CLI's own path from the
 // arguments to `op/call` and back, run in this process against a service in this process. The
 // user's calls come from a terminal (`cli-interactive`), the agent's from a script (`cli-script`).
-import { type ErrorBody } from "@tasks/contracts";
+// The grant gate's refusal (A3 3.7.8) goes the same way, from an agent's shell whose ticket maps
+// the call to a session of a home whose row was revoked (`cli-agent`).
+import { expect } from "vitest";
+import { EXIT_CODES, type ErrorBody } from "@tasks/contracts";
 import {
   ContractError,
   contractSuite,
   contractWorld,
+  grantSuite,
+  revokedSession,
   type ContractTransport,
 } from "@tasks/service/test/contract";
 import { CLI_SPEC } from "../src/args.ts";
@@ -50,3 +55,34 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
   };
   return transport;
 });
+
+grantSuite(
+  "the grant gate through the CLI with --json, for a call acting as a session of a revoked home",
+  async () => {
+    const w = await contractWorld("cg");
+    const { ticket } = await revokedSession(w);
+    return {
+      refused: async (entry, input) => {
+        const ran = await runMain([verbOf(entry, input), "--input", "-", "--json"], {
+          home: w.home,
+          env: { TASKS_TICKET: ticket },
+          stdin: JSON.stringify(input),
+        });
+        if (ran.code === 0) return undefined;
+        expect(ran.code, entry).toBe(EXIT_CODES.forbidden);
+        const error = (JSON.parse(ran.stdout) as { error?: ErrorBody & { class?: string } }).error;
+        if (error === undefined)
+          throw new Error(`tasks exited ${String(ran.code)} without an error`);
+        // The CLI adds A2's class to A3's body; the suite compares A3's.
+        expect(error.class, entry).toBe("forbidden");
+        return {
+          code: error.code,
+          message: error.message,
+          ...(error.hint === undefined ? {} : { hint: error.hint }),
+          ...(error.data === undefined ? {} : { data: error.data }),
+        };
+      },
+      close: () => w.close(),
+    };
+  },
+);

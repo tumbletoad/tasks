@@ -104,7 +104,7 @@ Merged steps left these checks for a session:
 | M2.14 | Setup v0 | M2.03 | S | done |
 | M2.15 | Real-machine acceptance | all | S RM | todo |
 
-M2.04b is not in the base count. Until it is merged, the agent-home rows that `tasks setup agents` writes restrict nothing: a registered agent can still write into a space it was not registered for.
+M2.04b is not in the base count.
 
 ## M3: durable space (parallel with M4)
 

@@ -157,7 +157,8 @@ One table in `service.sqlite` for every credential and registration on this mach
 
 - Only a token's SHA-256 is kept, and a token reaches a browser only after its row is on disk.
 - A revocation takes effect at once and closes every connection tied to the row. A row is tied to a connection in the same synchronous step that checks it, so no revocation falls in between.
-- An `agent_home` row has no token and no expiry. `tasks setup agents` (A3 3.13) keeps one per app and home through `setup/home_grant` and `setup/home_revoke` (`hub/agent-homes.ts`), made before the home is changed. Until A3's grant gate reads the rows in the request path (A3 3.7.8), they restrict nothing.
+- An `agent_home` row has no token and no expiry. `tasks setup agents` (A3 3.13) keeps one per app and home through `setup/home_grant` and `setup/home_revoke` (`hub/agent-homes.ts`), made before the home is changed, and one home per instance. A3's grant gate reads the rows at every agent home's call (A3 3.7.8).
+- An `agent_home` row ties no connection: its revocation refuses the home's next call instead, so the agent hears `forbidden` with `rule: "grant"` rather than a closed connection and failed rebinds.
 
 ### 3.3 Service lifecycle
 

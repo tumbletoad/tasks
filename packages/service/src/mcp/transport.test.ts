@@ -406,6 +406,8 @@ describe("[A3.3.3.mcp.transport] the endpoint's transport", () => {
     const ops = {
       machine: { id: "m_test" },
       spaces: () => [{ id: `sp_${"0".repeat(26)}`, name: "Probe", state: "open", reader }],
+      // The grant gate lets this connection (an entry without --instance) use the probe space.
+      homes: { may: () => true },
     } as unknown as OpsHost;
     const channel = new FakeChannel() as FakeChannel & McpChannel;
     Object.assign(channel, { connection: { id: 1, context: {} } });
@@ -504,6 +506,8 @@ describe("[A3.3.3.mcp.transport] the endpoint's transport", () => {
     const ops = {
       machine: { id: "m_test" },
       spaces: () => [{ id: `sp_${"0".repeat(26)}`, name: "Probe", state: "open", reader }],
+      // The grant gate lets this connection (an entry without --instance) use the probe space.
+      homes: { may: () => true },
     } as unknown as OpsHost;
     const channel = new FakeChannel() as FakeChannel & McpChannel;
     Object.assign(channel, { connection: { id: 1, context: {} } });

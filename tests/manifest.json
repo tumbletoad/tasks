@@ -1642,6 +1642,54 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.grant.space",
+      "title": "A home granted one space reaches no other: its own space works; the other, named by ID or by name in its entry or picked as the machine default, is forbidden with rule grant before its reader or writer is touched, and is not pinned, at the bind or at a call; a target that does not resolve is the grant refusal unless the home is granted it; a launch reference, a ticket or a task of the other space binds and reads nothing there and is not used up; after a service restart the rows still decide",
+      "source": "A3 3.7.3, A3 3.7.4, A3 3.7.8, A3 3.5, A7 3.9 M2.04b",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.grant.revoke",
+      "title": "A revoked agent-home row refuses the next call of every connection of its home with forbidden and rule grant: an open unbound one, a bound one, one bound by its ticket, one resumed by its handle, a CLI call acting as its session and a real mcp mode connection; registered again they go on as they were. A session is its home's: another instance presenting its ticket again binds nothing, and a call on a session needs both its home's and its connection's row. A write admitted before the revoke is checked again before its actor is registered and before the writer gets it, and a bind asks the gate again in its section",
+      "source": "A3 3.7.4, A3 3.7.8, A3 3.13.1, A7 3.9 M2.04b",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.grant.precedence",
+      "title": "A session in a granted space that names another space is refused with rule binding; once its space is no longer granted every call is refused with rule grant, whatever it names",
+      "source": "A2 3.10.3, A3 3.7.8, A7 3.9 M2.04b",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.grant.scope",
+      "title": "The unbound writer scope of an MCP connection is its home's grant row: shared by the home's connections, kept when the row is replaced or revoked and made again, and kept as the earlier scope once the connection binds, so a retry never writes twice",
+      "source": "A3 3.7.9, A1 3.8, A7 3.9 M2.04b",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.grant.unregistered",
+      "title": "A home no live row names is refused with forbidden, rule grant and the command that registers it; an entry without --instance acts as agent:manual in the machine's default space only, and manual is no instance ID (machine.toml and setup refuse it, the gate counts no row of it); one home per instance: setup refuses an instance another home holds, and an instance two live rows hold is refused; no folder, ticket, reference or task text reaches a refusal or the log",
+      "source": "A3 3.7.4, A3 3.7.8, A3 3.5, A7 3.9 M2.04b",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.grant.faces",
+      "title": "forbidden with rule grant has A3's body through every face that carries an agent home's call: in process, tasks-local/1's op/call and the CLI's --json for a CLI call acting as a session whose home is not granted, and MCP's text in both eras; the UI is the user and carries none",
+      "source": "A3 3.2.2, A3 3.5, A3 3.7.8, A7 3.9 M2.04b",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.2.5.tools.budget-corpus",
       "title": "Property test over spaces of up to 200 tasks with long and odd text (controls, lone surrogates, very long lines, CJK, emoji, planted markers): every result of the five tools, and every error, fits its budget, keeps its data blocks and markers whole and says the way on whenever it leaves something out; paging a sections read returns every character of a long note, context or log entry once, in order, with no gap or overlap, each page whole within its budget",
       "source": "A3 3.2.5, A3 3.4.4, A3 3.9.6, A3 3.10, A3 5, A7 3.9 M2.03",

@@ -1,15 +1,19 @@
 // The contract suite (contract/suite.ts) over the request path's own faces: the functions
-// in-process, tasks-local/1's `op/call` with real sessions, and HTTP as the UI. MCP and the CLI
-// run it in their own tests.
+// in-process, tasks-local/1's `op/call` with real sessions, and HTTP as the UI; and the grant
+// gate's refusal on the faces here that carry an agent home's call. MCP and the CLI run both in
+// their own tests.
 import type { RpcSession } from "@tasks/bridge/protocol";
 import { expect } from "vitest";
 import { ERROR_CODES, AppError, routePath, type ErrorBody } from "@tasks/contracts";
 import { httpRoutes } from "@tasks/contracts/generated/http-routes.ts";
-import { opCall } from "../src/ops/index.ts";
+import { bridgePrincipal, clientOf, instanceOf } from "../src/mcp/index.ts";
+import { opCall, type Caller } from "../src/ops/index.ts";
 import {
   ContractError,
   contractSuite,
   contractWorld,
+  grantSuite,
+  revokedSession,
   type Actor,
   type ContractTransport,
 } from "./contract/suite.ts";
@@ -88,6 +92,67 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", a
   };
   return transport;
 });
+
+// The grant gate (A3 3.7.8) on the faces here that carry an agent home's call. HTTP carries none:
+// it is the UI's, and the UI is the user.
+grantSuite("the grant gate, in-process, for an MCP connection of a home no row names", async () => {
+  const w = await contractWorld("gi");
+  const context = {
+    space: w.space,
+    instance: "ungranted-agent",
+    app: "test",
+    cwd: null,
+    env: {},
+    parent: { pid: process.pid },
+  };
+  // Bound as the local endpoint binds an mcp mode connection, and called as its tool caller calls.
+  const connection = { context };
+  await w.service.bindings.bridge(connection);
+  const slot = w.service.bindings.attach(connection);
+  const caller: Caller = {
+    class: "bridge",
+    env: {},
+    principal: bridgePrincipal(context, w.service.ops.machine.id),
+    client: clientOf(context),
+    home: instanceOf(context),
+    ...(slot === undefined ? {} : { binding: slot }),
+  };
+  return {
+    refused: async (entry, input) => {
+      try {
+        await opCall(w.service.ops, caller, { op: entry, input });
+        return undefined;
+      } catch (error) {
+        if (error instanceof AppError) return error.toBody();
+        throw error;
+      }
+    },
+    close: async () => {
+      if (slot !== undefined) w.service.bindings.closed(slot);
+      await w.close();
+    },
+  };
+});
+
+grantSuite(
+  "the grant gate over tasks-local/1, for a CLI call acting as a session of a revoked home",
+  async () => {
+    const w = await contractWorld("gr");
+    const { ticket } = await revokedSession(w);
+    const agent = await classSession(w.home, w.path, "cli-agent", { TASKS_TICKET: ticket });
+    return {
+      refused: (entry, input) =>
+        agent.call("op/call", { op: entry, input }, { timeoutMs: 60_000 }).then(
+          () => undefined,
+          (error: unknown) => errorOf(error),
+        ),
+      close: async () => {
+        agent.close();
+        await w.close();
+      },
+    };
+  },
+);
 
 contractSuite("[A3.3.2.ops.contract] the contract suite, over tasks-local/1", async () => {
   const w = await contractWorld("cr");

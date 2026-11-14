@@ -15,7 +15,7 @@ import { opCall, type Caller, type OpsHost, type Slot } from "../src/ops/index.t
 import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/suite.ts";
 import { stateOf } from "./harness.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
-import { classSession, errorOf } from "./ops-helpers.ts";
+import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 180_000;
@@ -32,6 +32,11 @@ beforeAll(async () => {
     ),
     request_id: rid(),
   });
+  // The agent homes these connections name, registered for Mira as setup does (the grant gate,
+  // grant-gate.test.ts).
+  for (const instance of ["test-agent", "other-agent", "wire-agent", "shared-agent"]) {
+    await grantHome(w.home, w.path, { instance, space: w.space });
+  }
 }, LONG);
 afterAll(async () => {
   await w.close();
@@ -542,8 +547,10 @@ describe("[A3.3.7.binding.space] a session is pinned to its space", () => {
       expect(status["session"]).toMatchObject({ state: "bound", task: "M-2" });
       resumed.close();
 
-      // An unbound connection pinned to Life: once Life is closed, unavailable, never Mira.
-      const pinned = await connect({ space: life });
+      // An unbound connection pinned to Life (its home registered for Life): once Life is
+      // closed, unavailable, never Mira.
+      await grantHome(w.home, w.path, { instance: "life-agent", space: life });
+      const pinned = await connect({ space: life, instance: "life-agent" });
       expect(pinned.binding["space"]).toBe(life);
       expect((await pinned.call("space.status"))["space"]).toMatchObject({ id: life });
       const closer = await classSession(w.home, w.path, "cli-interactive");

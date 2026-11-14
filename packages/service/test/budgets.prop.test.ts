@@ -13,7 +13,7 @@ import { DATA_WORD, closeMarker, openMarker } from "../src/mcp/text.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
 import { contractWorld } from "./contract/suite.ts";
-import { classSession } from "./ops-helpers.ts";
+import { classSession, grantHome } from "./ops-helpers.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 1_200_000;
@@ -237,6 +237,9 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
   }
   const call = async (op: string, input: Json, caller: Caller = USER): Promise<Json> =>
     (await opCall(w.service.ops, caller, { op, input, space })) as Json;
+  // The agent's home, registered for this run's space as setup does (its row for the last run's
+  // space is replaced: one live row per home).
+  await grantHome(w.home, w.path, { instance: "budget-agent", space });
   const context = { space, instance: "budget-agent", app: "test", env: {} };
   const principal = bridgePrincipal(context, w.service.ops.machine.id);
   const tool = toolCaller({ ops: w.service.ops, context, conn: 1 });
@@ -426,7 +429,7 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
       };
       const page = (await opCall(
         w.service.ops,
-        { class: "bridge", env: {}, principal },
+        { class: "bridge", env: {}, principal, home: "budget-agent" },
         { op: "task.get", input: args, space },
       )) as Json;
       const text = await mcp("get_task", args);

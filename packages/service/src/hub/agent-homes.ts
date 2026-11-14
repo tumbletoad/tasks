@@ -12,7 +12,7 @@
 // holder of service.lock is the one writer of the grants table.
 import { AppError } from "@tasks/contracts";
 import type { JsonObject } from "@tasks/bridge/protocol";
-import { hasControl, INSTANCE_ID } from "@tasks/launch";
+import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@tasks/launch";
 import { isId } from "@tasks/storage";
 import { isLive, type ConnectionClass, type Grant, type GrantStore } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
@@ -98,6 +98,10 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       const home = text(params, "home", 4096);
       const instance = text(params, "instance", 40);
       if (!INSTANCE_ID.test(instance)) throw invalid("instance", "Expected an instance ID");
+      // A3 3.7.4: `manual` is the hand-made entry's, which has no row (ops/grant.ts).
+      if (instance === MANUAL_INSTANCE) {
+        throw invalid("instance", "manual is kept for an entry without --instance");
+      }
       // An instance may have no account label (machine.toml's `account` is optional): empty is kept.
       const account = params["account"];
       if (typeof account !== "string" || account.length > 64 || hasControl(account)) {
@@ -117,6 +121,12 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       const ofHome = live().filter(
         (grant) => attr(grant, "app") === app && samePath(host.platform, attr(grant, "home"), home),
       );
+      // One home per instance: a connection shows only its instance, so the grant gate could not
+      // tell two homes of one instance apart (hub/home-gate.ts). The person frees the instance by
+      // removing the other home, or gives this one its own instance in machine.toml.
+      if (live().some((grant) => !ofHome.includes(grant) && attr(grant, "instance") === instance)) {
+        throw invalid("instance", "Another agent home is registered as this instance");
+      }
       const kept = ofHome.find(
         (grant) =>
           attr(grant, "instance") === instance &&
