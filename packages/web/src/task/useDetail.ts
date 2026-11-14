@@ -1,5 +1,6 @@
 // The expanded task's detail, live (A5 3.15 item 8): read when the task expands, and again
-// whenever a frame of the feed touched the task (its row, a note, a log entry, a source). Only the
+// whenever a frame of the feed touched the task (its row, a note, a log entry, a source) or a
+// fresh snapshot replaced the working set. Only the
 // newest read applies: an older one that answers late never replaces a newer detail. A read that
 // fails keeps what is shown and says so, unless the session itself failed (signed out, a stale
 // build), which the frame reports.
@@ -43,7 +44,9 @@ export function useDetail(task: string): DetailState {
     };
     load();
     const stop = live.onTouched((touched) => {
-      if (touched.tasks.has(task)) load();
+      // A fresh snapshot reads again whatever the task: one the working set does not hold (a
+      // completed task) is in no snapshot's list, and what changed before it is unknown.
+      if (touched.reset || touched.tasks.has(task)) load();
     });
     return () => {
       current = false;

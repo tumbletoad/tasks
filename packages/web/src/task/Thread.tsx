@@ -125,6 +125,8 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
   const t = useT();
   const say = useToast();
   const [all, setAll] = useState(false);
+  /** The entry that holds focus: it stays shown while it does, however many entries arrive. */
+  const [focused, setFocused] = useState<string | undefined>(undefined);
 
   const items: Item[] = [];
   for (const note of notes) {
@@ -181,7 +183,12 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
   );
 
   if (items.length === 0) return <p className={styles.line}>{t("thread.empty")}</p>;
-  const hidden = all ? 0 : Math.max(0, items.length - SHOWN_ENTRIES);
+  // Nothing moves under focus (A5 3.15): an entry that holds focus is not pushed out of the last
+  // six by an entry that arrives; the window grows to keep it until focus leaves it.
+  const held = focused === undefined ? -1 : items.findIndex((item) => item.key === focused);
+  const hidden = all
+    ? 0
+    : Math.max(0, Math.min(items.length - SHOWN_ENTRIES, held < 0 ? Infinity : held));
   const shown = items.slice(hidden);
   const today = new Date().toDateString();
   return (
@@ -205,10 +212,20 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
         aria-label={t("thread.label")}
         aria-live="polite"
         aria-relevant="additions"
+        onFocus={(event) => {
+          const key = (event.target as HTMLElement).closest<HTMLElement>("[data-entry-key]")
+            ?.dataset["entryKey"];
+          setFocused(key);
+        }}
+        onBlur={(event) => {
+          const next = event.relatedTarget as Node | null;
+          if (next === null || !event.currentTarget.contains(next)) setFocused(undefined);
+        }}
       >
         {shown.map((item) => (
           <li
             key={item.key}
+            data-entry-key={item.key}
             className={styles.entry}
             data-entry={item.kind}
             data-state={item.state}

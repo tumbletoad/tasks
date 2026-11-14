@@ -188,7 +188,12 @@ function Slots({
             aria-label={t("task.collapse")}
             data-tip={t("task.collapse")}
             tabIndex={tab}
-            onClick={() => {
+            onClick={(event) => {
+              // The button leaves with the card: focus goes to the title first, as Escape's does.
+              event.currentTarget
+                .closest("[data-row-line]")
+                ?.querySelector<HTMLElement>('[data-part="title"]')
+                ?.focus({ preventScroll: true });
               actions.toggle(task);
             }}
           >
@@ -236,24 +241,30 @@ function Slots({
 function TitleEditor({
   task,
   label,
+  actions,
   onDone,
 }: {
   readonly task: TaskRow;
   readonly label: string;
-  readonly onDone: (title: string | undefined) => void;
+  readonly actions: RowActions;
+  readonly onDone: () => void;
 }) {
   const field = useRef<HTMLInputElement>(null);
   const done = useRef(false);
+  // Taken once, as the editor opens: the save's base is the title the person began to change.
+  const [save] = useState(() => actions.rename(task));
+  const [before] = useState(task.title);
   useEffect(() => {
     field.current?.focus();
     field.current?.select();
   }, []);
-  const finish = (save: boolean) => {
+  const finish = (keep: boolean) => {
     if (done.current) return;
     done.current = true;
     const title = (field.current?.value ?? "").trim();
     const line = field.current?.closest("[data-row-line]");
-    onDone(save && title !== "" && title !== task.title ? title : undefined);
+    onDone();
+    if (keep && title !== "" && title !== before) save(title);
     // After React has put the title back.
     requestAnimationFrame(() => {
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
@@ -265,7 +276,7 @@ function TitleEditor({
       className={styles.edit}
       data-part="title-edit"
       aria-label={label}
-      defaultValue={task.title}
+      defaultValue={before}
       maxLength={500}
       dir="auto"
       onKeyDown={(event) => {
@@ -382,9 +393,9 @@ function RowView({
               <TitleEditor
                 task={task}
                 label={t("task.title")}
-                onDone={(title) => {
+                actions={actions}
+                onDone={() => {
                   setEditing(false);
-                  if (title !== undefined) actions.rename(task, title);
                 }}
               />
             ) : (

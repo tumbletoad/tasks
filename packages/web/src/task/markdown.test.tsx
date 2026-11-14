@@ -100,7 +100,9 @@ describe("[A5.3.26.web.markdown] task Markdown is elements of an allow-list, nev
       "_a ".repeat(10_000),
     ];
     for (const input of inputs) expect(html(input).length).toBeGreaterThan(0);
-    expect(html("## Plan ##")).toBe('<div dir="auto" data-md=""><p><strong>Plan</strong></p></div>');
+    expect(html("## Plan ##")).toBe(
+      '<div dir="auto" data-md=""><p><strong>Plan</strong></p></div>',
+    );
     expect(html("# C#")).toContain("<strong>C#</strong>");
     expect(html("#  ")).toContain("<p><strong></strong></p>");
   });

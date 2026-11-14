@@ -196,8 +196,25 @@ function Facts({ task, clock }: { readonly task: TaskRow; readonly clock: Clock 
   );
 }
 
-/** A source's line: its kind's icon, then its own text (a link when its URL may open). */
-function SourceLine({ source }: { readonly source: SourceOutput }) {
+/** Two texts a person reads as the same: case, spacing and a closing full stop aside. */
+function sameText(a: string, b: string | undefined): boolean {
+  if (b === undefined) return false;
+  const plain = (s: string) => {
+    const words = s.normalize("NFC").trim().split(/\s+/u).join(" ");
+    let end = words.length;
+    while (end > 0 && words[end - 1] === ".") end -= 1;
+    return words.slice(0, end).toLocaleLowerCase();
+  };
+  const left = plain(a);
+  return left !== "" && left === plain(b);
+}
+
+/**
+ * A source's line: its kind's icon, then its own text (a link when its URL may open). A source
+ * whose own text is the task's title or summary (a task named after its email) shows its key, or
+ * else its kind's name, instead: the card shows each fact string once (A5 3.7).
+ */
+function SourceLine({ source, task }: { readonly source: SourceOutput; readonly task: TaskRow }) {
   const t = useT();
   const ref = source.key === undefined ? undefined : keyRef(source.kind, source.key);
   const link = source.url === undefined ? undefined : safeHref(source.url);
@@ -205,12 +222,23 @@ function SourceLine({ source }: { readonly source: SourceOutput }) {
     link?.domain === undefined
       ? source.url
       : t("source.tip", { domain: link.domain, url: source.url ?? "" });
-  const title =
+  const repeats = sameText(source.title, task.title) || sameText(source.title, task.summary);
+  // What opens the source: its own text, or, when that repeats the task, its key or kind's name.
+  const own: ReactNode = repeats ? (
+    ref === undefined ? (
+      t("source.kind", { kind: source.kind })
+    ) : (
+      <span className={`${styles.key} ${styles.mono}`}>{ref}</span>
+    )
+  ) : (
+    source.title
+  );
+  const opener =
     link === undefined ? (
-      <span dir="auto">{source.title}</span>
+      <span dir="auto">{own}</span>
     ) : (
       <a href={link.href} target="_blank" rel={LINK_REL} data-tip={tip} title={tip} dir="auto">
-        {source.title}
+        {own}
       </a>
     );
   return (
@@ -219,8 +247,10 @@ function SourceLine({ source }: { readonly source: SourceOutput }) {
         <SourceIcon kind={source.kind} />
       </span>
       <span data-fact="">
-        {ref === undefined ? null : <span className={`${styles.key} ${styles.mono}`}>{ref}</span>}
-        {title}
+        {ref === undefined || repeats ? null : (
+          <span className={`${styles.key} ${styles.mono}`}>{ref}</span>
+        )}
+        {opener}
         {source.who === undefined ? null : (
           <span className={styles.muted} dir="auto">
             {t("source.whoSuffix", { who: source.who })}
@@ -437,7 +467,11 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
         )}
         <ul className={styles.links}>
           {sources.map((source, i) => (
-            <SourceLine key={`${String(i)}:${source.key ?? source.title}`} source={source} />
+            <SourceLine
+              key={`${String(i)}:${source.key ?? source.title}`}
+              source={source}
+              task={task}
+            />
           ))}
           <PlaceLine task={task} detail={detail} />
           {learnings.map((learning, i) => (

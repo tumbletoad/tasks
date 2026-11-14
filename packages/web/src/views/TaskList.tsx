@@ -81,6 +81,16 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
   const asking = useRef<string | undefined>(undefined);
   /** The URL's task this list has applied, or written itself. */
   const handled = useRef<string | undefined>(wantedRef === undefined ? undefined : "");
+  /** The URL's task as this render reads it. */
+  const wanted = useRef(wantedRef);
+  wanted.current = wantedRef;
+  /**
+   * The URL's task the person has just left by expanding or collapsing a row: until the router
+   * puts the new URL in place, a frame that renders with the old one must not apply it again.
+   */
+  const leaving = useRef<{ ref: string | undefined } | undefined>(undefined);
+  /** The URL's `task.get`: the newest one applies, and the person's own choice outdates it. */
+  const lookups = useRef(new Latest());
 
   // The expanded task's newest row: live, else the injected one, else the last one seen.
   const expandedRow =
@@ -94,14 +104,16 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
   // The view's rows, grouped, as one sequence of items. Recomputed when the published rows change.
   // An expanded task stays where it is until it is collapsed, even when an update takes it out
   // of the view (A5 3.1 item 7), and the URL's task joins its group when the view leaves it out.
+  // Only the expanded task joins: the injected row is that task's row while it is expanded, and
+  // the live row wins over it as soon as the store holds the task.
   const items = useMemo(() => {
     const tasks = [...state.tasks.values()].filter(filter);
-    for (const extra of [injected, expandedRow]) {
-      if (extra !== undefined && !tasks.some((task) => task.id === extra.id)) tasks.push(extra);
+    if (expandedRow !== undefined && !tasks.some((task) => task.id === expandedRow.id)) {
+      tasks.push(expandedRow);
     }
     const groups = groupTasks(tasks, state.areas.values(), state.projects.values());
     return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [state.tasks, state.areas, state.projects, filter, injected, expandedRow]);
+  }, [state.tasks, state.areas, state.projects, filter, expandedRow]);
 
   const timed = useMemo(
     () => items.items.some((item) => item.kind === "row" && item.task.due_at !== undefined),
@@ -202,19 +214,36 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
     (task: TaskRow) => {
       setExpanded(task.id);
       setCurrent(task.id);
+      // An injected row belongs to its expansion: another task's expansion ends it.
+      setInjected((known) => (known?.id === task.id ? known : undefined));
       watched.current.add(task.id);
       loadReceipts(task.id);
     },
     [loadReceipts],
   );
 
+  /**
+   * The person expanded or collapsed a row: that is the URL's task now (`ref`). A lookup of the
+   * URL's earlier task that is still on its way is outdated, and the earlier URL, until the
+   * router replaces it, is not applied again.
+   */
+  const chosen = useCallback((ref: string | undefined) => {
+    handled.current = ref;
+    lookups.current.begin("target");
+    asking.current = undefined;
+    leaving.current = wanted.current === ref ? undefined : { ref: wanted.current };
+  }, []);
+
   // The URL's task (a link, `tasks open <task>`, a reload, Back and Forward) expands once it is
   // found: in the live rows, or read with `task.get` once the rows are live and do not hold it.
   // A URL without a task collapses. A task that does not exist leaves the URL with a toast. Each
   // URL task is applied once (`handled`): the URL this list wrote itself, after the person
   // expanded or collapsed a row, is already applied, so a frame in between never undoes a click.
-  const lookups = useRef(new Latest());
   useEffect(() => {
+    if (leaving.current !== undefined) {
+      if (wantedRef === leaving.current.ref) return;
+      leaving.current = undefined;
+    }
     if (wantedRef === handled.current) return;
     if (wantedRef === undefined) {
       handled.current = undefined;
@@ -235,18 +264,27 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
     if (state.phase !== "live" || asking.current === wantedRef) return;
     asking.current = wantedRef;
     const newest = lookups.current.begin("target");
+    // An answer applies only while it is the newest lookup and the URL still names its task: the
+    // person may have chosen another row, or gone Back, while it was on its way.
+    const applies = () => newest() && wanted.current === wantedRef;
+    const settled = () => {
+      if (asking.current === wantedRef) asking.current = undefined;
+    };
     const { areas, projects } = state;
     api.client.task
       .get({ task: wantedRef })
       .then((read) => {
-        if (!newest() || read.view !== "digest") return;
+        settled();
+        if (!applies() || read.view !== "digest") return;
         handled.current = wantedRef;
         const found = rowOfFacts(read.task, areas, projects, latest.current.today);
         setInjected(found);
         expandTask(found);
       })
       .catch((error: unknown) => {
-        if (!newest() || live.failed(error)) return;
+        if (live.failed(error)) return;
+        settled();
+        if (!applies()) return;
         handled.current = wantedRef;
         say(t("task.gone"));
         changed.current?.(undefined, true);
@@ -255,11 +293,11 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
 
   /** Collapses the expanded task; an injected one leaves with it (its route is left). */
   const collapse = useCallback(() => {
-    handled.current = undefined;
+    chosen(undefined);
     setExpanded(undefined);
     setInjected(undefined);
     changed.current?.(undefined);
-  }, []);
+  }, [chosen]);
 
   /** The click's receipt shows at once, unless a list already holds it: that one is newer. */
   const shown = useCallback(
@@ -297,7 +335,7 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
         if (latest.current.expanded === task.id) {
           collapse();
         } else {
-          handled.current = task.ref;
+          chosen(task.ref);
           expandTask(task);
           changed.current?.(task);
         }
@@ -305,7 +343,7 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
       // A tile whose launch is on its way or done (A5 3.6): the row expands, and stays expanded.
       expand: (task) => {
         if (latest.current.expanded !== task.id) {
-          handled.current = task.ref;
+          chosen(task.ref);
           expandTask(task);
           changed.current?.(task);
         }
@@ -361,27 +399,31 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
           });
       },
       // The title, edited in place (A5 3.7): shown at once, held until the feed confirms it.
-      rename: (task, title) => {
-        live
-          .write(
-            (request) =>
-              api.client.task.update({
-                task: task.id,
-                set: { title },
-                ...(live.store.asOf === undefined ? {} : { base: live.store.asOf }),
-                request_id: request,
-              }),
-            { tasks: [{ id: task.id, set: { title } }] },
-          )
-          .answer.catch((error: unknown) => {
-            if (!live.failed(error)) say(t("task.renameFailed"));
-          });
+      rename: (task) => {
+        // The base is taken when the editor opens: what the person saw when they began to type.
+        const base = live.store.asOf;
+        return (title) => {
+          live
+            .write(
+              (request) =>
+                api.client.task.update({
+                  task: task.id,
+                  set: { title },
+                  ...(base === undefined ? {} : { base }),
+                  request_id: request,
+                }),
+              { tasks: [{ id: task.id, set: { title } }] },
+            )
+            .answer.catch((error: unknown) => {
+              if (!live.failed(error)) say(t("task.renameFailed"));
+            });
+        };
       },
       current: (task) => {
         setCurrent(task.id);
       },
     };
-  }, [api, live, expandTask, collapse, say, shown, t, toClipboard]);
+  }, [api, live, expandTask, chosen, collapse, say, shown, t, toClipboard]);
 
   const onCurrent = useCallback((key: string) => {
     setCurrent(key);
