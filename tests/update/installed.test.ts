@@ -32,7 +32,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe as suite, expect, test } from "vitest";
 import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { canonicalStatePath, installId } from "../../packages/service/src/hub/paths.ts";
 import {
@@ -55,6 +55,7 @@ import {
   releaseOf,
   runInstaller,
   runProgram,
+  runsElevated,
   snapshot,
   stableCommand,
   throwawayKey,
@@ -64,6 +65,11 @@ import { keyLine } from "./fixture.ts";
 import type { ChildTask } from "./child.ts";
 
 const windows = process.platform === "win32";
+/**
+ * Every test here runs the installed service, which refuses an elevated token (exit 64): skipped
+ * in an elevated process, where nothing of the file runs, its builds included (kit.ts).
+ */
+const describe = suite.skipIf(runsElevated());
 /** Builds, an install script run and many service starts: a slow runner gets room. */
 const SLOW = 900_000;
 const ROUNDS = 2_400_000;
