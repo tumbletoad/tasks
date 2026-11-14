@@ -80,7 +80,13 @@ const recordFile = () => join(stateOf(home), "setup", "agents.json");
 
 /** `tasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
 const run = (argv: string[], tty = true, env: Record<string, string> = {}) =>
-  runMain(argv, { home, tty, env, main: { agents: { env: fakes.env, home: user } } });
+  runMain(argv, {
+    home,
+    tty,
+    env,
+    // macOS: never the machine's own Applications folder.
+    main: { agents: { env: fakes.env, home: user, systemApplications: join(user, "Apps") } },
+  });
 
 /** The live agent-home rows, as any CLI may read them. */
 async function rows(): Promise<

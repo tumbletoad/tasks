@@ -90,7 +90,12 @@
         "enabled": true
       }
     ],
-    "approvals": {}
+    "approvals": {},
+    "setup": {
+      "managedPaths": [
+        "C:/Users/mira/.claude/CLAUDE.md"
+      ]
+    }
   },
   "problems": []
 }

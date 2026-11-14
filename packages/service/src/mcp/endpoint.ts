@@ -66,6 +66,16 @@ export interface McpEndpointOptions {
   /** Session binding (M2.04): each connection's slot from its bind. Without it, all are unbound. */
   readonly bindings?: Bindings;
   readonly log?: (event: McpEvent) => void;
+  /**
+   * A tool call went through the request path from this instance and app (the entry's `--instance`
+   * and `--app`), in the bridge's working folder (the bind context's `cwd`): `tasks doctor --live`
+   * asks for it (hub/agent-homes.ts `setup/seen`). Only a call the service carried out counts.
+   */
+  readonly seen?: (
+    instance: string | undefined,
+    app: string | undefined,
+    folder: string | undefined,
+  ) => void;
   /** Tests only. */
   readonly limits?: Partial<TransportLimits>;
 }
@@ -92,6 +102,7 @@ export function toolCaller(options: {
   readonly context: JsonObject;
   readonly conn: number;
   readonly log?: (event: McpEvent) => void;
+  readonly seen?: McpEndpointOptions["seen"];
   readonly slot?: Slot;
   readonly bindings?: Bindings;
 }): ToolCall {
@@ -101,6 +112,8 @@ export function toolCaller(options: {
   const home = instanceOf(options.context);
   const { slot, bindings } = options;
   const named = spaceOf(options.context);
+  const cwd = options.context["cwd"];
+  const folder = typeof cwd === "string" ? cwd : undefined;
   return async (tool, args, thread) => {
     const entry = toolEntry(tool);
     if (entry === undefined) return text(renderError(INTERNAL.toBody()), true);
@@ -125,6 +138,7 @@ export function toolCaller(options: {
         },
         { op: entry.name, input: args, ...(space === undefined ? {} : { space }) },
       );
+      options.seen?.(client.instance, client.app, folder);
       return text(renderResult(entry.name, result), false);
     } catch (error) {
       if (error instanceof AppError) return text(renderError(error.toBody()), true);
@@ -159,6 +173,7 @@ export function mcpEndpoint(options: McpEndpointOptions): (channel: McpChannel) 
       context,
       conn,
       ...(log === undefined ? {} : { log }),
+      ...(options.seen === undefined ? {} : { seen: options.seen }),
       ...(slot === undefined ? {} : { slot }),
       ...(bindings === undefined ? {} : { bindings }),
     });

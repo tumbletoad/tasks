@@ -142,7 +142,7 @@ Code: `packages/service/src/hub/paths.ts` (`resolveLayout`, pure over host facts
 
 #### 3.2.4 `machine.toml`
 
-One machine-local file, `<config>/machine.toml`, never synced or exported. This appendix owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]` and `[[spaces]]`. A4 owns `[terminal]`, `[[instance]]`, `[[custom_target]]`, `[approvals]`, `[override.*]` and the run caps. A1 and A4 own `[roots]`. A6 owns `[remote]` and `[security]`. Code: `packages/service/src/config/` (`machine-toml.ts`, whose header states the rules; `toml.ts`, `edit.ts`). Tests: `A2.3.2.4.config.golden`, `.edit`, `A2.3.13.cli.doctor` (`doctor-config.test.ts`).
+One machine-local file, `<config>/machine.toml`, never synced or exported. This appendix owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]` and `[[spaces]]`. A4 owns `[terminal]`, `[[instance]]`, `[[custom_target]]`, `[approvals]`, `[override.*]` and the run caps. A1 and A4 own `[roots]`. A3 owns `[setup]` (3.12). A6 owns `[remote]` and `[security]`. Code: `packages/service/src/config/` (`machine-toml.ts`, whose header states the rules; `toml.ts`, `edit.ts`). Tests: `A2.3.2.4.config.golden`, `.edit`, `A2.3.13.cli.doctor` (`doctor-config.test.ts`).
 
 - The keys of this appendix: `[service] default_space`; `[http] port`; `[ui] open_mode` (`tab` or `app`); `[updates] channel`, `check`, `auto` (`auto = true` installs only while no run or launched session is active); `[log] level`; `[[spaces]]` with `id`, `path` and `enabled`.
 - **Reading is strict and content-free** (the key and a fixed code, never the value). A bad entry is dropped, so a half-understood instance is never offered and an approval that is not exactly `allow` approves nothing. A problem in the file itself or in `[[spaces]]` refuses the start, because hosting another set of spaces than the person wrote is worse than not starting.
@@ -267,7 +267,7 @@ The service proves itself only after the client's proof verifies, and **the clie
 **rpc mode** (CLI, shim). `RPC_METHODS` (`local/classes.ts`) is the one table of which class may call which method, and `handlerTable` (`hub/endpoint.ts`) the one place handlers are registered. User-only methods are also checked again by each handler.
 - `service/shutdown {restart?}` answers before the drain. It is the graceful stop on Windows.
 - `t3/pair` and `t3/pair_wait` are user-only because the service, holding `service.lock`, is the one writer of T3's token (`hub/t3.ts`). The shim's `launch.*` and `run.*` each need their own credential (A4 3.6.3, 3.17).
-- A3's setup engine (`packages/service/src/setup/`) runs in the CLI, in the person's session, because the apps' commands must be the ones on the person's PATH, which a service started at boot does not have. The service keeps only the rows (`setup/home_grant`, `setup/home_revoke`, 3.2.5).
+- A3's setup engine (`packages/service/src/setup/`) runs in the CLI, in the person's session, because the apps' commands must be the ones on the person's PATH, which a service started at boot does not have. The service keeps only the rows (`setup/home_grant`, `setup/home_revoke`, 3.2.5), and for `tasks doctor --live` the times of the tool calls it carried out per instance, in memory (`setup/seen`, every CLI class, A3 3.14).
 - An internal error carries nothing from the failure, in the reply or the log.
 - **Closing** (a revocation, a shutdown, a slow reader) makes a connection terminal before the socket's close event: nothing buffered is dispatched.
 
@@ -651,7 +651,7 @@ Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/docto
 
 **Crashes** write a record to `<state>/crash/` and exit 70 at once. The record never holds the error's message or function names, because a name can be data. Node's fatal reports exclude the environment. Nothing is uploaded.
 
-**`tasks doctor [--json] [--self-test] [--bundle]`** works without a service and opens no space database. Every check is non-interactive, so `--self-test` (for CI, the build, install and update) runs them all. Rows not built yet show as skipped. A1, A3 and A4 add rows.
+**`tasks doctor [--json] [--self-test] [--live] [--bundle]`** works without a service and opens no space database. Every check is non-interactive, so `--self-test` (for CI, the build, install and update) runs them all. Rows not built yet show as skipped. A1, A3 and A4 add rows: A3's agent rows are in `doctor-agents.ts`, loaded only by doctor, and `--live`, which spends tokens, runs only when asked (A3 3.14).
 - `paths` says where the hidden data folder is. `config` reads `machine.toml` as the service does, with the same rule and words.
 - `runtime` is loaded by a dynamic import only doctor reaches, so no other command loads storage.
 - `accounts` counts other interactive accounts, never names them, and leaves out an agent app's sandbox accounts. v1 assumes one user per machine (3.8.6), so the row warns on every run and cannot be acknowledged.

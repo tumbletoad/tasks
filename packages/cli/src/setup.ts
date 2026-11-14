@@ -26,18 +26,25 @@ import { asAppError } from "./verbs.ts";
 /** `tasks setup --help` and `tasks help setup`. */
 export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
 
-  agents [--preview]  What registering ${CLI_NAME} in each Claude Code and Codex home would change:
-                      the exact command and diff per home, and the apply command. Writes nothing
+  agents [--preview]  What registering ${CLI_NAME} in each agent home would change (Claude Code,
+                      Codex and the Codex app, the homes T3 Code uses, Claude Desktop): the exact
+                      command or entry and the diff per home, and the apply command. Writes nothing
   agents --apply --plan <token>
                       Carry out that preview: register ${CLI_NAME}'s MCP server in each home that
                       has no entry yet, or change nothing when the homes changed since
   agents --remove     Take out every entry setup wrote that is still exactly as it wrote it
   agents --status     Each home: registered or not, and its grant row
-    [--app claude-code,codex] [--instance <id>] [--space <id or name>]
+    [--app claude-code,codex,claude-desktop,codex-app,t3] [--instance <id>] [--home <folder>]
+    [--parts mcp,approve-tools] [--space <id or name>]
+  agents print --app <name>
+                      The entry and the file it belongs in, to add by hand (also cursor, gemini,
+                      opencode, zed, vscode). Writes nothing
   t3 [--no-browser]   Pair with T3 Code: approve ${CLI_NAME} on T3's page in your browser
   t3 --status         Whether T3 Code can be used: paired, running, or Reconnect T3
 
-Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings.
+Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings:
+--parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are
+only read.
 --apply, --remove and pairing run only from an interactive terminal. --no-browser prints the page
 to open instead of opening it. Pairing again replaces the earlier pairing: a T3 launch still
 waiting on the earlier one is then shown as unknown, never repeated.

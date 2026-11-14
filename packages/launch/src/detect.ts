@@ -22,6 +22,7 @@ import {
   type BuiltInTargetId,
   type TargetDef,
 } from "./catalogue.ts";
+import { killTree, ownsGroup } from "./kill.ts";
 import type { Instance } from "./sections.ts";
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -624,7 +625,7 @@ export function nodeDetectHost(options: NodeHostOptions): DetectHost {
         // Linux and macOS: the command leads a process group of its own, so whatever it starts is
         // killed with it. Windows has no such group here: a descendant may outlive the call, and
         // the grace below still ends the call and closes Tasks's end of the pipe.
-        const group = platform !== "win32";
+        const group = ownsGroup(platform);
         let child;
         try {
           child = spawn(file, [...args], {
@@ -639,42 +640,13 @@ export function nodeDetectHost(options: NodeHostOptions): DetectHost {
           finish(undefined);
           return;
         }
-        const killAll = () => {
-          if (group && child.pid !== undefined) {
-            try {
-              process.kill(-child.pid, "SIGKILL");
-              return;
-            } catch {
-              // The group is gone: only the command itself may be left.
-            }
-          }
-          child.kill("SIGKILL");
-        };
-        // Windows, at the bound: the command is still running, so its tree can be found from it.
-        // The system's own taskkill, by its full path, ends it with every descendant.
-        const killTree = () => {
-          if (platform !== "win32" || child.pid === undefined) {
-            killAll();
-            return;
-          }
-          const killer = spawn(
-            win32.join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "taskkill.exe"),
-            ["/T", "/F", "/PID", String(child.pid)],
-            { stdio: "ignore", shell: false, windowsHide: true },
-          );
-          killer.once("error", () => {
-            child.kill("SIGKILL");
-          });
-          killer.once("exit", () => {
-            child.kill("SIGKILL");
-          });
-        };
-        // At the bound the command and its group are killed, and the answer waits for the pipe to
-        // close. A grace bounds even that wait, then the pipe is closed from this end.
+        // At the bound the command and what it started are killed (kill.ts), and the answer waits
+        // for the pipe to close. A grace bounds even that wait, then the pipe is closed from this
+        // end.
         let timedOut = false;
         timer = setTimeout(() => {
           timedOut = true;
-          killTree();
+          killTree(child, platform);
           timer = setTimeout(() => {
             child.stdout.destroy();
             finish(undefined);
@@ -683,7 +655,7 @@ export function nodeDetectHost(options: NodeHostOptions): DetectHost {
         // When the command exits, what it left behind in its group is killed, so a descendant
         // holding the pipe cannot keep the answer waiting.
         child.once("exit", () => {
-          if (group) killAll();
+          if (group) killTree(child, platform);
         });
         child.stdout.setEncoding("utf8");
         child.stdout.on("data", (chunk: string) => {

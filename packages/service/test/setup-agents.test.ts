@@ -117,6 +117,8 @@ async function inputOf(w: World, extra: Record<string, string> = {}): Promise<Se
     tasks: w.tasks,
     detection: await detect(nodeDetectHost({ env, home: w.home, timeoutMs: 30_000 })),
     instances: [],
+    // macOS: never the machine's own Applications folder.
+    systemApplications: join(w.root, "Applications"),
     isFolder: (path) => existsSync(path) && statSync(path).isDirectory(),
     run: (argv, childEnv) => runCommand(argv, childEnv, w.home),
   };
