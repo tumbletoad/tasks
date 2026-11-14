@@ -1,4 +1,4 @@
-// The updater with real builds, a real install and real processes (A7 3.8 M6.12's Verify line):
+// The updater with real builds, a real install and real processes (A7 3.13 M6.12's Verify line):
 // two versions built offline as the install scripts' tests build them (the real bundles and
 // launchers, the Node that runs the tests as the runtime), both trusting a throwaway key made
 // here, released and signed with it; the older one installed by its install script into a

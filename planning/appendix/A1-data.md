@@ -468,7 +468,7 @@ After the commit, the outbox topic `redact` finishes the rest, so a crash only d
 
 ### 3.12 Search index tables
 
-Not built yet (M3.05). A3 owns query syntax, ranking, result shape, budgets and cursors (R12). This appendix owns the tables and keeps them consistent.
+Built (M3.05) up to the schema step that creates the tables: released schemas are frozen and 0.2 does not hold them (3.4), so no space has an index until that step runs. The code is `packages/storage/src/search/`; tests `[A1.5.search.index]`, `[A1.5.search.rows-by-ids]`. A3 owns query syntax, ranking, result shape, budgets and cursors (R12). This appendix owns the tables and keeps them consistent.
 
 ```sql
 CREATE TABLE search_docs (
@@ -487,6 +487,12 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2',
   prefix = '2 3'
 );
+
+-- What a change to an existing source, area or project reads to find the tasks that show it
+-- (task_labels_label serves labels since 0.2).
+CREATE INDEX task_sources_source ON task_sources(source_id);
+CREATE INDEX tasks_area ON tasks(area_id);
+CREATE INDEX tasks_project ON tasks(project_id);
 ```
 
 | Document | `title` | `body` | `extra` |
@@ -496,13 +502,22 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 | learning | owning task title | body | project title |
 | project, area | title | brief | slug |
 
-- The FTS table stores its own copy of the text, so snippets and highlights work and deletes need no old values, unlike external-content tables.
-- The write handlers delete and re-insert each affected document in the write transaction. A lifecycle change updates `search_docs.lifecycle` for the task and its children. Tombstones and redaction remove documents; restore re-adds them.
+**What it guarantees.**
+- Once a space holds the tables (`hasSearchTables`, read when the writer attaches), every commit writes the documents its change rows reach, inside its own transaction (`indexChanges`). One function derives a document from the current state for both the commit and the rebuild, and a document whose content did not change keeps its row and its `seq`. So after any history the index equals a fresh rebuild, document numbers and seqs aside, and every FTS row has its `search_docs` row (`expectedDocuments`, `storedDocuments`).
+- A document exists for every live row and only for it: a tombstoned task has none, and neither have its notes, log entries and learnings, nor any deleted row. `lifecycle` is the owning task's (null for areas and projects) and `audience` the note's. A restore re-adds the documents.
+- What a change reaches: a task's title, lifecycle, tombstone or group (area and project) reaches its children's documents as well as its own, since a learning shows the task's project; its summary, context and outcome only its own; a source or a label every task that shows it; an area or a project its own document and its tasks' (a project's learnings too). A new source, label, area or project reaches no other task, because the links and tasks its commit adds have change rows of their own, so a commit that creates one reads no other task; a change to an existing one finds its tasks through the indexes above. Places, launches, preferences, proposals and exchanges hold no search text.
+- The FTS table stores its own copy of the text, so snippets and highlights work and deletes need no old values, unlike external-content tables. A rewritten document keeps its number, so `doc` stays its FTS rowid.
 - Agent queries join `search_docs` with `audience = 'all'`, so "only me" notes (D14) are excluded from agent search, agent reads and the projection with no migration.
-- `tasks index rebuild` empties and refills both tables in one transaction. The maintenance worker runs `INSERT INTO search_fts(search_fts, rank) VALUES ('merge', 500)` when idle and the FTS `integrity-check` weekly.
+- `rebuildSearchIndex` empties and refills both tables in the caller's write transaction, every document with the space's `last_seq`.
+- **Pages by frozen IDs** (`search/rows.ts`). A3's cursors freeze an ordered list of task or learning IDs at a snapshot. A1 serves each page with `rows_by_ids(ids)` (`ROWS_BY_IDS_SQL`, `decodeRowsByIds`) in one read transaction, which returns the page's own `as_of` and one entry per ID, in order, never fewer: the current row with its `version`, `touched` and lifecycle; `{id, ref, state: "deleted"}` for a tombstoned task, or a deleted learning or one whose task is tombstoned; `{id, state: "redacted"}` for an ID with no row, with no content. Only entity redaction removes a row (3.11.4), so a missing row is a redacted one without a `redactions` lookup, and every ID in `redactions` has no row. Rows may be newer than the cursor's snapshot; the page's `as_of` is the base for writes. A3 invalidates a cursor when the space's epoch or incarnation differs from the cursor's.
+
+**Limits.**
 - **Broad queries are the cost.** A broad term matches a median of about 36,000 of the 108,000 documents at design scale (p95 about 72,000), so bm25 ranking of every match and snippets dominate. Selective queries (p95 about 20 ms) and no-hit queries (under 0.1 ms) are far below the target. M3.16 chooses a query design for broad terms (3.20).
 - **Trigram.** An optional `search_tri` table with the `trigram` tokenizer, for substring and CJK search, stays behind `features.search_trigram`, off by default: its broad p95 is above the unicode61 index on Windows and Linux. Open item 4 decides the default.
-- **Pages by frozen IDs.** A3's cursors freeze an ordered list of IDs at a snapshot. A1 serves each later page with `rows_by_ids(ids)` in one read transaction, which returns the page's own `as_of` and one entry per ID, in order, never fewer: the current row with its `version` and lifecycle; `{id, ref, state: "deleted"}` for a tombstoned row; `{id, state: "redacted"}` for an ID in `redactions`, with no content. Rows may be newer than the cursor's snapshot; the page's `as_of` is the base for writes. A3 invalidates a cursor when the space's epoch or incarnation differs from the cursor's.
+
+**The schema step that adds the tables** runs `SEARCH_TABLE_STATEMENTS` (`search/tables.ts`, the DDL above) and then `rebuildSearchIndex` in its `up`, so a migrated space starts with a complete index, and adds `search_docs.kind` to `CLOSED_ENUMS`. Its `verify` counts `type = 'table'` rows only, as 0002's does, so FTS5's shadow tables are not judged as STRICT tables. Until it runs, the writer keeps no index and A3's search answers filters but not words (A3 3.9.2).
+
+**Not built yet.** The `tasks index rebuild` verb; the maintenance worker's `INSERT INTO search_fts(search_fts, rank) VALUES ('merge', 500)` when idle and the FTS `integrity-check` weekly; and, with `space.patch`, re-indexing every task document when the reference prefix changes (each task's `extra` holds its reference).
 
 ### 3.13 The projection (D10)
 
@@ -605,6 +620,7 @@ There is no fallback to another clone, a containing project, a parent folder, th
 - **Use.** A route whose process Tasks starts in the folder calls `resolvePlace` right before the launch and hands that process the folder and the check in its claim's reply (A4 3.6.3), never in argv, which a process listing shows, or the environment, which the agent inherits. Routes where none of our processes is in the folder get only the first part (A4).
 - **Windows** reads `.` and `..` through the path, not the held handle; what ties path to directory there is that a folder a process is in, and every folder above it, cannot be renamed or removed. Residual, asserted by a test: a junction put into the path before the process entered and removed before the check. The check passes, but the process holds the link's target, so a later change of the path could move a later child. Untested: a reparse point set on the held folder itself.
 - **Identity, never spelling.** Inside the root is confirmed by identity, so `C:\workshop` is never inside `C:\work`. A volume without file numbers gives `identity_unavailable`, and `tasks roots add` refuses it, because comparing paths instead would make two folders `A` and `a` one. Unstable file numbers (FAT) are not detected.
+- **A link to a file is `not_a_directory`** on every platform, and a dangling link `path_missing`: the reason is the one Linux's own stat gives. Linux and macOS follow a link to a file, so there a failed stat is `path_missing`. Windows cannot follow a junction or a directory link to a file, and its stat calls the path missing. So on Windows, after a failed stat, `resolvePlace` (for a folder place) and `placeOf` read the link's own chain with lstat and readlink, at most 40 links as Linux follows them (41 is a loop). A relative target is taken from the real folder its link lies in, never from the path's spelling, because a link reached through another link leads where the file system takes it. A chain that ends at something other than a folder is `not_a_directory`, anything else `path_missing`. That read only picks the refusal, so it never makes a place resolve. Links in the path's earlier segments are not counted toward the 40. Tests: `[A1.3.15.places.resolve]`, `[A1.3.15.places.prop]`.
 - **The Git remote is an observation, not an identity**, read by a port of git's own config parser (`git-remote.ts`); the product never starts git. What the parser cannot read exactly records no remote, never a guess, and the place is bound with a warning (A3). Credentials are removed as text and nothing else changes, so two addresses git keeps apart are never recorded as one.
 
 **Limits of exactness.** A process may change its own working directory after the check. Two names of one directory by a hard link cannot be told apart. The Windows residual above. A repository changed while its remote is read. A place bound by `{root, path}` is not checked against the folder, so its remote is recorded only when the folder resolves at bind time.
@@ -823,6 +839,7 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.â€¦]`, `[A1.3.15.â€
 | Schema lint | `schema.lint` | `test/schema-lint.test.ts` |
 | Write path, receipts, launches, dedupe | `write.*` | `test/write-path.test.ts`, `children`, `clear-append`, `receipts`, `launches`, `write-model`, `dedupe` |
 | Errors | `errors.codes` | `test/errors.test.ts`, `packages/contracts/src/a1-errors.test.ts` |
+| Search index, pages by frozen IDs | `search.*` | `test/search-index.test.ts`, with the stand-ins of later operations in `test/search-helpers.ts` |
 | Migrations | `migration.*`; `A2.3.1.hub.failed-migration`, `A2.3.1.hub.migration-timeout` | `test/migrate.test.ts`, `tests/migration/`, `packages/service/test/migration-open.test.ts`, `packages/cli/test/migration-drill.test.ts` |
 | Backups and restore | `backup.*`, `restore.*` | `test/backup.test.ts`, `test/retention.test.ts`, `test/restore.test.ts` |
 | Synced and network folders | `sync.*` | `packages/service/test/sync-folders.test.ts`, `synced-spaces.test.ts` |

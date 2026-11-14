@@ -173,7 +173,7 @@ Orientation and session status (`entries/space-status.ts`, `ops/here.ts`). It is
 
 #### 3.4.3 `search`
 
-Find active tasks, finished tasks and learnings. Rows only, `get_task` for detail. Arrives in M4.01.
+Find active tasks, finished tasks and learnings. Rows only, `get_task` for detail. The entry `task.search` (`entries/task-search.ts`, `src/search/` in the service) is built with its CLI verb `tasks find` and its UI route (M3.05); the MCP tool `search`, its text form below and its data block arrive in M4.01, and the page's search box in M5.10, both on this entry. A scope or limit left out is `active` and 15, applied by the handler, so a query that names a lifecycle can widen the scope (3.9.2).
 
 ```ts
 { q?: string,                        // ≤ 500 chars: words, "phrases" and filters (3.9.2)
@@ -308,7 +308,6 @@ Each entry's CLI face names its verb (A2 owns the command), and `docs/agents/cli
 | Tool | Entry | CLI verb |
 |---|---|---|
 | `status` | `space.status` | `tasks status --here` |
-| `search` | `task.search` | `tasks find "<q>" [--scope all]` |
 | `organize` | `group.manage` | `tasks area list\|create\|rename\|move\|archive` |
 | `preferences` | `prefs.manage` | `tasks prefs describe\|get\|set` |
 
@@ -322,9 +321,11 @@ The catalogue is `packages/contracts/src/errors.ts` (each code with its A2 class
 - **`read_only`** answers every write to a space that takes no write on this machine, with `retryable: false` and the space's reason in A1's words, so the agent passes it on and does not retry.
 - **The grant refusal** (3.7.8) is one body on every face that carries an agent home's call: `{code: "forbidden", message: "This agent is not registered for this space.", hint: "Ask the user to run: tasks setup agents", data: {rule: "grant"}}`, with the command from the brand package. It names no space, home, folder, task or reference, and is the same for an ungranted space, a revoked row and no row, so the agent passes on the one command that fixes each. It carries no action key: it comes before staging, for reads too.
 
+- **`cursor_expired`** carries `reason`: `idle` (15 minutes unused, or evicted as its binding's least recently used), `restart` (unknown: issued before a restart, or never), `epoch`, `incarnation` or `binding` (another binding or another space), with the hint to run the search again (`search/cursors.ts`).
+
 Still to build:
 
-- `forbidden` rule `proposal_limit` (3.8.4); `not_permitted` carries the binding kind; `cursor_expired` carries `reason`: `idle`, `restart`, `epoch`, `incarnation` or `binding`, with the hint to run the search again; `not_found` carries up to 3 similar rows.
+- `forbidden` rule `proposal_limit` (3.8.4); `not_permitted` carries the binding kind; `not_found` carries up to 3 similar rows.
 - `read_only` also carries A6's `space_transferred` and `space_superseded`, the reasons `held` and `transfer_pending` arrive with their steps, and `STORAGE_OVERLOADED` needs a `retry_after_ms`.
 
 ### 3.6 Server instructions
@@ -539,17 +540,17 @@ For each write call from an agent actor, inside A1's writer transaction (X11), t
 
 ### 3.9 Search and indexing for agents
 
-Search is not built yet (M3.05, M4.01). The task digest v0 and its paging are built (3.9.6).
+Search is built (M3.05: `packages/service/src/search/`, tests `[A3.5.search.*]`) except the MCP tool's text form (M4.01), the trigram fallback (M3.16) and the index itself on real spaces: its tables arrive with a schema step after 0.2 (A1 3.12), and until then a space answers filters but not words. The task digest v0 and its paging are built (3.9.6).
 
 #### 3.9.1 Index content
 
 A1 owns the tables and keeps them current inside every commit (R1): one FTS5 table `search_fts (title, body, extra)` with `unicode61 remove_diacritics 2` and `prefix='2 3'`, and `search_docs` with each document's kind (`task`, `note`, `log`, `learning`, `project`, `area`), owning task, lifecycle and audience. This appendix specifies how queries use them.
 
 - **Column weights:** `bm25(search_fts, 10, 3, 2)` for title, body and extra.
-- **Grouping:** note, log and learning hits roll up to their owning task. A task's score is its best document's score, and the row's snippet comes from that document.
+- **Grouping:** note, log and learning hits roll up to their owning task. A task's score is its best document's score, and the row's snippet comes from that document. Of documents with equal scores the lowest entity ID is the best, so neither the order of writing nor a rebuild decides.
 - **Scopes:** `active` and `finished` filter on `search_docs.lifecycle`. `learnings` returns only `learning` documents, one row each.
 - **Filters** use A1's indexed task columns: status, inbox, area, project, priority, effort, due, focus, place, created, completed, creating actor kind, and the exact source-key table.
-- **Audience:** agent queries join `audience = 'all'`. When D14's "only me" notes arrive, they drop out of agent search, snippets and reads with no change here.
+- **Audience:** agent queries join `audience = 'all'`, in matches, negations, snippets and `has:notes` alike. When D14's "only me" notes arrive, they drop out of agent search, snippets and reads with no change here.
 - **Substring and CJK:** FTS5 and the trigram tokenizer are both in the SQLite of the pinned Node (3.54.1). A1's trigram table stays off behind `features.search_trigram`, and the fallback of 3.9.2 runs only when the flag is on. M3.16 decides the default.
 - The index holds what the product stores: titles, links and short summaries of sources. It never fetches URLs or mail bodies.
 - No embeddings in v1. The search call is the seam where an optional local semantic index can be added later without changing the tools.
@@ -576,35 +577,41 @@ by:agent  updated>-24h  completed>2026-10-01  on:cwd  id:M-14
 | `source:` | A full key (exact), or a kind (`email`, `ticket`, …) |
 | `by:` | `user`, `agent`, `agent:<instance>` |
 | `created`, `updated`, `completed` | Comparisons with dates or relative values (`>-24h`) |
-| `on:` | `cwd` (needs the `cwd` input), `this-machine`, or a machine name |
+| `on:` | `cwd` (needs the `cwd` input: tasks of any lifecycle placed at that folder or around it, as Open here matches places), `this-machine`, or a machine name |
 | `id:` | A task ref |
 
-- Words are ANDed. `OR` joins neighbours. A leading `-` negates. Quotes make a phrase.
-- Unknown keys and enum values fail with suggestions. The limits are 500 characters and 20 clauses.
-- **Safe execution.** The parser builds SQL with bound parameters. Every free-text token goes into FTS5 `MATCH` as a quoted string, with internal quotes doubled, and the last token gets `*` for prefix matching. User text never reaches `MATCH` raw.
-- **Fallback.** With `features.search_trigram` on (A1), a query that returns fewer than three rows, with text of at least three characters, adds trigram matches over titles and summaries, marked `~`.
-- The result's `parsed:` field shows how the query was read.
+- Words are ANDed. `OR` (upper case, alone) joins its two neighbours. A leading `-` negates. Quotes make a phrase, which runs to the next quote or to the end; `""` inside is one quote. A filter value may be quoted too (`area:"Client work"`). A word or phrase made only of characters the tokenizer always drops (`&`, `—`, `«»`: ASCII other than letters and digits, and the punctuation, symbols and spaces of Latin-1, General Punctuation, CJK punctuation and the fullwidth forms, `SEPARATOR_RANGES`) is left out, because it would match nothing and empty the whole AND; `parsed` shows the query without it. Any other text is searched as written: which further characters the tokenizer keeps depends on its own Unicode tables (it keeps 🧪 and drops 😀), so the parser never guesses.
+- **What OR joins.** Words with words or filters with filters, never a negated term: a word or a filter can match one task in ways no single statement ranks, and "not a or b" reads two ways. Each is `invalid_input`.
+- **A key is letters only**, so `10:30` and `M-14` stay words, and a key is read without regard to case. Unknown keys and values fail with suggestions: from the language's own words in the hint (`Did you mean p?`), from the space's values (statuses, effort keys, areas, projects, machines) in `data.suggestions` only, because no stored value reaches a message (3.5). The limits are 500 characters and 20 terms, for the query as given and for its `parsed` form (which closes an open phrase and quotes a value that holds a quote), so `parsed` always parses again.
+- **Values.** `status:` and `effort:` take comma lists. `due:` with a date, `today` or a number of days is that day, and `none` and `overdue` take only the colon; a timed due counts by its UTC day until M8's reminders bring zones. A relative time with a colon (`created:-7d`) means since then. A date is the space's day in its time zone. `is:new` and `is:changed` need the seen cursor and are refused naming M5.09.
+- **A query that names a lifecycle** (`is:completed`, `is:archived`, `is:unwrapped` or a `completed` comparison, not negated) searches every lifecycle when the call gives no scope, so `tasks find is:completed` finds completed tasks; the result's `scope` says which was searched.
+- **Words need the index** (A1 3.12). A space whose schema does not hold the search tables answers a query of filters, and refuses one with words with `space_unavailable`, `reason: "not_indexed"`, `retryable: false`.
+- **Safe execution** (`search/plan.ts`). The parser builds SQL from fixed fragments with every value bound. Every free-text token goes into FTS5 `MATCH` as a quoted string, with internal quotes doubled and control characters removed (an FTS5 string ends at a NUL), joined only by the planner's `AND` and `OR`. The last term gets `*` for prefix matching when it is an unquoted word whose last token has at least two letters, digits or private-use characters, the shortest prefix the index keeps: a one-letter prefix ranks most of the space, so `M-1` and `R.` get none. A token here runs over letters, digits, private-use characters and nonspacing marks, as in the tokenizer, and anything else ends it; where the tokenizer keeps such a character too, its token is only longer than the one counted. Negated words exclude every task (or learning) with a matching document through a `NOT IN` over their own `MATCH`, so `-word` also works alone. User text never reaches `MATCH` raw.
+- **Fallback.** With `features.search_trigram` on (A1), a query that returns fewer than three rows, with text of at least three characters, adds trigram matches over titles and summaries, marked `~`. Not built (M3.16 decides the default).
+- The result's `parsed` field shows how the query was read, in the language itself (`printQuery`): parsing it again gives the same query.
 
 #### 3.9.3 Ranking
 
-- **With text:** `score = -bm25(...) × boosts`: active task ×1.5; a hit on the task document itself, over one of its notes or log entries, ×1.2; focus ×1.2; updated in the last 7 days ×1.1; place matches `cwd` ×1.3; same area as the bound task ×1.2.
-- **Without text:** sort by due date (none last), then priority, then last update.
-- **Ties** go to the most recent update, then the ID, so the order is stable.
+- **With text:** `score = -bm25(...) × boosts`: active task ×1.5; a hit on the task document itself, over one of its notes or log entries, ×1.2; focus ×1.2; updated in the last 7 days ×1.1; place matches `cwd` ×1.3; same area as the bound task ×1.2. bm25 runs only in the FTS query itself, never inside an aggregate or a window (SQLite refuses it there), so each matching document's score is materialized once and a task takes its best document's (3.9.1). "Updated" is the instant of the commit that last touched the task: commit instants never go back (A1 3.9), so the newest commit before the cutoff splits the history once for every candidate.
+- **Without text:** sort by due date (none last), then priority, then last update. Scope `learnings` sorts by the learning's own date.
+- **Ties** go to the most recent update (the task's `touched`), then the ID, so the order is stable.
 - **Broad terms.** A query that matches most documents must not rank all of them. M3.16 first chooses one design with A1, measured with the storage bench on Windows and Linux, and then re-runs the bench's R05 on both: (1) cap the candidates before ranking (for example rank only the newest N matches, or open tasks first, then completed); (2) past a match-count limit, rank with a cheaper order than bm25 (recency within the match set) and build snippets only for the 20 shown; or (3) restate the 50 ms target for broad queries that match more than a third of the space, keeping 50 ms for selective queries. A1 owns the target, and the bench's broad queries stay the defined stress case.
 
 #### 3.9.4 Rows
 
-- Titles are cut at 90 characters, snippets at 100. A snippet is FTS5's `snippet()` from the best document, otherwise the summary.
-- Scope `learnings` returns one row per learning: `M-3 · 2026-04-03 · Lumen Health · "Always store UTC plus the clinic's zone ID, never offsets."`
-- The header line gives the count, the scope, the parsed query, the snapshot `as_of` and the next cursor. Rows sit inside a data block (3.10).
+- Titles are cut at 90 characters, snippets at 100, each on one line with an ellipsis. A snippet is FTS5's `snippet()` over the best document's current text, with the kind of that document (`snippet_from`: a learning shows as `learning: …`), otherwise the summary. A snippet never comes from a document that no longer belongs to the task or that the caller's audience may not read, nor from another document that took the best one's number after a removal: the page checks the number still holds the entity frozen at S.
+- Scope `learnings` returns one row per learning, its text cut at 200 characters: `M-3 · 2026-04-03 · Lumen Health · "Always store UTC plus the clinic's zone ID, never offsets."`
+- The structured result (`TaskSearchResult`) carries `as_of`, `scope`, `parsed`, `total`, `first` (the position of the first row) and `cursor`. The header line gives the positions, the total, the scope, the parsed query, the page's `as_of` and the next cursor. In the MCP text (M4.01) the rows sit inside a data block (3.10); `tasks find` prints them as lines, with `*` after a changed row.
 
 #### 3.9.5 Cursors bound to a snapshot
 
-- The first page runs the query in one read transaction at `as_of` S. The service keeps the ordered list of matching IDs (at most 1,000) in memory under a random cursor `c_` plus 16 base32 characters, tied to the connection's binding, the space epoch and the authority incarnation of S.
-- Later pages read from that list, so no row is skipped or repeated, and the order is never recomputed. Each later page reads its rows fresh in one read transaction, and its header prints that read's `as_of`, which is the `base` for writes based on that page. Rows changed after S carry a `*` marker.
-- **Deleted and redacted entries.** An entry deleted or redacted after S keeps its place as a placeholder row, never with its old content: `M-22 · deleted since this search` or `M-9 · redacted since this search`. So the union of pages still equals the snapshot list.
+- The first page runs the query in one read transaction at `as_of` S. The plan names the space's values (statuses, effort keys, areas, projects, machines) as read just before, and for `on:cwd` and the cwd boost the tasks placed at the caller's folder (of any lifecycle; the query at S filters them), read after a stamp of the places table. That transaction reads the values and the stamp again: when they differ, the search plans again with the new ones, at most three times, then answers `space_unavailable` with `reason: "busy"`, `retryable: true`. So a rename between the two reads never mixes two states. The service keeps the ordered list of matching IDs (at most 1,000), each with its reference and best document at S (its number and entity), in memory (`search/cursors.ts`), tied to the caller's binding, the space, its epoch and the authority incarnation of S.
+- Every page reads its slice of that list through A1's `rows_by_ids`, the first page included: it reads its rows fresh in a read transaction of its own, and its header prints that read's `as_of`, which is the `base` for writes based on that page. So no row is skipped or repeated, the order is never recomputed, and a write between the query and the first page's read shows exactly as it would on a later page. Rows changed after S (the task's `touched`; a learning's version or its task's `touched`, since the row shows the task's title and group) carry `changed`, the `*` marker.
+- **A cursor per page.** Each page with more after it returns a cursor `c_` plus 16 base32 characters (80 random bits) for the next page. The same cursor again gives the same page, so a retry after a lost answer skips nothing.
+- **Deleted and redacted entries.** An entry deleted or redacted after S keeps its place as a placeholder row with its reference and nothing else: `M-22 · deleted since this search` or `M-9 · redacted since this search`. So the union of pages still equals the snapshot list.
+- **The binding** is the writer scope the call acts in (3.7.9): a bound session's, else the connection's. A cursor from another binding or another space is `cursor_expired` with `reason: "binding"`.
 - **Invalidation.** A cursor becomes invalid when the space epoch or the authority incarnation changes (a claim, transfer or restore) or when the connection's binding changes or is lost. It then returns `cursor_expired` with `reason` `epoch`, `incarnation` or `binding`, never rows from a different history.
-- Cursors expire after 15 minutes idle, and each connection keeps at most 32 (least recently used goes first). A service restart drops them. The service never re-runs a query silently.
+- Cursors expire after 15 minutes idle, and each binding keeps at most 32 (least recently used goes first). A service restart drops them. The service never re-runs a query silently.
 - `total` is exact up to 1,000, otherwise `1000+`.
 
 #### 3.9.6 The task digest
@@ -928,10 +935,13 @@ Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.so
 - **Framing (X14).** An area, project, label, status and space name set to an injection sentence appears only inside data blocks in `status`, `search`, `get_task`, `organize`, write results and errors.
 - **Transport reasons.** Each condition in 3.5 yields its `reason` and `retryable` value through MCP, the CLI's `--json` and HTTP.
 
+**Search property tests** (built, M3.05; `src/search/query.test.ts`, `test/search.test.ts`). Deletions, redactions and authority changes are played directly on a fixture space with the change rows their operations will write (storage's `test/search-helpers.ts`), until M3.04, M3.14 and M3.08 bring the operations; each of those steps then drives the same properties through its operation.
+
+- **Query parser** (`[A3.5.search.parser]`, `[A3.5.search.query]`). Random strings never produce an SQLite or FTS5 syntax error. The result is always rows or `invalid_input`. Parsing, printing `parsed:` and parsing again gives the same query.
+- **Cursors** (`[A3.5.search.cursors]`). Random writes between pages, including deletions and redactions: the union of pages equals the snapshot list, with no duplicates and no gaps. A deleted or redacted entry appears as a placeholder and never with its old content (checked with sentinel text). An epoch, incarnation or binding change between pages gives `cursor_expired` with the matching reason.
+
 **Property tests still to write:**
 
-- **Query parser.** Random strings never produce an SQLite or FTS5 syntax error. The result is always rows or `invalid_input`. Parsing, printing `parsed:` and parsing again gives the same query.
-- **Cursors.** Random writes between pages, including deletions and redactions: the union of pages equals the snapshot list, with no duplicates and no gaps. A deleted or redacted entry appears as a placeholder and never with its old content (checked with sentinel text). An epoch, incarnation or binding change between pages gives `cursor_expired` with the matching reason.
 - **Autonomy.** The decision table is checked exhaustively over levels, overrides, area overrides, action keys and source and destination of moves, always against the staged plan's actual targets.
 - **Proposals.** Merging per session and field set, staleness at accept, limits.
 

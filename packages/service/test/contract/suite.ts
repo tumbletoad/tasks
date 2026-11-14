@@ -274,6 +274,16 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "learnings, and a follow-up in a project by name",
     now: { error: "invalid_input" },
   },
+  "task.search 0": {
+    owner: "the schema step that adds the search tables (A1 3.12), and M3.04 (learnings)",
+    why: "words need the search index, which schema 0.2 does not hold",
+    now: { error: "space_unavailable" },
+  },
+  "task.search 1": {
+    owner: "M3.04 (task.delete), with a cursor of the world's own search",
+    why: "the next page after a task was deleted, under the example's cursor",
+    now: { error: "cursor_expired" },
+  },
 };
 
 const VERIFIED = new Set([
