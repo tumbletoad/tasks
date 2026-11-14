@@ -59,6 +59,13 @@ const SAMPLE = {
   by: "Codex",
   what: "Codex prepared the changelog",
   actor: "Codex",
+  who: "Ana Reyes",
+  ref: "LUM-212",
+  url: "https://mail.example/m/1",
+  kind: "email",
+  area: "Client work",
+  project: "Lumen Health",
+  age: "3d",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

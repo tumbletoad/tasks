@@ -10,8 +10,12 @@
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
 //   /s/:space/search?q=                     search results (M5.10)
-//   /s/:space/task/:id                      a task, expanded (its host view is M5.06's)
+//   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings/:section             settings (M5.11; Appearance here)
+//
+// A view, an area or a project with `?task=<ref>` holds that task expanded (A5 3.3): expanding a
+// row writes it there, so a reload, Back and Forward keep the expansion, and the link stays a
+// link to the task.
 //
 // A path of another shape lands on `/`. Route parameters come from the URL, so each is checked by
 // its shape before it is used.
@@ -30,6 +34,12 @@ import { SpaceSession } from "./session.tsx";
 import { Shell } from "./Shell.tsx";
 import { isView, LANDING } from "./views.ts";
 
+/** A view's search: the task it holds expanded, a reference or an ID, checked by its shape. */
+export function taskSearch(search: Record<string, unknown>): { task?: string } {
+  const task = search["task"];
+  return typeof task === "string" && SEGMENT.test(task) ? { task } : {};
+}
+
 const rootRoute = createRootRoute({
   component: Outlet,
   notFoundComponent: () => <Navigate to="/" replace />,
@@ -38,10 +48,7 @@ const rootRoute = createRootRoute({
 const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  validateSearch: (search: Record<string, unknown>): { task?: string } => {
-    const task = search["task"];
-    return typeof task === "string" && SEGMENT.test(task) ? { task } : {};
-  },
+  validateSearch: taskSearch,
   component: function LandingRoute() {
     const { task } = landingRoute.useSearch();
     return <Landing {...(task === undefined ? {} : { task })} />;
@@ -74,30 +81,36 @@ const spaceIndexRoute = createRoute({
 const viewRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: "$view",
+  validateSearch: taskSearch,
   component: function ViewRoute() {
     const { space, view } = viewRoute.useParams();
+    const { task } = viewRoute.useSearch();
     if (!isView(view)) {
       return <Navigate to="/s/$space/$view" params={{ space, view: LANDING }} replace />;
     }
-    return <ViewPage view={view} />;
+    return <ViewPage view={view} task={task} />;
   },
 });
 
 const areaRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: "area/$area",
+  validateSearch: taskSearch,
   component: function AreaRoute() {
     const { area } = areaRoute.useParams();
-    return <AreaPage area={area} />;
+    const { task } = areaRoute.useSearch();
+    return <AreaPage area={area} task={task} />;
   },
 });
 
 const projectRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: "area/$area/project/$project",
+  validateSearch: taskSearch,
   component: function ProjectRoute() {
     const { area, project } = projectRoute.useParams();
-    return <AreaPage area={area} project={project} />;
+    const { task } = projectRoute.useSearch();
+    return <AreaPage area={area} project={project} task={task} />;
   },
 });
 

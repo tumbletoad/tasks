@@ -2178,6 +2178,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.6.http.row-children",
+      "title": "A task's compact row carries its first three sources with their own text, key and URL, how many more it has, and its place's state on this machine (here, missing, none; none when the feed names no machine), never a path; a batch that adds a source or link or clears a place carries the task's row after the child, naming no field",
+      "source": "A5 3.6, A5 3.15, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.9.cli.open",
       "title": "tasks open against a real service: a code minted over the socket, the listener proved by its HMAC probe before the port is trusted, the code only in the URL fragment and redeemable once, --space and --task as the route, --print-url with its warning, an agent shell told to ask the user, A2 message and exit 6 when another user holds the port, the moved line, tasks service port with --reuse for the person only",
       "source": "A2 3.8.2, A2 3.8.4, A2 3.9, A7 3.9 M2.12",
@@ -2858,6 +2866,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.26.web.markdown",
+      "title": "Task Markdown (context, notes, log, outcome, learnings) renders as React elements of an allow-list (paragraphs and line breaks, strong lines, lists, quotes, fenced and inline code, emphasis, links): raw HTML and the XSS payloads show as text, and only https, http and mailto links open, in a new tab with no opener and no referrer",
+      "source": "A5 3.26, A5 3.7, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.web.task-host",
+      "title": "A task link's host view for every row of A5 3.3's table: Inbox, the area view, the status view (Open for another status), Completed for completed and archived tasks, Trash for a restorable deleted task, and the landing view for an unknown one",
+      "source": "A5 3.3, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.web.detail",
+      "title": "The expanded task's detail joins the pages of a sections read (a text a page boundary split is one entry, notes and log oldest first, learnings once), and a task the live rows do not hold becomes a row with its area and project found by name",
+      "source": "A5 3.7, A5 3.3, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.expanded-state",
+      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
+      "source": "A5 3.3, A5 3.7, A5 3.15, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.25.web.items",
       "title": "A grouped list as one sequence of items: group headings and project labels are items, each row knows its place and its list's size, rows keep their area and project rows by identity, and keyboard moves (next, previous, first, last, next and previous group) skip headings",
       "source": "A5 3.25, A5 3.22, A7 3.12 M5.03",
@@ -2885,6 +2925,38 @@
       "id": "A5.3.15.web.overlay-clear",
       "title": "An own write's overlay can clear a task's fields (unstarring clears focus_on) and the confirmed row comes back when the write settles",
       "source": "A5 3.15, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.expanded",
+      "title": "In Chromium and Firefox against the real service: a task link lands on the area view with the task expanded; sources show their own text with the key first and the person after, a blocked scheme as text; the work folder line; the context as Markdown whose markup stays text and runs nothing; the last six thread entries then Earlier; the facts with short labels; no fact string twice; a new agent entry appears live; no CSP report",
+      "source": "A5 3.7, A5 3.3, A5 3.26, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.task-links",
+      "title": "In Chromium and Firefox against the real service: a link to an Inbox task, a waiting task without an area, an area task and a completed task (with its outcome) each opens on its host view expanded, with its sidebar item current; a reload keeps it, collapsing pushes the view so Back reopens it, and an unknown task lands on the landing view with a toast",
+      "source": "A5 3.3, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.keyboard",
+      "title": "In Chromium and Firefox against the real service, by keyboard alone: Enter expands and puts the task in the URL, Tab reaches the star, the collapse button, a source link and the strip, Escape collapses to the title, Back reopens, F2 renames with Enter (kept after a reload) and Escape cancels, typed letters stay in the field, and the list keys move on from the card's title",
+      "source": "A5 3.7, A5 3.21, A5 3.22, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-06.e2e.screens",
+      "title": "In Chromium and Firefox against the real service: screenshots of the expanded task in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation in the expanded task in either theme, and nothing scrolls horizontally at 390 px",
+      "source": "A5 3.7, A5 3.19, A5 3.22, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
