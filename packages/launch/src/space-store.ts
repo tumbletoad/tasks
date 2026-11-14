@@ -27,7 +27,6 @@ import {
   type AppToolsState,
   type NewRun,
   type OutcomeReason,
-  type RunEvidence,
   type RunPatch,
   type RunRecord,
   type RunResult,
