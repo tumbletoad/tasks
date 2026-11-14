@@ -65,6 +65,8 @@ async function richTask(world: World, tag: string): Promise<{ ref: string; title
         url: "https://tickets.example/LUM",
       },
       { kind: "chat", title: "#lumen-dev", who: "Jonas Berg", url: "javascript:window.__xss=4" },
+      // A source whose own text is the task's title: its line names its kind instead.
+      { kind: "doc", title, url: "https://docs.example/brief" },
     ],
   });
   const space = world.mira.id;
@@ -148,7 +150,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
 
     // Sources show their own text: no kind label, a ticket's key first, the person after.
     const sources = body.locator('[data-part="source"]');
-    await expect(sources).toHaveCount(3, { timeout: SLOW_MS });
+    await expect(sources).toHaveCount(4, { timeout: SLOW_MS });
     const mail = body.locator('[data-part="source"][data-kind="email"]');
     await expect(mail).toContainText("Wrong appointment times since Sunday");
     await expect(mail).toContainText("· Ana Reyes");
@@ -160,6 +162,10 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(ticket).toContainText("Appointments off by one hour");
     // A source whose link has a blocked scheme is text.
     await expect(body.locator('[data-part="source"][data-kind="chat"] a')).toHaveCount(0);
+    // A source whose text repeats the title shows its kind's name, still a link.
+    const doc = body.locator('[data-part="source"][data-kind="doc"]');
+    await expect(doc).toHaveText("Document");
+    await expect(doc.locator("a")).toHaveAttribute("href", "https://docs.example/brief");
     // No folder on this machine: Open and Run use the space's work folder.
     await expect(body.locator('[data-part="place"]')).toHaveAttribute("data-state", "work_folder");
     await expect(body.locator('[data-part="place"]')).toContainText("Tasks work folder");
