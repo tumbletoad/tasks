@@ -221,9 +221,10 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     const anchor = await firstVisible(page);
     const height = () => list.evaluate((element) => element.style.getPropertyValue("--k-h"));
     const tall = await height();
-    const area = (await page.locator('nav a[aria-current="page"]').first().textContent()) ?? "";
     await bulk.op(bulk.mira.id, "task.add", {
-      tasks: [{ title: `Captured while scrolled (${test.info().project.name})`, area }],
+      tasks: [
+        { title: `Captured while scrolled (${test.info().project.name})`, area: bulk.task.area },
+      ],
     });
     await expect.poll(height, { timeout: SLOW_MS }).not.toBe(tall);
     await page.waitForTimeout(300);
