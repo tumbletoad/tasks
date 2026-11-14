@@ -22,14 +22,13 @@ import { Rng } from "./rng.ts";
 
 /**
  * The tables of schema 0.2 that no operation writes yet, so the sample leaves them empty: labels
- * and learnings (M3.04's lifecycle, the label operations), proposals (M4.02), exchanges (M7.05 and
- * M7.06), attachments (after v1). The step that brings an operation moves its table's rows into
- * the sample, as the StandIn comment in mira.ts says.
+ * (the label operations), proposals (M4.02), exchanges (M7.05 and M7.06), attachments (after v1).
+ * The step that brings an operation moves its table's rows into the sample, as the StandIn comment
+ * in mira.ts says: learnings came with M3.04's wrap-up.
  */
 const EMPTY_0_2 = [
   "labels",
   "task_labels",
-  "learnings",
   "attachments",
   "proposals",
   "exchanges",
@@ -53,16 +52,24 @@ afterAll(() => {
  */
 function checkHistory(conn: Connection): void {
   const one = (sql: string): unknown => Object.values(conn.prepare(sql).get() ?? {})[0];
-  // A change's op indexes its commit's ops, and that operation targets the row, or the source of
-  // a source link. (The reviewer's query counted op 0 for every change of a multi-operation commit.)
+  // A change's op indexes its commit's ops, and that operation targets the row, the source of a
+  // source link, or the task of a learning its wrap-up adds. (The reviewer's query counted op 0
+  // for every change of a multi-operation commit.)
   expect(
     one(
       `SELECT count(*) FROM changes c JOIN commits k ON c.seq = k.seq
        WHERE c.op < 0 OR c.op >= json_array_length(k.ops)
           OR (json_extract(k.ops, '$[' || c.op || '].target') <> c.entity_id
-              AND c.entity_id NOT LIKE '%|' || json_extract(k.ops, '$[' || c.op || '].target'))`,
+              AND c.entity_id NOT LIKE '%|' || json_extract(k.ops, '$[' || c.op || '].target')
+              AND NOT (c.entity = 'learnings'
+                AND json_extract(k.ops, '$[' || c.op || '].op') = 'task.wrap_up'
+                AND c.task_id = json_extract(k.ops, '$[' || c.op || '].target')))`,
     ),
   ).toBe(0);
+  // The learnings came through the writer's wrap-up.
+  expect(one("SELECT count(*) FROM learnings")).toBe(
+    one("SELECT count(*) FROM changes WHERE entity = 'learnings' AND action = 'create'"),
+  );
   // Every operation is {v: 1, op, target, input}.
   expect(
     one(
@@ -143,12 +150,6 @@ function fillEmpty02(conn: Connection): void {
       { task, owner, seq },
     );
     run(
-      `INSERT INTO learnings (id, task_id, position, body, created_by, created_at, created_seq,
-         version)
-       VALUES ('lr_fixture', $task, 'a0', 'Check the zone first.', $owner, $at, $seq, $seq)`,
-      row,
-    );
-    run(
       `INSERT INTO attachments (id, task_id, sha256, size, media_type, filename, created_by,
          created_at, created_seq, version)
        VALUES ('at_fixture', $task, $sha, 12, 'text/plain', 'notes.txt', $owner, $at, $seq, $seq)`,
@@ -206,9 +207,19 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
       conn.close();
     }
     // The sample at this build's revision holds the same rows in every 0.1 table: 0.2 adds only
-    // tables and the space's hold.
+    // tables and the space's hold, and the sample's last request, Mira's wrap-up with two
+    // learnings: one commit with its receipt, the task's wrap change and the two learnings.
     const b = await seedMira(temp(), { seed, tasks });
-    expect(b.counts).toEqual({ ...a.counts, ...Object.fromEntries(EMPTY_0_2.map((t) => [t, 0])) });
+    const more = (table: string, n: number): [string, number] => [
+      table,
+      (a.counts[table] ?? 0) + n,
+    ];
+    expect(b.counts).toEqual({
+      ...a.counts,
+      ...Object.fromEntries(EMPTY_0_2.map((t) => [t, 0])),
+      ...Object.fromEntries([more("commits", 1), more("receipts", 1), more("changes", 3)]),
+      learnings: 2,
+    });
     expect(b.machine).toBe(a.machine);
   });
 

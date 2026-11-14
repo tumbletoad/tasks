@@ -202,6 +202,7 @@ export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   places: "place",
   launches: "launch",
   machines: "machine",
+  learnings: "learning",
   preferences: "preference",
 };
 

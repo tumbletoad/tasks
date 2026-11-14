@@ -7,10 +7,14 @@
 //   and those the request links before the draft. A draft the request creates holds its own keys
 //   from its create on, so two drafts of one request with one key are one task, whatever the order
 //   of their source operations.
-// - A holder's lifecycle is its own at the start, or what the request's earlier `task.complete` and
-//   `task.reopen` left. A task the request itself completes finished last of all and is no match:
-//   a draft after it is new work, as complete_task's follow-up of the same ticket is (A3 3.4.8),
-//   so it is created, never matched to an earlier finish either.
+// - A holder's lifecycle and tombstone are its own at the start, or what the request's earlier
+//   operations left: `task.complete`, `task.archive` and `task.reopen` move its lifecycle, and
+//   `task.delete` and `task.restore` its tombstone, so a task the request deletes no longer holds
+//   its keys and one it restores holds them again. A task the request itself completes, archives
+//   or wraps up finished last of all and is no match: a draft after it is new work, as
+//   complete_task's follow-up of the same ticket is (A3 3.4.8), so it is created, never matched
+//   to an earlier finish either. That holds also when the operation finds the task finished or
+//   wrapped already (`if_active`, `once`): the request says it is done before the draft.
 // - One active holder is the match, and the draft's entries follow it. Several are ambiguous: the
 //   first by reference is named, the rest listed, and nothing follows. With none, a holder finished
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
@@ -24,6 +28,7 @@
 //
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
+// It reads deleted tasks' links too, so a task the request restores holds its keys again.
 import type { Connection } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
@@ -36,10 +41,9 @@ const DAY_MS = 86_400_000;
 const SQL = {
   sourceByKey: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
   holders:
-    "SELECT ts.source_id AS source_id, ts.task_id AS task_id FROM task_sources ts " +
-    "JOIN tasks t ON t.id = ts.task_id WHERE ts.removed_at IS NULL AND t.deleted_at IS NULL " +
-    "AND ts.source_id IN (SELECT value FROM json_each($sources))",
-  task: "SELECT ref, lifecycle, completed_at, created_seq, fv FROM tasks WHERE id = $id",
+    "SELECT source_id, task_id FROM task_sources WHERE removed_at IS NULL " +
+    "AND source_id IN (SELECT value FROM json_each($sources))",
+  task: "SELECT ref, lifecycle, completed_at, deleted_at, created_seq, fv FROM tasks WHERE id = $id",
   commitAt: "SELECT at FROM commits WHERE seq = $seq",
 } as const;
 
@@ -67,8 +71,10 @@ interface Holder {
    * active. A task the request completes finished at the request's instant, after every commit.
    */
   finished: { at: number; seq: number } | null;
-  /** The request completed it: a draft after it is new work (A1 3.6). */
+  /** The request completed, archived or wrapped it up: a draft after it is new work (A1 3.6). */
   here: boolean;
+  /** Its tombstone, as the request has staged it: a deleted task holds no key. */
+  deleted: boolean;
   /** Reference order: existing tasks by reference, then the request's drafts as created. */
   rank: readonly [number, number];
 }
@@ -142,6 +148,7 @@ export class Dedupe {
       lifecycle: "active",
       finished: null,
       here: false,
+      deleted: false,
       rank: [1, (this.#drafts += 1)],
     });
     for (const key of keys) this.link(key, id);
@@ -156,15 +163,38 @@ export class Dedupe {
   }
 
   /**
-   * The request completes (`completed`) or reopens (`active`) `task`. A task it completes finished
-   * last of all, which keeps a later draft from matching it or any earlier finish.
+   * The request completes (`completed`), archives (`archived`) or reopens (`active`) `task`. A
+   * task it completes or archives finished last of all, which keeps a later draft from matching it
+   * or any earlier finish. One that is finished already (`if_active`) keeps its own lifecycle.
    */
-  lifecycle(task: Id<"t">, lifecycle: "active" | "completed"): void {
+  lifecycle(task: Id<"t">, lifecycle: TaskLifecycle): void {
     if (this.#keys.size === 0) return;
     const holder = this.#holder(task);
-    holder.lifecycle = lifecycle;
-    holder.here = lifecycle === "completed";
-    holder.finished = holder.here ? { at: this.#at, seq: Number.MAX_SAFE_INTEGER } : null;
+    if (lifecycle === "active") {
+      holder.lifecycle = "active";
+      holder.here = false;
+      holder.finished = null;
+      return;
+    }
+    if (holder.lifecycle === "active") holder.lifecycle = lifecycle;
+    this.#finishedHere(holder);
+  }
+
+  /** The request wraps `task` up: like a finish, a draft after it is new work (A3 3.4.8). */
+  wrapped(task: Id<"t">): void {
+    if (this.#keys.size === 0) return;
+    this.#finishedHere(this.#holder(task));
+  }
+
+  /** The request deletes (`true`) or restores (`false`) `task`: only a live task holds keys. */
+  deleted(task: Id<"t">, deleted: boolean): void {
+    if (this.#keys.size === 0) return;
+    this.#holder(task).deleted = deleted;
+  }
+
+  #finishedHere(holder: Holder): void {
+    holder.here = true;
+    holder.finished = { at: this.#at, seq: Number.MAX_SAFE_INTEGER };
   }
 
   /**
@@ -177,7 +207,7 @@ export class Dedupe {
       for (const task of this.#startHolders().get(key) ?? []) found.add(task);
       for (const task of this.#links.get(key) ?? []) found.add(task);
     }
-    const holders = [...found].map((id) => ({ id, ...this.#holder(id) }));
+    const holders = [...found].map((id) => ({ id, ...this.#holder(id) })).filter((h) => !h.deleted);
     const active = holders
       .filter((h) => h.lifecycle === "active")
       .sort(byRank)
@@ -253,6 +283,7 @@ export class Dedupe {
       lifecycle,
       finished,
       here: false,
+      deleted: r.optInt("deleted_at", "instant") !== null,
       rank: [0, r.int("ref", "taskRef")],
     };
     this.#holders.set(id, holder);
