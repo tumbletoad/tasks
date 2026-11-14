@@ -14,9 +14,12 @@
 //      (`versions/<v>/bin/tasks doctor --self-test --json`): integrity, the runtime gate and the
 //      candidate's checks. Authenticity was settled in step 2; this is the functional half.
 //   6. The journal records each stable launcher the switch changes, with its old and new SHA-256
-//      (phase `staged`), then `current` is switched atomically (`switched`), then on Windows each
-//      changed launcher is swapped, one at a time, `tasks.exe` first (`launchers_done`), and
-//      install.json records the version.
+//      (phase `staged`), and on Windows each one is staged as `bin\<name>.new` (checked, flushed)
+//      before `current` changes (A2 3.12.6 step 8). Then `current` is switched atomically
+//      (`switched`), then each changed launcher is swapped for its staged copy, one at a time,
+//      `tasks.exe` first: by one rename where Windows allows it, else by renaming the running one
+//      aside and the new one in (switch.ts placeLauncher; `launchers_done`), and install.json
+//      records the version.
 //   7. The service is restarted through the OS (A2 3.12.6 step 11): a supervised service is asked
 //      for `service/shutdown {restart: true}` and its manager starts it again from the new current;
 //      one nobody supervises is stopped and started. The update waits up to 30 s for a handshake
@@ -66,10 +69,15 @@ import {
   type LauncherChange,
 } from "./journal.ts";
 import { hostPlatform, ReleaseError, verifyRelease, type VerifiedRelease } from "./release.ts";
-import { repairLocked, type RepairOutcome, type RepairSeams } from "./repair.ts";
+import {
+  repairLocked,
+  supervisorReplaced,
+  type RepairOutcome,
+  type RepairSeams,
+} from "./repair.ts";
 import {
   checkStable,
-  cleanAsideLaunchers,
+  cleanLaunchers,
   currentFor,
   currentVersion,
   digestOf,
@@ -79,12 +87,15 @@ import {
   placeLauncher,
   placeStable,
   readInstallRecord,
+  stagedPath,
+  stageLauncher,
   stablePlan,
   UPDATE_LOCK,
   VERSIONS,
   WINDOWS_LAUNCHERS,
   writeCurrent,
   writeInstallRecord,
+  type LauncherPoint,
 } from "./switch.ts";
 
 /** How long a second update waits for the first (A7 3.8 M6.12: "a second concurrent update waits"). */
@@ -124,6 +135,10 @@ export type UpdatePoint =
   | "done"
   | "rolling_back";
 
+/**
+ * The seams of an update: its own steps, the repair's, and each launcher's (`staged` once its
+ * `.new` is written, then the swap's `aside` and `placed`, with the launcher's name).
+ */
 export interface UpdateSeams extends Partial<RepairSeams> {
   readonly update?: (point: UpdatePoint) => void | Promise<void>;
 }
@@ -453,12 +468,12 @@ async function bringBack(
 /**
  * Finishes or rolls back an interrupted update (repair.ts), with update.lock held, and brings the
  * service back on what current names when that update had found it running (its journal's
- * `service`) and it does not run that version now, or when that update changed the supervisor
- * (tasksw.exe), which an old supervisor may have outlived even when the service it restarted
- * names current; with `always`, also a service that runs another version than current without
- * any journal. The journal goes only after that, so a kill before it leaves the next run what it
- * needs to bring the service back. A `stuck` outcome changes nothing and is returned for the
- * caller to report.
+ * `service`) and it does not run that version now, or when the repair may have replaced the
+ * supervisor (tasksw.exe, repair.ts supervisorReplaced), which an old supervisor may have outlived
+ * even when the service it restarted names current; with `always`, also a service that runs
+ * another version than current without any journal. The journal goes only after that, so a kill
+ * before it leaves the next run what it needs to bring the service back. A `stuck` outcome
+ * changes nothing and is returned for the caller to report.
  */
 async function repairFirst(
   install: Install,
@@ -474,12 +489,16 @@ async function repairFirst(
   });
   if (repair.kind === "stuck") return repair;
   const journaled = repair.kind === "rolled_forward" || repair.kind === "rolled_back";
+  const supervisorChanged = supervisorReplaced(repair);
   try {
     const control = options.control;
     const current = currentVersion(install.root, install.platform);
-    if (control !== undefined && current !== undefined && (journaled || always)) {
+    if (
+      control !== undefined &&
+      current !== undefined &&
+      (journaled || always || supervisorChanged)
+    ) {
       const running = await control.running();
-      const supervisorChanged = journaled && supervisorIn(repair.journal);
       const wanted = running !== undefined || (journaled && repair.journal.service);
       if (wanted && (running?.version !== current || supervisorChanged)) {
         await bringBack(control, options, current, supervisorChanged);
@@ -663,6 +682,32 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   }
   // The candidate passed its self-test before switchTo (an update's, or --rollback's own).
   write({ ...run.journal, phase: "staged", tested: true, launchers });
+  const bin = (name: string) => join(root, "bin", name);
+  const seam = (name: string) => (point: LauncherPoint) => {
+    options.seams?.launcher?.(point, name);
+  };
+  // A2 3.12.6 step 8: each changed launcher is staged beside the stable one, checked and flushed,
+  // all before current changes. A failure here is a failure before the switch: nothing changed.
+  try {
+    for (const launcher of launchers) {
+      stageLauncher(bin(launcher.name), join(target, "bin", launcher.name), launcher.new);
+      seam(launcher.name)("staged");
+    }
+  } catch (error) {
+    for (const launcher of launchers) {
+      try {
+        rmSync(stagedPath(bin(launcher.name)), { force: true });
+      } catch {
+        // Not a file of the update's (a folder at the name): left as it is.
+      }
+    }
+    removeJournal(state);
+    if (error instanceof InstallError) throw error;
+    throw new InstallError(
+      `The new launchers could not be staged in bin (${codeOf(error)}). current was not changed.`,
+      1,
+    );
+  }
   await at(options, "staged");
   let restarted = false;
   try {
@@ -671,14 +716,15 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     write({ ...run.journal, phase: "switched" });
     await at(options, "switched");
     // One at a time, tasks.exe first: at every instant at least one stable launcher exists
-    // (A2 3.12.6 step 10). Linux and macOS: the stable link names current and never changes;
-    // one that is missing is made again.
+    // (A2 3.12.6 step 10), and where Windows allows it (a launcher that is not running) its path
+    // never goes missing. The old one can be found again in its version folder, so a rollback
+    // needs no aside copy of it. Linux and macOS: the stable link names current and never
+    // changes; one that is missing is made again.
     for (const launcher of launchers) {
-      placeLauncher(
-        join(root, "bin", launcher.name),
-        join(target, "bin", launcher.name),
-        launcher.new,
-      );
+      placeLauncher(bin(launcher.name), stagedPath(bin(launcher.name)), launcher.new, {
+        keptIn: [join(root, VERSIONS, from, "bin", launcher.name)],
+        at: seam(launcher.name),
+      });
       await at(options, "launcher");
     }
     if (platform !== "win32") placeStable(root, plan, []);
@@ -722,7 +768,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
   });
   removeJournal(state);
   await at(options, "done");
-  cleanAsideLaunchers(root);
+  cleanLaunchers(root);
   return { outcome: "updated", from, to };
 }
 
@@ -760,7 +806,7 @@ async function rollBack(run: Switch, error: unknown, restarted: boolean): Promis
       root: install.root,
       state: install.state,
       platform: install.platform,
-      ...(options.seams?.at === undefined ? {} : { seams: { at: options.seams.at } }),
+      ...repairSeams(options),
       reason,
       keepJournal: true,
       ...(options.now === undefined ? {} : { now: options.now }),
@@ -979,7 +1025,7 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
     if (repair.kind === "stuck") sayRepair(options, repair);
     const current = currentVersion(install.root, install.platform);
     if (current === undefined) throw new InstallError("current names no installed version.", 1);
-    if (repair.kind === "nothing") cleanAsideLaunchers(install.root);
+    if (repair.kind === "nothing") cleanLaunchers(install.root);
     return { outcome: "repaired", repair, current };
   } finally {
     lock.release();
@@ -988,5 +1034,12 @@ export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult
 
 function repairSeams(options: UpdateOptions): { seams?: RepairSeams } {
   const point = options.seams?.at;
-  return point === undefined ? {} : { seams: { at: point } };
+  const launcher = options.seams?.launcher;
+  if (point === undefined && launcher === undefined) return {};
+  return {
+    seams: {
+      at: point ?? (() => undefined),
+      ...(launcher === undefined ? {} : { launcher }),
+    },
+  };
 }
