@@ -2227,7 +2227,7 @@
     },
     {
       "id": "A2.3.12.1.runtime.safe-exit",
-      "title": "The pinned runtime hands Sparkplug batches to a V8 worker thread and compiles hot functions with Maglev, and with safe-exit.ts loaded first it does neither; every flag it sets is known to the runtime; every script that loads the product's code and ends through process.exit, found by parsing the sources, imports safe-exit.ts before any other module",
+      "title": "The pinned runtime hands Sparkplug batches to a V8 worker thread and compiles hot functions with Maglev, and with safe-exit.ts loaded first it does neither; every flag it sets is known to the runtime; every script that loads the product's code and ends through process.exit, found through the import graph of packages/, tests/ and scripts/, imports safe-exit.ts before any other module",
       "source": "A2 3.12.1",
       "owner": "M1",
       "kind": "ci",
