@@ -258,8 +258,8 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "launch_unknown" },
   },
   "task.add 0": {
-    owner: "M3.06 (source-key dedupe) and M4.01 (areas and projects by name)",
-    why: "an area and project by name, and a draft whose source key matches",
+    owner: "M4.01 (areas and projects by name, possible-duplicate warnings)",
+    why: "an area and project by name, and a similar title's warning",
     now: { error: "not_found" },
   },
   "task.finish 0": {

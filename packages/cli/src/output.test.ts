@@ -137,6 +137,25 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
 
   test("people's text names the space of every write", () => {
     expect(render("task.add", { tasks: [{ ref: "M-31" }] }, "Mira")).toBe("Added M-31 to Mira\n");
+    // A draft found by its source key (A3 3.4.5) says so, never "Added".
+    const found = { result: "exists", ref: "M-14", lifecycle: "active", log_added: true };
+    expect(
+      render(
+        "task.add",
+        {
+          tasks: [
+            found,
+            { ...found, lifecycle: "completed", log_added: false },
+            { result: "exists", ambiguous: ["M-14", "M-15"], log_added: false },
+          ],
+        },
+        "Mira",
+      ),
+    ).toBe(
+      "Found M-14 in Mira by its source key, log entry added\n" +
+        "Found M-14 (completed) in Mira by its source key\n" +
+        "Several tasks in Mira have its source key: M-14, M-15\n",
+    );
     expect(
       render("task.update", { result: "updated", task: "M-14", fields: ["summary"] }, "Mira"),
     ).toBe("Updated M-14 in Mira: summary\n");

@@ -5,7 +5,7 @@
 // looks up a remote command's receipt by command ID (A6 3.8.4), which adds an optional input.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, idPattern, patterns, TaskId, TaskRef, Warnings } from "../schemas.ts";
+import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from "../schemas.ts";
 import { AS_OF, M14, requestId } from "./fixture.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
@@ -43,6 +43,15 @@ const ReceiptOpResult = z.strictObject({
   differs: z
     .array(z.enum(["kind", "title", "who", "ref", "url", "at"]))
     .describe("Fields of an existing source the input gave otherwise")
+    .optional(),
+  matched_by: z
+    .enum(["source_key"])
+    .describe("A task draft that matched an existing task: how")
+    .optional(),
+  lifecycle: Lifecycle.describe("The matched task's lifecycle").optional(),
+  ambiguous: z
+    .array(TaskRef)
+    .describe("Several active tasks matched, the named one first")
     .optional(),
 });
 
