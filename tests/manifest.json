@@ -2354,6 +2354,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.24.web.build-paths",
+      "title": "The built page holds no absolute path of the build machine (the repository, the home folder, the output folder, in any spelling) and no development JSX, with NODE_ENV test, development or unset, and the build gives the caller's NODE_ENV back",
+      "source": "A5 3.24",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.stored-token",
       "title": "A value read back from localStorage is used only when it has a token's exact shape; markup, JSON, wrong lengths, other types and blocked storage read as signed out, are removed and never throw",
       "source": "A5 3.26, A2 3.8.4, A2 3.8.6, A7 3.9 M2.13",
