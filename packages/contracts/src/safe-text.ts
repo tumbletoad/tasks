@@ -41,9 +41,40 @@ export const normaliseText = normaliser((text: string): string =>
  * SafeText for one-line fields such as titles (A1 keeps them to one line): every line break and
  * the spaces around it become one space. Idempotent, and it never rejects.
  */
-export const normaliseLine = normaliser((text: string): string =>
-  normaliseText(text).replace(/[ \t]*\n[ \t\n]*/g, " "),
-);
+export const normaliseLine = normaliser((text: string): string => joinLines(normaliseText(text)));
+
+const isGap = (char: string): boolean => char === " " || char === "\t" || char === "\n";
+
+/**
+ * Every run of spaces, tabs and line breaks that holds a line break becomes one space. A loop, not
+ * the regular expression it replaces, which retried from every position of a long run of spaces:
+ * quadratic time on the long texts an import reads.
+ */
+function joinLines(text: string): string {
+  if (!text.includes("\n")) return text;
+  const parts: string[] = [];
+  let from = 0;
+  let i = 0;
+  while (i < text.length) {
+    if (!isGap(text.charAt(i))) {
+      i += 1;
+      continue;
+    }
+    let end = i;
+    let breaks = false;
+    while (end < text.length && isGap(text.charAt(end))) {
+      if (text.charAt(end) === "\n") breaks = true;
+      end += 1;
+    }
+    if (breaks) {
+      parts.push(text.slice(from, i), " ");
+      from = end;
+    }
+    i = end;
+  }
+  parts.push(text.slice(from));
+  return parts.join("");
+}
 
 /**
  * Multi-line text of at most `max` characters, normalised with SafeText. Lengths count Unicode

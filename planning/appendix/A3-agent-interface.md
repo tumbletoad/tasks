@@ -199,6 +199,7 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 
 - Every variant carries `bound`. A connection that cannot hold a binding (the UI, the CLI) loads the task with `bound: false` and uses nothing up (3.7.3).
 - A routine's launch reference binds the space, not a task, so its result is the status overview (`view: "status"`, M6).
+- The `outcome` section holds the outcome, the wrap-up state and the task's own learnings in their order (A1 3.11.2). The learnings follow the outcome's text and page like a list, each whole (at most 1 KiB, so a fresh page always holds it), keyed by its rank among all the task's learnings, removed ones included, so each comes back once and a page stays within its budget. A page that holds learnings without the outcome's text shows them under their own heading. The digest's `learnings` are related learnings from other tasks (3.9.7, M4.03), never the task's own.
 - `sessions` and `proposals` become section values with the session list (M4.06) and proposals (M4.02). Provenance labels on context and summary arrive with digest v1 (M4.03).
 - A launch reference or task in a space the agent home is not granted is `forbidden` with `rule: "grant"`, and binds and reads nothing (3.7.8).
 
@@ -235,16 +236,21 @@ Appends to a task's log, or records a note for the user (`entries/entry-add.ts`)
 
 #### 3.4.8 `complete_task`
 
-Finish (`done`) or abandon (`dropped`) a task with an outcome and learnings, and create follow-ups in the same request (`entries/task-finish.ts`). It also wraps up a task the user already checked off.
+Finish (`done`) or abandon (`dropped`) a task with an outcome and learnings, and create follow-ups in the same request (`entries/task-finish.ts`, `ops/handlers.ts`; test `[A3.3.4.finish.lifecycle]`). It also wraps up a task the user already checked off.
 
-| Task state | What the call does (A1 operations) |
+The call sends `task.complete` (`done`) or `task.archive` (`dropped`) with `if_active`, then, when it carries an outcome or learnings, `task.wrap_up` with them and `once`, then its follow-ups. The writer decides the row of the table below on the task as it finds it, inside the request's transaction:
+
+| Task state | What the call does |
 |---|---|
-| Active, `done` | `task.complete` with outcome and learnings: completed and wrapped in one commit |
-| Active, `dropped` | `task.archive` with the outcome as reason, then `task.wrap_up` |
-| Completed or archived, `wrap_state` pending (the user checked it off, D12) | `task.wrap_up`: adds outcome and learnings and marks it wrapped. A4's Wrap-up routine uses this path. |
-| Already wrapped | `no_change` if the outcome is identical, otherwise `conflict` with the stored outcome |
+| Active, `done` | Completed and wrapped up in one commit. Without an outcome or learnings (the user's check-off, D12) the wrap-up waits (`pending`). |
+| Active, `dropped` | Archived and wrapped up in one commit. The outcome says why, so it is not copied into the archive's reason. Without an outcome nothing waits for a wrap-up. |
+| Completed or archived, not wrapped (the user checked it off) | Left as it is, and wrapped up: the outcome and learnings are added and it is marked wrapped. A4's Wrap-up routine uses this path. |
+| Already wrapped | `no_change` when the outcome is the stored one (or none is given) and every learning is there already, otherwise `conflict` on `wrap`, whose value holds the stored outcome, whatever the base |
 
-Wrap-up only adds text and never destroys any (A1). Until `task.wrap_up` exists (M3.04), `dropped`, `learnings` and wrapping up a completed task are refused. A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out. The task the call completes never matches a follow-up, and neither does an older finished task with the key: a follow-up with one of its keys is new work after it, so it is created, and later lookups of that key find it first (A1 3.6).
+- The operations follow from the input alone, never from a read of the task, so a replay's stored result lines up with them whatever the task's state is now. `result` comes from the operations' stored results, and `lifecycle`, `wrap_state` and `learnings` (those this call recorded) from history as of the commit, so a replay answers what the first call said (3.4.1).
+- Wrap-up only adds text and never destroys any (A1 3.11.2).
+- A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out.
+- The task the call completes, archives or wraps up never matches a follow-up, and neither does an older finished task with the key: a follow-up with one of its keys is new work after it, so it is created, and later lookups of that key find it first (A1 3.6).
 
 #### 3.4.9 `reopen_task`
 
@@ -713,7 +719,7 @@ A1 fixes the format, `<namespace>:<id>` with a lower-case namespace `[a-z0-9.-]+
 | Jira issue | `jira:<KEY>`, or `jira.<site>:<KEY>` when a user has several sites | `jira:LUM-212` |
 | GitHub or GitLab issue or pull request | `github:<owner>/<repo>#<n>`, `gitlab:<group>/<project>#<n>` (`!<n>` for a merge request) | `github:tidy-logs/tidy-logs#139` |
 | Drive document, calendar event | `gdrive:<file id>`, `gcal:<event id>` | |
-| Anything else | `url:<normalised URL>` | scheme and host lowercased, fragment and `utm_*` removed |
+| Anything else | `url:<normalised URL>` | scheme and host lowercased, `utm_*` removed (a name read percent-decoded), and the fragment removed unless it holds a `/`: such a fragment is an app's route that names the item, as a webmail's `#inbox/<id>` names its thread |
 
 - **Normalisation.** A1 lower-cases the namespace and trims spaces. Agents upper-case Jira keys. Other IDs keep the case the source shows.
 - **Threads, not messages.** One email or chat thread is one item, so a reply in the same thread matches the same task.
