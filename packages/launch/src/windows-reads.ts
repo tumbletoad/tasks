@@ -32,13 +32,13 @@ export const REGISTRY_READS =
   "$v=$k.GetValue($n);if($null -eq $v){throw 'value'};,$v}";
 
 /**
- * A helper's whole output as text, or undefined when a byte is not what the helpers write:
+ * A helper script's whole output as text, or undefined when a byte is not what the scripts write:
  * printable ASCII, a space, a line feed or a carriage return. Decoding first would hide such a
  * byte: Node's "ascii" clears each byte's high bit, so bytes that are no text could read as a
  * valid line (`end` among them), and a lenient UTF-8 decoder turns them into U+FFFD. An output
  * with any other byte is no output at all, never a part of one.
  */
-export function helperOutput(bytes: Uint8Array): string | undefined {
+export function scriptOutput(bytes: Uint8Array): string | undefined {
   for (const byte of bytes) {
     if (byte > 0x7e || (byte < 0x20 && byte !== 0x0a && byte !== 0x0d)) return undefined;
   }

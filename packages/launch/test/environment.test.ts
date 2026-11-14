@@ -22,7 +22,7 @@ import {
   agentEnvironment,
   captureOutput,
   expandWindows,
-  helperOutput,
+  scriptOutput,
   holdFolder,
   mergeLayers,
   parseRegistryOutput,
@@ -400,8 +400,8 @@ describe("[A4.5.environment.layers] the session layer, the snapshot's parse and 
     ]) {
       expect(await base(bad)).toEqual({ kind: "service", env: serviceEnv });
     }
-    expect(helperOutput(Buffer.from("a b\r\nend", "latin1"))).toBe("a b\r\nend");
-    expect(helperOutput(Buffer.from([0x61, 0x09, 0x62]))).toBeUndefined();
+    expect(scriptOutput(Buffer.from("a b\r\nend", "latin1"))).toBe("a b\r\nend");
+    expect(scriptOutput(Buffer.from([0x61, 0x09, 0x62]))).toBeUndefined();
   });
 
   test("the registry reader calls no cmdlet: Windows PowerShell never searches its module path for one", () => {

@@ -19,7 +19,7 @@ import { spawn } from "node:child_process";
 import { lstat, open, readdir, realpath, stat, statfs } from "node:fs/promises";
 import os from "node:os";
 import { win32 } from "node:path";
-import { base64Text, helperOutput, isBase64, REGISTRY_READS } from "@tasks/launch";
+import { base64Text, isBase64, REGISTRY_READS, scriptOutput } from "@tasks/launch";
 import { system32 } from "./identity.ts";
 import type { PathKind, SyncHost, WindowsSyncFacts } from "./sync-folders.ts";
 
@@ -132,7 +132,7 @@ export function parseWindowsFacts(output: string): WindowsSyncFacts | undefined 
  * ends), then every line checked. Anything else is no facts.
  */
 export function windowsFactsOf(output: Uint8Array): WindowsSyncFacts | undefined {
-  const text = helperOutput(output);
+  const text = scriptOutput(output);
   return text === undefined ? undefined : parseWindowsFacts(text);
 }
 
