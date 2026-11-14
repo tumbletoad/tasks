@@ -278,8 +278,8 @@ export function checkHistory(conn: Connection): void {
 }
 
 /**
- * The same invariants on the child rows a request can change after their create: links and
- * places (A1 3.4). Each starts with its create row, every `fv` entry is its field's latest change,
+ * The same invariants on the rows other than tasks that a request can change after their create:
+ * links, places, launches and preferences (A1 3.4). Each starts with its create row, every `fv` entry is its field's latest change,
  * and the row's version is the latest change to any of its fields.
  */
 function checkChildHistory(conn: Connection): void {
@@ -299,6 +299,7 @@ function checkChildHistory(conn: Connection): void {
       key: "id",
       fields: { state: ["state", "reason", "detail", "updated_at"] },
     },
+    { table: "preferences", key: "key", fields: { value: ["value", "schema_ver"] } },
   ] as const;
   for (const { table, key, fields } of kinds) {
     const rows = conn

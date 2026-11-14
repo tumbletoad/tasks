@@ -16,6 +16,8 @@ export interface A1ErrorMapping {
   readonly reason?: string;
   /** `data.retryable`: retry the same call with the same request_id after a short wait. */
   readonly retryable?: boolean;
+  /** `data.rule`, for `forbidden`: which rule refused the call (A3 3.5). */
+  readonly rule?: string;
 }
 
 const unavailable = (reason: string, retryable: boolean): A1ErrorMapping => ({
@@ -59,6 +61,8 @@ export const A1_ERRORS = {
   NOTHING_TO_REDO: { code: "not_found" },
   UNDO_BEFORE_FLOOR: { code: "conflict" },
   HAS_ACTIVE_TASKS: { code: "conflict" },
+  /** A preference whose declaration does not list the actor: policy is the user's (A1 3.16). */
+  PREFERENCE_FORBIDDEN: { code: "forbidden", rule: "policy" },
   /** An absolute path under no root of this machine (A1 3.15, M2.07). */
   PLACE_OUTSIDE_ROOTS: { code: "invalid_input" },
   /** Undecided: the writer passes A1's reason on (transfer_pending, held, not the authority). */
@@ -156,6 +160,7 @@ export function a1ErrorBody(cause: string, message: string, place: A1ErrorPlace 
       cause,
       ...(reason === undefined ? {} : { reason }),
       ...(mapping.retryable === undefined ? {} : { retryable: mapping.retryable }),
+      ...(mapping.rule === undefined ? {} : { rule: mapping.rule }),
       ...(place.op === undefined ? {} : { op: place.op }),
       ...(place.field === undefined ? {} : { field: place.field }),
       ...(place.at === undefined ? {} : { original_at: new Date(place.at).toISOString() }),

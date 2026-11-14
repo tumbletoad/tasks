@@ -25,14 +25,13 @@
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
 import type { Connection } from "../driver.ts";
+import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
+import { readSpacePreference } from "../preferences.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
-import { DEDUPE_WINDOW_DAYS, type Operation, type TaskLifecycle } from "./request.ts";
+import type { Operation, TaskLifecycle } from "./request.ts";
 
 const DAY_MS = 86_400_000;
-
-/** The longest window a space may set, in days: ten years. */
-const WINDOW_DAYS_MAX = 3_650;
 
 const SQL = {
   sourceByKey: "SELECT id FROM sources WHERE source_key = $key AND deleted_at IS NULL",
@@ -42,7 +41,6 @@ const SQL = {
     "AND ts.source_id IN (SELECT value FROM json_each($sources))",
   task: "SELECT ref, lifecycle, completed_at, created_seq, fv FROM tasks WHERE id = $id",
   commitAt: "SELECT at FROM commits WHERE seq = $seq",
-  window: "SELECT value FROM preferences WHERE key = 'tasks.dedupe_window_days'",
 } as const;
 
 /** What a draft's keys matched (A1 3.6). */
@@ -268,26 +266,14 @@ export class Dedupe {
     return new RowReader("commits", commit).int("at", "instant");
   }
 
-  /** `tasks.dedupe_window_days` in milliseconds, or its default when unset or not a valid count. */
+  /**
+   * `tasks.dedupe_window_days` in milliseconds, as the registry reads it: its default when unset,
+   * reset or not a whole number of days from 0 to 3,650 (A1 3.16).
+   */
   #window(): number {
     if (this.#windowMs !== undefined) return this.#windowMs;
-    let days = DEDUPE_WINDOW_DAYS;
-    const text = this.#conn.prepare(SQL.window).get()?.["value"];
-    if (typeof text === "string") {
-      try {
-        const value: unknown = JSON.parse(text);
-        if (
-          typeof value === "number" &&
-          Number.isSafeInteger(value) &&
-          value >= 0 &&
-          value <= WINDOW_DAYS_MAX
-        ) {
-          days = value;
-        }
-      } catch {
-        // A value that is not JSON is ignored for the default, as listPreference does.
-      }
-    }
+    const days = readSpacePreference(this.#conn, "tasks.dedupe_window_days").value;
+    if (typeof days !== "number") throw misuse("The dedupe window reads as a number of days");
     this.#windowMs = days * DAY_MS;
     return this.#windowMs;
   }
