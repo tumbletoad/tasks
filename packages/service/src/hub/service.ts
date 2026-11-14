@@ -23,7 +23,7 @@ import { randomBytes } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { envVar, PRODUCT_NAME } from "@tasks/brand";
-import { T3Route, type Root } from "@tasks/launch";
+import type { Root } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
   fatalProblems,
@@ -111,7 +111,7 @@ import {
   type SessionStore,
 } from "../binding/index.ts";
 import { repairIfIdle, type RepairOutcome } from "../version/repair.ts";
-import { t3Files, t3FileNames, t3HomeOf, T3_STATE_DIR } from "./t3.ts";
+import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { within } from "./wait.ts";
 
@@ -667,15 +667,16 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         },
       },
       launches: { handlers: () => launching.service?.handlers() ?? {} },
-      // `tasks setup t3` (M2.11): T3's route over `<state>/t3`. Launching through it is a later step's.
-      t3: {
+      // `tasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
+      // fallback (M6.10). Launching through them is a later step's.
+      t3: t3Host({
         log,
-        route: new T3Route({
-          home: t3HomeOf(env, facts),
-          files: t3Files(layout.state, platform),
-          platform,
-        }),
-      },
+        home: t3HomeOf(env, facts),
+        files: t3Files(layout.state, platform),
+        platform,
+        env,
+        instances: config.instances,
+      }),
       // `tasks setup agents` (M2.14): the agent-home rows of the grants table.
       agentHomes: {
         log,
