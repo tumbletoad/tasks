@@ -1,6 +1,7 @@
-// The views of the sidebar (A5 3.3, 3.5) as pure functions of the live rows, so membership and the
-// counts are unit tests. The views themselves are later steps (M5.04 Today, M5.05 the rest); until
-// then each shows the open tasks it holds through the skeleton's grouped list.
+// The views of the sidebar (A5 3.3, 3.4, 3.5) as pure functions of the live rows, so membership and
+// the counts are unit tests. Today's sections and week strip are `todayOf` (A5 3.4); the other
+// views' own groupings are M5.05's, and until then each shows the open tasks it holds through the
+// grouped list.
 //
 // - Status views are disjoint (U5): Inbox holds the tasks with the inbox flag, and Open, Waiting,
 //   Review and Backlog hold the other active tasks by status. So the counts add up.
@@ -10,6 +11,7 @@
 //   in it), so they have no list here yet.
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
+import { dateOf, dayNumber, localDate, type Clock } from "../row/dates.ts";
 
 export const VIEWS = [
   "today",
@@ -74,9 +76,12 @@ export function viewCounts(tasks: Iterable<TaskRow>): Readonly<Record<CountedVie
   return counts;
 }
 
-/** What a view's content area lists: the tasks it holds, or undefined when it has no list yet. */
+/**
+ * What a status view's content area lists: the tasks it holds. Undefined for a view whose list is
+ * not a filter of the open tasks: Today has sections (`todayOf`), Completed and Agents read data
+ * the live store does not hold.
+ */
 export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined {
-  if (view === "today") return () => true;
   if (isCounted(view)) return (task) => countedViewOf(task) === view;
   return undefined;
 }
@@ -84,4 +89,314 @@ export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined
 /** An area view: every open task of the area (A5 3.5), or of one of its projects. */
 export function areaFilter(area: string, project?: string): (task: TaskRow) => boolean {
   return (task) => task.area_id === area && (project === undefined || task.project_id === project);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Today (A5 3.4): the week strip, then Focus, This week, Next and Changes. A task appears in the
+// first section that selects it and in no other, so the sections are disjoint by construction:
+// each section takes only what the sections before it left. Computed from the task rows in the
+// client, never by a model: Today reads what the space holds (a star is `focus_on`, a plan is
+// `planned_for`) and decides nothing about it.
+
+export const TODAY_SECTIONS = ["focus", "week", "next", "changes"] as const;
+export type TodaySection = (typeof TODAY_SECTIONS)[number];
+
+export const TODAY_LABEL: Readonly<Record<TodaySection, MessageId>> = {
+  focus: "today.focus",
+  week: "today.week",
+  next: "today.next",
+  changes: "today.changes",
+};
+
+export const isTodaySection = (value: string): value is TodaySection =>
+  (TODAY_SECTIONS as readonly string[]).includes(value);
+
+/** Next's length until the preference `today.next_limit` reaches the page (A5 open item 5). */
+export const NEXT_LIMIT = 3;
+/** Changes shows at most this many lines (A5 3.4, 3.14). */
+export const CHANGES_LIMIT = 5;
+/** A change older than this drops off Changes (A5 3.14). */
+export const CHANGES_DAYS = 7;
+/** The strip draws this many marks under a day, then a plus (A5 3.4). */
+export const STRIP_MARKS = 4;
+
+const DAY_MS = 86_400_000;
+
+/** An agent's change to a task (A5 3.14's digest, as far as the page knows it). */
+export interface TaskChange {
+  readonly task: string;
+  /** The actor's label ("Codex"). */
+  readonly actor: string;
+  /** When the page saw it, in milliseconds since 1970. */
+  readonly at: number;
+}
+
+export interface TodayOptions {
+  /** Next's length (`today.next_limit`). */
+  readonly nextLimit?: number;
+  /** The strip's chosen day: Focus and This week show only that day's tasks. */
+  readonly day?: string | undefined;
+  /** Agents' changes, newest first: Changes lists the tasks no section above holds. */
+  readonly changes?: readonly TaskChange[];
+  /** Each area's colour slot, for the strip's marks. */
+  readonly slots?: ReadonlyMap<string, number>;
+}
+
+/** One mark under a day of the strip: a task due or planned that day. */
+export interface StripMark {
+  readonly task: string;
+  readonly title: string;
+  /** The task's area slot; none for a task without an area (a muted mark). */
+  readonly slot?: number;
+  /** A hollow ring: a waiting task's follow-up day (its `planned_for`). */
+  readonly ring: boolean;
+}
+
+export interface StripDay {
+  /** `YYYY-MM-DD`. */
+  readonly date: string;
+  readonly today: boolean;
+  /** Every task due or planned that day, in section order; the strip draws the first four. */
+  readonly marks: readonly StripMark[];
+}
+
+export interface TodaySectionRows {
+  readonly key: TodaySection;
+  readonly tasks: readonly TaskRow[];
+}
+
+export interface Today {
+  /** Seven days, today first. */
+  readonly strip: readonly StripDay[];
+  /** The sections that have rows, in order. */
+  readonly sections: readonly TodaySectionRows[];
+}
+
+/** A task's due day on the viewer's calendar: its date, or the day of its due time. */
+export function dueDayOf(task: TaskRow, clock: Clock): string | undefined {
+  if (task.due_at !== undefined) return localDate(task.due_at, clock.timeZone);
+  if (task.due_date !== undefined && dayNumber(task.due_date) !== undefined) return task.due_date;
+  return undefined;
+}
+
+const plannedOf = (task: TaskRow): string | undefined =>
+  task.planned_for !== undefined && dayNumber(task.planned_for) !== undefined
+    ? task.planned_for
+    : undefined;
+
+/** Starred: `focus_on` today or earlier. The star carries over until it is cleared (A5 3.4). */
+export const isStarred = (task: TaskRow, today: string): boolean =>
+  task.focus_on !== undefined && task.focus_on <= today;
+
+const isLate = (task: TaskRow, clock: Clock): boolean => {
+  if (task.due_at !== undefined) return task.due_at < clock.now;
+  const due = dueDayOf(task, clock);
+  return due !== undefined && due < clock.today;
+};
+
+/** Focus selects it: starred, or (not backlog) due today or late, or planned today or earlier. */
+export function inFocus(task: TaskRow, clock: Clock): boolean {
+  if (task.lifecycle !== "active") return false;
+  if (isStarred(task, clock.today)) return true;
+  if (task.status === "backlog") return false;
+  const due = dueDayOf(task, clock);
+  const planned = plannedOf(task);
+  return (
+    (due !== undefined && due <= clock.today) || (planned !== undefined && planned <= clock.today)
+  );
+}
+
+/** The day that brings a task into This week: the earlier of its due and planned days there. */
+function weekDay(task: TaskRow, clock: Clock): string | undefined {
+  if (task.lifecycle !== "active" || task.status === "backlog") return undefined;
+  const today = dayNumber(clock.today) ?? 0;
+  const first = dateOf(today + 1);
+  const last = dateOf(today + 6);
+  const days = [dueDayOf(task, clock), plannedOf(task)].filter(
+    (d): d is string => d !== undefined && d >= first && d <= last,
+  );
+  return days.sort()[0];
+}
+
+/** This week selects it (when Focus does not): not backlog, due or planned in the next six days. */
+export const inWeek = (task: TaskRow, clock: Clock): boolean => weekDay(task, clock) !== undefined;
+
+/** Next selects it (when no section above does): open, not in the Inbox. */
+export const inNext = (task: TaskRow): boolean =>
+  task.lifecycle === "active" && task.status === "open" && !task.inbox;
+
+/** Priority 1 to 3 first; none (4, the default) last. */
+const priorityOf = (task: TaskRow): number =>
+  task.priority !== undefined && task.priority >= 1 && task.priority <= 3 ? task.priority : 4;
+
+/** A due as a sortable number (undated: none): its instant, or its day's start. */
+function dueKey(task: TaskRow, clock: Clock): number | undefined {
+  if (task.due_at !== undefined) return task.due_at;
+  const day = dueDayOf(task, clock);
+  return day === undefined ? undefined : (dayNumber(day) ?? 0) * DAY_MS;
+}
+
+/** Undated last. */
+const byDue = (a: number | undefined, b: number | undefined): number =>
+  a === b ? 0 : a === undefined ? 1 : b === undefined ? -1 : a - b;
+
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Focus: late first (oldest due first), then due today, then priority, due date and age. */
+function focusOrder(clock: Clock): (a: TaskRow, b: TaskRow) => number {
+  const tier = (task: TaskRow): number =>
+    isLate(task, clock) ? 0 : dueDayOf(task, clock) === clock.today ? 1 : 2;
+  return (a, b) => {
+    const ta = tier(a);
+    const tb = tier(b);
+    if (ta !== tb) return ta - tb;
+    return (
+      (ta === 0 ? byDue(dueKey(a, clock), dueKey(b, clock)) : 0) ||
+      priorityOf(a) - priorityOf(b) ||
+      byDue(dueKey(a, clock), dueKey(b, clock)) ||
+      a.created_at - b.created_at ||
+      byText(a.id, b.id)
+    );
+  };
+}
+
+/** This week: by the day that selects it, then priority. */
+function weekOrder(clock: Clock): (a: TaskRow, b: TaskRow) => number {
+  return (a, b) =>
+    byText(weekDay(a, clock) ?? "", weekDay(b, clock) ?? "") ||
+    priorityOf(a) - priorityOf(b) ||
+    byDue(dueKey(a, clock), dueKey(b, clock)) ||
+    a.created_at - b.created_at ||
+    byText(a.id, b.id);
+}
+
+/** Next: priority, then due date (undated last), then the space's order, then age. */
+function nextOrder(clock: Clock): (a: TaskRow, b: TaskRow) => number {
+  return (a, b) =>
+    priorityOf(a) - priorityOf(b) ||
+    byDue(dueKey(a, clock), dueKey(b, clock)) ||
+    byText(a.position, b.position) ||
+    a.created_at - b.created_at ||
+    byText(a.id, b.id);
+}
+
+/** Whether a day is a task's due or planned day. */
+export const onDay = (task: TaskRow, day: string, clock: Clock): boolean =>
+  dueDayOf(task, clock) === day || plannedOf(task) === day;
+
+/** The strip's days: today and the six after it. */
+export function stripDays(clock: Clock): string[] {
+  const today = dayNumber(clock.today) ?? 0;
+  return Array.from({ length: 7 }, (_, i) => dateOf(today + i));
+}
+
+/**
+ * Today from the open tasks. Focus and This week are what the strip marks; the strip's chosen day
+ * narrows what they show to that day. Next takes the first `nextLimit` open tasks left. Changes
+ * lists the tasks agents changed that no section above holds, newest first.
+ */
+export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOptions = {}): Today {
+  const nextLimit = options.nextLimit ?? NEXT_LIMIT;
+  const focus: TaskRow[] = [];
+  const week: TaskRow[] = [];
+  const rest: TaskRow[] = [];
+  const all = new Map<string, TaskRow>();
+  for (const task of tasks) {
+    if (task.lifecycle !== "active") continue;
+    all.set(task.id, task);
+    if (inFocus(task, clock)) focus.push(task);
+    else if (inWeek(task, clock)) week.push(task);
+    else rest.push(task);
+  }
+  focus.sort(focusOrder(clock));
+  week.sort(weekOrder(clock));
+
+  // The strip marks the days of the tasks Focus and This week hold, before the day filter.
+  const days = stripDays(clock);
+  const marks = new Map<string, StripMark[]>(days.map((d) => [d, []]));
+  for (const task of [...focus, ...week]) {
+    const due = dueDayOf(task, clock);
+    const planned = plannedOf(task);
+    const slot = task.area_id === undefined ? undefined : options.slots?.get(task.area_id);
+    const mark = (ring: boolean): StripMark => ({
+      task: task.id,
+      title: task.title,
+      ...(slot === undefined ? {} : { slot }),
+      ring,
+    });
+    if (due !== undefined) marks.get(due)?.push(mark(false));
+    if (planned !== undefined && planned !== due) {
+      marks.get(planned)?.push(mark(task.status === "waiting"));
+    }
+  }
+  const strip = days.map((date) => ({
+    date,
+    today: date === clock.today,
+    marks: marks.get(date) ?? [],
+  }));
+
+  const day = options.day;
+  const shownFocus = day === undefined ? focus : focus.filter((t) => onDay(t, day, clock));
+  const shownWeek = day === undefined ? week : week.filter((t) => onDay(t, day, clock));
+  // Next and Changes never take a task Focus or This week selected, shown or filtered out: a task
+  // keeps its one section, and the day filter only narrows what that section shows.
+  const next = rest.filter(inNext).sort(nextOrder(clock)).slice(0, Math.max(0, nextLimit));
+  const above = new Set([...focus, ...week, ...next].map((t) => t.id));
+  const since = clock.now - CHANGES_DAYS * DAY_MS;
+  const changed: TaskRow[] = [];
+  for (const change of options.changes ?? []) {
+    if (changed.length >= CHANGES_LIMIT) break;
+    if (change.at < since || above.has(change.task)) continue;
+    const task = all.get(change.task);
+    if (task === undefined) continue;
+    above.add(change.task);
+    changed.push(task);
+  }
+
+  const sections: TodaySectionRows[] = [];
+  const add = (key: TodaySection, rows: readonly TaskRow[]) => {
+    if (rows.length > 0) sections.push({ key, tasks: rows });
+  };
+  add("focus", shownFocus);
+  add("week", shownWeek);
+  add("next", next);
+  add("changes", changed);
+  return { strip, sections };
+}
+
+/** The expanded task as the list last showed it: its section and its place there. */
+export interface HeldTask {
+  readonly task: TaskRow;
+  readonly section?: TodaySection;
+  readonly index?: number;
+}
+
+/**
+ * Today's sections with the expanded task kept where it was shown (A5 3.3, 3.15: nothing moves
+ * under focus). An update that moves the expanded task to another section, or off Today, leaves
+ * it at its place in the section it was in until it is collapsed, with its latest data. An
+ * expanded task Today has not shown (a link or a reload names it) sits at the top of Focus. Still
+ * disjoint: the held task leaves the section the update put it in.
+ */
+export function holdExpanded(
+  sections: readonly TodaySectionRows[],
+  held: HeldTask | undefined,
+): readonly TodaySectionRows[] {
+  if (held === undefined) return sections;
+  const id = held.task.id;
+  const now = sections.find((s) => s.tasks.some((t) => t.id === id))?.key;
+  if (now !== undefined && (held.section === undefined || now === held.section)) return sections;
+  const target: TodaySection = held.section ?? "focus";
+  const out: TodaySectionRows[] = [];
+  for (const key of TODAY_SECTIONS) {
+    const tasks = [...(sections.find((s) => s.key === key)?.tasks ?? [])].filter(
+      (t) => t.id !== id,
+    );
+    if (key === target) {
+      const at = held.section === undefined ? 0 : Math.min(held.index ?? 0, tasks.length);
+      tasks.splice(at, 0, held.task);
+    }
+    if (tasks.length > 0) out.push({ key, tasks });
+  }
+  return out;
 }

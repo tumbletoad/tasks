@@ -2946,6 +2946,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.4.web.today",
+      "title": "Today's sections and strip as data: A5 3.4's fixture example, Focus's order (late by oldest due, due today, then priority, due date and age), This week by the day that selects it with a waiting task's follow-up day, Next's rule, order and limit, the strip's day narrowing Focus and This week only, Changes (agents' changes off the sections above, newest first, five at most, seven days), and the expanded task held at its place in its section",
+      "source": "A5 3.4, A5 3.14, A5 3.15, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today-disjoint",
+      "title": "Property test over generated tasks, changes, days, Next limits and held tasks: no task is in two sections, every selected task meets its section's rule, every task Focus or This week selects is shown without a day filter, the strip's marks are those tasks' due and planned days, and holding the expanded task keeps the sections disjoint",
+      "source": "A5 3.4, A5 5, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today-page",
+      "title": "Today in a DOM with the real live store: the strip shows today's date once with one cell in the tab order, the sections are section elements under their headings with no view heading, the chosen day narrows Focus and This week and Escape clears it, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-04.e2e.today",
+      "title": "In Chromium and Firefox against the real service on a fixed Thursday: the strip and Focus, This week and Next with no task twice, today's date once on the screen, a day chosen in the strip by keyboard narrows Focus and This week and Escape clears it, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report",
+      "source": "A5 3.4, A5 3.3, A5 3.15, A5 3.19, A5 3.22, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.write.dedupe",
       "title": "task.create upserts by the keys of its draft's sources: an active match returns existing with matched_by and takes only the draft's entries, link_sources links its sources, several active matches are ambiguous, a task finished within tasks.dedupe_window_days returns existing with its lifecycle and an older one does not, dedupe new refuses an active match and none never matches, a removed link or a deleted task never matches, the request's own links and lifecycle changes count, a change to a matched draft's fields is left out, and a request that returned existing, retried after the window, replays existing",
       "source": "A1 3.6, A1 3.8, A1 5, A3 3.4.5, A3 3.11.1, A7 3.10 M3.06",

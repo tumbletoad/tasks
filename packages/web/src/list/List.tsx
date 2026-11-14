@@ -333,6 +333,7 @@ export function List({
     if (item === undefined) return "";
     if (item.group.kind === "inbox") return t("group.inbox");
     if (item.group.kind === "loose") return t("group.noArea");
+    if (item.group.label !== undefined) return t(item.group.label);
     return item.group.title ?? "";
   };
   const total = virtual ? virtualizer.getTotalSize() : undefined;
@@ -351,8 +352,18 @@ export function List({
     >
       {groups.map((group) => {
         const title = titleOf(group.item);
+        // Today's sections are `section` elements (A5 3.22), named like every group by aria-label:
+        // a virtualised list may have unmounted the heading.
+        const isSection = group.item?.group.kind === "section";
+        const Wrapper = isSection ? "section" : "div";
         return (
-          <div key={group.key} className={styles.group} role="group" aria-label={title}>
+          <Wrapper
+            key={group.key}
+            className={styles.group}
+            role={isSection ? undefined : "group"}
+            aria-label={title}
+            data-section={isSection ? group.key : undefined}
+          >
             {group.head === undefined ? null : (
               <h2
                 ref={measure}
@@ -360,16 +371,19 @@ export function List({
                 data-index={group.head}
                 data-key={`g:${group.key}`}
                 data-first={group.item?.first}
+                data-kind={group.item?.group.kind}
                 style={position(group.head)}
               >
-                <span
-                  className={
-                    group.item?.group.slot === undefined
-                      ? styles.dot
-                      : `${styles.dot} slot-${String(group.item.group.slot)}`
-                  }
-                  aria-hidden="true"
-                />
+                {isSection ? null : (
+                  <span
+                    className={
+                      group.item?.group.slot === undefined
+                        ? styles.dot
+                        : `${styles.dot} slot-${String(group.item.group.slot)}`
+                    }
+                    aria-hidden="true"
+                  />
+                )}
                 <span className={styles.name} dir="auto">
                   {title}
                 </span>
@@ -408,7 +422,7 @@ export function List({
                 </ul>
               </div>
             ))}
-          </div>
+          </Wrapper>
         );
       })}
     </div>
