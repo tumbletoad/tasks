@@ -32,7 +32,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { readJournal } from "../../packages/service/src/version/journal.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
-import { runProgram } from "../../scripts/install/test/kit.ts";
+import { runProgram, runsElevated } from "../../scripts/install/test/kit.ts";
 import { openInstalled, windows, type Installed } from "./installed.ts";
 
 /** Builds, an install script run and many service starts: a slow runner gets room. */
@@ -45,7 +45,8 @@ const LAUNCHERS = [CONSOLE, GUI] as const;
 const POINTS = ["staged", "aside", "placed"] as const;
 const ENTRIES = ["stable command", "supervisor"] as const;
 
-describe.runIf(windows)(
+// Its service refuses an elevated token (exit 64): skipped in an elevated process (kit.ts).
+describe.runIf(windows && !runsElevated())(
   "[A2.3.12.6.update.launchers] an updater killed between the renames and the copy of each stable launcher: the next start repairs to a complete version",
   () => {
     let w: Installed;
