@@ -124,6 +124,14 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
       await whoami(bridge);
       await procs.kill(peer);
       home.removeServiceFile();
+      // The peer's exit can reach this test before the bridge has handled its end of the
+      // connection. A call sent then is in flight when the connection ends, and gets
+      // connection_lost at once (A2 3.7.5). So the call waits until the bridge has noticed the loss.
+      await waitFor(
+        () => (bridge.proc.stderr().includes("lost the connection") ? true : undefined),
+        30_000,
+        "the bridge notices the loss",
+      );
       const started = Date.now();
       const reply = await bridge.call("echo", {});
       // The hold is 10 s; the answer names the service as down, not the lost connection.
