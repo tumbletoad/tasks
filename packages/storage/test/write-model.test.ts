@@ -634,7 +634,8 @@ function stored(result: WriteResult): WriteResult {
 
 const property = (seen: Seen) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 40 }), async (steps) => {
-    const fx = await writeFixture(temp.make());
+    // 150 fresh spaces and thousands of commits: which writes apply does not depend on a flush.
+    const fx = await writeFixture(temp.make(), { flush: false });
     try {
       const actors: Credential[] = [fx.human, fx.codex, fx.claude];
       const model = new Model(fx.writer.asOf());
