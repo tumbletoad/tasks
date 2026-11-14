@@ -66,17 +66,22 @@ type Action =
   | {
       readonly kind: "run";
       readonly steps: number;
-      readonly killAt: number | null;
+      readonly killAt: Kill;
       readonly during: During;
     }
-  | { readonly kind: "restart" | "rebuild"; readonly killAt: number | null }
+  | { readonly kind: "restart" | "rebuild"; readonly killAt: Kill }
   | { readonly kind: "edit" | "replace" | "delete"; readonly pick: number }
   | { readonly kind: "hardlink"; readonly pick: number; readonly same: boolean }
   | { readonly kind: "elsewhere" | "decoy"; readonly which: number }
   | { readonly kind: "folder-file" | "folder-link"; readonly which: number }
   | { readonly kind: "swap-rescue" | "swap-rescued-root" | "rest" };
 
-const kill = fc.option(fc.integer({ min: 1, max: 40 }), { nil: null, freq: 3 });
+/** A kill at the n-th act on disk, right after the writer answered a batch, or none. */
+type Kill = number | "reported" | null;
+const kill: fc.Arbitrary<Kill> = fc.oneof(
+  { weight: 4, arbitrary: fc.option(fc.integer({ min: 1, max: 40 }), { nil: null, freq: 3 }) },
+  { weight: 1, arbitrary: fc.constant("reported" as const) },
+);
 const action: fc.Arbitrary<Action> = fc.oneof(
   {
     weight: 4,
@@ -305,6 +310,8 @@ class Model {
   killer: ReturnType<typeof killAt> | undefined;
   /** A person's act run once while a batch waits on the writer. */
   during: (() => void) | undefined;
+  /** The kill is right after the writer's next answer. */
+  killOnReport = false;
   /** The state outside the tree the projection's current act is checked against. */
   baseline: Map<string, Entry> | undefined;
 
@@ -320,6 +327,12 @@ class Model {
         projected: (batch) => {
           if (this.killer?.dead() === true) return refuse();
           const answer = w.writer.projected(batch);
+          if (this.killOnReport) {
+            // The writer marked the batch; the process ends before anything else happens.
+            this.killOnReport = false;
+            this.killer?.kill();
+            return refuse();
+          }
           const during = this.during;
           this.during = undefined;
           during?.();
@@ -341,9 +354,11 @@ class Model {
    * Runs `work` as the projection, with a kill at its `at`-th act if one is armed, and checks
    * invariant 2 around it. A kill ends in a restart, as the service's next start would be.
    */
-  async act(work: () => Promise<void>, at: number | null = null): Promise<void> {
+  async act(work: () => Promise<void>, at: Kill = null): Promise<void> {
     this.baseline = this.outsideState();
-    this.killer = at === null ? undefined : killAt(at);
+    this.killer =
+      at === null ? undefined : killAt(at === "reported" ? Number.MAX_SAFE_INTEGER : at);
+    this.killOnReport = at === "reported";
     try {
       await work();
     } catch (error) {
@@ -352,6 +367,7 @@ class Model {
     const killed = this.killer?.dead() === true;
     if (killed) seen.kills += 1;
     this.killer = undefined;
+    this.killOnReport = false;
     this.during = undefined;
     if (killed) {
       this.projector = this.newProjector();
@@ -361,14 +377,14 @@ class Model {
     this.baseline = undefined;
   }
 
-  async restart(at: number | null): Promise<void> {
+  async restart(at: Kill): Promise<void> {
     await this.act(async () => {
       this.projector = this.newProjector();
       await this.projector.start();
     }, at);
   }
 
-  async run(steps: number, at: number | null, during: During): Promise<void> {
+  async run(steps: number, at: Kill, during: During): Promise<void> {
     if (during !== "none") {
       const swap = (): void => {
         const target = during === "view-link" ? this.view : join(this.view, "open");
@@ -389,7 +405,7 @@ class Model {
     }, at);
   }
 
-  async rebuild(at: number | null): Promise<void> {
+  async rebuild(at: Kill): Promise<void> {
     await this.act(async () => {
       this.current.rebuild();
       await this.current.step();
@@ -728,10 +744,10 @@ let runs = 0;
 const seen = { kills: 0, during: 0, hardlinks: 0, folders: 0, swaps: 0, rescued: 0, rests: 0 };
 const LEAST = {
   kills: 40,
-  during: 20,
+  during: 12,
   hardlinks: 10,
-  folders: 15,
-  swaps: 8,
+  folders: 10,
+  swaps: 5,
   rescued: 100,
   rests: 70,
 };

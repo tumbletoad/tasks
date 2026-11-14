@@ -283,6 +283,8 @@ export function killAt(at: number): {
   hook: Hook;
   dead: () => boolean;
   act: () => Act | undefined;
+  /** The kill now, between acts: as the writer has just answered, say. */
+  kill: () => void;
 } {
   let count = 0;
   let dead = false;
@@ -299,5 +301,8 @@ export function killAt(at: number): {
     },
     dead: () => dead,
     act: () => act,
+    kill: () => {
+      dead = true;
+    },
   };
 }
