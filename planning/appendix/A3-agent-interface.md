@@ -735,8 +735,10 @@ TT Tasks stores links, titles and one-line summaries, never message bodies.
    words, a one-line summary with the next step, area and project, a due date only if the source
    states one, and the source with its key and a meaningful title (subject, chat space or person,
    ticket title). Put what is new in the draft's log. Up to 25 drafts per add_tasks call.
-3. "exists": TT Tasks already has this item. Do not create another. Its log entry was added.
-   Update its summary if the next step changed.
+3. "exists": TT Tasks already has this item. Do not create another. On an active task its log
+   entry was added: update its summary if the next step changed. On a task finished in the last
+   30 days nothing was added: if the source shows new work, send the draft again with
+   on_existing "create_new".
 4. "possible duplicate": if it is the same work, add the source to that task with update_task
    add_sources instead.
 5. Waiting tasks: if the awaited reply arrived, set status open, clear waiting_on, log what arrived.
