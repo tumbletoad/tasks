@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./runs": "./src/runs.ts",
     "./generated/client.ts": "./generated/client.ts",
     "./generated/http-routes.ts": "./generated/http-routes.ts",
     "./generated/*.json": "./generated/*.json"

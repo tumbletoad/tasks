@@ -284,6 +284,9 @@ importers:
       '@tasks/brand':
         specifier: workspace:*
         version: link:../brand
+      '@tasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tasks/files':
         specifier: workspace:*
         version: link:../files
@@ -309,6 +312,12 @@ importers:
       '@tasks/brand':
         specifier: workspace:*
         version: link:../brand
+      '@tasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tasks/launch':
+        specifier: workspace:*
+        version: link:../launch
     devDependencies:
       fast-check:
         specifier: 4.10.2

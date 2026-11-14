@@ -6,6 +6,7 @@ export * from "./errors.ts";
 export * from "./http.ts";
 export * from "./operations.ts";
 export * from "./registry.ts";
+export * from "./runs.ts";
 export * from "./safe-text.ts";
 export * from "./schemas.ts";
 export { checkRegistry, LIMITS, type CheckOptions } from "./check.ts";
