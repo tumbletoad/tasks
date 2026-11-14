@@ -218,6 +218,8 @@ export class Bindings implements BindingPort {
   #savedAt = 0;
   #dirty = false;
   #prunedAt = 0;
+  /** Records the store could not read back at this start (`binding.store_dropped`), for doctor. */
+  readonly dropped: number;
 
   constructor(options: BindingsOptions) {
     this.#options = options;
@@ -225,6 +227,7 @@ export class Bindings implements BindingPort {
     const { state, dropped } = options.store.load();
     for (const session of state.sessions) this.#sessions.set(session.id, session);
     for (const handle of state.handles) this.#handles.set(handle.hash, handle);
+    this.dropped = dropped;
     if (dropped > 0) this.#log({ ev: "binding.store_dropped", count: dropped });
   }
 

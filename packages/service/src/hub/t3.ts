@@ -259,14 +259,27 @@ export function t3Verbs(host: T3Host): Readonly<Record<string, Verb>> {
         }),
       );
       const running = await host.route.running();
+      // The token's expiry and whether the pairing renews it (a refresh token), for doctor's
+      // warning before it runs out (A4 3.4.1), whether or not T3 runs now.
+      const pairing = host.route.pairing();
+      const token =
+        pairing === undefined || pairing.reconnect
+          ? {}
+          : { ...iso(pairing.expiresAt), renews: pairing.refreshToken !== undefined };
       if (available.state !== "ready") {
-        return { state: available.state, message: T3_TEXT[available.state], running, instances };
+        return {
+          state: available.state,
+          message: T3_TEXT[available.state],
+          ...token,
+          running,
+          instances,
+        };
       }
       return {
         state: "ready",
         message: "Paired with T3 Code.",
         paired_at: new Date(available.pairedAt).toISOString(),
-        ...iso(available.expiresAt),
+        ...token,
         running,
         instances,
       };
