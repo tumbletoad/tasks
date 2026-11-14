@@ -8,6 +8,7 @@ import {
   buildPage,
   parseToken,
   SECTION_ORDER,
+  textCost,
   type PageItem,
   type Placed,
   type Section,
@@ -135,6 +136,9 @@ export function digestOf(
 /** At most this many notes or log entries a page can hold: what the reader takes per list. */
 const PAGE_ITEMS = 64;
 
+/** The prefix of a learning's line in the compact text, `- learning: `, rounded up. */
+const LEARNING_BYTES = 16;
+
 /** The sections asked for, in the order a page shows them, and the token the page starts at. */
 export interface PagePlan {
   readonly asked: readonly Section[];
@@ -239,16 +243,20 @@ export function sectionsOf(
       case "context":
         add([{ value: null, key: 0, text: text(row["context"]), extra: 0 }]);
         break;
-      case "outcome":
+      case "outcome": {
+        // The task's own learnings go with the start of the outcome: a page that continues the
+        // outcome had them on the page before (A1 3.11.2).
+        const learnings = here?.kind === "at" ? [] : read.learnings;
         add([
           {
-            value: { ...present("wrap_state", row["wrap_state"]), learnings: [] },
+            value: { ...present("wrap_state", row["wrap_state"]), learnings },
             key: 0,
             text: text(row["outcome"]),
-            extra: 0,
+            extra: learnings.reduce((n, learning) => n + LEARNING_BYTES + textCost(learning), 0),
           },
         ]);
         break;
+      }
       case "sources":
         add(
           read.sources.slice(skip).map((source, i) => {

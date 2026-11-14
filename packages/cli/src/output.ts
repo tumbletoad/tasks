@@ -133,7 +133,13 @@ export function render(entry: string, result: Result, space: string): string {
       );
       break;
     case "task.finish": {
-      lines.push(`Completed ${String(result["task"])} in ${space}${replay(result)}`);
+      const done =
+        result["result"] === "no_change"
+          ? "No change to"
+          : result["lifecycle"] === "archived"
+            ? "Dropped"
+            : "Completed";
+      lines.push(`${done} ${String(result["task"])} in ${space}${replay(result)}`);
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
         const ref = typeof f["ref"] === "string" ? f["ref"] : undefined;
         lines.push(

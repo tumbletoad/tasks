@@ -182,6 +182,13 @@ const PLACE: Statement = {
     `AND deleted_at IS NULL AND owner_id = ${MATCH}`,
   mode: "get",
 };
+/** The task's own learnings in their order, those its wrap-ups left (A1 3.11.2). */
+const LEARNINGS: Statement = {
+  sql:
+    `SELECT body FROM learnings WHERE task_id = ${MATCH} AND deleted_at IS NULL ` +
+    "ORDER BY position",
+  mode: "all",
+};
 /** One row per commit that changed the task or a row under it, newest first. */
 const HISTORY: Statement = {
   sql:
@@ -297,6 +304,8 @@ export interface TaskRead {
   readonly sources: Row[];
   readonly place: Row | undefined;
   readonly history: Row[];
+  /** The task's own learnings, in their order. */
+  readonly learnings: string[];
   /** How many of each the task holds in all. */
   readonly counts: {
     readonly instructions: number;
@@ -335,24 +344,37 @@ export async function readTask(
     lupto: options.log.upto,
     llimit: options.log.limit,
   };
-  const [space, alias, row, instructions, notes, counts, log, logCount, sources, place, history] =
-    await snapshot(
-      reader,
-      [
-        SPACE,
-        PREFIX_ALIAS,
-        TASK,
-        INSTRUCTIONS,
-        NOTES,
-        NOTE_COUNTS,
-        LOG,
-        LOG_COUNT,
-        SOURCES,
-        PLACE,
-        HISTORY,
-      ],
-      params,
-    );
+  const [
+    space,
+    alias,
+    row,
+    instructions,
+    notes,
+    counts,
+    log,
+    logCount,
+    sources,
+    place,
+    history,
+    learnings,
+  ] = await snapshot(
+    reader,
+    [
+      SPACE,
+      PREFIX_ALIAS,
+      TASK,
+      INSTRUCTIONS,
+      NOTES,
+      NOTE_COUNTS,
+      LOG,
+      LOG_COUNT,
+      SOURCES,
+      PLACE,
+      HISTORY,
+      LEARNINGS,
+    ],
+    params,
+  );
   const facts = spaceFacts(space);
   if (
     key.prefix !== null &&
@@ -374,6 +396,7 @@ export async function readTask(
     sources: sourceRows,
     place: (place as Row | null) ?? undefined,
     history: history as Row[],
+    learnings: (learnings as Row[]).map((learning) => text(learning["body"])),
     counts: {
       instructions: Number(noteCounts?.["i"] ?? 0),
       notes: Number(noteCounts?.["n"] ?? 0),
@@ -694,18 +717,30 @@ export interface CommitFacts {
   readonly changes: readonly CommitChange[];
   /** The task's status as of the commit. */
   readonly status: string | undefined;
+  /** The task's lifecycle and wrap-up state as of the commit (A1 3.11). */
+  readonly lifecycle: string | undefined;
+  readonly wrapState: string | undefined;
 }
 
 const COMMIT_CHANGES: Statement = {
   sql: "SELECT entity, field, before, after FROM changes WHERE seq = $seq AND task_id = $task",
   mode: "all",
 };
-/** The status as of $seq: the first later change's `before`, else the status now. */
-const STATUS_AT: Statement = {
+/**
+ * A field's column as of $seq: from the first later change of the field its `before`, else the
+ * column now. `wrap_state` may be null, so the later change is found first, not coalesced.
+ */
+const columnAt = (field: string, path: string, column: string): string =>
+  `(SELECT CASE WHEN c.before IS NULL THEN t.${column} ELSE json_extract(c.before, '${path}') END ` +
+  "FROM tasks t LEFT JOIN (SELECT before FROM changes WHERE entity = 'tasks' " +
+  `AND entity_id = $task AND field = '${field}' AND seq > $seq ORDER BY seq, n LIMIT 1) c ` +
+  "WHERE t.id = $task)";
+/** The status, lifecycle and wrap-up state as of $seq. */
+const STATE_AT: Statement = {
   sql:
-    "SELECT COALESCE((SELECT json_extract(before, '$') FROM changes WHERE entity = 'tasks' " +
-    "AND entity_id = $task AND field = 'status' AND seq > $seq ORDER BY seq, n LIMIT 1), " +
-    "(SELECT status FROM tasks WHERE id = $task)) AS status",
+    `SELECT ${columnAt("status", "$", "status")} AS status, ` +
+    `${columnAt("lifecycle", "$.lifecycle", "lifecycle")} AS lifecycle, ` +
+    `${columnAt("wrap", "$.wrap_state", "wrap_state")} AS wrap_state`,
   mode: "get",
 };
 
@@ -729,8 +764,11 @@ export async function readCommit(
   task: string,
   seq: number,
 ): Promise<CommitFacts> {
-  const [changes, status] = await snapshot(reader, [COMMIT_CHANGES, STATUS_AT], { task, seq });
-  const value = (status as Row | null)?.["status"];
+  const [changes, state] = await snapshot(reader, [COMMIT_CHANGES, STATE_AT], { task, seq });
+  const at = (name: string): string | undefined => {
+    const value = (state as Row | null)?.[name];
+    return typeof value === "string" ? value : undefined;
+  };
   return {
     changes: (changes as Row[]).map((row) => ({
       entity: text(row["entity"]),
@@ -738,7 +776,9 @@ export async function readCommit(
       before: json(row["before"]),
       after: json(row["after"]),
     })),
-    status: typeof value === "string" ? value : undefined,
+    status: at("status"),
+    lifecycle: at("lifecycle"),
+    wrapState: at("wrap_state"),
   };
 }
 

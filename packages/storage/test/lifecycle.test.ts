@@ -493,10 +493,10 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
             planned: true,
           };
           for (const given of steps) {
-            const s: Step =
+            const s =
               given.kind === "again"
                 ? {
-                    kind: "wrap",
+                    kind: "wrap" as const,
                     actor: given.actor,
                     outcome: model.outcome ?? undefined,
                     add: model.learnings.slice(0, 1),
@@ -505,7 +505,6 @@ describe("[A1.5.write.wrap-up-additive] wrap-up never changes context, notes, lo
                     once: true,
                   }
                 : given;
-            if (s.kind === "again") continue;
             if (s.kind !== "wrap") {
               const active = model.lifecycle === "active";
               if (s.kind === "reopen" && active) continue;

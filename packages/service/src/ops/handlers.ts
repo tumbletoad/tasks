@@ -1402,17 +1402,31 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "task.finish": async (call) => {
     const { input } = call;
     checkMode(input);
-    if (input["status"] === "dropped") {
-      throw unsupported("status", "M3.04 (task.archive and task.wrap_up)");
-    }
-    if (Array.isArray(input["learnings"]) && input["learnings"].length > 0) {
-      throw unsupported("learnings", "M3.01 and M3.04 (the learnings table, task.wrap_up)");
-    }
     const task = await taskOf(call);
     const outcome = typeof input["outcome"] === "string" ? input["outcome"] : undefined;
+    const learnings = Array.isArray(input["learnings"]) ? (input["learnings"] as string[]) : [];
+    // A3 3.4.8, decided by the writer on the task as it finds it: an active task is completed
+    // (done) or archived (dropped), one the user finished first is left as it is (`if_active`),
+    // and the outcome and learnings are its wrap-up, `once`: a task wrapped already is no change
+    // with the same outcome and a conflict otherwise. The operations follow from the input alone,
+    // so a replay's stored result lines up with them whatever the task's state is now.
     const ops: Operation[] = [
-      { kind: "task.complete", task, ...(outcome === undefined ? {} : { outcome }) },
+      {
+        kind: input["status"] === "dropped" ? "task.archive" : "task.complete",
+        task,
+        if_active: true,
+      },
     ];
+    if (outcome !== undefined || learnings.length > 0) {
+      ops.push({
+        kind: "task.wrap_up",
+        task,
+        ...(outcome === undefined ? {} : { outcome }),
+        ...(learnings.length === 0 ? {} : { learnings: { add: learnings } }),
+        once: true,
+      });
+    }
+    const own = ops.length;
     const follow = drafts(input["follow_ups"]);
     const firsts: number[] = [];
     // task.finish's result has no warnings (A3 3.4.8): a follow-up's source_differs stays in the
@@ -1431,12 +1445,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // follow-up bound without a remote (its config unreadable) has no remote check, unannounced.
     ops.push(...(await placeSets(call, asks, "refuse", ops.length)).ops);
     const result = await submit(call, ops);
+    const done = opAt(result, 0);
+    // Whether the call finished or wrapped up the task, from the operations' stored results; its
+    // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a
+    // replay answers what the first answer said (A3 3.4.1).
+    const changed = Array.from({ length: own }, (_, i) => opAt(result, i)).some(
+      (op) => op.status !== "unchanged",
+    );
+    const facts = await commitOf(call, done, result.seq);
     return {
-      result: result.status === "applied" ? "completed" : "no_change",
-      task: refOf(opAt(result, 0)),
-      lifecycle: "completed",
-      wrap_state: outcome === undefined ? "pending" : "wrapped",
-      learnings: 0,
+      result: changed ? "completed" : "no_change",
+      task: refOf(done),
+      lifecycle: facts.lifecycle ?? "completed",
+      ...(facts.wrapState === undefined ? {} : { wrap_state: facts.wrapState }),
+      learnings:
+        result.status === "applied"
+          ? facts.changes.filter((c) => c.entity === "learnings" && c.field === null).length
+          : 0,
       // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
       follow_ups: follow.map((draft, k) => {
         const outcome = draftOutcome(result, firsts[k] ?? 0);

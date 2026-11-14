@@ -137,6 +137,7 @@ export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   places: "place",
   launches: "launch",
   machines: "machine",
+  learnings: "learning",
 };
 
 /** A row without its nulls, booleans as booleans. */
