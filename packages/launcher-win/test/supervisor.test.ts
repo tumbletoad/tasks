@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import {
   closeSync,
   constants,
+  copyFileSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -46,6 +47,7 @@ interface Step {
   exit: number;
   ms?: number;
   switchTo?: string;
+  replaceSupervisor?: boolean;
 }
 
 interface StubLine {
@@ -53,6 +55,7 @@ interface StubLine {
   n: number;
   t: number;
   pid?: number;
+  ppid?: number;
   version?: string;
   execPath?: string;
   args?: string[];
@@ -512,6 +515,82 @@ describe.runIf(windows)(
         killQuietly(pid);
       }
     }, 60_000);
+
+    test("[A2.3.3.2.launcher-win.handover] a supervisor whose bin\\tasksw.exe was replaced while it ran hands the service over to the new one; one that cannot start leaves it supervising", async () => {
+      const root = install();
+      const stub = join(root, "stub");
+      const trace = join(stub, "trace.txt");
+      const log = join(stub, "log.jsonl");
+      // Another file with the same build: only the file at bin\tasksw.exe is another one.
+      copyFileSync(hooks.tasksw, join(stub, "tasksw-next.exe"));
+      // The service renames the running supervisor's file aside, puts the new one there (as an
+      // update does) and asks for a restart.
+      const s = supervise(root, [{ exit: 75, replaceSupervisor: true }, { exit: 0 }], 20);
+      // The supervisor the test started handed over and exited 0 at once...
+      expect(s.status).toBe(0);
+      // ...and the new one started the service again and stopped on its 0.
+      const finished = await waitUntil(
+        () => existsSync(trace) && readFileSync(trace, "utf8").includes("stop 0"),
+        30_000,
+      );
+      expect(finished, "the new supervisor did not finish").toBe(true);
+      expect(readFileSync(trace, "utf8").split("\n").filter(Boolean)).toEqual([
+        "exit 75",
+        "hand-over",
+        "exit 0",
+        "stop 0",
+      ]);
+      const starts = readLines<StubLine>(log).filter((l) => l.ev === "start");
+      expect(starts).toHaveLength(2);
+      const [first, second] = starts;
+      expect(second?.ppid, "the second start comes from another supervisor").not.toBe(first?.ppid);
+      expect(second?.manager).toBe("tasksw");
+      expect(await waitUntil(() => !alive(second?.ppid ?? 0), 20_000)).toBe(true);
+      expect(readdirSync(join(root, "bin")).sort()).toEqual([
+        "tasks.exe",
+        "tasksw.exe",
+        "tasksw.exe.old-1",
+      ]);
+
+      // A new file that cannot run: the supervisor says so and goes on supervising itself.
+      const broken = install();
+      writeFileSync(join(broken, "stub", "tasksw-next.exe"), "not a program");
+      const kept = supervise(broken, [{ exit: 75, replaceSupervisor: true }, { exit: 0 }], 20);
+      expect(kept.status).toBe(0);
+      expect(kept.trace).toEqual(["exit 75", "hand-over-failed", "restart", "exit 0", "stop 0"]);
+      expect(kept.starts.map((x) => x.ppid)).toEqual([kept.starts[0]?.ppid, kept.starts[0]?.ppid]);
+      expect(kept.stderr).toMatch(/cannot start the new supervisor/);
+    }, 90_000);
+
+    test("[A2.3.3.2.launcher-win.handover] a replaced supervisor hands over before any restart of its service, also after a failure: a service that dies after its repair replaced tasksw.exe, before its exit 75, is not left to the old one", async () => {
+      const root = install();
+      const stub = join(root, "stub");
+      const trace = join(stub, "trace.txt");
+      copyFileSync(hooks.tasksw, join(stub, "tasksw-next.exe"));
+      // The service replaces the supervisor's file, then dies (no exit 75): the old supervisor
+      // waits its first back-off unit and, instead of starting the service itself again, starts
+      // the new one, which starts it.
+      const s = supervise(root, [{ exit: 70, replaceSupervisor: true }, { exit: 0 }], 20);
+      expect(s.status).toBe(0);
+      const finished = await waitUntil(
+        () => existsSync(trace) && readFileSync(trace, "utf8").includes("stop 0"),
+        30_000,
+      );
+      expect(finished, "the new supervisor did not finish").toBe(true);
+      expect(readFileSync(trace, "utf8").split("\n").filter(Boolean)).toEqual([
+        "exit 70",
+        "wait 1",
+        "hand-over",
+        "exit 0",
+        "stop 0",
+      ]);
+      const starts = readLines<StubLine>(join(stub, "log.jsonl")).filter((l) => l.ev === "start");
+      expect(starts).toHaveLength(2);
+      expect(starts[1]?.ppid, "the second start comes from another supervisor").not.toBe(
+        starts[0]?.ppid,
+      );
+      expect(await waitUntil(() => !alive(starts[1]?.ppid ?? 0), 20_000)).toBe(true);
+    }, 90_000);
 
     test("a release build ignores the test hooks: it waits a real second and traces nothing", () => {
       const root = install(release);
