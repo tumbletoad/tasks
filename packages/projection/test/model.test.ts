@@ -282,8 +282,17 @@ class Model {
   }
 
   /** A generated file on disk, reached through real folders, or undefined. */
-  pickFile(pick: number): { path: string; task: string; abs: string } | undefined {
-    const files = this.generated().filter(({ path }) => {
+  pickFile(pick: number, live = false): { path: string; task: string; abs: string } | undefined {
+    const alive = live
+      ? new Set(
+          this.w.reader
+            .prepare("SELECT id FROM tasks WHERE deleted_at IS NULL")
+            .all<{ id: string }>()
+            .map((row) => row.id),
+        )
+      : undefined;
+    const files = this.generated().filter(({ path, task }) => {
+      if (alive !== undefined && !alive.has(task)) return false;
       const parts = path.split("/");
       for (let i = 0; i < parts.length; i += 1) {
         if (!this.realFolder(join(this.view, ...parts.slice(0, i)))) return false;
@@ -719,9 +728,11 @@ class Model {
         // A swapped rescue folder matters at the next rescue: the person edits a generated file,
         // its task changes, and a batch must move the edit aside.
         this.person(a);
-        const file = this.pickFile(0);
+        // A task that is not deleted: a patch must apply.
+        const file = this.pickFile(0, true);
         if (file === undefined) return;
-        this.person({ kind: "edit", pick: 0 });
+        this.disturb(file.task);
+        this.write(file.abs, this.personText());
         this.w.submit([
           {
             kind: "task.patch",
@@ -791,6 +802,7 @@ describe("[A1.5.projection.model] commits, a person's acts in the tree and kills
         least,
       );
     }
-    await fc.assert(property, { numRuns: 20 });
+    // More for a soak run: PROJECTION_MODEL_RUNS=500.
+    await fc.assert(property, { numRuns: Number(process.env["PROJECTION_MODEL_RUNS"] ?? "20") });
   }, 600_000);
 });
