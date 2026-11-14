@@ -3,20 +3,23 @@
 // only: every archive a test needs to be refused is crafted here, byte by byte.
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { crc32, deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   exportBundle,
   exportBundleWith,
   exportName,
+  exportPeak,
   type ExportPoint,
 } from "../src/bundle/export.ts";
 import { EXPORT_MARKER, EXPORT_VERSION, exportText } from "../src/bundle/export-file.ts";
@@ -26,14 +29,16 @@ import { BUNDLE_POLICY, type BundlePolicy } from "../src/backup/policy.ts";
 import { StorageError } from "../src/errors.ts";
 import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
-import { backupSpace } from "../src/backup/backup.ts";
+import { backupPeak, backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import { listBackups, verifyBackup } from "../src/backup/list.ts";
 import { schemaObjects } from "../src/backup/snapshot.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
+import { unpackBackup } from "../src/restore/unpack.ts";
 import { openSpace } from "../src/space.ts";
-import { copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
+import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
+import { STEPS_MARK_GUARD, STEPS_SEARCH } from "./stand-in-steps.ts";
 
 const folders = tempFolders("bundle");
 
@@ -167,6 +172,33 @@ async function refused(zip: string, code: string, policy?: BundlePolicy): Promis
   expect(readdirSync(parent)).toEqual([]);
   expect(error.message).not.toContain(parent);
   return error;
+}
+
+/**
+ * The bundle `file` rebuilt after `edit` changed its unpacked files (its database at
+ * `<folder>/space.db`), with export.json made to agree with the result: every file's digest and
+ * the database's rows per table. A crafted bundle, as another tool could write one.
+ */
+async function rebuildBundle(
+  file: string,
+  edit: (folder: string) => Promise<void> | void,
+): Promise<string> {
+  const unpacked = folders.make();
+  const { manifest } = await readBundle(file, BUNDLE_POLICY, {
+    extractTo: (name) => join(unpacked, ...name.split("/")),
+  });
+  await edit(unpacked);
+  const { counts } = await readFacts(unpacked);
+  const out = join(folders.make(), "rebuilt.zip");
+  const writer = ZipWriter.create(out, 0);
+  const files: typeof manifest.files = {};
+  for (const name of Object.keys(manifest.files)) {
+    const entry = writer.addBytes(name, readFileSync(join(unpacked, ...name.split("/"))));
+    files[name] = { size: entry.size, sha256: entry.sha256 };
+  }
+  writer.addBytes("export.json", Buffer.from(exportText({ ...manifest, counts, files })));
+  writer.finish();
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -671,6 +703,56 @@ describe("[A1.5.bundle.export-restore] export bundles restore as read-only copie
   });
 });
 
+describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the shared free-space reserve", () => {
+  test("each refuses before it writes anything when the free space less the reserve cannot hold its peak, and runs when it can", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    // The database's pages times their size: the file, with every page checkpointed into it.
+    const size = statSync(join(folder, "space.db")).size;
+    const reserve = BUNDLE_POLICY.freeSpaceReserveBytes;
+    const seen: string[] = [];
+    const free =
+      (bytes: number) =>
+      (where: string): number => {
+        seen.push(where);
+        return reserve + bytes;
+      };
+
+    const backupNeeds = backupPeak(size);
+    await expectCode(
+      () =>
+        backupSpaceWith(checked, folder, { kind: "manual" }, { freeBytes: free(backupNeeds - 1) }),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    expect(existsSync(join(folder, "backups"))).toBe(false);
+    // Asked of the nearest folder that exists: the backups folder is not made yet.
+    expect(seen).toEqual([folder]);
+    await backupSpaceWith(checked, folder, { kind: "manual" }, { freeBytes: free(backupNeeds) });
+
+    const exportNeeds = exportPeak(size, 0, true);
+    expect(exportNeeds).toBe(6 * size);
+    await expectCode(
+      () =>
+        exportBundleWith(
+          checked,
+          folder,
+          { mode: "backup", withJsonl: true },
+          { freeBytes: free(exportNeeds - 1) },
+        ),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    expect(existsSync(join(folder, "exports"))).toBe(false);
+    await exportBundleWith(
+      checked,
+      folder,
+      { mode: "backup", withJsonl: true },
+      { freeBytes: free(exportNeeds) },
+    );
+    expect(readdirSync(join(folder, "exports"))).toHaveLength(1);
+  });
+});
+
 describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from a bundle", () => {
   test("each restores into a new folder with integrity_check, last_seq and counts; a copy stays read-only; in place it is claimed", async () => {
     const checked = await checkedDriver();
@@ -708,62 +790,159 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     writer.conn.close();
   });
 
-  test("a database whose tables, indexes or views are not its revision's is refused before anything writes to it", async () => {
+  test("a database whose tables, indexes or views are not its revision's is refused before anything writes to it, and so is its export", async () => {
     const checked = await checkedDriver();
     const changes = [
       // A table, an index and a view the schema does not have.
       "CREATE TABLE notes_copy (id TEXT PRIMARY KEY, body TEXT) STRICT",
       "CREATE INDEX tasks_by_title ON tasks (title)",
       "CREATE VIEW open_tasks AS SELECT id FROM tasks",
+      // A name that SQL's LIKE 'sqlite_%' takes for SQLite's own (`_` matches any character): an
+      // index whose expression fails the restore's first write. Compared by the literal prefix.
+      "CREATE INDEX sqlitexguard ON space " +
+        "((CASE WHEN transfer IS NOT NULL THEN abs(-9223372036854775808) ELSE 0 END))",
     ];
     for (const sql of changes) {
       const { folder } = await createFixtureSpace(folders.make());
       await writeCommits(folder, 1);
+      const clean = await exportBundle(checked, folder, { mode: "backup" });
       const conn = await rawWriter(folder);
       try {
         conn.exec(sql);
       } finally {
         conn.close();
       }
+      // The export refuses at once, with its own code, and writes nothing.
+      const refusal = await expectCode(
+        () => exportBundle(checked, folder, { mode: "backup" }),
+        "SPACE_SCHEMA_FOREIGN",
+      );
+      expect(refusal.message).not.toMatch(/notes_copy|tasks_by_title|open_tasks|sqlitexguard/);
+      expect(readdirSync(join(folder, "exports")), sql).toEqual([clean.name]);
+      // A backup is still taken (the writer copies what is there), and a crafted bundle holds the
+      // change: a restore refuses both before its first write.
       const backup = await backupSpace(checked, folder, { kind: "manual" });
-      const bundle = await exportBundle(checked, folder, { mode: "backup" });
+      const bundle = await rebuildBundle(clean.file, async (unpacked) => {
+        const edit = await rawWriter(unpacked);
+        try {
+          edit.exec(sql);
+        } finally {
+          edit.close();
+        }
+      });
       const parent = folders.make();
+      const unpackRefusal = await expectCode(
+        () => unpackBackup(checked, backup.file, join(parent, "unpacked.db"), {}),
+        "BACKUP_INVALID",
+      );
+      expect(unpackRefusal.message, sql).toContain("schema is not its revision's");
       await expectCode(
         () => restoreBackup(checked, backup.file, join(parent, "a")),
         "BACKUP_INVALID",
       );
-      await expectCode(
-        () => restoreBackup(checked, bundle.file, join(parent, "b")),
+      const bundleRefusal = await expectCode(
+        () => restoreBackup(checked, bundle, join(parent, "b")),
         "BUNDLE_INVALID",
       );
-      expect(readdirSync(parent), sql).toEqual([]);
+      expect(bundleRefusal.message, sql).toContain("schema is not its revision's");
+      expect(existsSync(join(parent, "a")) || existsSync(join(parent, "b")), sql).toBe(false);
       // Retention calls it unverified too: verified means what a restore accepts.
-      const [listed] = listBackups(join(folder, "backups")).backups;
+      const listed = listBackups(join(folder, "backups")).backups.find(
+        (b) => b.name === backup.name,
+      );
       expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toBe(
         undefined,
       );
     }
   });
 
-  test("a virtual table counts by its own text, the shadow tables its module makes by none", async () => {
+  test("a virtual table counts by its own text, its module's shadow tables by type and name, and a table named like one in full", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const conn = await rawWriter(folder);
     try {
       const before = schemaObjects(conn);
       conn.exec("CREATE VIRTUAL TABLE probe_fts USING fts5(body)");
-      const after = schemaObjects(conn);
-      expect(after.length).toBe(before.length + 1);
-      expect(after.filter((o) => o.includes("probe_fts"))).toEqual([
+      const added = schemaObjects(conn).filter((o) => !before.includes(o));
+      expect(added).toEqual([
         JSON.stringify([
           "table",
           "probe_fts",
           "probe_fts",
           "CREATE VIRTUAL TABLE probe_fts USING fts5(body)",
         ]),
+        // SQLite names them shadow tables (PRAGMA table_list), not a guess from their names.
+        ...["config", "content", "data", "docsize", "idx"].map((suffix) =>
+          JSON.stringify(["table", `probe_fts_${suffix}`, `probe_fts_${suffix}`]),
+        ),
       ]);
+      conn.exec("CREATE TABLE probe_fts_extra (x)");
+      expect(schemaObjects(conn)).toContain(
+        JSON.stringify([
+          "table",
+          "probe_fts_extra",
+          "probe_fts_extra",
+          "CREATE TABLE probe_fts_extra (x)",
+        ]),
+      );
     } finally {
       conn.close();
     }
+  });
+
+  test("a space at a revision with the search tables (a stand-in for schema 0.3) backs up, exports, verifies and restores; a table under the FTS table's prefix is refused", async () => {
+    const checked = await checkedDriver();
+    const steps = STEPS_SEARCH;
+    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
+    await writeCommits(folder, 3, "s", steps);
+    const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
+    const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, { steps });
+    expect(bundle.manifest.counts["search_fts_data"]).toBeGreaterThan(0);
+    for (const file of [backup.file, bundle.file]) {
+      const restored = await restoreBackupWith(
+        checked,
+        file,
+        join(folders.make(), "mira"),
+        {},
+        { steps },
+      );
+      expect(restored.revision, file).toEqual({ major: 0, minor: 3 });
+      expect(restored.space.lastSeq, file).toBe(3);
+    }
+    const listed = listBackups(join(folder, "backups")).backups[0];
+    if (listed === undefined) throw new Error("the backup is listed");
+    expect(await verifyBackup(checked, listed, { steps })).toEqual(backup.sidecar);
+
+    const conn = await rawWriter(folder);
+    try {
+      conn.exec("CREATE TABLE search_fts_extra (x)");
+    } finally {
+      conn.close();
+    }
+    await expectCode(
+      () => exportBundleWith(checked, folder, { mode: "backup" }, { steps }),
+      "SPACE_SCHEMA_FOREIGN",
+    );
+    const foreign = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
+    await expectCode(
+      () => restoreBackupWith(checked, foreign.file, join(folders.make(), "mira"), {}, { steps }),
+      "BACKUP_INVALID",
+    );
+  });
+
+  test("an export whose bundle a restore would refuse at its first write is refused, and nothing is published", async () => {
+    const checked = await checkedDriver();
+    // A schema whose restore refuses its read-only mark once the space has three commits.
+    const steps = STEPS_MARK_GUARD;
+    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
+    await writeCommits(folder, 1, "s", steps);
+    const first = await exportBundleWith(checked, folder, { mode: "backup" }, { steps });
+    await writeCommits(folder, 2, "t", steps);
+    const error = await expectCode(
+      () => exportBundleWith(checked, folder, { mode: "backup" }, { steps }),
+      "BUNDLE_INVALID",
+    );
+    expect(error.message).toContain("first write");
+    expect(readdirSync(join(folder, "exports"))).toEqual([first.name]);
   });
 
   test("a trigger the copied database holds runs on none of the restore's writes: the copy stays read-only, the claim stands", async () => {
@@ -821,7 +1000,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
 });
 
 describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backup that restores", () => {
-  test("a newer one that does not verify, or that goes away meanwhile, is skipped and the next is restored; the target is checked first", async () => {
+  test("a newer one that does not verify, or that goes away before its files are open, is skipped and the next is restored; the target is checked first", async () => {
     const checked = await checkedDriver();
     const { folder, space } = await createFixtureSpace(folders.make());
     const id = space.spaceId;
@@ -838,9 +1017,9 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
     writeFileSync(newest.file, bytes);
 
-    // The middle one goes away after the listing, while its restore begins (retention, say).
+    // The middle one goes away after the listing, before its restore opens its files (retention,
+    // say): it is skipped as a candidate.
     const { rmSync } = await import("node:fs");
-    let calls = 0;
     const parent = folders.make();
     const { restored, backup } = await restoreLatest(
       checked,
@@ -849,10 +1028,10 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
       join(parent, "mira"),
       {},
       {
-        freeBytes: () => {
-          calls += 1;
-          if (calls === 2) rmSync(middle.file);
-          return Number.MAX_SAFE_INTEGER;
+        held: (file) => {
+          if (file !== newest.file) return;
+          rmSync(middle.sidecarFile);
+          rmSync(middle.file);
         },
       },
     );
@@ -904,7 +1083,7 @@ describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1
     const pages = bytes.length / pageSize;
     bytes.fill(0xa5, Math.floor(pages * 0.75) * pageSize);
     writeFileSync(db, bytes);
-    const damaged = sha(bytes);
+    const before = treeDigest(folder);
 
     const report = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14) });
     expect(report.file).toBe(
@@ -918,13 +1097,116 @@ describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1
     expect(lines).toHaveLength(report.rows);
     expect(lines.filter((l) => l.table === "space")).toHaveLength(1);
     expect(lines.filter((l) => l.table === "commits")).toHaveLength(3);
-    // Nothing in the space was changed, and a second rescue writes a file of its own.
-    expect(sha(readFileSync(db))).toBe(damaged);
+    // Every file of the space is as it was, and the rescued file is the one new file.
+    expect(withoutRescued(treeDigest(folder))).toEqual(before);
+    expect(readdirSync(join(folder, "exchange", "rescued"))).toEqual([basename(report.file)]);
+    // A second rescue writes a file of its own.
     const again = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14, 0, 0, 1) });
     expect(again.file).not.toBe(report.file);
     expect(existsSync(report.file)).toBe(true);
   });
+
+  test("rescue never opens the original: a write-ahead log beside an empty database, one with rows not yet checkpointed, and a hot journal all stay byte for byte", async () => {
+    const checked = await checkedDriver();
+    const at = Date.UTC(2026, 10, 14);
+
+    // A write-ahead log beside an empty database: SQLite would delete it at the first read, so the
+    // rescue refuses the copy, and the log stays as it was.
+    const empty = join(folders.make(), "mira");
+    mkdirSync(empty);
+    writeFileSync(join(empty, "space.db"), Buffer.alloc(0));
+    writeFileSync(join(empty, "space.db-wal"), Buffer.from("fixture recovery material\n"));
+    const emptyBefore = treeDigest(empty);
+    await expectCode(() => rescueSpace(checked, empty, { now: () => at }), "SPACE_INVALID");
+    expect(treeDigest(empty)).toEqual(emptyBefore);
+
+    // Rows only in the write-ahead log: a copy of the folder taken while a writer had it open.
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const live = await rawWriter(folder);
+    const crashed = join(folders.make(), "mira");
+    try {
+      live.pragma("wal_autocheckpoint", 0);
+      live.exec("UPDATE tasks SET title = 'Rescued from the log' WHERE ref = 1");
+      copyTree(folder, crashed);
+    } finally {
+      live.close();
+    }
+    expect(statSync(join(crashed, "space.db-wal")).size).toBeGreaterThan(0);
+    const walBefore = treeDigest(crashed);
+    const fromLog = rescueSpace(checked, crashed, { now: () => at });
+    expect(withoutRescued(treeDigest(crashed))).toEqual(walBefore);
+    expect(readFileSync(fromLog.file, "utf8")).toContain("Rescued from the log");
+    expect(fromLog.failed).toEqual([]);
+
+    // A hot rollback journal: played back in the copy only.
+    const journaled = join(folders.make(), "mira");
+    copyTree(folder, journaled);
+    await crashWithHotJournal(join(journaled, "space.db"));
+    const journalBefore = treeDigest(journaled);
+    const fromJournal = rescueSpace(checked, journaled, { now: () => at });
+    expect(withoutRescued(treeDigest(journaled))).toEqual(journalBefore);
+    expect(fromJournal.failed).toEqual([]);
+    // The copy's journal was played back: the rows are the last committed state's.
+    expect(fromJournal.rows).toBe(rescueSpace(checked, folder, { now: () => at }).rows);
+    // No scratch folder is left.
+    for (const where of [crashed, journaled]) {
+      expect(readdirSync(join(where, "exchange", "rescued")).length, where).toBe(1);
+    }
+  });
+
+  test("a rescue names and writes only the product's tables: a table named like a token is in neither the file nor the report", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    // Built from parts: the source holds no token.
+    const token = ["gh", "p_", "a1".repeat(18)].join("");
+    const conn = await rawWriter(folder);
+    try {
+      conn.exec(`CREATE TABLE "${token}" (body TEXT) STRICT`);
+      conn.prepare(`INSERT INTO "${token}" VALUES ($body)`).run({ body: token });
+    } finally {
+      conn.close();
+    }
+    const report = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14) });
+    expect(report.failed).toEqual([]);
+    expect(readFileSync(report.file, "utf8")).not.toContain(token);
+    // Its export is refused by the schema rule before the scan, and the refusal names nothing.
+    const refusal = await expectCode(
+      () => exportBundle(checked, folder, { mode: "backup" }),
+      "SPACE_SCHEMA_FOREIGN",
+    );
+    expect(refusal.message).not.toContain(token);
+  });
 });
+
+/** A tree digest without the rescued rows' folder: what a rescue must leave as it was. */
+const withoutRescued = (digest: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(digest).filter(([path]) => !path.startsWith("exchange/rescued/")),
+  );
+
+/** Leaves `db` as a crash in the middle of another tool's rollback-journal transaction does. */
+async function crashWithHotJournal(db: string): Promise<void> {
+  const checked = await checkedDriver();
+  const source = join(folders.make(), "source.db");
+  copyFileSync(db, source);
+  const conn = checked.driver.open(source, { readOnly: false, busyTimeoutMs: 5000 });
+  try {
+    conn.pragma("journal_mode", "DELETE");
+    conn.pragma("cache_size", 5);
+    conn.exec("BEGIN IMMEDIATE");
+    conn.exec(
+      "CREATE TABLE crash_pad (v BLOB); WITH RECURSIVE n(i) AS (VALUES (1) UNION ALL " +
+        "SELECT i + 1 FROM n WHERE i < 200) INSERT INTO crash_pad SELECT zeroblob(8192) FROM n",
+    );
+    copyFileSync(source, db);
+    copyFileSync(`${source}-journal`, `${db}-journal`);
+  } finally {
+    conn.close();
+  }
+  expect(readFileSync(`${db}-journal`)[0]).toBe(0xd9);
+}
 
 /** Adds an attachment row (deleted at `deletedAt` when given) and, for a live one, its blob. */
 async function addAttachment(

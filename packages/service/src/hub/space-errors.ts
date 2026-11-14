@@ -16,6 +16,7 @@ const MESSAGES: Readonly<Record<string, string>> = {
   BUNDLE_INVALID: "The bundle is not a valid export of a space, or does not verify.",
   EXPORT_SECRET_FOUND:
     "The space holds text shaped like a secret, such as an API key or token. Nothing was exported. Remove it from the task, then export again.",
+  SPACE_SCHEMA_FOREIGN: `The space's database holds tables, indexes or views that ${PRODUCT_NAME} does not make, so a restore would refuse its bundle. Nothing was exported.`,
   SPACE_WRITER_TAKEN: "Another writer still holds the space.",
   SPACE_LOCKED_ELSEWHERE: "Another process holds the space.",
   SPACE_CHANGED: "The space changed meanwhile. Nothing was replaced.",

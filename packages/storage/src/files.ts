@@ -278,25 +278,41 @@ export function readBounded(path: string, limit: number, io: FileIo = NODE_IO): 
   }
   let open = true;
   return withCleanup(
-    () =>
-      fsCall((): BoundedRead => {
-        const buffer = new Uint8Array(limit + 1);
-        let length = 0;
-        while (length < buffer.length) {
-          const read = io.readSync(fd, buffer, length, buffer.length - length, null);
-          if (read <= 0) break;
-          length += read;
-        }
-        open = false;
+    () => {
+      const read = readOpenBounded(fd, limit, io);
+      open = false;
+      fsCall(() => {
         io.closeSync(fd);
-        return length > limit
-          ? { state: "too_large" }
-          : { state: "ok", bytes: buffer.slice(0, length) };
-      }),
+      });
+      return read;
+    },
     () => {
       if (open) closeQuietly(fd, io);
     },
   );
+}
+
+/**
+ * Reads at most `limit` bytes of the open file `fd`, which the caller has just opened and not read
+ * yet: what readBounded reads, through a descriptor the caller holds and closes.
+ */
+export function readOpenBounded(
+  fd: number,
+  limit: number,
+  io: FileIo = NODE_IO,
+): { state: "too_large" } | { state: "ok"; bytes: Uint8Array } {
+  return fsCall(() => {
+    const buffer = new Uint8Array(limit + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = io.readSync(fd, buffer, length, buffer.length - length, null);
+      if (read <= 0) break;
+      length += read;
+    }
+    return length > limit
+      ? { state: "too_large" }
+      : { state: "ok", bytes: buffer.slice(0, length) };
+  });
 }
 
 /** A short random name part for temporary files and folders. */

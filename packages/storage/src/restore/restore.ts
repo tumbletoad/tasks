@@ -6,12 +6,18 @@
 //
 // Into a new folder: the copy keeps the backup's identity (space ID, epoch, incarnation), so it is
 // a READ-ONLY COPY (A1 3.18 "Restore" step 3, A6 3.5): before the folder takes its name, the copy's
-// database is marked in `space.transfer` (markReadOnlyCopy), and every open of it is then read-only
+// database is marked in `space.transfer` (mark.ts), and every open of it is then read-only
 // with the reason `read_only_copy` until it is claimed (claim.ts, through the storage worker's
 // claimSpace), which gives it a new epoch and incarnation and clears the mark in one transaction.
 // The mark is in the database, so it survives a copy of the folder or of the database alone, and
 // space.json, which only describes the database, cannot remove it. Without it, two folders on one
 // machine could write under one authority. The live space, if any, is not touched.
+//
+// VERIFIED MEANS A TRIAL RESTORE (A1 3.18). A backup is verified when restoreCopy, the restore's
+// own steps up to and with its first write (unpack with every check, then the read-only mark), ran
+// to its end on a scratch copy (verifyBackupFile). There is no second checker to drift from what a
+// restore does: retention keeps the newest backup verified this way (backup/retention.ts), and
+// `restore latest` restores its candidates directly (rescue.ts).
 //
 // In place (disaster recovery): the restored copy is claimed in its staging folder first, with a
 // new epoch and a new incarnation (claim.ts), then swapped in for the live space, whose folder
@@ -25,10 +31,16 @@
 // worker's restoreInPlace (worker/client.ts) holds the live space's claim for the whole restore: a
 // writer of this process that has the space open refuses it, and none opens meanwhile.
 import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
-import type { Connection } from "../driver.ts";
+import { dirname, join } from "node:path";
 import { misuse, StorageError } from "../errors.ts";
-import { FOLDER_MODE, fsCall, fsyncFolder, makeDirExact, removeQuietly } from "../files.ts";
+import {
+  FOLDER_MODE,
+  fsCall,
+  fsyncFolder,
+  makeDirExact,
+  removeQuietly,
+  temporaryTag,
+} from "../files.ts";
 import { isId, osRandom, type Id, type RandomSource } from "../ids.ts";
 import {
   DATABASE_FILE,
@@ -38,10 +50,12 @@ import {
   writeManifest,
 } from "../manifest.ts";
 import { openWriter } from "../open.ts";
-import { decodeSpaceRow, inRange, type SpaceRow } from "../rows.ts";
+import { inRange, type SpaceRow } from "../rows.ts";
 import type { Revision, SchemaStep } from "../schema.ts";
 import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
 import type { CheckedDriver } from "../startup-check.ts";
+import { BACKUP_TEMP_PREFIX, type BackupSidecar } from "../backup/sidecar.ts";
+import { bundleInvalid } from "../bundle/read.ts";
 import { claimSpace, type Claim } from "./claim.ts";
 import {
   renameFolder,
@@ -51,7 +65,19 @@ import {
   type SwapNames,
   type SwapPoint,
 } from "./folders.ts";
-import { unpackAny, type RestoreSource, type UnpackSeams } from "./unpack.ts";
+import { dropTriggers, markCopy } from "./mark.ts";
+import {
+  inFolder,
+  isBundleFile,
+  removeDatabase,
+  unpackAny,
+  type CopyPlace,
+  type RestoreSource,
+  type Unpacked,
+  type UnpackSeams,
+} from "./unpack.ts";
+
+export { dropTriggers, markReadOnlyCopy, READ_ONLY_COPY } from "./mark.ts";
 
 export interface RestoreOptions {
   appVersion?: string;
@@ -154,73 +180,80 @@ export async function restoreBackupWith(
     makeDirExact(names.staging, FOLDER_MODE);
   });
   try {
-    const unpacked = await unpackAny(
-      checked,
-      backupFile,
-      names.staging,
-      { appVersion, ...busy(options) },
-      seams,
-    );
-    seams.at?.("unpacked");
     // The copy is read-only before it takes a name any open could find.
-    const conn = openWriter(checked, join(names.staging, DATABASE_FILE), busy(options));
-    let space: SpaceRow;
-    try {
-      space = markReadOnlyCopy(conn, now);
-    } finally {
-      // The last connection to close checkpoints the -wal into the file and removes it.
-      conn.close();
-    }
-    writeManifest(names.staging, manifestFor(space, unpacked.step, appVersion));
+    const copy = await restoreCopy(checked, backupFile, inFolder(names.staging), now, options, seams);
+    writeManifest(names.staging, manifestFor(copy.space, copy.step, appVersion));
     fsyncFolder(names.staging);
     seams.at?.("marked");
     renameFolder(names.staging, names.live);
     fsyncFolder(names.parent);
-    return { folder: names.live, ...pick({ ...unpacked, space }) };
+    return { folder: names.live, ...pick(copy) };
   } catch (error) {
     removeQuietly(names.staging);
     throw error;
   }
 }
 
-/** The state `space.transfer` holds for a read-only copy (A6 3.5's `read_only_copy`). */
-export const READ_ONLY_COPY = "restored_copy";
-
 /**
- * Marks the space on `conn`, a writer on a restored copy in its staging folder, as a read-only
- * copy: `space.transfer` = `{state: "restored_copy", at}`, its triggers dropped first in the same
- * transaction (dropTriggers). Writes no commit: the space row has no history (A1 3.4), and the
- * copy's history stays the backup's. Returns the marked row, which must hold the mark.
+ * The restore's own steps for a read-only copy, up to and with its first write: `file` unpacked into
+ * `place` with every check a restore makes (unpack.ts), then the read-only mark (mark.ts). A
+ * restore into a new folder runs them in its staging folder; a verification runs exactly these on a
+ * scratch copy (verifyBackupFile). The caller removes `place` on failure.
  */
-export function markReadOnlyCopy(conn: Connection, now: number): SpaceRow {
-  return conn.transaction("immediate", () => {
-    dropTriggers(conn);
-    conn
-      .prepare("UPDATE space SET transfer = $transfer WHERE one = 1")
-      .run({ transfer: JSON.stringify({ state: READ_ONLY_COPY, at: now }) });
-    const space = decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get());
-    if (space.transfer?.["state"] !== READ_ONLY_COPY) {
-      throw new StorageError("SPACE_INVALID", "The restored copy did not keep its read-only mark");
-    }
-    return space;
-  });
+export async function restoreCopy(
+  checked: CheckedDriver,
+  file: string,
+  place: CopyPlace,
+  now: number,
+  options: { busyTimeoutMs?: number },
+  seams: RestoreSeams,
+): Promise<Unpacked> {
+  const unpacked = await unpackAny(checked, file, place, busy(options), seams);
+  seams.at?.("unpacked");
+  const invalid = isBundleFile(file) ? bundleInvalid : backupInvalid;
+  const space = markCopy(checked, place.db, now, busy(options), invalid);
+  return { ...unpacked, space };
+}
+
+const backupInvalid = (why: string): StorageError =>
+  new StorageError("BACKUP_INVALID", `The backup does not verify: ${why}`);
+
+/** What a verification takes: a restore's seams, and its connections' busy timeout. */
+export interface VerifyOptions extends UnpackSeams {
+  busyTimeoutMs?: number;
 }
 
 /**
- * Drops every trigger of a restored database, inside the caller's write transaction, before the
- * restore's first write. Tasks' schema has none (A1 3.4); one in a copied or crafted database would
- * run on the restore's own writes, and could clear the read-only mark or undo a claim.
+ * Verifies the backup `backupFile` by a trial restore (see the header): restoreCopy on a scratch
+ * copy beside it, under a backup's own temporary name (`.backup.tmp-<random>.db`), so a crash leaves
+ * only a leftover that the listing names and cleanup removes. The scratch copy is removed again.
+ * Returns the backup's sidecar when the restore ran to its end, undefined when any step failed.
+ * Never throws for the backup's sake. It needs the database's size in free disk space.
  */
-export function dropTriggers(conn: Connection): void {
-  const names = conn
-    .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger'")
-    .all<{ name: unknown }>();
-  for (const { name } of names) {
-    conn.exec(`DROP TRIGGER IF EXISTS "${String(name).replaceAll('"', '""')}"`);
+export async function verifyBackupFile(
+  checked: CheckedDriver,
+  backupFile: string,
+  options: VerifyOptions = {},
+): Promise<BackupSidecar | undefined> {
+  const scratch = join(dirname(backupFile), `${BACKUP_TEMP_PREFIX}${temporaryTag()}.db`);
+  try {
+    const copy = await restoreCopy(
+      checked,
+      backupFile,
+      { db: scratch, folder: dirname(scratch) },
+      Date.now(),
+      options,
+      options,
+    );
+    return copy.source.kind === "backup" ? copy.source.sidecar : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    removeDatabase(scratch);
   }
 }
 
-const busy = (options: RestoreOptions): { busyTimeoutMs?: number } =>
+const busy = (options: { busyTimeoutMs?: number }): { busyTimeoutMs?: number } =>
   options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs };
 
 const pick = (u: { space: SpaceRow; revision: Revision; source: RestoreSource }) => ({
@@ -309,8 +342,8 @@ export async function restoreInPlaceWith(
     const unpacked = await unpackAny(
       checked,
       backupFile,
-      names.staging,
-      { appVersion, ...busy(options) },
+      inFolder(names.staging),
+      busy(options),
       seams,
     );
     seams.at?.("unpacked");

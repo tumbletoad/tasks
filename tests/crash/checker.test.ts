@@ -21,7 +21,11 @@ import { claimSpace } from "../../packages/storage/src/restore/claim.ts";
 import { swapIntoPlace, swapNames } from "../../packages/storage/src/restore/folders.ts";
 import { restoreInPlace } from "../../packages/storage/src/restore/restore.ts";
 import { unpackBackup } from "../../packages/storage/src/restore/unpack.ts";
-import { DATABASE_FILE } from "../../packages/storage/src/manifest.ts";
+import {
+  DATABASE_FILE,
+  manifestFor,
+  writeManifest,
+} from "../../packages/storage/src/manifest.ts";
 import { openWriter } from "../../packages/storage/src/open.ts";
 import { SCHEMA_0_2_STATEMENTS } from "../../packages/storage/migrations/0002-schema-0.2.ts";
 import { SOURCE_APP_VERSION } from "../../packages/storage/src/space.ts";
@@ -504,9 +508,13 @@ describe(
       built.ledger.take({ t: "restore-start", backup: record.name });
       const swap = swapNames(built.folder, Date.now());
       mkdirSync(swap.staging);
-      await unpackBackup(built.checked, record.file, swap.staging, {
-        appVersion: SOURCE_APP_VERSION,
-      });
+      const unpacked = await unpackBackup(
+        built.checked,
+        record.file,
+        join(swap.staging, DATABASE_FILE),
+        {},
+      );
+      writeManifest(swap.staging, manifestFor(unpacked.space, unpacked.step, SOURCE_APP_VERSION));
       swapIntoPlace(swap);
       expect(names(await check(built))).toContain("incarnation");
     });

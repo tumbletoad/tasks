@@ -1,7 +1,24 @@
 // Checking a copy of a space database: a backup's snapshot before it is compressed, and a restored
 // database before it is used (A1 3.18). The copy opens read-only, passes PRAGMA integrity_check, and
-// gives the facts a sidecar records. Nothing here trusts the copy: every value is decoded. A
-// restore also requires the copy's own schema (hasOwnSchema) before it writes to it.
+// gives the facts a sidecar records. Nothing here trusts the copy: every value is decoded.
+//
+// THE EXACT-SCHEMA RULE (A1 3.18 "Restore and import of a bundle", step 3), in one place
+// (requireOwnSchema): a database a restore writes to, or an export writes out, has exactly the
+// tables, indexes and views that the schema steps up to its revision create. The comparison covers
+// every object of the main schema but two kinds:
+// - A trigger: a restore drops every one before its first write (restore/mark.ts).
+// - An object whose name starts with SQLite's literal reserved prefix `sqlite_` (sqlite_sequence,
+//   sqlite_stat1, sqlite_autoindex_…), compared as a plain prefix of the name, never through SQL
+//   LIKE, in which `_` matches any character. SQLite makes these itself; a crafted one cannot run
+//   on a write (an index can only fail it), and a restore's first write runs on its copy before
+//   anything calls the copy verified (restore/restore.ts), so one that fails it is caught there.
+// A virtual table is compared by its own text. Its module's shadow tables, which SQLite itself names
+// (PRAGMA table_list's type `shadow`, never a guess from a name), are compared by type and name
+// only: their text follows the SQLite version.
+//
+// Every name a diagnostic gives comes from the product's own list of its tables and columns
+// (productTables), built from the schema steps, never from a name read out of the database being
+// inspected (A6 3.16.4).
 import { lstatSync, statSync } from "node:fs";
 import { MEMORY, SINGLE_STEP, type Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
@@ -28,14 +45,17 @@ export async function copySnapshot(
   // The driver's backup() does not check its connection (A1 3.19): a closed or invalidated
   // connection fails here instead.
   source.pragma("user_version");
-  const pages = Number(source.pragma("page_count"));
-  const pageSize = Number(source.pragma("page_size"));
-  checkDatabaseSize(pages * pageSize, policy);
+  checkDatabaseSize(databaseBytes(source), policy);
   await checked.driver.backup(source, dest, { pagesPerStep: SINGLE_STEP });
   checkDatabaseSize(
     fsCall(() => statSync(dest).size),
     policy,
   );
+}
+
+/** The size of the database on `conn`: its pages times their size. */
+export function databaseBytes(conn: Connection): number {
+  return Number(conn.pragma("page_count")) * Number(conn.pragma("page_size"));
 }
 
 /** What a checked snapshot holds. */
@@ -44,50 +64,94 @@ export interface SnapshotFacts {
   space: SpaceRow;
   /** Rows per table, by table name. */
   counts: Record<string, number>;
-  /** Its tables, indexes and views as SQLite stores them (schemaObjects). */
+  /** Its schema objects as the exact-schema rule compares them (schemaObjects). */
   schema: readonly string[];
 }
 
-/** Every table, index and view of the main schema but SQLite's own, by type and name. */
-const SCHEMA_OBJECTS =
-  "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
-  "WHERE type IN ('table', 'index', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name";
+/** SQLite's literal reserved prefix: what SQLite names so is its own. */
+export const SQLITE_RESERVED_PREFIX = "sqlite_";
+
+const isReserved = (name: unknown): boolean =>
+  typeof name === "string" && name.startsWith(SQLITE_RESERVED_PREFIX);
+
+/** Every object of the main schema, triggers included, in a fixed order. */
+const ALL_OBJECTS = "SELECT type, name, tbl_name, sql FROM main.sqlite_schema ORDER BY type, name";
+
+/** The main schema's tables as SQLite classifies them: `table`, `view`, `virtual` or `shadow`. */
+const TABLE_LIST = "SELECT name, type FROM pragma_table_list WHERE schema = 'main'";
 
 /**
- * The schema objects of the database on `conn`: each table, index and view with the SQL text
- * SQLite keeps for it, which holds every column, constraint, key and generated value. Triggers are
- * not among them: a restore drops them (restore.ts). A virtual table (FTS5) counts by its own text;
- * the shadow tables its module makes (`<name>_…`) count by none, since that text follows the SQLite
- * version, and only the module writes them.
+ * The schema objects of the database on `conn` as the exact-schema rule compares them (see the
+ * header): each table, index and view with the SQL text SQLite keeps for it, which holds every
+ * column, constraint, key and generated value; a shadow table by its type and name.
  */
 export function schemaObjects(conn: Connection): string[] {
-  const rows = conn.prepare(SCHEMA_OBJECTS).all<Record<string, unknown>>();
-  const virtual = rows
-    .filter((row) => typeof row["sql"] === "string" && /^CREATE VIRTUAL TABLE/i.test(row["sql"]))
-    .map((row) => `${String(row["name"])}_`);
-  const shadow = (row: Record<string, unknown>): boolean =>
-    virtual.some((prefix) => String(row["tbl_name"]).startsWith(prefix));
-  return rows
-    .filter((row) => !shadow(row))
-    .map((row) => JSON.stringify([row["type"], row["name"], row["tbl_name"], row["sql"]]));
+  const shadow = new Set(
+    conn
+      .prepare(TABLE_LIST)
+      .all<{ name: unknown; type: unknown }>()
+      .filter((row) => row.type === "shadow")
+      .map((row) => row.name),
+  );
+  return conn
+    .prepare(ALL_OBJECTS)
+    .all<Record<string, unknown>>()
+    .filter((row) => row["type"] !== "trigger" && !isReserved(row["name"]))
+    .map((row) =>
+      JSON.stringify(
+        row["type"] === "table" && shadow.has(row["name"])
+          ? [row["type"], row["name"], row["tbl_name"]]
+          : [row["type"], row["name"], row["tbl_name"], row["sql"]],
+      ),
+    );
 }
 
-const REFERENCES = new WeakMap<readonly SchemaStep[], Map<number, readonly string[]>>();
+/** A table of the product's schema that holds data, with its columns, as the schema steps make it. */
+export interface ProductTable {
+  name: string;
+  columns: readonly string[];
+}
+
+/** What the schema steps make at one revision: the objects compared, and the data tables. */
+interface Reference {
+  objects: readonly string[];
+  tables: readonly ProductTable[];
+}
+
+const REFERENCES = new WeakMap<readonly SchemaStep[], Map<number, Reference>>();
+
+/** The product's data tables on `conn`: every plain table but SQLite's, with its columns. */
+function dataTablesOf(conn: Connection): ProductTable[] {
+  return conn
+    .prepare(TABLE_LIST)
+    .all<{ name: unknown; type: unknown }>()
+    .filter((row) => row.type === "table" && typeof row.name === "string" && !isReserved(row.name))
+    .map((row) => String(row.name))
+    .sort()
+    .map((name) => ({
+      name,
+      // Every column a SELECT * returns: the plain ones and the generated ones.
+      columns: conn
+        .prepare("SELECT name FROM pragma_table_xinfo($table) WHERE hidden IN (0, 2, 3) ORDER BY cid")
+        .all<{ name: unknown }>({ table: name })
+        .map((column) => String(column.name)),
+    }));
+}
 
 /**
- * The schema objects a space has at `userVersion`: what `steps`, from an empty database up to that
- * revision, create in a private in-memory database, as creating a space and migrating one run
- * them. Undefined when the steps never reach it. Kept per chain of steps and revision.
+ * What `steps` make from an empty database up to `userVersion`, in a private in-memory database, as
+ * creating a space and migrating one run them. Undefined when the steps never reach it. Kept per
+ * chain of steps and revision.
  */
-export function referenceSchema(
+function reference(
   checked: CheckedDriver,
   steps: readonly SchemaStep[],
   userVersion: number,
-): readonly string[] | undefined {
+): Reference | undefined {
   const known = REFERENCES.get(steps)?.get(userVersion);
   if (known !== undefined) return known;
   const conn = checked.driver.open(MEMORY, { readOnly: false, busyTimeoutMs: 0, create: true });
-  let objects: string[] | undefined;
+  let made: Reference | undefined;
   try {
     let current = 0;
     for (const step of steps) {
@@ -95,53 +159,79 @@ export function referenceSchema(
       step.up(conn);
       current = encodeRevision(step.revision);
       if (current === userVersion) {
-        objects = schemaObjects(conn);
+        made = { objects: schemaObjects(conn), tables: dataTablesOf(conn) };
         break;
       }
     }
   } finally {
     conn.close();
   }
-  if (objects === undefined) return undefined;
-  const byVersion = REFERENCES.get(steps) ?? new Map<number, readonly string[]>();
-  byVersion.set(userVersion, objects);
+  if (made === undefined) return undefined;
+  const byVersion = REFERENCES.get(steps) ?? new Map<number, Reference>();
+  byVersion.set(userVersion, made);
   REFERENCES.set(steps, byVersion);
-  return objects;
+  return made;
+}
+
+/** The schema objects a space has at `userVersion` (schemaObjects), or undefined: never reached. */
+export function referenceSchema(
+  checked: CheckedDriver,
+  steps: readonly SchemaStep[],
+  userVersion: number,
+): readonly string[] | undefined {
+  return reference(checked, steps, userVersion)?.objects;
 }
 
 /**
- * Whether a restored database has exactly the tables, indexes and views of its revision (A1 3.18
- * "Restore and import of a bundle", step 3). A table defined otherwise (a foreign key that
- * cascades into another table, a generated or checked column, an extra table or index) would run
- * or refuse on Tasks' own writes, the read-only mark and a claim first: a restore never writes to
- * a database it has not recognised.
+ * The product's data tables at `userVersion`, with their columns: the names a diagnostic, a rescue
+ * or `data.jsonl` may give, never ones read out of the database at hand. Undefined when the steps
+ * never reach that revision.
  */
-export function hasOwnSchema(
+export function productTables(
   checked: CheckedDriver,
-  facts: SnapshotFacts,
   steps: readonly SchemaStep[],
-): boolean {
-  const reference = referenceSchema(checked, steps, facts.userVersion);
-  return (
-    reference !== undefined &&
-    reference.length === facts.schema.length &&
-    reference.every((object, i) => object === facts.schema[i])
-  );
+  userVersion: number,
+): readonly ProductTable[] | undefined {
+  return reference(checked, steps, userVersion)?.tables;
+}
+
+/**
+ * The exact-schema rule (see the header): `schema` (schemaObjects of a database at `userVersion`)
+ * must be exactly what `steps` make at that revision. SPACE_SCHEMA_FOREIGN otherwise, whose message
+ * names no object: a foreign definition, such as a cascading key or a generated column, would act
+ * on Tasks' own writes, and its name is the database's, not the product's.
+ */
+export function requireOwnSchema(
+  checked: CheckedDriver,
+  schema: readonly string[],
+  userVersion: number,
+  steps: readonly SchemaStep[],
+): void {
+  const expected = referenceSchema(checked, steps, userVersion);
+  if (
+    expected === undefined ||
+    expected.length !== schema.length ||
+    !expected.every((object, i) => object === schema[i])
+  ) {
+    throw new StorageError(
+      "SPACE_SCHEMA_FOREIGN",
+      "The database has tables, indexes or views that its schema revision does not create",
+    );
+  }
 }
 
 /** A table name Tasks can quote safely: the names its schema steps create. */
 const TABLE_NAME = /^[a-z_][a-z0-9_]{0,63}$/;
 
-/** Rows per table of the main schema. */
+/** Rows per table of the main schema (SQLite's own tables left out by their literal prefix). */
 export function tableCounts(conn: Connection): Record<string, number> {
   const counts: Record<string, number> = {};
   const names = conn
-    .prepare(
-      "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' " +
-        "ORDER BY name",
-    )
-    .all<{ name: unknown }>();
-  for (const { name } of names) {
+    .prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table' ORDER BY name")
+    .all<{ name: unknown }>()
+    .map((row) => row.name)
+    .filter((name) => !isReserved(name));
+  for (const name of names) {
     if (typeof name !== "string" || !TABLE_NAME.test(name)) {
       throw new StorageError("SPACE_INVALID", "The database has a table that is not a space's");
     }

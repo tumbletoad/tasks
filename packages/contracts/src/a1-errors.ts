@@ -116,6 +116,8 @@ export const A1_ERRORS = {
   BUNDLE_INVALID: { code: "invalid_input" },
   /** An export that would carry a secret-shaped string; nothing was written (A6 3.16.4). */
   EXPORT_SECRET_FOUND: { code: "invalid_input" },
+  /** A database with objects its revision does not create: an export of it is refused (A1 3.18). */
+  SPACE_SCHEMA_FOREIGN: { code: "invalid_input" },
 } as const satisfies Record<string, A1ErrorMapping>;
 
 export type A1ErrorCode = keyof typeof A1_ERRORS;

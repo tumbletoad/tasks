@@ -91,6 +91,12 @@ export const STORAGE_ERROR_CODES = [
    */
   "EXPORT_SECRET_FOUND",
   /**
+   * A database has tables, indexes or views that the schema steps up to its revision do not create
+   * (A1 3.18's exact-schema rule): an export refuses it before it writes anything, because a restore
+   * would refuse its bundle. The message names no object.
+   */
+  "SPACE_SCHEMA_FOREIGN",
+  /**
    * The space already has a writer in this process: the same database file by any name (its real
    * path, or its identity on its volume, before the open or as SQLite opened it), or the same
    * space ID in another folder (A1 3.9). Across processes, A2's

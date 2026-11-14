@@ -321,13 +321,14 @@ export class ZipWriter {
   }
 
   /**
-   * Adds the file `source` as `name`, deflated. `expectedSize` is its size now: the file must not
-   * change while it is read. Stops at the first byte past `limit` (BUNDLE_LIMIT_EXCEEDED).
+   * Adds the file `source` as `name`, deflated: a path, or the descriptor of a file the caller
+   * opened, checked and closes (read from its start). `expectedSize` is its size now: the file must
+   * not change while it is read. Stops at the first byte past `limit` (BUNDLE_LIMIT_EXCEEDED).
    * `onChunk` sees every uncompressed chunk (the export's secret scan).
    */
   async addFile(
     name: string,
-    source: string,
+    source: string | number,
     expectedSize: number,
     limit: number,
     onChunk?: (chunk: Buffer) => void,
@@ -352,7 +353,7 @@ export class ZipWriter {
     });
     let input: number;
     try {
-      input = openSync(source, "r");
+      input = typeof source === "number" ? source : openSync(source, "r");
     } catch (error) {
       throw fsError(error);
     }
@@ -365,7 +366,8 @@ export class ZipWriter {
     } catch (error) {
       throw error instanceof StorageError ? error : fsError(error);
     } finally {
-      closeSync(input);
+      // A descriptor the caller passed is the caller's to close.
+      if (typeof source !== "number") closeSync(input);
     }
     if (raw.bytes !== expectedSize) {
       throw new StorageError("BACKUP_FAILED", "A file changed meanwhile");

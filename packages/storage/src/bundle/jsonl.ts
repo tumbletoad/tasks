@@ -3,36 +3,46 @@
 //
 // One record per line: `{"table": <name>, "row": {<column>: <value>}}`, tables by name, rows in the
 // table's own order. Text and numbers are themselves, an integer past 2^53 is its decimal text, and
-// a BLOB is `{"$base64": "…"}`. A virtual table (FTS5) and its shadow tables are left out: they are
-// derived from the others.
+// a BLOB is `{"$base64": "…"}`. The tables and columns are the product's own at the database's
+// revision (backup/snapshot.ts productTables), never names read out of the database: a virtual
+// table (FTS5) and its shadow tables are left out, since they are derived from the others, and so
+// is anything the product's schema does not have.
 import { fstatSync, fsyncSync, writeSync } from "node:fs";
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import { closeQuietly, createFileExact, FILE_MODE, fsError } from "../files.ts";
+import type { ProductTable } from "../backup/snapshot.ts";
 
-/** A table name Tasks can quote safely: the names its schema steps create. */
-const TABLE_NAME = /^[a-z_][a-z0-9_]{0,63}$/;
+const quoted = (name: string): string => `"${name.replaceAll('"', '""')}"`;
 
-/** The tables to write, by name: every table but SQLite's, the virtual ones and their shadows. */
-export function dataTables(conn: Connection): string[] {
-  const rows = conn
-    .prepare("SELECT name, sql FROM sqlite_schema WHERE type = 'table' ORDER BY name")
-    .all<{ name: unknown; sql: unknown }>();
-  const virtual = rows
-    .filter((r) => typeof r.sql === "string" && /^CREATE VIRTUAL TABLE/i.test(r.sql))
-    .map((r) => String(r.name));
-  return rows
-    .map((r) => r.name)
-    .filter((name): name is string => typeof name === "string" && TABLE_NAME.test(name))
-    .filter((name) => !name.startsWith("sqlite_"))
-    .filter((name) => !virtual.some((v) => name === v || name.startsWith(`${v}_`)));
-}
+/** The query of every row of `table`, its product columns named one by one. */
+const selectAll = (table: ProductTable): string =>
+  `SELECT ${table.columns.map(quoted).join(", ")} FROM ${quoted(table.name)}`;
 
 const value = (v: unknown): unknown => {
   if (typeof v === "bigint") return v.toString();
   if (v instanceof Uint8Array) return { $base64: Buffer.from(v).toString("base64") };
   return v;
 };
+
+/**
+ * Calls `see` with every text value of every row of `tables`, by the product's table and column
+ * names (the export's secret scan when it writes no data.jsonl). `see` may throw to stop.
+ */
+export function scanText(
+  conn: Connection,
+  tables: readonly ProductTable[],
+  see: (table: string, column: string, text: string) => void,
+): void {
+  for (const table of tables) {
+    for (const row of conn.prepare(selectAll(table)).iterate()) {
+      for (const column of table.columns) {
+        const v = row[column];
+        if (typeof v === "string") see(table.name, column, v);
+      }
+    }
+  }
+}
 
 export interface JsonlReport {
   /** Tables written whole. */
@@ -46,14 +56,15 @@ export interface JsonlReport {
 const FLUSH_AT = 1024 * 1024;
 
 /**
- * Writes every data table of the database on `conn` into the new file `dest` (exclusive,
- * owner-only, flushed) and returns what it wrote. `tolerant` (the rescue) goes on past a table
- * that fails, keeping the rows read before the failure; otherwise the first failure is thrown.
- * `seeText` sees every text value (the export's secret scan); it may throw to stop.
+ * Writes every row of `tables` on `conn` into the new file `dest` (exclusive, owner-only, flushed)
+ * and returns what it wrote. `tolerant` (the rescue) goes on past a table that fails, keeping the
+ * rows read before the failure; otherwise the first failure is thrown. `seeText` sees every text
+ * value (the export's secret scan); it may throw to stop.
  */
 export function writeJsonl(
   conn: Connection,
   dest: string,
+  tables: readonly ProductTable[],
   options: { tolerant?: boolean; seeText?: (table: string, column: string, text: string) => void },
 ): JsonlReport {
   let fd: number;
@@ -76,16 +87,16 @@ export function writeJsonl(
     }
   };
   try {
-    const tables = options.tolerant === true ? safeTables(conn) : dataTables(conn);
     for (const table of tables) {
       try {
-        for (const row of conn.prepare(`SELECT * FROM "${table}"`).iterate()) {
+        for (const row of conn.prepare(selectAll(table)).iterate()) {
           const out: Record<string, unknown> = {};
-          for (const [column, v] of Object.entries(row)) {
-            if (typeof v === "string") options.seeText?.(table, column, v);
+          for (const column of table.columns) {
+            const v = row[column];
+            if (typeof v === "string") options.seeText?.(table.name, column, v);
             out[column] = value(v);
           }
-          const line = `${JSON.stringify({ table, row: out })}\n`;
+          const line = `${JSON.stringify({ table: table.name, row: out })}\n`;
           pending.push(line);
           pendingBytes += line.length;
           report.rows += 1;
@@ -95,7 +106,7 @@ export function writeJsonl(
       } catch (error) {
         if (options.tolerant !== true || !(error instanceof StorageError)) throw error;
         // The rows read before the failure stay: that is what the rescue is for.
-        report.failed.push(table);
+        report.failed.push(table.name);
       }
     }
     flush();
@@ -106,14 +117,5 @@ export function writeJsonl(
     throw error instanceof StorageError ? error : fsError(error);
   } finally {
     closeQuietly(fd);
-  }
-}
-
-/** The data tables, or for a schema that no longer reads, none: the rescue then writes nothing. */
-function safeTables(conn: Connection): string[] {
-  try {
-    return dataTables(conn);
-  } catch {
-    return [];
   }
 }

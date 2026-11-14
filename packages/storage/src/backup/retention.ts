@@ -12,11 +12,11 @@
 //   space's backups (a machine-local backup.dir set to one folder twice): those are neither kept,
 //   removed nor counted. A backup the listing could not verify is never removed here: a person
 //   looks at it first.
-// - A1's "never the newest verified backup" means a backup that would restore: before
-//   applyRetention removes anything, it verifies the newest complete backups, one by one, with
-//   exactly the checks a restore makes (verifyBackup, verify.ts), until one passes, and keeps that
-//   one. A newer one that does not verify is kept too, for a person. When none verifies, nothing
-//   is removed.
+// - A1's "never the newest verified backup" means a backup that restores: before applyRetention
+//   removes anything, it verifies the newest complete backups, one by one, by a trial restore (the
+//   restore's own steps, its first write included, on a scratch copy: verifyBackup), until one
+//   passes, and keeps that one. Nothing else makes a backup verified. A newer one that does not
+//   verify is kept too, for a person. When none verifies, nothing is removed.
 // - Removal looks at each file again, since the listing may be stale: only the two regular files
 //   of a listed backup are removed, one at a time, never a folder or a link put in their place,
 //   and only while the sidecar still reads as listed and the data still has its size and SHA-256.
@@ -34,10 +34,14 @@ import { isDeepStrictEqual } from "node:util";
 import { fsyncFolder } from "../files.ts";
 import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
-import { verifyBackup, type BackupListing, type ListedBackup } from "./list.ts";
+import {
+  verifyBackup,
+  type BackupListing,
+  type ListedBackup,
+  type VerifyOptions,
+} from "./list.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "./policy.ts";
 import { DATA_SUFFIX, readSidecar, SIDECAR_SUFFIX } from "./sidecar.ts";
-import type { VerifyOptions } from "./verify.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;

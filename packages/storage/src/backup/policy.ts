@@ -16,10 +16,12 @@ import {
   closeSync,
   createReadStream,
   createWriteStream,
+  existsSync,
   statfsSync,
   type ReadStream,
   type WriteStream,
 } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
@@ -77,7 +79,22 @@ export function freeBytes(folder: string): number {
   }
 }
 
-/** Refuses an expansion of `bytes` that would leave less free space than the reserve. */
+/**
+ * The nearest folder at or above `folder` that exists: where a folder a writer has not made yet
+ * will be, for its free disk space.
+ */
+export function existingFolder(folder: string): string {
+  let current = resolve(folder);
+  while (!existsSync(current) && dirname(current) !== current) current = dirname(current);
+  return current;
+}
+
+/**
+ * Refuses an expansion of `bytes` that would leave less free space than the reserve. Every side
+ * that writes or unpacks checks it before it starts, with what it needs at its peak: the backup
+ * writer and the exporter for their temporary files (backup.ts, bundle/export.ts), a restore for
+ * what it unpacks.
+ */
 export function checkFreeSpace(bytes: number, free: number, policy: BundlePolicy): void {
   if (bytes > free - policy.freeSpaceReserveBytes) {
     throw limitExceeded("the free disk space");
@@ -228,15 +245,20 @@ const isZlibError = (error: unknown): boolean => {
  * Runs `source` through `stages` into `sink`, which already exists. pipeline owns every stream from
  * the start: a failure anywhere destroys all of them, the sink's descriptor included, and its error
  * is the one returned. Should the source stream not even be made, the sink is destroyed here.
+ * `source` is a path, or the descriptor of a file the caller opened and keeps: read from its start,
+ * never closed here, so a reader reads the file it checked even when another file takes the name.
  */
 async function pipeInto(
-  source: string,
+  source: string | number,
   stages: readonly Transform[],
   sink: Writable,
 ): Promise<void> {
   let input: ReadStream;
   try {
-    input = createReadStream(source);
+    input =
+      typeof source === "number"
+        ? createReadStream("", { fd: source, autoClose: false, start: 0 })
+        : createReadStream(source);
   } catch (error) {
     sink.destroy();
     throw error;
@@ -272,13 +294,13 @@ export interface InflateLimits {
 }
 
 /**
- * Decompresses `source` into the new file `dest` (owner-only, exclusive, flushed), or only counts
- * and hashes it when `dest` is undefined. It stops as soon as the output passes either limit, so
- * a small archive that expands without end never fills a disk or memory. The caller removes a
- * partial `dest`.
+ * Decompresses `source` (a path, or a descriptor the caller holds: pipeInto) into the new file
+ * `dest` (owner-only, exclusive, flushed), or only counts and hashes it when `dest` is undefined. It
+ * stops as soon as the output passes either limit, so a small archive that expands without end
+ * never fills a disk or memory. The caller removes a partial `dest`.
  */
 export async function inflateFile(
-  source: string,
+  source: string | number,
   dest: string | undefined,
   limits: InflateLimits,
 ): Promise<Digests> {

@@ -1,5 +1,7 @@
-// Taking a verified backup of a space (A1 3.18, the minimal backup set of MIL-02).
+// Taking a backup of a space (A1 3.18, the minimal backup set of MIL-02).
 //
+// 0. Before anything is written, the free disk space, less the shared policy's reserve, must hold
+//    the backup's peak (backupPeak): BUNDLE_LIMIT_EXCEEDED otherwise.
 // 1. A separate READ-ONLY connection copies the database with the driver's backup API in ONE step
 //    (pagesPerStep = SINGLE_STEP), so the copy is one consistent snapshot taken inside one read
 //    transaction, and WAL lets the writer go on meanwhile. node:sqlite restarts a multi-step backup
@@ -8,7 +10,8 @@
 //    incarnation, last_seq, user_version, rows per table) are read from the copy itself, so they
 //    describe exactly the snapshot, whatever the writer did meanwhile.
 // 3. Compression with Node's zlib into a temporary file, flushed to disk, then read back through
-//    the bounded decompression a restore uses and compared, so the stored file is known to restore.
+//    the bounded decompression and compared, so a write that went wrong is caught now. That makes
+//    no backup verified: only a trial restore does (restore/restore.ts verifyBackupFile).
 // 4. The `.db.gz` is PUBLISHED under its name and the folder synced, then the sidecar is written to
 //    a temporary file, flushed, and published the same way. The sidecar is the commit point.
 //
@@ -61,7 +64,15 @@ import type { SchemaStep } from "../schema.ts";
 import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
 import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
-import { BUNDLE_POLICY, compressFile, inflateFile, type BundlePolicy } from "./policy.ts";
+import {
+  BUNDLE_POLICY,
+  checkFreeSpace,
+  compressFile,
+  existingFolder,
+  freeBytes,
+  inflateFile,
+  type BundlePolicy,
+} from "./policy.ts";
 import {
   BACKUP_KINDS,
   BACKUP_TEMP_PREFIX,
@@ -75,7 +86,7 @@ import {
   type BackupKind,
   type BackupSidecar,
 } from "./sidecar.ts";
-import { checkSnapshot, copySnapshot } from "./snapshot.ts";
+import { checkSnapshot, copySnapshot, databaseBytes } from "./snapshot.ts";
 
 export { BACKUP_TEMP_PREFIX };
 
@@ -119,6 +130,8 @@ export interface BackupSeams {
   steps?: readonly SchemaStep[];
   policy?: BundlePolicy;
   io?: FileIo;
+  /** Free bytes for a folder. Default: the file system's. */
+  freeBytes?: (folder: string) => number;
 }
 
 /** The backups folder of a space folder, unless machine-local settings move it. */
@@ -222,6 +235,13 @@ export async function writeBackup(
   const timer = setInterval(refresh, FRESH_INTERVAL_MS);
   timer.unref();
   try {
+    // Before anything is written: the free disk space, less the policy's reserve, holds the
+    // backup's peak (backupPeak).
+    checkFreeSpace(
+      backupPeak(databaseBytes(source)),
+      (seams.freeBytes ?? freeBytes)(existingFolder(backupDir)),
+      policy,
+    );
     makeDurableFolder(backupDir, io);
     // The driver writes only a new file (A1 3.18): it creates the copy exclusively and
     // owner-only under this backup's random temporary name, so the copy is owner-only from its
@@ -337,6 +357,14 @@ export async function writeBackup(
  * cleanup takes an untouched file for a leftover (list.ts LEFTOVER_MIN_AGE_MS).
  */
 export const FRESH_INTERVAL_MS = 5 * 60_000;
+
+/**
+ * What a backup needs on disk at its peak, from the database's size D (its pages times their
+ * size): the snapshot (D) and its compressed form while both exist, which is at most about D (gzip
+ * adds a few bytes per block to data it cannot compress). The read-back writes nothing, and the
+ * sidecar is a few hundred bytes. A guideline (PLAN D26): a disk that fills anyway fails the backup.
+ */
+export const backupPeak = (databaseSize: number): number => 2 * databaseSize;
 
 /** Whether `path` is still the regular file `before` described (same identity where known), of `size`. */
 function sameFile(path: string, before: BigIntStats, size: number): boolean {

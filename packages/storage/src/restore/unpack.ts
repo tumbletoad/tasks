@@ -1,32 +1,33 @@
-// Unpacking a backup or an export bundle into a new folder (A1 3.18 "Restore", steps 1 and 2).
-// Nothing is used before every check passed. Then space.json is written from the database: a
-// backup holds none (A1 3.1), and a bundle's is checked, never kept, because the database wins.
+// Unpacking a backup or an export bundle into a new database file (A1 3.18 "Restore", steps 1 to 3),
+// with every check a restore makes before its first write. Nothing is used before every check
+// passed. No space.json is written here: the restore writes it from the database after its first
+// write (restore.ts), because the database wins and a bundle's is checked, never kept.
 //
-// A backup (`.db.gz` beside its sidecar) is unpacked as `space.db` and verified with the checks
-// that define a verified backup (backup/verify.ts: the files, the sidecar, the BundlePolicy while
-// it streams, both digests, integrity_check, the sidecar's facts, the revision and the format).
+// A backup (`.db.gz` beside its sidecar) is read through both files held open (backup/read.ts:
+// the files, the sidecar, the BundlePolicy while it streams, both digests). An export bundle
+// (`.zip`) is read with bundle/read.ts, which checks the archive, its layout and every file against
+// export.json while it streams; `space.db` and the attachments are unpacked, everything else only
+// verified, and its space.json must name the space its database holds.
 //
-// An export bundle (`.zip`) is read with bundle/read.ts, which checks the archive, its layout and
-// every file against export.json while it streams. `space.db` and the attachments are unpacked,
-// everything else only verified. Then the database must pass integrity_check and agree with
-// export.json (space, epoch, incarnation, last commit, revision, rows per table), space.json must
-// name the same space, the revision must be one this build knows and not newer, its tables,
-// indexes and views must be exactly its revision's (snapshot.ts hasOwnSchema), and every live
-// attachment row's blob must be in the bundle.
+// Then one function decides for both (acceptRestored): the database passes integrity_check and
+// agrees with what its source records (space, epoch, incarnation, last commit, revision, rows per
+// table), the revision is one this build knows and not newer, the space's format is its
+// revision's, and its tables, indexes and views are exactly its revision's (backup/snapshot.ts
+// requireOwnSchema). A bundle's live attachment rows must each have their blob, with the row's size.
 import { join } from "node:path";
-import { StorageError } from "../errors.ts";
-import { DATABASE_FILE, MANIFEST_FILE, manifestFor, writeManifest } from "../manifest.ts";
+import { misuse, StorageError } from "../errors.ts";
+import { removeQuietly } from "../files.ts";
+import { DATABASE_FILE, MANIFEST_FILE } from "../manifest.ts";
 import { stepPosition } from "../migrate/steps.ts";
 import { openReader } from "../open.ts";
 import type { SpaceRow } from "../rows.ts";
 import type { Revision, SchemaStep } from "../schema.ts";
 import type { CheckedDriver } from "../startup-check.ts";
-import { removeQuietly } from "../files.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "../backup/policy.ts";
+import { holdBackup, inflateBackup } from "../backup/read.ts";
 import type { BackupSidecar } from "../backup/sidecar.ts";
-import { checkSnapshot, hasOwnSchema, type SnapshotFacts } from "../backup/snapshot.ts";
-import { unpackVerified } from "../backup/verify.ts";
+import { checkSnapshot, requireOwnSchema, type SnapshotFacts } from "../backup/snapshot.ts";
 import type { ExportManifest } from "../bundle/export-file.ts";
 import { bundleInvalid, readBundle } from "../bundle/read.ts";
 
@@ -35,6 +36,11 @@ export interface UnpackSeams {
   steps?: readonly SchemaStep[];
   /** Free bytes for the folder. Default: the file system's. */
   freeBytes?: (folder: string) => number;
+  /**
+   * Runs once a backup's two files are both open, before either is read (backup/read.ts): a test
+   * removes them there, as retention could.
+   */
+  held?: (backupFile: string) => void | Promise<void>;
 }
 
 /** What a restore came from: a backup with its sidecar, or a bundle with its export.json. */
@@ -48,50 +54,168 @@ export interface Unpacked {
   source: RestoreSource;
 }
 
-interface UnpackOptions {
-  appVersion: string;
+export interface UnpackOptions {
   busyTimeoutMs?: number;
 }
+
+/**
+ * Where an unpacked copy goes: its new database file, and for a bundle the folder its attachments
+ * go to, which is the database's own folder (`db` is `<folder>/space.db`).
+ */
+export interface CopyPlace {
+  db: string;
+  folder: string;
+}
+
+/** A copy's place in a staging folder: `<staging>/space.db`. */
+export const inFolder = (staging: string): CopyPlace => ({
+  db: join(staging, DATABASE_FILE),
+  folder: staging,
+});
 
 /** Whether a file is an export bundle, by its name: a backup is a `.db.gz`. */
 export const isBundleFile = (file: string): boolean => /\.zip$/i.test(file);
 
 /**
- * Unpacks the backup or bundle `file` into the empty folder `staging` as `space.db` with its
- * `space.json`, and verifies it. On failure the caller removes `staging`.
+ * Unpacks the backup or bundle `file` into `place` and verifies it. On failure the caller removes
+ * what it unpacked: the database and its side files, and a bundle's attachments.
  */
 export async function unpackAny(
   checked: CheckedDriver,
   file: string,
-  staging: string,
+  place: CopyPlace,
   options: UnpackOptions,
   seams: UnpackSeams = {},
 ): Promise<Unpacked> {
   return isBundleFile(file)
-    ? unpackBundle(checked, file, staging, options, seams)
-    : unpackBackup(checked, file, staging, options, seams);
+    ? unpackBundle(checked, file, place, options, seams)
+    : unpackBackup(checked, file, place.db, options, seams);
 }
 
-/** Unpacks the backup `backupFile` (a `.db.gz` beside its sidecar). */
+const backupInvalid = (why: string): StorageError =>
+  new StorageError("BACKUP_INVALID", `The backup does not verify: ${why}`);
+
+const busy = (options: UnpackOptions): { busyTimeoutMs?: number } =>
+  options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs };
+
+/**
+ * Unpacks the backup `backupFile` (a `.db.gz` beside its sidecar) into the new database file `db`,
+ * its two files held open until it is done.
+ */
 export async function unpackBackup(
   checked: CheckedDriver,
   backupFile: string,
-  staging: string,
+  db: string,
   options: UnpackOptions,
   seams: UnpackSeams = {},
 ): Promise<Unpacked> {
-  const verified = await unpackVerified(checked, backupFile, join(staging, DATABASE_FILE), {
-    ...seams,
-    ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
+  const policy = seams.policy ?? BUNDLE_POLICY;
+  const held = holdBackup(backupFile, policy);
+  try {
+    await seams.held?.(backupFile);
+    await inflateBackup(held, db, {
+      policy,
+      ...(seams.freeBytes === undefined ? {} : { freeBytes: seams.freeBytes }),
+    });
+    const { sidecar } = held;
+    const facts = factsOf(checked, db, options, backupInvalid);
+    const step = acceptRestored(checked, facts, sidecar, seams.steps ?? SCHEMA_STEPS, {
+      noun: "backup",
+      record: "its sidecar",
+      invalid: backupInvalid,
+    });
+    return { space: facts.space, revision: step.revision, step, source: { kind: "backup", sidecar } };
+  } finally {
+    held.close();
+  }
+}
+
+/** Unpacks the export bundle `bundleFile` (a `.zip`) into `place`. */
+export async function unpackBundle(
+  checked: CheckedDriver,
+  bundleFile: string,
+  place: CopyPlace,
+  options: UnpackOptions,
+  seams: UnpackSeams = {},
+): Promise<Unpacked> {
+  if (place.db !== join(place.folder, DATABASE_FILE)) {
+    throw misuse("A bundle unpacks its database into its attachments' folder");
+  }
+  const policy = seams.policy ?? BUNDLE_POLICY;
+  const { db, folder } = place;
+  const { manifest, kept } = await readBundle(bundleFile, policy, {
+    extractTo: (name, kind) =>
+      kind === "database"
+        ? db
+        : kind === "attachment"
+          ? join(folder, ...name.split("/"))
+          : undefined,
+    keep: [MANIFEST_FILE],
+    freeFolder: folder,
+    ...(seams.freeBytes === undefined ? {} : { freeBytes: seams.freeBytes }),
   });
-  // checkSnapshot removed the -wal and -shm its read-only open left, so the folder holds the
-  // database and, next, space.json.
-  writeManifest(staging, manifestFor(verified.space, verified.step, options.appVersion));
-  const { space, revision, step, sidecar } = verified;
-  return { space, revision, step, source: { kind: "backup", sidecar } };
+  if (!Object.hasOwn(manifest.files, DATABASE_FILE)) throw bundleInvalid("it holds no space.db");
+  const spaceJson = kept.get(MANIFEST_FILE);
+  if (spaceJson === undefined) throw bundleInvalid("it holds no space.json");
+
+  const facts = factsOf(checked, db, options, bundleInvalid);
+  const step = acceptRestored(
+    checked,
+    facts,
+    {
+      space_id: manifest.space_id,
+      epoch: manifest.epoch,
+      incarnation: manifest.incarnation,
+      seq: manifest.seq,
+      user_version: manifest.user_version,
+      counts: manifest.counts,
+    },
+    seams.steps ?? SCHEMA_STEPS,
+    { noun: "bundle", record: "export.json", invalid: bundleInvalid },
+  );
+  let named: unknown;
+  try {
+    named = (JSON.parse(UTF8.decode(spaceJson)) as Record<string, unknown> | null)?.["space_id"];
+  } catch {
+    named = undefined;
+  }
+  if (named !== facts.space.spaceId) throw bundleInvalid("its space.json names another space");
+  checkAttachments(checked, db, manifest, options);
+  return {
+    space: facts.space,
+    revision: step.revision,
+    step,
+    source: { kind: "bundle", manifest },
+  };
 }
 
 const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/** The unpacked database's facts; a database that does not check is the source's fault. */
+function factsOf(
+  checked: CheckedDriver,
+  db: string,
+  options: UnpackOptions,
+  invalid: (why: string) => StorageError,
+): SnapshotFacts {
+  try {
+    return checkSnapshot(checked, db, options.busyTimeoutMs);
+  } catch (error) {
+    // Its bytes matched what the source records, so a failing check means it was bad when written.
+    const cause = error instanceof StorageError ? error.code : "an unexpected error";
+    throw invalid(`its database does not check (${cause})`);
+  }
+}
+
+/** What a backup's sidecar or a bundle's export.json records of the database. */
+interface Recorded {
+  space_id: string;
+  epoch: number;
+  incarnation: string;
+  seq: number;
+  user_version: number;
+  counts: Record<string, number>;
+}
 
 const sameCounts = (a: Record<string, number>, b: Record<string, number>): boolean => {
   const keys = Object.keys(a);
@@ -101,74 +225,52 @@ const sameCounts = (a: Record<string, number>, b: Record<string, number>): boole
   );
 };
 
-/** Unpacks the export bundle `bundleFile` (a `.zip`). */
-export async function unpackBundle(
+/**
+ * The checks every restore makes of an unpacked database before it writes to it, for a backup and
+ * a bundle alike (see the header). Returns the revision's step.
+ */
+export function acceptRestored(
   checked: CheckedDriver,
-  bundleFile: string,
-  staging: string,
-  options: UnpackOptions,
-  seams: UnpackSeams = {},
-): Promise<Unpacked> {
-  const policy = seams.policy ?? BUNDLE_POLICY;
-  const db = join(staging, DATABASE_FILE);
-  const { manifest, kept } = await readBundle(bundleFile, policy, {
-    extractTo: (name, kind) =>
-      kind === "database"
-        ? db
-        : kind === "attachment"
-          ? join(staging, ...name.split("/"))
-          : undefined,
-    keep: [MANIFEST_FILE],
-    freeFolder: staging,
-    ...(seams.freeBytes === undefined ? {} : { freeBytes: seams.freeBytes }),
-  });
-  if (!Object.hasOwn(manifest.files, DATABASE_FILE)) throw bundleInvalid("it holds no space.db");
-  const spaceJson = kept.get(MANIFEST_FILE);
-  if (spaceJson === undefined) throw bundleInvalid("it holds no space.json");
-
-  let facts: SnapshotFacts;
-  try {
-    facts = checkSnapshot(checked, db, options.busyTimeoutMs);
-  } catch (error) {
-    const cause = error instanceof StorageError ? error.code : "an unexpected error";
-    throw bundleInvalid(`its database does not verify (${cause})`);
-  }
+  facts: SnapshotFacts,
+  recorded: Recorded,
+  steps: readonly SchemaStep[],
+  source: { noun: string; record: string; invalid: (why: string) => StorageError },
+): SchemaStep {
   const { space } = facts;
   if (
-    space.spaceId !== manifest.space_id ||
-    space.authority.epoch !== manifest.epoch ||
-    space.authority.incarnation !== manifest.incarnation ||
-    space.lastSeq !== manifest.seq ||
-    facts.userVersion !== manifest.user_version ||
-    !sameCounts(facts.counts, manifest.counts)
+    facts.userVersion !== recorded.user_version ||
+    space.spaceId !== recorded.space_id ||
+    space.authority.epoch !== recorded.epoch ||
+    space.authority.incarnation !== recorded.incarnation ||
+    space.lastSeq !== recorded.seq ||
+    !sameCounts(facts.counts, recorded.counts)
   ) {
-    throw bundleInvalid("its database differs from export.json");
+    throw source.invalid(`its database differs from ${source.record}`);
   }
-  let named: unknown;
-  try {
-    named = (JSON.parse(UTF8.decode(spaceJson)) as Record<string, unknown> | null)?.["space_id"];
-  } catch {
-    named = undefined;
-  }
-  if (named !== space.spaceId) throw bundleInvalid("its space.json names another space");
-
-  const position = stepPosition(seams.steps ?? SCHEMA_STEPS, facts.userVersion);
+  const position = stepPosition(steps, facts.userVersion);
   if (position.state === "newer") {
-    throw new StorageError("SPACE_TOO_NEW", "The bundle's schema is newer than this build writes");
+    throw new StorageError(
+      "SPACE_TOO_NEW",
+      `The ${source.noun}'s schema is newer than this build writes`,
+    );
   }
   if (position.state === "unknown") {
-    throw new StorageError("SPACE_VERSION_UNKNOWN", "The bundle's schema revision is unknown");
+    throw new StorageError(
+      "SPACE_VERSION_UNKNOWN",
+      `The ${source.noun}'s schema revision is unknown`,
+    );
   }
   const { step } = position;
   if (space.format.major !== step.format.major || space.format.minor !== step.format.minor) {
     throw new StorageError("SPACE_INVALID", "The space format does not match its schema revision");
   }
-  if (!hasOwnSchema(checked, facts, seams.steps ?? SCHEMA_STEPS)) {
-    throw bundleInvalid("its database's schema is not its revision's");
+  try {
+    requireOwnSchema(checked, facts.schema, facts.userVersion, steps);
+  } catch (error) {
+    if (!(error instanceof StorageError) || error.code !== "SPACE_SCHEMA_FOREIGN") throw error;
+    throw source.invalid("its database's schema is not its revision's");
   }
-  checkAttachments(checked, db, manifest, options.busyTimeoutMs);
-  writeManifest(staging, manifestFor(space, step, options.appVersion));
-  return { space, revision: step.revision, step, source: { kind: "bundle", manifest } };
+  return step;
 }
 
 /**
@@ -179,9 +281,9 @@ function checkAttachments(
   checked: CheckedDriver,
   db: string,
   manifest: ExportManifest,
-  busyTimeoutMs: number | undefined,
+  options: UnpackOptions,
 ): void {
-  const conn = openReader(checked, db, busyTimeoutMs === undefined ? {} : { busyTimeoutMs });
+  const conn = openReader(checked, db, busy(options));
   try {
     const has =
       conn
@@ -206,4 +308,9 @@ function checkAttachments(
     conn.close();
     for (const path of [`${db}-wal`, `${db}-shm`]) removeQuietly(path);
   }
+}
+
+/** Removes an unpacked database file and the files SQLite keeps beside it. */
+export function removeDatabase(db: string): void {
+  for (const path of [db, `${db}-wal`, `${db}-shm`, `${db}-journal`]) removeQuietly(path);
 }

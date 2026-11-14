@@ -3,27 +3,61 @@
 //
 // - restoreLatest: `tasks space restore latest --to <folder>` restores the newest complete backup
 //   of the space that restores into a new folder, as a read-only copy. The candidates are
-//   restored directly, newest first: a restore verifies its backup in full (backup/verify.ts), so
-//   a newer one that does not verify, or that went away since the listing (retention, the
-//   person), is skipped and kept, never removed, and nothing is unpacked twice.
-// - rescueSpace ("Rescue readable data"): every row that can still be read, through a read-only
-//   connection, into `exchange/rescued/rescued-<utc>.jsonl` in the space folder, for review
-//   (bundle/jsonl.ts's format). A table that fails partway keeps the rows read before the failure
-//   and is named in the report. Nothing in the space is changed: the file is new, created
-//   exclusively, and `exchange/` is the folder meant for files people look at (A1 3.1).
-import { existsSync, statSync } from "node:fs";
+//   restored directly, newest first: a restore checks its backup in full and runs its first write
+//   (restore.ts), so a newer one that does not restore, or that went away before the restore held
+//   its files (retention, the person), is skipped and kept, never removed, and nothing is unpacked
+//   twice.
+// - rescueSpace ("Rescue readable data"): every row that can still be read into
+//   `exchange/rescued/rescued-<utc>.jsonl` in the space folder, for review (bundle/jsonl.ts's
+//   format). RESCUE NEVER OPENS THE DAMAGED ORIGINAL: opening a database, read-only too, can delete
+//   a write-ahead log beside it or play a rollback journal back, and either can be the last
+//   recovery material. So the database file and its side files (`-wal`, `-shm`, `-journal`) are
+//   copied byte for byte, by plain file reads that never go through SQLite, into a private scratch
+//   folder `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that
+//   was in the space folder is the same afterwards; the one new file is the rescued one, created
+//   exclusively, and `exchange/` is the folder meant for files people look at (A1 3.1). The scratch
+//   folder is removed by its full name; a crash's is listed by `tasks space list`.
+//   The rows are read by the product's own tables and columns at the database's revision
+//   (backup/snapshot.ts productTables), so the report names only those: a table that fails partway
+//   keeps the rows read before the failure and is named by its product name.
+import {
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
-import { fsCall } from "../files.ts";
+import {
+  closeQuietly,
+  createFileExact,
+  errnoCode,
+  FILE_MODE,
+  FOLDER_MODE,
+  fsCall,
+  fsError,
+  makeDirExact,
+  removeQuietly,
+  temporaryTag,
+} from "../files.ts";
 import type { Id } from "../ids.ts";
 import { DATABASE_FILE } from "../manifest.ts";
-import { openReader } from "../open.ts";
+import { stepPosition } from "../migrate/steps.ts";
+import { applyPragmas, BUSY_TIMEOUT_MS, openUnconfigured } from "../open.ts";
 import { inRange } from "../rows.ts";
+import type { SchemaStep } from "../schema.ts";
 import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
+import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { makeDurableFolder } from "../backup/backup.ts";
 import { listBackups } from "../backup/list.ts";
 import { utcStamp } from "../backup/sidecar.ts";
+import { productTables, type ProductTable } from "../backup/snapshot.ts";
 import { writeJsonl, type JsonlReport } from "../bundle/jsonl.ts";
 import {
   restoreBackupWith,
@@ -92,41 +126,173 @@ export async function restoreLatest(
 /** The folder of rescued rows, inside the space folder. */
 export const RESCUED_FOLDER = ["exchange", "rescued"] as const;
 
+/** The prefix of a rescue's private scratch folder in RESCUED_FOLDER, before its random tag. */
+export const RESCUE_TEMP_PREFIX = ".rescue.tmp-";
+
+/** The files of a space's database a rescue copies: the database, then its side files. */
+const DATABASE_FILES = ["", "-wal", "-shm", "-journal"] as const;
+
 export interface RescueRecord extends JsonlReport {
   /** The JSON lines file the rows went into. */
   file: string;
 }
 
+export interface RescueOptions {
+  now?: () => number;
+  busyTimeoutMs?: number;
+  /** The registered schema steps. Default: SCHEMA_STEPS. Tests pass stand-in steps. */
+  steps?: readonly SchemaStep[];
+}
+
+const notRegular = (): StorageError =>
+  new StorageError("SPACE_INVALID", "A file of the database is not a regular file");
+
+/** POSIX's refusal to open a link; on Windows the identity check covers it. */
+const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+
+/**
+ * Copies the regular file at `from` into the new file `to` (owner-only, exclusive) by plain reads
+ * of the descriptor it opened, never through a link and never through SQLite. Returns false when
+ * nothing is at `from`.
+ */
+function copyPlain(from: string, to: string): boolean {
+  const before = fsCall(() => lstatSync(from, { bigint: true, throwIfNoEntry: false }));
+  if (before === undefined) return false;
+  if (!before.isFile()) throw notRegular();
+  let input: number;
+  try {
+    input = openSync(from, constants.O_RDONLY | NO_FOLLOW);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return false;
+    throw fsError(error);
+  }
+  try {
+    const opened = fsCall(() => fstatSync(input, { bigint: true }));
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      throw notRegular();
+    }
+    const out = fsCall(() => createFileExact(to, FILE_MODE));
+    try {
+      const buffer = new Uint8Array(4 * 1024 * 1024);
+      let position = 0;
+      for (;;) {
+        const read = fsCall(() => readSync(input, buffer, 0, buffer.length, position));
+        if (read <= 0) break;
+        let written = 0;
+        while (written < read) {
+          const chunk = buffer.subarray(written, read);
+          written += fsCall(() => writeSync(out, chunk, 0, chunk.length));
+        }
+        position += read;
+      }
+    } finally {
+      closeQuietly(out);
+    }
+  } finally {
+    closeQuietly(input);
+  }
+  return true;
+}
+
+/**
+ * Opens the private copy `db` for reading only: its own connection, which may play the copy's
+ * journal back or rebuild its WAL index (the copy is this rescue's), with the schema's functions
+ * untrusted and every write refused.
+ */
+function openCopy(checked: CheckedDriver, db: string, busyTimeoutMs: number): Connection {
+  const conn = openUnconfigured(checked, db, "writer", { busyTimeoutMs });
+  try {
+    applyPragmas(conn, [
+      { name: "busy_timeout", value: busyTimeoutMs, expect: busyTimeoutMs },
+      { name: "trusted_schema", value: "OFF", expect: 0 },
+      { name: "query_only", value: 1, expect: 1 },
+    ]);
+  } catch (error) {
+    closeQuietlyConn(conn);
+    throw error;
+  }
+  return conn;
+}
+
+function closeQuietlyConn(conn: Connection): void {
+  try {
+    conn.close();
+  } catch {
+    // The first error is the one the caller sees.
+  }
+}
+
+/** The product's tables at the revision the copy records, the names a rescue may give. */
+function rescueTables(
+  checked: CheckedDriver,
+  conn: Connection,
+  steps: readonly SchemaStep[],
+): readonly ProductTable[] {
+  const userVersion = conn.pragma("user_version");
+  const position = inRange(userVersion, "count")
+    ? stepPosition(steps, userVersion)
+    : { state: "unknown" as const };
+  if (position.state === "newer") {
+    throw new StorageError("SPACE_TOO_NEW", "The database is newer than this build reads");
+  }
+  if (position.state !== "known" || typeof userVersion !== "number") {
+    throw new StorageError("SPACE_VERSION_UNKNOWN", "The database's schema revision is unknown");
+  }
+  const tables = productTables(checked, steps, userVersion);
+  if (tables === undefined) {
+    throw new StorageError("SPACE_VERSION_UNKNOWN", "The database's schema revision is unknown");
+  }
+  return tables;
+}
+
 /**
  * Writes every row of the space at `folder` that can still be read into a new JSON lines file
- * under `exchange/rescued/`. A database that does not open at all is refused with its error.
+ * under `exchange/rescued/`, from a private copy of its database files (see the header). A copy that
+ * does not open at all is refused with its error, and the space folder stays as it was.
  */
 export function rescueSpace(
   checked: CheckedDriver,
   folder: string,
-  options: { now?: () => number; busyTimeoutMs?: number } = {},
+  options: RescueOptions = {},
 ): RescueRecord {
   const dir = checkSpacePath(folder);
   const db = join(dir, DATABASE_FILE);
-  if (!fsCall(() => existsSync(db))) {
+  if (fsCall(() => lstatSync(db, { throwIfNoEntry: false })) === undefined) {
     throw new StorageError("SPACE_NOT_FOUND", "No space found: the database is missing");
   }
   const now = (options.now ?? Date.now)();
   if (!inRange(now, "instant"))
     throw new StorageError("STORAGE_MISUSE", "The clock is out of range");
-  const conn = openReader(
-    checked,
-    db,
-    options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs },
-  );
+  const out = join(dir, ...RESCUED_FOLDER);
+  makeDurableFolder(out);
+  const scratch = join(out, `${RESCUE_TEMP_PREFIX}${temporaryTag()}`);
+  fsCall(() => {
+    makeDirExact(scratch, FOLDER_MODE);
+  });
   try {
-    const out = join(dir, ...RESCUED_FOLDER);
-    makeDurableFolder(out);
-    const file = join(out, `rescued-${utcStamp(now)}.jsonl`);
-    // Created exclusively: a file already there is refused and stays. One cut short by a failure
-    // stays too, with the rows it holds: nothing a rescue wrote is removed.
-    return { file, ...writeJsonl(conn, file, { tolerant: true }) };
+    const copy = join(scratch, DATABASE_FILE);
+    for (const suffix of DATABASE_FILES) {
+      const copied = copyPlain(`${db}${suffix}`, `${copy}${suffix}`);
+      if (suffix === "" && !copied) {
+        throw new StorageError("SPACE_NOT_FOUND", "No space found: the database is missing");
+      }
+    }
+    // An empty database file is never a space's (A1 3.1), and SQLite would delete the copied -wal.
+    if (fsCall(() => statSync(copy).size) === 0) {
+      throw new StorageError("SPACE_INVALID", "The database file is empty");
+    }
+    const conn = openCopy(checked, copy, options.busyTimeoutMs ?? BUSY_TIMEOUT_MS);
+    try {
+      const tables = rescueTables(checked, conn, options.steps ?? SCHEMA_STEPS);
+      const file = join(out, `rescued-${utcStamp(now)}.jsonl`);
+      // Created exclusively: a file already there is refused and stays. One cut short by a failure
+      // stays too, with the rows it holds: nothing a rescue wrote is removed.
+      return { file, ...writeJsonl(conn, file, tables, { tolerant: true }) };
+    } finally {
+      closeQuietlyConn(conn);
+    }
   } finally {
-    conn.close();
+    // This rescue's own scratch folder, by its full name.
+    removeQuietly(scratch);
   }
 }

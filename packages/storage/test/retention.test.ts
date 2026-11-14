@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { basename, join } from "node:path";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
-import { backupSpace } from "../src/backup/backup.ts";
+import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import {
   listBackups,
   verifyBackup,
@@ -24,9 +24,14 @@ import {
   type BackupKind,
   type BackupSidecar,
 } from "../src/backup/sidecar.ts";
+import { StorageError } from "../src/errors.ts";
 import type { Id } from "../src/ids.ts";
-import { restoreBackup } from "../src/restore/restore.ts";
+import { restoreLatest } from "../src/restore/rescue.ts";
+import { restoreBackup, restoreBackupWith } from "../src/restore/restore.ts";
+import { unpackBackup } from "../src/restore/unpack.ts";
+import { readFacts, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
+import { STEPS_MARK_GUARD } from "./stand-in-steps.ts";
 
 const folders = tempFolders("retention");
 
@@ -532,5 +537,133 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
     for (const name of applied.removed) {
       expect(dailies.some((d) => d.name === name) && plan.remove.includes(name), name).toBe(true);
     }
+  });
+});
+
+async function expectCode(fn: () => unknown, code: string): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(StorageError);
+    expect((error as StorageError).code, (error as Error).message).toBe(code);
+    return;
+  }
+  throw new Error(`expected ${code}, but nothing was thrown`);
+}
+
+describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran to their first write on a scratch copy", () => {
+  test("a backup whose restore fails at its first write is never verified, and never the reason another backup is removed", async () => {
+    const checked = await checkedDriver();
+    // A schema whose restore refuses its read-only mark once the space has three commits: the
+    // exact-schema rule passes it, since its own steps made it (stand-in-steps.ts).
+    const steps = STEPS_MARK_GUARD;
+    const { folder, space } = await createFixtureSpace(folders.make(), "mira", {}, steps);
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    await writeCommits(folder, 1, "s", steps);
+    const older = await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "pre-migrate", now: () => now - 90 * DAY },
+      { steps },
+    );
+    await writeCommits(folder, 2, "t", steps);
+    const newer = await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "pre-migrate", now: () => now - 80 * DAY },
+      { steps },
+    );
+    expect(newer.sidecar.seq).toBeGreaterThanOrEqual(3);
+    // Every check before the first write passes for the newer one: its files, its digests,
+    // integrity_check, its facts, its revision and its exact schema.
+    const parent = folders.make();
+    await unpackBackup(checked, newer.file, join(parent, "unpacked.db"), {}, { steps });
+
+    // Verification, marking and retention together: the plan would remove the older backup, and
+    // only the older one restores, so it is the newest verified one and stays.
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([older.name]);
+    const [first, second] = listing.backups;
+    if (first === undefined || second === undefined) throw new Error("two backups expected");
+    expect(await verifyBackup(checked, first, { steps })).toBeUndefined();
+    expect(await verifyBackup(checked, second, { steps })).toEqual(older.sidecar);
+    const applied = await applyRetention(checked, listing, plan, { steps });
+    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+    expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
+    // The trials left nothing beside the backups.
+    expect(readdirSync(dir).sort()).toEqual(
+      [older.file, older.sidecarFile, newer.file, newer.sidecarFile].map((f) => basename(f)).sort(),
+    );
+
+    // A restore refuses the newer one for the same reason, and leaves no folder; the older one
+    // restores, and `restore latest` goes past the newer one to it.
+    await expectCode(
+      () => restoreBackupWith(checked, newer.file, join(parent, "a"), {}, { steps }),
+      "BACKUP_INVALID",
+    );
+    expect(existsSync(join(parent, "a"))).toBe(false);
+    await restoreBackupWith(checked, older.file, join(parent, "b"), {}, { steps });
+    const latest = await restoreLatest(checked, dir, space.spaceId, join(parent, "c"), {}, { steps });
+    expect(latest.backup).toBe(older.name);
+  });
+});
+
+describe("[A1.5.backup.held-files] a reader opens both files of a backup before it reads either, and holds them", () => {
+  test("retention removing a backup after a verification opened both of its files does not fail the verification", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    await writeCommits(folder, 1);
+    const old = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 90 * DAY,
+    });
+    await writeCommits(folder, 1, "t");
+    const kept = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 80 * DAY,
+    });
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([old.name]);
+    const oldListed = listing.backups.find((b) => b.name === old.name);
+    if (oldListed === undefined) throw new Error("the old backup is listed");
+    // The old backup's verification holds both files when retention runs and removes them.
+    let removed: string[] = [];
+    const verified = await verifyBackup(checked, oldListed, {
+      held: async (file) => {
+        if (file === old.file) removed = (await applyRetention(checked, listing, plan)).removed;
+      },
+    });
+    expect(removed).toEqual([old.name]);
+    expect(existsSync(old.file) || existsSync(old.sidecarFile)).toBe(false);
+    expect(verified).toEqual(old.sidecar);
+    expect(existsSync(kept.file) && existsSync(kept.sidecarFile)).toBe(true);
+  });
+
+  test("a restore whose backup goes away after both files are open restores it whole", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const restored = await restoreBackupWith(
+      checked,
+      backup.file,
+      join(folders.make(), "mira"),
+      {},
+      {
+        held: () => {
+          // As retention removes a backup: the sidecar first, then the data.
+          rmSync(backup.sidecarFile);
+          rmSync(backup.file);
+        },
+      },
+    );
+    expect(existsSync(backup.file) || existsSync(backup.sidecarFile)).toBe(false);
+    expect(restored.space.lastSeq).toBe(backup.sidecar.seq);
+    expect((await readFacts(restored.folder)).integrity).toBe("ok");
   });
 });

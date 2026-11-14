@@ -9,21 +9,28 @@
 //   data.jsonl       with `withJsonl`: every table, one record per line (jsonl.ts)
 //   view/…           the projection, once M3.10 renders it from the snapshot
 //
-// 1. A read-only connection copies the database in one backup step into a private work folder
-//    `.export.tmp-<random>` in the exports folder (A1 3.1: `<space>/exports`), and the space's
-//    connection closes. The copy is vacuumed, so it carries no bytes of deleted rows, and checked
-//    (integrity_check and the facts, as a backup's).
-// 2. The secret scan (A6 3.16.4): every text value of every table, and every attachment's bytes,
-//    against the secret patterns (secrets.ts). An attachment's file must be the regular file of its
-//    row under the space's own `attachments/`, never a link out of it, and never a file of a
-//    secrets folder. A hit writes nothing: EXPORT_SECRET_FOUND names the kind and the table and
-//    column, never the text.
+// 0. Before anything is written, on the space's own read-only connection: the revision is one this
+//    build knows and not newer, the database has exactly its revision's tables, indexes and views
+//    (backup/snapshot.ts requireOwnSchema, the rule a restore applies: SPACE_SCHEMA_FOREIGN), and
+//    the free disk space, less the policy's reserve, holds the export's peak (exportPeak). So an
+//    export that a restore would refuse, or that could fill the disk, writes nothing.
+// 1. The connection copies the database in one backup step into a private work folder
+//    `.export.tmp-<random>` in the exports folder (A1 3.1: `<space>/exports`), and closes. The copy
+//    is vacuumed, so it carries no bytes of deleted rows, and checked (integrity_check and the facts,
+//    as a backup's).
+// 2. The secret scan (A6 3.16.4): every text value of the product's tables, by the product's own
+//    table and column names (snapshot.ts productTables), never a name read out of the database. A
+//    hit writes nothing: EXPORT_SECRET_FOUND names the kind and the table and column, never the
+//    text.
 // 3. Every file is checked against its kind's limit, and the files together against the count and
-//    the total (the shared BundlePolicy), before anything is written.
-// 4. The archive is written in the work folder, flushed, then read back exactly as a restore reads
-//    it (read.ts), every checksum against export.json: Tasks never publishes a bundle it would
-//    refuse.
-// 5. Publication: the archive takes its name `<mode>-<utc>-e<epoch>-s<seq>.zip` in the exports
+//    the total (the shared BundlePolicy), before the archive is written.
+// 4. The archive is written in the work folder and flushed. Each attachment is read through the
+//    descriptor that was checked: the regular file of its row under the space's own `attachments/`,
+//    reached through no link, of the row's size, in no secrets folder, its bytes scanned for secrets
+//    and hashed to the row's hash while they are written.
+// 5. A trial restore of the archive, the restore's own steps (restore/restore.ts restoreCopy) in
+//    the work folder: Tasks never publishes a bundle its restore would refuse.
+// 6. Publication: the archive takes its name `<mode>-<utc>-e<epoch>-s<seq>.zip` in the exports
 //    folder by a hard link or an exclusive create (files.ts publishExclusive), never by a rename,
 //    so nothing there is ever replaced, and the folder is synced. That is the one publication
 //    point: any failure before it leaves no file under the bundle's name.
@@ -34,10 +41,20 @@
 // the caller's transfer statement; its states, its signing and its import are M3.08's, which build
 // on this function and on readBundle. The exporter only reads the space: no mode changes it.
 import { createHash } from "node:crypto";
-import { createReadStream, realpathSync, statSync } from "node:fs";
+import {
+  constants,
+  createReadStream,
+  fstatSync,
+  lstatSync,
+  openSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
+import type { Connection } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import {
+  closeQuietly,
   FOLDER_MODE,
   fsCall,
   fsError,
@@ -70,13 +87,27 @@ import { makeDurableFolder } from "../backup/backup.ts";
 import {
   BUNDLE_POLICY,
   bundleEntryKind,
+  checkFreeSpace,
   entryLabel,
   entryLimit,
+  existingFolder,
+  freeBytes,
   limitExceeded,
   type BundlePolicy,
 } from "../backup/policy.ts";
 import { utcStamp } from "../backup/sidecar.ts";
-import { checkSnapshot, copySnapshot, type SnapshotFacts } from "../backup/snapshot.ts";
+import {
+  checkSnapshot,
+  copySnapshot,
+  databaseBytes,
+  productTables,
+  requireOwnSchema,
+  schemaObjects,
+  type ProductTable,
+  type SnapshotFacts,
+} from "../backup/snapshot.ts";
+import { restoreCopy } from "../restore/restore.ts";
+import { inFolder } from "../restore/unpack.ts";
 import {
   EXPORT_FILE,
   EXPORT_MARKER,
@@ -88,8 +119,7 @@ import {
   type FileDigest,
   type TransferStatement,
 } from "./export-file.ts";
-import { dataTables, writeJsonl } from "./jsonl.ts";
-import { readBundle } from "./read.ts";
+import { scanText, writeJsonl } from "./jsonl.ts";
 import { ZipWriter } from "./zip.ts";
 
 /** The exports folder of a space (A1 3.1): the bundles the person asked for. */
@@ -130,11 +160,11 @@ export interface ExportRecord {
 export type ExportPoint =
   /** The snapshot is in the work folder, vacuumed and checked. */
   | "snapshot"
-  /** The secret scan passed and the attachments are found. */
+  /** The secret scan of the rows passed and the attachments are known. */
   | "scanned"
   /** The archive is written and flushed in the work folder. */
   | "written"
-  /** The archive read back as a restore reads it. */
+  /** The archive restored on trial as a restore restores it. */
   | "verified"
   /** The archive has its name. */
   | "published";
@@ -145,6 +175,8 @@ export interface ExportSeams {
   policy?: BundlePolicy;
   steps?: readonly SchemaStep[];
   io?: FileIo;
+  /** Free bytes for a folder. Default: the file system's. */
+  freeBytes?: (folder: string) => number;
 }
 
 /** The name of a bundle. */
@@ -158,8 +190,9 @@ export const exportsFolder = (spaceFolder: string): string =>
 /**
  * Exports the space at `folder` as a bundle (see the header). Opening the space refuses as a
  * reader's open does. Later failures keep their own code when it says what is wrong with the
- * space or the bundle (BUNDLE_LIMIT_EXCEEDED, BUNDLE_INVALID, EXPORT_SECRET_FOUND, SPACE_TOO_NEW,
- * SPACE_VERSION_UNKNOWN), and are BACKUP_FAILED otherwise, with the cause's code in the message.
+ * space or the bundle (BUNDLE_LIMIT_EXCEEDED, BUNDLE_INVALID, EXPORT_SECRET_FOUND,
+ * SPACE_SCHEMA_FOREIGN, SPACE_TOO_NEW, SPACE_VERSION_UNKNOWN), and are BACKUP_FAILED otherwise,
+ * with the cause's code in the message.
  */
 export async function exportBundle(
   checked: CheckedDriver,
@@ -167,6 +200,18 @@ export async function exportBundle(
   options: ExportOptions,
 ): Promise<ExportRecord> {
   return exportBundleWith(checked, folder, options, {});
+}
+
+/**
+ * What an export needs on disk at its peak, at most, from the space's database size D, its live
+ * attachments' total A and data.jsonl's estimate J (twice the database: JSON repeats every column's
+ * name in every row): the snapshot and its vacuum's write-ahead log (2D), then the snapshot,
+ * data.jsonl and the archive that holds them (2D + 2J + A), then the archive and its trial restore
+ * (2D + 2A + J). So 2D + 2A + 2J bounds every step.
+ */
+export function exportPeak(databaseSize: number, attachments: number, withJsonl: boolean): number {
+  const jsonl = withJsonl ? 2 * databaseSize : 0;
+  return 2 * databaseSize + 2 * attachments + 2 * jsonl;
 }
 
 /** exportBundle with test seams. */
@@ -194,6 +239,15 @@ export async function exportBundleWith(
   const work = join(exportDir, `${EXPORT_TEMP_PREFIX}${temporaryTag()}`);
   let made = false;
   try {
+    // 0. What a restore would refuse, and what the disk cannot hold, before anything is written.
+    const tables = checkSource(checked, opened.conn, steps);
+    const peak = exportPeak(
+      databaseBytes(opened.conn),
+      liveAttachmentBytes(opened.conn, tables),
+      options.withJsonl === true,
+    );
+    checkFreeSpace(peak, (seams.freeBytes ?? freeBytes)(existingFolder(exportDir)), policy);
+
     makeDurableFolder(exportDir, io);
     fsCall(() => {
       makeDirExact(work, FOLDER_MODE);
@@ -210,39 +264,36 @@ export async function exportBundleWith(
     vacuum(checked, db, busy);
     const facts = checkSnapshot(checked, db, options.busyTimeoutMs);
     const position = stepPosition(steps, facts.userVersion);
-    if (position.state === "newer") {
-      throw new StorageError("SPACE_TOO_NEW", "The space's schema is newer than this build writes");
-    }
-    if (position.state === "unknown") {
-      throw new StorageError("SPACE_VERSION_UNKNOWN", "The space's schema revision is unknown");
-    }
+    if (position.state !== "known") throw misuse("The snapshot's revision is not the source's");
     seams.at?.("snapshot");
 
-    // 2. The secret scan, the attachments the snapshot names, and data.jsonl.
+    // 2. The secret scan of the rows, data.jsonl, and the attachments the snapshot names.
+    const snapshotTables = productTables(checked, steps, facts.userVersion) ?? [];
     const jsonl = options.withJsonl === true ? join(work, JSONL_FILE) : undefined;
-    const blobs = scanSnapshot(checked, db, jsonl, busy);
-    const sources = blobs.map((blob) => attachmentSource(dir, blob, options.secretFolders ?? []));
+    const blobs = scanSnapshot(checked, db, snapshotTables, jsonl, busy);
     seams.at?.("scanned");
 
-    // 3. The limits, before anything is written.
+    // 3. The limits, before the archive is written.
     const spaceJson = Buffer.from(
       manifestText(manifestFor(facts.space, position.step, appVersion)),
     );
     const planned: { name: string; size: number }[] = [
       { name: MANIFEST_FILE, size: spaceJson.length },
       { name: DATABASE_FILE, size: sizeOf(db) },
-      ...sources.map((s) => ({ name: s.name, size: s.size })),
+      ...blobs.map((b) => ({ name: blobName(b.sha256), size: b.size })),
       ...(jsonl === undefined ? [] : [{ name: JSONL_FILE, size: sizeOf(jsonl) }]),
     ];
     checkPlanned(planned, policy);
 
-    // 4. The archive, then read back as a restore reads it.
+    // 4. The archive. Its sources are inside it now, so they go before the trial restore.
     const archive = join(work, "bundle.zip");
     const manifest = await writeArchive(archive, {
       createdAt,
       spaceJson,
       db,
-      sources,
+      space: dir,
+      blobs,
+      secretFolders: options.secretFolders ?? [],
       jsonl,
       facts,
       options,
@@ -250,12 +301,25 @@ export async function exportBundleWith(
       policy,
       io,
     });
+    for (const path of [db, ...(jsonl === undefined ? [] : [jsonl])]) removeQuietly(path, io);
     seams.at?.("written");
-    await readBundle(archive, policy);
+
+    // 5. The trial restore: the restore's own steps, to its first write, on a copy in the work
+    // folder (restore/restore.ts restoreCopy).
+    const trial = join(work, "trial");
+    fsCall(() => {
+      makeDirExact(trial, FOLDER_MODE);
+    });
+    await restoreCopy(checked, archive, inFolder(trial), createdAt, busy, {
+      policy,
+      steps,
+      ...(seams.freeBytes === undefined ? {} : { freeBytes: seams.freeBytes }),
+    });
+    removeQuietly(trial, io);
     const digest = await fileDigest(archive);
     seams.at?.("verified");
 
-    // 5. Publication: the one point where the bundle appears, never over anything.
+    // 6. Publication: the one point where the bundle appears, never over anything.
     const name = exportName(
       options.mode,
       createdAt,
@@ -284,12 +348,49 @@ export async function exportBundleWith(
   }
 }
 
+/**
+ * Step 0 on the space's own connection: the revision is known and not newer, and the schema is
+ * exactly the revision's. Returns the product's tables at that revision.
+ */
+function checkSource(
+  checked: CheckedDriver,
+  conn: Connection,
+  steps: readonly SchemaStep[],
+): readonly ProductTable[] {
+  const userVersion = conn.pragma("user_version");
+  const position = inRange(userVersion, "count")
+    ? stepPosition(steps, userVersion)
+    : { state: "unknown" as const };
+  if (position.state === "newer") {
+    throw new StorageError("SPACE_TOO_NEW", "The space's schema is newer than this build writes");
+  }
+  if (position.state !== "known" || typeof userVersion !== "number") {
+    throw new StorageError("SPACE_VERSION_UNKNOWN", "The space's schema revision is unknown");
+  }
+  const schema = conn.transaction("deferred", () => schemaObjects(conn));
+  requireOwnSchema(checked, schema, userVersion, steps);
+  return productTables(checked, steps, userVersion) ?? [];
+}
+
+/** The total size of the live attachment rows' blobs, each blob once. */
+function liveAttachmentBytes(conn: Connection, tables: readonly ProductTable[]): number {
+  if (!tables.some((table) => table.name === "attachments")) return 0;
+  const total = conn
+    .prepare(
+      "SELECT coalesce(sum(size), 0) AS n FROM " +
+        "(SELECT DISTINCT sha256, size FROM attachments WHERE deleted_at IS NULL)",
+    )
+    .get()?.["n"];
+  return inRange(total, "count") ? total : 0;
+}
+
 /** The codes an export passes on as they are: they say what is wrong with the space or bundle. */
 const OWN_CODES: ReadonlySet<string> = new Set([
   "BACKUP_FAILED",
   "BUNDLE_INVALID",
   "BUNDLE_LIMIT_EXCEEDED",
   "EXPORT_SECRET_FOUND",
+  "SPACE_SCHEMA_FOREIGN",
   "SPACE_TOO_NEW",
   "SPACE_VERSION_UNKNOWN",
 ]);
@@ -324,47 +425,38 @@ interface Blob {
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
-/** A secret-shaped text refuses the export, naming where it is and never what it is. */
+/** An attachment's path in a bundle and under a space (A1 3.18 "Attachments"). */
+const blobName = (sha256: string): string => `attachments/sha256/${sha256.slice(0, 2)}/${sha256}`;
+
+/**
+ * A secret-shaped text refuses the export, naming where it is and never what it is. `table` and
+ * `column` are the product's own names (snapshot.ts productTables).
+ */
 function refuseSecret(table: string, column: string, text: string): void {
   const kind = findSecret(text);
   if (kind === undefined) return;
-  const place = /^[a-z_][a-z0-9_]{0,63}$/.test(column) ? `${table}.${column}` : table;
   throw new StorageError(
     "EXPORT_SECRET_FOUND",
-    `The export would hold a string shaped like a secret (${kind}) in ${place}. Nothing was written`,
+    `The export would hold a string shaped like a secret (${kind}) in ${table}.${column}. Nothing was written`,
   );
 }
 
 /**
- * The secret scan of every text value in the snapshot (writing data.jsonl in the same pass when
- * asked), and the blobs its live attachment rows name.
+ * The secret scan of every text value of the product's tables in the snapshot (writing data.jsonl
+ * in the same pass when asked), and the blobs its live attachment rows name.
  */
 function scanSnapshot(
   checked: CheckedDriver,
   db: string,
+  tables: readonly ProductTable[],
   jsonl: string | undefined,
   busy: { busyTimeoutMs?: number },
 ): Blob[] {
   const conn = openReader(checked, db, busy);
   try {
-    if (jsonl !== undefined) {
-      writeJsonl(conn, jsonl, { seeText: refuseSecret });
-    } else {
-      for (const table of dataTables(conn)) {
-        for (const row of conn.prepare(`SELECT * FROM "${table}"`).iterate()) {
-          for (const [column, value] of Object.entries(row)) {
-            if (typeof value === "string") refuseSecret(table, column, value);
-          }
-        }
-      }
-    }
-    const hasTable =
-      conn
-        .prepare(
-          "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'attachments'",
-        )
-        .get()?.["n"] === 1;
-    if (!hasTable) return [];
+    if (jsonl !== undefined) writeJsonl(conn, jsonl, tables, { seeText: refuseSecret });
+    else scanText(conn, tables, refuseSecret);
+    if (!tables.some((table) => table.name === "attachments")) return [];
     const rows = conn
       .prepare(
         "SELECT sha256, max(size) AS size, min(size) AS least FROM attachments " +
@@ -388,42 +480,41 @@ function scanSnapshot(
   }
 }
 
-/** An attachment's file in the space, checked, with its bundle path. */
-interface Source {
-  name: string;
-  path: string;
-  size: number;
-  sha256: string;
-}
-
 const inside = (child: string, parent: string): boolean => {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 };
 
-/**
- * The file of a live attachment row (A1 3.18 "Attachments"): the regular file at
- * `attachments/sha256/<first two hex>/<hash>` of the space itself, reached through no link, of the
- * row's size, and in no secrets folder.
- */
-function attachmentSource(space: string, blob: Blob, secretFolders: readonly string[]): Source {
-  const name = `attachments/sha256/${blob.sha256.slice(0, 2)}/${blob.sha256}`;
-  const path = join(space, ...name.split("/"));
-  let real: string;
-  let size: number;
+/** POSIX's refusal to open a link; on Windows the identity checks cover it. */
+const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+
+const notOwnFile = (): StorageError =>
+  new StorageError("BUNDLE_INVALID", "An attachment of the space is not its own file");
+
+/** The real path of `path`, or BUNDLE_INVALID when nothing is there. */
+function realOf(path: string): string {
   try {
-    real = realpathSync(path);
-    size = statSync(real).size;
+    return realpathSync(path);
   } catch (error) {
     if (errnoCode(error) === "ENOENT") {
       throw new StorageError("BUNDLE_INVALID", "An attachment of the space is missing");
     }
     throw fsError(error);
   }
-  const expected = join(realpathSync(space), ...name.split("/"));
-  if (real !== expected || !fsCall(() => statSync(real).isFile())) {
-    throw new StorageError("BUNDLE_INVALID", "An attachment of the space is not its own file");
-  }
+}
+
+/**
+ * Opens the file of a live attachment row for reading (A1 3.18 "Attachments"): the regular file at
+ * `attachments/sha256/<first two hex>/<hash>` of the space itself, reached through no link, in no
+ * secrets folder, of the row's size. The checks hold for the file the descriptor reads: the path
+ * resolves to the space's own place before and after the open, and the opened file is the one at
+ * that place. The caller closes the descriptor.
+ */
+function openAttachment(space: string, blob: Blob, secretFolders: readonly string[]): number {
+  const parts = blobName(blob.sha256).split("/");
+  const path = join(space, ...parts);
+  const expected = join(fsCall(() => realpathSync(space)), ...parts);
+  if (realOf(path) !== expected) throw notOwnFile();
   for (const secrets of secretFolders) {
     let realSecrets: string;
     try {
@@ -431,17 +522,40 @@ function attachmentSource(space: string, blob: Blob, secretFolders: readonly str
     } catch {
       continue;
     }
-    if (inside(real, realSecrets)) {
+    if (inside(expected, realSecrets)) {
       throw new StorageError(
         "EXPORT_SECRET_FOUND",
         "A file of the export lies in the secrets folder. Nothing was written",
       );
     }
   }
-  if (size !== blob.size) {
-    throw new StorageError("BUNDLE_INVALID", "An attachment differs from its row");
+  let fd: number;
+  try {
+    fd = openSync(expected, constants.O_RDONLY | NO_FOLLOW);
+  } catch (error) {
+    if (errnoCode(error) === "ELOOP") throw notOwnFile();
+    throw fsError(error);
   }
-  return { name, path: real, size, sha256: blob.sha256 };
+  try {
+    const opened = fsCall(() => fstatSync(fd, { bigint: true }));
+    const there = fsCall(() => lstatSync(expected, { bigint: true, throwIfNoEntry: false }));
+    if (
+      there === undefined ||
+      !opened.isFile() ||
+      opened.dev !== there.dev ||
+      opened.ino !== there.ino ||
+      realOf(path) !== expected
+    ) {
+      throw notOwnFile();
+    }
+    if (opened.size !== BigInt(blob.size)) {
+      throw new StorageError("BUNDLE_INVALID", "An attachment differs from its row");
+    }
+  } catch (error) {
+    closeQuietly(fd);
+    throw error;
+  }
+  return fd;
 }
 
 /** Refuses a plan that passes a limit of the policy: each file's kind, the count, the total. */
@@ -481,7 +595,10 @@ interface ArchiveInput {
   createdAt: number;
   spaceJson: Buffer;
   db: string;
-  sources: readonly Source[];
+  /** The space folder, whose attachments the blobs are. */
+  space: string;
+  blobs: readonly Blob[];
+  secretFolders: readonly string[];
   jsonl: string | undefined;
   facts: SnapshotFacts;
   options: ExportOptions;
@@ -508,16 +625,22 @@ async function writeArchive(archive: string, input: ArchiveInput): Promise<Expor
         entryLimit("database", policy),
       ),
     );
-    for (const source of input.sources) {
-      const written = await writer.addFile(
-        source.name,
-        source.path,
-        source.size,
-        entryLimit("attachment", policy),
-        byteScanner(),
-      );
+    for (const blob of input.blobs) {
+      const fd = openAttachment(input.space, blob, input.secretFolders);
+      let written;
+      try {
+        written = await writer.addFile(
+          blobName(blob.sha256),
+          fd,
+          blob.size,
+          entryLimit("attachment", policy),
+          byteScanner(),
+        );
+      } finally {
+        closeQuietly(fd);
+      }
       // The blob is the content its name and row promise.
-      if (written.sha256 !== source.sha256) {
+      if (written.sha256 !== blob.sha256) {
         throw new StorageError("BUNDLE_INVALID", "An attachment differs from its row");
       }
       add(written);

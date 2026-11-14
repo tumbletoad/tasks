@@ -434,6 +434,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.trial-restore",
+      "title": "Verified means a trial restore: a backup whose every check passes but whose restore fails at its first write (the read-only mark) is not verified, retention keeps the older backup that restores instead of removing it, a restore refuses the backup with BACKUP_INVALID and restore latest goes past it; the trials leave no file beside the backups",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.held-files",
+      "title": "A reader opens both files of a backup before it reads either and reads only through them: retention removing a backup while its verification holds both files leaves the verification passing, and a restore whose files are removed after they are open restores the backup whole",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.free-reserve",
+      "title": "The backup writer and the exporter check the shared free-space reserve against their estimated peak before they write anything: one byte short is BUNDLE_LIMIT_EXCEEDED with no backups or exports folder made, exactly enough runs",
+      "source": "A1 3.18, A7 3.10 M3.07, DA-17",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.backup.rotation",
       "title": "Rotation removes only what A1's retention allows: a property test over random backup sets, clocks and offsets never removes a manual backup, the newest complete one, a pre-migration one under 30 days, another space's or a damaged one; on real files manual backups, the newest verified one and a damaged newer one stay",
       "source": "A1 3.18, A7 3.10 M3.07",
