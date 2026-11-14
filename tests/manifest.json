@@ -2835,7 +2835,7 @@
     },
     {
       "id": "A1.5.write.lifecycle",
-      "title": "The lifecycle through the write path: archive takes an active task to archived with its reason and no wrap-up waiting, if_active leaves a finished task as it is without touching it, wrap-up writes the outcome, adds and tombstones learnings within 20 of 1 KiB, clears the planning scalars on request and refuses an active task, once is no change on a wrapped task it would not change and a conflict on wrap otherwise, and delete and restore set and clear the tombstone, which later operations of the same request see",
+      "title": "The lifecycle through the write path: archive takes an active task to archived with its reason and no wrap-up waiting, if_active leaves a finished task as it is without touching it, wrap-up writes the outcome, adds and tombstones learnings within 20 of 1 KiB, clears the planning scalars on request and refuses an active task, once is no change on a wrapped task it would not change and a conflict on wrap otherwise, and delete and restore set and clear the tombstone, which later operations of the same request see; in a space with the search tables each of them leaves the index equal to a fresh rebuild",
       "source": "A1 3.6, A1 3.11.1, A1 3.11.2, A1 3.11.3, A1 3.11.4, A3 3.4.8, A7 3.10 M3.04",
       "owner": "M3",
       "kind": "ci",

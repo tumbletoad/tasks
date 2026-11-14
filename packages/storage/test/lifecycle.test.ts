@@ -4,6 +4,11 @@
 import fc from "fast-check";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
+import {
+  expectedDocuments,
+  storedDocuments,
+  type SearchDocument,
+} from "../src/search/documents.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
@@ -350,6 +355,92 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     expect(submit([{ kind: "task.delete", task: id }], { base: null }).error).toMatchObject({
       code: "BASE_REQUIRED",
     });
+  });
+
+  test("the search index follows archive, wrap-up, delete and restore in the commit: it equals a fresh rebuild", async () => {
+    // A space with the search tables, as the schema step that adds them will make it (A1 3.12).
+    const f = await writeFixture(temp.make(), { search: true });
+    try {
+      const send = (ops: Operation[]): WriteResult => {
+        const result = f.writer.submit(f.request(f.human, ops, { base: f.base() }));
+        expectStatus(result, "applied");
+        return result;
+      };
+      const docs = (): [string, string | null][] =>
+        [...storedDocuments(f.reader).docs.values()]
+          .map((d): [string, string | null] => [d.kind, d.lifecycle])
+          .sort();
+      const rebuilt = (): void => {
+        const { docs: stored, stray } = storedDocuments(f.reader);
+        expect(stray).toBe(0);
+        const plain = (all: Iterable<SearchDocument>): unknown[] =>
+          [...all]
+            .map(({ kind, entityId, taskId, lifecycle, audience, title, body, extra }) => ({
+              kind,
+              entityId,
+              taskId,
+              lifecycle,
+              audience,
+              title,
+              body,
+              extra,
+            }))
+            .sort((a, b) => (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0));
+        expect(plain(stored.values())).toEqual(plain(expectedDocuments(f.reader).values()));
+      };
+      const id = newId("t");
+      send([
+        { kind: "task.create", id, title: "Fix the export" },
+        { kind: "note.add", task: id, body: "Ask the clinic first." },
+      ]);
+      const base = docs().filter(([kind]) => kind === "area" || kind === "project");
+      const without = (): [string, string | null][] =>
+        docs().filter(([kind]) => kind !== "area" && kind !== "project");
+      send([{ kind: "task.archive", task: id }]);
+      rebuilt();
+      expect(without()).toEqual([
+        ["note", "archived"],
+        ["task", "archived"],
+      ]);
+      send([
+        {
+          kind: "task.wrap_up",
+          task: id,
+          outcome: "Not needed after the move.",
+          learnings: { add: ["Ask before exporting.", "Check the zone."] },
+        },
+      ]);
+      rebuilt();
+      expect(without()).toEqual([
+        ["learning", "archived"],
+        ["learning", "archived"],
+        ["note", "archived"],
+        ["task", "archived"],
+      ]);
+      // A tombstone takes the task's documents and its children's out; a restore brings them back.
+      send([{ kind: "task.delete", task: id }]);
+      rebuilt();
+      expect(without()).toEqual([]);
+      send([{ kind: "task.restore", task: id }]);
+      rebuilt();
+      expect(without()).toHaveLength(4);
+      // A removed learning leaves the index; a reopen moves the rest to active.
+      const learning = f.reader
+        .prepare("SELECT id FROM learnings WHERE task_id = $id ORDER BY position LIMIT 1")
+        .get({ id })?.["id"] as Id<"lr">;
+      send([{ kind: "task.wrap_up", task: id, learnings: { remove: [learning] } }]);
+      send([{ kind: "task.reopen", task: id }]);
+      rebuilt();
+      expect(without()).toEqual([
+        ["learning", "active"],
+        ["note", "active"],
+        ["task", "active"],
+      ]);
+      expect(docs().filter(([kind]) => kind === "area" || kind === "project")).toEqual(base);
+      checkHistory(f.reader);
+    } finally {
+      f.close();
+    }
   });
 });
 
