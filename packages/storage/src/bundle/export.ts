@@ -12,8 +12,10 @@
 // 0. Before anything is written, on the space's own read-only connection: the revision is one this
 //    build knows and not newer, the database has exactly its revision's tables, indexes and views
 //    (backup/snapshot.ts requireOwnSchema, the rule a restore applies: SPACE_SCHEMA_FOREIGN), and
-//    the free disk space, less the policy's reserve, holds the export's peak (exportPeak). So an
-//    export that a restore would refuse, or that could fill the disk, writes nothing.
+//    the free disk space, less the policy's reserve, holds the export's peak without data.jsonl
+//    (exportPeak). So an export that a restore would refuse, or that could fill the disk, writes
+//    nothing. data.jsonl, whose size is not known before, may hold half of what is left
+//    (jsonlBudget), counted as it is written: past that, BUNDLE_LIMIT_EXCEEDED.
 // 1. The connection copies the database in one backup step into a private work folder
 //    `.export.tmp-<random>` in the exports folder (A1 3.1: `<space>/exports`), and closes. The copy
 //    loses the objects the exact-schema rule leaves out (triggers, SQLite's statistics tables), is
@@ -206,14 +208,21 @@ export async function exportBundle(
 
 /**
  * What an export needs on disk at its peak, at most, from the space's database size D, its live
- * attachments' total A and data.jsonl's estimate J (twice the database: JSON repeats every column's
- * name in every row): the snapshot and its vacuum's write-ahead log (2D), then the snapshot,
- * data.jsonl and the archive that holds them (2D + 2J + A), then the archive and its trial restore
- * (2D + 2A + J). So 2D + 2A + 2J bounds every step.
+ * attachments' total A and data.jsonl's size J (0 without it): the snapshot and its vacuum's
+ * write-ahead log (2D), then the snapshot, data.jsonl and the archive that holds them (2D + 2J + A),
+ * then the archive and its trial restore (2D + 2A + J), or the archive and its published copy where
+ * the file system makes no hard link (2D + 2A + 2J). So 2D + 2A + 2J bounds every step. J is not
+ * known before data.jsonl is written (JSON can be many times the database: column names in every
+ * row, escaped control characters), so the export checks 2D + 2A before it writes anything, and
+ * data.jsonl may then hold half of what is left (jsonlBudget), counted as it is written.
  */
-export function exportPeak(databaseSize: number, attachments: number, withJsonl: boolean): number {
-  const jsonl = withJsonl ? 2 * databaseSize : 0;
+export function exportPeak(databaseSize: number, attachments: number, jsonl: number): number {
   return 2 * databaseSize + 2 * attachments + 2 * jsonl;
+}
+
+/** What data.jsonl may hold: half of the free space, less the reserve, that the rest leaves. */
+export function jsonlBudget(free: number, needed: number, policy: BundlePolicy): number {
+  return Math.max(0, Math.floor((free - policy.freeSpaceReserveBytes - needed) / 2));
 }
 
 /** exportBundle with test seams. */
@@ -246,9 +255,10 @@ export async function exportBundleWith(
     const peak = exportPeak(
       databaseBytes(opened.conn),
       liveAttachmentBytes(opened.conn, tables),
-      options.withJsonl === true,
+      0,
     );
-    checkFreeSpace(peak, (seams.freeBytes ?? freeBytes)(existingFolder(exportDir)), policy);
+    const free = (seams.freeBytes ?? freeBytes)(existingFolder(exportDir));
+    checkFreeSpace(peak, free, policy);
 
     makeDurableFolder(exportDir, io);
     fsCall(() => {
@@ -272,7 +282,10 @@ export async function exportBundleWith(
     // 2. The secret scan of the rows, data.jsonl, and the attachments the snapshot names.
     const snapshotTables = productTables(checked, steps, facts.userVersion) ?? [];
     const jsonl = options.withJsonl === true ? join(work, JSONL_FILE) : undefined;
-    const blobs = scanSnapshot(checked, db, snapshotTables, jsonl, busy);
+    const blobs = scanSnapshot(checked, db, snapshotTables, busy, {
+      file: jsonl,
+      maxBytes: jsonlBudget(free, peak, policy),
+    });
     seams.at?.("scanned");
 
     // 3. The limits, before the archive is written.
@@ -451,19 +464,21 @@ function refuseSecret(table: string, column: string, text: string): void {
 
 /**
  * The secret scan of every text value of the product's tables in the snapshot (writing data.jsonl
- * in the same pass when asked), and the blobs its live attachment rows name.
+ * in the same pass when asked, at most `jsonl.maxBytes`), and the blobs its live attachment rows
+ * name.
  */
 function scanSnapshot(
   checked: CheckedDriver,
   db: string,
   tables: readonly ProductTable[],
-  jsonl: string | undefined,
   busy: { busyTimeoutMs?: number },
+  jsonl: { file: string | undefined; maxBytes: number },
 ): Blob[] {
   const conn = openReader(checked, db, busy);
   try {
-    if (jsonl !== undefined) writeJsonl(conn, jsonl, tables, { seeText: refuseSecret });
-    else scanText(conn, tables, refuseSecret);
+    if (jsonl.file !== undefined) {
+      writeJsonl(conn, jsonl.file, tables, { seeText: refuseSecret, maxBytes: jsonl.maxBytes });
+    } else scanText(conn, tables, refuseSecret);
     if (!tables.some((table) => table.name === "attachments")) return [];
     const rows = conn
       .prepare(

@@ -789,26 +789,59 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
     expect(most).toBeGreaterThan(0);
     expect(most).toBeLessThanOrEqual(backupNeeds);
 
-    const exportNeeds = exportPeak(size, 0, true);
-    expect(exportNeeds).toBe(6 * size);
+    // The export, before data.jsonl: 2D before it writes anything.
+    const exportNeeds = exportPeak(size, 0, 0);
+    expect(exportNeeds).toBe(2 * size);
+    await expectCode(
+      () =>
+        exportBundleWith(checked, folder, { mode: "backup" }, { freeBytes: free(exportNeeds - 1) }),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    expect(existsSync(join(folder, "exports"))).toBe(false);
+    await exportBundleWith(checked, folder, { mode: "backup" }, { freeBytes: free(exportNeeds) });
+    expect(readdirSync(join(folder, "exports"))).toHaveLength(1);
+  });
+
+  test("data.jsonl is counted as it is written: past its share of the free space the export is refused, and nothing is published", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    // Control characters: JSON writes each as six bytes, so data.jsonl is many times the database.
+    const raw = await rawWriter(folder);
+    try {
+      raw
+        .prepare("UPDATE tasks SET context = $text WHERE id = (SELECT min(id) FROM tasks)")
+        .run({ text: "\u0001".repeat(2 * 1024 * 1024) });
+    } finally {
+      raw.close();
+    }
+    const size = statSync(join(folder, "space.db")).size;
+    const reserve = BUNDLE_POLICY.freeSpaceReserveBytes;
+    const free = (bytes: number) => (): number => reserve + bytes;
+    const ample = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
+    const jsonl = ample.manifest.files["data.jsonl"]?.size ?? 0;
+    // Far past twice the database, which no estimate made before writing would have allowed for.
+    expect(jsonl).toBeGreaterThan(4 * size);
+    const exports = join(folder, "exports");
     await expectCode(
       () =>
         exportBundleWith(
           checked,
           folder,
-          { mode: "backup", withJsonl: true },
-          { freeBytes: free(exportNeeds - 1) },
+          { mode: "backup", withJsonl: true, now: () => Date.now() + 1000 },
+          { freeBytes: free(exportPeak(size, 0, jsonl) - 1) },
         ),
       "BUNDLE_LIMIT_EXCEEDED",
     );
-    expect(existsSync(join(folder, "exports"))).toBe(false);
-    await exportBundleWith(
+    expect(readdirSync(exports)).toEqual([ample.name]);
+    const fits = await exportBundleWith(
       checked,
       folder,
-      { mode: "backup", withJsonl: true },
-      { freeBytes: free(exportNeeds) },
+      { mode: "backup", withJsonl: true, now: () => Date.now() + 2000 },
+      { freeBytes: free(exportPeak(size, 0, jsonl)) },
     );
-    expect(readdirSync(join(folder, "exports"))).toHaveLength(1);
+    expect(fits.manifest.files["data.jsonl"]?.size).toBe(jsonl);
+    expect(readdirSync(exports).sort()).toEqual([ample.name, fits.name].sort());
   });
 });
 
@@ -1219,6 +1252,34 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
 });
 
 describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1 3.2)", () => {
+  test("a rescue keeps the free-space reserve: refused before it copies anything when the database's files do not fit, and its rows file stops at its share", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    const db = join(folder, "space.db");
+    const sizeOf = (path: string): number => (existsSync(path) ? statSync(path).size : 0);
+    // The copy: the files as they are, and the log once more, which SQLite may play back.
+    const copying =
+      sizeOf(db) + 2 * sizeOf(`${db}-wal`) + sizeOf(`${db}-shm`) + sizeOf(`${db}-journal`);
+    const reserve = BUNDLE_POLICY.freeSpaceReserveBytes;
+    const before = treeDigest(folder);
+    await expectCode(
+      () => rescueSpace(checked, folder, { freeBytes: () => reserve + copying - 1 }),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    expect(existsSync(join(folder, "exchange"))).toBe(false);
+    // The copy fits, the rows do not: the rescue ends, and no table is reported as unreadable.
+    await expectCode(
+      () => rescueSpace(checked, folder, { freeBytes: () => reserve + copying + 16 }),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    const rescued = join(folder, "exchange", "rescued");
+    expect(readdirSync(rescued).filter((name) => name.startsWith(".rescue.tmp-"))).toEqual([]);
+    expect(withoutRescued(treeDigest(folder))).toEqual(before);
+    const report = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14, 1) });
+    expect(report.failed).toEqual([]);
+  });
+
   test("a damaged table stops partway and is named, the others are written whole, and the space is unchanged", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());

@@ -14,10 +14,12 @@
 // machine could write under one authority. The live space, if any, is not touched.
 //
 // VERIFIED MEANS A TRIAL RESTORE (A1 3.18). A backup is verified when restoreCopy, the restore's
-// own steps up to and with its first write (unpack with every check, then the read-only mark), ran
-// to its end on a scratch copy (verifyBackupFile). There is no second checker to drift from what a
-// restore does: retention keeps the newest backup verified this way (backup/retention.ts), and
-// `restore latest` restores its candidates directly (rescue.ts).
+// own steps up to and with its first write (unpack with every check, then the read-only mark, whose
+// transaction runs a claim of the copy and takes it back, mark.ts), ran to its end on a scratch copy
+// (verifyBackupFile). So a verified backup restores into a new folder, can be claimed there, and
+// restores in place, whose first write is that claim. There is no second checker to drift from
+// what a restore does: retention keeps the newest backup verified this way (backup/retention.ts),
+// and `restore latest` restores its candidates directly (rescue.ts).
 //
 // In place (disaster recovery): the restored copy is claimed in its staging folder first, with a
 // new epoch and a new incarnation (claim.ts), then swapped in for the live space, whose folder
@@ -49,7 +51,6 @@ import {
   readManifest,
   writeManifest,
 } from "../manifest.ts";
-import { openWriter } from "../open.ts";
 import { inRange, type SpaceRow } from "../rows.ts";
 import type { Revision, SchemaStep } from "../schema.ts";
 import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
@@ -65,7 +66,7 @@ import {
   type SwapNames,
   type SwapPoint,
 } from "./folders.ts";
-import { dropUnchecked, markCopy } from "./mark.ts";
+import { dropUnchecked, firstWrite, markCopy } from "./mark.ts";
 import {
   inFolder,
   isBundleFile,
@@ -358,24 +359,26 @@ export async function restoreInPlaceWith(
       throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
     }
     // The claim happens in the staging folder, before the copy takes the space's name: no crash
-    // can leave an unclaimed old incarnation in place of the live space.
-    const conn = openWriter(checked, join(names.staging, DATABASE_FILE), busy(options));
-    let claim: Claim;
-    try {
-      conn.transaction("immediate", () => {
-        dropUnchecked(conn);
-      });
-      claim = claimSpace(conn, {
-        kind: "restore_claim",
-        machineId: options.machineId,
-        knownEpochs: [...live.epochs, ...(options.knownEpochs ?? [])],
-        now,
-        random: options.random ?? osRandom,
-      });
-    } finally {
-      // The last connection to close checkpoints the -wal into the file and removes it.
-      conn.close();
-    }
+    // can leave an unclaimed old incarnation in place of the live space. It is this restore's
+    // first write (mark.ts firstWrite), after the unchecked objects are dropped.
+    const claim: Claim = firstWrite(
+      checked,
+      join(names.staging, DATABASE_FILE),
+      busy(options),
+      isBundleFile(backupFile) ? bundleInvalid : backupInvalid,
+      (conn) => {
+        conn.transaction("immediate", () => {
+          dropUnchecked(conn);
+        });
+        return claimSpace(conn, {
+          kind: "restore_claim",
+          machineId: options.machineId,
+          knownEpochs: [...live.epochs, ...(options.knownEpochs ?? [])],
+          now,
+          random: options.random ?? osRandom,
+        });
+      },
+    );
     writeManifest(names.staging, manifestFor(claim.space, unpacked.step, appVersion));
     fsyncFolder(names.staging);
     seams.at?.("claimed");

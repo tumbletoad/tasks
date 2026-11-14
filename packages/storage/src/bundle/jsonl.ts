@@ -11,6 +11,7 @@ import { fstatSync, fsyncSync, writeSync } from "node:fs";
 import type { Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import { closeQuietly, createFileExact, FILE_MODE, fsError } from "../files.ts";
+import { limitExceeded } from "../backup/policy.ts";
 import type { ProductTable } from "../backup/snapshot.ts";
 
 const quoted = (name: string): string => `"${name.replaceAll('"', '""')}"`;
@@ -55,17 +56,29 @@ export interface JsonlReport {
 
 const FLUSH_AT = 1024 * 1024;
 
+/** A failure writing the file, which no table's tolerance covers: it ends the whole write. */
+class WriteFailed extends Error {
+  override readonly name = "WriteFailed";
+}
+
 /**
  * Writes every row of `tables` on `conn` into the new file `dest` (exclusive, owner-only, flushed)
- * and returns what it wrote. `tolerant` (the rescue) goes on past a table that fails, keeping the
- * rows read before the failure; otherwise the first failure is thrown. `seeText` sees every text
+ * and returns what it wrote. `tolerant` (the rescue) goes on past a table whose rows fail to READ,
+ * keeping the rows read before the failure; otherwise the first failure is thrown. A failure to
+ * write the file always ends it. `maxBytes` is what the file may hold (the writer's share of the
+ * free disk space less the reserve, A1 3.18 "Bundle limits"): a write past it is
+ * BUNDLE_LIMIT_EXCEEDED, counted as the bytes go out, never estimated. `seeText` sees every text
  * value (the export's secret scan); it may throw to stop.
  */
 export function writeJsonl(
   conn: Connection,
   dest: string,
   tables: readonly ProductTable[],
-  options: { tolerant?: boolean; seeText?: (table: string, column: string, text: string) => void },
+  options: {
+    tolerant?: boolean;
+    maxBytes?: number;
+    seeText?: (table: string, column: string, text: string) => void;
+  },
 ): JsonlReport {
   let fd: number;
   try {
@@ -74,6 +87,8 @@ export function writeJsonl(
     throw fsError(error);
   }
   const report: JsonlReport = { tables: 0, rows: 0, failed: [], size: 0 };
+  const maxBytes = options.maxBytes ?? Number.POSITIVE_INFINITY;
+  let written = 0;
   let pending: string[] = [];
   let pendingBytes = 0;
   const flush = (): void => {
@@ -81,9 +96,15 @@ export function writeJsonl(
     const bytes = Buffer.from(pending.join(""), "utf8");
     pending = [];
     pendingBytes = 0;
-    let offset = 0;
-    while (offset < bytes.length) {
-      offset += writeSync(fd, bytes, offset, bytes.length - offset);
+    try {
+      if (written + bytes.length > maxBytes) throw limitExceeded("the free disk space");
+      let offset = 0;
+      while (offset < bytes.length) {
+        offset += writeSync(fd, bytes, offset, bytes.length - offset);
+      }
+      written += bytes.length;
+    } catch (error) {
+      throw new WriteFailed("The rows file was not written", { cause: error });
     }
   };
   try {
@@ -104,7 +125,13 @@ export function writeJsonl(
         }
         report.tables += 1;
       } catch (error) {
-        if (options.tolerant !== true || !(error instanceof StorageError)) throw error;
+        if (
+          error instanceof WriteFailed ||
+          options.tolerant !== true ||
+          !(error instanceof StorageError)
+        ) {
+          throw error;
+        }
         // The rows read before the failure stay: that is what the rescue is for.
         report.failed.push(table.name);
       }
@@ -113,7 +140,8 @@ export function writeJsonl(
     fsyncSync(fd);
     report.size = fstatSync(fd).size;
     return report;
-  } catch (error) {
+  } catch (thrown) {
+    const error = thrown instanceof WriteFailed ? thrown.cause : thrown;
     throw error instanceof StorageError ? error : fsError(error);
   } finally {
     closeQuietly(fd);

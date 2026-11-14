@@ -56,6 +56,7 @@ import type { CheckedDriver } from "../startup-check.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { makeDurableFolder } from "../backup/backup.ts";
 import { listBackups } from "../backup/list.ts";
+import { BUNDLE_POLICY, checkFreeSpace, existingFolder, freeBytes } from "../backup/policy.ts";
 import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
 import { writeJsonl, type JsonlReport } from "../bundle/jsonl.ts";
@@ -142,6 +143,22 @@ export interface RescueOptions {
   busyTimeoutMs?: number;
   /** The registered schema steps. Default: SCHEMA_STEPS. Tests pass stand-in steps. */
   steps?: readonly SchemaStep[];
+  /** Free bytes for a folder. Default: the file system's. */
+  freeBytes?: (folder: string) => number;
+}
+
+/**
+ * What a rescue's private copy may take on disk (A1 3.18 "Bundle limits"): the database files as
+ * they are, and the log once more, which SQLite may play back into the copy of the database.
+ */
+function copyBytes(db: string): number {
+  let total = 0;
+  for (const suffix of DATABASE_FILES) {
+    const stats = fsCall(() => lstatSync(`${db}${suffix}`, { throwIfNoEntry: false }));
+    const size = stats?.isFile() === true ? stats.size : 0;
+    total += suffix === "-wal" ? 2 * size : size;
+  }
+  return total;
 }
 
 const notRegular = (): StorageError =>
@@ -264,6 +281,11 @@ export function rescueSpace(
   if (!inRange(now, "instant"))
     throw new StorageError("STORAGE_MISUSE", "The clock is out of range");
   const out = join(dir, ...RESCUED_FOLDER);
+  // A writer keeps the free-space reserve: the copy must fit before anything is written, and the
+  // rows file may then hold what is left, counted as it is written (bundle/jsonl.ts).
+  const copying = copyBytes(db);
+  const free = (options.freeBytes ?? freeBytes)(existingFolder(out));
+  checkFreeSpace(copying, free, BUNDLE_POLICY);
   makeDurableFolder(out);
   const scratch = join(out, `${RESCUE_TEMP_PREFIX}${temporaryTag()}`);
   fsCall(() => {
@@ -287,7 +309,8 @@ export function rescueSpace(
       const file = join(out, `rescued-${utcStamp(now)}.jsonl`);
       // Created exclusively: a file already there is refused and stays. One cut short by a failure
       // stays too, with the rows it holds: nothing a rescue wrote is removed.
-      return { file, ...writeJsonl(conn, file, tables, { tolerant: true }) };
+      const maxBytes = free - BUNDLE_POLICY.freeSpaceReserveBytes - copying;
+      return { file, ...writeJsonl(conn, file, tables, { tolerant: true, maxBytes }) };
     } finally {
       closeQuietlyConn(conn);
     }

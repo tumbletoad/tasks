@@ -27,10 +27,10 @@ import {
 import { StorageError } from "../src/errors.ts";
 import type { Id } from "../src/ids.ts";
 import { restoreLatest } from "../src/restore/rescue.ts";
-import { restoreBackup, restoreBackupWith } from "../src/restore/restore.ts";
+import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { unpackBackup } from "../src/restore/unpack.ts";
-import { readFacts, writeCommits } from "./backup-helpers.ts";
-import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
+import { rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
+import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { STEPS_MARK_GUARD } from "./stand-in-steps.ts";
 
 const folders = tempFolders("retention");
@@ -614,6 +614,51 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
       { steps },
     );
     expect(latest.backup).toBe(older.name);
+  });
+
+  test("a backup whose copy refuses a claim is never verified: the mark's transaction runs the claim and takes it back", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    await writeCommits(folder, 2);
+    const older = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 90 * DAY,
+    });
+    // The space's own schema, with rows a claim cannot use: no system actor to write its commit.
+    const conn = await rawWriter(folder);
+    try {
+      conn.exec("UPDATE actors SET kind = 'agent' WHERE kind = 'system'");
+    } finally {
+      conn.close();
+    }
+    const newer = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 80 * DAY,
+    });
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([older.name]);
+    const applied = await applyRetention(checked, listing, plan);
+    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+
+    // Neither restore takes it: into a new folder (its copy could never be claimed) nor in place.
+    const parent = folders.make();
+    await expectCode(() => restoreBackup(checked, newer.file, join(parent, "a")), "BACKUP_INVALID");
+    await expectCode(
+      () => restoreInPlace(checked, newer.file, folder, { machineId: TEST_MACHINE }),
+      "BACKUP_INVALID",
+    );
+    expect(readdirSync(parent)).toEqual([]);
+    // The older one restores, and the claim its restore ran was taken back: the copy keeps the
+    // backup's identity, last commit and rows.
+    const restored = await restoreBackup(checked, older.file, join(parent, "b"));
+    expect(restored.space.authority.epoch).toBe(older.sidecar.epoch);
+    expect(restored.space.authority.incarnation).toBe(older.sidecar.incarnation);
+    expect(restored.space.lastSeq).toBe(older.sidecar.seq);
+    expect(restored.space.lineage.incarnations).toHaveLength(1);
+    expect((await readFacts(restored.folder)).counts).toEqual(older.sidecar.counts);
   });
 });
 
