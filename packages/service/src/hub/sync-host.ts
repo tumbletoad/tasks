@@ -35,8 +35,10 @@ const TEXT = "@('String','ExpandString')";
  */
 const SECTIONS = [
   // A network drive's label and format are not read: IsReady on a disconnected one waits for the
-  // network's time-out, and the label that counts (Google Drive's) is a local drive's.
-  "foreach($x in [IO.DriveInfo]::GetDrives()){$t=$x.get_DriveType().ToString();$f='';$l='';if($t -ne 'Network' -and $x.get_IsReady()){$f=$x.get_DriveFormat();$l=$x.get_VolumeLabel()};[void]$o.Append('drive '+(b $x.get_Name())+' '+(b $t)+' '+(b $f)+' '+(b $l)+[char]10)}",
+  // network's time-out, and the label that counts (Google Drive's) is a local drive's. Another
+  // drive is listed only when it is ready, with its label: IsReady also says false when it fails,
+  // so a folder on a drive left out is unlisted, and unchecked after a fresh run (sync-folders.ts).
+  "foreach($x in [IO.DriveInfo]::GetDrives()){$t=$x.get_DriveType().ToString();$f='';$l='';if($t -ne 'Network'){if(-not $x.get_IsReady()){continue};$f=$x.get_DriveFormat();$l=$x.get_VolumeLabel()};[void]$o.Append('drive '+(b $x.get_Name())+' '+(b $t)+' '+(b $f)+' '+(b $l)+[char]10)}",
   `$k=key ([Microsoft.Win32.Registry]::CurrentUser) 'Software\\Microsoft\\OneDrive\\Accounts';if($k){foreach($n in $k.GetSubKeyNames()){$u=val (sk $k $n) 'UserFolder' ${TEXT};if($u){[void]$o.Append('onedrive '+(b $u)+[char]10)}}}`,
   `$sid=[Security.Principal.WindowsIdentity]::GetCurrent().get_User().get_Value();if(-not $sid){throw 'sid'};$k=key ([Microsoft.Win32.Registry]::LocalMachine) 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SyncRootManager';if($k){foreach($n in $k.GetSubKeyNames()){$r=sk (sk $k $n) 'UserSyncRoots';if($r){$u=val $r $sid ${TEXT};if($u){[void]$o.Append('root '+(b $n)+' '+(b $u)+[char]10)}}}}`,
   "$k=key ([Microsoft.Win32.Registry]::CurrentUser) 'Software\\Google\\DriveFS\\Share';if($k){$v=val $k 'SyncTargets' @('Binary');if($null -ne $v -and $v.get_Length() -gt 0){[void]$o.Append('drivefs '+[Convert]::ToBase64String($v)+[char]10)}}",

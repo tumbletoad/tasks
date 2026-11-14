@@ -572,9 +572,9 @@ export function macNetwork(mounts: string | undefined, path: string): string | u
 export const isUncPath = (path: string): boolean => /^[\\/]{2}[^\\/?.]/.test(path);
 
 /**
- * Whether a Windows real path is on a drive letter the facts do not list. The facts are all of the
- * machine's drives when they were read, so such a drive came later: its type and label were not
- * seen (A1 3.2).
+ * Whether a Windows real path is on a drive letter the facts do not list. The facts list every
+ * network drive and every other drive that was ready when they were read, so such a drive came
+ * later or was not ready: its type and label were not seen (A1 3.2).
  */
 export function unlistedDrive(path: string, windows: WindowsSyncFacts): boolean {
   const letter = /^([A-Za-z]):/.exec(path)?.[1]?.toUpperCase();
