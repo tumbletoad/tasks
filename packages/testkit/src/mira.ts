@@ -419,6 +419,12 @@ export async function seedMira(
   // Every commit is some minutes after the one before.
   let now = start;
   const clock = (): number => (now += rng.range(1, 90) * 60_000);
+  // No flush per commit while the sample is built: nobody uses the new folder before this returns,
+  // and a sample that a crash cut short is thrown away. The largest sample is about 3,600 commits,
+  // and a flush can cost milliseconds (4 ms on GitHub's Windows runner, many more while other
+  // tests flush beside it), which made building it take minutes. FULL comes back before the close,
+  // whose checkpoint then flushes the finished sample once.
+  conn.pragma("synchronous", "OFF");
   let writer: SpaceWriter | undefined;
   try {
     writer = SpaceWriter.open(opened, {
@@ -427,6 +433,7 @@ export async function seedMira(
       random,
     });
     generate(conn, writer, rng, clock, created.space, created.actors, start, taskCount);
+    conn.pragma("synchronous", "FULL");
     const counts: Record<string, number> = {};
     for (const { name } of conn
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
