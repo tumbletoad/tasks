@@ -2939,7 +2939,7 @@
     },
     {
       "id": "A1.5.projection.outbox",
-      "title": "The projection's outbox bookkeeping: a reported key is done only through the snapshot it was rendered at, a row changed after it waits from T + 1, a full rebuild queues every task from commit 1, a batch is checked, and under interleaved commits and reports the watermark never covers a commit a task still waits for and never moves back",
+      "title": "The projection's outbox bookkeeping: a reported key is done only through the snapshot it was rendered at, a row changed after it waits from T + 1, a full rebuild queues every task from commit 1, a reconciliation queues only the tasks it names (one without a task row too), a batch and a queue are checked, and under interleaved commits and reports the watermark never covers a commit a task still waits for and never moves back",
       "source": "A1 3.7, A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2963,7 +2963,7 @@
     },
     {
       "id": "A1.5.projection.rescue",
-      "title": "A file a person edited, a person's file at a task's path and a link where a folder goes are moved to exchange/rescued/<stamp>/, never lost and never followed; a file the projection did not write is otherwise left alone; a write that fails before or after the rescue leaves the person's file where the catalogue names it; a tree of another incarnation is rebuilt, removing only its own unchanged files; projection.dir is outside the space's folder and does not hold it, also through a link, and a name starting with two dots is inside",
+      "title": "What is not the projection's is never written through, overwritten, deleted or changed in mode: an edited file, a person's file at a task's path, a link where a folder goes and a hard link to a file outside are moved by one rename to a folder made for that rescue under exchange/rescued/, keeping their mode; files with temporary-looking names and text where the old control files were are kept; a rescue that cannot happen leaves the person's file in place and the task queued; a task whose file cannot be placed holds the watermark below it and never stops the tasks after it",
       "source": "A1 3.13, A1 3.1, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2971,7 +2971,7 @@
     },
     {
       "id": "A1.5.projection.kill",
-      "title": "A kill at every point of a batch, each rename included, leaves complete files and no temporary file once the next projector starts, a watermark that covers no unrendered task and every catalogue path in place, rescues nothing, and settles to a fresh render",
+      "title": "A kill at every act on disk of a start and a batch, each rename, temporary file, record and journal write included, leaves complete files and no temporary file once the next projector starts, a watermark that covers no unrendered task and every catalogue path in place, rescues nothing, and settles to a fresh render",
       "source": "A1 3.7, A1 3.13, A1 5, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2979,7 +2979,7 @@
     },
     {
       "id": "A1.5.projection.service",
-      "title": "The service keeps each space open as this machine's projected in a worker of its own: the first render of the sample space, a task added through the request path in its file and the catalogue, projection.dir taking the tree out of the space's folder, and a projection.dir inside the space's folder refused with nothing written",
+      "title": "The service keeps each space open as this machine's projected into its view/ in a worker of its own, with the trusted record beside the space's settings: the first render of the sample space, a task added through the request path in its file and the catalogue, tasks view rebuild bringing back a deleted file and moving an edited one aside, for the user only, and a restore in place projected anew",
       "source": "A1 3.9, A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -2995,7 +2995,7 @@
     },
     {
       "id": "A1.5.projection.recovery",
-      "title": "The projection's record describes the disk: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing, and never through a link in place of the projection's folder; a journal that cannot be read rebuilds the tree; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing, unreadable or of another incarnation reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -3003,7 +3003,7 @@
     },
     {
       "id": "A1.5.projection.folders",
-      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a removal or a read through it touches nothing behind it, a link is rescued, and the tree is rebuilt, also when the folder or the projection's own folder is removed while nothing changes, when it is removed during a batch killed before its rebuild, and when it becomes a link while a batch waits on the writer, so the catalogue names only files in the tree; a rebuild removes the old claim, catalogue and index first",
+      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a look or a removal through it touches nothing behind it, the link is moved aside as it is, and what the record had below it is rendered again, also when the folder is removed while nothing changes, when it becomes a link while a batch waits on the writer, and when the tree's own folder is replaced by a link",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -3011,8 +3011,24 @@
     },
     {
       "id": "A1.5.projection.escape",
-      "title": "Task text in the projection's Markdown is shown, never run: a one-line text has HTML, links, entity references, block markers and a heading's closing run escaped, a text of more lines is verbatim in a fence none of its lines closes, index.md escapes task, area and project titles, the catalogue keeps the exact text, and front-matter values YAML 1.2 reads as numbers are quoted",
+      "title": "Task text in the projection's Markdown is shown, never run: a one-line text has HTML, links, entity references, block markers and a heading's closing run escaped, a text of more lines is verbatim in a fence none of its lines closes, what may still render is A1's list and nothing else (emphasis, strikethrough, code spans, autolinks), index.md escapes task, area and project titles, the catalogue keeps the exact text, and front-matter values YAML 1.2 reads as numbers are quoted",
       "source": "A1 3.13, A3 3.9.8, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.model",
+      "title": "Random sequences of commits, a person's acts in the tree (edits, files at generated paths and elsewhere, deleted files, folders replaced by files or links, hard links to files outside, text where control files were, temporary-looking names, swapped rescue folders, during a batch too) and kills at every act, each followed by a restart: no byte a person put there is lost or changed in mode, nothing outside the tree and the new rescue folders changes, the watermark covers only tasks whose files are on disk, the projection never moves its own files aside, and at rest the tree is a fresh render",
+      "source": "A1 3.13, A1 5, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.reconcile",
+      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on tasks view rebuild; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
+      "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

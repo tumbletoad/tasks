@@ -212,10 +212,15 @@ export class Projector {
     const pending = readPending(this.#conn);
     const record = found ?? newRecord(identityOf(pending));
     let recovered = false;
+    /** Tasks the killed batch was placing whose files are not on disk as it meant them. */
+    const unverified = new Set<string>();
     if (found !== undefined && journal !== undefined) {
       for (const [path, placing] of journal.placing) {
         const look = this.#tree.look(path);
-        if (look.kind !== "file" || look.links !== 1 || look.sha256 !== placing.sha256) continue;
+        if (look.kind !== "file" || look.links !== 1 || look.sha256 !== placing.sha256) {
+          if (placing.task !== undefined) unverified.add(placing.task);
+          continue;
+        }
         record.files.set(path, {
           sha256: placing.sha256,
           size: placing.size,
@@ -241,7 +246,11 @@ export class Projector {
     this.#record = record;
     this.#republish = false;
     this.#save();
-    // Only now: until the record above is written, the journal is what a next start plays.
+    // The writer may have marked them rendered before the kill: they are queued again, so the
+    // watermark never covers a task whose file is not on disk and in the record (rule 7).
+    await this.#queue([...unverified]);
+    // Only now: until the record is written and they are queued, the journal is what a next start
+    // plays.
     this.#state.dropJournal();
     const reconciled = await this.#reconcileNow(full);
     return {
@@ -294,11 +303,17 @@ export class Projector {
       queue.clear();
       for (const id of missingTasks(this.#conn, [...record.entries.keys()])) queue.add(id);
     }
-    const ids = [...queue];
+    queued += await this.#queue([...queue]);
+    return { full, checked, queued, forgotten };
+  }
+
+  /** Queues `ids` for rendering again through the writer, in parts. Returns how many it queued. */
+  async #queue(ids: readonly string[]): Promise<number> {
+    let queued = 0;
     for (let i = 0; i < ids.length; i += PROJECTION_QUEUE_KEYS) {
       queued += await this.#writer.queueProjection(ids.slice(i, i + PROJECTION_QUEUE_KEYS));
     }
-    return { full, checked, queued, forgotten };
+    return queued;
   }
 
   /** Recounts the retired files: those of a task whose line names another path, or of no task. */

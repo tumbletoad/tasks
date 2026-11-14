@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   catalogText,
   indexText,
+  mdLine,
   projectionJson,
   README_TEXT,
   renderTask,
@@ -436,6 +437,18 @@ describe("[A1.5.projection.escape] task text in the view is shown, never run: on
       expect(line, line).not.toMatch(/<|\[|&#?[0-9A-Za-z]+;/);
     }
     expect(lines).toContain("## \\<b>Lumen\\</b>");
+  });
+
+  test("what may still render of a one-line text is A1's list and nothing else: emphasis, strikethrough, code spans, a bare URL's autolink", () => {
+    const line = mdLine(
+      "**bold** _it_ ~~gone~~ `code` https://example.org <b> [l](u) ![i](u) &amp; \\* end ##",
+    );
+    // Kept, by A1's choice: they run and load nothing, and escaping them would bury the text.
+    expect(line).toContain("**bold** _it_ ~~gone~~ `code` https://example.org ");
+    // Everything else that could be markup is escaped.
+    expect(unescaped(line)).not.toMatch(/<|\[|&[a-z]+;/);
+    // At a line's start a fence of tildes, like one of backticks, is escaped.
+    expect(mdLine("~~~ fence")).toBe("\\~~~ fence");
   });
 
   test("front-matter values that YAML 1.2 reads as numbers are quoted", () => {
