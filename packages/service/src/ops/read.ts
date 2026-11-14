@@ -610,9 +610,35 @@ export async function readPlaced(
   return { space: spaceFacts(space), placed: placed as Row[] };
 }
 
+/**
+ * Every task with a place on this machine under one of the roots in `$roots` (JSON), whatever its
+ * lifecycle, tombstoned ones too: search's `on:cwd` (A3 3.9.2), whose own query at S filters them.
+ * It reads `places` only beside the task's row, so the places stamp of a search covers it.
+ */
+const PLACED_ANY: Statement = {
+  sql:
+    "SELECT t.id, t.ref, t.priority, t.due_date, t.due_at, pl.root_id AS place_root, " +
+    "pl.rel_path AS place_path, pl.kind AS place_kind, pl.identity AS place_identity " +
+    "FROM places pl JOIN tasks t ON t.id = pl.owner_id WHERE pl.owner_kind = 'task' " +
+    "AND pl.machine_id = $machine AND pl.deleted_at IS NULL " +
+    "AND pl.root_id IN (SELECT value FROM json_each($roots))",
+  mode: "all",
+};
+
+/** The tasks of any lifecycle placed on this machine under `roots`: search's `on:cwd`. */
+export async function readPlacedAny(
+  reader: WorkerConnection,
+  machine: string,
+  roots: readonly string[],
+): Promise<Row[]> {
+  const [placed] = await snapshot(reader, [PLACED_ANY], { machine, roots: JSON.stringify(roots) });
+  return placed as Row[];
+}
+
 export const DEFAULT_STATUS_ORDER = ["open", "waiting", "review", "backlog"] as const;
 
-function keysOf(value: unknown, fallback: readonly string[]): string[] {
+/** The keys of a list preference's stored value (A1 3.16), or `fallback`. */
+export function keysOf(value: unknown, fallback: readonly string[]): string[] {
   if (typeof value !== "string") return [...fallback];
   try {
     const parsed = JSON.parse(value) as unknown;
