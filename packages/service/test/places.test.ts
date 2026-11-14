@@ -482,9 +482,12 @@ describe("[A1.3.15.places.request-path] replays and remotes", () => {
       ...first,
       replayed: true,
     });
-    // A new request binds with no remote recorded.
+    // A new request binds with no remote recorded. The same title again in the Inbox is a possible
+    // duplicate of the first task (A3 3.4.5), and that is its only warning.
     const again = TaskAddResult.parse(await call(s, "task.add", { ...request, request_id: rid() }));
-    expect(again.warnings).toEqual([]);
+    expect(again.warnings).toEqual([
+      `tasks.0: possible duplicate of ${first.tasks[0]?.ref ?? ""} (both in the Inbox, similar title)`,
+    ]);
     for (const file of filesBelow(spaceFolder)) {
       expect(readFileSync(file).includes("fixture-bridge-marker"), file).toBe(false);
     }

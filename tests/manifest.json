@@ -2968,6 +2968,78 @@
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.registry.mixed-actions",
+      "title": "The registry check takes a write entry whose required action enum names its read actions, with request_id and base as the optional shared schemas, and refuses a read entry with actions, an action field that is no required enum, reads that are empty, unknown, repeated or every action, and a required request_id or base; readsOnly tells the actions apart",
+      "source": "A3 3.2.3, A3 3.4.10, A3 3.4.11, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.tools.eleven",
+      "title": "The texts of search, add_tasks, reopen_task, organize, preferences and run_report: A3's example results read as A3 shows them, editable names, titles, snippets, queries, preference values and close names only inside the data block, and a page of 50 rows and fifty full areas within their budgets with the cut said",
+      "source": "A3 3.3, A3 3.4.3, A3 3.4.5, A3 3.4.9 to 3.4.12, A3 3.5, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.tools.run-report",
+      "title": "run_report on an unbound and on a task-bound MCP connection in both eras, and from a person's terminal and an agent's shell, returns not_permitted with the binding it found, and writes nothing: no commit, no actor, no receipt",
+      "source": "A3 3.2.3, A3 3.3, A3 3.4.12, A3 3.5, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.add.names",
+      "title": "add_tasks, update_task and complete_task's follow-ups take areas and projects by name or slug ignoring case and by an old slug; a name within edit distance 2 of one is invalid_input with it in data.suggestions only, a new name waits for its step and writes nothing; an agent's task without a group goes to the Inbox; a similar title in the group it lands in is a warning that never blocks, replays the same and is dropped for a draft that matched by key",
+      "source": "A3 3.4.5, A3 3.4.6, A3 3.4.8, A3 3.5, A3 3.8.1, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.organize.list",
+      "title": "organize lists the active areas in order with their projects and active task counts, narrows to one area by name, ignores a request ID on a read and writes nothing, and refuses a write action without a request_id before the action's own step refusal",
+      "source": "A3 3.2.3, A3 3.4.10, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.prefs.tool",
+      "title": "preferences describes and reads every declared key with its default and who may set it, suggests a known key for a typo, and on set refuses a policy key to every actor (rule policy), the user's keys to agents (rule user_only), a value outside its key's schema, a missing request_id or base and a set on a read, before pref.set's own step",
+      "source": "A1 3.16, A3 3.4.11, A3 3.8.2, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.search.text",
+      "title": "search through the request path renders its rows inside the data block, and a space without the search index refuses words with not_indexed in words an agent can act on while filters still answer",
+      "source": "A3 3.4.3, A3 3.9.2, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.exposure.user-only",
+      "title": "Every user-only and UI-only entry is forbidden to the bridge, cli-script and cli-agent classes with its rule and is no tool, a user-only field is forbidden to them too, and no agent-allowed entry declares a user-only or R7 operation",
+      "source": "A3 3.2.3, A3 3.10, R7, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A6.3.3.remote-envelope",
+      "title": "The remote command envelope types live in the registry's type package and no transport: no entry or generated face names them, and every action's validity is within the receivers' limit",
+      "source": "A6 3.3, A6 3.8.1, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

@@ -165,6 +165,90 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
   );
 });
 
+describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding", () => {
+  test(
+    "an unbound and a task-bound connection get not_permitted, in both eras and from the CLI, and nothing is written",
+    async () => {
+      const w = await opened("rr");
+      await grantHome(w.home, w.path, { instance: "test-agent", space: w.space });
+      const user = await classSession(w.home, w.path, "cli-interactive");
+      cleanups.push(() => {
+        user.close();
+      });
+      const asOf = async (): Promise<string> =>
+        ((await user.call("op/call", { op: "space.status", input: {} })) as { as_of: string })
+          .as_of;
+      await user.call("op/call", {
+        op: "task.add",
+        input: { tasks: [{ title: "Fixture task" }], request_id: "fixture-request-rr-0001" },
+      });
+      const before = await asOf();
+      const report = (n: number) => ({
+        name: "run_report",
+        arguments: {
+          sources: [{ name: "Mail", state: "ok", items_seen: 3 }],
+          summary: "Fixture summary, refused.",
+          request_id: `fixture-request-rr-${String(n).padStart(4, "0")}`,
+        },
+      });
+      const refused = (reply: { result?: string | undefined }) => {
+        const result = JSON.parse(reply.result ?? "{}") as { isError?: boolean };
+        expect(result.isError).toBe(true);
+        return textOf(result);
+      };
+      // Unbound, in both eras.
+      const unbound = await raw(w, bridgeContext({ space: w.space }));
+      await unbound.initialize();
+      expect(refused(await unbound.request("tools/call", report(2)))).toMatch(
+        /^error not_permitted: This works only in a run or routine\. Nothing to report outside a run\./u,
+      );
+      const modernUnbound = await raw(w, bridgeContext({ space: w.space }));
+      expect(
+        refused(await modernUnbound.request("tools/call", modern("2026-07-28", report(3)))),
+      ).toMatch(/^error not_permitted: /u);
+      // Bound to a task by get_task {task, bind: true}.
+      const bound = await raw(w, bridgeContext({ space: w.space }));
+      await bound.initialize();
+      await bound.request("tools/call", {
+        name: "get_task",
+        arguments: { task: "M-1", bind: true },
+      });
+      expect(refused(await bound.request("tools/call", report(4)))).toMatch(
+        /^error not_permitted: This works only in a run or routine\. This session is bound to a task, not a run\./u,
+      );
+      // The CLI: a person's terminal and an agent's shell are no run either.
+      for (const cls of ["cli-interactive", "cli-agent"] as const) {
+        const session = await classSession(w.home, w.path, cls, {
+          ...(cls === "cli-agent" ? { CODEX_THREAD_ID: "fixture-thread" } : {}),
+          TASKS_SPACE: w.space,
+        });
+        try {
+          const error = await session
+            .call("op/call", {
+              op: "run.report",
+              input: report(5 + (cls === "cli-agent" ? 1 : 0)).arguments,
+            })
+            .then(
+              () => undefined,
+              (thrown: unknown) => errorOf(thrown),
+            );
+          expect(error, cls).toMatchObject({ code: "not_permitted", data: { binding: "none" } });
+        } finally {
+          session.close();
+        }
+      }
+      // Nothing was written: not a report, not even the agent's first act in the space.
+      expect(await asOf()).toBe(before);
+      const receipt = (await user.call("op/call", {
+        op: "receipt.get",
+        input: { request: "fixture-request-rr-0002" },
+      })) as { found: boolean };
+      expect(receipt.found).toBe(false);
+    },
+    LONG,
+  );
+});
+
 describe("[A3.3.3.mcp.eras] the envelopes of both eras", () => {
   test(
     "2025-11-25: negotiated at initialize and held; tools only",
