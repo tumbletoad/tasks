@@ -1091,7 +1091,7 @@
     },
     {
       "id": "A4.5.run.machine",
-      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, and the claim window on the monotonic and the wall clock",
+      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep finishing a run left reconciling, and the claim window on the monotonic and the wall clock",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
@@ -1099,7 +1099,7 @@
     },
     {
       "id": "A4.5.execution-store.contract",
-      "title": "The ExecutionStore contract suites on every backend (in memory, the space database in the writer's thread and through a storage worker), for launches and for runs: one Prepared record per click and one queued run per request, with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart with the unknown runs that await their exit, texts kept as the space stores them with an agent's cut and never refused, records of IDs and codes only, and the writer's copy of A4's rules and text normalisation",
+      "title": "The ExecutionStore contract suites on every backend (in memory, the space database in the writer's thread and through a storage worker), for launches and for runs: one Prepared record per click and one queued run per request, with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart with the unknown runs that await their exit, texts kept as the space stores them with an agent's cut and never refused, every other result field judged as the writer judges it, records of IDs and codes only, and the writer's copy of A4's rules and text normalisation",
       "source": "A4 3.16.1, A4 5.1, X7, A7 3.9 M2.05",
       "owner": "M2",
       "kind": "ci",

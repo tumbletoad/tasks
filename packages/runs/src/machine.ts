@@ -16,6 +16,8 @@
 //    so. What the shim left comes before any time limit, and an `unknown` run whose stop timed out
 //    stays on the list until its exit settles it or its shim is found gone, because an exit the
 //    service did not hear while it was down is still a definite exit.
+// 4. What a shim reports never keeps a run open. A result the store refuses is left out and the
+//    transition commits without it; an outcome that names no reason of A4's is `no_result`.
 //
 // One call at a time per run: every call on a run (a start, a claim and its reply, a report, a
 // cancel, the sweep's or recovery's work on it) runs in that run's section, reads the record there,
@@ -32,6 +34,7 @@
 import {
   awaitsExit,
   FINAL_RUN_STATES,
+  isRunReason,
   type NewRun,
   type RunEvidence,
   type RunPatch,
@@ -174,16 +177,18 @@ const apart = (now: number, since: number, limit: number): boolean =>
 /**
  * The final state an exit gives (A4 3.11.2): `cancelled` once a stop was asked for, on process exit
  * only; `timed_out` at the shim's limit; `succeeded` when the outcome says success; else `failed`
- * with the outcome's reason.
+ * with the outcome's reason, or `no_result` for an outcome that names none of A4's reasons, so a
+ * damaged report still settles the run.
  */
 export function finalFor(run: RunRecord, exit: RunExit): Move {
   const result = exit.result;
   if (run.at.cancelling !== undefined) return { next: "cancelled", patch: { result } };
-  if (exit.timeout !== undefined) {
+  if (exit.timeout !== undefined && isRunReason("timed_out", exit.timeout)) {
     return { next: "timed_out", patch: { reason: exit.timeout, result } };
   }
   if (result.ok) return { next: "succeeded", patch: { result } };
-  const reason: RunReason = result.outcome === "success" ? "exit_status" : result.outcome;
+  const outcome = result.outcome === "success" ? "exit_status" : result.outcome;
+  const reason: RunReason = isRunReason("failed", outcome) ? outcome : "no_result";
   return { next: "failed", patch: { reason, result } };
 }
 
@@ -327,10 +332,12 @@ export class RunMachine {
   /**
    * The live service's periodic check: a starting run unclaimed past its window is `failed`
    * (`not_claimed`), a cancelling run whose process has not ended in time is `unknown`
-   * (`stop_timed_out`). Returns the runs it moved.
+   * (`stop_timed_out`), and a `reconciling` run, whose shim is already known lost, is settled by
+   * recovery's rule: a write recovery or a live exit could not finish (a store call past its
+   * deadline that then failed) is finished here, not at the next restart. Returns the runs it moved.
    */
   async sweep(): Promise<RunRecord[]> {
-    const settled = await this.#settleAll((run) => this.#timedOut(run));
+    const settled = await this.#settleAll("sweep");
     return settled.filter((s) => s.moved).map((s) => s.run);
   }
 
@@ -339,14 +346,11 @@ export class RunMachine {
    * It never spawns and never sends a stop. Returns the runs as recovery left them.
    */
   async recover(): Promise<RunRecord[]> {
-    const settled = await this.#settleAll(undefined, true);
+    const settled = await this.#settleAll("recover");
     return settled.map((s) => s.run);
   }
 
-  async #settleAll(
-    rule: ((run: RunRecord) => Move | undefined) | undefined,
-    observe = false,
-  ): Promise<{ run: RunRecord; moved: boolean }[]> {
+  async #settleAll(mode: "sweep" | "recover"): Promise<{ run: RunRecord; moved: boolean }[]> {
     const { runs } = await this.#call(() => this.#store.openWork(this.#machine));
     const results = await Promise.allSettled(
       runs.map(async (candidate) => {
@@ -354,8 +358,8 @@ export class RunMachine {
         const after = await this.#section(candidate.id, async () => {
           read = await this.#read(candidate.id);
           if (read === undefined) return undefined;
-          if (!observe) return this.#decide(candidate.id, rule ?? (() => undefined), false, read);
-          return this.#recoverOne(read);
+          if (mode === "recover" || read.state === "reconciling") return this.#recoverOne(read);
+          return this.#decide(candidate.id, (r) => this.#timedOut(r), false, read);
         });
         return { run: after, moved: after !== undefined && after.version !== read?.version };
       }),
@@ -528,6 +532,22 @@ export class RunMachine {
     } catch (error) {
       if (!(error instanceof RunRefused)) throw error;
       if (error.code === "stale") return { kind: "stale", run: error.current };
+      // A result the store refuses is left out, never the transition: what an agent or its shim
+      // reported must not keep the run from settling (A4 3.11.2). The state and reason still say
+      // how it ended; the record then holds no result.
+      if (
+        error.code === "invalid" &&
+        patch.result !== undefined &&
+        error.field?.startsWith("patch.result") === true
+      ) {
+        return this.#try(run, {
+          next: move.next,
+          patch: {
+            ...(move.patch?.reason === undefined ? {} : { reason: move.patch.reason }),
+            ...(move.patch?.evidence === undefined ? {} : { evidence: move.patch.evidence }),
+          },
+        });
+      }
       return { kind: "refused", run: error.current ?? run, error };
     }
   }

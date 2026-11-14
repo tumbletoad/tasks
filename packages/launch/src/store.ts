@@ -595,9 +595,16 @@ export function runResultProblem(result: unknown): string | undefined {
       "reasoningOutputTokens",
       "costUsd",
     ];
+    // Each a count or a cost the writer stores: finite, from 0 to the largest safe integer.
     for (const [key, n] of Object.entries(usage as Usage)) {
       if (n === undefined) continue;
-      if (!fields.includes(key) || typeof n !== "number" || !Number.isFinite(n) || n < 0) {
+      if (
+        !fields.includes(key) ||
+        typeof n !== "number" ||
+        !Number.isFinite(n) ||
+        n < 0 ||
+        n > Number.MAX_SAFE_INTEGER
+      ) {
         return "patch.result.usage";
       }
     }

@@ -8,6 +8,7 @@ import {
   type RunResult,
   type RunState,
 } from "@tasks/contracts/runs";
+import type { RunStore } from "@tasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
 import {
@@ -363,6 +364,98 @@ describe("[A4.5.run.machine] the run machine's rules", () => {
     expect(open).toContain(live.id);
     expect(open).not.toContain(gone.id);
     expect(open).not.toContain(exited.id);
+  });
+
+  test("a result the store refuses is left out, never the transition: a damaged report still settles its run", async () => {
+    const b = bench();
+    // A cost no store keeps, an outcome that names none of A4's reasons, a timeout of no kind.
+    const costly = await b.runIn("running");
+    const settled = await b.machine.report(costly.id, {
+      kind: "exited",
+      exit: { result: { ...OK, usage: { costUsd: 1e300 } } },
+    });
+    expect(settled).toMatchObject({ state: "succeeded", result: null });
+    const strange = await b.runIn("running");
+    const failed = await b.machine.report(strange.id, {
+      kind: "exited",
+      exit: {
+        result: { ...OK, ok: false, outcome: "lost_track" as RunResult["outcome"] },
+        timeout: "forever" as "wall",
+      },
+    });
+    expect(failed).toMatchObject({ state: "failed", reason: "no_result", result: null });
+    // The same from exit.json after a restart.
+    const seen = new Map<string, RunObservation>();
+    const c = bench((run) => seen.get(run.id) ?? { kind: "pending" });
+    const gone = await c.runIn("running");
+    seen.set(gone.id, { kind: "exited", exit: { result: { ...OK, durationMs: 1.5 } } });
+    const after = (await c.make().recover()).find((r) => r.id === gone.id);
+    expect(after).toMatchObject({ state: "succeeded", result: null });
+  });
+
+  test("a run left reconciling by a write that failed late is settled by the next sweep, not the next restart", async () => {
+    const durable = new MemoryDurable(() => Date.UTC(2026, 10, 13, 9, 0, 0));
+    const memory = new MemoryExecutionStore(durable);
+    // The final write hangs past its deadline, then fails: recovery's call ends without it.
+    let fail: ((error: Error) => void) | undefined;
+    let hang = true;
+    const store: RunStore = {
+      createRun: (input, id) => memory.createRun(input, id),
+      readRun: (id) => memory.readRun(id),
+      openWork: (machine) => memory.openWork(machine),
+      transitionRun: (id, expect, next, patch) =>
+        hang && next === "succeeded"
+          ? new Promise((_resolve, reject) => {
+              fail = reject;
+            })
+          : memory.transitionRun(id, expect, next, patch),
+    };
+    let release: (() => void) | undefined;
+    const machine = new RunMachine({
+      store,
+      machine: MACHINE,
+      recovery: { observe: () => Promise.resolve({ kind: "exited", exit: { result: OK } }) },
+      deadlines: { store: 1, step: 1 },
+      // The store's deadline passes when the test says so.
+      wait: (_ms, signal) =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+          signal.addEventListener("abort", () => undefined);
+        }),
+    });
+    const live = new RunMachine({
+      store: memory,
+      machine: MACHINE,
+      recovery: { observe: () => Promise.resolve({ kind: "pending" }) },
+    });
+    const run = await live.queue(
+      {
+        task: TASK,
+        routine: null,
+        instance: "codex-work",
+        adapter: "codex-exec",
+        place: null,
+        request: "Fix the export.",
+        briefHash: "0a1b2c3d".repeat(8),
+        permission: "auto-edit",
+        limits: RUN_LIMITS.task,
+      },
+      "machine-test-late-write-01",
+    );
+    await live.start(run.id, () => Promise.resolve({ kind: "spawned" }));
+    await live.claim(run.id, "claim-1", () => Promise.resolve());
+    await live.report(run.id, { kind: "started", pid: 4242, pidStartedAt: 1 });
+    const recovering = machine.recover();
+    // Let every store call but the hanging one answer before its deadline.
+    for (let i = 0; i < 50 && fail === undefined; i += 1) await Promise.resolve();
+    release?.();
+    expect(await recovering).toEqual([]);
+    fail?.(new Error("The storage worker restarted"));
+    expect((await memory.readRun(run.id))?.state).toBe("reconciling");
+    hang = false;
+    const swept = await machine.sweep();
+    expect(swept.map((r) => [r.id, r.state])).toEqual([[run.id, "succeeded"]]);
+    expect(durable.runs.get(run.id)?.result).toEqual(OK);
   });
 
   test("finalFor: cancelled after a stop, timed out at a limit, succeeded on success, failed with the outcome", () => {

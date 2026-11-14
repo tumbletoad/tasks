@@ -313,6 +313,19 @@ export function runStoreContract(
       expect(done.result?.text).toBe("̈́".repeat(TEXT_CAP_BYTES / 4));
       expect(done.result?.error).toBe("Stopped\nat a prompt");
       expect(await store.readRun(run.id)).toEqual(done);
+      // Every other field is judged as the writer judges it, so no backend accepts a result
+      // another refuses: a cost beyond a safe integer, a fractional duration.
+      for (const [bad, field] of [
+        [{ ...RESULT, usage: { costUsd: 1e300 } }, "patch.result.usage"],
+        [{ ...RESULT, durationMs: 1.5 }, "patch.result.durationMs"],
+        [{ ...RESULT, exitCode: 2 ** 32 }, "patch.result.exitCode"],
+      ] as const) {
+        const other = await runIn("running");
+        const refused = await refusal(
+          store.transitionRun(other.id, seenRun(other), "succeeded", { result: bad }),
+        );
+        expect(refused, field).toMatchObject({ code: "invalid", field });
+      }
       const kept = await store.createRun(
         await runInput({ request: "Fix the export\r\nand the zone\u0007" }),
         requestId(),
