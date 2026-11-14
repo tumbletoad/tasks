@@ -74,6 +74,11 @@ and workflow.
 - Paste the Verify output into the pull request, with the OS, and say what you did not test.
 - Substantial changes get an independent review before merging: storage, protocol, security,
   migrations, launch, and anything over a few hundred lines. Fix or answer every finding.
+- A review ranks its findings by how likely a person is to run into them and what it would cost
+  them (PLAN D27). Loss, damage or frustration from plausible use comes first and is always fixed.
+  A case that needs a program on the same machine working against the product on purpose is
+  noted, closed when that is cheap, and otherwise stated as a limit in the specification. A small
+  visual flaw or a minor bug comes last.
 - Before merging, merge main into the branch: merge `tests/manifest.json` by entry ID, keeping both
   sides, and run `pnpm install` after a lockfile merge.
 
