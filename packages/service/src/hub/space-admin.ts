@@ -27,7 +27,16 @@ export type AdminJob =
       /** Folders no file of the bundle may come from: the secrets folder (A6 3.16.4). */
       readonly secretFolders: readonly string[];
     }
-  | { readonly kind: "restore"; readonly backupFile: string; readonly target: string };
+  | { readonly kind: "restore"; readonly backupFile: string; readonly target: string }
+  | {
+      /** The newest backup of the space that verifies, into a new folder (A1 3.2). */
+      readonly kind: "restore-latest";
+      readonly backupDir: string;
+      readonly spaceId: Id<"sp">;
+      readonly target: string;
+    }
+  /** The rows that can still be read, into `exchange/rescued/` (A1 3.2). */
+  | { readonly kind: "rescue"; readonly folder: string };
 
 export interface AdminBackup {
   readonly name: string;
@@ -54,7 +63,15 @@ export type AdminResult =
   | { readonly kind: "create"; readonly spaceId: Id<"sp">; readonly refPrefix: string }
   | { readonly kind: "backup"; readonly backup: AdminBackup }
   | { readonly kind: "export"; readonly export: AdminExport }
-  | { readonly kind: "restore"; readonly spaceId: Id<"sp"> };
+  | { readonly kind: "restore"; readonly spaceId: Id<"sp">; readonly backup?: string }
+  | {
+      readonly kind: "rescue";
+      readonly file: string;
+      readonly tables: number;
+      readonly rows: number;
+      /** Tables that could not be read to their end: names from the schema, never content. */
+      readonly failed: readonly string[];
+    };
 
 /** Where an export's secret scan found a secret-shaped string: words only, never text. */
 export interface SecretPlace {

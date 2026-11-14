@@ -210,6 +210,13 @@ export {
   type RestoreOptions,
 } from "./restore/restore.ts";
 export { isBundleFile, type RestoreSource } from "./restore/unpack.ts";
+// The ways out of a space whose check failed (A1 3.2).
+export {
+  newestVerifiedBackup,
+  rescueSpace,
+  RESCUED_FOLDER,
+  type RescueRecord,
+} from "./restore/rescue.ts";
 // Export bundles (M3.07): the exporter, and the reader every side that opens a bundle shares. M3.08
 // builds transfer and import on these.
 export {

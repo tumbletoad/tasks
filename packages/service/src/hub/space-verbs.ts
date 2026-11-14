@@ -14,7 +14,10 @@
 //                   transfer waits for M3.08's machine keys and states)
 //   space/restore   a backup or a bundle into a new folder,   (restoreBackup, then served)
 //                   a read-only copy, or in place, claimed    (SpaceManager.restoreInPlace)
-//                   with a new epoch
+//                   with a new epoch; `latest` of a space:    (newestVerifiedBackup)
+//                   its newest backup that verifies, into a new folder (A1 3.2)
+//   space/rescue    the rows that can still be read, into     (rescueSpace)
+//                   `exchange/rescued/` (A1 3.2)
 //   space/claim     claim a read-only copy                    (SpaceManager.claim)
 //   space/recover   play a rollback journal back              (SpaceManager.recover)
 //
@@ -143,7 +146,7 @@ function userOnly(cls: ConnectionClass): void {
 
 /** The space an admin job made: a create's new space, a restore's read-only copy. */
 function spaceOf(result: AdminResult): Id<"sp"> {
-  if (result.kind === "backup" || result.kind === "export") {
+  if (result.kind !== "create" && result.kind !== "restore") {
     throw new AppError({ code: "internal", message: "No space." });
   }
   return result.spaceId;
@@ -457,6 +460,38 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       if ((to === undefined) === (inPlace === undefined)) {
         throw invalid("to", "Give either a new folder or the space to restore in place");
       }
+      // `latest`: the newest backup of the space `of` that verifies, into a new folder. The way
+      // out of a database that fails its check (A1 3.2), whose restore in place is refused.
+      if (backup === "latest") {
+        if (to === undefined || !isAbsolute(to)) {
+          throw invalid("to", "The latest backup is restored into a new folder");
+        }
+        const of = find(required(params, "of"));
+        if (of.id === undefined) throw invalid("of", "The space's ID is not known yet");
+        const target = resolve(to);
+        const spaceId = of.id;
+        try {
+          return await oneAtATime(async () => {
+            refuseNetwork(await manager.checkFolder(target), "to");
+            const restored = await runAdmin({
+              kind: "restore-latest",
+              backupDir: backupDirOf(of),
+              spaceId,
+              target,
+            });
+            const entry = await manager.open(target, spaceOf(restored));
+            return {
+              space: describe(viewOf(entry)),
+              read_only_copy: true,
+              ...(restored.kind === "restore" && restored.backup !== undefined
+                ? { backup: restored.backup }
+                : {}),
+            };
+          });
+        } catch (error) {
+          throw failure(error);
+        }
+      }
       // A backup's or a bundle's file, or its name: a backup's in the backups folder of the space
       // it restores, a bundle's (`.zip`) in its exports folder.
       let file: string;
@@ -485,6 +520,26 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           epoch: change.epoch,
           incarnation: change.incarnation,
         };
+      } catch (error) {
+        throw failure(error);
+      }
+    },
+
+    "space/rescue": async (params, cls) => {
+      userOnly(cls);
+      const view = find(required(params, "space"));
+      try {
+        const done = await runAdmin({ kind: "rescue", folder: manager.folderOf(view.entry) });
+        return done.kind === "rescue"
+          ? {
+              rescue: {
+                file: done.file,
+                tables: done.tables,
+                rows: done.rows,
+                failed: done.failed,
+              },
+            }
+          : {};
       } catch (error) {
         throw failure(error);
       }

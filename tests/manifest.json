@@ -482,6 +482,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.sync.check-failed-ways",
+      "title": "The two actions for a failed check through the CLI: restore latest restores the space's newest backup that verifies into a new folder as a read-only copy, skipping and keeping a newer one that does not; rescue writes every readable row into exchange/rescued; the read-only words name both and never a new backup",
+      "source": "A1 3.2, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.rescue.damaged",
+      "title": "Rescue of a damaged database keeps the rows that can still be read: a table that fails partway is named, the others are written whole, the database is not changed, and each rescue writes a new file of its own",
+      "source": "A1 3.2, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A6.5.stale-restore",
       "title": "This machine records what it saw of its spaces (epoch, incarnation, lineage, last_seq at open and close); a folder of the same incarnation with a lower last_seq, or of an ancestor incarnation, opens read_only(stale_restore) before anything is written, and a restore claim above every known epoch makes it current",
       "source": "A6 3.5, A1 3.1, A7 3.10 M3.07",

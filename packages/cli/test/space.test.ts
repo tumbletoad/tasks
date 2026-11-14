@@ -2,7 +2,14 @@
 // (in this process, with a TTY as the class says) creates, backs up, restores, claims and closes
 // spaces; the script and agent classes are refused the user-only verbs; a space read-only for its
 // synced or network folder names the ways out (A1 3.2). Fixture text only.
-import { existsSync, mkdirSync, readdirSync, renameSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -285,6 +292,63 @@ describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that res
     }
   }, 180_000);
 
+  test("[A1.5.sync.check-failed-ways] restore latest skips a newer backup that does not verify; rescue writes the readable rows", async () => {
+    const folder = join(world.root, "s", "rescued");
+    const made = await user(["space", "create", "Rescued", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const added = await world.tasks([
+      "add",
+      "Rescued task",
+      "--space",
+      "Rescued",
+      "--request-id",
+      "fixture-rescue-0001",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+    const names: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const backup = await user(["space", "backup", folder, "--json"]);
+      expect(backup.code, backup.stdout + backup.stderr).toBe(0);
+      names.push((parsed(backup.stdout)["backup"] as { name: string }).name);
+      // Two backups, two names: a backup's name has the millisecond it began.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    // The newer backup no longer verifies, though its size is right.
+    const dir = join(folder, "backups");
+    const newer = join(dir, `${names[1] ?? ""}.db.gz`);
+    const bytes = readFileSync(newer);
+    bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
+    writeFileSync(newer, bytes);
+
+    const copyFolder = join(world.root, "s", "rescued-copy");
+    const latest = await user(["space", "restore", "latest", folder, "--to", copyFolder, "--json"]);
+    expect(latest.code, latest.stdout + latest.stderr).toBe(0);
+    expect(parsed(latest.stdout)).toMatchObject({
+      backup: names[0],
+      read_only_copy: true,
+      space: { state: "read_only", reason: "read_only_copy" },
+    });
+    // The damaged one stays, for a person to look at.
+    expect(existsSync(newer)).toBe(true);
+
+    const rescue = await user(["space", "rescue", folder, "--json"]);
+    expect(rescue.code, rescue.stdout + rescue.stderr).toBe(0);
+    const rescued = parsed(rescue.stdout)["rescue"] as {
+      file: string;
+      rows: number;
+      failed: string[];
+    };
+    expect(rescued.failed).toEqual([]);
+    expect(rescued.file.startsWith(join(folder, "exchange", "rescued"))).toBe(true);
+    const lines = readFileSync(rescued.file, "utf8").trimEnd().split("\n");
+    expect(lines).toHaveLength(rescued.rows);
+    expect(lines.some((line) => line.includes("Rescued task"))).toBe(true);
+    for (const done of [copyFolder, folder]) {
+      expect((await user(["space", "close", done, "--json"])).code).toBe(0);
+    }
+  }, 180_000);
+
   test("a secret-shaped title refuses the export, naming its kind and place but never the text", async () => {
     // Built from parts: the source holds no token.
     const token = ["gh", "p_", "aB3dE5".repeat(6)].join("");
@@ -381,8 +445,14 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
       EXCLUDED_WAY,
       ...BACKUP_WAY,
     ]);
-    // A database that failed its check takes no new backup: its words name the restore already.
-    for (const reason of ["check_failed", "read_only_copy", "not_authority", undefined]) {
+    // A database that failed its check takes no new backup: its two actions are A1 3.2's.
+    expect(wayOut({ entry: 0, state: "read_only", reason: "check_failed" })).toEqual([
+      "Restore the newest backup that verifies into a new local folder, or keep the rows that can still be read:",
+      `  ${CLI_NAME} space restore latest <folder> --to <new folder>`,
+      `  ${CLI_NAME} space rescue <folder>`,
+      "<new folder> must not exist yet. The rescue writes a file into <folder>/exchange/rescued. The old folder keeps all its files.",
+    ]);
+    for (const reason of ["read_only_copy", "not_authority", undefined]) {
       expect(
         wayOut({ entry: 0, state: "read_only", ...(reason === undefined ? {} : { reason }) }),
       ).toEqual([]);

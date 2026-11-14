@@ -75,6 +75,8 @@ export const RPC_METHODS = {
   // `tasks space export` (A1 3.18, M3.07): a bundle of the space, for the user only.
   "space/export": USER,
   "space/restore": USER,
+  // `tasks space rescue` (A1 3.2, M3.07): the readable rows of a space, for the user only.
+  "space/rescue": USER,
   "space/claim": USER,
   "space/recover": USER,
   // `tasks space use` (A2 3.1, M5.01): the machine's default space, for the user only.

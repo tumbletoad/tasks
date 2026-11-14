@@ -208,7 +208,7 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
     Array.isArray(seenLineage) &&
     seenLineage.length <= MAX_SEEN_LINEAGE &&
     seenLineage.every((id) => isId(id, "ai"))
-      ? (seenLineage)
+      ? seenLineage
       : undefined;
   const confirmed = record["synced_folder_confirmed"];
   const confirmedPath = isRecord(confirmed) ? confirmed["path"] : undefined;

@@ -11,7 +11,10 @@ import {
   DEFAULT_DRIVER,
   exportBundle,
   loadDriver,
+  newestVerifiedBackup,
+  rescueSpace,
   restoreBackup,
+  StorageError,
 } from "@tasks/storage";
 import { makeDir } from "./files.ts";
 import type { AdminJob, AdminReply, AdminResult } from "./space-admin.ts";
@@ -79,6 +82,24 @@ async function run(job: AdminJob): Promise<AdminResult> {
       // A backup's `.db.gz` or an export bundle's `.zip`: either restores as a read-only copy.
       const restored = await restoreBackup(checked, job.backupFile, job.target);
       return { kind: "restore", spaceId: restored.space.spaceId };
+    }
+    case "restore-latest": {
+      const newest = await newestVerifiedBackup(checked, job.backupDir, job.spaceId);
+      if (newest === undefined) {
+        throw new StorageError("BACKUP_INVALID", "No backup of the space verifies");
+      }
+      const restored = await restoreBackup(checked, newest.file, job.target);
+      return { kind: "restore", spaceId: restored.space.spaceId, backup: newest.name };
+    }
+    case "rescue": {
+      const rescued = rescueSpace(checked, job.folder);
+      return {
+        kind: "rescue",
+        file: rescued.file,
+        tables: rescued.tables,
+        rows: rescued.rows,
+        failed: rescued.failed,
+      };
     }
   }
 }

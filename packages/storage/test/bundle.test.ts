@@ -27,6 +27,7 @@ import { StorageError } from "../src/errors.ts";
 import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
 import { backupSpace } from "../src/backup/backup.ts";
+import { rescueSpace } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
@@ -595,6 +596,60 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const writer = openSpace(checked, folder, { role: "writer" });
     expect(writer.space.lastSeq).toBe(live.space.lastSeq + 1);
     writer.conn.close();
+  });
+});
+
+describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1 3.2)", () => {
+  test("a damaged table stops partway and is named, the others are written whole, and the space is unchanged", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    const conn = await rawWriter(folder);
+    try {
+      const system = String(
+        conn.prepare("SELECT id FROM actors WHERE kind = 'system'").get()?.["id"],
+      );
+      conn
+        .prepare(
+          `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3000)
+           INSERT INTO tasks (id, ref, title, context, position, created_at, created_by,
+             created_seq, version, touched)
+           SELECT 't_rescue' || i, 100 + i, 'Rescue task ' || i, hex(randomblob(400)), 'a0', 0,
+             $actor, 0, 0, 0
+           FROM n`,
+        )
+        .run({ actor: system });
+    } finally {
+      // The last connection's close checkpoints every page into the database file.
+      conn.close();
+    }
+    // The last quarter of the pages, where the tasks' leaves are, is overwritten.
+    const db = join(folder, "space.db");
+    const bytes = readFileSync(db);
+    const raw = bytes.readUInt16BE(16);
+    const pageSize = raw === 1 ? 65_536 : raw;
+    const pages = bytes.length / pageSize;
+    bytes.fill(0xa5, Math.floor(pages * 0.75) * pageSize);
+    writeFileSync(db, bytes);
+    const damaged = sha(bytes);
+
+    const report = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14) });
+    expect(report.file).toBe(
+      join(folder, "exchange", "rescued", "rescued-20261114T000000.000Z.jsonl"),
+    );
+    expect(report.failed).toContain("tasks");
+    const lines = readFileSync(report.file, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { table: string });
+    expect(lines).toHaveLength(report.rows);
+    expect(lines.filter((l) => l.table === "space")).toHaveLength(1);
+    expect(lines.filter((l) => l.table === "commits")).toHaveLength(3);
+    // Nothing in the space was changed, and a second rescue writes a file of its own.
+    expect(sha(readFileSync(db))).toBe(damaged);
+    const again = rescueSpace(checked, folder, { now: () => Date.UTC(2026, 10, 14, 0, 0, 1) });
+    expect(again.file).not.toBe(report.file);
+    expect(existsSync(report.file)).toBe(true);
   });
 });
 
