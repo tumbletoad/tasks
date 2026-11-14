@@ -103,11 +103,17 @@ function newRequest(rng: Rng, ledger: Ledger, round: number, n: number): Planned
       },
     ];
   } else if (roll < 30) {
-    // A task and its first children in one request: all of it commits, or none.
+    // A task and its first children in one request: all of it commits, or none. It never dedupes
+    // by its source's key (A1 3.6), so the task is always created, as the checker expects.
     const id = taskId();
     ledger.tasks.push(id);
     ops = [
-      { kind: "task.create", id: id as `t_${string}`, title: `Crash task ${String(c)}` },
+      {
+        kind: "task.create",
+        id: id as `t_${string}`,
+        title: `Crash task ${String(c)}`,
+        dedupe: "none",
+      },
       { kind: "note.add", task: id, body: `Note ${String(c)}` },
       {
         kind: "source.add",

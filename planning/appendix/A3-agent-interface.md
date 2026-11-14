@@ -204,15 +204,18 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 
 #### 3.4.5 `add_tasks`
 
-Create 1 to 25 tasks in one transaction: follow-ups found during work, items from a refresh, splits of a large task (`entries/task-add.ts`). One invalid draft rejects the call. The handler binds every place before anything is sent (`ops/places.ts`), and a folder under no root creates the task without a place and warns, because only the user adds roots. Its MCP face arrives with the upsert in M4.01.
+Create 1 to 25 tasks in one transaction: follow-ups found during work, items from a refresh, splits of a large task (`entries/task-add.ts`). One invalid draft rejects the call. The handler binds every place before anything is sent (`ops/places.ts`), and a folder under no root creates the task without a place and warns, because only the user adds roots. Its MCP face arrives in M4.01.
+
+**Upsert by source key (R4)** through A1's dedupe (A1 3.6; `ops/handlers.ts`: `draftOps`, `draftOutcome`; test `[A3.3.4.add.upsert]`). `on_existing` sets the draft's `task.create`: `return`, the default, is A1's default, `add_sources` sets `link_sources`, and `create_new` sets `dedupe: "new"`. Each row comes from the writer's result, so a replay says the same.
+- An **active** task linked to any key of the draft: `exists` with its `id`, `ref`, `lifecycle` and `matched_by: "source_key"`, and nothing else written for that draft. With `add_sources`, the draft's sources are linked to it. The draft's `log` text is added to it either way (`log_added`), so "create or find, then log" is one call. Autonomy then applies to the matched task's own area, never to the area the draft names (3.8.3).
+- **Several** active matches: `exists` with an `ambiguous` list of references and no `id` or `ref`, and nothing written for the draft, its log included. The agent picks one.
+- A task **completed or archived in the last 30 days**: `exists` with its lifecycle, and nothing written, its log included. The agent reopens it and adds the entry, or sends the draft again with `on_existing: "create_new"`, which creates a new active task with the same source, so later lookups find it first.
+- `create_new` against an active match is `invalid_input` (`data.field: "dedupe"`), so a refresh never makes two active tasks for one item.
+- A matched draft binds no place, so it gets no place warning. A source linked with `add_sources` reports `source_differs` as for a created draft.
+- The `title` of an `exists` row is the draft's, as sent: the handler reads nothing for it.
 
 Still to build:
 
-- **Upsert by source key (R4)** through A1's dedupe. `on_existing` defaults to `return`.
-  - An **active** task linked to any key of the draft: `exists`, nothing else written for that draft. With `on_existing: "add_sources"`, the draft's other sources are linked to it. The draft's `log` text is added to it either way, so "create or find, then log" is one call (A1 rebinds later operations in the request to the matched task). Autonomy then applies to the matched task's own area, never to the area the draft names (3.8.3).
-  - **Several** active matches: `exists` with an `ambiguous` list. The agent picks one.
-  - A task **completed or archived in the last 30 days**: `exists` with its lifecycle. The agent reopens it, or sends the draft again with `on_existing: "create_new"`, which creates a new active task with the same source, so later lookups find it first.
-  - `create_new` against an active match is `invalid_input`, so a refresh never makes two active tasks for one item.
 - **Similar titles** in the same project come back as `possible duplicate` warnings. They never block.
 - **Areas and projects** match by name or slug, ignoring case. An unknown name within edit distance 2 of an existing one is `invalid_input` with a "did you mean" hint, which stops "Client Work" from appearing next to "Client work". Other new names are created under autonomy (3.8).
 - **Inbox.** Without an area or project the task goes to the Inbox. `inbox: true` sends it there anyway.
@@ -241,7 +244,7 @@ Finish (`done`) or abandon (`dropped`) a task with an outcome and learnings, and
 | Completed or archived, `wrap_state` pending (the user checked it off, D12) | `task.wrap_up`: adds outcome and learnings and marks it wrapped. A4's Wrap-up routine uses this path. |
 | Already wrapped | `no_change` if the outcome is identical, otherwise `conflict` with the stored outcome |
 
-Wrap-up only adds text and never destroys any (A1). Until `task.wrap_up` exists (M3.04), `dropped`, `learnings` and wrapping up a completed task are refused. A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings.
+Wrap-up only adds text and never destroys any (A1). Until `task.wrap_up` exists (M3.04), `dropped`, `learnings` and wrapping up a completed task are refused. A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out. The task the call completes never matches a follow-up, and neither does an older finished task with the key: a follow-up with one of its keys is new work after it, so it is created, and later lookups of that key find it first (A1 3.6).
 
 #### 3.4.9 `reopen_task`
 
@@ -732,8 +735,10 @@ TT Tasks stores links, titles and one-line summaries, never message bodies.
    words, a one-line summary with the next step, area and project, a due date only if the source
    states one, and the source with its key and a meaningful title (subject, chat space or person,
    ticket title). Put what is new in the draft's log. Up to 25 drafts per add_tasks call.
-3. "exists": TT Tasks already has this item. Do not create another. Its log entry was added.
-   Update its summary if the next step changed.
+3. "exists": TT Tasks already has this item. Do not create another. On an active task its log
+   entry was added: update its summary if the next step changed. On a task finished in the last
+   30 days nothing was added: if the source shows new work, send the draft again with
+   on_existing "create_new".
 4. "possible duplicate": if it is the same work, add the source to that task with update_task
    add_sources instead.
 5. Waiting tasks: if the awaited reply arrived, set status open, clear waiting_on, log what arrived.
@@ -948,13 +953,13 @@ What remains: a program that leaves its process group (`setsid`), and on Windows
 
 Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.soundness`. `tests/manifest.json` lists each with its test.
 
-**Built and pinned by tests.** Each built section names its tests. Beyond those: the soundness test (`packages/contracts/src/soundness.test.ts`) fuzzes values from every generated JSON Schema, asserts the registry's rule counts so it cannot pass on empty data, and keeps every hostile probe found so far. `packages/bridge/src/protocol/client.test.ts`, with A2's conformance suite, proves that no context, ticket, native ID, folder, handle or `mcp_init` leaves the bridge before the service's proof (X2). The contract suite compares `bound` where the face's connection can bind and requires `bound: false` on the others.
+**Built and pinned by tests.** Each built section names its tests. Beyond those: the upsert property (`[A1.5.write.dedupe-sessions]`) runs random drafts in each `on_existing` mode from three sessions, with completions, reopens, retries and clock jumps past the window, against a reference model at the writer, which the handler maps `on_existing` onto; without a reopen, which is the user's act, no key ever has two active tasks. The soundness test (`packages/contracts/src/soundness.test.ts`) fuzzes values from every generated JSON Schema, asserts the registry's rule counts so it cannot pass on empty data, and keeps every hostile probe found so far. `packages/bridge/src/protocol/client.test.ts`, with A2's conformance suite, proves that no context, ticket, native ID, folder, handle or `mcp_init` leaves the bridge before the service's proof (X2). The contract suite compares `bound` where the face's connection can bind and requires `bound: false` on the others.
 
 **Contract and MCP tests still to write:**
 
 - **Scope.** Each policy key through `preferences` returns `forbidden` (`policy`). Every `exchange.*` entry, including an import apply, is refused for `cli-script`, `cli-agent` and `bridge` connections, and an applied import is recorded with the human who applied it as principal and the `import` actor as author (A1), never as a privileged actor.
 - **Tool list.** `run_report` on an unbound or task-bound connection returns `not_permitted` and writes nothing. A routine whose MCP host initializes from the offline file during a service restart calls `run_report` successfully after reconnect and reports full source coverage (M6).
-- **Receipts (X12).** A no-op `source.unlink` retried after someone relinks the source replays `no_change` and leaves the new link. An `add_tasks` that returned `exists` on a task completed 29 days ago, retried after the 30-day window, replays `exists` and creates nothing. A call with a relative date (`due: "fri"`) retried after midnight replays the first result.
+- **Receipts (X12).** A no-op `source.unlink` retried after someone relinks the source replays `no_change` and leaves the new link. A call with a relative date (`due: "fri"`) retried after midnight replays the first result. (A draft that returned `exists` on a finished task, retried after the window, replays `exists` and creates nothing: pinned at the writer by `[A1.5.write.dedupe]`.)
 - **Staged plan (X11).** An `add_tasks` draft naming a Full area, with a source key that dedupes onto a task in a Suggest area and `on_existing: "add_sources"`, becomes a proposal. A move from a Full area to a Review area applies with a mark, and a move from Suggest to Full is proposed. A bundle that completes and then wraps up one task with one `base` applies, and history shows one before and after per field.
 - **Links.** An agent removes a source with a `base` read before the user removed and re-added it: `conflict`. Two concurrent context appends both land. Re-adding a removed source without `base` is `conflict`.
 - **Writer scope (X13).** Unbound bridge writes count against the agent home's scope. Binding after 10 unbound completions does not reset the count. A bundle that completes one task and moves ten counts eleven affected records, and the brake turns the whole call into a proposal when it would cross the limit.
@@ -965,7 +970,6 @@ Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.so
 
 - **Query parser.** Random strings never produce an SQLite or FTS5 syntax error. The result is always rows or `invalid_input`. Parsing, printing `parsed:` and parsing again gives the same query.
 - **Cursors.** Random writes between pages, including deletions and redactions: the union of pages equals the snapshot list, with no duplicates and no gaps. A deleted or redacted entry appears as a placeholder and never with its old content (checked with sentinel text). An epoch, incarnation or binding change between pages gives `cursor_expired` with the matching reason.
-- **Upsert.** Random sequences of `add_tasks` with overlapping keys, `on_existing` modes and concurrent sessions leave at most one active task per key, and the key points at the newest task.
 - **Autonomy.** The decision table is checked exhaustively over levels, overrides, area overrides, action keys and source and destination of moves, always against the staged plan's actual targets.
 - **Proposals.** Merging per session and field set, staleness at accept, limits.
 
