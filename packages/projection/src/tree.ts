@@ -4,8 +4,11 @@
 // Rules:
 // - **Only inside its folder.** Every path is relative, `/`-separated and matches the tree's
 //   grammar (isTreePath) before it is joined to the folder, also a path read back from the record,
-//   so neither a title nor an edited record can reach outside it. A folder of the tree that is a
-//   link, or a file where a folder belongs, is rescued, never followed.
+//   so neither a title nor an edited record can reach outside it. Every read, removal and write
+//   first checks each folder of the path with lstat: a link (a junction included) or a file where a
+//   folder belongs is never followed. A write rescues it and makes the folder; a read or a removal
+//   finds nothing there. Either way the folder is reported lost (lostFolders): the files the record
+//   placed in it are no longer in the tree, and the projector rebuilds (projector.ts).
 // - **A person's edit is never lost.** The record (`.projection-files.json`, what A1 3.4 calls
 //   `projection_files`) holds the SHA-256 of each file as written. A file that is replaced or
 //   removed must hash to a value the caller knows as its own; anything else at that path (an edited
@@ -245,8 +248,10 @@ export class Tree {
   readonly #now: () => number;
   readonly #win: boolean;
   readonly #at: TreeOptions["at"];
-  /** Folders checked in this batch. */
+  /** Folders found real in this batch, or made by it. */
   #folders = new Set<string>();
+  /** Folders of the tree found missing, or not real (a link, a file), in this batch. */
+  #lost = new Set<string>();
   /** This batch's rescue folder, relative to the space's folder, once one was made. */
   #box: string | undefined;
   #rescued = 0;
@@ -262,6 +267,7 @@ export class Tree {
   /** Starts a batch: folders are checked again, and rescues go to a new folder. */
   newBatch(): void {
     this.#folders = new Set();
+    this.#lost = new Set();
     this.#box = undefined;
     this.#rescued = 0;
   }
@@ -273,21 +279,63 @@ export class Tree {
       : { files: this.#rescued, folder: this.#box };
   }
 
+  /** The folders of the tree this batch found missing or not real: what the record had there is gone. */
+  get lostFolders(): ReadonlySet<string> {
+    return this.#lost;
+  }
+
   #abs(path: string): string {
     if (!isTreePath(path)) throw new ProjectionError("EINVAL", "Not a path of the projection");
     return join(this.#dir, ...path.split("/"));
   }
 
-  /** Creates the projection's folder when it is missing. A link or a file there is refused. */
-  prepare(): void {
+  /**
+   * Creates the projection's folder when it is missing, and says so: whatever the record says is in
+   * it is gone. A link or a file there is refused.
+   */
+  prepare(): boolean {
     const stats = lstatSync(this.#dir, { throwIfNoEntry: false });
     if (stats === undefined) {
       makeDir(this.#dir, FOLDER_MODE);
-      return;
+      return true;
     }
     if (!stats.isDirectory()) {
       throw new ProjectionError("ENOTDIR", "The projection's folder is not a folder");
     }
+    return false;
+  }
+
+  /**
+   * Whether any of `folders` (relative, `/`-separated, each with its parents listed too), or the
+   * projection's folder itself, is not a real folder now: missing, a link or a file. Only lstat,
+   * so nothing is followed.
+   */
+  missing(folders: Iterable<string>): boolean {
+    if (lstatSync(this.#dir, { throwIfNoEntry: false })?.isDirectory() !== true) return true;
+    for (const folder of folders) {
+      const abs = join(this.#dir, ...folder.split("/"));
+      if (lstatSync(abs, { throwIfNoEntry: false })?.isDirectory() !== true) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether every folder of `path` is a real folder of the tree, each checked with lstat. The first
+   * that is not (missing, a link, a file) is reported lost, and nothing below it is looked at.
+   */
+  #inTree(path: string): boolean {
+    let rel = "";
+    for (const part of path.split("/").slice(0, -1)) {
+      rel = rel === "" ? part : `${rel}/${part}`;
+      if (this.#folders.has(rel)) continue;
+      const stats = lstatSync(join(this.#dir, ...rel.split("/")), { throwIfNoEntry: false });
+      if (stats?.isDirectory() !== true) {
+        this.#lost.add(rel);
+        return false;
+      }
+      this.#folders.add(rel);
+    }
+    return true;
   }
 
   /**
@@ -330,15 +378,21 @@ export class Tree {
     return { kind: "file", sha256: sha256(readFileSync(abs)), stats };
   }
 
-  /** The hash of the file at `path`, undefined when nothing is there, `other` for anything else. */
+  /**
+   * The hash of the file at `path`, undefined when nothing is there (a folder of it that is not a
+   * real folder included), `other` for anything else.
+   */
   hashOf(path: string): string | undefined {
-    const found = this.#look(this.#abs(path));
+    const abs = this.#abs(path);
+    if (!this.#inTree(path)) return undefined;
+    const found = this.#look(abs);
     return found.kind === "missing" ? undefined : found.kind === "file" ? found.sha256 : "other";
   }
 
   /**
    * Makes sure every folder of `folder` (relative, `/`-separated) is a real folder of the tree. A
-   * file or a link where one belongs is rescued, then the folder is made with mode 0700.
+   * file or a link where one belongs is rescued, then the folder is made with mode 0700. A folder
+   * that was missing or rescued is reported lost.
    */
   #folder(folder: string): void {
     let rel = "";
@@ -349,6 +403,7 @@ export class Tree {
       const stats = lstatSync(abs, { throwIfNoEntry: false });
       // lstat: a link, a junction included, is never a folder here.
       const real = stats?.isDirectory() === true;
+      if (!real) this.#lost.add(rel);
       if (stats !== undefined && !real) this.#rescueAt(rel, abs);
       if (!real) makeDir(abs, FOLDER_MODE, { recursive: false });
       this.#folders.add(rel);
@@ -411,10 +466,12 @@ export class Tree {
 
   /**
    * Removes the file at `path` when its hash is one `ours` accepts; rescues anything else there.
-   * Nothing there is fine.
+   * Nothing there is fine, and so is a folder of it that is not a real folder: what is behind it is
+   * not in the tree, and is never touched.
    */
   remove(path: string, ours: (hash: string) => boolean): "removed" | "rescued" | "missing" {
     const abs = this.#abs(path);
+    if (!this.#inTree(path)) return "missing";
     const found = this.#look(abs);
     if (found.kind === "missing") return "missing";
     if (found.kind === "file" && ours(found.sha256)) {
@@ -502,20 +559,41 @@ export class Tree {
 
   /**
    * Moves what is at `abs` (tree path `path`) into this batch's rescue folder under the same path,
-   * and makes a rescued file writable: it is the person's now (A1 3.13 step 3). Across volumes a
-   * file is copied, then removed; anything else there fails the move.
+   * and makes a rescued file writable: it is the person's now (A1 3.13 step 3). The destination's
+   * folders in the rescue folder must be real folders and the destination free: a link rescued
+   * earlier in the batch is never moved into, and nothing rescued is replaced. Across volumes a
+   * file is copied, then removed, and the copy goes again when the original cannot; anything else
+   * there fails the move.
    */
   #rescueAt(path: string, abs: string): void {
     const box = this.#rescueBox();
+    let at = box;
+    for (const part of path.split("/").slice(0, -1)) {
+      at = join(at, part);
+      const stats = lstatSync(at, { throwIfNoEntry: false });
+      if (stats === undefined) break;
+      if (!stats.isDirectory()) {
+        throw new ProjectionError("ENOTDIR", "A rescued link stands where a rescue goes");
+      }
+    }
     const dest = join(box, ...path.split("/"));
     makeDir(dirname(dest), FOLDER_MODE);
+    if (lstatSync(dest, { throwIfNoEntry: false }) !== undefined) {
+      throw new ProjectionError("EEXIST", "Something was rescued there already");
+    }
     const stats = lstatSync(abs);
     try {
       renameSync(abs, dest);
     } catch (error) {
       if ((error as { code?: unknown }).code !== "EXDEV" || !stats.isFile()) throw error;
       copyFileSync(abs, dest, constants.COPYFILE_EXCL);
-      this.#unlink(abs);
+      try {
+        this.#unlink(abs);
+      } catch (failed) {
+        // The original stays where it was: a second copy would be made at every retry.
+        this.#unlink(dest);
+        throw failed;
+      }
     }
     if (stats.isFile()) chmodSync(dest, 0o600);
     this.#rescued += 1;
@@ -591,12 +669,16 @@ export class Tree {
     atomicWrite(join(this.#dir, RECORD_FILE), `${JSON.stringify(value)}\n`, 0o600);
   }
 
-  /** The journal a kill left, or undefined. One that cannot be read is no journal. */
-  readJournal(): Journal | undefined {
+  /**
+   * The journal a kill left: undefined when there is none, null when there is one that cannot be
+   * read. That one may name files a reported batch placed, so the record cannot be trusted.
+   */
+  readJournal(): Journal | undefined | null {
     const value = this.#readJson(JOURNAL_FILE);
-    if (!isRecordObject(value) || value["format"] !== FORMAT) return undefined;
+    if (value === undefined) return undefined;
+    if (!isRecordObject(value) || value["format"] !== FORMAT) return null;
     const files = hashesOf(value["files"]);
-    if (files === undefined || !isRecordObject(value["tasks"])) return undefined;
+    if (files === undefined || !isRecordObject(value["tasks"])) return null;
     const tasks = new Map<string, TaskRecord | null>();
     for (const [id, item] of Object.entries(value["tasks"])) {
       if (item === null) {
@@ -604,7 +686,7 @@ export class Tree {
         continue;
       }
       const record = taskRecordOf(item);
-      if (record === undefined || record.entry.id !== id) return undefined;
+      if (record === undefined || record.entry.id !== id) return null;
       tasks.set(id, record);
     }
     return { tasks, files };

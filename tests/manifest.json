@@ -2746,6 +2746,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.projection.recovery",
+      "title": "The projection's record describes the disk: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a journal that cannot be read rebuilds the tree; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "source": "A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.folders",
+      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a removal or a read through it touches nothing behind it, a link is rescued, and the tree is rebuilt, also when the folder or the projection's own folder is removed while nothing changes, so the catalogue names only files in the tree; a rebuild removes the old claim, catalogue and index first",
+      "source": "A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.escape",
+      "title": "Task text in the projection's Markdown is text, never markup: a one-line text has HTML, links, entity references, block markers and a heading's closing run escaped, a text of more lines is verbatim in a fence none of its lines closes, index.md escapes task, area and project titles, the catalogue keeps the exact text, and front-matter values YAML 1.2 reads as numbers are quoted",
+      "source": "A1 3.13, A3 3.9.8, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-03.e2e.rows",
       "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
       "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",

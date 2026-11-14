@@ -27,6 +27,7 @@ export {
   dateIn,
   FORMAT,
   indexText,
+  mdLine,
   projectionJson,
   README_TEXT,
   renderTask,

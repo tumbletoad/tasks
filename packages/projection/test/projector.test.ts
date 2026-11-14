@@ -254,6 +254,32 @@ describe("[A1.5.projection.rescue] a file a person edited is moved to exchange/r
     refused("relative/view");
   });
 
+  test("projection.dir is checked where its folders are on disk: a link to the space's folder, or to a folder holding it, changes nothing", () => {
+    const space = join(root, `space-real-${String(n)}`);
+    mkdirSync(join(space, "backups"), { recursive: true });
+    const link = process.platform === "win32" ? "junction" : "dir";
+    const toSpace = join(root, `to-space-${String(n)}`);
+    const toRoot = join(root, `to-root-${String(n)}`);
+    symlinkSync(space, toSpace, link);
+    symlinkSync(root, toRoot, link);
+    const refused = (dir: string): void => {
+      expect(() => projectionFolder(space, dir)).toThrow(
+        expect.objectContaining({ code: "EINVAL" }),
+      );
+    };
+    // Inside the space through a link, existing or not yet.
+    refused(join(toSpace, "backups", "view"));
+    refused(join(toSpace, "not-yet", "view"));
+    refused(toSpace);
+    // Holding the space through a link.
+    refused(toRoot);
+    // The space's own view/ through a link is its view/.
+    expect(projectionFolder(space, join(toSpace, "view"))).toBe(join(toSpace, "view"));
+    expect(projectionFolder(space, join(root, `elsewhere-${String(n)}`))).toBe(
+      join(root, `elsewhere-${String(n)}`),
+    );
+  });
+
   test("a tree of another space or incarnation is rebuilt: its files that still hold what was written go, an edited one is rescued", async () => {
     const projector = w.projector();
     await projector.start();

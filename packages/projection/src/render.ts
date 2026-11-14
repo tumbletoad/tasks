@@ -12,6 +12,10 @@
 // - Then the title as H1, the summary, and the sections Context, Sources, Notes and Log. A
 //   completed or archived task leads with Outcome and Learnings and keeps the rest under Record.
 //   Only notes for every audience are read (read.ts), so no other note is ever written.
+// - **Task text is text, never markup** (A1 3.13 "Task text"): agents write most of it, some from
+//   mail and tickets, and a Markdown viewer would run or load what it says. A text of one line is
+//   written with what could start markup escaped (mdLine); a text of more lines goes verbatim into a
+//   fenced block that no line of it can close (fenced). The catalogue holds every text exactly.
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { formatEntryRef, formatTaskRef } from "@tasks/storage";
 
@@ -170,7 +174,8 @@ export function taskPath(prefix: string, task: TaskInput, timeZone: string): str
 
 const YAML_WORDS = new Set(["true", "false", "null", "yes", "no", "on", "off", "y", "n", "~"]);
 const PLAIN = /^[A-Za-z0-9_][A-Za-z0-9_./:@+-]*$/;
-const NUMBER_LIKE = /^[-+]?[0-9._]+([eE][-+]?[0-9]+)?$/;
+// Decimal, and YAML 1.2's hexadecimal and octal integers (`0x1f`, `0o17`).
+const NUMBER_LIKE = /^([-+]?[0-9._]+([eE][-+]?[0-9]+)?|0x[0-9a-fA-F]+|0o[0-7]+)$/;
 const DATE_LIKE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9:.]+Z)?$/;
 
 /**
@@ -191,22 +196,69 @@ export function yamlValue(value: string | number | null): string {
   return plain ? value : JSON.stringify(value);
 }
 
-/** A list's item: the first line after `head`, later lines indented under it. */
+/**
+ * One line of task text as Markdown text, never markup: a line break becomes a space; a backslash
+ * that would escape the next character is escaped itself; `<` (HTML, autolinks), `[` (links,
+ * images, references) and the `&` of an entity reference are escaped; and so is a block marker at
+ * the line's start (a heading, a quote, a list, a rule, a fence). What CommonMark lets a backslash
+ * escape renders as itself, so a viewer shows the text and runs or loads nothing.
+ */
+export function mdLine(text: string): string {
+  return text
+    .replace(/[ \t]*\n[ \t\n]*/g, " ")
+    .replace(/\\(?=[!-/:-@[-`{-~])/g, "\\\\")
+    .replace(/[<[]/g, "\\$&")
+    .replace(/&(?=#?[0-9A-Za-z]+;)/g, "\\&")
+    .replace(/^( {0,3})([#>+*=_`~-])/, "$1\\$2")
+    .replace(/^( {0,3}[0-9]{1,9})([.)])/, "$1\\$2");
+}
+
+/** A heading of task text: mdLine, and a closing run of `#` escaped, which would be dropped. */
+function heading(level: number, text: string): string {
+  return `${"#".repeat(level)} ${mdLine(text).replace(/(^|[ \t])(#+)([ \t]*)$/, "$1\\$2$3")}`;
+}
+
+/**
+ * A text of several lines, verbatim in a fenced block: its fence is one backtick longer than the
+ * longest run of backticks in the text (at least three), so no line of it closes the block, and
+ * inside it nothing is markup. Each line gets `indent`, an empty one none.
+ */
+function fenced(text: string, indent: string): string[] {
+  let longest = 0;
+  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return [`${fence}text`, ...text.split("\n"), fence].map((line) =>
+    line === "" ? "" : `${indent}${line}`,
+  );
+}
+
+/** A section's text: one line as Markdown text, more lines fenced, nothing when it is empty. */
+function block(text: string): string {
+  const trimmed = text.replace(/\s+$/u, "");
+  if (trimmed === "") return "";
+  return trimmed.includes("\n") ? fenced(trimmed, "").join("\n") : mdLine(trimmed);
+}
+
+/**
+ * A list's item: `head` (Markdown already), then the text on the same line when it is one line,
+ * else fenced under it.
+ */
 function item(head: string, body: string): string {
-  const [first = "", ...rest] = body.replace(/\s+$/u, "").split("\n");
-  return [`- ${head}${first}`, ...rest.map((line) => (line === "" ? "" : `  ${line}`))].join("\n");
+  const text = body.replace(/\s+$/u, "");
+  if (!text.includes("\n")) return `- ${head}${mdLine(text)}`;
+  return [`- ${head}`.trimEnd(), ...fenced(text, "  ")].join("\n");
 }
 
 const sep = " · ";
 
 function noteLine(note: NoteInput, timeZone: string): string {
   const to = note.addressee === "agents" ? " → agents" : "";
-  const head = `${formatEntryRef("note", note.ordinal)}${sep}${dateIn(note.at, timeZone)}${sep}${note.author}${to}: `;
+  const head = `${formatEntryRef("note", note.ordinal)}${sep}${dateIn(note.at, timeZone)}${sep}${mdLine(note.author)}${to}: `;
   return item(head, note.body);
 }
 
 function logLine(entry: LogInput, timeZone: string): string {
-  const head = `${formatEntryRef("log", entry.ordinal)}${sep}${dateIn(entry.at, timeZone)}${sep}${entry.author}${sep}${entry.kind}: `;
+  const head = `${formatEntryRef("log", entry.ordinal)}${sep}${dateIn(entry.at, timeZone)}${sep}${mdLine(entry.author)}${sep}${mdLine(entry.kind)}: `;
   return item(head, entry.body);
 }
 
@@ -259,7 +311,7 @@ export function renderTask(
     ["version", yamlValue(task.version)],
     ["seq", yamlValue(task.touched)],
   ];
-  const context = task.context.replace(/\s+$/u, "");
+  const context = block(task.context);
   const sources = task.sources.map((s) => sourceLine(s, timeZone));
   const notes = task.notes.map((n) => noteLine(n, timeZone));
   const log = task.log.map((l) => logLine(l, timeZone));
@@ -274,7 +326,7 @@ export function renderTask(
     : [];
   const body = done
     ? [
-        ...section(2, "Outcome", [(task.outcome ?? "").replace(/\s+$/u, "")]),
+        ...section(2, "Outcome", [block(task.outcome ?? "")]),
         ...section(
           2,
           "Learnings",
@@ -288,14 +340,15 @@ export function renderTask(
         ...section(2, "Notes", notes),
         ...section(2, "Log", log),
       ];
+  const summary = task.summary.trim();
   const lines = [
     "---",
     ...front.map(([key, value]) => (value === "" ? `${key}:` : `${key}: ${value}`)),
     "---",
     "",
-    `# ${task.title}`,
+    heading(1, task.title),
     "",
-    ...(task.summary === "" ? [] : [task.summary, ""]),
+    ...(summary === "" ? [] : [mdLine(summary), ""]),
     ...body,
   ];
   const entry: CatalogEntry = {
@@ -379,7 +432,8 @@ function indexLine(entry: CatalogEntry): string {
     `P${String(entry.priority)}`,
     ...(entry.due === null ? [] : [`due ${entry.due.slice(0, 10)}`]),
   ];
-  return `- [${entry.ref}](${entry.path}) ${entry.title}${sep}${facts.join(sep)}`;
+  // The reference and the path follow the tree's grammar; the title and the facts are task text.
+  return `- [${entry.ref}](${entry.path}) ${mdLine(entry.title)}${sep}${mdLine(facts.join(sep))}`;
 }
 
 /**
@@ -414,12 +468,12 @@ export function indexText(entries: Iterable<CatalogEntry>, groups: Groups): stri
   ];
   for (const area of groupKeys(open, groups.areas, (e) => e.area)) {
     const inArea = open.filter((e) => e.area === area);
-    lines.push(`## ${area === null ? "No area" : title(groups.areas, area)}`, "");
+    lines.push(heading(2, area === null ? "No area" : title(groups.areas, area)), "");
     for (const project of groupKeys(inArea, groups.projects, (e) => e.project)) {
       const tasks = inArea.filter((e) => e.project === project);
       if (tasks.length === 0) continue;
       lines.push(
-        `### ${project === null ? "No project" : title(groups.projects, project)}`,
+        heading(3, project === null ? "No project" : title(groups.projects, project)),
         "",
         ...tasks.map(indexLine),
         "",

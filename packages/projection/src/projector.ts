@@ -18,6 +18,15 @@
 //    every moment.
 // 5. The record is written and the journal dropped. Then `*` is reported, when it was dirty.
 //
+// **The record describes the disk.** A record that could not be written fails the batch, keeps its
+// journal, and is written before anything else: no batch starts, and no journal is replaced, while
+// the record on disk is behind. A retired file that could not be removed is a failure of the batch,
+// and is tried again at the next publish until it goes. And when the record may no longer describe
+// the disk, the tree is rebuilt: a journal that cannot be read (it may name files a reported batch
+// placed), or a folder of the tree the record has files in that is missing or not a real folder
+// (tree.ts never follows it). The folders are checked before every batch and at every look at the
+// outbox, so a folder removed while nothing changes is noticed too.
+//
 // A kill anywhere leaves at most temporary files (removed at start) and a journal. At start the
 // journal is played forward against what is on disk: a file that reached its place is taken into
 // the record, and the path it replaced is retired, as is the file of a task the batch found gone.
@@ -26,12 +35,14 @@
 // projection rescue its own files, never loses a person's file, and never moves W past an
 // unrendered commit.
 //
-// A full rebuild (no record, a record of another space, epoch, incarnation or format) removes
-// `.projection.json` first, so the folder claims nothing, queues every task through the writer and
+// A full rebuild (no record, a record of another space, epoch, incarnation or format, an unreadable
+// journal, a lost folder) removes `.projection.json` first, so the folder claims nothing, then the
+// catalogue and the index, which name the old tree, queues every task through the writer and
 // renders them as batches like any other. The old tree's files are retired: each is removed when it
 // still holds what was written, rescued otherwise, once the rebuild ends. It runs in place, not in
 // a `view.new/` beside the folder, because `projection.dir` may be a folder the person chose.
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Connection, ProjectedBatch } from "@tasks/storage";
 import { PROJECTION_ALL, PROJECTION_BATCH } from "@tasks/storage";
 import { readBatch, readPending, type BatchRead } from "./read.ts";
@@ -115,9 +126,34 @@ export interface StartReport {
 }
 
 /**
+ * Where `path` is on disk: its nearest folder that exists, resolved through links, junctions and
+ * other names of a folder (a Windows short name, another case), then the rest of the path.
+ */
+function physical(path: string): string {
+  const rest: string[] = [];
+  let at = path;
+  for (;;) {
+    try {
+      return join(realpathSync.native(at), ...rest);
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        throw new ProjectionError(codeOf(error), "projection.dir cannot be checked");
+      }
+      const parent = dirname(at);
+      if (parent === at) return path;
+      rest.unshift(basename(at));
+      at = parent;
+    }
+  }
+}
+
+/**
  * The projection's folder: the space's `view/`, or the machine-local `projection.dir` (A1 3.13).
  * That one must be an absolute path outside the space's folder that does not contain it, so the
- * projection never writes among the space's own files. Throws EINVAL otherwise.
+ * projection never writes among the space's own files: checked as written and where the folders
+ * are on disk, so a link or another name of a folder on the way changes nothing. Throws EINVAL
+ * otherwise.
  */
 export function projectionFolder(
   spaceFolder: string,
@@ -135,17 +171,36 @@ export function projectionFolder(
     const rel = relative(fold(outer), fold(inner));
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   };
-  if (within(space, target)) {
-    throw new ProjectionError("EINVAL", "projection.dir holds the space's folder");
-  }
-  if (within(target, space) && fold(target) !== fold(view)) {
-    throw new ProjectionError("EINVAL", "projection.dir is inside the space's folder");
+  const realSpace = physical(space);
+  for (const [s, t] of [
+    [space, target],
+    [realSpace, physical(target)],
+  ] as const) {
+    if (within(s, t)) {
+      throw new ProjectionError("EINVAL", "projection.dir holds the space's folder");
+    }
+    if (within(t, s) && fold(t) !== fold(join(s, "view"))) {
+      throw new ProjectionError("EINVAL", "projection.dir is inside the space's folder");
+    }
   }
   return target;
 }
 
 const sameIdentity = (a: SpaceIdentity, b: SpaceIdentity): boolean =>
   a.spaceId === b.spaceId && a.epoch === b.epoch && a.incarnation === b.incarnation;
+
+/** The root files a rebuild removes first, the claim first of all: they describe the old tree. */
+const OLD_TREE_FILES = [".projection.json", "catalog.jsonl", "index.md"] as const;
+
+/** Every folder the record's task files are in, each with its parents: `completed`, `completed/2026`. */
+function foldersOf(record: TreeRecord): Set<string> {
+  const folders = new Set<string>();
+  for (const { path } of record.tasks.values()) {
+    const parts = path.split("/");
+    for (let i = 1; i < parts.length; i += 1) folders.add(parts.slice(0, i).join("/"));
+  }
+  return folders;
+}
 
 /** One task's work in a batch: its record before, and its new record or null when it goes. */
 interface Plan {
@@ -164,6 +219,10 @@ export class Projector {
   readonly #batch: number;
   readonly #at: ProjectorOptions["at"];
   #record: TreeRecord | undefined;
+  /** The record on disk is behind this one: it is written before anything else (see the header). */
+  #unsaved = false;
+  /** foldersOf(the record), kept for the look at the outbox every 100 ms. */
+  #folders = new Set<string>();
 
   constructor(options: ProjectorOptions) {
     this.#conn = options.conn;
@@ -201,23 +260,30 @@ export class Projector {
     const found = this.#tree.readRecord();
     const journal = this.#tree.readJournal();
     let recovered = false;
-    if (found !== undefined && found !== null && journal !== undefined) {
+    if (found !== undefined && found !== null && journal !== undefined && journal !== null) {
       this.#recover(found, journal);
       this.#tree.writeRecord(found);
       recovered = true;
     }
-    this.#tree.dropJournal();
     const pending = readPending(this.#conn);
     const rebuild =
       found === undefined ||
       found === null ||
+      // A journal that cannot be read may name files a reported batch placed (see the header).
+      journal === null ||
       !sameIdentity(found.identity, pending) ||
-      found.watermark > pending.lastSeq;
+      found.watermark > pending.lastSeq ||
+      this.#tree.lostFolders.size > 0 ||
+      this.#tree.missing(foldersOf(found));
     if (rebuild) await this.#rebuild(found ?? undefined, pending);
     else {
       this.#record = found;
       if (found.rebuilding && !found.queued) await this.#queue();
     }
+    // Only now: until the record above is written, the journal is what a next start plays.
+    this.#tree.dropJournal();
+    this.#unsaved = false;
+    this.#folders = foldersOf(this.#rec);
     const rescued = this.#tree.rescued;
     return {
       rebuild,
@@ -275,38 +341,74 @@ export class Projector {
       for (const [path, hash] of old.files) record.retired.set(path, hash);
       for (const [path, hash] of old.retired) record.retired.set(path, hash);
     }
-    // First the claim goes, so a reader never trusts the old tree's watermark for the new one.
-    const claim = ".projection.json";
-    this.#tree.remove(claim, (hash) => record.retired.get(claim) === hash);
-    record.retired.delete(claim);
+    // First the claim goes, so a reader never trusts the old tree's watermark for the new one. Then
+    // the catalogue and the index, which name the old tree's files: a removal that fails leaves
+    // them retired, and the rebuild's first publish replaces them.
+    for (const name of OLD_TREE_FILES) {
+      const hash = record.retired.get(name);
+      try {
+        this.#tree.remove(name, (found) => hash === found);
+        record.retired.delete(name);
+      } catch (error) {
+        if (name === ".projection.json") throw error;
+      }
+    }
     this.#record = record;
-    this.#tree.writeRecord(record);
+    // The new record has no task yet: no folder of the old tree is looked for again.
+    this.#folders = foldersOf(record);
+    this.#save();
     await this.#queue();
   }
 
   async #queue(): Promise<void> {
     await this.#writer.queueProjection();
     this.#rec.queued = true;
-    this.#tree.writeRecord(this.#rec);
+    this.#save();
   }
 
-  /** Whether a batch has work, and a mark that changes whenever the outbox or the space does. */
+  /**
+   * Writes the record. One that cannot be written leaves the projector unsaved: the journal stays,
+   * and the next batch writes the record before anything else (see the header).
+   */
+  #save(): void {
+    this.#unsaved = true;
+    this.#tree.writeRecord(this.#rec);
+    this.#unsaved = false;
+  }
+
+  /**
+   * Whether a batch has work, and a mark that changes whenever the outbox or the space does. Work
+   * is also a record not yet written, a retired file still there, and a folder of the tree that is
+   * missing or not a real folder (a few lstat calls).
+   */
   pending(): { dirty: boolean; mark: string } {
     const p = readPending(this.#conn);
     const record = this.#rec;
     const dirty =
+      this.#unsaved ||
       !sameIdentity(record.identity, p) ||
       record.rebuilding ||
       p.rows > 0 ||
-      p.lastSeq > record.watermark;
+      p.lastSeq > record.watermark ||
+      record.retired.size > 0 ||
+      this.#tree.missing(this.#folders);
     return { dirty, mark: `${String(p.rows)}:${String(p.newest)}:${String(p.lastSeq)}` };
   }
 
-  /** One batch (see the header). Throws only when the batch could not run at all. */
+  /** One batch (see the header). Throws when the batch could not run, or its record not be written. */
   async step(): Promise<StepReport> {
+    if (this.#unsaved) {
+      this.#save();
+      this.#tree.dropJournal();
+    }
+    const made = this.#tree.prepare();
     const read = readBatch(this.#conn, this.#batch);
     this.#tree.newBatch();
-    if (!sameIdentity(this.#rec.identity, read.space)) {
+    if (
+      made ||
+      !sameIdentity(this.#rec.identity, read.space) ||
+      this.#tree.missing(this.#folders)
+    ) {
       await this.#rebuild(this.#rec, read.space);
       return this.#report(read.seq, 0, true, { written: 0, removed: 0, failed: 0 }, false);
     }
@@ -319,7 +421,9 @@ export class Projector {
     const counts = { written: 0, removed: 0, failed: 0 };
     let code: string | undefined;
     let published = false;
+    let lost: boolean;
     let watermark: number;
+    let unsaved: Error | undefined;
     try {
       const done = read.keys.filter((key) => !plans.some((plan) => plan.key === key));
       for (const plan of plans) {
@@ -331,6 +435,14 @@ export class Projector {
           code ??= codeOf(error);
         }
       }
+      // A folder the batch found missing or not real, where the record has files it did not place
+      // now: those files are gone, so no catalogue may name them. The tree is rebuilt instead.
+      const placed = new Set(plans.flatMap((plan) => (plan.next === null ? [] : [plan.next.path])));
+      lost = [...record.tasks.values()].some(
+        ({ path }) =>
+          !placed.has(path) &&
+          [...this.#tree.lostFolders].some((folder) => path.startsWith(`${folder}/`)),
+      );
       watermark = await this.#writer.projected({ seq: read.seq, keys: done });
       await this.#at?.("reported");
       const backlog = watermark < read.seq;
@@ -339,22 +451,40 @@ export class Projector {
         record.queued = false;
       }
       if (
+        !lost &&
         !record.rebuilding &&
         watermark >= record.watermark &&
-        (read.all || done.length > 0 || watermark > record.watermark)
+        (read.all || done.length > 0 || watermark > record.watermark || record.retired.size > 0)
       ) {
-        counts.removed = await this.#publish(read, watermark, journalTasks);
+        const outcome = await this.#publish(read, watermark, journalTasks);
+        counts.removed = outcome.removed;
+        counts.failed += outcome.failed;
+        code ??= outcome.code;
         published = true;
       }
     } finally {
       // Whatever happened is what the record says now. A kill skips this: start() plays the journal.
       try {
-        this.#tree.writeRecord(record);
-        await this.#at?.("record");
-        this.#tree.dropJournal();
-      } catch {
-        // The journal stays, and the next start plays it forward.
+        this.#save();
+      } catch (error) {
+        // The journal stays: the next start plays it forward, and the next batch writes the record
+        // first. The batch fails, so the loop pauses.
+        unsaved = new ProjectionError(codeOf(error), "The projection's record was not written");
       }
+      if (unsaved === undefined) {
+        await this.#at?.("record");
+        try {
+          this.#tree.dropJournal();
+        } catch {
+          // The record is written: the next batch's journal replaces this one.
+        }
+      }
+    }
+    if (unsaved !== undefined) throw unsaved;
+    this.#folders = foldersOf(record);
+    if (lost) {
+      await this.#rebuild(record, read.space);
+      return this.#report(read.seq, watermark, true, counts, false, code);
     }
     if (published && read.all) {
       await this.#writer.projected({ seq: read.seq, keys: [PROJECTION_ALL] });
@@ -418,13 +548,14 @@ export class Projector {
 
   /**
    * The root files, from the record's catalogue lines, with the watermark, then the retired files
-   * the new catalogue no longer names (see the header). Returns the files removed.
+   * the new catalogue no longer names (see the header). Returns the files removed, and the retired
+   * files that could not be: they stay retired, and the next publish tries again.
    */
   async #publish(
     read: BatchRead,
     watermark: number,
     journalTasks: ReadonlyMap<string, TaskRecord | null>,
-  ): Promise<number> {
+  ): Promise<{ removed: number; failed: number; code?: string }> {
     const record = this.#rec;
     const entries = [...record.tasks.values()].map((task) => task.entry);
     const mark: Watermark = {
@@ -451,6 +582,8 @@ export class Projector {
     }
     record.watermark = watermark;
     let removed = 0;
+    let failed = 0;
+    let code: string | undefined;
     const used = new Set([...record.tasks.values()].map((task) => task.path));
     for (const [path, hash] of [...record.retired]) {
       if (used.has(path) || record.files.has(path)) {
@@ -460,10 +593,12 @@ export class Projector {
       try {
         if (this.#tree.remove(path, (found) => found === hash) === "removed") removed += 1;
         record.retired.delete(path);
-      } catch {
-        // Kept for a later publish.
+      } catch (error) {
+        // Kept for the next publish, which pending() asks for.
+        failed += 1;
+        code ??= codeOf(error);
       }
     }
-    return removed;
+    return { removed, failed, ...(code === undefined ? {} : { code }) };
   }
 }
