@@ -1858,6 +1858,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.t3.cli-route",
+      "title": "The T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
+      "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A7 3.13 M6.10",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.cli-command",
+      "title": "The T3 CLI's command line: a .cmd shim read exactly or refused, hostile folder names reaching the fake CLI byte for byte (through the shim on Windows) or refused before anything starts, a shim naming another T3 home refused, each thread start answer mapped to its launch state, and a stage that refuses what the CLI cannot be given",
+      "source": "A4 3.4.1, A4 3.2, A4 3.6.4, A4 3.8, A7 3.13 M6.10",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.t3.binding",
       "title": "Exact-folder binding for T3 by directory identity: an exact project root through a link or another case, an existing git worktree, never a containing project, a sibling clone, a submodule or a subfolder of a worktree, and an archived project gone from the list",
       "source": "A4 3.4.1, A4 5.1, R11, A7 3.9 M2.11",
