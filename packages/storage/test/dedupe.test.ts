@@ -466,8 +466,9 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       "existing",
     ]);
     expect(holders(fx.reader, "jira:FIX-2")).toEqual([c.id]);
-    // A task the request completes before the draft is no match: the draft is new work after it,
-    // as complete_task's follow-up of the same ticket is (A3 3.4.8), and later drafts find it.
+    // A task the request completes before the draft finished last of all and is no match: the
+    // draft is new work after it, as complete_task's follow-up of the same ticket is (A3 3.4.8),
+    // and later drafts find it.
     const after = draft(["jira:FIX-1"]);
     const finished = submit([{ kind: "task.complete", task: a.id }, ...after.ops], {
       actor: "human",
@@ -484,7 +485,15 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       id: after.id,
       lifecycle: "active",
     });
-    complete(after.id);
+    // So is the next one in the chain, though an earlier task with the key finished within the
+    // window: the task the request completes is the one finished last.
+    const next = draft(["jira:FIX-1"]);
+    const chained = submit([{ kind: "task.complete", task: after.id }, ...next.ops], {
+      actor: "human",
+      base: fx.base(),
+    });
+    expect(chained.results[1]).toMatchObject({ status: "created", id: next.id });
+    complete(next.id);
     // A task the request reopens is an active one, even when it finished before the window.
     clock.now += 40 * DAY;
     const reopened = submit(

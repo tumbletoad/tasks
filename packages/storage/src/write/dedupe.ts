@@ -8,8 +8,9 @@
 //   from its create on, so two drafts of one request with one key are one task, whatever the order
 //   of their source operations.
 // - A holder's lifecycle is its own at the start, or what the request's earlier `task.complete` and
-//   `task.reopen` left. A task the request itself completes is no match: a draft after it is new
-//   work, as complete_task's follow-up of the same ticket is (A3 3.4.8).
+//   `task.reopen` left. A task the request itself completes finished last of all and is no match:
+//   a draft after it is new work, as complete_task's follow-up of the same ticket is (A3 3.4.8),
+//   so it is created, never matched to an earlier finish either.
 // - One active holder is the match, and the draft's entries follow it. Several are ambiguous: the
 //   first by reference is named, the rest listed, and nothing follows. With none, a holder finished
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
@@ -65,9 +66,11 @@ interface Holder {
   lifecycle: TaskLifecycle;
   /**
    * When it finished: the instant, and the commit that wrote its lifecycle. Null while it is
-   * active, and for a task the request completes, which no draft of the request matches.
+   * active. A task the request completes finished at the request's instant, after every commit.
    */
   finished: { at: number; seq: number } | null;
+  /** The request completed it: a draft after it is new work (A1 3.6). */
+  here: boolean;
   /** Reference order: existing tasks by reference, then the request's drafts as created. */
   rank: readonly [number, number];
 }
@@ -140,6 +143,7 @@ export class Dedupe {
     this.#holders.set(id, {
       lifecycle: "active",
       finished: null,
+      here: false,
       rank: [1, (this.#drafts += 1)],
     });
     for (const key of keys) this.link(key, id);
@@ -154,14 +158,15 @@ export class Dedupe {
   }
 
   /**
-   * The request completes (`completed`) or reopens (`active`) `task`. A task it completes is no
-   * longer active and no finished match either: a later draft is new work after it.
+   * The request completes (`completed`) or reopens (`active`) `task`. A task it completes finished
+   * last of all, which keeps a later draft from matching it or any earlier finish.
    */
   lifecycle(task: Id<"t">, lifecycle: "active" | "completed"): void {
     if (this.#keys.size === 0) return;
     const holder = this.#holder(task);
     holder.lifecycle = lifecycle;
-    holder.finished = null;
+    holder.here = lifecycle === "completed";
+    holder.finished = holder.here ? { at: this.#at, seq: Number.MAX_SAFE_INTEGER } : null;
   }
 
   /**
@@ -198,7 +203,8 @@ export class Dedupe {
     const [last] = holders
       .filter((h) => h.finished !== null && h.finished.at >= since)
       .sort(byFinish);
-    if (last === undefined) return { active };
+    // The task finished last was completed by this request: the draft is new work after it.
+    if (last === undefined || last.here) return { active };
     return {
       active,
       match: { task: last.id, lifecycle: last.lifecycle, follows: false, linkSources: false },
@@ -245,7 +251,12 @@ export class Dedupe {
       const seq = lifecycleSeq(r);
       finished = { at: r.optInt("completed_at", "instant") ?? this.#commitAt(seq), seq };
     }
-    const holder: Holder = { lifecycle, finished, rank: [0, r.int("ref", "taskRef")] };
+    const holder: Holder = {
+      lifecycle,
+      finished,
+      here: false,
+      rank: [0, r.int("ref", "taskRef")],
+    };
     this.#holders.set(id, holder);
     return holder;
   }
