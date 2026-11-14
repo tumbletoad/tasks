@@ -14,6 +14,7 @@ import {
   PREFERENCE_KEY_MAX,
   PREFERENCE_VALUE_BYTES,
   preferenceSpec,
+  readPreference,
   type PrefValue,
 } from "@tasks/contracts/preferences";
 import { isId, type Id } from "../ids.ts";
@@ -271,7 +272,8 @@ export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
 export type DedupeMode = (typeof DEDUPE_MODES)[number];
 
 /** Days a finished task still matches a draft's key: `tasks.dedupe_window_days`'s default. */
-export const DEDUPE_WINDOW_DAYS = 30;
+export const DEDUPE_WINDOW_DAYS = readPreference("tasks.dedupe_window_days", undefined)
+  .value as number;
 
 export interface TaskCreate extends TaskValues, Placement {
   kind: "task.create";

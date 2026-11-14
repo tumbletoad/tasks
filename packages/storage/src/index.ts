@@ -332,8 +332,6 @@ export {
   type ReceiptLookup,
 } from "./write/receipts.ts";
 export {
-  DEFAULT_EFFORTS,
-  DEFAULT_STATUSES,
   MACHINE_OS,
   readAsOf,
   SpaceWriter,

@@ -189,10 +189,6 @@ function opsText(entries: readonly OpsEntry[]): string {
   });
 }
 
-/** The statuses and effort keys of a space without its own (A1 3.16). */
-export const DEFAULT_STATUSES = ["open", "waiting", "review", "backlog"] as const;
-export const DEFAULT_EFFORTS = ["S", "M", "L"] as const;
-
 /** The value, or STORAGE_MISUSE: a staged operation always has what its kind needs. */
 function must<T>(value: T | null | undefined, message: string): T {
   if (value === null || value === undefined) throw misuse(message);

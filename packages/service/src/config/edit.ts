@@ -40,6 +40,12 @@ export type Edit =
       readonly key: string;
       readonly value: EditValue;
     }
+  /**
+   * Removes `key`'s line from the standard table `[table…]`; the table's header stays. A key that
+   * is not there leaves the text as it is; one set another way (a dotted key, an inline table) is
+   * refused by the check of the result.
+   */
+  | { readonly op: "unset"; readonly table: readonly string[]; readonly key: string }
   /** Adds an element `[[array]]` after the array's last element, or at the end. */
   | { readonly op: "append"; readonly array: string; readonly entries: Entries }
   /** Adds a new standard table `[table…]` at the end. Refused when it exists. */
@@ -149,6 +155,17 @@ function withValue(doc: TomlDocument, path: readonly string[], value: unknown): 
   return copy;
 }
 
+/** `doc` without the value at `path`, copying only the tables on the way. */
+function withoutValue(doc: TomlDocument, path: readonly string[]): TomlDocument {
+  const [head, ...rest] = path;
+  if (head === undefined || !Object.hasOwn(doc, head)) return doc;
+  if (rest.length === 0) {
+    return Object.fromEntries(Object.entries(doc).filter(([name]) => name !== head));
+  }
+  const inner = doc[head];
+  return isTable(inner) ? { ...doc, [head]: withoutValue(inner, rest) } : doc;
+}
+
 function valueAt(doc: TomlDocument, path: readonly string[]): unknown {
   let at: unknown = doc;
   for (const part of path) {
@@ -232,6 +249,14 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const lead = before === "" || before.endsWith("\n") ? "" : eol;
       return `${before}${lead}${keyText(edit.key)} = ${valueText(edit.value)}${eol}${text.slice(at)}`;
     }
+    case "unset": {
+      const header = headers.find((h) => !h.array && samePath(h.path, edit.table));
+      if (header === undefined) return text;
+      const line = tableLines(lines, header).find(
+        (l) => l.kind === "keyval" && samePath(l.key, [edit.key]),
+      );
+      return line === undefined ? text : text.slice(0, line.start) + text.slice(line.end);
+    }
     case "append": {
       const elements = headers.filter((h) => h.array && samePath(h.path, [edit.array]));
       const block = blockOf(`[[${keyText(edit.array)}]]`, entriesOf(edit.entries), eol);
@@ -262,6 +287,8 @@ function intended(doc: TomlDocument, edit: Edit): TomlDocument | EditRefusal {
   switch (edit.op) {
     case "set":
       return withValue(doc, [...edit.table, edit.key], parsedValue(edit.value));
+    case "unset":
+      return withoutValue(doc, [...edit.table, edit.key]);
     case "append": {
       const current = doc[edit.array];
       if (current !== undefined && !Array.isArray(current)) return "unsupported_layout";

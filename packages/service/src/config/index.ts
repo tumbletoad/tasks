@@ -33,5 +33,6 @@ export {
   type PreparedEdit,
 } from "./edit.ts";
 export { configRefusal, unsafeConfigMessage } from "./messages.ts";
+export { readMachinePreferences, setMachinePreference } from "./preferences.ts";
 export { ROOTS_FILE, syncRootRevisions, type RootRevisions } from "./root-revs.ts";
 export { decodeConfig, MAX_CONFIG_BYTES, parseToml } from "./toml.ts";
