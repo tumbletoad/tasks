@@ -37,6 +37,10 @@ const styles = classes(css, [
   "slot",
 ]);
 
+/** A view stays the current item while it holds an expanded task (`?task=`, A5 3.3). */
+const IGNORE_TASK = { includeSearch: false } as const;
+const EXACT_IGNORE_TASK = { exact: true, includeSearch: false } as const;
+
 const isCounted = (view: View): view is CountedView =>
   (COUNTED as readonly string[]).includes(view);
 
@@ -69,6 +73,7 @@ export function Sidebar({ space }: { readonly space: string }) {
                 params={{ space, view }}
                 className={styles.item}
                 activeProps={{ "aria-current": "page" }}
+                activeOptions={IGNORE_TASK}
                 data-view={view}
                 {...(count === undefined
                   ? {}
@@ -95,7 +100,7 @@ export function Sidebar({ space }: { readonly space: string }) {
                 params={{ space, area: area.id }}
                 className={styles.item}
                 activeProps={{ "aria-current": "page" }}
-                activeOptions={{ exact: true }}
+                activeOptions={EXACT_IGNORE_TASK}
               >
                 <span
                   className={`${styles.dot} slot-${String(slotOf(area, index))}`}
@@ -116,6 +121,7 @@ export function Sidebar({ space }: { readonly space: string }) {
                           params={{ space, area: area.id, project: project.id }}
                           className={styles.item}
                           activeProps={{ "aria-current": "page" }}
+                          activeOptions={IGNORE_TASK}
                         >
                           <span className={styles.label} dir="auto">
                             {project.title}

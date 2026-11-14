@@ -34,7 +34,28 @@ export interface TaskRow {
   readonly created_at: number;
   readonly version: number;
   readonly touched?: number;
+  /** Its first three sources, with their own text and URL (A5 3.6). Absent: none. */
+  readonly sources?: readonly RowSource[];
+  /** How many more sources it has than `sources` shows. */
+  readonly sources_more?: number;
+  /** Its place's state on this machine. Absent: it has no place (A5 3.6). */
+  readonly place?: RowPlace;
 }
+
+/** A source as the row shows it: its kind and its own text, never a label. */
+export interface RowSource {
+  readonly kind: string;
+  readonly title: string;
+  readonly who?: string;
+  /** Its key in its own system ("LUM-212"). */
+  readonly ref?: string;
+  readonly url?: string;
+}
+
+/** A task's place on this machine: here and found, here and not found, or on another machine. */
+export type RowPlace =
+  | { readonly state: "here" | "missing" }
+  | { readonly state: "elsewhere"; readonly machine: string };
 
 /**
  * A task's logical fields and their columns (A1 3.4). A feed entity's `changed` names logical
@@ -62,8 +83,16 @@ export const TASK_FIELD_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   deleted: ["deleted_at", "deleted_by"],
 };
 
-/** Every column a logical field of a task stands for. */
-const TASK_COLUMNS: ReadonlySet<string> = new Set(Object.values(TASK_FIELD_COLUMNS).flat());
+/**
+ * Every column a logical field of a task stands for, and what the compact row carries of the
+ * task's children (A5 3.6): each is the compact row's, present or left out.
+ */
+const TASK_COLUMNS: ReadonlySet<string> = new Set([
+  ...Object.values(TASK_FIELD_COLUMNS).flat(),
+  "sources",
+  "sources_more",
+  "place",
+]);
 
 /**
  * A row a paged query shows, brought up to a task's post-change compact row from the feed. The
@@ -177,6 +206,22 @@ const optional = (v: unknown, check: (v: unknown) => boolean): boolean =>
   v === undefined || check(v);
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
+const isSource = (v: unknown): boolean =>
+  isRecord(v) &&
+  isString(v["kind"]) &&
+  isString(v["title"]) &&
+  optional(v["who"], isString) &&
+  optional(v["ref"], isString) &&
+  optional(v["url"], isString);
+
+const isSources = (v: unknown): boolean => Array.isArray(v) && v.every(isSource);
+
+const isPlace = (v: unknown): boolean =>
+  isRecord(v) &&
+  (v["state"] === "here" ||
+    v["state"] === "missing" ||
+    (v["state"] === "elsewhere" && isString(v["machine"])));
+
 /**
  * A task's compact row, when it has the fields the page relies on with their types. Its other
  * fields are the service's and are taken as they come: a column the page does not read yet must
@@ -198,7 +243,10 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["area_id"], isString) ||
     !optional(v["project_id"], isString) ||
     !optional(v["deleted_at"], isNumber) ||
-    !optional(v["touched"], isNumber)
+    !optional(v["touched"], isNumber) ||
+    !optional(v["sources"], isSources) ||
+    !optional(v["sources_more"], isNumber) ||
+    !optional(v["place"], isPlace)
   ) {
     return undefined;
   }

@@ -253,6 +253,7 @@ const VERB_METHODS = [
   "setup/homes",
   "setup/home_grant",
   "setup/home_revoke",
+  "setup/seen",
 ] as const;
 
 /** The bind context's environment: only text values (the library already kept only listed names). */
@@ -311,6 +312,9 @@ export const listenEndpoint: ListenEndpoint = async (options) => {
               const { ev, ...fields } = event;
               hub.log.log(ev, fields);
             },
+            ...(hub.agentHomes?.seen === undefined
+              ? {}
+              : { seen: hub.agentHomes.seen.saw.bind(hub.agentHomes.seen) }),
           }),
         }),
     // mcp mode: the binding its bind frame resolves (A2 3.6.4 `{handle, space, state}`). A failure

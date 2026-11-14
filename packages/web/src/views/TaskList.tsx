@@ -22,6 +22,7 @@ import { Row } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { rowOfFacts } from "../task/detail.ts";
 import css from "./TaskList.module.css";
 
 const styles = classes(css, ["line", "announce"]);
@@ -39,11 +40,20 @@ export interface TaskListProps {
   readonly filter: (task: TaskRow) => boolean;
   /** The line an empty view shows. */
   readonly empty: string;
-  /** A task reference or ID to expand once the rows hold it. */
-  readonly expand?: string;
+  /**
+   * The task the URL names (a reference or an ID): expanded once it is found. In the live rows,
+   * or else read with `task.get` and injected (A5 3.3): a task of another lifecycle, or one the
+   * view's filter leaves out. Undefined: none is expanded.
+   */
+  readonly expand?: string | undefined;
+  /**
+   * The person expanded a task or collapsed it: the page puts it in the URL. `gone`: the URL's
+   * task does not exist, and the URL drops it.
+   */
+  readonly onExpand?: (task: TaskRow | undefined, gone?: boolean) => void;
 }
 
-export function TaskList({ view, filter, empty, expand: wantedRef }: TaskListProps) {
+export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: TaskListProps) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -53,17 +63,57 @@ export function TaskList({ view, filter, empty, expand: wantedRef }: TaskListPro
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
-  const wanted = useRef(wantedRef);
+  /** The URL's task, read with `task.get` because the live rows do not hold it. */
+  const [injected, setInjected] = useState<TaskRow | undefined>(undefined);
   /** The tasks whose receipts the tab follows: the expanded one, and every one it launched. */
   const watched = useRef(new Set<string>());
   const receiptReads = useRef(new Latest());
+  const changed = useRef(onExpand);
+  changed.current = onExpand;
+  /** The expanded task's row as last seen: it stays while expanded, whatever the update did. */
+  const held = useRef<TaskRow | undefined>(undefined);
+  /** What the callbacks read: one object for every row, for good. */
+  const latest = useRef<{ expanded: string | undefined; today: string }>({
+    expanded: undefined,
+    today: "",
+  });
+  /** The URL's task whose `task.get` is on its way: asked once, not at every frame. */
+  const asking = useRef<string | undefined>(undefined);
+  /** The URL's task this list has applied, or written itself. */
+  const handled = useRef<string | undefined>(wantedRef === undefined ? undefined : "");
+  /** The URL's task as this render reads it. */
+  const wanted = useRef(wantedRef);
+  wanted.current = wantedRef;
+  /**
+   * The URL's task the person has just left by expanding or collapsing a row: until the router
+   * puts the new URL in place, a frame that renders with the old one must not apply it again.
+   */
+  const leaving = useRef<{ ref: string | undefined } | undefined>(undefined);
+  /** The URL's `task.get`: the newest one applies, and the person's own choice outdates it. */
+  const lookups = useRef(new Latest());
+
+  // The expanded task's newest row: live, else the injected one, else the last one seen.
+  const expandedRow =
+    expanded === undefined
+      ? undefined
+      : (state.tasks.get(expanded) ??
+        (injected?.id === expanded ? injected : undefined) ??
+        (held.current?.id === expanded ? held.current : undefined));
+  held.current = expandedRow;
 
   // The view's rows, grouped, as one sequence of items. Recomputed when the published rows change.
+  // An expanded task stays where it is until it is collapsed, even when an update takes it out
+  // of the view (A5 3.1 item 7), and the URL's task joins its group when the view leaves it out.
+  // Only the expanded task joins: the injected row is that task's row while it is expanded, and
+  // the live row wins over it as soon as the store holds the task.
   const items = useMemo(() => {
     const tasks = [...state.tasks.values()].filter(filter);
+    if (expandedRow !== undefined && !tasks.some((task) => task.id === expandedRow.id)) {
+      tasks.push(expandedRow);
+    }
     const groups = groupTasks(tasks, state.areas.values(), state.projects.values());
     return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [state.tasks, state.areas, state.projects, filter]);
+  }, [state.tasks, state.areas, state.projects, filter, expandedRow]);
 
   const timed = useMemo(
     () => items.items.some((item) => item.kind === "row" && item.task.due_at !== undefined),
@@ -160,18 +210,94 @@ export function TaskList({ view, filter, empty, expand: wantedRef }: TaskListPro
     };
   }, [live, t]);
 
-  // A route that names a task (`tasks open <task>`) expands it once the rows hold it.
+  const expandTask = useCallback(
+    (task: TaskRow) => {
+      setExpanded(task.id);
+      setCurrent(task.id);
+      // An injected row belongs to its expansion: another task's expansion ends it.
+      setInjected((known) => (known?.id === task.id ? known : undefined));
+      watched.current.add(task.id);
+      loadReceipts(task.id);
+    },
+    [loadReceipts],
+  );
+
+  /**
+   * The person expanded or collapsed a row: that is the URL's task now (`ref`). A lookup of the
+   * URL's earlier task that is still on its way is outdated, and the earlier URL, until the
+   * router replaces it, is not applied again.
+   */
+  const chosen = useCallback((ref: string | undefined) => {
+    handled.current = ref;
+    lookups.current.begin("target");
+    asking.current = undefined;
+    leaving.current = wanted.current === ref ? undefined : { ref: wanted.current };
+  }, []);
+
+  // The URL's task (a link, `tasks open <task>`, a reload, Back and Forward) expands once it is
+  // found: in the live rows, or read with `task.get` once the rows are live and do not hold it.
+  // A URL without a task collapses. A task that does not exist leaves the URL with a toast. Each
+  // URL task is applied once (`handled`): the URL this list wrote itself, after the person
+  // expanded or collapsed a row, is already applied, so a frame in between never undoes a click.
   useEffect(() => {
-    const ref = wanted.current;
-    if (ref === undefined) return;
-    const task = [...state.tasks.values()].find((r) => r.ref === ref || r.id === ref);
-    if (task === undefined) return;
-    wanted.current = undefined;
-    setExpanded(task.id);
-    setCurrent(task.id);
-    watched.current.add(task.id);
-    loadReceipts(task.id);
-  }, [state.tasks, loadReceipts]);
+    if (leaving.current !== undefined) {
+      if (wantedRef === leaving.current.ref) return;
+      leaving.current = undefined;
+    }
+    if (wantedRef === handled.current) return;
+    if (wantedRef === undefined) {
+      handled.current = undefined;
+      asking.current = undefined;
+      setExpanded(undefined);
+      setInjected(undefined);
+      return;
+    }
+    const matches = (row: TaskRow) => row.ref === wantedRef || row.id === wantedRef;
+    const row =
+      [...state.tasks.values()].find(matches) ??
+      (injected !== undefined && matches(injected) ? injected : undefined);
+    if (row !== undefined) {
+      handled.current = wantedRef;
+      if (latest.current.expanded !== row.id) expandTask(row);
+      return;
+    }
+    if (state.phase !== "live" || asking.current === wantedRef) return;
+    asking.current = wantedRef;
+    const newest = lookups.current.begin("target");
+    // An answer applies only while it is the newest lookup and the URL still names its task: the
+    // person may have chosen another row, or gone Back, while it was on its way.
+    const applies = () => newest() && wanted.current === wantedRef;
+    const settled = () => {
+      if (asking.current === wantedRef) asking.current = undefined;
+    };
+    const { areas, projects } = state;
+    api.client.task
+      .get({ task: wantedRef })
+      .then((read) => {
+        settled();
+        if (!applies() || read.view !== "digest") return;
+        handled.current = wantedRef;
+        const found = rowOfFacts(read.task, areas, projects, latest.current.today);
+        setInjected(found);
+        expandTask(found);
+      })
+      .catch((error: unknown) => {
+        if (live.failed(error)) return;
+        settled();
+        if (!applies()) return;
+        handled.current = wantedRef;
+        say(t("task.gone"));
+        changed.current?.(undefined, true);
+      });
+  }, [wantedRef, state, injected, api, live, say, t, expandTask]);
+
+  /** Collapses the expanded task; an injected one leaves with it (its route is left). */
+  const collapse = useCallback(() => {
+    chosen(undefined);
+    setExpanded(undefined);
+    setInjected(undefined);
+    changed.current?.(undefined);
+  }, [chosen]);
 
   /** The click's receipt shows at once, unless a list already holds it: that one is newer. */
   const shown = useCallback(
@@ -202,23 +328,25 @@ export function TaskList({ view, filter, empty, expand: wantedRef }: TaskListPro
   );
 
   // The row actions read the latest state through a ref: one object for every row, for good.
-  const latest = useRef({ expanded, today: clock.today });
   latest.current = { expanded, today: clock.today };
   const actions = useMemo<RowActions>(() => {
-    const expandTask = (task: TaskRow) => {
-      setExpanded(task.id);
-      setCurrent(task.id);
-      watched.current.add(task.id);
-      loadReceipts(task.id);
-    };
     return {
       toggle: (task) => {
-        if (latest.current.expanded === task.id) setExpanded(undefined);
-        else expandTask(task);
+        if (latest.current.expanded === task.id) {
+          collapse();
+        } else {
+          chosen(task.ref);
+          expandTask(task);
+          changed.current?.(task);
+        }
       },
       // A tile whose launch is on its way or done (A5 3.6): the row expands, and stays expanded.
       expand: (task) => {
-        if (latest.current.expanded !== task.id) expandTask(task);
+        if (latest.current.expanded !== task.id) {
+          chosen(task.ref);
+          expandTask(task);
+          changed.current?.(task);
+        }
       },
       // Open (A4's `launch.open`). An app that takes the brief by paste (Codex's assisted open)
       // gets it on the clipboard too.
@@ -270,17 +398,35 @@ export function TaskList({ view, filter, empty, expand: wantedRef }: TaskListPro
             if (!live.failed(error)) say(t("row.starFailed"));
           });
       },
+      // The title, edited in place (A5 3.7): shown at once, held until the feed confirms it.
+      rename: (task) => {
+        // The base is taken when the editor opens: what the person saw when they began to type.
+        const base = live.store.asOf;
+        return (title) => {
+          live
+            .write(
+              (request) =>
+                api.client.task.update({
+                  task: task.id,
+                  set: { title },
+                  ...(base === undefined ? {} : { base }),
+                  request_id: request,
+                }),
+              { tasks: [{ id: task.id, set: { title } }] },
+            )
+            .answer.catch((error: unknown) => {
+              if (!live.failed(error)) say(t("task.renameFailed"));
+            });
+        };
+      },
       current: (task) => {
         setCurrent(task.id);
       },
     };
-  }, [api, live, loadReceipts, say, shown, t, toClipboard]);
+  }, [api, live, expandTask, chosen, collapse, say, shown, t, toClipboard]);
 
   const onCurrent = useCallback((key: string) => {
     setCurrent(key);
-  }, []);
-  const onCollapse = useCallback(() => {
-    setExpanded(undefined);
   }, []);
 
   // The current row: the one chosen, or the first row when none is (or it left the view).
@@ -316,7 +462,7 @@ export function TaskList({ view, filter, empty, expand: wantedRef }: TaskListPro
         current={currentKey}
         expanded={expanded}
         onCurrent={onCurrent}
-        onCollapse={onCollapse}
+        onCollapse={collapse}
         row={row}
         // The empty line shows once the rows are live; the list keeps a row that holds focus.
         {...(state.phase === "live" ? { empty: <p className={styles.line}>{empty}</p> } : {})}

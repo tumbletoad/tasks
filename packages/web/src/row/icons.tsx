@@ -39,6 +39,28 @@ export const CopyIcon = () => (
   </Icon>
 );
 
+/** A learning (A5 3.20 "Actions": learning, a bulb). */
+export const BulbIcon = () => (
+  <Icon>
+    <path d="M9 17.5h6M10 20.5h4M12 3.5a5.5 5.5 0 0 0-3.3 9.9c.5.4.8 1 .8 1.6v.5h5v-.5c0-.6.3-1.2.8-1.6A5.5 5.5 0 0 0 12 3.5Z" />
+  </Icon>
+);
+
+/** A finished task's outcome (A5 3.20 "Actions": outcome, a check in a circle). */
+export const OutcomeIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="8" />
+    <path d="m8.5 12.2 2.4 2.3 4.6-4.8" />
+  </Icon>
+);
+
+/** Collapse the expanded task (A5 3.20 "Actions": chevrons). */
+export const ChevronUpIcon = () => (
+  <Icon>
+    <path d="m6.5 14.5 5.5-5.5 5.5 5.5" />
+  </Icon>
+);
+
 /** The late due's clock glyph: late and due-soon differ by text and by this shape (A5 3.19). */
 export const ClockIcon = () => (
   <Icon>

@@ -11,6 +11,8 @@ export const SECTIONS = [
   "terminal",
   "instance",
   "approvals",
+  // A3 3.12: `[setup.managed] paths`, files setup treats as managed by another source.
+  "setup",
   "custom_target",
   "override",
   "remote",

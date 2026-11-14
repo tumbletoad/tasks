@@ -976,6 +976,7 @@ When `view` is `"digest"`:
 | `task.context` | string | yes | Markdown context: the first 800 characters |
 | `task.waiting_on` | string | no | Who or what it waits on |
 | `task.focus` | boolean | yes | Starred for today |
+| `task.created` | string | no | When it was created |
 | `task.place` | object | no | Its place on this machine |
 | `task.place.root` | string | yes | Root name |
 | `task.place.path` | string | yes | Path inside the root |

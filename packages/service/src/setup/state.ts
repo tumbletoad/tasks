@@ -12,8 +12,11 @@ import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, ensurePrivateDir } from "../hub/files.ts";
 
-/** The apps setup registers Tasks in, by the name the bridge's `--app` carries (A3 3.13.2, 3.13.4). */
-export const AGENT_APPS = ["claude-code", "codex"] as const;
+/**
+ * The apps setup registers Tasks in, by the name the bridge's `--app` carries (A3 3.13.2-3.13.4).
+ * The Codex app and T3 Code read these apps' homes, so they have no entry of their own.
+ */
+export const AGENT_APPS = ["claude-code", "codex", "claude-desktop"] as const;
 export type AgentApp = (typeof AGENT_APPS)[number];
 
 export const isAgentApp = (value: unknown): value is AgentApp =>
