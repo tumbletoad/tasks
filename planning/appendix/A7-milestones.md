@@ -501,11 +501,12 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 **Goal.** Import the prototype, rehearse, cut over and run the trial. When the gate in 3.16 passes, v1 is done.
 
-**Merged.** M7.01 synthetic prototype fixture, M7.02 pure parsers. What later steps rely on:
+**Merged.** M7.01 synthetic prototype fixture, M7.02 pure parsers, M7.03 mapping. What later steps rely on:
 - **Fixture.** `packages/testkit/src/planning.ts` generates the synthetic prototype folder and its index from a fixed seed, in Mira's world with RFC 2606 hosts only. `pnpm seed --planning` writes it into `fixtures/` (`[A7.3.14.planning-fixture.deterministic]`): change the generator and regenerate, never the committed files.
 - **Index** (`fixtures/planning-prototype.index.json`). It sits beside the folder, not in it, so the importer's input copy holds only prototype files. It names every edge case with its location and gives the ledger `counts` that M7.04's dry run must report (`[A7.3.14.planning-fixture.index]`). The fixture covers every mapping row of 3.15.3, because M7.03's Verify needs a fixture case per row.
 - **The shared key.** The index's task is the Mira sample's M-1, which holds `jira:LUM-1000`, and `planning.test.ts` checks that it still does. If a change to Mira's random sequence breaks that test, keep Mira's first source a `jira:LUM-1000` ticket or move the fixture's key to Mira's first ticket.
 - **Parsers** (`packages/importer-planning`). Not covered by a test: the file-link refusal on Windows without the symlink privilege. The Ubuntu job runs it, and the folder-link refusal uses a junction and runs on both.
+- **Mapping** (M7.03, 3.15.3). M7.04 calls `mapPrototype(parsePrototype(input), options)` on the copy and reports the plan's counts, owners, sources and problems with the parse's. M7.05 applies `bindOperations(plan, idOf)` with fresh `t_` IDs. The writer does not take these parts of a plan yet, so M7.05 adds them: `alias.add`, `task.create`'s `created_at` and `ext` (and `imported_at` at the first import), the `at` of `log.add` and `task.complete`, area and project upserts by slug (a project slug another area holds takes the next free number), a commit above 50 operations, and the generic flag of a source (`ext.planning.generic_title`). `tests/importer/shared-sources.test.ts` applies the other parts through today's writer. A task's `exchange_items.base` is the values of its create and completion operations.
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
@@ -576,32 +577,44 @@ The prototype's rules, read from `planning.py` and the page's event handling. Th
 | Title | `title` | Over 300 characters: cut at a word boundary, the full text kept at the top of `context`, reported |
 | `## Group` | Area, only when metadata has no category | |
 | Body without the marker | `context`, verbatim | `Next:`, `Refs:` and `(added …)` stay in the text |
-| `(added YYYY-MM-DD, <agent>)` | `created_at` on that day at 09:00 local. `ext.planning.added_by` | `created_by` is the user who applied the import. Without the clause, `created_at` is the import time |
-| `category` | Area: slug from the text, title as written, order of first appearance in `TODO.md` | |
-| `project` | Project in that area | The slug ignores a trailing `(…)`. The full text stays the title |
+| `(added YYYY-MM-DD, <agent>)` | `created_at` on that day at 09:00 local. `ext.planning.added_by` | `created_by` is the user who applied the import. Without the clause, or with a day that is no date, `created_at` is the import time |
+| `category` | Area: slug from the text, title as written, order of first appearance in `TODO.md` | One slug is one area, titled as first written |
+| `project` | Project in that area | The slug ignores a trailing `(…)`. The full text stays the title. Project slugs are unique in a space, so the same name in a second area gets `-2` |
 | `status` `open`, `waiting`, `backlog` | The same status | |
 | `status: needs_review` | `review` | |
 | `status: delegated` | `waiting`, with `waiting_on` set to the owner and `ext.planning.status = "delegated"` | Keeps the distinction for a later status split (A1 3.17) |
 | No status | `waiting` when the title starts "Waiting on ", else `open` | The prototype's default |
-| `owner` | The user (given with `--me`): no owner. Another person: `waiting_on` for waiting or delegated tasks, else `owner` | The report lists every distinct owner |
+| `owner` | The user (given with `--me`): no owner. Another person: `waiting_on` for waiting or delegated tasks, else `owner` | `--me` matches without case and outer spaces. The report lists every distinct owner |
 | `priority` `P1`–`P3` | `priority` 1–3 | No `priority`: 3, because the prototype page shows a missing priority as P3. The space's default 4 means no priority (A1) |
-| `rank` | `ext.planning.rank`. Position within the project by rank, then by file order | Tasks without a rank sort after ranked ones |
+| `rank` | `ext.planning.rank`. Position within the project (or the area, without one) by rank, then by file order | Tasks without a rank sort after ranked ones |
 | `next` | `summary`, one line | No `next`: the `Next:` clause of the body, else empty |
 | `evidence` | One log entry of kind `evidence`, dated `source_date` | Verbatim |
 | `source_date`, `reviewed` | `source_at`, `reviewed_at`, that day at 09:00 local | Invalid dates are dropped and reported |
 | `confidence` | `ext.planning.confidence` | Kept as written |
 | `due` | `due_date` | Invalid dates are dropped and reported. No due date is ever invented |
-| `sources` | `sources` rows, linked with role `origin` | Kind from the URL: mail → `email`, chat → `chat`, `/browse/<KEY>-<n>` → `ticket` with `ref`, documents and drive → `doc`, calendar → `calendar`, code hosts → `pr` or `issue`, else `web`. The title is the label, unless the label only names the kind ("Email", "Chat"). Then the title is a short form of the URL, flagged "generic" so a later Refresh can improve it |
+| `sources` | `sources` rows, linked with role `origin` | Kind from the URL: mail → `email`, chat → `chat`, `/browse/<KEY>-<n>` → `ticket` with `ref`, documents and drive → `doc`, calendar → `calendar`, code hosts → `pr` or `issue`, else `web`. The title is the label, unless the label only names the kind ("Email", "Chat"). Then the title is a ticket's title from `data/jira.json`, else a short form of the URL, flagged "generic" so a later Refresh can improve it |
 | Source keys | Jira: `jira:<KEY>` from the URL. Others: `url:<normalised URL>` (A3 3.11.1) | `gmail:` and `gchat:` keys are derived only after the rehearsal shows that the URL token equals the connector's thread ID (risk D11) |
-| Shared sources | One `sources` row per key, linked to every task that names it | Every create uses `dedupe: none`, so a shared key never merges two legacy tasks or attaches one to an existing task. The report lists shared keys under needs attention. Refresh keeps A1's source-key dedupe |
-| `paths[0]` | A place `(machine, root, relative path)` | Longest matching root from `--roots` or the proposed roots. A path under no root is reported, and no place is created |
+| Shared sources | One `sources` row per key, linked to every task that names it | Every create uses `dedupe: none`, so a shared key never merges two legacy tasks or attaches one to an existing task. The row's title is the first label in task order that names more than the kind. The report lists shared keys under needs attention. Refresh keeps A1's source-key dedupe |
+| `paths[0]` | A place `(machine, root, relative path)` | Longest matching root from `--roots` or the proposed roots. A path under no root is reported, no place is created, and the path is kept in `ext.planning.paths` |
 | `paths[1…]` | `ext.planning.paths` | Reported. A5 shows one folder per task |
-| `[x]` in `TODO.md`, or a folded `check` | `lifecycle = completed`, `wrap_state = pending`, `completed_by` the user, `completed_at` the event time or the import time | D12: the user's check-off completes. `--checked-as review` keeps such tasks active in Review instead |
-| Folded `focus` | `focus_on` = the event's day | The parser gives `day` as the event's own time writes it. M7.03 chooses between that date and the import machine's local day. `unfocus` clears it |
-| Line in `DONE.md` with `(done YYYY-MM-DD; <evidence>)` | Completed on that day. `outcome` = the evidence. `wrap_state = wrapped` | |
+| `[x]` in `TODO.md`, or a folded `check` | `lifecycle = completed`, `wrap_state = pending`, `completed_by` the user, `completed_at` the event time when an event checked it, else the import time | D12: the user's check-off completes. A later `uncheck` event never clears a checked box. `--checked-as review` keeps such tasks active in Review instead |
+| Folded `focus` | `focus_on` = the day of the event's instant in the import machine's time zone | The day starring in TT Tasks at that instant would set (A5 3.4). The page writes its events in UTC, so the day as written can be the day before. `unfocus` clears it |
+| Line in `DONE.md` with `(done YYYY-MM-DD; <evidence>)` | Completed on that day at 09:00 local. `outcome` = the evidence. `wrap_state = wrapped` | A day that is no date, or outside 1970 to 9999: completed at the import time with `ext.planning.done_date_unknown`, still wrapped. Empty evidence: `wrap_state = pending` |
 | Line in `DONE.md` without it | Completed at the import time with `ext.planning.done_date_unknown`. `wrap_state = pending` | A later Wrap-up can add an outcome and learnings |
 | Every imported task | `ext.planning = {legacy_id, file, line, imported_at}` and one log entry "Imported from the Planning prototype" | No changed marker in the UI |
-| Unknown metadata keys | `ext.planning.<key>`, from the parser's `extra` | Never collide with the space's fields |
+| Unknown metadata keys | `ext.planning.<key>`, from the parser's `extra` | Never collide with the space's fields. A key that names one of the importer's own `ext.planning` keys is left out and reported |
+
+**The mapping** (`mapping.ts`, `plan.ts`; tests [A7.3.15.importer.mapping], [A7.3.15.importer.mapping-rules], [A7.3.15.importer.shared-sources]). `mapPrototype(parse, options)` is pure: no file, no clock and no random source, so one input gives one plan, which the preview token hashes. Its options are `--me`, the roots, `--checked-as`, `--include-orphans` and the import machine's IANA time zone. What the table leaves open:
+- **The plan.** Areas and projects by slug, each an upsert: the apply reuses a live one with that slug. Each task's operations in order: `task.create` with `dedupe: none`, the alias, `source.add` per source, `place.set`, the evidence and import log entries, `task.complete`. A task is named by a draft handle, its legacy ID, until the apply draws its `t_` ID (`bindOperations`), because an ID is random (A1 3.3) and a random plan could never match its preview. The report's owners and counts come with it.
+- **Local time.** "Local" is the import machine's zone: a day is 09:00 on that day there. A day or time outside the space's range (1970 to 9999) is dropped (`date-out-of-range`).
+- **Text.** Every text passes SafeText (A3 3.10), and each field it changed gives `text-sanitised`, which the report counts. A text over its limit in the space (summary 400 and owner 300 characters, context 64 KiB, evidence 16 KiB, outcome 4 KiB, source title 300 characters) is cut at the last space in its second half, else at the limit (`text-cut`). A title that SafeText empties is the legacy ID (`title-empty`).
+- **Slugs.** The text's letters and digits in lower case, accents removed, every other run as one `-`, at most 48 characters. A text with none gives `area` or `project`. An orphan, which has no group, is in area `Other`.
+- **Order.** Tasks are created group by group (an area, or a project in it) in order of first appearance, and within a group in position order. The writer appends each create to its group, so the creation order is the position, and the `M-n` references run per group.
+- **Sources.** Kind, in this order: `mailto:` → `email`; a path ending `/browse/<KEY>-<n>` → `ticket` (the key upper-cased); a path `/<owner>/<repo>[/-]/pull|pulls|merge_requests/<n>` → `pr`, `…/issues/<n>` → `issue`; the host's first label `mail`, `outlook`, `webmail` → `email`, `chat`, `teams` → `chat`, `calendar` → `calendar`, `docs`, `drive`, `sheets`, `slides` → `doc`; else `web`. A label is generic when, without case and a trailing `.` or `:`, it is empty or one of email, e-mail, mail, message, thread, chat, ticket, jira, issue, pr, pull request, merge request, doc, docs, document, drive, file, calendar, event, meeting, link, url, web, website, page. A generic title is the URL's host and path, at most 80 characters. A URL that does not parse, or a key over 512 characters, gives a keyless row of its own (`source-key-unavailable`). A URL over 2,048 characters is left out (`source-dropped`). A task links one key once.
+- **Places.** By the text of the paths, since the mapping reads no disk: segments split at `/` (and `\` for a Windows path, compared without case), empty and `.` segments dropped, the longest root by whole segments. A `..` segment, a character a place path never holds, or a relative path over 1,024 characters gives no place. The dry run checks which places resolve.
+- **`ext.planning`.** `legacy_id`, `file`, `line`, `added_by`, `status`, `rank`, `confidence`, `paths` (every path that is not the place), `done_date_unknown`, then each unknown metadata key, its strings through SafeText. A key that names one of these or `imported_at` is left out (`extra-key-reserved`), and so is a value nested deeper than 32 levels (`extra-dropped`). `imported_at` is the applying commit's instant, written at the first import only, so an unchanged re-import changes nothing.
+- **Duplicates.** A later line with an earlier line's ID is left out of the plan, so one legacy ID is one task and one alias. The parse reports it (`duplicate-id`).
+- **Problems.** The mapping's codes share the parser's table (`packages/contracts`, `import-planning.ts`), each a place and a code, never input text. Shared keys the space already holds and paths missing on this machine are the dry run's to find, because the mapping reads no space and no disk.
 
 #### 3.15.4 Dry run and preview
 
@@ -662,7 +675,7 @@ Re-import keeps the work space current from the real-use point until the switch-
 | `web-*` events without `.ready` | Unfinished browser writes | Ignored and reported, as the prototype does |
 | Browser-only check-offs and stars | Held in the prototype page's browser storage, keyed by the page's folder path | Exported from the page before the freeze and passed with `--actions` |
 | Raw events | Folded into state | Copied into the run folder |
-| Metadata entries without a task line | No task text | Reported. `--include-orphans` creates them in Backlog |
+| Metadata entries without a task line | No task text | Reported. `--include-orphans` creates them in Backlog, titled by their legacy ID |
 
 #### 3.15.8 Export to the prototype format
 
