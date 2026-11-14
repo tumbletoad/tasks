@@ -877,6 +877,8 @@ The first baselines come from the Mira sample space. In M5.13 they are compared 
 | Bridge | The thresholds of A2 3.7.7 | A2 |
 | Tool definitions | Measured in the generated definitions and reported, not capped | A3 3.2.5 |
 
+**These targets are guidelines until real use (PLAN D26).** A missed target is measured, reported and judged, and is by itself no reason to cut or rework a feature. They are set again when the product is close to maturity. The regression rule below stays: it guards against an accident, not against a design.
+
 CI runners are noisy. CI fails a build when a budget regresses by more than 50 % against the stored baseline of the same runner type (A1 5). Absolute targets are measured on the two real machines at each milestone close. Headless Firefox keeps a 1366x768 window whatever `--window-size` says and reports `performance.now()` in whole milliseconds, so performance tests that run headless in Firefox must account for both.
 
 #### 3.18.4 CI matrix
@@ -979,6 +981,7 @@ A required capability of D6, D7 or D8 has no profile. Changing that scope deviat
 | D17 | UI speed on Linux in the Firefox snap | Low to medium | Medium | U07 in M0, M5.13, A5 3.25's fallbacks |
 | D18 | Agents colliding in UI files | Medium | Low | One UI lane in M5, the other agents on runs and the importer (3.6) |
 | D19 | A build breaks the real work space during early real use | Medium | High | A verified backup before every upgrade, the deploy check after every deploy, a break fixed before other work, the prototype as source of truth until M7 |
+| D20 | Antivirus software flags the unsigned Windows launchers. Microsoft Defender once quarantined a freshly built `tasksw.exe` as a machine-learning false positive, which failed every test that builds or installs the launchers | Medium | Medium | Authenticode signing at M10 (3.17). Before a public release the build is installed on a Windows machine with no Defender allowance and no exclusion, and must not be flagged. Until then a development machine may need an allowance, which only its owner sets |
 
 ---
 
