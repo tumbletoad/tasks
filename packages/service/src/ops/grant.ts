@@ -14,7 +14,8 @@
 //   made for the instance of the connection that bound it and binds no connection of another
 //   instance (binding/bindings.ts), so the two are one home; the gate checks both all the same,
 //   so a session's calls stop with its home's row whichever connection carries them.
-// The user's classes, a script and an agent's CLI without a session are not an agent home's calls.
+// The user's classes, a script, an agent's CLI without a session, and one mapped to a session no
+// agent has bound yet (A3 3.7.7) are not an agent home's calls.
 //
 // What the gate promises: an agent that uses the entry its app was given reaches only the spaces
 // its home's live rows name, whatever its calls carry (no tool takes a space; a space a CLI call
@@ -66,6 +67,10 @@ export const grantRefused = (): AppError =>
 export function homesOf(caller: Caller): readonly string[] {
   const slot = caller.binding;
   if (slot !== undefined) {
+    // A CLI call mapped to a session no agent has bound yet (made with its launch, A3 3.7.7) is no
+    // home's call, as an agent's CLI without a session is not: it reaches only that session's
+    // space, which the person launched the task into. Once a home binds the session, it is gated.
+    if (slot.kind === "mapped" && slot.session?.waiting === true) return [];
     const session = slot.session?.instance;
     return session === undefined || session === slot.instance
       ? [slot.instance]

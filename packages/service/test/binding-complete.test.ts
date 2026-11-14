@@ -162,6 +162,48 @@ describe("[A3.3.7.binding.native] a launch's preset session ID binds alone, thro
   );
 });
 
+describe("[A3.3.7.binding.launch-session] a CLI call maps to its launch's session before any agent bound it", () => {
+  test(
+    "a launch whose instance is no registered home: its shell acts as the waiting session, ungated, in its space; once a home binds it, its calls are that home's",
+    { timeout: LONG },
+    async () => {
+      // T3's or Copy's instance is no agent home of its own: the session waits for the home that
+      // binds it (A3 3.7.7, 3.7.8).
+      const launch = await w.launch("M-4", { instance: "t3-launch" });
+      const waiting = w.service.bindings.sessionOfLaunch(launch.id);
+      expect(waiting?.waiting).toBe(true);
+      const shell = await classSession(w.home, w.path, "cli-agent", {
+        TASKS_TICKET: launch.ticket,
+      });
+      try {
+        const logged = (await shell.call(
+          "op/call",
+          {
+            op: "entry.add",
+            input: { kind: "progress", text: "Fixture progress, waiting.", request_id: rid() },
+          },
+          { timeoutMs: 60_000 },
+        )) as Json;
+        expect(logged).toMatchObject({ task: "M-4" });
+        const read = await user("task.get", { task: "M-4", sections: ["log"] });
+        const log = (read["sections"] as Json)["log"] as Json[];
+        expect(log[0]?.["author"]).toBe(`agent:t3-launch:${waiting?.id ?? ""}`);
+      } finally {
+        shell.close();
+      }
+      // The provider's home binds it with the ticket: the session is that home's from now on.
+      const agent = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      try {
+        expect(agent.binding["state"]).toBe("bound");
+        expect(agent.slot.session).toMatchObject({ id: waiting?.id, instance: "done-agent" });
+        expect(agent.slot.session?.waiting).toBeUndefined();
+      } finally {
+        agent.close();
+      }
+    },
+  );
+});
+
 describe("[A3.3.7.binding.call-only] a shared connection binds for its call only; a bound one says which task it stays on", () => {
   test(
     "Claude Desktop's chat: a launch reference loads its task with durable false and the hint, is not used up, and its session reads opened by reference",

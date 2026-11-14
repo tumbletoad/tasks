@@ -26,6 +26,11 @@ export interface BoundSession {
   readonly instance: string;
   /** The launches it was bound through (`la_` IDs), first open first. */
   readonly launches: readonly string[];
+  /**
+   * Made with its launch intent and bound by no agent yet (A3 3.7.7): it is no agent home's, and
+   * holds its launch's instance until the first connection that binds it makes it its home's.
+   */
+  readonly waiting?: true;
 }
 
 /**

@@ -240,6 +240,7 @@ const view = (record: SessionRecord): BoundSession => ({
   task: record.task,
   instance: record.instance,
   launches: record.launches,
+  ...(record.via === null ? { waiting: true as const } : {}),
 });
 
 /** The instance a bind context names: an A4 instance ID, else `manual` (mcp/principal.ts's rule). */
@@ -834,7 +835,8 @@ export class Bindings implements BindingPort {
     const found = new Set<SessionRecord>();
     for (const session of this.#sessions.values()) {
       if (session.ended_at !== undefined || this.#provisional.has(session.id)) continue;
-      if (instance !== undefined && session.instance !== instance) continue;
+      // A session is its home's once an agent bound it; one still waiting is the first binder's.
+      if (instance !== undefined && session.via !== null && session.instance !== instance) continue;
       const holds = session.native.some(
         (n) =>
           BINDS_ALONE.has(n.trust) &&

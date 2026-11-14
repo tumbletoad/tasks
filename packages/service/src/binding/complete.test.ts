@@ -247,14 +247,16 @@ describe("[A3.3.7.binding.native] a native ID a launch set or received binds alo
     expect(second.slot.session?.id).toBe(first.slot.session?.id);
   });
 
-  test("T3's returned thread ID binds at the bind frame; Codex's matched thread binds at the first tool call", async () => {
+  test("T3's returned thread ID binds at the bind frame for the provider's home; Codex's matched thread binds at the first tool call", async () => {
     const { bindings: b } = bindings();
-    const t3 = intentOf({ route: "t3-mcp" });
+    // T3's instance launched it; the Claude thread's bridge is the provider home's, which takes it.
+    const t3 = intentOf({ route: "t3-mcp", instance: "t3-work" });
     b.launched(SPACE, t3);
     b.launched(SPACE, { ...t3, state: "dispatched", evidence: { thread: T3_THREAD } });
     const thread = await connect(b, { env: { T3CODE_THREAD_ID: T3_THREAD } });
     expect(thread.state).toBe("bound");
-    expect(thread.slot.session?.launches).toEqual([t3.id]);
+    expect(thread.slot.session).toMatchObject({ launches: [t3.id], instance: "unit-agent" });
+    expect(thread.slot.session?.waiting).toBeUndefined();
 
     const codex = intentOf({ task: OTHER_TASK });
     b.launched(SPACE, codex);
@@ -274,18 +276,19 @@ describe("[A3.3.7.binding.native] a native ID a launch set or received binds alo
     expect((await connect(b, { env: { CLAUDE_CODE_SESSION_ID: "presented-only-1" } })).state).toBe(
       "unbound",
     );
-    // Another instance's session.
     const mine = intentOf({ evidence: { preset: CLAUDE } });
     b.launched(SPACE, mine);
-    expect(
-      (await connect(b, { instance: "other-agent", env: { CLAUDE_CODE_SESSION_ID: CLAUDE } }))
-        .state,
-    ).toBe("unbound");
     // A home that may not use the space.
     granted = false;
     expect((await connect(b, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } })).state).toBe("unbound");
     expect(events).toContainEqual({ ev: "binding.ignored", input: "native", reason: "grant" });
     granted = true;
+    // Once a home bound it, the session is that home's: another instance's connection binds nothing.
+    expect((await connect(b, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } })).state).toBe("bound");
+    expect(
+      (await connect(b, { instance: "other-agent", env: { CLAUDE_CODE_SESSION_ID: CLAUDE } }))
+        .state,
+    ).toBe("unbound");
     // A CLI call names no instance: the launch's ID alone maps it, a presented one does not.
     expect(b.mapped({ CLAUDE_CODE_SESSION_ID: CLAUDE })?.session?.launches).toEqual([mine.id]);
     expect(b.mapped({ CLAUDE_CODE_SESSION_ID: "presented-only-1" })).toBeUndefined();
