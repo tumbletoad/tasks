@@ -30,6 +30,8 @@ export function createClient(transport: ClientTransport) {
       get: (input: InputOf<"task.get">): Promise<OutputOf<"task.get">> => call("task.get", input),
       /** Reopen a completed or archived task. Its earlier outcome and learnings stay. */
       reopen: (input: InputOf<"task.reopen">): Promise<OutputOf<"task.reopen">> => call("task.reopen", input),
+      /** Find active tasks, finished tasks and learnings: rows only, a page at a time. */
+      search: (input: InputOf<"task.search">): Promise<OutputOf<"task.search">> => call("task.search", input),
       /** Change an active task's fields, summary, context, group or sources. */
       update: (input: InputOf<"task.update">): Promise<OutputOf<"task.update">> => call("task.update", input),
     },

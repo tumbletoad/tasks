@@ -44,6 +44,8 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
+import { indexChanges } from "../search/documents.ts";
+import { hasSearchTables } from "../search/tables.ts";
 import type { OpenedSpace } from "../space.ts";
 import { Dedupe, type Match } from "./dedupe.ts";
 import {
@@ -730,6 +732,11 @@ export class SpaceWriter {
   readonly #now: () => number;
   readonly #random: RandomSource;
   readonly #seams: WriteSeams;
+  /**
+   * Whether the space holds the search tables (A1 3.12), which a schema step after 0.2 adds: each
+   * commit then writes the documents it changed. A space without them keeps no index.
+   */
+  readonly #search: boolean;
   readonly spaceId: Id<"sp">;
   #registered = false;
   #closed = false;
@@ -741,6 +748,7 @@ export class SpaceWriter {
     this.#random = options.random ?? osRandom;
     this.#seams = seams;
     this.spaceId = opened.space.spaceId;
+    this.#search = hasSearchTables(opened.conn);
   }
 
   /**
@@ -1684,6 +1692,8 @@ export class SpaceWriter {
       changes = coalesce(conn, run);
       if (changes.length > 0) {
         insertChanges(conn, seq, changes);
+        // The search rows, in the same transaction as the state they index (A1 3.7, 3.12).
+        if (this.#search) indexChanges(conn, seq, changes);
         const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
         for (const id of tasks) conn.prepare(SQL.outbox).run({ key: id, seq });
         // The projection renders tasks and their children. Launch and run records are not.

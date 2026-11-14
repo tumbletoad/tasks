@@ -1,0 +1,824 @@
+// Search against a real space (A3 3.9; A7 3.10 M3.05 Verify): random query strings never raise an
+// SQLite error, the ranking and filters of A3 3.9.2–3.9.4, and cursor pages under random writes,
+// deletions and redactions with no gaps or duplicates and no old text. The fixture space gets the
+// search tables before its writer opens, as the schema step that adds them will do; tombstones,
+// redaction and authority changes are played directly on the database (storage's
+// search-helpers.ts), since their operations arrive in later steps. In-thread, through a reader
+// connection shaped like the service's. Fixture text only.
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import fc from "fast-check";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { AppError, SEARCH_SCOPES, TaskSearchResult } from "@tasks/contracts";
+import {
+  indexChanges,
+  rebuildSearchIndex,
+  type Connection,
+  type Operation,
+  type Row,
+  type WriteResult,
+} from "@tasks/storage";
+import {
+  addLearning,
+  changeAuthority,
+  directly,
+  lastSeq,
+  redactTask,
+  redactText,
+  tombstone,
+} from "@tasks/storage/search-helpers";
+import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+import type { WorkerConnection } from "@tasks/storage";
+import type { Caller } from "../src/ops/caller.ts";
+import { opCall, type OpsHost } from "../src/ops/index.ts";
+import { SearchCursors, CURSOR_LIMITS } from "../src/search/cursors.ts";
+import {
+  runSearch,
+  type SearchEnv,
+  type SearchReader,
+  type SearchResult,
+} from "../src/search/search.ts";
+import { SEPARATOR_RANGES } from "../src/search/query.ts";
+import { queryText } from "./search-queries.ts";
+import { tempRoot } from "./harness.ts";
+
+let temp: { root: string; cleanup: () => void };
+let fx: Fixture;
+let plain: Fixture;
+let clock = Date.UTC(2026, 10, 12, 9, 0, 0);
+const cursors = new SearchCursors(() => clock);
+
+beforeAll(async () => {
+  temp = tempRoot("search");
+  const indexed = join(temp.root, "indexed");
+  const unindexed = join(temp.root, "plain");
+  mkdirSync(indexed);
+  mkdirSync(unindexed);
+  fx = await writeFixture(indexed, { search: true });
+  plain = await writeFixture(unindexed);
+}, 60_000);
+
+afterAll(() => {
+  fx.close();
+  plain.close();
+  temp.cleanup();
+});
+
+/** The service's reader, in this thread: each call is one deferred read transaction. */
+function readerOf(f: Fixture): SearchReader {
+  const conn: Connection = f.reader;
+  return {
+    transaction: (mode, queries) =>
+      Promise.resolve(
+        conn.transaction(mode, () =>
+          queries.map((q) => {
+            const statement = conn.prepare(q.sql);
+            if (q.mode === "get") return statement.get(q.params) ?? null;
+            if (q.mode === "all") {
+              const all: Row[] = statement.all(q.params);
+              return all;
+            }
+            return statement.run(q.params);
+          }),
+        ),
+      ),
+  };
+}
+
+function envOf(f: Fixture, extra: Partial<SearchEnv> = {}): SearchEnv {
+  return {
+    cursors,
+    owner: "user-cli:test",
+    space: f.spaceId,
+    audience: "user",
+    today: "2026-11-12",
+    now: clock,
+    timeZone: "Europe/Lisbon",
+    machine: MACHINE.id,
+    live: () => [],
+    here: () => Promise.resolve([]),
+    ...extra,
+  };
+}
+
+const search = (input: Parameters<typeof runSearch>[1], extra: Partial<SearchEnv> = {}, f = fx) =>
+  runSearch(readerOf(f), input, envOf(f, extra));
+
+function submit(f: Fixture, ops: Operation[], who = f.human): WriteResult {
+  return f.writer.submit(f.request(who, ops, { base: f.base() }));
+}
+
+/** The IDs of the tasks a request created, in order. */
+function created(result: WriteResult): string[] {
+  if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
+  return result.results.flatMap((r) =>
+    r.status === "created" && r.id.startsWith("t_") ? [r.id] : [],
+  );
+}
+
+const refOf = (f: Fixture, id: string): string =>
+  `M-${String(f.reader.prepare("SELECT ref FROM tasks WHERE id = $id").get({ id })?.["ref"])}`;
+
+async function refusal(promise: Promise<unknown>): Promise<AppError> {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof AppError) return error;
+    throw error;
+  }
+  throw new Error("expected a refusal");
+}
+
+const ids = (result: SearchResult): string[] => result.rows.map((row) => String(row["id"]));
+
+describe("[A3.5.search.query] random query strings never raise an SQLite error", () => {
+  beforeAll(() => {
+    const [a, b] = created(
+      submit(fx, [
+        {
+          kind: "task.create",
+          title: "Fix appointment time zones",
+          summary: "Convert once from UTC",
+          context: "Times are stored without zone and converted twice.",
+          project: "portal",
+          priority: 1,
+          due: { date: "2026-11-13" },
+        },
+        { kind: "task.create", title: "Clinic report export", status: "waiting", area: "home" },
+      ]),
+    );
+    if (a === undefined || b === undefined) throw new Error("fixture tasks missing");
+    submit(fx, [
+      { kind: "note.add", task: a, body: "Check the café booking flow." },
+      { kind: "log.add", task: b, body: "Is the export naïve about DST?", log_kind: "question" },
+      {
+        kind: "source.add",
+        task: a,
+        source: { kind: "ticket", title: "Times shift", key: "jira:FX-1" },
+      },
+    ]);
+    submit(fx, [{ kind: "task.complete", task: b, outcome: "" }]);
+  });
+
+  test("every query gives rows that match the contract, or invalid_input", async () => {
+    let answered = 0;
+    let withRows = 0;
+    await fc.assert(
+      fc.asyncProperty(
+        queryText,
+        fc.constantFrom(undefined, ...SEARCH_SCOPES),
+        fc.constantFrom("user" as const, "agent" as const),
+        fc.boolean(),
+        async (q, scope, audience, cwd) => {
+          try {
+            const result = await search(
+              {
+                q,
+                ...(scope === undefined ? {} : { scope }),
+                limit: 5,
+                ...(cwd ? { cwd: "/" } : {}),
+              },
+              { audience },
+            );
+            const checked = TaskSearchResult.safeParse(result);
+            expect(checked.success, JSON.stringify(checked.error?.issues)).toBe(true);
+            answered += 1;
+            if (result.rows.length > 0) withRows += 1;
+          } catch (error) {
+            expect(error).toBeInstanceOf(AppError);
+            expect((error as AppError).code, (error as Error).message).toBe("invalid_input");
+          }
+        },
+      ),
+      { numRuns: 600 },
+    );
+    // Not a property about refusals only: many queries ran, and some found rows.
+    expect(answered).toBeGreaterThan(100);
+    expect(withRows).toBeGreaterThan(10);
+  }, 120_000);
+
+  test("a space without the search index answers filters, and refuses words with not_indexed", async () => {
+    created(
+      submit(plain, [{ kind: "task.create", title: "Plain waiting task", status: "waiting" }]),
+    );
+    const found = await search({ q: "status:waiting" }, {}, plain);
+    expect(found.rows.map((r) => r["title"])).toEqual(["Plain waiting task"]);
+    for (const q of ["plain", "-plain", "status:waiting plain"]) {
+      const error = await refusal(search({ q }, {}, plain));
+      expect(error.code).toBe("space_unavailable");
+      expect(error.data).toMatchObject({ reason: "not_indexed", retryable: false });
+    }
+  });
+
+  test("every character the parser leaves out is one the index's tokenizer drops", async () => {
+    const text = SEPARATOR_RANGES.flatMap(([a, b]) =>
+      Array.from({ length: b - a + 1 }, (_, i) => String.fromCodePoint(a + i)),
+    ).join("");
+    const tokens = await directly(fx, (conn) => {
+      conn.exec(
+        "CREATE VIRTUAL TABLE tok_probe USING fts5(x, tokenize = 'unicode61 remove_diacritics 2')",
+      );
+      conn.exec("CREATE VIRTUAL TABLE tok_probe_v USING fts5vocab(tok_probe, 'instance')");
+      conn.prepare("INSERT INTO tok_probe (x) VALUES ($x)").run({ x: text });
+      const n = Number(conn.prepare("SELECT count(*) AS n FROM tok_probe_v").get()?.["n"]);
+      conn.exec("DROP TABLE tok_probe_v");
+      conn.exec("DROP TABLE tok_probe");
+      return n;
+    });
+    expect(text.length).toBeGreaterThan(250);
+    expect(tokens).toBe(0);
+  });
+
+  test("a symbol the index keeps is searched as written, negated or not", async () => {
+    const [withIt, without] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Emojiword 🧪" },
+        { kind: "task.create", title: "Emojiword plain" },
+      ]),
+    );
+    expect(ids(await search({ q: "emojiword 🧪" }))).toEqual([withIt]);
+    expect(ids(await search({ q: "emojiword -🧪" }))).toEqual([without]);
+  });
+});
+
+describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
+  let title: string;
+  let note: string;
+  let done: string;
+  let starred: string;
+  let lumen: string;
+
+  beforeAll(async () => {
+    [title, note, done, starred, lumen] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Rankword in the title", summary: "Its summary." },
+        { kind: "task.create", title: "Another task", summary: "Plain summary." },
+        { kind: "task.create", title: "Rankword finished long ago" },
+        { kind: "task.create", title: "Starred rankword", focus: "2026-11-12", priority: 2 },
+        { kind: "task.create", title: "Lumen rankword", area: "lumen", priority: 3 },
+      ]),
+    ) as [string, string, string, string, string];
+    submit(fx, [
+      { kind: "note.add", task: note, body: "A rankword in a note, and more words around it." },
+      { kind: "note.add", task: title, body: "rankword again" },
+      { kind: "log.add", task: title, body: "rankword in the log" },
+    ]);
+    submit(fx, [{ kind: "task.complete", task: done, outcome: "Done with the rankword." }]);
+    const human = fx.human.principal_id;
+    await directly(fx, (conn) =>
+      addLearning(conn, done, "Rankword learnings stay findable.", human),
+    );
+  });
+
+  test("a task appears once, ranked by its best document with A3 3.9.3's boosts", async () => {
+    const found = await search({ q: "rankword", scope: "all", limit: 50 });
+    const order = ids(found);
+    expect(new Set(order).size).toBe(order.length);
+    expect(order).toEqual(expect.arrayContaining([title, note, done, starred, lumen]));
+    // A title hit beats a note hit; an active task beats the completed one.
+    expect(order.indexOf(title)).toBeLessThan(order.indexOf(note));
+    expect(order.indexOf(starred)).toBeLessThan(order.indexOf(done));
+    const noteRow = found.rows.find((r) => r["id"] === note);
+    expect(noteRow).toMatchObject({ kind: "task", snippet_from: "note" });
+    expect(String(noteRow?.["snippet"])).toMatch(/rankword/);
+    expect(found.rows.find((r) => r["id"] === done)).toMatchObject({
+      lifecycle: "completed",
+      completed: "2026-11-12",
+    });
+    expect(found.parsed).toBe("rankword");
+    expect(found.total).toBe(5);
+  });
+
+  test("scopes, the default scope and a query that names a lifecycle", async () => {
+    expect(ids(await search({ q: "rankword" }))).not.toContain(done);
+    expect(ids(await search({ q: "rankword", scope: "finished" }))).toEqual([done]);
+    const widened = await search({ q: "rankword is:completed" });
+    expect(widened.scope).toBe("all");
+    expect(ids(widened)).toEqual([done]);
+    const learned = await search({ q: "rankword", scope: "learnings" });
+    expect(learned.rows).toEqual([
+      expect.objectContaining({
+        kind: "learning",
+        task: refOf(fx, done),
+        text: "Rankword learnings stay findable.",
+      }),
+    ]);
+  });
+
+  test("the last word matches as a prefix of two characters or more, and -word excludes", async () => {
+    expect(ids(await search({ q: "rankw" }))).toContain(title);
+    expect(ids(await search({ q: "Ra" }))).toContain(title);
+    expect(ids(await search({ q: '"rankw"' }))).toEqual([]);
+    // The prefix goes to the last token: "R." has the one-letter token r, which gets none, and an
+    // enclosing mark ends a token as it does in the index.
+    expect(ids(await search({ q: "rankw." }))).toContain(title);
+    expect(ids(await search({ q: "rankword R." }))).toEqual([]);
+    const enclosing = String.fromCodePoint(0x20dd);
+    expect(ids(await search({ q: `rankword the${enclosing}T` }))).toEqual([]);
+    // Punctuation alone is no word, so it never empties the AND.
+    expect(ids(await search({ q: "rankword & —" }))).toContain(title);
+    const without = ids(await search({ q: "rankword -again" }));
+    expect(without).not.toContain(title);
+    expect(without).toContain(note);
+    // A negated word alone works too: the order without text.
+    expect(ids(await search({ q: "-rankword", limit: 50 }))).not.toContain(note);
+  });
+
+  test("filters: an area includes its projects, priority, focus, ids and has:", async () => {
+    expect(ids(await search({ q: "rankword area:Lumen" }))).toEqual([lumen]);
+    expect(ids(await search({ q: "rankword p<=2" }))).toEqual([starred]);
+    expect(ids(await search({ q: "rankword is:focus" }))).toEqual([starred]);
+    expect(ids(await search({ q: `id:${refOf(fx, note)}` }))).toEqual([note]);
+    expect(ids(await search({ q: "id:ZZ-1" }))).toEqual([]);
+    expect(ids(await search({ q: "rankword has:notes" }))).toEqual([title, note]);
+    expect(ids(await search({ q: "rankword -has:notes" })).sort()).toEqual([lumen, starred].sort());
+    const unknown = await refusal(search({ q: "status:opn" }));
+    expect(unknown.data["suggestions"]).toEqual(["open"]);
+  });
+
+  test("filter names resolve in the query's own snapshot, so a rename between the reads never mixes two", async () => {
+    const [moved = ""] = created(
+      submit(fx, [{ kind: "task.create", title: "Vocabword task", area: "lumen" }]),
+    );
+    const rename = async (title: string, slug: string) =>
+      directly(fx, (conn) => {
+        conn
+          .prepare("UPDATE areas SET title = $title, slug = $slug WHERE id = $id")
+          .run({ title, slug, id: fx.areas.home });
+        indexChanges(conn, lastSeq(conn), [
+          { entity: "areas", entityId: fx.areas.home, taskId: null, action: "set", field: "title" },
+        ]);
+      });
+    // Between the search's reads, the area named home is renamed and the task moves into it: it
+    // never was in an area named home.
+    const inner = readerOf(fx);
+    let calls = 0;
+    const racing: SearchReader = {
+      transaction: async (mode, queries) => {
+        calls += 1;
+        if (calls === 2) {
+          await rename("Elsewhere", "elsewhere");
+          submit(fx, [{ kind: "task.move", task: moved, area: "elsewhere" }]);
+        }
+        return inner.transaction(mode, queries);
+      },
+    };
+    try {
+      const outcome = await runSearch(racing, { q: "vocabword area:home" }, envOf(fx)).then(
+        (result) => ids(result),
+        (error: unknown) => (error instanceof AppError ? error.code : error),
+      );
+      expect(outcome === "invalid_input" || (Array.isArray(outcome) && outcome.length === 0)).toBe(
+        true,
+      );
+    } finally {
+      await rename("Home", "home");
+    }
+    // Values that change at every read never settle: a retryable refusal, never a mixed answer.
+    let reads = 0;
+    const restless: SearchReader = {
+      transaction: async (mode, queries) => {
+        const results = await inner.transaction(mode, queries);
+        reads += 1;
+        const areas = results[3];
+        if (Array.isArray(areas)) areas.push({ id: `a_${String(reads)}`, slug: "x", title: "X" });
+        return results;
+      },
+    };
+    const busy = await refusal(runSearch(restless, { q: "vocabword" }, envOf(fx)));
+    expect(busy.code).toBe("space_unavailable");
+    expect(busy.data).toMatchObject({ reason: "busy", retryable: true });
+  });
+
+  test("on:cwd resolves places in the query's own snapshot too", async () => {
+    const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Oldcwdword" }]));
+    submit(fx, [{ kind: "place.set", task, root: "probe", path: "here" }]);
+    const placedHere = () =>
+      fx.reader
+        .prepare(
+          "SELECT owner_id FROM places WHERE root_id = 'probe' AND rel_path = 'here' " +
+            "AND deleted_at IS NULL",
+        )
+        .all()
+        .map((row) => String(row["owner_id"]));
+    let calls = 0;
+    // The tasks placed here are read; then, before the query, one commit renames the task and
+    // moves its place: no state had it both here and named newcwdword.
+    const here = () => {
+      calls += 1;
+      const placed = placedHere();
+      if (calls === 1) {
+        submit(fx, [
+          { kind: "task.patch", task, set: { title: "Newcwdword" } },
+          { kind: "place.set", task, root: "probe", path: "elsewhere" },
+        ]);
+      }
+      return Promise.resolve(placed);
+    };
+    const found = await search({ q: "newcwdword on:cwd", cwd: "/" }, { here });
+    expect(ids(found)).toEqual([]);
+    expect(calls).toBe(2);
+  });
+
+  test("without text: due date (none last), then priority, then the latest change", async () => {
+    const [late, soon, none] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Ordered late", due: { date: "2026-12-01" }, priority: 1 },
+        { kind: "task.create", title: "Ordered soon", due: { date: "2026-11-20" }, priority: 4 },
+        { kind: "task.create", title: "Ordered none", priority: 1 },
+      ]),
+    );
+    const order = ids(await search({ q: "status:open", limit: 50 }));
+    expect(order.indexOf(soon ?? "")).toBeLessThan(order.indexOf(late ?? ""));
+    expect(order.indexOf(late ?? "")).toBeLessThan(order.indexOf(none ?? ""));
+    expect((await search({ q: "status:open" })).rows[0]).not.toHaveProperty("snippet_from");
+  });
+
+  test("an agent never matches or sees an only-me note; the user does", async () => {
+    const [hidden] = created(submit(fx, [{ kind: "task.create", title: "Audience test" }]));
+    submit(fx, [{ kind: "note.add", task: hidden ?? "", body: "privateword in an only-me note" }]);
+    await directly(fx, (conn) => {
+      // As the operation that sets a note's audience (D14) will write and index it.
+      conn
+        .prepare("UPDATE notes SET audience = 'owner' WHERE task_id = $id")
+        .run({ id: hidden ?? "" });
+      const note = conn
+        .prepare("SELECT id FROM notes WHERE task_id = $id")
+        .get({ id: hidden ?? "" });
+      indexChanges(conn, lastSeq(conn), [
+        {
+          entity: "notes",
+          entityId: String(note?.["id"]),
+          taskId: hidden ?? "",
+          action: "set",
+          field: "audience",
+        },
+      ]);
+    });
+    expect(ids(await search({ q: "privateword" }))).toEqual([hidden]);
+    expect(ids(await search({ q: "privateword" }, { audience: "agent" }))).toEqual([]);
+    expect(ids(await search({ q: "audience -privateword" }, { audience: "agent" }))).toEqual([
+      hidden,
+    ]);
+    expect(ids(await search({ q: "audience has:notes" }, { audience: "agent" }))).toEqual([]);
+  });
+
+  test("of equal best documents the lower entity ID gives the snippet, before and after a rebuild", async () => {
+    // Two notes that score the same; the pair whose first note has the higher ID, so neither the
+    // order of writing nor the order of a rebuild's document numbers decides.
+    let task = "";
+    let notes: { id: string; body: string }[] = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Tie holder" }]));
+      submit(fx, [
+        { kind: "note.add", task, body: "tieword alpha" },
+        { kind: "note.add", task, body: "tieword bravo" },
+      ]);
+      notes = fx.reader
+        .prepare("SELECT id, body FROM notes WHERE task_id = $id ORDER BY created_seq, ordinal")
+        .all<{ id: string; body: string }>({ id: task });
+      if ((notes[0]?.id ?? "") > (notes[1]?.id ?? "")) break;
+    }
+    const lower = [...notes].sort((a, b) => (a.id < b.id ? -1 : 1))[0]?.body;
+    expect(lower).toBe("tieword bravo");
+    const snippet = async () =>
+      (await search({ q: "tieword", limit: 50 })).rows.find((r) => r["id"] === task)?.["snippet"];
+    expect(await snippet()).toBe(lower);
+    await directly(fx, (conn) => rebuildSearchIndex(conn));
+    expect(await snippet()).toBe(lower);
+  });
+
+  test("a snippet comes from the best document at the snapshot, never one that took its number", async () => {
+    const [lead] = created(
+      submit(fx, [{ kind: "task.create", title: "Reuseword lead", summary: "Lead." }]),
+    );
+    const [holder = ""] = created(
+      submit(fx, [{ kind: "task.create", title: "Reuse holder", summary: "Holder summary." }]),
+    );
+    // The holder's note is the newest document, so its number is the highest.
+    submit(fx, [{ kind: "note.add", task: holder, body: "reuseword first" }]);
+    const first = await search({ q: "reuseword", limit: 1 });
+    expect(ids(first)).toEqual([lead]);
+    await directly(fx, (conn) => {
+      // Entity redaction of the note (A1 3.11.4): the row leaves, and so does its document.
+      const note = conn.prepare("SELECT id FROM notes WHERE task_id = $id").get({ id: holder });
+      conn.prepare("DELETE FROM notes WHERE task_id = $id").run({ id: holder });
+      indexChanges(conn, lastSeq(conn), [
+        {
+          entity: "notes",
+          entityId: String(note?.["id"]),
+          taskId: holder,
+          action: "set",
+          field: "deleted",
+        },
+      ]);
+    });
+    // A new note of the same task takes the freed number.
+    submit(fx, [{ kind: "note.add", task: holder, body: "reuseword second" }]);
+    const next = await search({ cursor: first.cursor ?? "" });
+    expect(next.rows[0]).toMatchObject({ id: holder, snippet: "Holder summary." });
+    expect(next.rows[0]).not.toHaveProperty("snippet_from");
+  });
+
+  test("titles are cut at 90 characters and snippets at 100", async () => {
+    const long = `Cutword ${"x".repeat(120)}`;
+    const [task] = created(
+      submit(fx, [{ kind: "task.create", title: long, summary: `cutword ${"y ".repeat(80)}` }]),
+    );
+    const row = (await search({ q: "cutword" })).rows.find((r) => r["id"] === task);
+    expect(Array.from(String(row?.["title"]))).toHaveLength(90);
+    expect(String(row?.["title"]).endsWith("…")).toBe(true);
+    expect(Array.from(String(row?.["snippet"])).length).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("[A3.5.search.find] task.search through the request path", () => {
+  /** A host serving the indexed fixture space through the in-thread reader. */
+  const host = (): OpsHost => ({
+    machine: { id: MACHINE.id },
+    spaces: () => [
+      {
+        id: fx.spaceId,
+        name: "Mira",
+        state: "open",
+        writer: undefined,
+        reader: readerOf(fx) as unknown as WorkerConnection,
+      },
+    ],
+    now: () => clock,
+    timeZone: () => "Europe/Lisbon",
+  });
+  const user: Caller = { class: "cli-interactive", env: {} };
+  const script: Caller = { class: "cli-script", env: {} };
+  const call = (h: OpsHost, caller: Caller, input: Record<string, unknown>) =>
+    opCall(h, caller, { op: "task.search", input }) as Promise<SearchResult>;
+
+  test("the entry's schema, its default page of 15 and its cursor, for the user and a script", async () => {
+    created(
+      submit(
+        fx,
+        Array.from({ length: 20 }, (_, i) => ({
+          kind: "task.create" as const,
+          title: `findword ${String(i)}`,
+        })),
+      ),
+    );
+    const h = host();
+    const first = await call(h, user, { q: "findword" });
+    expect(TaskSearchResult.parse(first).rows).toHaveLength(15);
+    expect(first).toMatchObject({ scope: "active", total: 20, first: 1, parsed: "findword" });
+    const second = await call(h, user, { cursor: first.cursor, q: "ignored" });
+    expect(second.rows).toHaveLength(5);
+    expect(second.first).toBe(16);
+    expect(second).not.toHaveProperty("cursor");
+    // A script is another binding: the user's cursor is not its own.
+    const error = await refusal(call(h, script, { cursor: first.cursor }));
+    expect(error.code).toBe("cursor_expired");
+    expect(error.data).toEqual({ reason: "binding" });
+    expect(
+      TaskSearchResult.parse(await call(h, script, { q: "findword", limit: 3 })).rows,
+    ).toHaveLength(3);
+    // The schema's limits come first: too long a query is too_large.
+    expect((await refusal(call(h, user, { q: "x".repeat(501) }))).code).toBe("too_large");
+  });
+
+  test("a restart drops every cursor", async () => {
+    const first = await call(host(), user, { q: "findword", limit: 2 });
+    const error = await refusal(call(host(), user, { cursor: first.cursor }));
+    expect(error.data).toEqual({ reason: "restart" });
+  });
+
+  test("on:cwd finds a completed task placed here, in the scope that holds it", async () => {
+    const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Finishedcwdword" }]));
+    submit(fx, [{ kind: "place.set", task, root: "probe", path: "" }]);
+    submit(fx, [{ kind: "task.complete", task, outcome: "Completed." }]);
+    const root = { id: "probe", label: "Probe", path: temp.root, runs: false };
+    const h: OpsHost = { ...host(), roots: () => [root] };
+    const find = (q: string) => call(h, user, { q, scope: "finished", cwd: temp.root });
+    expect(ids(await find("finishedcwdword on:this-machine"))).toEqual([task]);
+    expect(ids(await find("finishedcwdword on:cwd"))).toEqual([task]);
+    expect(ids(await find("on:cwd is:completed"))).toContain(task);
+  });
+});
+
+describe("[A3.5.search.cursors] cursor pages under random writes, deletions and redactions", () => {
+  test("the union of pages is the snapshot list, and a removed entry never shows its old text", async () => {
+    const human = fx.human.principal_id;
+    let round = 0;
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            k: fc.constantFrom("title", "note", "create", "tombstone", "redact", "redactText"),
+            t: fc.nat({ max: 100 }),
+          }),
+          { minLength: 1, maxLength: 12 },
+        ),
+        fc.integer({ min: 1, max: 7 }),
+        async (steps, limit) => {
+          round += 1;
+          const word = `pageword${String(round)}`;
+          // A sentinel per task in its title, which every row shows.
+          const sentinel = (n: number) => `snt${String(round)}x${String(n)}z`;
+          const made = created(
+            submit(
+              fx,
+              Array.from({ length: 18 }, (_, n) => ({
+                kind: "task.create" as const,
+                title: `${word} task ${sentinel(n)}`,
+                priority: (n % 4) + 1,
+              })),
+            ),
+          );
+          // The snapshot list: the same search at the same state, in one page.
+          const order = ids(await search({ q: word, limit: 50 }));
+          expect([...order].sort()).toEqual([...made].sort());
+          /** Tasks tombstoned or redacted, and texts redacted, before the page being read. */
+          const removed = new Set<string>();
+          const redacted = new Set<string>();
+          const seen: Record<string, unknown>[] = [];
+          const check = (rows: readonly Record<string, unknown>[]): void => {
+            for (const row of rows) {
+              const text = JSON.stringify(row);
+              if (removed.has(String(row["id"]))) {
+                expect(["deleted", "redacted"]).toContain(row["kind"]);
+                expect(Object.keys(row).sort()).toEqual(["id", "kind", "ref"]);
+                expect(text).not.toMatch(/snt\d+x\d+z/);
+              }
+              for (const gone of redacted) expect(text).not.toContain(gone);
+            }
+            seen.push(...rows);
+          };
+          let page = await search({ q: word, limit });
+          check(page.rows);
+          let i = 0;
+          while (page.cursor !== undefined) {
+            for (const step of steps.slice(i, i + 2)) {
+              const target = made[step.t % made.length] ?? "";
+              const n = made.indexOf(target);
+              switch (step.k) {
+                case "title":
+                  if (removed.has(target)) break;
+                  submit(fx, [
+                    {
+                      kind: "task.patch",
+                      task: target,
+                      set: { title: `${word} renamed ${String(n)}` },
+                    },
+                  ]);
+                  break;
+                case "note":
+                  if (removed.has(target)) break;
+                  submit(fx, [{ kind: "note.add", task: target, body: `${word} note` }]);
+                  break;
+                case "create":
+                  created(submit(fx, [{ kind: "task.create", title: `${word} late arrival` }]));
+                  break;
+                case "tombstone":
+                case "redact":
+                  if (removed.has(target)) break;
+                  await directly(fx, (conn) => {
+                    if (step.k === "tombstone") tombstone(conn, target, human);
+                    else redactTask(conn, target);
+                  });
+                  removed.add(target);
+                  break;
+                case "redactText":
+                  await directly(fx, (conn) => {
+                    redactText(conn, sentinel(n));
+                  });
+                  redacted.add(sentinel(n));
+                  break;
+              }
+            }
+            i += 2;
+            page = await search({ cursor: page.cursor });
+            check(page.rows);
+          }
+          // No gaps, no duplicates: the snapshot's list, in its order.
+          expect(seen.map((r) => String(r["id"]))).toEqual(order);
+        },
+      ),
+      { numRuns: 12 },
+    );
+  }, 240_000);
+
+  test("a retried cursor gives the same page, and the header carries each page's own as_of", async () => {
+    const word = "retryword";
+    created(
+      submit(
+        fx,
+        Array.from({ length: 6 }, (_, i) => ({
+          kind: "task.create" as const,
+          title: `${word} ${String(i)}`,
+        })),
+      ),
+    );
+    const first = await search({ q: word, limit: 2 });
+    const cursor = first.cursor ?? "";
+    const again = await search({ cursor });
+    expect(await search({ cursor })).toEqual(again);
+    // A row changed after the snapshot is read fresh and marked; the others are not.
+    submit(fx, [{ kind: "task.patch", task: String(again.rows[0]?.["id"]), set: { priority: 1 } }]);
+    const later = await search({ cursor });
+    expect(ids(later)).toEqual(ids(again));
+    expect(later.rows[0]).toMatchObject({ priority: 1, changed: true });
+    expect(later.rows[1]).not.toHaveProperty("changed");
+    expect(later.as_of).not.toBe(again.as_of);
+    expect(later.first).toBe(3);
+    expect(later.total).toBe(6);
+  });
+
+  test("a learning row is marked changed when its task changed since the search", async () => {
+    const [one = "", two = ""] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Learn holder one" },
+        { kind: "task.create", title: "Learn holder two" },
+      ]),
+    );
+    const human = fx.human.principal_id;
+    await directly(fx, (conn) => {
+      addLearning(conn, one, "markword one", human);
+      addLearning(conn, two, "markword two", human);
+    });
+    const first = await search({ q: "markword", scope: "learnings", limit: 1 });
+    expect(first.rows[0]).not.toHaveProperty("changed");
+    submit(fx, [
+      { kind: "task.patch", task: one, set: { title: "Learn holder one renamed" } },
+      { kind: "task.patch", task: two, set: { title: "Learn holder two renamed" } },
+    ]);
+    const next = await search({ cursor: first.cursor ?? "" });
+    expect(next.rows[0]).toMatchObject({ kind: "learning", changed: true });
+    expect(String(next.rows[0]?.["title"])).toMatch(/renamed/);
+  });
+
+  test("more than 1,000 matches freeze the first 1,000, and total says 1000+", async () => {
+    const word = "bulkword";
+    for (let n = 0; n < 21; n += 1) {
+      created(
+        submit(
+          fx,
+          Array.from({ length: 50 }, (_, i) => ({
+            kind: "task.create" as const,
+            title: `${word} ${String(n * 50 + i)}`,
+          })),
+        ),
+      );
+    }
+    let page = await search({ q: word, limit: 50 });
+    expect(page.total).toBe("1000+");
+    const seen = ids(page);
+    while (page.cursor !== undefined) {
+      page = await search({ cursor: page.cursor });
+      seen.push(...ids(page));
+    }
+    expect(seen).toHaveLength(1000);
+    expect(new Set(seen).size).toBe(1000);
+    expect(page.first).toBe(951);
+  }, 120_000);
+
+  test("an epoch, incarnation, binding, idle or restart ends a cursor with its reason", async () => {
+    const word = "expireword";
+    created(
+      submit(
+        fx,
+        Array.from({ length: 4 }, (_, i) => ({
+          kind: "task.create" as const,
+          title: `${word} ${String(i)}`,
+        })),
+      ),
+    );
+    const open = async () => (await search({ q: word, limit: 1 })).cursor ?? "";
+
+    expect(
+      (await refusal(search({ cursor: await open() }, { owner: "agent:other" }))).data,
+    ).toEqual({
+      reason: "binding",
+    });
+    expect((await refusal(search({ cursor: "c_0000000000000000" }))).data).toEqual({
+      reason: "restart",
+    });
+    expect((await refusal(search({ cursor: "c_bad" }))).code).toBe("invalid_input");
+
+    const idle = await open();
+    clock += CURSOR_LIMITS.idleMs;
+    expect((await refusal(search({ cursor: idle }))).data).toEqual({ reason: "idle" });
+
+    const many = [];
+    for (let n = 0; n <= CURSOR_LIMITS.perOwner; n += 1) many.push(await open());
+    expect((await refusal(search({ cursor: many[0] ?? "" }))).data).toEqual({ reason: "idle" });
+    expect((await search({ cursor: many.at(-1) ?? "" })).rows).toHaveLength(1);
+
+    for (const what of ["epoch", "incarnation"] as const) {
+      const cursor = await open();
+      await directly(fx, (conn) => {
+        changeAuthority(conn, what);
+      });
+      const error = await refusal(search({ cursor }));
+      expect(error.code).toBe("cursor_expired");
+      expect(error.data).toEqual({ reason: what });
+      // Gone for good, never rows from another history.
+      expect((await refusal(search({ cursor }))).data).toEqual({ reason: what });
+    }
+  });
+});
