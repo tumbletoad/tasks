@@ -110,6 +110,7 @@ Never put a live space in a folder a sync client copies: a client can copy `spac
 - A stale `%OneDrive%` still counts: a false warning costs little, a corrupted database a lot.
 - The Drive for desktop `SyncTargets` value is protobuf-shaped: decoding it whole as UTF-16 runs past a path into the next field.
 - The detector never lists inside a provider root, never reads a provider's private databases and needs no admin rights. A network drive's label is never read on Windows: `IsReady` on a disconnected drive waits for the network's time-out.
+- The Windows facts come from one Windows PowerShell run (10 s) that calls .NET only, never a cmdlet: PowerShell finds a cmdlet by searching the modules on its module path, so the run's time would depend on what a machine has installed. Spaces that open together share one run and an answer is kept for a minute, but a run that gave no facts is not kept: one slow run leaves only the folders it was for unchecked, and the next check runs again.
 - The projection and the backups may go to a synced folder (`projection.dir`, `backup.dir`), which gives a readable copy on other devices without risk to the database.
 
 **Not built yet.**

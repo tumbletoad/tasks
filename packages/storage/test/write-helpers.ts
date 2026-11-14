@@ -52,12 +52,21 @@ export function steppingClock(): () => number {
 /**
  * Creates the fixture space in `parent`, with the writer open on it. The areas and the project are
  * fixture rows written before the writer opens: their operations arrive in later steps.
+ *
+ * `flush: false`: the writer's connection commits without a flush (`synchronous=OFF`), for a test
+ * whose subject is which writes apply, not what survives a power cut, and that commits thousands
+ * of times: a flush costs about 4 ms on GitHub's Windows runner and far more while other tests
+ * flush beside it. What survives a crash is the crash harness's subject (A7 3.18.1), at FULL.
  */
-export async function writeFixture(parent: string): Promise<Fixture> {
+export async function writeFixture(
+  parent: string,
+  options: { flush?: boolean } = {},
+): Promise<Fixture> {
   const created = await createFixtureSpace(parent);
   const checked = await checkedDriver();
   const opened = openSpace(checked, created.folder, { role: "writer" });
   const conn = opened.conn;
+  if (options.flush === false) conn.pragma("synchronous", "OFF");
   const ids = {
     codex: newId("ac"),
     claude: newId("ac"),
@@ -118,12 +127,14 @@ export async function writeFixture(parent: string): Promise<Fixture> {
     folder: created.folder,
     spaceId: created.space.spaceId,
     writer,
-    reopen: (options = {}) => {
+    reopen: (writerOptions = {}) => {
       fixture.writer.close();
-      writer = SpaceWriter.open(openSpace(checked, created.folder, { role: "writer" }), {
+      const again = openSpace(checked, created.folder, { role: "writer" });
+      if (options.flush === false) again.conn.pragma("synchronous", "OFF");
+      writer = SpaceWriter.open(again, {
         machine: MACHINE,
         now: steppingClock(),
-        ...options,
+        ...writerOptions,
       });
       fixture.writer = writer;
       return writer;

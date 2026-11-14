@@ -30,8 +30,5 @@ jobs:
           cache: true
       - run: pnpm install --frozen-lockfile
       - run: cp .github/diag/diag.ts.txt .github/diag/diag.ts && pnpm exec node .github/diag/diag.ts
-      - if: runner.os == 'Windows'
-        continue-on-error: true
-        run: pnpm exec vitest run --project product packages/launch/test/environment.test.ts packages/storage/test/file-names.test.ts
-      - if: runner.os == 'Windows'
-        run: pnpm exec node .github/diag/diag.ts
+      - continue-on-error: true
+        run: pnpm exec vitest run --project product --reporter=verbose packages/storage/test/write-model.test.ts packages/testkit/src/mira.test.ts packages/service/test/sync-host.test.ts packages/launch/test/environment.test.ts

@@ -326,50 +326,64 @@ export function registryEnvironment(
 }
 
 /**
- * The registry reader's script (Windows PowerShell 5.1): both keys' string values, unexpanded, as
- * JSON in base64 of UTF-8, so no console code page touches a name or a value. Fixed text.
+ * The registry reader's script (Windows PowerShell 5.1): both keys' string values, unexpanded, one
+ * line each, `<system|user> <String|ExpandString> <name> <value>` with the name and the value in
+ * base64 of UTF-8, so no console code page touches them, then a last line `end`. Fixed text.
+ *
+ * It calls .NET only, never a cmdlet: Windows PowerShell finds a cmdlet by searching the modules
+ * on its module path, and in the reader's minimal environment that search took 12 s on a machine
+ * with a few hundred modules installed (GitHub's Windows runner), against 0.13 s for the start
+ * itself. Past the reader's deadline every launch fell back to the service's environment.
  */
 export const REGISTRY_SCRIPT =
   "$ErrorActionPreference='Stop';" +
-  "$out=@{};" +
+  "$e=[Text.Encoding]::UTF8;$o=[Text.StringBuilder]::new();" +
   "foreach($pair in @(@('system',[Microsoft.Win32.Registry]::LocalMachine," +
   "'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')," +
   "@('user',[Microsoft.Win32.Registry]::CurrentUser,'Environment'))){" +
-  "$k=$pair[1].OpenSubKey($pair[2]);$v=@{};" +
+  "$k=$pair[1].OpenSubKey($pair[2]);" +
   "if($k -ne $null){foreach($n in $k.GetValueNames()){" +
   "$kind=$k.GetValueKind($n).ToString();" +
   "if($kind -eq 'String' -or $kind -eq 'ExpandString'){" +
-  "$v[$n]=@{kind=$kind;value=[string]$k.GetValue($n,$null,'DoNotExpandEnvironmentNames')}}}};" +
-  "$out[$pair[0]]=$v};" +
-  "$json=ConvertTo-Json -InputObject $out -Depth 4 -Compress;" +
-  "[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))";
+  "$v=[string]$k.GetValue($n,$null,'DoNotExpandEnvironmentNames');" +
+  "[void]$o.Append($pair[0]+' '+$kind+' '+[Convert]::ToBase64String($e.GetBytes($n))+' '+" +
+  "[Convert]::ToBase64String($e.GetBytes($v))+[char]10)}}}};" +
+  "[void]$o.Append('end');" +
+  "[Console]::Out.Write($o.ToString())";
 
-/** The reader's output, checked: both keys' values, or undefined when it is not that. */
-export function parseRegistryOutput(
-  text: string,
-): { system: Map<string, RegistryValue>; user: Map<string, RegistryValue> } | undefined {
-  let parsed: unknown;
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+/** A base64 field of a helper's line: its UTF-8 text, or undefined when it is not exactly that. */
+export function base64Text(field: string): string | undefined {
+  if (!BASE64.test(field)) return undefined;
   try {
-    parsed = JSON.parse(Buffer.from(text.trim(), "base64").toString("utf8"));
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(field, "base64"));
   } catch {
     return undefined;
   }
-  if (typeof parsed !== "object" || parsed === null) return undefined;
-  const take = (key: string): Map<string, RegistryValue> | undefined => {
-    const section = (parsed as Record<string, unknown>)[key];
-    if (typeof section !== "object" || section === null || Array.isArray(section)) return undefined;
-    const out = new Map<string, RegistryValue>();
-    for (const [name, entry] of Object.entries(section)) {
-      if (typeof entry !== "object" || entry === null) return undefined;
-      const { kind, value } = entry as Record<string, unknown>;
-      if ((kind !== "String" && kind !== "ExpandString") || typeof value !== "string") {
-        return undefined;
-      }
-      out.set(name, { kind, value });
-    }
-    return out;
+}
+
+/**
+ * The reader's output, checked: both keys' values, or undefined when it is not exactly that (a
+ * line of another shape, a field that is not base64 of UTF-8, or no `end`: a cut-off run).
+ */
+export function parseRegistryOutput(
+  text: string,
+): { system: Map<string, RegistryValue>; user: Map<string, RegistryValue> } | undefined {
+  const lines = text.trimEnd().split("\n");
+  if (lines.pop() !== "end") return undefined;
+  const sections = {
+    system: new Map<string, RegistryValue>(),
+    user: new Map<string, RegistryValue>(),
   };
-  const system = take("system");
-  const user = take("user");
-  return system === undefined || user === undefined ? undefined : { system, user };
+  for (const line of lines) {
+    const [section, kind, name, value, ...rest] = line.split(" ");
+    if (rest.length > 0 || (section !== "system" && section !== "user")) return undefined;
+    if (kind !== "String" && kind !== "ExpandString") return undefined;
+    const decodedName = base64Text(name ?? "");
+    const decodedValue = base64Text(value ?? "");
+    if (decodedName === undefined || decodedValue === undefined) return undefined;
+    sections[section].set(decodedName, { kind, value: decodedValue });
+  }
+  return sections;
 }

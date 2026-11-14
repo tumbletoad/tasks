@@ -1,216 +1,66 @@
 // TEMPORARY diagnostics for the hosted runners (removed before the pull request merges). Prints
-// facts only: times, counts, exit codes, drive letters and types.
-import { spawn, spawnSync } from "node:child_process";
-import {
-  closeSync,
-  fsyncSync,
-  mkdtempSync,
-  openSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  writeSync,
-} from "node:fs";
-import { createServer, request } from "node:http";
+// facts only: times, counts, exit codes, drive letters and types, variable names.
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
-const windows = process.platform === "win32";
 const out = (label: string, value: unknown) =>
   console.log(`[diag] ${label}: ${JSON.stringify(value)}`);
 const ms = (t0: number) => Math.round(performance.now() - t0);
 
-function flush(dir: string, label: string) {
-  const d = mkdtempSync(join(dir, "diag-flush-"));
-  try {
-    const f = join(d, "f.bin");
-    const fd = openSync(f, "w");
-    const times: number[] = [];
-    for (let i = 0; i < 50; i++) {
-      const t0 = performance.now();
-      writeSync(fd, Buffer.alloc(100, i));
-      fsyncSync(fd);
-      times.push(performance.now() - t0);
-    }
-    closeSync(fd);
-    times.sort((a, b) => a - b);
-    out(
-      `${label} fsync ms p50/p90/max`,
-      [times[25], times[45], times[49]].map((x) => Math.round((x ?? 0) * 100) / 100),
-    );
-    const db = new DatabaseSync(join(d, "x.db"));
-    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE t (v TEXT)");
-    const ins = db.prepare("INSERT INTO t VALUES (?)");
-    let t0 = performance.now();
-    for (let i = 0; i < 200; i++) {
-      db.exec("BEGIN IMMEDIATE");
-      ins.run("x".repeat(200));
-      db.exec("COMMIT");
-    }
-    out(`${label} sqlite FULL 200 commits ms`, ms(t0));
-    db.exec("PRAGMA synchronous=NORMAL");
-    t0 = performance.now();
-    for (let i = 0; i < 200; i++) {
-      db.exec("BEGIN IMMEDIATE");
-      ins.run("x".repeat(200));
-      db.exec("COMMIT");
-    }
-    out(`${label} sqlite NORMAL 200 commits ms`, ms(t0));
-    db.close();
-  } finally {
-    rmSync(d, { recursive: true, force: true });
-  }
-}
-
-async function linuxBind() {
-  // A server that closed its side first leaves TIME_WAIT on its port: can python bind it?
-  const server = createServer((_q, s) => s.end("ok"));
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
-  await new Promise<void>((r) => {
-    request({ host: "127.0.0.1", port, path: "/", agent: false }, (res) => {
-      res.resume();
-      res.on("end", r);
-    }).end();
-  });
-  server.closeAllConnections();
-  await new Promise<void>((r) => server.close(() => r()));
-  for (const reuse of [false, true]) {
-    const py = spawnSync(
-      "python3",
-      [
-        "-c",
-        `import socket\ns=socket.socket()\n${reuse ? "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n" : ""}s.bind(("127.0.0.1", ${port}))\ns.listen()\nprint("listening")`,
-      ],
-      { encoding: "utf8" },
-    );
-    out(`python bind after a closed server, reuse=${reuse}`, {
-      status: py.status,
-      out: py.stdout.trim(),
-      err: py.stderr.trim().split("\n").at(-1),
-    });
-  }
-  const ss = spawnSync("ss", ["-tan", `sport = :${port}`], { encoding: "utf8" });
-  out("ss rows on that port", ss.stdout.trim().split("\n").length - 1);
-}
-
 async function windowsChecks() {
-  const { windowsElevated, system32 } = await import("../../packages/service/src/hub/identity.ts");
-  out("elevated", windowsElevated());
-  const tmp = tmpdir();
-  out("tmpdir has a short name", tmp.includes("~"));
-  out("drives: tmpdir, its real path, cwd", [
-    tmp.slice(0, 2),
-    realpathSync.native(tmp).slice(0, 2),
-    process.cwd().slice(0, 2),
-  ]);
-  const ps = join(
-    system32() ?? "C:\\Windows\\System32",
-    "WindowsPowerShell",
-    "v1.0",
-    "powershell.exe",
-  );
+  const { system32 } = await import("../../packages/service/src/hub/identity.ts");
+  const ps = join(system32() ?? "C:\\Windows\\System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   const base = ["-NoLogo", "-NoProfile", "-NonInteractive"];
   const minimal: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (
-      v !== undefined &&
-      /^(SYSTEMROOT|WINDIR|SYSTEMDRIVE|TEMP|TMP|USERPROFILE|USERNAME|PATH|PATHEXT|COMSPEC)$/i.test(
-        k,
-      )
-    )
+    if (v !== undefined && /^(SYSTEMROOT|WINDIR|SYSTEMDRIVE|TEMP|TMP|USERPROFILE|USERNAME|PATH|PATHEXT|COMSPEC)$/i.test(k)) {
       minimal[k] = v;
+    }
   }
-  const { REGISTRY_SCRIPT } = await import("../../packages/launch/src/environment/layers.ts");
+  const pick = (name: string) =>
+    Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() === name.toUpperCase()));
   const run = (label: string, args: string[], env: NodeJS.ProcessEnv) => {
     const t0 = performance.now();
     const r = spawnSync(ps, args, { env, encoding: "utf8", windowsHide: true, timeout: 120_000 });
     out(label, { ms: ms(t0), status: r.status, bytes: r.stdout.length });
   };
-  for (let i = 0; i < 3; i++) {
-    run(`bare ${i}`, [...base, "-Command", "[Console]::Out.Write('x')"], process.env);
-    run(`convertto-json full env ${i}`, [...base, "-Command", "ConvertTo-Json 1"], process.env);
-    run(`convertto-json minimal env ${i}`, [...base, "-Command", "ConvertTo-Json 1"], minimal);
-    run(
-      `registry script minimal env ${i}`,
-      [...base, "-ExecutionPolicy", "Bypass", "-Command", REGISTRY_SCRIPT],
-      minimal,
-    );
-    run(
-      `get-childitem hkcu ${i}`,
-      [...base, "-Command", "Get-ChildItem HKCU:\\Environment | Out-Null"],
-      process.env,
-    );
+  out("names the full environment has and the minimal one lacks", Object.keys(process.env).filter((k) => !(k in minimal)).length);
+  out("PSModulePath set in the full environment", process.env["PSModulePath"] !== undefined);
+  for (const name of ["PSModulePath", "LOCALAPPDATA", "APPDATA", "ProgramFiles", "PROCESSOR_ARCHITECTURE"]) {
+    run(`convertto-json minimal + ${name}`, [...base, "-Command", "ConvertTo-Json 1"], { ...minimal, ...pick(name) });
   }
-  const modules = (process.env["PSModulePath"] ?? "")
-    .split(";")
-    .filter(Boolean)
-    .map((p) => {
-      try {
-        return readdirSync(p).length;
-      } catch {
-        return -1;
-      }
-    });
-  out("modules per PSModulePath entry", modules);
-  const { realSyncHost } = await import("../../packages/service/src/hub/sync-host.ts");
-  const { checkFolder } = await import("../../packages/service/src/hub/sync-folders.ts");
+  run("convertto-json minimal", [...base, "-Command", "ConvertTo-Json 1"], minimal);
+  const { REGISTRY_SCRIPT, parseRegistryOutput } = await import("../../packages/launch/src/environment/layers.ts");
   for (let i = 0; i < 3; i++) {
     const t0 = performance.now();
-    const facts = await realSyncHost().windowsFacts();
-    out(`sync facts ${i}`, {
-      ms: ms(t0),
-      ok: facts !== undefined,
-      drives: facts?.drives.map((d) => [
-        d.root,
-        d.type,
-        d.format,
-        d.label === "" ? "" : "labelled",
-      ]),
-    });
+    const r = spawnSync(ps, [...base, "-ExecutionPolicy", "Bypass", "-Command", REGISTRY_SCRIPT], { env: minimal, encoding: "ascii", windowsHide: true });
+    out(`new registry script, minimal env ${i}`, { ms: ms(t0), status: r.status, parsed: parseRegistryOutput(r.stdout) !== undefined });
   }
-  const t1 = performance.now();
-  const parallel = await Promise.all(
-    Array.from({ length: 8 }, async () => {
-      const t0 = performance.now();
-      const facts = await realSyncHost().windowsFacts();
-      return [ms(t0), facts !== undefined];
-    }),
-  );
-  out("sync facts, 8 at once", { total: ms(t1), each: parallel });
-  const t2 = performance.now();
-  const bare = await Promise.all(
-    Array.from(
-      { length: 8 },
-      () =>
-        new Promise<number>((resolve) => {
-          const t0 = performance.now();
-          const c = spawn(ps, [...base, "-Command", "[Console]::Out.Write('x')"], {
-            stdio: "ignore",
-            windowsHide: true,
-          });
-          c.on("close", () => resolve(ms(t0)));
-        }),
-    ),
-  );
-  out("bare, 8 at once", { total: ms(t2), each: bare });
-  const dir = mkdtempSync(join(tmp, "diag-check-"));
+  const { readWindowsFacts } = await import("../../packages/service/src/hub/sync-host.ts");
+  for (let i = 0; i < 3; i++) {
+    const t0 = performance.now();
+    const facts = await readWindowsFacts();
+    out(`new sync facts ${i}`, { ms: ms(t0), ok: facts !== undefined, drives: facts?.drives.length });
+  }
+  const defender = spawnSync(ps, [...base, "-Command", "(Get-MpComputerStatus).RealTimeProtectionEnabled"], { encoding: "utf8", windowsHide: true });
+  out("Defender real-time protection", defender.stdout.trim());
+}
+
+async function spaces(dir: string, label: string) {
+  const { createFixtureSpace } = await import("../../packages/storage/test/space-helpers.ts");
+  const d = mkdtempSync(join(dir, "diag-spaces-"));
   try {
     const t0 = performance.now();
-    const check = await checkFolder(dir, realSyncHost());
-    out("checkFolder(tmp)", {
-      ms: ms(t0),
-      verdict: check.verdict,
-      rules: check.signals.map((s) => s.rule),
-    });
+    for (let i = 0; i < 20; i++) await createFixtureSpace(d, `s${i}`);
+    out(`${label}: 20 fixture spaces created, ms`, ms(t0));
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
   }
 }
 
 out("platform", process.platform);
-flush(tmpdir(), "os temp");
-if (process.env["RUNNER_TEMP"] !== undefined) flush(process.env["RUNNER_TEMP"], "runner temp");
-if (windows) await windowsChecks();
-else await linuxBind();
+await spaces(tmpdir(), "os temp");
+if (process.env["RUNNER_TEMP"] !== undefined) await spaces(process.env["RUNNER_TEMP"], "runner temp");
+if (process.platform === "win32") await windowsChecks();

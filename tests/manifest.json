@@ -531,7 +531,15 @@
     },
     {
       "id": "A1.5.sync.statfs",
-      "title": "Network types from statfs samples captured on real machines and constructed from the kernel's values, mapped drives and drive types on Windows, macOS mount types, and the Windows facts read back",
+      "title": "Network types from statfs samples captured on real machines and constructed from the kernel's values, mapped drives and drive types on Windows, macOS mount types, and the Windows facts read back strictly",
+      "source": "A1 3.2, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.windows-facts",
+      "title": "The Windows facts run calls .NET only, checks that start together share one run, an answer is kept for a minute and a run that gave no facts is not kept; on Windows the real script answers through the real Windows PowerShell",
       "source": "A1 3.2, A1 5",
       "owner": "M3",
       "kind": "ci",

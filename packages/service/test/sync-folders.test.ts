@@ -595,18 +595,18 @@ describe("[A1.5.sync.statfs] network types from captured statfs samples", () => 
   });
 
   test("the Windows facts the PowerShell run writes, read back field by field", () => {
-    const json = {
-      drives: [
-        { root: "C:\\", type: "Fixed", format: "NTFS", label: "Fixture" },
-        { root: "G:\\", type: "Fixed", format: "FAT32", label: "Google Drive" },
-      ],
-      onedrive: "C:\\Users\\fixture\\OneDrive",
-      roots: { id: "OneDrive!S-1-5-21-1!Personal", path: "C:\\Users\\fixture\\OneDrive" },
-      drivefs: syncTargets(["D:\\Google Drive"]),
-    };
-    const out = Buffer.from(JSON.stringify(json), "utf8").toString("base64");
+    const b64 = (text: string): string => Buffer.from(text, "utf8").toString("base64");
+    const output = (...lines: string[]): string => [...lines, "end"].join("\n");
+    const out = output(
+      `drive ${b64("C:\\")} ${b64("Fixed")} ${b64("NTFS")} ${b64("Fixture")}`,
+      `drive ${b64("G:\\")} ${b64("Fixed")} ${b64("FAT32")} ${b64("Google Drive")}`,
+      `drive ${b64("Z:\\")} ${b64("Network")} ${b64("")} ${b64("")}`,
+      `onedrive ${b64("C:\\Users\\fixture\\OneDrive – Lumen")}`,
+      `root ${b64("OneDrive!S-1-5-21-1!Personal")} ${b64("C:\\Users\\fixture\\OneDrive")}`,
+      `drivefs ${syncTargets(["D:\\Google Drive"])}`,
+    );
     const facts = parseWindowsFacts(`${out}\r\n`);
-    expect(facts?.oneDriveAccounts).toEqual(["C:\\Users\\fixture\\OneDrive"]);
+    expect(facts?.oneDriveAccounts).toEqual(["C:\\Users\\fixture\\OneDrive – Lumen"]);
     expect(facts?.syncRoots).toEqual([
       { id: "OneDrive!S-1-5-21-1!Personal", path: "C:\\Users\\fixture\\OneDrive" },
     ]);
@@ -616,7 +616,31 @@ describe("[A1.5.sync.statfs] network types from captured statfs samples", () => 
       format: "FAT32",
       label: "Google Drive",
     });
+    expect(facts?.drives[2]).toEqual({ root: "Z:\\", type: "Network", format: "", label: "" });
     expect(driveFsPaths(facts?.driveFsTargets ?? "")).toEqual(["D:\\Google Drive"]);
-    expect(parseWindowsFacts("not base64 json")).toBeUndefined();
+    // A machine with none of them: only the drives, and the end.
+    expect(
+      parseWindowsFacts(output(`drive ${b64("C:\\")} ${b64("Fixed")} ${b64("NTFS")} ${b64("")}`)),
+    ).toEqual({
+      oneDriveAccounts: [],
+      syncRoots: [],
+      driveFsTargets: "",
+      drives: [{ root: "C:\\", type: "Fixed", format: "NTFS", label: "" }],
+    });
+    // Anything else is no facts, so the folder is unchecked, never local.
+    for (const bad of [
+      "not the run's output",
+      // Cut off before its end.
+      `drive ${b64("C:\\")} ${b64("Fixed")} ${b64("NTFS")} ${b64("")}`,
+      output(`drive ${b64("C:\\")} ${b64("Fixed")} ${b64("NTFS")}`),
+      output(`onedrive ${b64("C:\\x")} ${b64("C:\\y")}`),
+      output(`mount ${b64("C:\\x")}`),
+      output(`onedrive C:\\Users\\fixture\\OneDrive`),
+      output(`drivefs not*base64`),
+      // Base64, but not UTF-8.
+      output(`onedrive ${Buffer.from([0xff, 0xfe, 0x00]).toString("base64")}`),
+    ]) {
+      expect(parseWindowsFacts(bad), bad).toBeUndefined();
+    }
   });
 });
