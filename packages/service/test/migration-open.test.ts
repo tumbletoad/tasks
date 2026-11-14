@@ -22,7 +22,7 @@ import { checkedDriver, digestSpace } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeCommits } from "../../storage/test/backup-helpers.ts";
 import { FIXTURE_MACHINE } from "../../storage/test/fixture-requests.ts";
-import type { StepSet } from "../../storage/test/stand-in-steps.ts";
+import { SLOW_BARRIER_MS, type StepSet } from "../../storage/test/stand-in-steps.ts";
 import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { BUILD } from "../src/hub/build.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
@@ -39,6 +39,13 @@ import {
 import { classSession, errorOf, type CliClass } from "./ops-helpers.ts";
 
 const LONG = 240_000;
+
+/**
+ * The open's bound in the tests whose barrier backup is slow and whose space is then opened again
+ * in a new worker: shorter than the slow barrier, so the first open always passes it, and long
+ * enough for that ordinary second open on a loaded runner, which 1 s was not.
+ */
+const SLOW_OPEN_BOUND_MS = SLOW_BARRIER_MS - 500;
 const running: RunningService[] = [];
 const sessions: RpcSession[] = [];
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -536,7 +543,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       const slow = await watched("slow-failing");
       const service = await start(home, space.folder, {
         startWorker: inOrder([slow.worker]),
-        openTimeoutMs: 1_000,
+        openTimeoutMs: SLOW_OPEN_BOUND_MS,
         closeTimeoutMs: 30_000,
       });
       // The worker was stopped before the space was read again, and the space, still at 0.1, is
@@ -582,7 +589,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       const slow = await watched("slow-real");
       const service = await start(home, space.folder, {
         startWorker: inOrder([slow.worker]),
-        openTimeoutMs: 1_000,
+        openTimeoutMs: SLOW_OPEN_BOUND_MS,
         closeTimeoutMs: 30_000,
       });
       expect(slow.closed()).toBeDefined();
