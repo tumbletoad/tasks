@@ -72,7 +72,7 @@ For a part that is built, this text is the contract: the guarantee, the interfac
   backups/, exports/           verified snapshots and the bundles the user asked for (3.18)
 ```
 
-A space may live in any folder `machine.toml` registers (A2). Only `space.db` and `attachments/` are irreplaceable: `space.json` is rebuilt from the database and `view/` from the outbox. `exchange/` holds files people may have edited, so nothing removes them automatically. Machine-local state (A2) is never inside a space folder; the per-space local settings are `<state>/spaces/<space_id>.json` (`packages/service/src/hub/space-settings.ts`). Not built yet there: `last_seq` in `spaces_seen` (A6), `projection.dir` (3.13), the last clean-shutdown marker (3.2) and `transfers_imported[]`, the transfer IDs this machine has imported, so a second import of one transfer bundle is refused (3.18).
+A space may live in any folder `machine.toml` registers (A2). Only `space.db` and `attachments/` are irreplaceable: `space.json` is rebuilt from the database and `view/` from the outbox. `exchange/` holds files people may have edited, so nothing removes them automatically. Machine-local state (A2) is never inside a space folder; the per-space local settings are `<state>/spaces/<space_id>.json` (`packages/service/src/hub/space-settings.ts`). `seen` (A6's `spaces_seen`) holds the epoch, the incarnation, its lineage and the highest `last_seq` seen of it, recorded at open, every hour and at close, for stale-restore detection (A6 3.5). Not built yet there: `projection.dir` (3.13), the last clean-shutdown marker (3.2) and `transfers_imported[]`, the transfer IDs this machine has imported, so a second import of one transfer bundle is refused (3.18).
 
 **Rules.**
 - **Exact modes whatever the umask:** every file and folder storage creates gets 0700 or 0600 through a descriptor, because the mode given to `open` or `mkdir` is masked by the umask. Only what this call created gets a mode; what already exists keeps its own. One implementation, `packages/files`, used through storage's `files.ts`; tests `[A2.3.2.2.permissions.*]`. An existing space folder is not judged for who else can write it (open item 16).
@@ -112,9 +112,11 @@ Never put a live space in a folder a sync client copies: a client can copy `spac
 - The detector never lists inside a provider root, never reads a provider's private databases and needs no admin rights. A network drive's label is never read on Windows: `IsReady` on a disconnected drive waits for the network's time-out.
 - The projection and the backups may go to a synced folder (`projection.dir`, `backup.dir`), which gives a readable copy on other devices without risk to the database.
 
-**Not built yet.**
-- The same `quick_check` after an unclean shutdown and after an outside write (3.9).
-- When the check fails, the two actions **Restore the latest verified backup** into a new folder and **Rescue readable data**, which exports the rows that can still be read into an `exchange/rescued/` JSONL file for review. Conflict copies are never deleted automatically.
+**When the check fails** (`read_only(check_failed)`) the space takes no new backup, and the read-only words name two actions, both user-only and both leaving the folder as it is. Conflict copies are never deleted automatically.
+- **Restore the latest verified backup** into a new folder (`tasks space restore latest <space> --to <folder>`): the space's newest complete backup that passes every check a restore makes (`restore/rescue.ts` `newestVerifiedBackup`) restores as a read-only copy. A newer one that does not verify is skipped and kept.
+- **Rescue readable data** (`tasks space rescue <space>`): a read-only connection writes every row it can still read into a new file `exchange/rescued/rescued-<utc>.jsonl` (3.18's `data.jsonl` format) for review. A table that fails partway keeps the rows read before the failure and is named in the result. Tests: `[A1.5.sync.check-failed-ways]`, `[A1.5.rescue.damaged]`. Their buttons on the read-only bar are A5's.
+
+**Not built yet.** The same `quick_check` after an unclean shutdown and after an outside write (3.9).
 
 ### 3.3 IDs and references
 
@@ -816,7 +818,7 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.â€¦]`, `[A1.3.15.â€
 | Errors | `errors.codes` | `test/errors.test.ts`, `packages/contracts/src/a1-errors.test.ts` |
 | Migrations | `migration.*`; `A2.3.1.hub.failed-migration`, `A2.3.1.hub.migration-timeout` | `test/migrate.test.ts`, `tests/migration/`, `packages/service/test/migration-open.test.ts`, `packages/cli/test/migration-drill.test.ts` |
 | Backups and restore | `backup.*`, `restore.*` | `test/backup.test.ts`, `test/retention.test.ts`, `test/restore.test.ts` |
-| Export bundles, archive rules, secret scan | `bundle.*`; `A6.5.secrets.scanner`, `A2.3.10.cli.space-export` | `test/bundle.test.ts`, `src/secrets.test.ts`, `packages/cli/test/space.test.ts` |
+| Export bundles, archive rules, secret scan, rescue | `bundle.*`, `rescue.*`; `A6.5.secrets.scanner`, `A2.3.10.cli.space-export` | `test/bundle.test.ts`, `src/secrets.test.ts`, `packages/cli/test/space.test.ts` |
 | Synced and network folders | `sync.*` | `packages/service/test/sync-folders.test.ts`, `synced-spaces.test.ts` |
 | Places and roots | `A1.3.15.*` | `packages/launch/test/places*.test.ts`, `working-folder.test.ts`, `git-config.test.ts`, `packages/service/test/places*.test.ts`, `packages/cli/test/roots.test.ts` |
 | Crash harness | `crash.*` | `tests/crash/` |
