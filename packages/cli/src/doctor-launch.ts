@@ -111,28 +111,31 @@ export function environmentCheck(environment: unknown, now: number): Check {
   const attempted = instant(environment["attempted_at"]);
   const taken = instant(environment["taken_at"]);
   const live = `${CLI_NAME} doctor --live`;
-  if (typeof outcome !== "string") {
-    // No attempt since the service started: a launch takes one when it needs it.
-    return taken === undefined
-      ? {
-          id,
-          status: "skip",
-          detail: `No launch has read your login shell's environment yet. To read it now, run: ${live}`,
-        }
-      : {
-          id,
-          status: "ok",
-          detail: `Launched agents get your login shell's environment, taken ${age(now - taken)} ago; a launch takes it again once it is a day old.`,
-        };
-  }
-  const when = attempted === undefined ? "" : ` (${age(now - attempted)} ago)`;
-  if (outcome === "ok") {
+  if (typeof outcome !== "string" || outcome === "ok") {
+    // No attempt since the service started, or one that succeeded: it passes only with a snapshot
+    // under a day old to show. An older one is not judged: the next launch takes it again, and
+    // only --live says now whether the shell still gives one.
+    if (taken === undefined) {
+      return {
+        id,
+        status: "skip",
+        detail: `No launch has read your login shell's environment yet. To read it now, run: ${live}`,
+      };
+    }
+    if (now - taken >= DAY) {
+      return {
+        id,
+        status: "skip",
+        detail: `The login shell's environment launched agents get was taken ${age(now - taken)} ago; the next launch takes it again. To check your login shell now, run: ${live}`,
+      };
+    }
     return {
       id,
       status: "ok",
-      detail: `Your login shell gave its environment when last asked${when}; launched agents get it.`,
+      detail: `Launched agents get your login shell's environment, taken ${age(now - taken)} ago; a launch takes it again once it is a day old.`,
     };
   }
+  const when = attempted === undefined ? "" : ` (${age(now - attempted)} ago)`;
   const why = SNAPSHOT_WHY[outcome] ?? "it failed";
   const used =
     taken === undefined
@@ -172,6 +175,14 @@ export function t3PairingCheck(status: unknown, now: number): Check {
   }
   const running = state === "ready" ? "" : " T3 Code is not running now.";
   const expires = instant(status["expires_at"]);
+  if (status["renews"] !== true && expires === undefined && status["expires_at"] !== undefined) {
+    // An expiry the service gave that cannot be read: nothing to judge the pairing by.
+    return {
+      id,
+      status: "skip",
+      detail: "The service did not say when T3 Code's pairing runs out.",
+    };
+  }
   if (status["renews"] === true || expires === undefined) {
     return {
       id,
@@ -207,18 +218,27 @@ export function sessionsCheck(facts: unknown): Check {
   if (!isObject(facts)) {
     return { id, status: "skip", detail: "This service binds no agent sessions." };
   }
-  const count = (value: unknown) =>
-    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
-  const open = count(facts["open"]);
-  const dropped = count(facts["dropped"]);
+  const isCount = (value: unknown): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  const count = (value: unknown) => (isCount(value) ? value : 0);
+  const open = facts["open"];
+  const dropped = facts["dropped"];
+  const listed = facts["shared"];
+  // Facts missing or in another shape are not a pass: the row cannot say what it would judge.
+  if (!isCount(open) || !isCount(dropped) || !Array.isArray(listed)) {
+    return { id, status: "skip", detail: "The service did not say how its sessions stand." };
+  }
   // Instance IDs only, as the service names them: anything else never reaches a row.
-  const shared = (Array.isArray(facts["shared"]) ? facts["shared"] : [])
+  const counted = listed
     .filter(isObject)
     .map((s) => ({ instance: s["instance"], count: count(s["count"]) }))
-    .filter(
-      (s): s is { instance: string; count: number } =>
-        typeof s.instance === "string" && INSTANCE_ID.test(s.instance) && s.count > 0,
-    );
+    .filter((s) => s.count > 0);
+  const shared = counted.filter(
+    (s): s is { instance: string; count: number } =>
+      typeof s.instance === "string" && INSTANCE_ID.test(s.instance),
+  );
+  // Shared connections the row cannot name are still no pass.
+  const unnamed = counted.length - shared.length;
   const parts: string[] = [];
   if (dropped > 0) {
     parts.push(
@@ -229,6 +249,10 @@ export function sessionsCheck(facts: unknown): Check {
     const n = shared.reduce((sum, s) => sum + s.count, 0);
     parts.push(
       `${String(n)} agent connection${n === 1 ? "" : "s"} of ${shared.map((s) => s.instance).join(", ")} carr${n === 1 ? "ies" : "y"} more than one conversation (shared mode): a call there binds to no task unless it names one, so ask the agent to name its task on each call.`,
+    );
+  } else if (unnamed > 0) {
+    parts.push(
+      "Agent connections carry more than one conversation (shared mode): a call there binds to no task unless it names one, so ask the agent to name its task on each call.",
     );
   }
   if (parts.length > 0) return { id, status: "warn", detail: parts.join(" ") };

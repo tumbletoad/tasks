@@ -551,6 +551,23 @@ describe("[A3.3.14.doctor.manual] tasks doctor on an entry setup did not write",
         expect(named?.detail).toContain("as instance claude-x");
         expect(named?.detail).toContain("refuses its calls");
         expect(named?.detail).not.toContain(user);
+
+        // An --instance the service reads as the hand-made entry's (`manual`, or no instance ID
+        // at all) reaches the default space like one without: the row says so, not a refusal.
+        for (const instance of ["manual", "MANUAL", "codex.foo"]) {
+          withEntry(["mcp", "--instance", instance, "--app", "claude-code"]);
+          const asManual = row(await doctor(), "manual");
+          expect([instance, asManual?.status]).toEqual([instance, "warn"]);
+          expect(asManual?.detail).toContain("reach only the machine's default space");
+          expect(asManual?.detail).not.toContain("refuses its calls");
+        }
+        // Arguments the server does not take: no claim about what the entry reaches.
+        withEntry(["mcp", "--unknown", "x"]);
+        const unread = row(await doctor(), "manual");
+        expect(unread?.status).toBe("warn");
+        expect(unread?.detail).not.toContain("default space");
+        expect(unread?.detail).not.toContain("refuses its calls");
+        expect(unread?.detail).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
       } finally {
         writeFileSync(claudeFile, before);
         const removed = await run(["setup", "agents", "--remove", "--json"]);

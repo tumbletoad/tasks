@@ -37,7 +37,7 @@ import { join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import generatedTools from "@tasks/contracts/generated/mcp-tools.json" with { type: "json" };
 import { makeDir } from "@tasks/files";
-import { helperOutput, INSTANCE_ID, startHelper, type Env } from "@tasks/launch";
+import { helperOutput, INSTANCE_ID, MANUAL_INSTANCE, startHelper, type Env } from "@tasks/launch";
 import {
   appLabel,
   codexEngines,
@@ -493,11 +493,21 @@ function manualCheck(platform: NodeJS.Platform, views: readonly HomeView[]): Che
       removal === undefined
         ? `take the ${MCP_SERVER_KEY} member out of mcpServers in Claude Desktop's configuration file`
         : `take it out with ${removal.argv.join(" ")}${variable === undefined ? "" : ` with ${variable} set to that home`}`;
-    const instance = entryInstance(view.entry);
+    // The instance the service sees, by its own rule (binding's `instanceIn`): an entry without
+    // --instance, or with one that is `manual` or no instance ID, acts as the hand-made entry.
+    const named = entryInstance(view.entry);
+    const instance =
+      named === undefined
+        ? undefined
+        : named !== null && INSTANCE_ID.test(named) && named !== MANUAL_INSTANCE
+          ? named
+          : null;
     const what =
       instance === null
-        ? `an entry added by hand without --instance (as ${CLI_NAME} setup agents print gives one): its agents act as the hand-made entry and reach only the machine's default space. For an instance and a space of its own`
-        : `an entry added by hand${instance !== undefined && INSTANCE_ID.test(instance) ? ` as instance ${instance}` : ""}, which setup did not register for this home, so the service refuses its calls unless a registered home holds that instance. For setup to register this home`;
+        ? `an entry added by hand without --instance (or with one the service reads as the hand-made entry's, as ${CLI_NAME} setup agents print gives one without): its agents act as the hand-made entry and reach only the machine's default space. For an instance and a space of its own`
+        : instance === undefined
+          ? `an entry added by hand whose arguments are not ones ${PRODUCT_NAME}'s server takes. For setup to register this home`
+          : `an entry added by hand as instance ${instance}, which setup did not register for this home, so the service refuses its calls unless a registered home holds that instance. For setup to register this home`;
     return `${name(view)}: ${what}, ${how}, then run: ${CLI_NAME} setup agents`;
   });
   return { id: "manual", status: "warn", detail: parts.join(" ") };

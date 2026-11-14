@@ -44,6 +44,16 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     const nothing = environmentCheck(snapshot(null, null, null), NOW);
     expect(nothing.status).toBe("skip");
     expect(nothing.detail).toContain("doctor --live");
+    // A stored snapshot a day old or more is never ok, attempted at this start or not: the next
+    // launch takes it again, and only --live says now whether the shell still gives one.
+    for (const outcome of [null, "ok"]) {
+      const old = environmentCheck(snapshot(outcome, NOW - 3 * DAY, NOW - 3 * DAY), NOW);
+      expect([outcome, old.status]).toEqual([outcome, "skip"]);
+      expect(old.detail).toContain("3 days ago");
+      expect(old.detail).toContain("doctor --live");
+    }
+    // An attempt that succeeded with no snapshot to show is no pass either.
+    expect(environmentCheck(snapshot("ok", NOW, null), NOW).status).toBe("skip");
     // A failed attempt with a snapshot of an hour ago still in use, then a stale one, then none.
     const recent = environmentCheck(snapshot("timeout", NOW - 5 * 60_000, NOW - HOUR), NOW);
     expect(recent.status).toBe("warn");
@@ -70,6 +80,15 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
       "ok",
     );
     expect(t3PairingCheck(paired({ renews: false }), NOW).status).toBe("ok");
+    // An expiry the service gave but no one can read is not a pass.
+    for (const broken of ["broken", "", 12, { at: 1 }]) {
+      expect([
+        broken,
+        t3PairingCheck(paired({ renews: false, expires_at: broken }), NOW).status,
+      ]).toEqual([broken, "skip"]);
+    }
+    // Without `renews` the pairing is judged as one that cannot renew itself.
+    expect(t3PairingCheck(paired({ expires_at: iso(NOW + DAY) }), NOW).status).toBe("warn");
     const later = t3PairingCheck(paired({ renews: false, expires_at: iso(NOW + 30 * DAY) }), NOW);
     expect(later).toMatchObject({ status: "ok" });
     expect(later.detail).toContain("until 2026-12-14");
@@ -171,6 +190,26 @@ describe("[A3.3.14.doctor.sessions] doctor's sessions row against fakes", () => 
     );
     expect(shared.detail).not.toContain("/home/x");
     expect(shared.detail).not.toContain("\u001b");
+    // Shared connections the row cannot name still warn, unnamed.
+    const unnamed = sessionsCheck({
+      open: 1,
+      shared: [{ instance: "/home/x", count: 1 }],
+      dropped: 0,
+    });
+    expect(unnamed.status).toBe("warn");
+    expect(unnamed.detail).toContain("shared mode");
+    expect(unnamed.detail).not.toContain("/home/x");
     expect(sessionsCheck(null).status).toBe("skip");
+    // Facts the service did not give, or gave in another shape, are never a pass.
+    for (const facts of [
+      {},
+      { open: 1, shared: [] },
+      { open: 1, dropped: 0 },
+      { open: "1", shared: [], dropped: 0 },
+      { open: 1, shared: [], dropped: -1 },
+      { open: 1, shared: {}, dropped: 0 },
+    ]) {
+      expect([facts, sessionsCheck(facts).status]).toEqual([facts, "skip"]);
+    }
   });
 });
