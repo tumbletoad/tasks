@@ -210,8 +210,16 @@ export const EVENTS = {
     },
   },
   "update.repair_failed": { lvl: "error", c: "hub", fields: { code: "error_code" } },
-  /** current names another version than this service runs: it restarts into that one. */
-  "update.restart": { lvl: "warn", c: "hub", fields: { version: "version" } },
+  /**
+   * After a repair the service restarts: current names another version than it runs (`version`),
+   * or the update changed the Windows supervisor it runs under, which then hands over
+   * (`supervisor`).
+   */
+  "update.restart": {
+    lvl: "warn",
+    c: "hub",
+    fields: { version: "version", why: ["version", "supervisor"] },
+  },
   // machine.toml (A2 3.2.4): sections and codes only, never a key's text or a value.
   "config.problem": {
     lvl: "warn",

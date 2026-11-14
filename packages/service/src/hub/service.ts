@@ -23,7 +23,7 @@ import { randomBytes } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { envVar, PRODUCT_NAME } from "@tasks/brand";
-import { T3Route, type Root } from "@tasks/launch";
+import type { Root } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
   fatalProblems,
@@ -110,8 +110,8 @@ import {
   type BindingEvent,
   type SessionStore,
 } from "../binding/index.ts";
-import { repairIfIdle, type RepairOutcome } from "../version/repair.ts";
-import { t3Files, t3FileNames, t3HomeOf, T3_STATE_DIR } from "./t3.ts";
+import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
+import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { within } from "./wait.ts";
 
@@ -119,11 +119,16 @@ import { within } from "./wait.ts";
 export const UPDATE_CHECK_MS = 10_000;
 
 /**
- * Logs what a repair of an interrupted update did, and whether current now names another version
- * than this build's own: then the service must restart so its manager starts that one. A service
- * run from source names no version and never restarts for this.
+ * Logs what a repair of an interrupted update did, and whether the service must restart so its
+ * manager starts what the install now is: when current names another version than this build's
+ * own, or when the repair may have replaced the Windows supervisor (tasksw.exe, repair.ts
+ * supervisorReplaced) and this service runs under it. That supervisor may still run from the old
+ * file, renamed aside; before it starts the service again (after this exit 75, or after any other
+ * exit, should this one die first) it sees that bin\tasksw.exe is another file and starts that
+ * one in its place (launcher.c hand_over). A service run from source names no version and never
+ * restarts for this.
  */
-function afterRepair(log: Logger, outcome: RepairOutcome | undefined): boolean {
+function afterRepair(log: Logger, outcome: RepairOutcome | undefined, manager: Manager): boolean {
   if (outcome === undefined || outcome.kind === "nothing") return false;
   if (outcome.kind === "stuck") {
     log.log("update.repaired", { outcome: "stuck" });
@@ -137,8 +142,13 @@ function afterRepair(log: Logger, outcome: RepairOutcome | undefined): boolean {
   );
   // The build stamps its own label (scripts/build/bundle.ts); from source it stays "source".
   const build: string = BUILD.build;
-  if (build === "source" || outcome.current === BUILD.version) return false;
-  log.log("update.restart", { version: outcome.current });
+  if (build === "source") return false;
+  if (outcome.current !== BUILD.version) {
+    log.log("update.restart", { version: outcome.current, why: "version" });
+    return true;
+  }
+  if (manager !== "tasksw" || !supervisorReplaced(outcome)) return false;
+  log.log("update.restart", { version: outcome.current, why: "supervisor" });
   return true;
 }
 
@@ -482,7 +492,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       log.log("update.repair_failed", code === undefined ? {} : { code });
       return undefined;
     });
-    if (afterRepair(log, atStart)) throw new ServiceExit(EXIT.restart, "restart");
+    if (afterRepair(log, atStart, manager)) throw new ServiceExit(EXIT.restart, "restart");
 
     const temps = removeStaleTemps(layout.state, [
       SERVICE_FILE,
@@ -667,15 +677,16 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         },
       },
       launches: { handlers: () => launching.service?.handlers() ?? {} },
-      // `tasks setup t3` (M2.11): T3's route over `<state>/t3`. Launching through it is a later step's.
-      t3: {
+      // `tasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
+      // fallback (M6.10). Launching through them is a later step's.
+      t3: t3Host({
         log,
-        route: new T3Route({
-          home: t3HomeOf(env, facts),
-          files: t3Files(layout.state, platform),
-          platform,
-        }),
-      },
+        home: t3HomeOf(env, facts),
+        files: t3Files(layout.state, platform),
+        platform,
+        env,
+        instances: config.instances,
+      }),
       // `tasks setup agents` (M2.14): the agent-home rows of the grants table.
       agentHomes: {
         log,
@@ -1105,7 +1116,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
               if (reported === "stuck") return;
               reported = "stuck";
             } else if (outcome !== undefined) reported = undefined;
-            if (afterRepair(log, outcome) && draining === undefined && !aborted) {
+            if (afterRepair(log, outcome, manager) && draining === undefined && !aborted) {
               void drain(EXIT.restart, "request");
             }
           },
