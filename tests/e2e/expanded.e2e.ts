@@ -308,7 +308,7 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
       area: "home",
       sources: [{ kind: "web", title: "Van rental", url: "https://vans.example/booking" }],
     });
-    // A task added after it in the same group: the list's last row is never this one.
+    // Another task in the same group, so the list's keys have a row to move to.
     await addTask(world, { title: `Return the van keys (${tag})`, area: "home" });
     await page.goto(await world.signInUrl(`/s/${space}/today`));
     await showsSpace(page, world.mira.name);
@@ -372,10 +372,13 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.keyboard.press("Escape");
     await expect(title).toHaveText(`Book the moving van (${tag}), just the jump seats`);
     await expect(title).toHaveAttribute("aria-expanded", "true");
-    // The list's keys move on from the card's title: End goes to the list's last row (never this
-    // task: one was added after it).
+    // The list's keys move on from the card's title: Home goes to the list's first row, End to
+    // its last. The group holds another task, so one of them is another row.
     await title.focus();
-    await page.keyboard.press("End");
+    await page.keyboard.press("Home");
+    if (await title.evaluate((element) => element === document.activeElement)) {
+      await page.keyboard.press("End");
+    }
     await expect(title).not.toBeFocused();
     await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
   });

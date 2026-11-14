@@ -18,6 +18,11 @@ import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 const THEME_KEY = `${PRODUCT_ID}.theme`;
+/**
+ * At least this many rows in the scroll test's area view, whichever area it is: three of every six
+ * bulk tasks are in Lumen's projects and two in Home's (bulk.ts `PLACES`).
+ */
+const AREA_ROWS = BULK_TASKS / 3;
 
 interface Sweep {
   readonly frames: number;
@@ -164,7 +169,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
       expect(run.blank, `frames with an uncovered gap (worst ${String(run.worstGap)} px)`).toBe(0);
       expect(run.lostFocus).toBe(0);
     }
-    expect(atBottom).toBeGreaterThan(BULK_TASKS * 50);
+    expect(atBottom).toBeGreaterThan(AREA_ROWS * 50);
     // The focused row left the window and came back: it still holds focus, at the top again.
     expect(await focusedKey(page)).toBe(firstKey);
 
@@ -173,7 +178,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     const lastKey = await focusedKey(page);
     expect(lastKey).not.toBe(firstKey);
     await expect(page.locator(`[data-list] li[data-key="${lastKey ?? ""}"]`)).toBeInViewport();
-    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(BULK_TASKS * 50);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(AREA_ROWS * 50);
     await page.keyboard.press("Home");
     expect(await focusedKey(page)).toBe(firstKey);
     await expect(first).toBeInViewport();
@@ -238,7 +243,8 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
     bulk,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/area/${bulk.task.area}`));
+    // The Inbox, newest first, so every status chip is on the first screens.
+    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/inbox`));
     await showsSpace(page, bulk.mira.name);
     const rows = page.locator("[data-list] li[data-key]");
     await expect(rows.first()).toBeVisible({ timeout: SLOW_MS });
