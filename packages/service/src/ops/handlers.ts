@@ -65,10 +65,13 @@ import {
   storageFailure,
   unsupported,
 } from "./errors.ts";
+import { SearchCursors } from "../search/cursors.ts";
+import { runSearch, type SearchInput } from "../search/search.ts";
 import {
   readCommit,
   readLaunch,
   readPlaced,
+  readPlacedAny,
   readReceipt,
   readLaunchTask,
   readSpace,
@@ -1543,7 +1546,59 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     return receiptResult(stored);
   },
+
+  "task.search": async (call) => {
+    // A read through the reader (A3 3.9): a read-only space answers too.
+    const reader = readerOf(call.space);
+    const { host } = call;
+    const space = call.space.id ?? "";
+    const platform = host.platform ?? process.platform;
+    const boundTask = call.caller.binding?.session?.task ?? undefined;
+    try {
+      // The input passed the entry's schema (TaskSearchInput) and its SafeText.
+      const input: SearchInput = call.input;
+      return await runSearch(reader, input, {
+        cursors: cursorsOf(host),
+        // A cursor serves the binding it was issued to (A3 3.9.5): the scope the call acts in.
+        owner: call.principal.scope,
+        space,
+        audience: call.principal.audience,
+        today: call.today,
+        now: (host.now ?? Date.now)(),
+        timeZone: (host.timeZone ?? localTimeZone)(),
+        machine: host.machine.id,
+        ...(boundTask === undefined ? {} : { boundTask }),
+        live: () =>
+          [...(host.bindings?.liveSessions(space) ?? new Map<string, number>())]
+            .filter(([, count]) => count > 0)
+            .map(([task]) => task),
+        here: async (cwd) => {
+          const roots = host.roots?.() ?? [];
+          const found = await hereOf(cwd, roots, platform);
+          if (found === undefined || found.roots.length === 0) return [];
+          // Every lifecycle: the search's scope and filters at S choose among them.
+          const placed = await readPlacedAny(reader, host.machine.id, found.roots);
+          const rows = await hereRows(placed, found, roots, platform);
+          return rows.map(({ row }) => String(row["id"]));
+        },
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
+  },
 };
+
+/** The search cursors of one service run (A3 3.9.5): a restart drops them with the host. */
+const searchCursors = new WeakMap<OpsHost, SearchCursors>();
+
+function cursorsOf(host: OpsHost): SearchCursors {
+  let cursors = searchCursors.get(host);
+  if (cursors === undefined) {
+    cursors = new SearchCursors(host.now ?? Date.now);
+    searchCursors.set(host, cursors);
+  }
+  return cursors;
+}
 
 /** The `since` of a changes section: 24h, 7d or an ISO time, in milliseconds. */
 /** The request ID of a click's over-budget note: derived, so a repeated click replays it. */
