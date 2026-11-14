@@ -94,13 +94,28 @@ function taskLine(task: Result): string {
   return `${String(task["ref"])}  ${String(task["title"])}  (${parts.join(", ")})`;
 }
 
+/**
+ * A task draft's row (A3 3.4.5): added, or found by its source key (A1 3.6), with the lifecycle it
+ * was found in and whether its log entry went there, or the tasks that share its keys.
+ */
+function draftLine(task: Result, space: string): string {
+  if (task["result"] !== "exists") return `Added ${String(task["ref"])} to ${space}`;
+  const ambiguous = task["ambiguous"];
+  if (Array.isArray(ambiguous)) {
+    return `Several tasks in ${space} have its source key: ${ambiguous.map(String).join(", ")}`;
+  }
+  const lifecycle = task["lifecycle"] === "active" ? "" : ` (${String(task["lifecycle"])})`;
+  const logged = task["log_added"] === true ? ", log entry added" : "";
+  return `Found ${String(task["ref"])}${lifecycle} in ${space} by its source key${logged}`;
+}
+
 /** Plain text for a person, per entry. `space` names the space a write went to (A2 3.10.2). */
 export function render(entry: string, result: Result, space: string): string {
   const lines: string[] = [];
   switch (entry) {
     case "task.add":
       for (const task of (result["tasks"] as Result[] | undefined) ?? []) {
-        lines.push(`Added ${String(task["ref"])} to ${space}${replay(result)}`);
+        lines.push(`${draftLine(task, space)}${replay(result)}`);
       }
       break;
     case "task.update": {
@@ -120,7 +135,14 @@ export function render(entry: string, result: Result, space: string): string {
     case "task.finish": {
       lines.push(`Completed ${String(result["task"])} in ${space}${replay(result)}`);
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
-        lines.push(`Added ${String(f["ref"])} to ${space}`);
+        const ref = typeof f["ref"] === "string" ? f["ref"] : undefined;
+        lines.push(
+          f["result"] !== "exists"
+            ? `Added ${String(ref)} to ${space}`
+            : ref === undefined
+              ? `Several tasks in ${space} have a follow-up's source key`
+              : `Found ${ref} in ${space} by a follow-up's source key`,
+        );
       }
       break;
     }
