@@ -378,7 +378,7 @@ Still to build:
 - **An explicit `task`** on any call applies to that call only. Once an output schema carries it (M4.06), the result adds "this session is bound to M-14".
 - **Routine sessions** (M6) bind to the space, not a task (A4's binding kind `routine`). Task tools then need an explicit `task`. Every tool works unbound with an explicit `task` or when it needs none, except `run_report`.
 - **A lost binding.** Calls that relied on the bound task return `unbound` with the hint "Your session ended. Pass task, or ask the user." Search cursors of that connection are invalidated (3.9.5).
-- **Session records move into the space** when a schema step adds A1's `sessions` table with its `session.*` operations. Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
+- **Session records move into the space** with the `session.*` operations (M4.06): the `sessions` table exists (schema 0.3, A4 3.10). Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
 
 #### 3.7.4 Credentials and actors
 

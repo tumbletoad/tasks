@@ -133,10 +133,10 @@ Never put a live space in a folder a sync client copies: a client can copy `spac
 
 ### 3.4 Schema
 
-Schemas 0.1 and 0.2 are built and frozen (3.17). The SQL in `packages/storage/migrations/` (`0001-schema-0.1.ts`, `0002-schema-0.2.ts`) is the definition, and the facts code branches on (`APP_ID`, `FORBIDDEN_COLUMN_WORDS`, `CLOSED_ENUMS`, `OPEN_SETS`) are in `src/schema.ts`. The schema lint (`[A1.5.schema.lint]`) checks each against a fresh database, including STRICT, the foreign keys and the closed sets. Schema 0.2's tables `attachments`, `proposals`, `exchanges`, `exchange_items`, `labels`, `task_labels` and `learnings` exist, but no operation writes them yet (3.6).
+Schemas 0.1, 0.2 and 0.3 are built, and frozen once a build with them opens a real space (3.17). The SQL in `packages/storage/migrations/` (`0001-schema-0.1.ts`, `0002-schema-0.2.ts`, `0003-schema-0.3.ts`) is the definition, each step's departures from the DDL below in its header, and the facts code branches on (`APP_ID`, `FORBIDDEN_COLUMN_WORDS`, `CLOSED_ENUMS`, `OPEN_SETS`) are in `src/schema.ts`. The schema lint (`[A1.5.schema.lint]`) checks each against a fresh database, including STRICT, the foreign keys and the closed sets. Schema 0.2's tables `attachments`, `proposals`, `exchanges`, `exchange_items`, `labels`, `task_labels` and `learnings` exist, but no operation writes them yet (3.6). Schema 0.3 adds A4's `sessions` and `runs`: runs are written by `run.create` and `run.transition` (3.6), sessions by no operation yet (below).
 
 **Conventions.**
-- Every mutable row has `created_seq`, `version` and two JSON maps over its logical fields: `fv`, each field's physical version, and `fp`, its provenance (3.5, 3.10). A missing key means `created_seq`. The planned `sessions` and `runs` tables have no maps yet and `routines` only `fv` (open item 13). The logical fields are `TASK_FIELDS` and `CHILD_FIELDS` in `write/fields.ts`; `ext.<key>` is one field per key, and writers keep `ext` keys they do not know.
+- Every mutable row has `created_seq`, `version` and two JSON maps over its logical fields: `fv`, each field's physical version, and `fp`, its provenance (3.5, 3.10). A missing key means `created_seq`. `sessions` and `runs` have both maps like every row with history, and the schema lint requires them on every row with `created_seq`; the planned `routines` shows only `fv` (open item 13). The logical fields are `TASK_FIELDS` and `CHILD_FIELDS` in `write/fields.ts`; `ext.<key>` is one field per key, and writers keep `ext` keys they do not know.
 - No column holds an executable path, argv, environment, shell text or credential (R10, A6 L4).
 - `application_id` is random, not derived from the product name, so a rename keeps every space readable.
 - **WITHOUT ROWID** only for small, bounded rows whose key is not one INTEGER (`aliases`, `outbox`, `task_sources`, `task_labels`). Such a table keeps at most 1,002 bytes of a row on a 4 KiB leaf and spills the rest: the same 224,684 change rows took 203 MB without a rowid against 140 MB with one. So `changes`, `receipts`, `launches`, `exchange_items` and `history_text` keep a rowid.
@@ -149,33 +149,13 @@ Schemas 0.1 and 0.2 are built and frozen (3.17). The SQL in `packages/storage/mi
 
 **System commits** are written only by `writeSystemCommit` (3.7), by the system actor in scope `system`, with no receipt: `machine.register`, `actor.register`, `schema.migrate` and `space.claim`. Their request ID names the row or incarnation, so each happens once. The space row has no history.
 
-**Tables for later steps**, from step 0003 on: `projection_files` (3.13), the search tables (3.12), and these:
+**Tables for later steps**, from step 0004 on: `projection_files` (3.13), the search tables (3.12), and these. Schema 0.3 built `sessions` (A4 3.10) and `runs` (A4 3.11), and `0003-schema-0.3.ts` is their definition: a run holds the adapter, place, request text, spec, reason and evidence A4 3.16 lists, and a session a `detail` for what binding keeps, so the records later steps write need no schema change.
 
 ```sql
 CREATE TABLE history_text (hash TEXT PRIMARY KEY, text TEXT NOT NULL) STRICT;   -- text of 1 KiB or more
 
 CREATE TABLE redactions (                        -- IDs removed by entity redaction, never content
   entity_kind TEXT NOT NULL, entity_id TEXT PRIMARY KEY, seq INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE sessions (                          -- A4 3.10
-  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id),
-  kind TEXT NOT NULL CHECK (kind IN ('interactive','run')),
-  instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
-  native_id TEXT, native_id_source TEXT,
-  state TEXT NOT NULL CHECK (state IN ('opening','live','ended','unknown')), end_reason TEXT, exit_code INTEGER,
-  bound INTEGER NOT NULL DEFAULT 0, actor_id TEXT REFERENCES actors(id),
-  created_at INTEGER NOT NULL, ended_at INTEGER,
-  created_seq INTEGER NOT NULL, version INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE runs (                              -- A4 3.11
-  id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), routine_id TEXT, session_id TEXT,
-  instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
-  state TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1,
-  result TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result)),
-  queued_at INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER,
-  created_seq INTEGER NOT NULL, version INTEGER NOT NULL
 ) STRICT;
 
 CREATE TABLE routines (                          -- A4 3.12.1; spec holds template, params, limits, watermark
@@ -192,9 +172,9 @@ CREATE TABLE routines (                          -- A4 3.12.1; spec holds templa
 - From the step that adds `history_text`, text values of 1 KiB or more are stored there once by SHA-256 and referenced as `{"$t": hash}` in `changes` and `commits.ops`, so the after-value of one edit and the before-value of the next share storage.
 - `projection_files(path PRIMARY KEY, task_id, sha256, seq, entry)` records what the projection last wrote, including the task's catalogue line as rendered.
 
-**Records whose lifecycle A4 owns.** A4 writes launch intents, sessions and runs only through its `ExecutionStore` interface (X7). In v1 that interface writes these tables in the space database as A1 operations with their history; from L1 a machine without authority keeps them in a machine-local journal and publishes observations to the authority (A6). `launches` is built (0.1). A launch names its place, never an absolute path; a session's absolute folder stays in machine state (A4 3.10).
+**Records whose lifecycle A4 owns.** A4 writes launch intents, sessions and runs only through its `ExecutionStore` interface (X7). In v1 that interface writes these tables in the space database as A1 operations with their history; from L1 a machine without authority keeps them in a machine-local journal and publishes observations to the authority (A6). `launches` is built (0.1), `runs` too (0.3, `write/runs.ts`): a run's record holds the person's request text and the agent's final result and error, which are task text, so the redaction step covers them (3.11.4). A launch names its place, never an absolute path; a session's absolute folder stays in machine state (A4 3.10).
 
-**Sessions until their table exists.** Session records and binding handles live in `<state>/sessions.json` (`packages/service/src/binding/sessions.ts`, A3 3.7). Everything a session does in a space still goes through the write path: its actor joins with `actor.register`, every commit carries `session_id` from the credential, and a launch's `bound_at` is a launch operation. The step that adds the table moves each record into it, adds `sessions` to the crash harness's tables and leaves handles in machine state. Until then a session record lost with the state folder leaves its launch's `bound_at` in the space, so that launch's reference answers `launch_used`.
+**Sessions until binding writes their table.** Schema 0.3 has the `sessions` table, and the crash harness checks its rows, but binding's session records and handles still live in `<state>/sessions.json` (`packages/service/src/binding/sessions.ts`, A3 3.7). Everything a session does in a space still goes through the write path: its actor joins with `actor.register`, every commit carries `session_id` from the credential, and a launch's `bound_at` is a launch operation. The step that brings the `session.*` operations and the execution store's `upsertSession` (M4.06) moves each record into the table, with no schema change: `sessions.detail` holds how it bound, its launches, the native IDs its connections presented and the snapshot of its instance's label and account. Handles stay in machine state. Until then a session record lost with the state folder leaves its launch's `bound_at` in the space, so that launch's reference answers `launch_used`.
 
 ### 3.5 Versions and the base
 
@@ -213,11 +193,12 @@ Built in the write path (`write/request.ts` parses the base, `write/writer.ts` c
 
 A1's operations are the writer's internal interface, not Zod schemas. Each kind is listed once in `packages/contracts/src/operations.ts` with who may emit it, the scopes it may need and whether it always needs `base`, and a test checks the writer against that table. A registry handler (A3, R5) expands its input into operations, resolving relative dates, names and A3's `focus: true`; the writer takes ISO dates, IDs and slugs only.
 
-**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A3.3.7.actors.first-act]`): `task.create` (without dedupe), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `machine.register` and `actor.register`. What is not obvious from the code:
+**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A3.3.7.actors.first-act]`): `task.create` (without dedupe), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `run.create`, `run.transition`, `machine.register` and `actor.register` (tests also `[A1.5.write.runs]`). What is not obvious from the code:
 - `task.context_append` writes the `context` field without a base, so two appends both land while a stale replace conflicts with it.
 - **Initial children** of a new task are child operations in the same request naming the draft's client ID. There is no nested form of `task.create`, so each row kind has one implementation.
 - `machine.register` runs once, when a space's writer first opens on its authority machine. A writer on another machine registers nothing and refuses every request (`not_authority`). The writer refuses a principal without an `actors` row; the CLI's `script` and `agent:unknown` actors and A4's session actors join a space with `actor.register` on their first act.
 - **Launch operations** (A4 3.9, 3.16) write `launches` with history, but a launch is not a child of its task: it moves neither the task's `touched` nor its projection. Only a human or the system writes them, and they are never undoable (R7). The focus rule (a second click within `FOCUS_MS` returns the intent in flight) is checked in the transaction, because two tabs could both create an intent, and is measured on the wall clock, because commit instants stand still while the clock is behind the newest commit (3.9). A launch request stores no free text, so it never goes through the request path's `submit` (A3).
+- **Run operations** (A4 3.11, 3.16) follow the launch operations' rules: `runs` with history, not a child of its task, a human or the system only, never undoable, a compare-and-set on the state and version, evidence that only grows. A run request holds two texts and no other: the person's instruction in `run.create` (64 KiB) and the agent's final result and error in `run.transition` (8 KiB each), entering a final state, once.
 
 **Not built yet.**
 
@@ -238,7 +219,7 @@ A1's operations are the writer's internal interface, not Zod schemas. Each kind 
 | `attachment.add` | task, sha256, size, media type, file name | none | The blob is published first (3.18). |
 | `space.patch` | name, ref prefix | human only | The old prefix is kept as an alias. |
 | `space.hold`, `space.release` | reason | human only | Set or clear the hold `{by, at, reason, exchange_id?}`. While held, every write except `space.release` returns `SPACE_READ_ONLY` with reason `held`. Reads, search, backups and exports keep working. An `exchange.create` for an export can set the hold in the same commit (3.14). |
-| `session.*`, `run.*`, `routine.*` | A4's records and transitions | as A4 defines, routines human only (R7) | Not undoable. |
+| `session.*`, `run.report`, `routine.*` | A4's records and transitions | as A4 defines, routines human only (R7) | Not undoable. |
 | `exchange.create`, `exchange.apply`, `exchange.abandon` | 3.14 | human only (X15) | |
 | `undo`, `redo`, `revert`, `revert_session` | 3.10 | | |
 | `redact` | entity or text hash | human only, typed confirmation | 3.11.4. |
@@ -630,7 +611,7 @@ flag("features.search_trigram", { default: false, stability: "preview" });
 
 **Schema steps** are `SchemaStep`s in `packages/storage/migrations/`, listed in `migrations/index.ts`. The runner, open and restore read one step chain (`migrate/steps.ts`). Creating a space runs every step, so a new and a migrated space have the same schema.
 
-**Released schemas are frozen.** Real spaces exist at 0.1 and 0.2, so `0001` and `0002` are never edited and every change is a new step, the next being `0003`. Testkit pins each released schema (`RELEASED_SCHEMAS`) and the 0.1 sample's rows (`FIXED_SAMPLE_0_1`), never updated. Older revisions' fixtures are built from their step chain, never checked in. The runner's tests and the crash harness use one stand-in step above the real ones, which a new real step rebases.
+**Released schemas are frozen.** Real spaces exist at 0.1 and 0.2, so `0001` and `0002` are never edited, and `0003` is frozen once a build with it opens a real space. Every change is a new step, the next being `0004`. Testkit pins each released schema (`RELEASED_SCHEMAS`, 0.3 pinned with its step) and the 0.1 sample's rows (`FIXED_SAMPLE_0_1`), never updated. Older revisions' fixtures are built from their step chain, never checked in. The runner's tests and the crash harness use one stand-in step above the real ones (0.4 now), which a new real step rebases.
 
 **How a migration runs** is in the header of `migrate/runner.ts` (tests `[A1.5.migration.*]`): inside the writer's open, under its claim and `writer.lock`, before the write path attaches; never by open itself, and only on the authority (`SPACE_NEEDS_MIGRATION` elsewhere). A copy from another machine is claimed first, then migrated, so no migration commit extends the old incarnation's history in a second folder.
 
@@ -807,7 +788,7 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.â€¦]`, `[A1.3.15.â€
 | One writer per file, file names, cross-process lock | `writer.*` | `test/writer-worker.test.ts`, `test/file-names.test.ts`, `test/writer-lock.test.ts` |
 | Space folder, manifest, IDs, references, row domain | `space.*`, `ids.property`, `refs.short` | `test/space.test.ts`, `test/manifest.test.ts`, `test/files.test.ts`, `test/refs.test.ts`, `src/*.test.ts` |
 | Schema lint | `schema.lint` | `test/schema-lint.test.ts` |
-| Write path, receipts, launches | `write.*` | `test/write-path.test.ts`, `children`, `clear-append`, `receipts`, `launches`, `write-model` |
+| Write path, receipts, launches, runs | `write.*` | `test/write-path.test.ts`, `children`, `clear-append`, `receipts`, `launches`, `runs`, `write-model` |
 | Errors | `errors.codes` | `test/errors.test.ts`, `packages/contracts/src/a1-errors.test.ts` |
 | Migrations | `migration.*`; `A2.3.1.hub.failed-migration`, `A2.3.1.hub.migration-timeout` | `test/migrate.test.ts`, `tests/migration/`, `packages/service/test/migration-open.test.ts`, `packages/cli/test/migration-drill.test.ts` |
 | Backups and restore | `backup.*`, `restore.*` | `test/backup.test.ts`, `test/retention.test.ts`, `test/restore.test.ts` |
@@ -821,7 +802,7 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.â€¦]`, `[A1.3.15.â€
 - **The ledger is a lower bound:** a request in flight at the kill may have committed.
 - **What a process kill cannot show:** power loss, a torn sector, a lying disk, an OS crash, so fsync order and `synchronous` are not tested (a planted `synchronous = OFF` runs clean). Not covered yet: a full disk, an outside write, two processes or state folders (`writer.lock` has its own tests), recovery from a rollback journal (open item 10), retention, leftover cleanup, macOS.
 
-**The migration tests** migrate each released revision's fixture to current (`[A1.5.migration.from-0.1]`) and fail every statement boundary of the migration's transaction in turn (`[A1.5.migration.statement-faults]`), and a new schema step adds its fixture and its fault sweep. The installed-build drill (`[A1.5.migration.drill]`, `pnpm accept m3 --part migration --installed <folder>`) runs against an unmodified signed build, with a trigger as its fault because a product build has no fault hook, before a build with a new schema step reaches a real space.
+**The migration tests** migrate each released revision's fixture to current (`[A1.5.migration.from-0.1]`, `[A1.5.migration.from-0.2]` with a row in every 0.2 table) and fail every statement boundary of each step's migration in turn (`[A1.5.migration.statement-faults]`, `[A1.5.migration.statement-faults-0003]`), and a new schema step adds its fixture and its fault sweep. The installed-build drill (`[A1.5.migration.drill]`, `pnpm accept m3 --part migration --installed <folder>`) runs against an unmodified signed build, with a trigger as its fault because a product build has no fault hook, before a build with a new schema step reaches a real space.
 
 **Still to add with their steps.**
 - **Schema lint:** every replicated column changes only through `changes` (an audit trigger log compared with the `changes` rows of a random workload). Every store that can hold task text has a registered redaction handler (M3.14).
@@ -855,7 +836,7 @@ Item numbers are stable and never reused, so a settled item leaves a gap.
 10. **Recovery fault seam.** `RecoverSeams` needs a `faults.recover` in the worker's `ServeOptions` before the crash harness can kill a recovery at its seams (5).
 11. **WAL checkpoints inside commits.** The writer leaves SQLite's automatic checkpoint on, so a commit that crosses the threshold runs the checkpoint itself, the likely cause of R03's p99 near 20 ms (3.20). Whether to move checkpoints out of commits (for example `wal_autocheckpoint = 0` on the writer and a passive checkpoint on the maintenance worker when idle) is not decided. M1.15's measurement on the installed build decides it.
 12. **Repairing a damaged `space.json`.** A damaged manifest stops every writer (3.1), and today the person repairs or removes the file by hand. An operator command that repairs it from the database while keeping the original file is not built yet.
-13. **Field maps of A4's records.** The planned `sessions` and `runs` tables carry no `fv` and `fp`, and `routines` only `fv` (3.4). The steps that build them decide whether these rows get both maps, as every other row with history has, or why they need none.
+13. **Field maps of `routines`.** `sessions` and `runs` got both maps with schema 0.3, because a transition writes change rows and the schema lint requires both on every row with history. The planned `routines` shows only `fv` (3.4): the step that builds it gives it both, or says why it needs none.
 14. **A move command.** A space leaves a folder by backup, restore into a new folder and claim (3.2). A later step builds `tasks space move` on the transfer and claim primitives, under the five rules in 3.18, and decides how the `[[spaces]]` entry in `machine.toml` follows it.
 15. **Backups of a space whose migration keeps failing.** Retention never runs for a space whose migration failed, and a timeout records nothing because its outcome is not known when the open ends (3.17). So a migration that always runs past the open's bound and then fails adds a barrier backup at every open. Recording the late failure when it arrives would bound that case too.
 16. **Who else can write a space folder.** Storage writes `writer.lock`, `writer.json` and the databases into an existing space folder, and the folder that holds spaces, without judging their owner or mode (3.1), while A6's threat model expects space folders to be checked at start. That check needs its own step and a rule for spaces on removable or synced drives, where every file can show mode 0777 and another owner.
