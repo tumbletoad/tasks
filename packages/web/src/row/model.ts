@@ -118,6 +118,8 @@ export interface RowInput {
   /** The task's launch receipts, oldest first. */
   readonly receipts: readonly Receipt[];
   readonly sources?: readonly SourceFact[];
+  /** How many sources the task has beyond `sources` (the compact row carries the first three). */
+  readonly sourcesMore?: number;
   readonly place?: PlaceFact;
   readonly marker?: MarkerFact;
   readonly launchBlock?: LaunchBlock;
@@ -314,29 +316,31 @@ function ageOf(row: RowInput, ctx: RowContext): { model: RowModel["age"]; descri
 /** Schemes a source link may open (A5 3.26): anything else is shown as text. */
 const LINK_SCHEMES = ["https:", "http:", "mailto:"];
 
+/** A link a source or any text may open, or undefined: only `https:`, `http:` and `mailto:`. */
+export function safeHref(url: string): { href: string; domain?: string } | undefined {
+  try {
+    const parsed = new URL(url);
+    if (!LINK_SCHEMES.includes(parsed.protocol)) return undefined;
+    return parsed.protocol === "mailto:"
+      ? { href: parsed.href }
+      : { href: parsed.href, domain: parsed.hostname };
+  } catch {
+    // Not a URL: it shows as text.
+    return undefined;
+  }
+}
+
 /** Up to three sources, then "+2" (A5 3.6 "Sources"). */
-function sourcesOf(sources: readonly SourceFact[]): RowModel["sources"] {
+function sourcesOf(sources: readonly SourceFact[], more = 0): RowModel["sources"] {
   const shown = sources.slice(0, 3).map((source) => {
-    let href: string | undefined;
-    let domain: string | undefined;
-    if (source.url !== undefined) {
-      try {
-        const url = new URL(source.url);
-        if (LINK_SCHEMES.includes(url.protocol)) {
-          href = url.href;
-          domain = url.protocol === "mailto:" ? undefined : url.hostname;
-        }
-      } catch {
-        // Not a URL: the source shows as text.
-      }
-    }
+    const link = source.url === undefined ? undefined : safeHref(source.url);
     const tip =
-      domain === undefined
+      link?.domain === undefined
         ? msg("row.sourceTip", { text: source.text })
-        : msg("row.sourceTipDomain", { text: source.text, domain });
-    return { ...source, ...(href === undefined ? {} : { href }), tip };
+        : msg("row.sourceTipDomain", { text: source.text, domain: link.domain });
+    return { ...source, ...(link === undefined ? {} : { href: link.href }), tip };
   });
-  const rest = sources.length - shown.length;
+  const rest = sources.length - shown.length + Math.max(0, more);
   return rest > 0 ? { shown, more: msg("row.moreSources", { n: rest }) } : { shown };
 }
 
@@ -472,7 +476,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     ...(due === undefined ? {} : { due: due.model }),
     age: age.model,
     ...(priority === undefined ? {} : { priority }),
-    sources: sourcesOf(row.sources ?? []),
+    sources: sourcesOf(row.sources ?? [], row.sourcesMore),
     folder: folderOf(row.place),
     starred,
     launch: { ...launch, tip },
