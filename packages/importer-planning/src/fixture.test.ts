@@ -107,6 +107,10 @@ function expected(key: string, raw: unknown): unknown {
   if (raw === undefined) return key === "sources" || key === "paths" ? [] : undefined;
   if (key === "priority") return typeof raw === "string" ? { P1: 1, P2: 2, P3: 3 }[raw] : raw;
   if (key === "confidence" && typeof raw !== "string") return JSON.stringify(raw);
+  // Each parsed source carries its place in the file's list.
+  if (key === "sources" && Array.isArray(raw)) {
+    return raw.map((source: object, index) => ({ ...source, index }));
+  }
   return raw;
 }
 

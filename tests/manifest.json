@@ -770,6 +770,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.15.importer.mapping",
+      "title": "Each mapping row of A7 3.15.3 has a fixture case and an assertion: the synthetic prototype maps to a plan of A1 operations with the areas, projects, statuses, owners, priorities, ranks, summaries, dates, sources and keys, places, completions, stars, aliases and ext.planning each row states",
+      "source": "A7 3.14 (M7.03), A7 3.15.3, A7 3.15.7",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.mapping-rules",
+      "title": "The mapping's rules on small inputs: URL kinds and keys, generic labels, slugs, roots, days at 09:00 local and a star's local day, cutting and SafeText with their problems, duplicates, orphans, reserved and deep metadata keys, and a pure, deterministic plan whose draft handles bind to IDs",
+      "source": "A7 3.14 (M7.03), A7 3.15.1, A7 3.15.3",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.shared-sources",
+      "title": "Through the writer, two legacy tasks with one source key become two tasks linked to one source row, and the Mira sample task that holds a legacy task's key is untouched",
+      "source": "A7 3.14 (M7.03), A7 3.15.3, A1 3.6",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.writer-fit",
+      "title": "Every value of a plan is one the space stores as it is: over many seeded synthetic prototype folders built from awkward text, days, instants, zones, URLs, paths, keys and numbers, the writer's request check takes every operation unchanged, aliases keep the marker grammar, instants stay in range and ext.planning is JSON that SafeText keeps",
+      "source": "A7 3.15.3, A1 3.7, A3 3.10",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.15.importer.input-copy",
       "title": "The input copy copies only the inputs into a new folder, records their SHA-256, refuses an existing or nested destination, follows no link, and reports any source file that changed, appeared or went away",
       "source": "A7 3.14 (M7.02), A7 3.15.1",
@@ -2973,6 +3005,46 @@
       "id": "A3.3.4.add.upsert",
       "title": "task.add's upsert through the request path: exists with matched_by and lifecycle, the draft's log added to an active match, on_existing add_sources and create_new, an ambiguous match listed without a task, a follow-up of task.finish, and the existing results in the receipt and its replay",
       "source": "A3 3.4.5, A3 3.4.8, A3 3.11.1, A7 3.10 M3.06",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.lifecycle",
+      "title": "The lifecycle through the write path: archive takes an active task to archived with its reason and no wrap-up waiting, if_active leaves a finished task as it is without touching it, wrap-up writes the outcome, adds and tombstones learnings within 20 of 1 KiB, clears the planning scalars on request and refuses an active task, once is no change on a wrapped task it would not change and a conflict on wrap otherwise, and delete and restore set and clear the tombstone, which later operations of the same request see; in a space with the search tables each of them leaves the index equal to a fresh rebuild",
+      "source": "A1 3.6, A1 3.11.1, A1 3.11.2, A1 3.11.3, A1 3.11.4, A3 3.4.8, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.wrap-up-additive",
+      "title": "Property test: random wrap-ups across completions, archives and reopens never change the context, the other task fields, notes, log entries, sources, links, places or attachments, and leave the outcome, the learnings, the mark and the planning scalars as a model predicts",
+      "source": "A1 3.11.2, A1 5, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.tombstone",
+      "title": "Property test: after a random history, a deleted task keeps its row, every row under it and its history, and restore brings it back as it was with two tombstone changes added, taking changes again",
+      "source": "A1 3.11.4, A1 5, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.dedupe-lifecycle",
+      "title": "Dedupe sees the request's own archive, wrap-up, delete and restore: an archived task within the window matches with lifecycle archived, finished at the instant of the commit that archived it; a task the request archives or wraps up is no match for a later draft; one it deletes holds no key and one it restores holds its keys again",
+      "source": "A1 3.6, A1 3.11.3, A1 3.11.4, A7 3.10 M3.04",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.finish.lifecycle",
+      "title": "complete_task through the request path: dropped archives and wraps up, learnings are recorded and read back in get_task's outcome section, a task the user checked off is wrapped up, an already wrapped task is no_change with the same outcome and a conflict naming the stored outcome otherwise, follow-ups after a wrap-up are new work, and a replay answers what the first answer said",
+      "source": "A3 3.4.4, A3 3.4.8, A1 3.11, A7 3.10 M3.04",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

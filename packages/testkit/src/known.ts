@@ -4,7 +4,7 @@
 export const FIXED_SAMPLE = {
   seed: "fixed",
   tasks: 3,
-  digest: "bea7c814540f899e99693781c509173f33b625f9046781e425f7d56142abbffd",
+  digest: "ff3970ed08ca63a504ff6f34c95003f11af8d9a6481caa23c5154fd87b939a04",
 } as const;
 
 /**
