@@ -36,7 +36,8 @@
 // whole machine that cannot be read at all (Windows's registry and drives, Linux's statfs and mount
 // table, macOS's mount table), or a fault in the check itself, leaves the folder `unchecked`: it
 // is served as a synced folder is, read-only until the person confirms it is local and excluded
-// from sync. A check that cannot see never makes a space writable.
+// from sync. So is a folder on a Windows drive letter the facts do not list, after one fresh run.
+// A check that cannot see never makes a space writable.
 import { dirname, join, resolve } from "node:path";
 
 /** The sync clients and folder kinds A1 3.2 names. */
@@ -123,8 +124,11 @@ export interface SyncHost {
   list(dir: string): Promise<readonly string[] | undefined>;
   /** A small text file, or undefined when it is missing, unreadable or larger than `maxBytes`. */
   readText(path: string, maxBytes: number): Promise<string | undefined>;
-  /** Windows: the registry's and the drives' facts. Undefined elsewhere or when unreadable. */
-  windowsFacts(): Promise<WindowsSyncFacts | undefined>;
+  /**
+   * Windows: the registry's and the drives' facts. Undefined elsewhere or when unreadable. An
+   * answer may be kept for a while; `fresh` asks for a new one.
+   */
+  windowsFacts(fresh?: boolean): Promise<WindowsSyncFacts | undefined>;
   /** Linux: `fs.statfs`'s type of the file system that holds `path`. */
   statfsType(path: string): Promise<number | undefined>;
   /** Linux: /proc/self/mountinfo; macOS: the output of /sbin/mount. Undefined elsewhere. */
@@ -567,6 +571,18 @@ export function macNetwork(mounts: string | undefined, path: string): string | u
 /** Whether a Windows real path is a UNC path, which reaches another host. */
 export const isUncPath = (path: string): boolean => /^[\\/]{2}[^\\/?.]/.test(path);
 
+/**
+ * Whether a Windows real path is on a drive letter the facts do not list. The facts list every
+ * network drive and every other drive that was ready when they were read, so such a drive came
+ * later or was not ready: its type and label were not seen (A1 3.2).
+ */
+export function unlistedDrive(path: string, windows: WindowsSyncFacts): boolean {
+  const letter = /^([A-Za-z]):/.exec(path)?.[1]?.toUpperCase();
+  return (
+    letter !== undefined && !windows.drives.some((d) => d.root.slice(0, 1).toUpperCase() === letter)
+  );
+}
+
 /** The network file system of a Windows real path: a UNC path, or a drive of type Network. */
 export function windowsNetwork(
   path: string,
@@ -634,7 +650,12 @@ async function check(target: string, host: SyncHost): Promise<FolderCheck> {
   };
 
   const windows = await guarded(async () => {
-    const facts = await host.windowsFacts();
+    let facts = await host.windowsFacts();
+    // An answer may be a minute old: a drive it does not list may have come since, so the folder
+    // gets one fresh run before it is judged.
+    if (host.platform === "win32" && facts !== undefined && unlistedDrive(real, facts)) {
+      facts = await host.windowsFacts(true);
+    }
     if (host.platform === "win32" && facts === undefined) seen.unchecked = true;
     return facts;
   }, undefined);
@@ -689,7 +710,11 @@ async function check(target: string, host: SyncHost): Promise<FolderCheck> {
   if (conflicts.length > 0) signals.push({ kind: "synced", rule: "conflict_copy", depth: 0 });
 
   const fs = await guarded(async (): Promise<string | undefined> => {
-    if (host.platform === "win32") return windowsNetwork(real, windows);
+    if (host.platform === "win32") {
+      // A drive the facts do not list, even after a fresh run, was not seen: unchecked.
+      if (windows !== undefined && unlistedDrive(real, windows)) seen.unchecked = true;
+      return windowsNetwork(real, windows);
+    }
     if (host.platform === "linux") {
       const type = await host.statfsType(real);
       const mounts = await host.mountTable();
