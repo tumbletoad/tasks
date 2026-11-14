@@ -24,7 +24,7 @@ import { lstatSync, readlinkSync, statSync, type Stats } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, resolve } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
-import { shellWord } from "@tasks/launch/shell-line";
+import { MAX_LINE_BYTES, shellWord } from "@tasks/launch/shell-line";
 
 /**
  * What Tasks needs of a file or folder it trusts. `folder`: the state, log, crash and cache folders
@@ -322,11 +322,21 @@ export const unsafeReason = (thing: UnsafeThing): string => reasons(thing)[0];
 
 /**
  * The one line a person pastes to make every thing pass, or undefined when no command can: also
- * when a path in it holds a character no line to paste keeps literal.
+ * when a path in it holds a character no line to paste keeps literal, or the line would be longer
+ * than a line to paste can be (launch's MAX_LINE_BYTES, A3 3.13.7).
  */
 export function fixCommand(
   things: readonly Pick<UnsafeThing, "facts" | "problem">[],
   user: string = userName(),
+): string | undefined {
+  const line = repairLine(things, user);
+  return line !== undefined && Buffer.byteLength(line, "utf8") <= MAX_LINE_BYTES ? line : undefined;
+}
+
+/** The repair as one line, however long; undefined when no command can. */
+function repairLine(
+  things: readonly Pick<UnsafeThing, "facts" | "problem">[],
+  user: string,
 ): string | undefined {
   if (things.some((t) => shellArg(t.facts.path) === undefined)) return undefined;
   const repairs = things.map((t) => ({
@@ -388,6 +398,10 @@ export function unsafeMessage(things: readonly UnsafeThing[], why: string, user?
   if (things.some((t) => shellArg(t.facts.path) === undefined)) {
     notes.push(
       "No command is given, because a path in it holds a control character, which a line to paste cannot show as it is.",
+    );
+  } else if (fix === undefined && repairLine(things, user ?? userName()) !== undefined) {
+    notes.push(
+      `No command is given, because it would be longer than a line to paste can be (${String(MAX_LINE_BYTES)} bytes).`,
     );
   }
   const partial = things.some((t) => repairOf(t.facts, t.problem).none !== undefined);

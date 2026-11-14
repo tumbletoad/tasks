@@ -19,7 +19,8 @@
 //
 // The one command printed here (Claude Code's `mcp add`) is a line for PowerShell on Windows and a
 // POSIX shell elsewhere, quoted by launch's shell-line.ts, the rule for every line setup and doctor
-// print for a person to paste (A3 3.13.7). An install path no quoting keeps literal gets no line:
+// print for a person to paste (A3 3.13.7). An install path no quoting keeps literal, or one that
+// makes the line too long to paste, gets no line:
 // PrintRefused.
 import { posix, win32 } from "node:path";
 import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@tasks/brand";
@@ -74,7 +75,10 @@ export interface Snippet {
   readonly runIn?: string;
 }
 
-/** The install's path holds a character no quoting keeps literal in the shell the line is for. */
+/**
+ * The install's path holds a character no quoting keeps literal in the shell the line is for, or
+ * makes the line longer than a line to paste can be (launch's MAX_LINE_BYTES).
+ */
 export class PrintRefused extends Error {
   readonly runIn: string;
   constructor(runIn: string) {

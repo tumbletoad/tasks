@@ -20,6 +20,12 @@
 //   which expands or acts on them inside PowerShell's own quotes; an empty word, and one with a
 //   space or tab that ends in a backslash, which Windows PowerShell 5.1 hands on wrongly.
 //
+// A whole line, its variables included, is at most MAX_LINE_BYTES bytes of UTF-8, or there is no
+// line: a terminal in canonical mode (sh without line editing, on Linux) takes no longer line, and on
+// Windows that leaves cmd.exe, whose command line holds at most 8,191 characters, room for what an
+// npm `.cmd` shim puts before the words (Node's path and its script's). A UTF-16 character is never
+// more than its UTF-8 bytes, so one bound in bytes holds for both.
+//
 // Pure: no I/O. Tests: `A3.3.13.setup.print-quoting` (packages/service/test/print-quoting.test.ts),
 // which feeds the lines to the real shells.
 
@@ -67,6 +73,9 @@ export function shellWord(platform: NodeJS.Platform, word: string): string | und
   return plain.test(word) ? word : quotedWord(platform, word);
 }
 
+/** The longest line to paste, in bytes of UTF-8 (the header says why). */
+export const MAX_LINE_BYTES = 4095;
+
 /** A variable's name either shell sets as written. */
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
@@ -74,7 +83,8 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
  * An argv as one line to paste, with `env` set for the command first: PowerShell sets each
  * variable with `$env:NAME = '…';` (always quoted: a bare path there would run as a command) and
  * runs a command given by its path with `&`; a POSIX shell takes `NAME=value` before the command,
- * the value as any word. Undefined when a word or a value cannot be quoted.
+ * the value as any word. Undefined when a word or a value cannot be quoted, or the line would be
+ * longer than MAX_LINE_BYTES.
  */
 export function shellLine(
   platform: NodeJS.Platform,
@@ -94,5 +104,6 @@ export function shellLine(
   // A command by its path, or quoted, is run with `&`: PowerShell reads a quoted word as a string.
   const run =
     platform === "win32" && (/[\\/]/u.test(first) || words[0] !== first) ? `& ${command}` : command;
-  return [...sets, run].join(" ");
+  const line = [...sets, run].join(" ");
+  return Buffer.byteLength(line, "utf8") <= MAX_LINE_BYTES ? line : undefined;
 }

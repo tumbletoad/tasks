@@ -32,7 +32,14 @@ import { posix, win32 } from "node:path";
 import { isAgentMarker } from "@tasks/bridge/protocol";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
-import { detect, nodeDetectHost, pasteShell, shellLine, type Env } from "@tasks/launch";
+import {
+  detect,
+  MAX_LINE_BYTES,
+  nodeDetectHost,
+  pasteShell,
+  shellLine,
+  type Env,
+} from "@tasks/launch";
 import { loadMachineConfig } from "@tasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import {
@@ -217,7 +224,7 @@ const forbidden = (): AppError =>
 /**
  * The app's command as the person would run it, its variables first, as one line for PowerShell on
  * Windows and a POSIX shell elsewhere (launch's shell-line.ts, A3 3.13.7). Undefined when a word
- * holds a character no quoting keeps literal there.
+ * holds a character no quoting keeps literal there, or the line is too long to paste.
  */
 const commandLine = (platform: NodeJS.Platform, change: Change): string | undefined =>
   shellLine(platform, [...change.exec, ...change.args], change.set);
@@ -790,7 +797,8 @@ async function preview(
     }
   }
   if (!parsed.parts.includes("mcp")) return 0;
-  // A --home no line keeps as it is: the person's own command again, with the apply's words.
+  // A --home no line keeps as it is, or a line too long to paste: the person's own command again,
+  // with the apply's words.
   const line =
     shellLine(io.platform, apply) ??
     `this command again with --apply --plan ${plan}${registers ? ` --space ${space}` : ""} in place of --preview`;
@@ -813,9 +821,9 @@ function printCommand(io: Io, globals: Globals, input: SetupInput, app: PrintApp
     if (!(error instanceof PrintRefused)) throw error;
     throw new AppError({
       code: "invalid_input",
-      message: `${PRODUCT_NAME}'s command path holds a character that no line pasted into ${error.runIn} keeps as it is (a control character, and on Windows % ! ^ & | < > "), so no command is printed.`,
+      message: `${PRODUCT_NAME}'s command path cannot be pasted into ${error.runIn} as it is: it holds a control character (on Windows also % ! ^ & | < > "), or makes the line longer than ${String(MAX_LINE_BYTES)} bytes. So no command is printed.`,
       hint: `Run ${CLI_NAME} setup agents: it runs the app's own command without a shell.`,
-      data: { issues: [{ path: "command", message: "Cannot be quoted for a shell" }] },
+      data: { issues: [{ path: "command", message: "Cannot be pasted into a shell as it is" }] },
     });
   }
   if (globals.json) {

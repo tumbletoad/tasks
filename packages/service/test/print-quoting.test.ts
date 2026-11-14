@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { MCP_SERVER_KEY } from "@tasks/brand";
-import { pasteShell, shellLine, shellWord } from "@tasks/launch";
+import { MAX_LINE_BYTES, pasteShell, shellLine, shellWord } from "@tasks/launch";
 import { PrintRefused, snippetFor } from "../src/setup/index.ts";
 
 const windows = process.platform === "win32";
@@ -220,6 +220,51 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
           ]);
         }
       }
+    },
+    SLOW,
+  );
+
+  test(
+    "a line is at most MAX_LINE_BYTES bytes of UTF-8: at the bound every shell gets the words, past it there is no line",
+    () => {
+      expect(MAX_LINE_BYTES).toBe(4095);
+      const head = "claude ";
+      const at = ["claude", "x".repeat(MAX_LINE_BYTES - head.length)];
+      const line = shellLine(process.platform, at);
+      expect(line === undefined ? -1 : Buffer.byteLength(line, "utf8")).toBe(MAX_LINE_BYTES);
+      for (const shell of shells()) {
+        for (const stub of stubs) {
+          expect([shell.name, stub.kind, shell.run(line ?? "", stub.dir)?.argv]).toEqual([
+            shell.name,
+            stub.kind,
+            at.slice(1),
+          ]);
+        }
+      }
+      for (const platform of ["win32", "linux"] as const) {
+        // One byte past it, as a character or as the second byte of one; a variable counts too.
+        expect(shellLine(platform, ["claude", "x".repeat(MAX_LINE_BYTES - head.length + 1)])).toBe(
+          undefined,
+        );
+        expect(shellLine(platform, ["claude", "\u00e9".repeat(2100)])).toBeUndefined();
+        expect(shellLine(platform, ["claude"], { X: "x".repeat(MAX_LINE_BYTES) })).toBeUndefined();
+        // A 9,000-character word: cmd.exe would refuse the line through an npm `.cmd` shim.
+        expect(shellLine(platform, ["claude", "x".repeat(9000)])).toBeUndefined();
+      }
+      // print refuses with its explained fallback.
+      expect(() =>
+        snippetFor(
+          {
+            platform: process.platform,
+            userHome: base,
+            env: {},
+            tasks: windows
+              ? `C:\\${"x".repeat(9000)}\\tasks.exe`
+              : `/opt/${"x".repeat(9000)}/tasks`,
+          },
+          "claude-code",
+        ),
+      ).toThrow(PrintRefused);
     },
     SLOW,
   );
