@@ -617,7 +617,7 @@ Code: the UI listener in `packages/service/src/http/`, the socket and pipe in `p
   - One traversal (A1) covers every store of the active database and its derived stores: current state, history, `commits` payloads, pending and superseded proposals and their alternatives, exchange bases, receipts where they hold text, FTS, the projection, the outbox and caches. Receipts keep identity and hash metadata only. Pending work that refers to the text is invalidated.
   - Later, `redact` travels like any operation, replicas apply the same traversal, and the authority uploads fresh snapshots of the touched streams and deletes older blobs.
   - Backups, exports and working copies already written are not changed. The confirmation says so, and A1 says how open working copies are handled.
-- **Exports** are checked before writing: no file from the secrets folder, no string matching the patterns. Built (A1 3.18 "Export bundle"): a hit writes nothing and names the kind and the table and column, never the text.
+- **Exports** are checked before writing: no file from the secrets folder, no string matching the patterns. Built (A1 3.18 "Export bundle"): a hit writes nothing and names the kind and the table and column, never the text. A place a diagnostic names comes from the product's own list of its tables and columns, never from a name read out of the database being inspected, which could itself hold a secret.
 
 #### 3.16.5 Managed machines (A2 implements)
 

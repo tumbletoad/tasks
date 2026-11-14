@@ -513,7 +513,10 @@ function realOf(path: string): string {
 function openAttachment(space: string, blob: Blob, secretFolders: readonly string[]): number {
   const parts = blobName(blob.sha256).split("/");
   const path = join(space, ...parts);
-  const expected = join(fsCall(() => realpathSync(space)), ...parts);
+  const expected = join(
+    fsCall(() => realpathSync(space)),
+    ...parts,
+  );
   if (realOf(path) !== expected) throw notOwnFile();
   for (const secrets of secretFolders) {
     let realSecrets: string;

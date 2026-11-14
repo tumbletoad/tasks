@@ -515,7 +515,7 @@
     },
     {
       "id": "A1.5.rescue.damaged",
-      "title": "Rescue of a damaged database keeps the rows that can still be read: a table that fails partway is named, the others are written whole, the database is not changed, and each rescue writes a new file of its own",
+      "title": "Rescue of a damaged database keeps the rows that can still be read from a private copy of its files: a table that fails partway is named by its product name, the others are written whole, every file of the space folder stays byte for byte (a write-ahead log beside an empty database, one with rows not checkpointed, a hot journal), a table the product does not have is neither written nor named, and each rescue writes a new file of its own",
       "source": "A1 3.2, A7 3.10 M3.07",
       "owner": "M3",
       "kind": "ci",

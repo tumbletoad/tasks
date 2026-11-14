@@ -605,7 +605,14 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     );
     expect(existsSync(join(parent, "a"))).toBe(false);
     await restoreBackupWith(checked, older.file, join(parent, "b"), {}, { steps });
-    const latest = await restoreLatest(checked, dir, space.spaceId, join(parent, "c"), {}, { steps });
+    const latest = await restoreLatest(
+      checked,
+      dir,
+      space.spaceId,
+      join(parent, "c"),
+      {},
+      { steps },
+    );
     expect(latest.backup).toBe(older.name);
   });
 });

@@ -124,7 +124,12 @@ export async function unpackBackup(
       record: "its sidecar",
       invalid: backupInvalid,
     });
-    return { space: facts.space, revision: step.revision, step, source: { kind: "backup", sidecar } };
+    return {
+      space: facts.space,
+      revision: step.revision,
+      step,
+      source: { kind: "backup", sidecar },
+    };
   } finally {
     held.close();
   }

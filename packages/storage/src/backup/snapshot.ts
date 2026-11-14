@@ -132,7 +132,9 @@ function dataTablesOf(conn: Connection): ProductTable[] {
       name,
       // Every column a SELECT * returns: the plain ones and the generated ones.
       columns: conn
-        .prepare("SELECT name FROM pragma_table_xinfo($table) WHERE hidden IN (0, 2, 3) ORDER BY cid")
+        .prepare(
+          "SELECT name FROM pragma_table_xinfo($table) WHERE hidden IN (0, 2, 3) ORDER BY cid",
+        )
         .all<{ name: unknown }>({ table: name })
         .map((column) => String(column.name)),
     }));

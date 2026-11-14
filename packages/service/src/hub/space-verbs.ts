@@ -174,9 +174,10 @@ function failure(error: unknown): AppError {
 /**
  * What a crash can leave beside a space or in it, by name (A1 3.1, 3.18): a create's
  * `.<slug>.creating-*` folder, a restore's `.<slug>.restoring-*` staging folder, the
- * `<slug>.replaced-*` folder a restore in place keeps, `.space.json.tmp-*` files, and an export's
- * `exports/.export.tmp-*` work folder. Listed for the person, never removed here: a staging or
- * work folder may belong to a create, restore or export still running.
+ * `<slug>.replaced-*` folder a restore in place keeps, `.space.json.tmp-*` files, an export's
+ * `exports/.export.tmp-*` work folder and a rescue's `exchange/rescued/.rescue.tmp-*` scratch
+ * folder. Listed for the person, never removed here: a staging, work or scratch folder may belong
+ * to a create, restore, export or rescue still running.
  */
 export function leftoversOf(folder: string): string[] {
   const slug = basename(folder);
@@ -203,6 +204,10 @@ export function leftoversOf(folder: string): string[] {
   const exports = join(folder, "exports");
   for (const name of names(exports)) {
     if (name.startsWith(".export.tmp-")) found.push(join(exports, name));
+  }
+  const rescued = join(folder, "exchange", "rescued");
+  for (const name of names(rescued)) {
+    if (name.startsWith(".rescue.tmp-")) found.push(join(rescued, name));
   }
   return found.sort();
 }

@@ -21,11 +21,7 @@ import { claimSpace } from "../../packages/storage/src/restore/claim.ts";
 import { swapIntoPlace, swapNames } from "../../packages/storage/src/restore/folders.ts";
 import { restoreInPlace } from "../../packages/storage/src/restore/restore.ts";
 import { unpackBackup } from "../../packages/storage/src/restore/unpack.ts";
-import {
-  DATABASE_FILE,
-  manifestFor,
-  writeManifest,
-} from "../../packages/storage/src/manifest.ts";
+import { DATABASE_FILE, manifestFor, writeManifest } from "../../packages/storage/src/manifest.ts";
 import { openWriter } from "../../packages/storage/src/open.ts";
 import { SCHEMA_0_2_STATEMENTS } from "../../packages/storage/migrations/0002-schema-0.2.ts";
 import { SOURCE_APP_VERSION } from "../../packages/storage/src/space.ts";

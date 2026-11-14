@@ -181,7 +181,14 @@ export async function restoreBackupWith(
   });
   try {
     // The copy is read-only before it takes a name any open could find.
-    const copy = await restoreCopy(checked, backupFile, inFolder(names.staging), now, options, seams);
+    const copy = await restoreCopy(
+      checked,
+      backupFile,
+      inFolder(names.staging),
+      now,
+      options,
+      seams,
+    );
     writeManifest(names.staging, manifestFor(copy.space, copy.step, appVersion));
     fsyncFolder(names.staging);
     seams.at?.("marked");

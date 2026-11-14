@@ -34,12 +34,7 @@ import { isDeepStrictEqual } from "node:util";
 import { fsyncFolder } from "../files.ts";
 import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
-import {
-  verifyBackup,
-  type BackupListing,
-  type ListedBackup,
-  type VerifyOptions,
-} from "./list.ts";
+import { verifyBackup, type BackupListing, type ListedBackup, type VerifyOptions } from "./list.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "./policy.ts";
 import { DATA_SUFFIX, readSidecar, SIDECAR_SUFFIX } from "./sidecar.ts";
 
