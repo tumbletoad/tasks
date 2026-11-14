@@ -25,14 +25,19 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe as suite, expect, test } from "vitest";
 import { readServiceRecord } from "../../packages/service/src/install/context.ts";
 import { currentVersion, readInstallRecord } from "../../packages/service/src/version/switch.ts";
 import { createSpace, newId } from "../../packages/storage/src/index.ts";
 import { checkedDriver } from "../../packages/testkit/src/index.ts";
-import { runProgram, snapshot } from "../../scripts/install/test/kit.ts";
+import { runProgram, runsElevated, snapshot } from "../../scripts/install/test/kit.ts";
 import { openInstalled, type Installed } from "./installed.ts";
 
+/**
+ * Every test here runs the installed service, which refuses an elevated token (exit 64): skipped
+ * in an elevated process, where nothing of the file runs, its builds included (kit.ts).
+ */
+const describe = suite.skipIf(runsElevated());
 /** Builds, an install script run and many service starts: a slow runner gets room. */
 const SLOW = 900_000;
 const ROUNDS = 2_400_000;
