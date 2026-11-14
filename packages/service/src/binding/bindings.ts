@@ -13,8 +13,9 @@
 // launch's instance and no `via`; the first connection that binds it makes it its home's.
 //
 // The rules, in A3 3.7.3's order:
-// 0. The host: a connection whose app runs one server for many conversations (hosts.ts, A3 3.7.5)
-//    is shared from its bind frame on; its ticket and native IDs bind nothing at the bind frame.
+// 0. The host, read after rule 1 and before rule 2: a connection whose app runs one server for many
+//    conversations (hosts.ts, A3 3.7.5) is shared from its bind frame on; its ticket and native IDs
+//    bind nothing at the bind frame.
 // 1. `resume.handle`: a handle this service issued to a connection of the same instance, used in
 //    the last 24 hours, restores its binding and its pinned space; one whose session ended answers
 //    `lost`, and the connection continues unbound.
