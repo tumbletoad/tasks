@@ -128,12 +128,12 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
   }) => {
     await watchViolations(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/today`));
+    // An area view lists every status of its area: about half of the 5,000 are in this one.
+    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/area/${bulk.task.area}`));
     await showsSpace(page, bulk.mira.name);
     const list = page.locator("[data-list]");
     await expect(list).toHaveAttribute("data-virtual", "true", { timeout: SLOW_MS });
-    // Every open task is in Today until M5.04: the fixture's and the 5,000. Rows say their place
-    // in their list and its true size, mounted or not.
+    // Rows say their place in their list and its true size, mounted or not.
     const rows = page.locator("[data-list] li[data-key]");
     const largest = await page.evaluate(() =>
       Math.max(
@@ -209,20 +209,18 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     const after = (await topOf(page, middle?.key ?? "")) ?? Number.NaN;
     expect(Math.abs(after - before)).toBeLessThan(2);
 
-    // Rows above the viewport keep the scroll anchored: an agent adds a task at the top (the
-    // Inbox), and the first visible row stays where it was.
+    // Rows above the viewport keep the scroll anchored: a task is added at the top (the area's
+    // tasks without a project come before its projects), and the first visible row stays where
+    // it was.
     await page.getByRole("textbox", { name: "New task" }).focus();
     const anchor = await firstVisible(page);
-    const inbox = page.getByRole("link", { name: /^Inbox, / });
-    const counted = (await inbox.getAttribute("aria-label")) ?? (await inbox.textContent()) ?? "";
+    const height = () => list.evaluate((element) => element.style.getPropertyValue("--k-h"));
+    const tall = await height();
+    const area = (await page.locator('nav a[aria-current="page"]').first().textContent()) ?? "";
     await bulk.op(bulk.mira.id, "task.add", {
-      tasks: [{ title: `Captured while scrolled (${test.info().project.name})`, inbox: true }],
+      tasks: [{ title: `Captured while scrolled (${test.info().project.name})`, area }],
     });
-    await expect
-      .poll(async () => (await inbox.getAttribute("aria-label")) ?? (await inbox.textContent()), {
-        timeout: SLOW_MS,
-      })
-      .not.toBe(counted);
+    await expect.poll(height, { timeout: SLOW_MS }).not.toBe(tall);
     await page.waitForTimeout(300);
     expect(
       Math.abs(((await topOf(page, anchor?.key ?? "")) ?? 0) - (anchor?.top ?? 0)),
@@ -240,7 +238,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
     bulk,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/today`));
+    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/area/${bulk.task.area}`));
     await showsSpace(page, bulk.mira.name);
     const rows = page.locator("[data-list] li[data-key]");
     await expect(rows.first()).toBeVisible({ timeout: SLOW_MS });

@@ -308,14 +308,20 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
       area: "home",
       sources: [{ kind: "web", title: "Van rental", url: "https://vans.example/booking" }],
     });
+    // A task added after it in the same group: the list's last row is never this one.
+    await addTask(world, { title: `Return the van keys (${tag})`, area: "home" });
     await page.goto(await world.signInUrl(`/s/${space}/today`));
     await showsSpace(page, world.mira.name);
+    // The Home area lists the task (Today lists only what it selects, A5 3.4).
+    await page.getByRole("navigation").getByRole("link", { name: "Home", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/s/${space}/area/[a-z0-9_]+$`));
+    const view = page.url().replace(world.origin, "");
     const row = page.locator(`li[data-task="${ref}"]`);
     const title = row.locator('[data-part="title"]');
     await title.focus();
     await page.keyboard.press("Enter");
     await expect(title).toHaveAttribute("aria-expanded", "true");
-    await expect(page).toHaveURL(new RegExp(`/s/${space}/today\\?task=${ref}$`));
+    await expect(page).toHaveURL(`${world.origin}${view}?task=${ref}`);
 
     // Tab walks the header's controls, then the card: its source link, then the strip.
     const reached: string[] = [];
@@ -339,7 +345,7 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.keyboard.press("Escape");
     await expect(title).toHaveAttribute("aria-expanded", "false");
     await expect(title).toBeFocused();
-    await expect(page).toHaveURL(new RegExp(`/s/${space}/today$`));
+    await expect(page).toHaveURL(`${world.origin}${view}`);
     await page.goBack();
     await expect(title).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
 
@@ -366,10 +372,10 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.keyboard.press("Escape");
     await expect(title).toHaveText(`Book the moving van (${tag}), just the jump seats`);
     await expect(title).toHaveAttribute("aria-expanded", "true");
-    // The list's keys move on from the card's title: Home goes to the list's first row (this
-    // task, in an area, is never the first: the Inbox comes first).
+    // The list's keys move on from the card's title: End goes to the list's last row (never this
+    // task: one was added after it).
     await title.focus();
-    await page.keyboard.press("Home");
+    await page.keyboard.press("End");
     await expect(title).not.toBeFocused();
     await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
   });

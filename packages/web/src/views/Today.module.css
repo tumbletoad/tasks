@@ -103,15 +103,6 @@
   color: var(--k-muted);
 }
 
-.hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* Narrow: the weekday above the day, so seven cells fit without a horizontal scroll. */
 @media (max-width: 599px) {
   .day {

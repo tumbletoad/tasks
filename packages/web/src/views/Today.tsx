@@ -35,7 +35,7 @@ import { useLive } from "../store/hooks.ts";
 import css from "./Today.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
-const styles = classes(css, ["strip", "day", "weekday", "date", "marks", "mark", "plus", "hidden"]);
+const styles = classes(css, ["strip", "day", "weekday", "date", "marks", "mark", "plus"]);
 
 /** Agents' changes may touch any task, so Today announces and fades in every agent's row. */
 const ANY = (): boolean => true;
@@ -203,7 +203,7 @@ function Strip({
               {cell.marks.length > STRIP_MARKS ? <PlusMark /> : null}
             </span>
             {titles === "" ? null : (
-              <span id={tipId} className={styles.hidden}>
+              <span id={tipId} hidden>
                 {titles}
               </span>
             )}

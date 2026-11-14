@@ -55,9 +55,9 @@ test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new
     await field(b).fill(draftB);
     await switchTo(a, mira.name, studio.name);
     await expect(a).toHaveURL(`${origin}/s/${studio.id}/today`);
-    await expect(
-      a.locator('[data-part="title"]', { hasText: "Sketch the spring poster" }),
-    ).toBeVisible();
+    // Studio's Today, live: its tasks wait in the Inbox, so nothing is planned.
+    await expect(a.getByText("Nothing planned.")).toBeVisible();
+    await expect(a.getByRole("link", { name: /^Inbox, \d+ tasks?$/ })).toBeVisible();
     await expect(field(a)).toHaveValue("");
 
     // Tab B is still on Mira: its route, its draft, and a feed of Mira's that still delivers.
@@ -68,10 +68,13 @@ test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new
     await expect(b.locator('[data-part="title"]', { hasText: draftB })).toBeVisible();
     await expect(a.locator('[data-part="title"]', { hasText: draftB })).toHaveCount(0);
 
-    // Back to Mira in tab A: its draft is still there.
+    // Back to Mira in tab A: its draft is still there, and B's add is in Mira's Inbox.
     await switchTo(a, studio.name, mira.name);
     await expect(field(a)).toHaveValue(draftA);
+    await a.getByRole("link", { name: /^Inbox, \d+ tasks?$/ }).click();
     await expect(a.locator('[data-part="title"]', { hasText: draftB })).toBeVisible();
+    await a.goBack();
+    await expect(a).toHaveURL(`${origin}/s/${mira.id}/today`);
 
     // Make default: Studio. It changes only what a new tab opens.
     await spaceSwitcher(a, mira.name).click();
@@ -288,7 +291,8 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
     page.on("request", (request) => {
       if (request.url().endsWith("/api/v1/op/task.add")) adds.push(request.url());
     });
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    // The Inbox, where the add field puts a task.
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
     await showsSpace(page, world.mira.name);
     await expect(field(page)).toBeEnabled();
     const feed = sockets.at(-1);
@@ -329,6 +333,7 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
     // The old space's session stops with its confirmation still held back.
     await switchTo(page, world.mira.name, world.studio.name);
     await switchTo(page, world.studio.name, world.mira.name);
+    await page.getByRole("link", { name: /^Inbox, \d+ tasks?$/ }).click();
     await expect(page.locator('[data-part="title"]', { hasText: title })).toHaveCount(1, {
       timeout: SLOW_MS,
     });

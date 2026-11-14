@@ -2,8 +2,8 @@
 // service process with fixture data. Every change is made outside the page, by an agent or at the
 // terminal, and reaches the page only through the feed.
 //
-// Verify line, second sentence, for the view the page has today: a task that starts to match the
-// open view (added, or reopened) appears without a reload, and one that leaves it (completed) goes.
+// Verify line, second sentence, in the Inbox: a task that starts to match the open view (added, or
+// reopened) appears without a reload, and one that leaves it (completed) goes.
 // Completed and search have no read path in the service yet: their invalidation is tested in
 // packages/web/src/store/queries.test.ts against the store, and here once those views exist.
 import { expect } from "@playwright/test";
@@ -21,7 +21,8 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
     world,
   }) => {
     const space = world.mira.id;
-    await page.goto(await world.signInUrl(`/s/${space}`));
+    // The Inbox: the agent's tasks land there.
+    await page.goto(await world.signInUrl(`/s/${space}/inbox`));
     await showsSpace(page, world.mira.name);
     const project = test.info().project.name;
 
@@ -74,7 +75,7 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
     page,
     world,
   }) => {
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
     const field = page.getByRole("textbox", { name: "New task" });
     const title = `Order printer paper (${test.info().project.name})`;
     // The add's answer is held back: the feed's event confirms the add before the answer arrives.
