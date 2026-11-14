@@ -189,6 +189,24 @@ const LEARNINGS: Statement = {
     "ORDER BY position",
   mode: "all",
 };
+const LEARNINGS_TABLE: Statement = {
+  sql: "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'learnings'",
+  mode: "get",
+};
+/** The readers whose space has the learnings table: a table, once there, stays. */
+const learningReaders = new WeakSet<WorkerConnection>();
+
+/**
+ * Whether the reader's space has learnings to read: schema 0.2 on. A space at 0.1, served
+ * read-only until its migration runs (A1 3.17), has none, and its tasks still read.
+ */
+async function readsLearnings(reader: WorkerConnection): Promise<boolean> {
+  if (learningReaders.has(reader)) return true;
+  const [found] = await snapshot(reader, [LEARNINGS_TABLE]);
+  if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
+  learningReaders.add(reader);
+  return true;
+}
 /** One row per commit that changed the task or a row under it, newest first. */
 const HISTORY: Statement = {
   sql:
@@ -344,6 +362,7 @@ export async function readTask(
     lupto: options.log.upto,
     llimit: options.log.limit,
   };
+  const learned = await readsLearnings(reader);
   const [
     space,
     alias,
@@ -371,7 +390,7 @@ export async function readTask(
       SOURCES,
       PLACE,
       HISTORY,
-      LEARNINGS,
+      ...(learned ? [LEARNINGS] : []),
     ],
     params,
   );
@@ -396,7 +415,7 @@ export async function readTask(
     sources: sourceRows,
     place: (place as Row | null) ?? undefined,
     history: history as Row[],
-    learnings: (learnings as Row[]).map((learning) => text(learning["body"])),
+    learnings: ((learnings ?? []) as Row[]).map((learning) => text(learning["body"])),
     counts: {
       instructions: Number(noteCounts?.["i"] ?? 0),
       notes: Number(noteCounts?.["n"] ?? 0),

@@ -3,8 +3,9 @@
 // the same rows, IDs and instants on every machine.
 //
 // The space comes from storage's createSpace, and its writer registers the machine on the first
-// open (machine.register). Tasks, their notes, log entries and sources, and the place are written
-// through the write path as requests to the space's writer (A1 3.7), each with its receipt. The
+// open (machine.register). Tasks, their notes, log entries and sources, the place and, from schema
+// 0.2 on, a wrap-up with learnings are written through the write path as requests to the space's
+// writer (A1 3.7), each with its receipt. The
 // record kinds whose operations arrive in later steps still go in through StandIn below, which
 // writes the commits, change rows, outbox rows and receipts those operations will write: areas and
 // projects (area.*, project.*) and preferences (pref.set). Each step that adds one of those
@@ -425,6 +426,11 @@ export async function seedMira(
       random,
     });
     generate(conn, writer, rng, clock, created.space, created.actors, start, taskCount);
+    // Schema 0.2's learnings (A1 3.11.2): a 0.1 build had no wrap-up operation, so the sample at
+    // that revision has none, and every row before them is the one the 0.1 builds made.
+    if (opened.revision.major > 0 || opened.revision.minor >= 2) {
+      wrapUp(conn, writer, rng, created.space, created.actors.human);
+    }
     const counts: Record<string, number> = {};
     for (const { name } of conn
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
@@ -435,6 +441,53 @@ export async function seedMira(
   } finally {
     if (writer === undefined) conn.close();
     else writer.close();
+  }
+}
+
+const LEARNINGS = [
+  "Store UTC plus the clinic's zone ID, and convert once.",
+  "Ask the clinic for a sample file before changing an export.",
+];
+
+/**
+ * Mira wraps up her first task, which the sample always checks off, with what she learned: an
+ * outcome when it has none yet, and two learnings (A1 3.11.2), through the writer.
+ */
+function wrapUp(
+  conn: Connection,
+  writer: SpaceWriter,
+  rng: Rng,
+  space: { spaceId: Id<"sp">; authority: { machineId: Id<"m"> } },
+  human: Id<"ac">,
+): void {
+  const first = conn.prepare("SELECT id, wrap_state FROM tasks ORDER BY ref LIMIT 1").get();
+  const task = first?.["id"];
+  if (typeof task !== "string") throw new Error("no task");
+  const result = writer.submit({
+    space_id: space.spaceId,
+    request_id: newId("op", (bytes) => {
+      rng.fill(bytes);
+    }).slice(3),
+    actor: {
+      scope_id: "cli:mira",
+      principal_id: human,
+      actor_kind: "human",
+      machine_id: space.authority.machineId,
+      origin: "cli",
+    },
+    base: formatAsOf(writer.asOf()),
+    undoable: true,
+    ops: [
+      {
+        kind: "task.wrap_up",
+        task,
+        ...(first?.["wrap_state"] === "pending" ? { outcome: OUTCOMES[0] } : {}),
+        learnings: { add: LEARNINGS },
+      },
+    ],
+  });
+  if (result.status !== "applied") {
+    throw new Error(`the sample's wrap-up was ${result.status}: ${result.error?.code ?? ""}`);
   }
 }
 
