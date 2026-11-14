@@ -8,7 +8,7 @@ import { expect, type Page } from "@playwright/test";
 import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
-import { SLOW_MS } from "./world.ts";
+import { SLOW_MS, type World } from "./world.ts";
 
 const THEME_KEY = `${PRODUCT_ID}.theme`;
 
@@ -89,9 +89,10 @@ test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new
     await c.goto(`${origin}/`);
     await expect(c).toHaveURL(`${origin}/s/${studio.id}/today`, { timeout: SLOW_MS });
     await showsSpace(c, studio.name);
-    // A task link without a space opens in the default space too.
+    // A task link without a space opens in the default space too, on the task's host view: S-1
+    // is in the Inbox (A5 3.3).
     await c.goto(`${origin}/?task=S-1`);
-    await expect(c).toHaveURL(`${origin}/s/${studio.id}/task/S-1`);
+    await expect(c).toHaveURL(`${origin}/s/${studio.id}/inbox?task=S-1`);
 
     // And back: Mira is the default again, so the world's other tests see the machine as it was.
     await spaceSwitcher(c, studio.name).click();
@@ -102,7 +103,7 @@ test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new
     const d = await context.newPage();
     await d.goto(`${origin}/`);
     await expect(d).toHaveURL(`${origin}/s/${mira.id}/today`, { timeout: SLOW_MS });
-    await expect(c).toHaveURL(`${origin}/s/${studio.id}/task/S-1`);
+    await expect(c).toHaveURL(`${origin}/s/${studio.id}/inbox?task=S-1`);
   });
 });
 
@@ -335,6 +336,10 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
   });
 });
 
+/** A fixture task's host view with the task expanded: the area view of its area (A5 3.3). */
+const hostOf = (world: World, ref: string) =>
+  new RegExp(`^${world.origin}/s/${world.mira.id}/area/[a-z0-9_]+\\?task=${ref}$`);
+
 test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens that task", () => {
   test("the chooser of a machine without a default keeps the task a link named", async ({
     page,
@@ -352,7 +357,8 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
     // The link `tasks open <task>` makes without a space.
     await page.goto(await world.signInUrl(`/task/${world.task.ref}`));
     await page.getByRole("link", { name: world.mira.name }).click();
-    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/task/${world.task.ref}`);
+    // The task route lands on the task's host view, the task in its URL (A5 3.3).
+    await expect(page).toHaveURL(hostOf(world, world.task.ref));
     await expect(page.locator(`li[data-task="${world.task.ref}"]`)).toHaveAttribute(
       "data-expanded",
       "true",
@@ -373,8 +379,9 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
     }, `/s/${world.mira.id}/task/${world.spare.ref}`);
     await expect(second).toHaveAttribute("data-expanded", "true");
     await expect(first).not.toHaveAttribute("data-expanded", "true");
+    await expect(page).toHaveURL(hostOf(world, world.spare.ref));
     await page.goBack();
-    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/task/${world.task.ref}`);
+    await expect(page).toHaveURL(hostOf(world, world.task.ref));
     await expect(first).toHaveAttribute("data-expanded", "true");
     await expect(second).not.toHaveAttribute("data-expanded", "true");
   });
