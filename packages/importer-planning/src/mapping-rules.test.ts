@@ -15,6 +15,7 @@ import {
   mapPrototype,
   MappingOptionsError,
   nineOClock,
+  numberedSlug,
   parsePrototype,
   placeFor,
   shortUrl,
@@ -477,7 +478,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     // A metadata key is any text. One that no task line could carry as its ID is no prototype
     // task: it is left out and reported, and the problem cannot name it.
     const odd = plan(
-      { metadata: metadata({ "​ ": {}, "raw‮id": {}, "M-1": {}, "o-2": {} }) },
+      { metadata: metadata({ "\u200b ": {}, "raw\u202eid": {}, "M-1": {}, "o-2": {} }) },
       { includeOrphans: true },
     );
     expect(odd.tasks.map((t) => t.legacyId)).toEqual(["o-2"]);
@@ -496,7 +497,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     });
     expect(createOf(p, "x1").summary).toBe("call the clinic");
     // The clause's text passes SafeText like every field, and its change is reported as `next`.
-    const hidden = plan({ todo: line("A", "x1", "Next: call​ the clinic.") });
+    const hidden = plan({ todo: line("A", "x1", "Next: call\u200b the clinic.") });
     expect(createOf(hidden, "x1").summary).toBe("call the clinic");
     expect(codes(hidden, "x1")).toEqual(["text-sanitised body", "text-sanitised next"]);
   });
@@ -504,7 +505,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
   test("a ticket's title from data/jira.json passes SafeText, and its change is reported", () => {
     const p = plan({
       todo: line("A", "x1"),
-      jira: JSON.stringify([{ key: "LUM-7", summary: "Fix the ‮export" }]),
+      jira: JSON.stringify([{ key: "LUM-7", summary: "Fix the \u202eexport" }]),
       metadata: metadata({
         x1: { sources: [{ label: "Ticket", url: "https://tickets.lumen.example/browse/LUM-7" }] },
       }),
@@ -550,11 +551,11 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     const roots = { work: "/home/mira/work" };
     expect(placeFor("/home/mira/work/café", roots)).toEqual({ root: "work", path: "café" });
     // A decomposed é would be stored composed: on Linux another folder.
-    expect(placeFor("/home/mira/work/café", roots)).toBeUndefined();
+    expect(placeFor("/home/mira/work/cafe\u0301", roots)).toBeUndefined();
     expect(placeFor("/home/mira/work/a\u{e0041}", roots)).toBeUndefined();
     const p = plan({
       todo: line("A", "x1"),
-      metadata: metadata({ x1: { paths: ["/home/mira/work/café"] } }),
+      metadata: metadata({ x1: { paths: ["/home/mira/work/cafe\u0301"] } }),
     });
     expect(opsOf(p, "x1", "place.set")).toEqual([]);
     expect(createOf(p, "x1").ext.planning.paths).toEqual(["/home/mira/work/café"]);
@@ -674,6 +675,125 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
       }),
     });
     expect(q.projects.map((x) => x.slug)).toEqual([long, `${"p".repeat(46)}-2`]);
+  });
+
+  test("a group's identity comes from its whole title, before it is cut to fit", () => {
+    const a = "a".repeat(300);
+    const paren = `Clinic sync (${"x".repeat(310)})`;
+    const p = plan({
+      todo: line("A", "x1") + line("B", "x2") + line("C", "x3") + line("D", "x4"),
+      metadata: metadata({
+        x1: { category: `${a}one` },
+        x2: { category: `${a}two` },
+        x3: { category: "Lumen", project: "Clinic sync" },
+        x4: { category: "Lumen", project: paren },
+      }),
+    });
+    expect(p.areas.map((x) => x.slug)).toHaveLength(3);
+    expect(createOf(p, "x1").area).not.toBe(createOf(p, "x2").area);
+    expect(createOf(p, "x3").project).toBe(createOf(p, "x4").project);
+  });
+
+  test("a project's trailing (…) is ignored whenever the rest is not empty", () => {
+    const p = plan({
+      todo: line("A", "x1") + line("B", "x2") + line("C", "x3"),
+      metadata: metadata({
+        x1: { category: "Home", project: "🏠 (Q1)" },
+        x2: { category: "Home", project: "🏠 (Q2)" },
+        x3: { category: "Home", project: "(Q4)" },
+      }),
+    });
+    expect(p.projects).toEqual([
+      { slug: "project", title: "🏠 (Q1)", area: "home" },
+      { slug: "q4", title: "(Q4)", area: "home" },
+    ]);
+    expect(groupSlug("日本 (Q4)", "project")).toBe("project");
+  });
+
+  test("a title over 300 characters that starts with spaces keeps its words", () => {
+    const p = plan({ todo: line(`${" ".repeat(300)}Task`, "x1") });
+    expect(createOf(p, "x1").title).toBe("Task");
+  });
+
+  test("one value nested too deep leaves the rest of the metadata file as it is", () => {
+    const deep = `${"[".repeat(5000)}1${"]".repeat(5000)}`;
+    const p = plan({
+      todo: line("A", "x1") + line("B", "x2"),
+      metadata: `{"x1": {"status": "waiting", "deep": ${deep}}, "x2": {"owner": "Noor"}}`,
+    });
+    expect(createOf(p, "x1").status).toBe("waiting");
+    expect(Object.hasOwn(createOf(p, "x1").ext.planning, "deep")).toBe(false);
+    expect(codes(p, "x1")).toEqual(["extra-dropped extra"]);
+    expect(createOf(p, "x2").owner).toBe("Noor");
+  });
+
+  test("long runs of spaces cost linear time", () => {
+    const started = performance.now();
+    const p = plan({
+      todo: line("A", "x1"),
+      metadata: metadata({ x1: { owner: `a${" ".repeat(200_000)}b` } }),
+    });
+    expect(createOf(p, "x1").owner).toBe("a");
+    const taken = new Set<string>();
+    const next = new Map<string, number>();
+    for (let i = 0; i < 20_000; i += 1) taken.add(numberedSlug("p".repeat(48), taken, next));
+    expect(taken.size).toBe(20_000);
+    // Linear: well under the time a quadratic scan of these sizes takes.
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  test("a utm_ parameter is removed however its name is percent-encoded", () => {
+    expect(classifyUrl("https://www.example.org/p?%75tm_source=a&b=%75").key).toBe(
+      "url:https://www.example.org/p?b=%75",
+    );
+    expect(classifyUrl("https://www.example.org/p?%zz=1").key).toBe(
+      "url:https://www.example.org/p?%zz=1",
+    );
+  });
+
+  test("a problem names a source's or a path's place in the file's list", () => {
+    const p = plan({
+      todo: line("A", "x1"),
+      metadata: metadata({
+        x1: {
+          sources: [null, { label: "Long", url: `https://www.example.org/${"a".repeat(2100)}` }],
+          paths: [5, "/elsewhere/x", "/home/mira/work/y"],
+        },
+      }),
+    });
+    expect(p.problems.map((x) => `${x.code} ${x.field ?? ""} ${String(x.index ?? "")}`)).toEqual([
+      "source-dropped sources 1",
+      "path-outside-roots paths 1",
+      "paths-extra paths 2",
+    ]);
+  });
+
+  test("a ticket title's leading byte-order mark is a sanitised change too", () => {
+    const p = plan({
+      todo: line("A", "x1"),
+      jira: JSON.stringify([{ key: "LUM-7", summary: "\ufeffFix the export" }]),
+      metadata: metadata({
+        x1: { sources: [{ label: "Ticket", url: "https://tickets.lumen.example/browse/LUM-7" }] },
+      }),
+    });
+    expect(opsOf(p, "x1", "source.add")[0]?.source.title).toBe("Fix the export");
+    expect(codes(p, "x1")).toEqual(["text-sanitised sources"]);
+  });
+
+  test("a rank JSON.parse could not keep as written is dropped", () => {
+    const input = {
+      todo: line("A", "x1") + line("B", "x2"),
+      metadata: '{"x1": {"rank": 1e400}, "x2": {"rank": 9007199254740993}}',
+      done: "",
+      events: [],
+    };
+    const parse = parsePrototype(input);
+    expect(parse.metadata.get("x1")?.rank).toBeUndefined();
+    expect(parse.metadata.get("x2")?.rank).toBeUndefined();
+    expect(parse.problems.map((x) => `${x.code} ${x.task ?? ""} ${x.field ?? ""}`)).toEqual([
+      "field-type x1 rank",
+      "field-type x2 rank",
+    ]);
   });
 
   test("the plan is pure: no clock, no random source, the same plan for the same input", () => {

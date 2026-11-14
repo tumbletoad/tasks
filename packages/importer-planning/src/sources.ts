@@ -68,14 +68,27 @@ function hostKind(host: string): PlannedSourceKind {
   return HOST_KINDS.get(host.split(".")[0] ?? "") ?? "web";
 }
 
-/** The query without its `utm_*` parameters, each other parameter kept as written. */
+/**
+ * The query without its `utm_*` parameters, each other parameter kept as written. A name is read
+ * percent-decoded (`%75tm_source` is `utm_source`); one that does not decode is kept.
+ */
 function withoutTracking(search: string): string {
   if (search.length <= 1) return search;
   const kept = search
     .slice(1)
     .split("&")
-    .filter((part) => !part.toLowerCase().startsWith("utm_"));
+    .filter((part) => !trackingName(part.split("=", 1)[0] ?? ""));
   return kept.length === 0 ? "" : `?${kept.join("&")}`;
+}
+
+function trackingName(name: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(name);
+  } catch {
+    decoded = name;
+  }
+  return decoded.toLowerCase().startsWith("utm_");
 }
 
 /** The URL as a `url:` key normalises it (see the header). */

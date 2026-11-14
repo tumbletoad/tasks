@@ -230,46 +230,57 @@ function groupsOf(entries: readonly Entry[], report: Report): Groups {
   const areaSlugs = new Set<string>();
   const projects = new Map<string, PlannedProject>();
   const projectSlugs = new Set<string>();
+  // The next number to try per slug, so many groups with one slug cost linear time.
+  const nextArea = new Map<string, number>();
+  const nextProject = new Map<string, number>();
   const of = new Map<Entry, { area: string; project?: string }>();
-  // A text is cleaned and reported once, where it first appears.
-  const seen = new Map<string, string>();
-  const once = (raw: string, field: ProblemField, at: Place): string => {
+  // A text is cleaned and reported once, where it first appears. Its identity comes from the whole
+  // cleaned text, its title is that text cut to fit: two long titles that differ only past the
+  // cut stay two groups.
+  interface GroupText {
+    readonly full: string;
+    readonly title: string;
+  }
+  const seen = new Map<string, GroupText>();
+  const once = (raw: string, field: ProblemField, at: Place): GroupText => {
     const key = `${field}\u0000${raw}`;
-    let title = seen.get(key);
-    if (title === undefined) {
-      title = report.clean(raw, "line", at, field).trim();
-      title = report.fit(title, MAPPING_LIMITS.title, "chars", at, field);
-      seen.set(key, title);
+    let text = seen.get(key);
+    if (text === undefined) {
+      const full = report.clean(raw, "line", at, field).trim();
+      text = { full, title: report.fit(full, MAPPING_LIMITS.title, "chars", at, field) };
+      seen.set(key, text);
     }
-    return title;
+    return text;
   };
+  const OTHER: GroupText = { full: "Other", title: "Other" };
   for (const e of entries) {
     const category = once(e.meta?.category ?? "", "category", e.metaAt);
     // The ledger's group, only when metadata has no category. An orphan has no group: `Other`.
-    const areaTitle =
-      category !== "" ? category : once(e.line?.group ?? "Other", "group", e.at) || "Other";
-    let planned = areas.get(groupKey(areaTitle, "area"));
+    const group = e.line === undefined ? OTHER : once(e.line.group, "group", e.at);
+    const areaText = category.full !== "" ? category : group.full !== "" ? group : OTHER;
+    const areaKey = groupKey(areaText.full, "area");
+    let planned = areas.get(areaKey);
     if (planned === undefined) {
-      const slug = numberedSlug(groupSlug(areaTitle, "area"), areaSlugs);
+      const slug = numberedSlug(groupSlug(areaText.full, "area"), areaSlugs, nextArea);
       areaSlugs.add(slug);
-      planned = { slug, title: areaTitle };
-      areas.set(groupKey(areaTitle, "area"), planned);
+      planned = { slug, title: areaText.title };
+      areas.set(areaKey, planned);
     }
     const area = planned.slug;
 
-    const projectTitle = once(e.meta?.project ?? "", "project", e.metaAt);
-    if (projectTitle === "") {
+    const projectText = once(e.meta?.project ?? "", "project", e.metaAt);
+    if (projectText.full === "") {
       of.set(e, { area });
       continue;
     }
-    const key = `${area}\u0000${groupKey(projectTitle, "project")}`;
+    const key = `${area}\u0000${groupKey(projectText.full, "project")}`;
     let project = projects.get(key);
     if (project === undefined) {
       // Project slugs are unique in a space, not per area (A1 3.4): another project with the same
       // slug gets the next free number.
-      const slug = numberedSlug(groupSlug(projectTitle, "project"), projectSlugs);
+      const slug = numberedSlug(groupSlug(projectText.full, "project"), projectSlugs, nextProject);
       projectSlugs.add(slug);
-      project = { slug, title: projectTitle, area };
+      project = { slug, title: projectText.title, area };
       projects.set(key, project);
     }
     of.set(e, { area, project: project.slug });
@@ -315,7 +326,9 @@ function sourcesOf(
   const order: Group[] = [];
   for (const e of entries) {
     const keys = new Set<string>();
-    for (const [index, s] of (e.meta?.sources ?? []).entries()) {
+    for (const s of e.meta?.sources ?? []) {
+      // Its place in the file's list, which an invalid item before it does not shift.
+      const index = s.index;
       const url = report.clean(s.url, "line", e.metaAt, "sources", index).trim();
       if (url === "" || codePoints(url) > MAPPING_LIMITS.url) {
         report.add("source-dropped", e.metaAt, "sources", index);
@@ -356,9 +369,10 @@ function sourcesOf(
     let title: string;
     let generic = false;
     if (named !== undefined) title = named.label;
-    else if (ticket !== undefined && ticket.clean !== "") {
-      title = ticket.clean;
-      // The title lands on this task's source: its change is reported there.
+    else if (ticket !== undefined && ticket.clean.trim() !== "") {
+      title = ticket.clean.trim();
+      // The title lands on this task's source: its change is reported there. Compared before
+      // the trim, which would hide a removed byte-order mark.
       if (ticket.clean !== ticket.raw) {
         report.add("text-sanitised", first.entry.metaAt, "sources", first.index);
       }
@@ -437,11 +451,12 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   const line = e.line;
   if (line !== undefined && !line.marked) report.add("fallback-id", e.at);
 
-  // Title, and the full text at the top of the context when it is over 300 characters. An orphan
-  // is titled by its legacy ID. A legacy ID is of the marker grammar, so SafeText keeps it.
+  // Title, trimmed, and the full text at the top of the context when it is over 300 characters, so
+  // a cut keeps words, never only leading spaces. An orphan is titled by its legacy ID. A legacy
+  // ID is of the marker grammar, so SafeText keeps it.
   const rawTitle = line?.title ?? e.id;
-  let title = report.clean(rawTitle, "line", e.at, "title");
-  if (title.trim() === "") {
+  let title = report.clean(rawTitle, "line", e.at, "title").trim();
+  if (title === "") {
     report.add("title-empty", e.at, "title");
     title = e.id;
   }
@@ -528,21 +543,23 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
     ext["confidence"] = report.clean(meta.confidence, "text", e.metaAt, "confidence");
   }
 
-  // The place from paths[0]; every other path goes to ext.planning.paths.
+  // The place from paths[0]; every other path goes to ext.planning.paths. Problems name a path's
+  // place in the file's list, which a path the parser left out does not shift.
   const paths = meta?.paths ?? [];
+  const pathAt = (i: number): number => meta?.pathIndexes?.[i] ?? i;
   let place: { root: string; path: string } | undefined;
   const others: string[] = [];
   const first = paths[0];
   if (first !== undefined) {
     place = placeFor(first, options.roots ?? {});
     if (place === undefined) {
-      report.add("path-outside-roots", e.metaAt, "paths", 0);
-      others.push(report.clean(first, "text", e.metaAt, "paths", 0));
+      report.add("path-outside-roots", e.metaAt, "paths", pathAt(0));
+      others.push(report.clean(first, "text", e.metaAt, "paths", pathAt(0)));
     }
   }
-  if (paths.length > 1) report.add("paths-extra", e.metaAt, "paths", 1);
+  if (paths.length > 1) report.add("paths-extra", e.metaAt, "paths", pathAt(1));
   for (const [i, p] of paths.slice(1).entries()) {
-    others.push(report.clean(p, "text", e.metaAt, "paths", i + 1));
+    others.push(report.clean(p, "text", e.metaAt, "paths", pathAt(i + 1)));
   }
   if (others.length > 0) ext["paths"] = others;
 
@@ -724,7 +741,7 @@ export function mapPrototype(parse: PrototypeParse, options: MappingOptions): Im
   for (const t of parse.jira.tickets) {
     const key = t.key.toUpperCase();
     if (t.title !== undefined && !jira.has(key)) {
-      jira.set(key, { raw: t.title.trim(), clean: normaliseLine(t.title).trim() });
+      jira.set(key, { raw: t.title, clean: normaliseLine(t.title) });
     }
   }
   const { rows, byEntry } = sourcesOf(entries, jira, report);

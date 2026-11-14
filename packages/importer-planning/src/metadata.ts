@@ -3,7 +3,7 @@
 // `source_date`, `reviewed`, `confidence`, optional `due`, `sources` and `paths`. A missing file is
 // `{}`. A value of the wrong type is dropped and reported; an unknown key is kept as written.
 
-import { readJson, isObject, type Inexact } from "./json.ts";
+import { readJson, isObject } from "./json.ts";
 import { limitsWith, type Limits } from "./limits.ts";
 import { problem, type Problem, type ProblemField } from "./problems.ts";
 import { isIsoDate, type Source } from "./text.ts";
@@ -17,6 +17,8 @@ export interface MetadataSource {
   /** Empty when the row has no label. */
   readonly label: string;
   readonly url: string;
+  /** Its position in the file's list, which problems name. */
+  readonly index: number;
 }
 
 export interface MetadataEntry {
@@ -44,9 +46,11 @@ export interface MetadataEntry {
   readonly paths: readonly string[];
   /** Every key the prototype's grammar does not name, with its JSON value. */
   readonly extra: Readonly<Record<string, unknown>>;
-  /** The keys of `extra` whose value holds a number JSON.parse could not keep as written
-   * (`9007199254740993`, `1e400`): its value there is not what the file says. */
+  /** The keys of `extra` whose value holds a number that may stand for one JSON.parse could not
+   * keep as written (`9007199254740993`, `1e400`, json.ts: `inexactNumbers`). */
   readonly inexact?: readonly string[];
+  /** Each kept path's position in the file's list, when a path was left out before it. */
+  readonly pathIndexes?: readonly number[];
 }
 
 export interface MetadataParse {
@@ -89,8 +93,7 @@ export function parseMetadata(
   const limits = limitsWith(overrides);
   const entries = new Map<string, MetadataEntry>();
   if (source === undefined) return { present: false, entries, problems: [] };
-  const inexact: Inexact = new WeakMap();
-  const read = readJson(source, METADATA_FILE, limits.jsonBytes, inexact);
+  const read = readJson(source, METADATA_FILE, limits.jsonBytes, { numbers: true });
   const problems = read.problems;
   if (!read.ok) return { present: true, entries, problems };
   if (!isObject(read.value)) {
@@ -107,7 +110,7 @@ export function parseMetadata(
       problems.push(problem("entry-not-object", { file: METADATA_FILE, task: id }));
       continue;
     }
-    entries.set(id, entryFrom(id, value, limits, problems, inexact.get(value)));
+    entries.set(id, entryFrom(id, value, limits, problems, read.inexact ?? new Set()));
   }
   return { present: true, entries, problems };
 }
@@ -117,7 +120,7 @@ function entryFrom(
   raw: Record<string, unknown>,
   limits: Limits,
   problems: Problem[],
-  inexact: ReadonlySet<string> = new Set(),
+  inexact: ReadonlySet<number>,
 ): MetadataEntry {
   const report = (code: Parameters<typeof problem>[0], field: ProblemField, index?: number) => {
     problems.push(problem(code, { file: METADATA_FILE, task: id, field, index }));
@@ -142,7 +145,10 @@ function entryFrom(
     paths: [],
     extra: Object.fromEntries(Object.entries(raw).filter(([key]) => !KNOWN.has(key))),
   };
-  const lossy = Object.keys(entry.extra).filter((key) => inexact.has(key));
+  const lossy =
+    inexact.size === 0
+      ? []
+      : Object.keys(entry.extra).filter((key) => holds(entry.extra[key], inexact, 0));
   if (lossy.length > 0) entry.inexact = lossy;
   const set = <K extends keyof MetadataEntry>(key: K, value: MetadataEntry[K] | undefined) => {
     if (value !== undefined) entry[key] = value;
@@ -170,7 +176,7 @@ function entryFrom(
 
   // A rank JSON.parse could not keep as written (1e400, 2^53 + 1) is no rank the file gives.
   const rank = raw["rank"];
-  if (typeof rank === "number" && Number.isFinite(rank) && !inexact.has("rank")) entry.rank = rank;
+  if (typeof rank === "number" && Number.isFinite(rank) && !inexact.has(rank)) entry.rank = rank;
   else if (rank !== undefined) report("field-type", "rank");
 
   // Free text. A number is dropped: JSON.parse has already rounded it (1e-400, 2^53 + 1), so its
@@ -197,12 +203,13 @@ function entryFrom(
     const url = isObject(item) ? item["url"] : undefined;
     const label = isObject(item) ? (item["label"] ?? "") : undefined;
     if (typeof url === "string" && url !== "" && typeof label === "string") {
-      sources.push({ label, url });
+      sources.push({ label, url, index: i });
     } else report("source-invalid", "sources", i);
   }
   entry.sources = sources;
 
   const paths: string[] = [];
+  const pathIndexes: number[] = [];
   for (const [i, item] of list("paths").entries()) {
     if (typeof item !== "string") {
       report("field-type", "paths", i);
@@ -210,7 +217,20 @@ function entryFrom(
     }
     if (!ABSOLUTE.test(item)) report("path-not-absolute", "paths", i);
     paths.push(item);
+    pathIndexes.push(i);
   }
   entry.paths = paths;
+  if (pathIndexes.some((at, i) => at !== i)) entry.pathIndexes = pathIndexes;
   return entry;
+}
+
+/** Values deeper than this are left out by the mapping anyway (32 levels), so the walk stops. */
+const HOLDS_DEPTH = 64;
+
+/** Whether a parsed value holds, within HOLDS_DEPTH levels, a number of the `inexact` set. */
+function holds(value: unknown, inexact: ReadonlySet<number>, depth: number): boolean {
+  if (typeof value === "number") return inexact.has(value);
+  if (typeof value !== "object" || value === null || depth >= HOLDS_DEPTH) return false;
+  const items = Array.isArray(value) ? (value as unknown[]) : Object.values(value);
+  return items.some((item) => holds(item, inexact, depth + 1));
 }

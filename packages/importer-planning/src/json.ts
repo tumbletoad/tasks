@@ -4,59 +4,60 @@ import { problem, type Problem } from "./problems.ts";
 import { byteLength, decode, type Source } from "./text.ts";
 
 export type JsonRead =
-  | { readonly ok: true; readonly value: unknown; readonly problems: Problem[] }
+  | {
+      readonly ok: true;
+      readonly value: unknown;
+      readonly problems: Problem[];
+      /** With `numbers`: what JSON.parse made of each number it could not keep as written. */
+      readonly inexact?: ReadonlySet<number>;
+    }
   | { readonly ok: false; readonly problems: Problem[] };
-
-/**
- * Where JSON.parse could not keep a number as written: for each object or array of a parsed value,
- * its keys whose value is such a number or holds one at any depth.
- */
-export type Inexact = WeakMap<object, Set<string>>;
 
 /**
  * Parses a JSON file. Over `maxBytes` it is not read (`file-too-large`). Text that is no JSON gives
  * `json-invalid`, and the parser's own message is never kept, because it quotes the input. With
- * `inexact`, every number whose value differs from its text (`exactNumber`) is recorded there.
+ * `numbers`, the result also holds `inexact` (`inexactNumbers`).
  */
 export function readJson(
   source: Source,
   file: string,
   maxBytes: number,
-  inexact?: Inexact,
+  options: { readonly numbers?: boolean } = {},
 ): JsonRead {
   if (byteLength(source) > maxBytes) {
     return { ok: false, problems: [problem("file-too-large", { file })] };
   }
   const { text, problems } = decode(source, file);
+  let value: unknown;
   try {
-    const value: unknown =
-      inexact === undefined ? JSON.parse(text) : JSON.parse(text, recorder(inexact));
-    return { ok: true, value, problems };
+    value = JSON.parse(text);
   } catch {
     // SyntaxError, or a RangeError from very deep nesting.
     problems.push(problem("json-invalid", { file }));
     return { ok: false, problems };
   }
+  return options.numbers === true
+    ? { ok: true, value, problems, inexact: inexactNumbers(text) }
+    : { ok: true, value, problems };
 }
 
+/** A JSON string or a JSON number. Strings are matched whole, so a digit inside one is skipped. */
+const TOKEN = /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
 /**
- * A reviver that records inexact numbers and returns every value as it is. JSON.parse revives
- * children before their holder, so a holder that holds an inexact value is known by the time its
- * own holder is revived.
+ * The values JSON.parse gives the numbers of `text` (valid JSON) that it could not keep as written:
+ * `1e400` gives Infinity, `1e-400` zero and `9007199254740993` 9007199254740992. A value of the
+ * parse that is in this set may stand for such a number, so its key is left out. One linear scan
+ * of the text: no reviver, whose recursion overflows on deep nesting and would fail the whole file.
  */
-function recorder(inexact: Inexact) {
-  return function (this: object, key: string, value: unknown, context?: { source?: string }) {
-    const off =
-      typeof value === "number"
-        ? context?.source !== undefined && !exactNumber(context.source, value)
-        : typeof value === "object" && value !== null && inexact.has(value);
-    if (off) {
-      const keys = inexact.get(this) ?? new Set<string>();
-      keys.add(key);
-      inexact.set(this, keys);
-    }
-    return value;
-  };
+export function inexactNumbers(text: string): Set<number> {
+  const out = new Set<number>();
+  for (const [token] of text.matchAll(TOKEN)) {
+    if (token.startsWith('"')) continue;
+    const value = Number(token);
+    if (!exactNumber(token, value)) out.add(value);
+  }
+  return out;
 }
 
 /**
