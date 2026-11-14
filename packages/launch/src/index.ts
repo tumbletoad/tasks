@@ -20,6 +20,7 @@ export * from "./machine.ts";
 export * from "./places.ts";
 export * from "./problems.ts";
 export * from "./sections.ts";
+export * from "./shell-line.ts";
 export * from "./space-store.ts";
 export * from "./store.ts";
 export * from "./process.ts";

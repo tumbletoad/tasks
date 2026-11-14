@@ -30,6 +30,7 @@ import {
   fixCommand,
   problemOf,
   repairOf,
+  shellArg,
   shellPath,
   unsafeMessage,
   type Need,
@@ -171,7 +172,17 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
     );
     expect(shellPath("/srv/a b/it's", "/home/ada")).toBe(`'/srv/a b/it'\\''s'`);
     expect(shellPath("/home/ada x/f", "/home/ada")).toBe(`'/home/ada x/f'`);
-    expect(shellPath("/srv/$(id)\n`x`", "/home/ada")).toBe(`'/srv/$(id)\n\`x\`'`);
+    expect(shellPath("/srv/$(id) `x`", "/home/ada")).toBe(`'/srv/$(id) \`x\`'`);
+    // A control character: no line to paste shows it as it is (A3 3.13.7), so the sentence shows
+    // it escaped and no command is given.
+    expect(shellArg("/srv/a\nb", "/home/ada")).toBeUndefined();
+    expect(shellPath("/srv/a\nb", "/home/ada")).toBe(`"/srv/a\\nb"`);
+    expect(
+      fixCommand(
+        [{ facts: facts("/srv/a\nb", "folder", 0o777), problem: "world_writable" }],
+        "ada",
+      ),
+    ).toBeUndefined();
   });
 
   test("the message says what is wrong in plain words first, then why, then the command", () => {

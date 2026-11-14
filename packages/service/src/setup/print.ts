@@ -16,9 +16,14 @@
 // `approve-tools` (A3 3.13.2, 3.13.4) would approve Tasks's tools in the app's settings. Setup never
 // changes another app's approval settings (A3 3.13.1), so the part is only ever shown as a change
 // to make by hand: it writes nothing.
+//
+// The one command printed here (Claude Code's `mcp add`) is a line for PowerShell on Windows and a
+// POSIX shell elsewhere, quoted by launch's shell-line.ts, the rule for every line setup and doctor
+// print for a person to paste (A3 3.13.7). An install path no quoting keeps literal gets no line:
+// PrintRefused.
 import { posix, win32 } from "node:path";
 import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@tasks/brand";
-import { envValue, type Env } from "@tasks/launch";
+import { envValue, pasteShell, shellLine, type Env } from "@tasks/launch";
 import { keyText, valueText } from "../config/edit.ts";
 import { CODEX_STARTUP_TIMEOUT_SEC } from "./agents.ts";
 import { claudeDesktopFolders, DESKTOP_FILE } from "./hosts.ts";
@@ -65,6 +70,17 @@ export interface Snippet {
   /** `json`, `toml`, or `command` for an app whose own command adds the entry. */
   readonly format: "json" | "toml" | "command";
   readonly text: string;
+  /** A command's shell, which the line is quoted for (A3 3.13.7): "PowerShell", "a POSIX shell…". */
+  readonly runIn?: string;
+}
+
+/** The install's path holds a character no quoting keeps literal in the shell the line is for. */
+export class PrintRefused extends Error {
+  readonly runIn: string;
+  constructor(runIn: string) {
+    super("no line to paste keeps the install's path as it is");
+    this.runIn = runIn;
+  }
 }
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
@@ -100,13 +116,27 @@ export function snippetFor(input: PrintInput, app: PrintApp): Snippet {
   const [command = "", ...args] = argv;
   const plain = { command, args };
   switch (app) {
-    case "claude-code":
+    case "claude-code": {
+      const runIn = pasteShell(input.platform);
+      const line = shellLine(input.platform, [
+        "claude",
+        "mcp",
+        "add",
+        "--scope",
+        "user",
+        MCP_SERVER_KEY,
+        "--",
+        ...argv,
+      ]);
+      if (line === undefined) throw new PrintRefused(runIn);
       return {
         app,
         files: [p.join(input.userHome, ".claude.json")],
         format: "command",
-        text: `claude mcp add --scope user ${MCP_SERVER_KEY} -- ${argv.map((a) => JSON.stringify(a)).join(" ")}\n`,
+        text: `${line}\n`,
+        runIn,
       };
+    }
     case "codex":
       return {
         app,

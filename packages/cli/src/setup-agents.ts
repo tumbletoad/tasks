@@ -32,7 +32,7 @@ import { posix, win32 } from "node:path";
 import { isAgentMarker } from "@tasks/bridge/protocol";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
-import { detect, nodeDetectHost, type Env } from "@tasks/launch";
+import { detect, nodeDetectHost, pasteShell, shellLine, type Env } from "@tasks/launch";
 import { loadMachineConfig } from "@tasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import {
@@ -45,6 +45,7 @@ import {
   LockBusy,
   planOf,
   planToken,
+  PrintRefused,
   PRINT_APPS,
   PRINT_LABELS,
   removeHome,
@@ -214,35 +215,12 @@ const forbidden = (): AppError =>
   });
 
 /**
- * One argument as the person's shell takes it literally: as it is when no shell would split or
- * change it, else in single quotes, where neither PowerShell (Windows) nor a POSIX shell expands
- * anything. PowerShell doubles a single quote inside; a POSIX shell closes, escapes and reopens.
+ * The app's command as the person would run it, its variables first, as one line for PowerShell on
+ * Windows and a POSIX shell elsewhere (launch's shell-line.ts, A3 3.13.7). Undefined when a word
+ * holds a character no quoting keeps literal there.
  */
-function quoted(platform: NodeJS.Platform, arg: string): string {
-  if (/^[A-Za-z0-9_.,:/\\=@+-]+$/u.test(arg)) return arg;
-  return platform === "win32"
-    ? `'${arg.replaceAll("'", "''")}'`
-    : `'${arg.replaceAll("'", `'\\''`)}'`;
-}
-
-/** An argv as a line the person can paste into their shell. */
-const shown = (platform: NodeJS.Platform, argv: readonly string[]): string =>
-  argv.map((a) => quoted(platform, a)).join(" ");
-
-/**
- * The app's command as the person would run it: its variables, then its argv. PowerShell sets a
- * variable with `$env:NAME = '…';` and runs a quoted path with `&`; a POSIX shell takes `NAME='…'`.
- */
-function commandLine(platform: NodeJS.Platform, change: Change): string {
-  const argv = shown(platform, [...change.exec, ...change.args]);
-  const set = Object.entries(change.set);
-  if (platform === "win32") {
-    // A value is always quoted here: PowerShell would run an unquoted path as a command.
-    const value = (v: string) => `'${v.replaceAll("'", "''")}'`;
-    return [...set.map(([k, v]) => `$env:${k} = ${value(v)};`), `& ${argv}`].join(" ");
-  }
-  return [...set.map(([k, v]) => `${k}=${quoted(platform, v)}`), argv].join(" ");
-}
+const commandLine = (platform: NodeJS.Platform, change: Change): string | undefined =>
+  shellLine(platform, [...change.exec, ...change.args], change.set);
 
 const REASON: Readonly<Record<OutcomeReason, string>> = {
   unreadable: "its file cannot be read",
@@ -782,7 +760,9 @@ async function preview(
       if (change.writer === "edit") {
         io.stdout(`   writes one entry into this file (the app has no command for it)\n`);
       } else {
-        io.stdout(`   runs: ${commandLine(io.platform, change)}\n`);
+        io.stdout(
+          `   runs: ${commandLine(io.platform, change) ?? `the app's own command, whose words no line for ${pasteShell(io.platform)} keeps as they are (--json lists them)`}\n`,
+        );
         if (change.unset.length > 0) {
           io.stdout(`   without ${change.unset.join(", ")} from your environment\n`);
         }
@@ -808,19 +788,34 @@ async function preview(
     }
   }
   if (!parsed.parts.includes("mcp")) return 0;
+  // A --home no line keeps as it is: the person's own command again, with the apply's words.
+  const line =
+    shellLine(io.platform, apply) ??
+    `this command again with --apply --plan ${plan}${registers ? ` --space ${space}` : ""} in place of --preview`;
   io.stdout(
     !anything
       ? "Nothing was changed.\n"
       : changes === 0
-        ? `Nothing was changed. To renew the registered homes' grant rows, run: ${shown(io.platform, apply)}\n`
-        : `Nothing was changed. To make ${changes === 1 ? "this change" : `these ${String(changes)} changes`}, run: ${shown(io.platform, apply)}\n`,
+        ? `Nothing was changed. To renew the registered homes' grant rows, run: ${line}\n`
+        : `Nothing was changed. To make ${changes === 1 ? "this change" : `these ${String(changes)} changes`}, run: ${line}\n`,
   );
   return 0;
 }
 
 /** `print --app <name>`: the entry and where it goes. Reads no home and writes nothing. */
 function printCommand(io: Io, globals: Globals, input: SetupInput, app: PrintApp): number {
-  const snippet = snippetFor(input, app);
+  let snippet;
+  try {
+    snippet = snippetFor(input, app);
+  } catch (error) {
+    if (!(error instanceof PrintRefused)) throw error;
+    throw new AppError({
+      code: "invalid_input",
+      message: `${PRODUCT_NAME}'s command path holds a character that no line pasted into ${error.runIn} keeps as it is (on Windows % ! ^ & | < > ", anywhere a control character), so no command is printed.`,
+      hint: `Run ${CLI_NAME} setup agents: it runs the app's own command without a shell.`,
+      data: { issues: [{ path: "command", message: "Cannot be quoted for a shell" }] },
+    });
+  }
   if (globals.json) {
     io.stdout(`${JSON.stringify(snippet)}\n`);
     return 0;
@@ -828,7 +823,7 @@ function printCommand(io: Io, globals: Globals, input: SetupInput, app: PrintApp
   const where = snippet.files.length === 1 ? "in" : "in one of";
   io.stdout(
     snippet.format === "command"
-      ? `${PRINT_LABELS[app]}: run this; it writes the entry ${where} ${snippet.files.join(", ")}\n`
+      ? `${PRINT_LABELS[app]}: run this in ${snippet.runIn ?? pasteShell(io.platform)}; it writes the entry ${where} ${snippet.files.join(", ")}\n`
       : `${PRINT_LABELS[app]}: add this ${where} ${snippet.files.join(", ")}, keeping what is there\n`,
   );
   io.stdout(snippet.text);
