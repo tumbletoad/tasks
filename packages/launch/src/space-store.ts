@@ -1,5 +1,5 @@
 // The v1 execution store: the space database (A4 3.16.1, X7). Each call is one A1 operation,
-// `launch.create` or `launch.transition`, sent to the space's writer, which commits the record, its
+// `launch.create`, `launch.transition`, `run.create` or `run.transition`, sent to the space's writer, which commits the record, its
 // history and the request's receipt in one transaction (A1 3.7). Reads go to the
 // same writer, behind the requests sent before them. Launch code never imports storage (A7 3.2):
 // the writer reaches this store as a port, the in-thread SpaceWriter in tests and the worker's
@@ -17,16 +17,41 @@ import {
   type IntentState,
 } from "./intents.ts";
 import {
+  APP_TOOLS_STATES,
+  OUTCOME_REASONS,
+  RUN_ADAPTERS,
+  RUN_EVIDENCE_FIELDS,
+  RUN_PERMISSIONS,
+  RUN_STATES,
+  isRunReason,
+  type AppToolsState,
+  type NewRun,
+  type OutcomeReason,
+  type RunEvidence,
+  type RunPatch,
+  type RunRecord,
+  type RunResult,
+  type RunState,
+  type Usage,
+} from "@tasks/contracts/runs";
+import {
   checkNewIntent,
+  checkNewRun,
+  checkRunTransition,
   checkTransition,
   ExecutionRefused,
   LAUNCH_ID,
+  RUN_ID,
+  RunRefused,
+  runEvidenceProblem,
+  runResultProblem,
   type ExecutionStore,
   type Expected,
   type LaunchIntent,
   type NewIntent,
   type Outcome,
   type RefusalCode,
+  type RunExpected,
 } from "./store.ts";
 
 type MaybePromise<T> = T | Promise<T>;
@@ -49,6 +74,33 @@ export interface SpaceLaunchRow {
   at: Readonly<Record<string, unknown>>;
   created_at: number;
   updated_at: number;
+  version: number;
+}
+
+/**
+ * A run row as the space's writer reads it back (storage: `RunRow`): its JSON columns decoded, each
+ * key checked here against A4's lists.
+ */
+export interface SpaceRunRow {
+  id: string;
+  task_id: string | null;
+  routine_id: string | null;
+  session_id: string | null;
+  instance_id: string;
+  machine_id: string;
+  adapter: string;
+  place_id: string | null;
+  request: string | null;
+  spec: object;
+  state: string;
+  reason: string | null;
+  attempt: number;
+  evidence: Readonly<Record<string, unknown>>;
+  at: Readonly<Record<string, unknown>>;
+  result: object | null;
+  queued_at: number;
+  started_at: number | null;
+  ended_at: number | null;
   version: number;
 }
 
@@ -76,6 +128,8 @@ export interface SpaceWriterPort {
   submit(request: SpaceWriteRequest): MaybePromise<SpaceWriteResult>;
   launch(id: string): MaybePromise<SpaceLaunchRow | null | undefined>;
   openLaunches(machine: string): MaybePromise<readonly SpaceLaunchRow[]>;
+  run(id: string): MaybePromise<SpaceRunRow | null | undefined>;
+  openRuns(machine: string): MaybePromise<readonly SpaceRunRow[]>;
   /**
    * A request's receipt in a writer scope (storage: `receipt`, A1 3.8), read only: whether the
    * scope already decided a request with this ID. Behind the requests sent before it.
@@ -220,9 +274,77 @@ export class SpaceExecutionStore implements ExecutionStore {
     return row === null || row === undefined ? undefined : decodeLaunch(row);
   }
 
-  async openWork(machine: string): Promise<{ intents: LaunchIntent[] }> {
+  async openWork(machine: string): Promise<{ intents: LaunchIntent[]; runs: RunRecord[] }> {
     const rows = await this.#writer.openLaunches(machine);
-    return { intents: rows.map(decodeLaunch) };
+    const runs = await this.#writer.openRuns(machine);
+    return { intents: rows.map(decodeLaunch), runs: runs.map(decodeRun) };
+  }
+
+  async createRun(value: NewRun, requestId: string): Promise<RunRecord> {
+    const input = checkNewRun(value);
+    if (input.machine !== this.#credential.machine_id) {
+      throw new RunRefused("invalid", "This store writes for its own machine", "machine");
+    }
+    const { limits } = input;
+    const result = await this.#submit(requestId, {
+      kind: "run.create",
+      ...(input.task === null ? {} : { task: input.task }),
+      ...(input.routine === null ? {} : { routine: input.routine }),
+      instance: input.instance,
+      adapter: input.adapter,
+      place: input.place,
+      ...(input.session === undefined ? {} : { session: input.session }),
+      ...(input.request === null ? {} : { request: input.request }),
+      brief_hash: input.briefHash,
+      permission: input.permission,
+      limits: {
+        max_turns: limits.maxTurns,
+        wall_ms: limits.wallMs,
+        idle_ms: limits.idleMs,
+        ...(limits.budgetUsd === undefined ? {} : { budget_usd: limits.budgetUsd }),
+      },
+    });
+    const id = result.results[0]?.id;
+    if (result.error !== undefined || id === undefined) throw runRefusal(result);
+    return this.#readRunOrThrow(id);
+  }
+
+  async transitionRun(
+    id: string,
+    expect: RunExpected,
+    next: RunState,
+    patch?: RunPatch,
+  ): Promise<RunRecord> {
+    const change = checkRunTransition(id, expect, next, patch);
+    const result = await this.#submit(transitionRequestId(), {
+      kind: "run.transition",
+      run: change.id,
+      expect: change.expect.state,
+      expect_version: change.expect.version,
+      next: change.next,
+      ...(change.reason === undefined ? {} : { reason: change.reason }),
+      ...(Object.keys(change.evidence).length === 0 ? {} : { evidence: change.evidence }),
+      ...(change.result === undefined ? {} : { result: resultRow(change.result) }),
+    });
+    if (result.error === undefined) return this.#readRunOrThrow(change.id);
+    const refused = runRefusal(result);
+    if (refused.code === "stale" || refused.code === "evidence") {
+      const current = await this.readRun(change.id);
+      throw new RunRefused(refused.code, refused.message, refused.field, current);
+    }
+    throw refused;
+  }
+
+  async readRun(id: string): Promise<RunRecord | undefined> {
+    if (!RUN_ID.test(id)) return undefined;
+    const row = await this.#writer.run(id);
+    return row === null || row === undefined ? undefined : decodeRun(row);
+  }
+
+  async #readRunOrThrow(id: string): Promise<RunRecord> {
+    const run = await this.readRun(id);
+    if (run === undefined) throw new Error("A run the writer returned is not there");
+    return run;
   }
 
   async #read(id: string): Promise<LaunchIntent> {
@@ -314,4 +436,159 @@ export function decodeLaunch(row: SpaceLaunchRow): LaunchIntent {
     updatedAt: row.updated_at,
     version: row.version,
   };
+}
+
+/** The refusal a rejected run request means: as a launch's, for a run record. */
+function runRefusal(result: SpaceWriteResult): RunRefused {
+  const launch = refusal(result);
+  const field = launch.field === "result" ? "patch.result" : launch.field;
+  return new RunRefused(launch.code, launch.message, field);
+}
+
+/** A run result as the writer stores it, in its column's snake case. */
+function resultRow(result: RunResult): Record<string, unknown> {
+  const usage =
+    result.usage === null
+      ? null
+      : Object.fromEntries(
+          Object.entries(USAGE_KEYS).flatMap(([camel, snake]) => {
+            const value = result.usage?.[camel as keyof Usage];
+            return value === undefined ? [] : [[snake, value]];
+          }),
+        );
+  return {
+    ok: result.ok,
+    outcome: result.outcome,
+    exit_code: result.exitCode,
+    signal: result.signal,
+    native_id: result.nativeId,
+    text: result.text,
+    error: result.error,
+    usage,
+    app_tools: result.appTools,
+    declined: result.declined,
+    permission_denials: result.permissionDenials,
+    duration_ms: result.durationMs,
+  };
+}
+
+const USAGE_KEYS = {
+  inputTokens: "input_tokens",
+  cachedInputTokens: "cached_input_tokens",
+  outputTokens: "output_tokens",
+  reasoningOutputTokens: "reasoning_output_tokens",
+  costUsd: "cost_usd",
+} as const satisfies Record<keyof Usage, string>;
+
+const isOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
+  values.includes(value as T);
+
+/** A run row as a RunRecord, checked: a row that is not one is a damaged space. */
+export function decodeRun(row: SpaceRunRow): RunRecord {
+  const bad = (column: string): never => {
+    throw new Error(`A run row holds an invalid ${column}`);
+  };
+  const { state, adapter, reason } = row;
+  const spec = row.spec as Readonly<Record<string, unknown>>;
+  if (!RUN_ID.test(row.id)) bad("id");
+  if (!isOf(RUN_STATES, state)) return bad("state");
+  if (!isOf(RUN_ADAPTERS, adapter)) return bad("adapter");
+  if (reason !== null && !isRunReason(state, reason) && !isFinalReason(reason))
+    return bad("reason");
+  const limits = spec["limits"] as Record<string, unknown> | undefined;
+  const permission = spec["permission"];
+  const briefHash = spec["brief_hash"];
+  if (!isOf(RUN_PERMISSIONS, permission) || typeof briefHash !== "string") return bad("spec");
+  if (
+    limits === undefined ||
+    typeof limits["max_turns"] !== "number" ||
+    typeof limits["wall_ms"] !== "number" ||
+    typeof limits["idle_ms"] !== "number"
+  ) {
+    return bad("spec");
+  }
+  const at: Partial<Record<RunState, number>> = {};
+  for (const [key, value] of Object.entries(row.at)) {
+    if (!isOf(RUN_STATES, key) || typeof value !== "number") return bad("at");
+    at[key] = value;
+  }
+  // A4's keys, checked by their kind. A key a newer build added is left out, not refused: the
+  // writer has checked its shape, and evidence only grows.
+  const evidence: Record<string, unknown> = {};
+  for (const key of Object.keys(row.evidence).sort()) {
+    if (!Object.hasOwn(RUN_EVIDENCE_FIELDS, key)) continue;
+    const value = row.evidence[key];
+    if (runEvidenceProblem({ [key]: value }) !== undefined) return bad("evidence");
+    evidence[key] = value;
+  }
+  const result =
+    row.result === null ? null : decodeResult(row.result as Readonly<Record<string, unknown>>);
+  if (result === undefined) return bad("result");
+  const budget = limits["budget_usd"];
+  return {
+    id: row.id,
+    task: row.task_id,
+    routine: row.routine_id,
+    session: row.session_id,
+    machine: row.machine_id,
+    instance: row.instance_id,
+    adapter,
+    place: row.place_id,
+    folderKind: row.place_id === null ? "work_folder" : "place",
+    request: row.request,
+    briefHash,
+    permission,
+    limits: {
+      maxTurns: limits["max_turns"],
+      wallMs: limits["wall_ms"],
+      idleMs: limits["idle_ms"],
+      ...(typeof budget === "number" ? { budgetUsd: budget } : {}),
+    },
+    state,
+    reason: reason as RunRecord["reason"],
+    attempt: row.attempt,
+    evidence: evidence,
+    at: Object.fromEntries(RUN_STATES.flatMap((s) => (s in at ? [[s, at[s]]] : []))),
+    result,
+    queuedAt: row.queued_at,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    version: row.version,
+  };
+}
+
+/** A reason a record may keep from a final state it entered before (unknown, then settled). */
+function isFinalReason(reason: string): boolean {
+  return (["failed", "timed_out", "unknown"] as const).some((s) => isRunReason(s, reason));
+}
+
+/** A stored result as a RunResult, or undefined when it is not one. */
+function decodeResult(row: Readonly<Record<string, unknown>>): RunResult | undefined {
+  const usageRow = row["usage"] as Record<string, unknown> | null | undefined;
+  let usage: Usage | null = null;
+  if (usageRow !== null && usageRow !== undefined) {
+    const out: Record<string, number> = {};
+    for (const [camel, snake] of Object.entries(USAGE_KEYS)) {
+      const value = usageRow[snake];
+      if (typeof value === "number") out[camel] = value;
+    }
+    usage = out;
+  }
+  const result: RunResult = {
+    ok: row["ok"] as boolean,
+    outcome: row["outcome"] as OutcomeReason,
+    exitCode: (row["exit_code"] ?? null) as number | null,
+    signal: (row["signal"] ?? null) as string | null,
+    nativeId: (row["native_id"] ?? null) as string | null,
+    text: (row["text"] ?? null) as string | null,
+    error: (row["error"] ?? null) as string | null,
+    usage,
+    appTools: (row["app_tools"] ?? null) as AppToolsState | null,
+    declined: row["declined"] as number,
+    permissionDenials: row["permission_denials"] as number,
+    durationMs: (row["duration_ms"] ?? null) as number | null,
+  };
+  if (!isOf(OUTCOME_REASONS, result.outcome)) return undefined;
+  if (result.appTools !== null && !isOf(APP_TOOLS_STATES, result.appTools)) return undefined;
+  return runResultProblem(result) === undefined ? result : undefined;
 }

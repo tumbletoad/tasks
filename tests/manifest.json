@@ -1083,7 +1083,7 @@
     },
     {
       "id": "A4.5.execution-store.contract",
-      "title": "The ExecutionStore contract suite on every backend (in memory, the space database in the writer's thread and through a storage worker): one Prepared record per click with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart, records of IDs and codes only, and the writer's copy of A4's rules",
+      "title": "The ExecutionStore contract suites on every backend (in memory, the space database in the writer's thread and through a storage worker), for launches and for runs: one Prepared record per click and one queued run per request, with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart, records of IDs and codes only, and the writer's copy of A4's rules",
       "source": "A4 3.16.1, A4 5.1, X7, A7 3.9 M2.05",
       "owner": "M2",
       "kind": "ci",

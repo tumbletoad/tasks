@@ -35,11 +35,16 @@ import {
 import { decodeLaunch, SpaceExecutionStore } from "../src/space-store.ts";
 import { ExecutionRefused } from "../src/store.ts";
 import { executionStoreContract } from "./execution-store-contract.ts";
+import { runStoreContract } from "./run-store-contract.ts";
 import { memoryBackend, spaceBackend, spaceStore, workerSpace } from "./stores.ts";
 
 executionStoreContract("in memory", () => Promise.resolve(memoryBackend()));
 
 executionStoreContract("the space database, through the writer", () => spaceBackend());
+
+runStoreContract("in memory", () => Promise.resolve(memoryBackend()));
+
+runStoreContract("the space database, through the writer", () => spaceBackend());
 
 describe("[A4.5.launch.open-replay] the space store says, read only, whether a request ID was decided", () => {
   test("false before a click and for another ID, true after it, through the worker and in this thread, and the lookup writes nothing", async () => {
