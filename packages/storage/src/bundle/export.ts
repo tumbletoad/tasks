@@ -16,8 +16,9 @@
 //    export that a restore would refuse, or that could fill the disk, writes nothing.
 // 1. The connection copies the database in one backup step into a private work folder
 //    `.export.tmp-<random>` in the exports folder (A1 3.1: `<space>/exports`), and closes. The copy
-//    is vacuumed, so it carries no bytes of deleted rows, and checked (integrity_check and the facts,
-//    as a backup's).
+//    loses the objects the exact-schema rule leaves out (triggers, SQLite's statistics tables), is
+//    vacuumed, so it carries no bytes of deleted rows, and is checked (integrity_check and the
+//    facts, as a backup's).
 // 2. The secret scan (A6 3.16.4): every text value of the product's tables, by the product's own
 //    table and column names (snapshot.ts productTables), never a name read out of the database. A
 //    hit writes nothing: EXPORT_SECRET_FOUND names the kind and the table and column, never the
@@ -106,6 +107,7 @@ import {
   type ProductTable,
   type SnapshotFacts,
 } from "../backup/snapshot.ts";
+import { dropUnchecked } from "../restore/mark.ts";
 import { restoreCopy } from "../restore/restore.ts";
 import { inFolder } from "../restore/unpack.ts";
 import {
@@ -404,12 +406,18 @@ function exportFailed(error: unknown): StorageError {
 const sizeOf = (path: string): number => fsCall(() => statSync(path).size);
 
 /**
- * Vacuums the private snapshot, so the bundle carries no bytes of deleted rows or free pages. The
- * connection is the only one on the file; its close checkpoints the -wal into the file.
+ * Drops the objects the exact-schema rule leaves out from the private snapshot (restore/mark.ts
+ * dropUnchecked: triggers and SQLite's statistics tables, which a restore drops anyway), so the
+ * bundle holds exactly its revision's schema and nothing the secret scan does not read, then
+ * vacuums it, so the bundle carries no bytes of deleted rows or free pages. The connection is the
+ * only one on the file; its close checkpoints the -wal into the file.
  */
 function vacuum(checked: CheckedDriver, db: string, busy: { busyTimeoutMs?: number }): void {
   const conn = openWriter(checked, db, busy);
   try {
+    conn.transaction("immediate", () => {
+      dropUnchecked(conn);
+    });
     conn.exec("VACUUM");
   } finally {
     conn.close();

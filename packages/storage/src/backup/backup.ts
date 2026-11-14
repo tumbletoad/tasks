@@ -281,6 +281,11 @@ export async function writeBackup(
     ) {
       throw new StorageError("BACKUP_FAILED", "The compressed backup does not read back");
     }
+    // The snapshot is done once its compressed form reads back: it goes before the publication,
+    // whose copy (where the file system makes no hard link) is a second compressed file, so the
+    // backup's files never pass backupPeak.
+    for (const path of databaseFiles(copy)) removeQuietly(path, io);
+    own.splice(0, own.length, packed);
     refresh();
     seams.at?.("compressed");
 
@@ -308,8 +313,8 @@ export async function writeBackup(
     // Fresh, so the data is young when it takes its name.
     refresh();
     data = { path: file, id: publish(() => publishExclusive(packed, file, io).id) };
-    // The data holds its name: the temporary files are done, and only the data is kept fresh.
-    for (const path of [copy, packed]) removeQuietly(path, io);
+    // The data holds its name: the temporary file is done, and only the data is kept fresh.
+    removeQuietly(packed, io);
     own.splice(0, own.length, file);
     fsyncFolder(backupDir, io);
     seams.at?.("data-published");
@@ -346,9 +351,7 @@ export async function writeBackup(
     throw backupFailed(error);
   } finally {
     clearInterval(timer);
-    for (const path of [copy, `${copy}-wal`, `${copy}-shm`, `${copy}-journal`, packed]) {
-      removeQuietly(path, io);
-    }
+    for (const path of [...databaseFiles(copy), packed]) removeQuietly(path, io);
   }
 }
 
@@ -361,10 +364,15 @@ export const FRESH_INTERVAL_MS = 5 * 60_000;
 /**
  * What a backup needs on disk at its peak, from the database's size D (its pages times their
  * size): the snapshot (D) and its compressed form while both exist, which is at most about D (gzip
- * adds a few bytes per block to data it cannot compress). The read-back writes nothing, and the
- * sidecar is a few hundred bytes. A guideline (PLAN D26): a disk that fills anyway fails the backup.
+ * adds a few bytes per block to data it cannot compress); then the compressed form and, where the
+ * file system makes no hard link, its published copy, since the snapshot is removed before the
+ * publication. The read-back writes nothing, and the sidecar is a few hundred bytes. A guideline
+ * (PLAN D26): a disk that fills anyway fails the backup.
  */
 export const backupPeak = (databaseSize: number): number => 2 * databaseSize;
+
+/** A database file and the files SQLite keeps beside it. */
+const databaseFiles = (db: string): string[] => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`];
 
 /** Whether `path` is still the regular file `before` described (same identity where known), of `size`. */
 function sameFile(path: string, before: BigIntStats, size: number): boolean {

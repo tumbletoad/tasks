@@ -65,7 +65,7 @@ import {
   type SwapNames,
   type SwapPoint,
 } from "./folders.ts";
-import { dropTriggers, markCopy } from "./mark.ts";
+import { dropUnchecked, markCopy } from "./mark.ts";
 import {
   inFolder,
   isBundleFile,
@@ -77,7 +77,7 @@ import {
   type UnpackSeams,
 } from "./unpack.ts";
 
-export { dropTriggers, markReadOnlyCopy, READ_ONLY_COPY } from "./mark.ts";
+export { dropUnchecked, markReadOnlyCopy, READ_ONLY_COPY } from "./mark.ts";
 
 export interface RestoreOptions {
   appVersion?: string;
@@ -363,7 +363,7 @@ export async function restoreInPlaceWith(
     let claim: Claim;
     try {
       conn.transaction("immediate", () => {
-        dropTriggers(conn);
+        dropUnchecked(conn);
       });
       claim = claimSpace(conn, {
         kind: "restore_claim",

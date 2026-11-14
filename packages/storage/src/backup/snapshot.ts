@@ -5,13 +5,16 @@
 // THE EXACT-SCHEMA RULE (A1 3.18 "Restore and import of a bundle", step 3), in one place
 // (requireOwnSchema): a database a restore writes to, or an export writes out, has exactly the
 // tables, indexes and views that the schema steps up to its revision create. The comparison covers
-// every object of the main schema but two kinds:
-// - A trigger: a restore drops every one before its first write (restore/mark.ts).
-// - An object whose name starts with SQLite's literal reserved prefix `sqlite_` (sqlite_sequence,
-//   sqlite_stat1, sqlite_autoindex_…), compared as a plain prefix of the name, never through SQL
-//   LIKE, in which `_` matches any character. SQLite makes these itself; a crafted one cannot run
-//   on a write (an index can only fail it), and a restore's first write runs on its copy before
-//   anything calls the copy verified (restore/restore.ts), so one that fails it is caught there.
+// every object of the main schema, those with SQLite's reserved prefix `sqlite_` included (the
+// steps make the same `sqlite_autoindex_…` indexes in the reference), except the ones a restore
+// drops before its first write and an export drops from its private snapshot (isDropped,
+// restore/mark.ts dropUnchecked):
+// - a trigger, since one would run on those writes;
+// - SQLite's statistics tables `sqlite_stat1` and `sqlite_stat4`, which ANALYZE makes and only the
+//   query planner reads, by their exact names.
+// Nothing else is left out: an object SQLite would let no statement create, such as an index named
+// `sqlite_autoindex_…` with a definition of its own, can be planted in a file, and it would act on
+// every later write, not only on the restore's first one.
 // A virtual table is compared by its own text. Its module's shadow tables, which SQLite itself names
 // (PRAGMA table_list's type `shadow`, never a guess from a name), are compared by type and name
 // only: their text follows the SQLite version.
@@ -74,16 +77,34 @@ export const SQLITE_RESERVED_PREFIX = "sqlite_";
 const isReserved = (name: unknown): boolean =>
   typeof name === "string" && name.startsWith(SQLITE_RESERVED_PREFIX);
 
+/** SQLite's statistics tables, which ANALYZE makes: dropped, never compared (see the header). */
+export const STATISTICS_TABLES: readonly string[] = ["sqlite_stat1", "sqlite_stat4"];
+
+/**
+ * Whether a main-schema object is one the exact-schema rule leaves out because a restore drops it
+ * before its first write, and an export from its private snapshot (see the header): a trigger, or a
+ * statistics table by its exact name. The one test of it: schemaObjects skips what it passes, and
+ * restore/mark.ts dropUnchecked drops exactly that.
+ */
+export function isDropped(type: unknown, name: unknown): boolean {
+  return (
+    type === "trigger" ||
+    (type === "table" && typeof name === "string" && STATISTICS_TABLES.includes(name))
+  );
+}
+
 /** Every object of the main schema, triggers included, in a fixed order. */
-const ALL_OBJECTS = "SELECT type, name, tbl_name, sql FROM main.sqlite_schema ORDER BY type, name";
+export const ALL_OBJECTS =
+  "SELECT type, name, tbl_name, sql FROM main.sqlite_schema ORDER BY type, name";
 
 /** The main schema's tables as SQLite classifies them: `table`, `view`, `virtual` or `shadow`. */
 const TABLE_LIST = "SELECT name, type FROM pragma_table_list WHERE schema = 'main'";
 
 /**
  * The schema objects of the database on `conn` as the exact-schema rule compares them (see the
- * header): each table, index and view with the SQL text SQLite keeps for it, which holds every
- * column, constraint, key and generated value; a shadow table by its type and name.
+ * header): each table, index and view, SQLite's own included, with the SQL text SQLite keeps for it
+ * (none for an index SQLite made for a key), which holds every column, constraint, key and
+ * generated value; a shadow table by its type and name. Only what isDropped passes is left out.
  */
 export function schemaObjects(conn: Connection): string[] {
   const shadow = new Set(
@@ -96,7 +117,7 @@ export function schemaObjects(conn: Connection): string[] {
   return conn
     .prepare(ALL_OBJECTS)
     .all<Record<string, unknown>>()
-    .filter((row) => row["type"] !== "trigger" && !isReserved(row["name"]))
+    .filter((row) => !isDropped(row["type"], row["name"]))
     .map((row) =>
       JSON.stringify(
         row["type"] === "table" && shadow.has(row["name"])

@@ -1,6 +1,6 @@
 // A restore's first write on a copy in its staging folder (A1 3.18): the read-only mark of a copy
-// restored into a new folder, with the triggers dropped before it. A restore in place's first write
-// is its claim (claim.ts), after the same drop (restore.ts).
+// restored into a new folder, with the objects the exact-schema rule leaves out dropped before it.
+// A restore in place's first write is its claim (claim.ts), after the same drop (restore.ts).
 //
 // The mark is `space.transfer` = `{state: "restored_copy", at}`: every open of the copy is then
 // read-only with the reason `read_only_copy` until it is claimed (A6 3.5). It writes no commit: the
@@ -10,32 +10,35 @@ import { StorageError } from "../errors.ts";
 import { openWriter } from "../open.ts";
 import { decodeSpaceRow, type SpaceRow } from "../rows.ts";
 import type { CheckedDriver } from "../startup-check.ts";
+import { ALL_OBJECTS, isDropped } from "../backup/snapshot.ts";
 
 /** The state `space.transfer` holds for a read-only copy (A6 3.5's `read_only_copy`). */
 export const READ_ONLY_COPY = "restored_copy";
 
 /**
- * Drops every trigger of a restored database, inside the caller's write transaction, before the
- * restore's first write. Tasks' schema has none (A1 3.4); one in a copied or crafted database would
- * run on the restore's own writes, and could clear the read-only mark or undo a claim.
+ * Drops, inside the caller's write transaction, every object of a copied database that the
+ * exact-schema rule leaves out (backup/snapshot.ts isDropped): each trigger, which would run on the
+ * restore's own writes and could clear the read-only mark or undo a claim (Tasks' schema has none,
+ * A1 3.4), and SQLite's statistics tables. A restore runs it before its first write, an export on
+ * its private snapshot. Names are only quoted here, never shown.
  */
-export function dropTriggers(conn: Connection): void {
-  const names = conn
-    .prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger'")
-    .all<{ name: unknown }>();
-  for (const { name } of names) {
-    conn.exec(`DROP TRIGGER IF EXISTS "${String(name).replaceAll('"', '""')}"`);
+export function dropUnchecked(conn: Connection): void {
+  const rows = conn.prepare(ALL_OBJECTS).all<{ type: unknown; name: unknown }>();
+  for (const { type, name } of rows) {
+    if (!isDropped(type, name)) continue;
+    const quoted = `"${String(name).replaceAll('"', '""')}"`;
+    conn.exec(type === "trigger" ? `DROP TRIGGER IF EXISTS ${quoted}` : `DROP TABLE ${quoted}`);
   }
 }
 
 /**
  * Marks the space on `conn`, a writer on a restored copy in its staging folder, as a read-only
- * copy, its triggers dropped first in the same transaction. Returns the marked row, which must
- * hold the mark.
+ * copy, the unchecked objects dropped first in the same transaction. Returns the marked row, which
+ * must hold the mark.
  */
 export function markReadOnlyCopy(conn: Connection, now: number): SpaceRow {
   return conn.transaction("immediate", () => {
-    dropTriggers(conn);
+    dropUnchecked(conn);
     conn
       .prepare("UPDATE space SET transfer = $transfer WHERE one = 1")
       .run({ transfer: JSON.stringify({ state: READ_ONLY_COPY, at: now }) });

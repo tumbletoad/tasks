@@ -1,7 +1,7 @@
 // Export bundles (A1 3.18, A6 3.5, A7 M3.07): the export and its restore, the shared BundlePolicy
 // on archives, the archive rules a restore enforces, and the export's secret scan. Fixture data
 // only: every archive a test needs to be refused is crafted here, byte by byte.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { crc32, deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -31,7 +32,9 @@ import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
 import { backupPeak, backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import { listBackups, verifyBackup } from "../src/backup/list.ts";
+import { applyRetention, planRetention } from "../src/backup/retention.ts";
 import { schemaObjects } from "../src/backup/snapshot.ts";
+import { openReader } from "../src/open.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { unpackBackup } from "../src/restore/unpack.ts";
@@ -152,6 +155,21 @@ function exportJson(files: Record<string, Buffer | { size: number; sha256: strin
       files: listed,
     }),
   );
+}
+
+/**
+ * Plants `sql` in the database file `db` as another program could: SQLite's defensive flag off and
+ * its schema writable, so even a name with SQLite's reserved prefix is taken.
+ */
+function plant(db: string, sql: string): void {
+  const conn = new DatabaseSync(db, { defensive: false });
+  try {
+    conn.exec("PRAGMA writable_schema = ON");
+    conn.exec(sql);
+    conn.exec("PRAGMA writable_schema = OFF");
+  } finally {
+    conn.close();
+  }
 }
 
 /** Restores `zip` into a new folder, expects `code`, and that no folder was left behind. */
@@ -708,6 +726,19 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 3);
+    // Text that compresses poorly (random lower-case letters, which match no secret's shape), so
+    // the compressed backup is most of the database's size.
+    const noise = Buffer.from(randomBytes(4 * 1024 * 1024).map((b) => 97 + (b % 26))).toString(
+      "latin1",
+    );
+    const raw = await rawWriter(folder);
+    try {
+      raw
+        .prepare("UPDATE tasks SET context = $noise WHERE id = (SELECT min(id) FROM tasks)")
+        .run({ noise });
+    } finally {
+      raw.close();
+    }
     // The database's pages times their size: the file, with every page checkpointed into it.
     const size = statSync(join(folder, "space.db")).size;
     const reserve = BUNDLE_POLICY.freeSpaceReserveBytes;
@@ -729,6 +760,34 @@ describe("[A1.5.backup.free-reserve] the backup writer and the exporter keep the
     // Asked of the nearest folder that exists: the backups folder is not made yet.
     expect(seen).toEqual([folder]);
     await backupSpaceWith(checked, folder, { kind: "manual" }, { freeBytes: free(backupNeeds) });
+    // Where the file system makes no hard link, the publication copies the compressed file: the
+    // snapshot is gone by then, so the backup's files on disk never pass its peak.
+    const dir = join(folder, "backups");
+    const onDisk = (): number =>
+      readdirSync(dir)
+        .filter((name) => !before.has(name))
+        .reduce((sum, name) => sum + statSync(join(dir, name)).size, 0);
+    const before = new Set(readdirSync(dir));
+    let most = 0;
+    const noLinks = {
+      ...NODE_IO,
+      linkSync: () => {
+        throw Object.assign(new Error("no hard links here"), { code: "ENOTSUP" });
+      },
+      writeSync: (fd: number, data: Uint8Array, offset: number, length: number) => {
+        const written = NODE_IO.writeSync(fd, data, offset, length);
+        most = Math.max(most, onDisk());
+        return written;
+      },
+    };
+    await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "manual", now: () => Date.now() + 1000 },
+      { io: noLinks, freeBytes: free(backupNeeds) },
+    );
+    expect(most).toBeGreaterThan(0);
+    expect(most).toBeLessThanOrEqual(backupNeeds);
 
     const exportNeeds = exportPeak(size, 0, true);
     expect(exportNeeds).toBe(6 * size);
@@ -856,6 +915,109 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     }
   });
 
+  test("an object under SQLite's reserved prefix is compared like any other: one planted in the file is refused by the export, a verification, a restore and retention", async () => {
+    const checked = await checkedDriver();
+    const token = `ghp_${"a".repeat(36)}`;
+    const planted = [
+      // Passes the restore's first write (the mark), fails the claim of a restore in place.
+      "CREATE INDEX sqlite_probe_epoch ON space " +
+        "((CASE WHEN authority_epoch > 1 THEN abs(-9223372036854775808) ELSE 0 END))",
+      // Named like the index SQLite makes for a key, with a definition of its own: it refuses every
+      // later task whose title another task has.
+      "CREATE UNIQUE INDEX sqlite_autoindex_tasks_9 ON tasks (title)",
+      // A table no statement may create, holding a secret-shaped string the scan never reads.
+      `CREATE TABLE sqlite_probe_secret (value TEXT); INSERT INTO sqlite_probe_secret VALUES ('${token}')`,
+    ];
+    for (const sql of planted) {
+      const { folder } = await createFixtureSpace(folders.make());
+      await writeCommits(folder, 2);
+      const at = Date.now() - 60_000;
+      const good = await backupSpace(checked, folder, { kind: "daily", now: () => at });
+      plant(join(folder, "space.db"), sql);
+      const refusal = await expectCode(
+        () => exportBundle(checked, folder, { mode: "backup" }),
+        "SPACE_SCHEMA_FOREIGN",
+      );
+      expect(refusal.message, sql).not.toMatch(/sqlite_probe|sqlite_autoindex|ghp_/);
+      expect(
+        existsSync(join(folder, "exports")) ? readdirSync(join(folder, "exports")) : [],
+      ).toEqual([]);
+      const bad = await backupSpace(checked, folder, { kind: "daily", now: () => at + 1000 });
+      const listing = listBackups(join(folder, "backups"));
+      const listed = listing.backups.find((b) => b.name === bad.name);
+      expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toBe(
+        undefined,
+      );
+      await expectCode(
+        () => restoreBackup(checked, bad.file, join(folders.make(), "mira")),
+        "BACKUP_INVALID",
+      );
+      await expectCode(
+        () => restoreInPlace(checked, bad.file, folder, { machineId: TEST_MACHINE }),
+        "BACKUP_INVALID",
+      );
+      // Retention keeps the older backup that restores, and removes nothing because of the other.
+      const plan = planRetention(
+        listing,
+        { now: at + 2000, utcOffsetMinutes: 0 },
+        { spaceId: good.sidecar.space_id },
+      );
+      const result = await applyRetention(checked, listing, plan);
+      expect(result.verified, sql).toBe(good.name);
+      expect(result.removed, sql).toEqual([]);
+    }
+  });
+
+  test("triggers and SQLite's statistics tables are dropped: the export leaves them out of its bundle, a restore drops them before its first write", async () => {
+    const checked = await checkedDriver();
+    const token = `ghp_${"b".repeat(36)}`;
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    const conn = await rawWriter(folder);
+    try {
+      conn.exec("ANALYZE");
+      // Statistics are rows like any other: one holds a secret-shaped string the scan never reads.
+      conn
+        .prepare("INSERT INTO sqlite_stat1 (tbl, idx, stat) VALUES ('tasks', NULL, $stat)")
+        .run({ stat: token });
+      conn.exec(`CREATE TRIGGER keep_text AFTER INSERT ON tasks BEGIN SELECT '${token}'; END`);
+    } finally {
+      conn.close();
+    }
+    const unchecked = (db: string): number => {
+      const reader = openReader(checked, db);
+      try {
+        return Number(
+          reader
+            .prepare(
+              "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'trigger' " +
+                "OR name IN ('sqlite_stat1', 'sqlite_stat4')",
+            )
+            .get()?.["n"],
+        );
+      } finally {
+        reader.close();
+      }
+    };
+    expect(unchecked(join(folder, "space.db"))).toBeGreaterThanOrEqual(2);
+    const bundle = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
+    const unpacked = folders.make();
+    await readBundle(bundle.file, BUNDLE_POLICY, {
+      extractTo: (name) => join(unpacked, ...name.split("/")),
+    });
+    expect(unchecked(join(unpacked, "space.db"))).toBe(0);
+    expect(readFileSync(join(unpacked, "space.db")).includes(Buffer.from(token))).toBe(false);
+    expect(readFileSync(bundle.file).includes(Buffer.from(token))).toBe(false);
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const listed = listBackups(join(folder, "backups")).backups[0];
+    if (listed === undefined) throw new Error("the backup is listed");
+    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+    for (const file of [backup.file, bundle.file]) {
+      const restored = await restoreBackup(checked, file, join(folders.make(), "mira"));
+      expect(unchecked(join(restored.folder, "space.db")), file).toBe(0);
+    }
+  });
+
   test("a virtual table counts by its own text, its module's shadow tables by type and name, and a table named like one in full", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const conn = await rawWriter(folder);
@@ -949,24 +1111,29 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 2);
-    const conn = await rawWriter(folder);
-    try {
-      // Undoes the read-only mark and keeps the authority a claim would change.
-      conn.exec(
-        `CREATE TRIGGER undo_mark AFTER UPDATE ON space WHEN NEW.transfer IS NOT NULL
-         BEGIN UPDATE space SET transfer = NULL WHERE one = 1; END`,
-      );
-      conn.exec(
-        `CREATE TRIGGER keep_authority AFTER UPDATE OF authority_incarnation ON space
-         BEGIN UPDATE space SET authority_incarnation = OLD.authority_incarnation,
-           authority_epoch = OLD.authority_epoch WHERE one = 1; END`,
-      );
-    } finally {
-      conn.close();
-    }
+    const addTriggers = async (where: string): Promise<void> => {
+      const conn = await rawWriter(where);
+      try {
+        // Undoes the read-only mark and keeps the authority a claim would change.
+        conn.exec(
+          `CREATE TRIGGER undo_mark AFTER UPDATE ON space WHEN NEW.transfer IS NOT NULL
+           BEGIN UPDATE space SET transfer = NULL WHERE one = 1; END`,
+        );
+        conn.exec(
+          `CREATE TRIGGER keep_authority AFTER UPDATE OF authority_incarnation ON space
+           BEGIN UPDATE space SET authority_incarnation = OLD.authority_incarnation,
+             authority_epoch = OLD.authority_epoch WHERE one = 1; END`,
+        );
+      } finally {
+        conn.close();
+      }
+    };
+    await addTriggers(folder);
     const before = await readFacts(folder);
     const backup = await backupSpace(checked, folder, { kind: "manual" });
-    const bundle = await exportBundle(checked, folder, { mode: "backup" });
+    // The export leaves triggers out of its bundle; another tool's bundle may hold them.
+    const exported = await exportBundle(checked, folder, { mode: "backup" });
+    const bundle = await rebuildBundle(exported.file, addTriggers);
     const triggers = (where: string): number => {
       const opened = openSpace(checked, where, { role: "reader" });
       try {
@@ -979,7 +1146,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
         opened.conn.close();
       }
     };
-    for (const file of [backup.file, bundle.file]) {
+    for (const file of [backup.file, bundle]) {
       const restored = await restoreBackup(checked, file, join(folders.make(), "mira"));
       expect(triggers(restored.folder), file).toBe(0);
       await expectCode(
@@ -987,7 +1154,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
         "SPACE_READ_ONLY_COPY",
       );
     }
-    const inPlace = await restoreInPlace(checked, bundle.file, folder, { machineId: TEST_MACHINE });
+    const inPlace = await restoreInPlace(checked, bundle, folder, { machineId: TEST_MACHINE });
     expect(triggers(folder)).toBe(0);
     const writer = openSpace(checked, folder, { role: "writer" });
     try {
