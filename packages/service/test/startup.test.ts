@@ -352,9 +352,11 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     expect(stale?.message).toContain("tasks space claim <folder>");
     // Nothing was written: no machine registration, no migration, no backup.
     expect(existsSync(backupsFolder(space.folder))).toBe(false);
-    // "Use this restore as current": a restore claim above every epoch this machine has seen.
+    // "Use this restore as current": a restore claim above every epoch this machine has seen. Its
+    // change, which the service records before the space opens again, carries the lineage.
     const change = await second.spaceManager.claim(0);
     expect(change.epoch).toBe(2);
+    expect(change.lineage).toEqual([space.space.authority.incarnation, change.incarnation]);
     expect(second.spaces()).toEqual([{ entry: 0, state: "open", id }]);
     await second.stop();
     removeRuntimeDir(second);
@@ -388,14 +390,36 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     removeRuntimeDir(first);
     running.splice(running.indexOf(first), 1);
 
-    // A claim elsewhere was recorded as the service records it before the space opens again (its
-    // epoch and incarnation only), and nothing more: the folder's lower epoch is enough.
-    recordSeen(stateOf(home), id, { epoch: 2, incarnation: newId("ai") });
-    expect(readSpaceSettings(stateOf(home), id).seen?.lineage).toBeUndefined();
+    // A claim of a copy elsewhere, recorded as the service records it before the space opens
+    // again (a crash then leaves only this): its lineage holds the folder's incarnation, which is
+    // an ancestor, so the folder is stale.
+    const claimed = newId("ai");
+    recordSeen(stateOf(home), id, {
+      epoch: 2,
+      incarnation: claimed,
+      lastSeq: 1,
+      lineage: [incarnation, claimed],
+    });
     const second = await start(home, [{ path: space.folder, id }], { maintenance: false });
     expect(second.spaces()).toEqual([
       expect.objectContaining({ entry: 0, state: "read_only", reason: "stale_restore", id }),
     ]);
+    await second.stop();
+    removeRuntimeDir(second);
+    running.splice(running.indexOf(second), 1);
+
+    // A sibling: a later claim whose lineage does not hold the folder's incarnation (two claims of
+    // one backup). An epoch says nothing of descent, so it is not judged here (M3.08's competing
+    // branch), and the folder opens as before.
+    const sibling = newId("ai");
+    recordSeen(stateOf(home), id, {
+      epoch: 3,
+      incarnation: sibling,
+      lastSeq: 1,
+      lineage: [newId("ai"), sibling],
+    });
+    const third = await start(home, [{ path: space.folder, id }], { maintenance: false });
+    expect(third.spaces()).toEqual([{ entry: 0, state: "open", id }]);
   }, 180_000);
 
   test("an open that runs past its bound keeps watching its writer.lock: a loss then still ends the service with 70", async () => {
@@ -495,9 +519,14 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       restoreInPlace: async () => {
         asked += 1;
         await restoring;
+        const incarnation = newId("ai");
         return {
           space: { spaceId: space.space.spaceId },
-          claim: { epoch: 5, incarnation: newId("ai") },
+          claim: {
+            epoch: 5,
+            incarnation,
+            space: { lastSeq: 1, lineage: { incarnations: [{ incarnation }] } },
+          },
         };
       },
       close: () => Promise.resolve(),

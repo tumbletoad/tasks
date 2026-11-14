@@ -425,11 +425,29 @@ class Hosted {
   }
 }
 
-/** What a restore in place or a claim through the manager reports. Content-free. */
+/**
+ * What a restore in place or a claim through the manager reports. Content-free. The service
+ * records it as `seen` before the space opens again, with the new incarnation's last_seq and
+ * lineage, so a crash before that open leaves the ancestors recorded (A6 3.5).
+ */
 export interface SpaceChange {
   readonly epoch: number;
   readonly incarnation: Id<"ai">;
+  readonly lastSeq: number;
+  readonly lineage: readonly Id<"ai">[];
 }
+
+/** A claim's change, from the space row its commit left. */
+const changeOf = (claim: {
+  epoch: number;
+  incarnation: Id<"ai">;
+  space: { lastSeq: number; lineage: { incarnations: readonly { incarnation: Id<"ai"> }[] } };
+}): SpaceChange => ({
+  epoch: claim.epoch,
+  incarnation: claim.incarnation,
+  lastSeq: claim.space.lastSeq,
+  lineage: claim.space.lineage.incarnations.map((entry) => entry.incarnation),
+});
 
 export class SpaceManager {
   readonly #options: SpaceManagerOptions;
@@ -667,7 +685,7 @@ export class SpaceManager {
       this.#forgetFailures(restored.space.spaceId);
       return {
         spaceId: restored.space.spaceId,
-        change: { epoch: restored.claim.epoch, incarnation: restored.claim.incarnation },
+        change: changeOf(restored.claim),
       };
     });
   }
@@ -696,7 +714,7 @@ export class SpaceManager {
       });
       return {
         spaceId: claim.space.spaceId,
-        change: { epoch: claim.epoch, incarnation: claim.incarnation },
+        change: changeOf(claim),
       };
     });
   }
@@ -881,11 +899,7 @@ export class SpaceManager {
         info.authority.machineId === this.#options.machine.id &&
         // A read-only copy or a refusal is the writer's open's to judge.
         info.readOnlyReasons.every((reason) => reason === "older_revision") &&
-        staleAgainst(seen, {
-          epoch: info.authority.epoch,
-          incarnation: info.authority.incarnation,
-          lastSeq: info.lastSeq,
-        });
+        staleAgainst(seen, { incarnation: info.authority.incarnation, lastSeq: info.lastSeq });
       if (!stale) {
         await conn.close();
         return false;
