@@ -77,15 +77,22 @@ function keyOf(entity: InvertibleEntity, id: string): Record<string, string> {
   return { task, source };
 }
 
-/** A child row whose life keeps its parent's create from being inverted. */
+/**
+ * A child row whose life keeps its parent's create from being inverted: one that another commit
+ * created or revived, or one the creating commits made that holds another's write in any field.
+ */
 interface Child {
   readonly entity: ConflictEntity;
   /** Its `changes.entity_id`, as SQL. */
   readonly key: string;
   /** The task it belongs to, as SQL. */
   readonly task: string;
-  /** The rows of the parent `$parent`. */
+  /** The column naming its parent, which the query matches against `$parents`. */
   readonly parent: string;
+  /** A further condition on its rows, as SQL, or "". */
+  readonly where: string;
+  /** Its logical fields (fields.ts), its tombstone among them. */
+  readonly fields: Readonly<Record<string, readonly string[]>>;
   /** Its tombstone field and that field's column. */
   readonly field: "deleted" | "removed";
   readonly column: "deleted_at" | "removed_at";
@@ -95,11 +102,24 @@ const LINK_KEY = "task_id || '|' || source_id";
 
 /** A1 3.10: a task's notes, log entries, learnings, links, attachments and places. */
 const TASK_CHILDREN: readonly Child[] = [
-  ...(["notes", "log_entries", "learnings", "attachments"] as const).map((entity): Child => ({
+  ...(["notes", "log_entries"] as const).map((entity): Child => ({
     entity,
     key: "id",
     task: "task_id",
-    parent: "task_id = $parent",
+    parent: "task_id",
+    where: "",
+    fields: CHILD_FIELDS[entity],
+    field: "deleted",
+    column: "deleted_at",
+  })),
+  // Schema 0.2's rows that no operation writes yet: their tombstone is their one field so far.
+  ...(["learnings", "attachments"] as const).map((entity): Child => ({
+    entity,
+    key: "id",
+    task: "task_id",
+    parent: "task_id",
+    where: "",
+    fields: { deleted: ["deleted_at"] },
     field: "deleted",
     column: "deleted_at",
   })),
@@ -107,7 +127,9 @@ const TASK_CHILDREN: readonly Child[] = [
     entity: "task_sources",
     key: LINK_KEY,
     task: "task_id",
-    parent: "task_id = $parent",
+    parent: "task_id",
+    where: "",
+    fields: CHILD_FIELDS.task_sources,
     field: "removed",
     column: "removed_at",
   },
@@ -115,7 +137,9 @@ const TASK_CHILDREN: readonly Child[] = [
     entity: "task_labels",
     key: "task_id || '|' || label_id",
     task: "task_id",
-    parent: "task_id = $parent",
+    parent: "task_id",
+    where: "",
+    fields: { removed: ["removed_at"] },
     field: "removed",
     column: "removed_at",
   },
@@ -123,7 +147,9 @@ const TASK_CHILDREN: readonly Child[] = [
     entity: "places",
     key: "id",
     task: "owner_id",
-    parent: "owner_kind = 'task' AND owner_id = $parent",
+    parent: "owner_id",
+    where: " AND owner_kind = 'task'",
+    fields: CHILD_FIELDS.places,
     field: "deleted",
     column: "deleted_at",
   },
@@ -135,7 +161,9 @@ const SOURCE_CHILDREN: readonly Child[] = [
     entity: "task_sources",
     key: LINK_KEY,
     task: "task_id",
-    parent: "source_id = $parent",
+    parent: "source_id",
+    where: "",
+    fields: CHILD_FIELDS.task_sources,
     field: "removed",
     column: "removed_at",
   },
@@ -146,11 +174,52 @@ const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = 
   sources: SOURCE_CHILDREN,
 };
 
-/** The live children of one parent, with the version of each one's tombstone field. */
+/**
+ * The live children of every parent in `$parents` (a JSON array of IDs), in one statement per
+ * child table: an importer's commit creates thousands of rows, and a source's links have no index
+ * by source, so a statement per created row would scan the links once per source.
+ */
 const childSql = (c: Child): string =>
-  `SELECT ${c.key} AS id, ${c.task} AS task, created_seq, ` +
-  `coalesce(json_extract(fv, '$.${c.field}'), created_seq) AS version ` +
-  `FROM ${c.entity} WHERE ${c.parent} AND ${c.column} IS NULL`;
+  `SELECT ${c.key} AS key, ${c.task} AS task, ${c.parent} AS parent, * FROM ${c.entity} ` +
+  `WHERE ${c.parent} IN (SELECT value FROM json_each($parents))${c.where} AND ${c.column} IS NULL ` +
+  `ORDER BY created_seq, key`;
+
+/** A live child row of a parent the plan may tombstone. */
+interface Kid {
+  readonly child: Child;
+  /** Its `changes.entity_id`. */
+  readonly id: string;
+  readonly task: Id<"t"> | null;
+  readonly state: RowState;
+}
+
+/** The live children of each row `changes` creates, by `<entity>|<id>` of the parent. */
+function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<string, Kid[]> {
+  const kids = new Map<string, Kid[]>();
+  for (const [entity, children] of Object.entries(CHILDREN)) {
+    const parents = changes
+      .filter((ch) => ch.action === "create" && ch.entity === entity)
+      .map((ch) => ch.entityId);
+    if (parents.length === 0) continue;
+    for (const child of children) {
+      const rows = conn.prepare(childSql(child)).all({ parents: JSON.stringify(parents) });
+      for (const row of rows) {
+        const r = new RowReader(child.entity, row);
+        const key = `${entity}|${r.text("parent")}`;
+        const kid: Kid = {
+          child,
+          id: r.text("key"),
+          task: r.optText("task", (v) => isId(v, "t")) as Id<"t"> | null,
+          state: rowState(child.entity, row, child.fields),
+        };
+        const list = kids.get(key);
+        if (list === undefined) kids.set(key, [kid]);
+        else list.push(kid);
+      }
+    }
+  }
+  return kids;
+}
 
 const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
@@ -324,6 +393,24 @@ export function planInversions(
   const plan: InversionPlan = { inversions: [], conflicts: [] };
   const rows = new Map<string, RowState>();
   const refs = new Map<string, string>();
+  const kids = liveChildren(conn, changes);
+  /**
+   * Each (row, field) is named once: a child row of a create can block both its own create and
+   * its parent's. The first naming stays, completed by what a later one knows (`wrote`).
+   */
+  const named = new Map<string, FieldConflict>();
+  const blocked = (c: FieldConflict): void => {
+    const key = `${c.entity}|${c.id}|${c.field}`;
+    const earlier = named.get(key);
+    if (earlier === undefined) {
+      named.set(key, c);
+      plan.conflicts.push(c);
+    } else {
+      for (const [k, v] of Object.entries(c)) {
+        if (!Object.hasOwn(earlier, k)) Object.assign(earlier, { [k]: v as unknown });
+      }
+    }
+  };
   const read = (entity: InvertibleEntity, id: string): RowState => {
     const key = `${entity}|${id}`;
     let row = rows.get(key);
@@ -407,7 +494,7 @@ export function planInversions(
       if (columns === undefined) throw invalidValue("changes", "field");
       const restore = change.before ?? "null";
       if (provenanceOf(row, field) !== change.afterProv) {
-        plan.conflicts.push(
+        blocked(
           fieldConflict(entity, id, change.taskId, field, {
             wrote: parsed(change.after),
             restore: parsed(restore),
@@ -420,7 +507,7 @@ export function planInversions(
         field === table.tombstone && restore === "null" ? takenBy(conn, entity, row) : undefined;
       if (taken !== undefined) {
         const other = rowState(entity, taken.row, table.fields);
-        plan.conflicts.push(
+        blocked(
           conflict(
             {
               entity,
@@ -447,8 +534,8 @@ export function planInversions(
       continue;
     }
 
-    // A create: every field holds a write of the creating commits, and no live child row is
-    // another's (A1 3.10).
+    // A create: every field holds a write of the creating commits, and every live child row is
+    // theirs and holds only their writes (A1 3.10).
     const created = parsed(change.after);
     if (typeof created !== "object" || created === null || Array.isArray(created)) {
       throw invalidValue("changes", "after");
@@ -457,28 +544,33 @@ export function planInversions(
     for (const [field, columns] of Object.entries(table.fields)) {
       if (options.creating.has(provenanceOf(row, field))) continue;
       passes = false;
-      plan.conflicts.push(
+      blocked(
         fieldConflict(entity, id, change.taskId, field, {
           wrote: columnsValue(created as Record<string, unknown>, columns),
         }),
       );
     }
-    for (const child of CHILDREN[entity] ?? []) {
-      for (const kid of conn.prepare(childSql(child)).all({ parent: id })) {
-        const k = new RowReader(child.entity, kid);
-        if (options.creating.has(k.int("created_seq", "seq"))) continue;
+    for (const kid of kids.get(`${entity}|${id}`) ?? []) {
+      const { child, state } = kid;
+      // Another's row is named by its tombstone, with who created or revived it; a row of the
+      // creating commits by each field another wrote since, so that a partial inversion keeps the
+      // parent, and the row stays reachable, too.
+      const theirs = !options.creating.has(state.createdSeq);
+      const fields = theirs
+        ? [child.field]
+        : Object.keys(child.fields).filter((f) => !options.creating.has(provenanceOf(state, f)));
+      for (const field of fields) {
         passes = false;
-        const task = k.optText("task", (v) => isId(v, "t")) as Id<"t"> | null;
-        plan.conflicts.push(
+        blocked(
           conflict(
             {
               entity: child.entity,
-              id: k.text("id"),
-              ...(task === null ? {} : { task }),
-              field: child.field,
-              value: null,
+              id: kid.id,
+              ...(kid.task === null ? {} : { task: kid.task }),
+              field,
+              value: theirs ? null : columnsValue(state.raw, child.fields[field] ?? []),
             },
-            k.int("version", "seq"),
+            versionOf(state, field),
           ),
         );
       }

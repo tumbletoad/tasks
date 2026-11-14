@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
+import { planInversions, readChanges } from "../src/write/history.ts";
 import type { Credential, Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
@@ -482,6 +483,79 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     ]);
     expect(task(id)["deleted_at"]).toBeNull();
     expect(commitAt(mine.seq)["undo_status"]).toBe("undone");
+  });
+
+  test("a child row that holds another's write keeps its task, in a partial undo too", () => {
+    const id = newId("t");
+    const c = applied(
+      write([
+        { kind: "task.create", id, title: "Plant bulbs" },
+        { kind: "place.set", task: id, root: "home", path: "garden" },
+      ]),
+    );
+    // Codex binds the place Mira created to another folder: its row is hers, its folder is not.
+    const theirs = applied(
+      write([{ kind: "place.set", task: id, root: "home", path: "garden/beds" }], "codex"),
+    );
+    const place = String(one("SELECT id FROM places WHERE owner_id = $id", { id }));
+    const refused = undo();
+    expectStatus(refused, "conflict");
+    // Named once, though it blocks both the place's own create and its task's.
+    expect(refused.conflicts).toMatchObject([
+      { entity: "places", id: place, task: id, field: "folder", version: theirs.seq },
+    ]);
+    expect(refused.conflicts).toHaveLength(1);
+    // A partial undo leaves the task too: a tombstone would hide Codex's folder with it.
+    const u = applied(undo({ partial: true }));
+    expect(changesAt(u.seq)).toEqual([]);
+    expect(u.conflicts).toMatchObject([{ entity: "places", id: place, field: "folder" }]);
+    expect(task(id)["deleted_at"]).toBeNull();
+    expect(row("SELECT rel_path, deleted_at FROM places WHERE id = $place", { place })).toEqual({
+      rel_path: "garden/beds",
+      deleted_at: null,
+    });
+    expect(commitAt(c.seq)["undo_status"]).toBe("undone");
+  });
+
+  test("a create's child rows are read once per table, however many rows it created", () => {
+    const ops: Operation[] = [];
+    for (let k = 0; k < 25; k += 1) {
+      const id = newId("t");
+      ops.push(
+        { kind: "task.create", id, title: `Fixture task ${String(k + 1)}` },
+        {
+          kind: "source.add",
+          task: id,
+          source: { kind: "web", title: "Fixture guide", key: `web:fixture-guide-${String(k)}` },
+        },
+      );
+    }
+    const c = applied(write(ops));
+    // Statements that look for live child rows, counted on a connection that only reads.
+    let scans = 0;
+    const counting = new Proxy(fx.reader, {
+      get(target, key) {
+        if (key === "prepare") {
+          return (sql: string) => {
+            if (/(deleted_at|removed_at) IS NULL/u.test(sql)) scans += 1;
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, key) as unknown;
+        return typeof value === "function" ? (value as () => unknown).bind(target) : value;
+      },
+    });
+    const plan = planInversions(counting, readChanges(fx.reader, c.seq), {
+      creating: new Set([c.seq]),
+      refPrefix: "MI",
+      partial: false,
+      op: 0,
+    });
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.inversions).toHaveLength(75);
+    // One per child table of a task and one for a source's links, never one per created row: an
+    // importer's commit holds thousands, and a source's links have no index by source.
+    expect(scans).toBeLessThanOrEqual(8);
   });
 
   test("a restore never takes a place or a source key another row holds now", () => {
