@@ -31,7 +31,7 @@
 // no identity, and then nothing resolves there (`identity_unavailable`), by design.
 //
 // Errors and results never carry a path out of this machine: a reason names the root ID only.
-import { lstat, realpath, stat } from "node:fs/promises";
+import { lstat, readlink, realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import type { BigIntStats } from "node:fs";
 import { readGitRemote, type GitRemote } from "./git-remote.ts";
@@ -48,7 +48,7 @@ export const RESOLVE_REASONS = [
   "root_unavailable",
   /** The place's folder is not there or cannot be reached (a dangling link included). */
   "path_missing",
-  /** The place is a folder and a file is there. */
+  /** The place is a folder and a file is there (through a link to a file included). */
   "not_a_directory",
   /** The place is a file and something else is there. */
   "not_a_file",
@@ -280,6 +280,31 @@ export function absoluteFolder(
 
 const bigStat = (path: string): Promise<BigIntStats> => stat(path, { bigint: true });
 
+/**
+ * Why a path whose stat failed names no folder: `not_a_directory` when it is a link that leads,
+ * through its own chain of links, to something there that is not a folder, `path_missing`
+ * otherwise. Linux and macOS follow a link to a file, so the stat itself says `not_a_directory`;
+ * Windows cannot follow a junction or a directory link to a file, and its stat says the path is
+ * missing. Read only after the stat failed, so it decides which refusal is given and never that a
+ * place resolves: the reason is the same on every platform (A1 3.15).
+ */
+async function missingReason(
+  path: string,
+  P: PlatformPath,
+): Promise<"path_missing" | "not_a_directory"> {
+  let at = path;
+  for (let hops = 0; hops <= 32; hops += 1) {
+    try {
+      const entry = await lstat(at);
+      if (!entry.isSymbolicLink()) return entry.isDirectory() ? "path_missing" : "not_a_directory";
+      at = P.resolve(P.dirname(at), await readlink(at));
+    } catch {
+      return "path_missing";
+    }
+  }
+  return "path_missing";
+}
+
 /** The largest file number, which Windows gives when a file's ID does not fit (ReFS). */
 const NO_FILE_ID = 2n ** 64n - 1n;
 
@@ -414,13 +439,13 @@ export async function resolvePlace(
   }
   // The place through the root as configured, in one stat: what it names at this moment.
   const named = segments.length === 0 ? base.given : P.join(base.given, ...segments);
+  const kind = place.kind ?? "folder";
   let found: BigIntStats;
   try {
     found = await bigStat(named);
   } catch {
-    return failed("path_missing");
+    return failed(kind === "folder" ? await missingReason(named, P) : "path_missing");
   }
-  const kind = place.kind ?? "folder";
   if (kind === "folder" ? !found.isDirectory() : !found.isFile()) {
     return failed(kind === "file" ? "not_a_file" : "not_a_directory");
   }
@@ -550,7 +575,11 @@ export async function placeOf(
   let real: string;
   try {
     found = await bigStat(ready.path);
-    if (!found.isDirectory()) return failed("not_a_directory");
+  } catch {
+    return failed(await missingReason(ready.path, P));
+  }
+  if (!found.isDirectory()) return failed("not_a_directory");
+  try {
     real = await realpath(ready.path);
   } catch {
     return failed("path_missing");

@@ -118,6 +118,39 @@ describe("[A1.3.15.places.resolve] resolve(): one folder or a reason, never anot
     });
   });
 
+  test("a link to a file is not_a_directory on every platform, a dangling link path_missing", async () => {
+    // Windows cannot follow a junction to a file (its stat says the path is missing); Linux
+    // follows a link to a file. The reason is the same on both: a file is there, not a folder.
+    const { base, work, roots } = world();
+    folder(work, "c d");
+    writeFileSync(join(work, "c d", "e.f"), "x");
+    linkFolder(join(work, "c d", "e.f"), join(work, "to-file"));
+    linkFolder(join(work, "to-file"), join(work, "to-link"));
+    linkFolder(join(base, "nowhere", "e.f"), join(work, "dangling"));
+    const refused = (reason: string) => ({ status: "failed", reason, root: "work" });
+    for (const [path, reason] of [
+      ["to-file", "not_a_directory"],
+      ["to-link", "not_a_directory"],
+      ["c d/e.f", "not_a_directory"],
+      ["to-file/b", "path_missing"],
+      ["dangling", "path_missing"],
+    ] as const) {
+      expect([path, await resolvePlace({ root: "work", path }, roots)]).toEqual([
+        path,
+        refused(reason),
+      ]);
+    }
+    // The way back gives the same reason.
+    expect(await placeOf(join(work, "to-file"), roots)).toEqual({
+      status: "failed",
+      reason: "not_a_directory",
+    });
+    expect(await placeOf(join(work, "dangling"), roots)).toEqual({
+      status: "failed",
+      reason: "path_missing",
+    });
+  });
+
   test("a link inside the root that stays inside names the folder it leads to", async () => {
     const { work, roots } = world();
     const target = folder(work, "repos", "portal");
