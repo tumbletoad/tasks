@@ -258,6 +258,38 @@ describe("[A1.5.projection.folders] a folder of the tree that went missing or be
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
+  test("open/ removed during a batch, and the run killed before its rebuild: the loss is still seen at the next start", async () => {
+    const projector = w.projector();
+    await projector.start();
+    await settle(projector);
+    const [a] = activeIds();
+    w.submit([{ kind: "task.patch", task: a ?? "", set: { summary: "Removed mid-batch" } }]);
+    let hit: () => void = () => undefined;
+    const killed = new Promise<void>((resolve) => {
+      hit = resolve;
+    });
+    const doomed = w.projector({
+      at: (point) => {
+        // After the batch's own check of its folders, before it places anything.
+        if (point === "journal") rmSync(join(w.dir, "open"), { recursive: true, force: true });
+        if (point !== "record") return;
+        hit();
+        return new Promise<void>(() => undefined);
+      },
+    });
+    await doomed.start();
+    void doomed.step();
+    await killed;
+
+    const after = w.projector();
+    expect((await after.start()).rebuild).toBe(true);
+    await settle(after);
+    expectClean(w.dir);
+    expectCatalogInTree(w.dir);
+    checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
   test("the projection's folder removed while it runs: it is made again and rebuilt", async () => {
     const projector = w.projector();
     await projector.start();

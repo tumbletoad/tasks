@@ -283,7 +283,7 @@ export class Projector {
     // Only now: until the record above is written, the journal is what a next start plays.
     this.#tree.dropJournal();
     this.#unsaved = false;
-    this.#folders = foldersOf(this.#rec);
+    this.#useFolders(foldersOf(this.#rec));
     const rescued = this.#tree.rescued;
     return {
       rebuild,
@@ -355,7 +355,7 @@ export class Projector {
     }
     this.#record = record;
     // The new record has no task yet: no folder of the old tree is looked for again.
-    this.#folders = foldersOf(record);
+    this.#useFolders(foldersOf(record));
     this.#save();
     await this.#queue();
   }
@@ -374,6 +374,15 @@ export class Projector {
     this.#unsaved = true;
     this.#tree.writeRecord(this.#rec);
     this.#unsaved = false;
+  }
+
+  /**
+   * The folders the record has files in: pending() looks for them, and a write never makes one of
+   * them again (tree.ts setKnownFolders), so a lost folder stays lost until the rebuild.
+   */
+  #useFolders(folders: Set<string>): void {
+    this.#folders = folders;
+    this.#tree.setKnownFolders(folders);
   }
 
   /**
@@ -481,7 +490,7 @@ export class Projector {
       }
     }
     if (unsaved !== undefined) throw unsaved;
-    this.#folders = foldersOf(record);
+    this.#useFolders(foldersOf(record));
     if (lost) {
       await this.#rebuild(record, read.space);
       return this.#report(read.seq, watermark, true, counts, false, code);

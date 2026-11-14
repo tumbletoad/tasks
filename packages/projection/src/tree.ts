@@ -252,6 +252,8 @@ export class Tree {
   #folders = new Set<string>();
   /** Folders of the tree found missing, or not real (a link, a file), in this batch. */
   #lost = new Set<string>();
+  /** The folders the record has files in (projector.ts): a write never makes one of them again. */
+  #known: ReadonlySet<string> = new Set();
   /** This batch's rescue folder, relative to the space's folder, once one was made. */
   #box: string | undefined;
   #rescued = 0;
@@ -282,6 +284,15 @@ export class Tree {
   /** The folders of the tree this batch found missing or not real: what the record had there is gone. */
   get lostFolders(): ReadonlySet<string> {
     return this.#lost;
+  }
+
+  /**
+   * The folders the record has files in, each with its parents. A write that finds one of them
+   * missing or not real fails instead of making it again: the folder stays lost until the tree is
+   * rebuilt, so a kill before the rebuild cannot hide the loss from the next start.
+   */
+  setKnownFolders(folders: ReadonlySet<string>): void {
+    this.#known = folders;
   }
 
   #abs(path: string): string {
@@ -392,7 +403,8 @@ export class Tree {
   /**
    * Makes sure every folder of `folder` (relative, `/`-separated) is a real folder of the tree. A
    * file or a link where one belongs is rescued, then the folder is made with mode 0700. A folder
-   * that was missing or rescued is reported lost.
+   * that was missing or not real is reported lost; one the record has files in is left as it is,
+   * and the write fails (setKnownFolders).
    */
   #folder(folder: string): void {
     let rel = "";
@@ -404,6 +416,12 @@ export class Tree {
       // lstat: a link, a junction included, is never a folder here.
       const real = stats?.isDirectory() === true;
       if (!real) this.#lost.add(rel);
+      if (!real && this.#known.has(rel)) {
+        throw new ProjectionError(
+          stats === undefined ? "ENOENT" : "ENOTDIR",
+          "A folder of the tree is gone: the tree is rebuilt first",
+        );
+      }
       if (stats !== undefined && !real) this.#rescueAt(rel, abs);
       if (!real) makeDir(abs, FOLDER_MODE, { recursive: false });
       this.#folders.add(rel);

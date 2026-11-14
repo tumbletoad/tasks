@@ -2867,7 +2867,7 @@
     },
     {
       "id": "A1.5.projection.folders",
-      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a removal or a read through it touches nothing behind it, a link is rescued, and the tree is rebuilt, also when the folder or the projection's own folder is removed while nothing changes, so the catalogue names only files in the tree; a rebuild removes the old claim, catalogue and index first",
+      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a removal or a read through it touches nothing behind it, a link is rescued, and the tree is rebuilt, also when the folder or the projection's own folder is removed while nothing changes, and when it is removed during a batch killed before its rebuild, so the catalogue names only files in the tree; a rebuild removes the old claim, catalogue and index first",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
