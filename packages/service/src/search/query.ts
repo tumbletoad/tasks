@@ -174,7 +174,8 @@ export function suggest(
   aliases: Readonly<Record<string, string>> = {},
 ): string[] {
   const w = word.toLowerCase();
-  const alias = aliases[w];
+  // An own entry only: `constructor` is no alias, whatever every object inherits.
+  const alias = Object.hasOwn(aliases, w) ? aliases[w] : undefined;
   if (alias !== undefined) return [alias];
   return options
     .map((option) => ({ option, d: distance(w, option.toLowerCase()) }))
@@ -386,7 +387,13 @@ export function parseQuery(given: string): Query {
   const kept = groups
     .map((group) => group.filter((t) => t.type === "filter" || SEARCHABLE.test(t.text)))
     .filter((group) => group.length > 0);
-  return { groups: kept };
+  const query = { groups: kept };
+  // `parsed` is a query too: printing closes an open phrase and quotes a value with a quote, so
+  // the printed form is held to the same limit, and parsing it again always succeeds.
+  if (Array.from(printQuery(query)).length > QUERY_LIMITS.length) {
+    throw queryProblem("The query is longer than 500 characters");
+  }
+  return query;
 }
 
 /** A character FTS5's unicode61 keeps in a token: its default categories L*, N* and Co. */

@@ -6,7 +6,7 @@ import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { AppError } from "@tasks/contracts";
 import { queryText } from "../../test/search-queries.ts";
-import { namesLifecycle, parseQuery, printQuery, type Query } from "./query.ts";
+import { namesLifecycle, parseQuery, printQuery, QUERY_LIMITS, type Query } from "./query.ts";
 
 function refusal(fn: () => unknown): AppError {
   try {
@@ -70,6 +70,23 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(JSON.stringify(error.toBody())).not.toMatch(/prio|secret-word/);
     expect(refusal(() => parseQuery("stauts:open")).hint).toBe("Did you mean status?");
     expect(refusal(() => parseQuery("is:inbx")).hint).toBe("Did you mean inbox?");
+    // Only the language's own words: never a property every object inherits.
+    for (const inherited of ["constructor", "toString", "hasOwnProperty"]) {
+      const odd = refusal(() => parseQuery(`${inherited}:x`));
+      expect(odd.code).toBe("invalid_input");
+      expect(odd.hint ?? "").not.toMatch(/function|native/);
+      for (const s of (odd.data["suggestions"] as unknown[] | undefined) ?? []) {
+        expect(typeof s).toBe("string");
+      }
+    }
+  });
+
+  test("an accepted query's parsed form is itself within the limits", () => {
+    // An open phrase at the length limit prints with its closing quote: one character more.
+    expect(refusal(() => parseQuery(`"${"a".repeat(499)}`)).code).toBe("invalid_input");
+    expect(refusal(() => parseQuery(`area:${"x".repeat(493)}"y`)).code).toBe("invalid_input");
+    const fits = `"${"a".repeat(497)}"`;
+    expect(printQuery(parseQuery(fits))).toBe(fits);
   });
 
   test("OR, negation, limits and values are checked", () => {
@@ -141,6 +158,7 @@ describe("[A3.5.search.parser] the query language", () => {
           return;
         }
         const printed = printQuery(query);
+        expect(Array.from(printed).length).toBeLessThanOrEqual(QUERY_LIMITS.length);
         expect(parseQuery(printed)).toEqual(query);
         expect(printQuery(parseQuery(printed))).toBe(printed);
       }),
