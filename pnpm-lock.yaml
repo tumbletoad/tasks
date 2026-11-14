@@ -274,6 +274,10 @@ importers:
   packages/files: {}
 
   packages/importer-planning:
+    dependencies:
+      '@tasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       fast-check:
         specifier: 4.10.2
