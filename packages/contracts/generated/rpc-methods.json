@@ -846,6 +846,24 @@
             "pattern": "^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$",
             "type": "string"
           },
+          "source": {
+            "additionalProperties": false,
+            "description": "What was copied: the apply checks it again",
+            "properties": {
+              "actions": {
+                "description": "The actions export, as copied",
+                "type": "string"
+              },
+              "folder": {
+                "description": "The prototype folder, as copied",
+                "type": "string"
+              }
+            },
+            "required": [
+              "folder"
+            ],
+            "type": "object"
+          },
           "sources_by_kind": {
             "description": "Sources per kind",
             "items": {
@@ -1026,6 +1044,7 @@
         "required": [
           "run",
           "folder",
+          "source",
           "blocked",
           "time_zone",
           "options",

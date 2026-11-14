@@ -73,6 +73,8 @@ export interface PreviewRun {
   readonly run: string;
   /** The run's folder in the space. */
   readonly folder: string;
+  /** What was copied: the prototype folder and the actions export, as given. */
+  readonly source: { readonly folder: string; readonly actions?: string };
   /** The options the plan was made with; `roots` holds every root of `roots` below. */
   readonly options: MappingOptions;
   readonly roots: readonly PreviewRoot[];
@@ -370,6 +372,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
   const report: ImportPlanningPreviewResult = {
     run: run.run,
     folder: run.folder,
+    source: run.source,
     blocked,
     ...(blocked ? {} : { token: previewToken(plan, run) }),
     time_zone: run.options.timeZone,

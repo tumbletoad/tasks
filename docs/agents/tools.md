@@ -175,6 +175,9 @@ Dry run of the Planning prototype import: a report and a preview token.
 |---|---|---|---|
 | `run` | string | yes | The run: --apply names it |
 | `folder` | string | yes | The run's folder in the space: input copy and reports |
+| `source` | object | yes | What was copied: the apply checks it again |
+| `source.folder` | string | yes | The prototype folder, as copied |
+| `source.actions` | string | no | The actions export, as copied |
 | `blocked` | boolean | yes | An error blocks the preview: no token |
 | `token` | string | no | The preview token --apply needs |
 | `time_zone` | string | yes | IANA zone the days are placed in |
@@ -293,6 +296,9 @@ Result:
 {
   "run": "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
   "folder": "/home/mira/.tasks/spaces/mira/exchange/planning/ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+  "source": {
+    "folder": "/home/mira/planning"
+  },
   "blocked": false,
   "token": "pv1_AtekacJbssQkxs2yO8RxABLlpCsi-6x_RmcCKsW-RuY",
   "time_zone": "Europe/Lisbon",

@@ -40,6 +40,7 @@ const space: PreviewRun["space"] = {
 const runOf = (more: Partial<PreviewRun> = {}): PreviewRun => ({
   run: "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
   folder: "/home/mira/.tasks/spaces/mira/exchange/planning/ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+  source: { folder: "/home/mira/planning" },
   options,
   roots: [{ id: "work", folder: "/home/mira/work", origin: "machine" }],
   inputs: [

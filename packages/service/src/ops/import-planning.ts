@@ -186,6 +186,10 @@ export async function planningPreview(
   const preview = previewOf(parse, plan, {
     run,
     folder,
+    source: {
+      folder: source,
+      ...(actionsSource === undefined ? {} : { actions: actionsSource }),
+    },
     options,
     roots,
     inputs: copied.files,

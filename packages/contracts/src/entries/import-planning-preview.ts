@@ -91,6 +91,12 @@ const Place = z.strictObject({
 export const ImportPlanningPreviewResult = z.strictObject({
   run: z.string().regex(IMPORT_RUN).describe("The run: --apply names it"),
   folder: z.string().describe("The run's folder in the space: input copy and reports"),
+  source: z
+    .strictObject({
+      folder: z.string().describe("The prototype folder, as copied"),
+      actions: z.string().describe("The actions export, as copied").optional(),
+    })
+    .describe("What was copied: the apply checks it again"),
   blocked: z.boolean().describe("An error blocks the preview: no token"),
   token: z.string().regex(PREVIEW_TOKEN).describe("The preview token --apply needs").optional(),
   time_zone: z.string().describe("IANA zone the days are placed in"),
@@ -225,6 +231,7 @@ export const importPlanningPreview = defineEntry({
       output: {
         run: "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
         folder: "/home/mira/.tasks/spaces/mira/exchange/planning/ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+        source: { folder: "/home/mira/planning" },
         blocked: false,
         token: "pv1_AtekacJbssQkxs2yO8RxABLlpCsi-6x_RmcCKsW-RuY",
         time_zone: "Europe/Lisbon",
