@@ -1675,7 +1675,7 @@
     },
     {
       "id": "A3.3.7.binding.user-ops",
-      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them",
+      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them; a change waits for a reference bind that waits on its launch, and a write that read its binding before the change writes nothing",
       "source": "A3 3.7.3, A3 3.2.3, A3 5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",

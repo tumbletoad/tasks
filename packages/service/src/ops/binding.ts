@@ -167,4 +167,10 @@ export interface BindingPort {
    * says it was opened by reference and is not tracked.
    */
   untracked(launch: string): void;
+  /**
+   * Whether the session goes on: its record is here and has not ended. A write acting as a session
+   * asks right before the writer gets it, so a user's end, unbind or rebind that landed while the
+   * call ran stops it (A3 3.7.3).
+   */
+  goesOn(session: string): boolean;
 }

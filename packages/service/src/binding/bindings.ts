@@ -1129,6 +1129,11 @@ export class Bindings implements BindingPort {
     return session.native.some((n) => n.source === source && n.trust !== "presented");
   }
 
+  goesOn(session: string): boolean {
+    const record = this.#sessions.get(session);
+    return record !== undefined && record.ended_at === undefined;
+  }
+
   /** A session as the user's commands name it, or undefined. */
   session(id: string): BoundSession | undefined {
     const found = this.#sessions.get(id);

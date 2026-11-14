@@ -576,6 +576,22 @@ function intentInput(input: Record<string, unknown>): Record<string, unknown> {
  * found before the writer (a place bound without a remote check): the writer keeps them with an
  * accepted result, so they come back in `result.warnings`, and a replay returns the first call's.
  */
+/**
+ * A3 3.7.3: a write acting as a session goes to the writer only while that session goes on. The
+ * user's end, unbind or rebind may land after the call read its binding (`use`); the call then
+ * writes nothing, and its retry acts as its connection is bound now.
+ */
+function checkSession(call: Call): void {
+  const session = call.principal.session;
+  const bindings = call.host.bindings;
+  if (session === undefined || bindings === undefined || bindings.goesOn(session)) return;
+  throw new AppError({
+    code: "unbound",
+    message: `Your ${PRODUCT_NAME} session ended while this call ran: nothing was written.`,
+    hint: "Call again: the call then acts as your session is now. Pass task, or ask the user.",
+  });
+}
+
 async function submit(
   call: Call,
   ops: Operation[],
@@ -599,6 +615,7 @@ async function submit(
     // read and staged stops it before its actor is registered, and once more (below) before the
     // writer gets the request.
     checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    checkSession(call);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
@@ -624,9 +641,11 @@ async function submit(
       intent: { entry: call.entry.name, input: intentInput(input) },
       ops,
     };
-    // The last step before the writer: no write is handed over after the revoke took effect. Only
-    // a request the writer holds already can still commit.
+    // The last step before the writer: no write is handed over after the revoke took effect, or
+    // as a session the user ended, unbound or rebound meanwhile (A3 3.7.3). Only a request the
+    // writer holds already can still commit.
     checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    checkSession(call);
     // An unbound connection's write was registered when its call started (`opCall`), so a retry
     // after a lost reply, once bound, still finds this receipt.
     result = await writer.submit(request);

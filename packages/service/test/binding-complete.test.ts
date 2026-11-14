@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import { newId } from "@tasks/storage";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
-import { opCall, type Slot } from "../src/ops/index.ts";
+import { opCall, type BindingPort, type Slot } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
@@ -346,6 +346,75 @@ describe("[A3.3.7.binding.user-ops] the user ends, unbinds and rebinds a session
         shell.close();
         agent.close();
       }
+    },
+  );
+
+  test(
+    "a write that read its binding before the user's end writes nothing, and its retry acts as the connection is now",
+    { timeout: LONG },
+    async () => {
+      const real = w.service.bindings;
+      const agent = await connect();
+      await agent.tool("get_task", { task: "M-3", bind: true });
+      const session = agent.slot.session?.id ?? "";
+      expect(session).not.toBe("");
+      // The end lands right after the call read its binding: the slot keeps the session it read,
+      // as a call does whose principal was computed before the end.
+      agent.close();
+      let armed = true;
+      const racing: BindingPort = {
+        redeem: (slot, launch) => real.redeem(slot, launch),
+        bindTask: (slot, space, task) => real.bindTask(slot, space, task),
+        pin: (slot, space) => {
+          real.pin(slot, space);
+        },
+        use: async (slot) => {
+          await real.use(slot);
+          if (armed) {
+            armed = false;
+            await real.end(session);
+          }
+        },
+        liveSessions: (space) => real.liveSessions(space),
+        sessionsOf: (space, task) => real.sessionsOf(space, task),
+        untracked: (launch) => {
+          real.untracked(launch);
+        },
+        goesOn: (id) => real.goesOn(id),
+      };
+      const call = toolCaller({
+        ops: { ...w.service.ops, bindings: racing },
+        context: bridgeContext({ space: w.space, instance: "done-agent" }),
+        conn: 2,
+        slot: agent.slot,
+        bindings: real,
+      });
+      const text = async (args: Json) => {
+        const result = await call("add_entry", args, undefined);
+        return result.content
+          .flatMap((item) => (item.type === "text" ? [item.text] : []))
+          .join("\n");
+      };
+      const request = rid();
+      const args = {
+        task: "M-3",
+        kind: "progress",
+        text: "Fixture progress racing the end.",
+        request_id: request,
+      };
+      const refused = await text(args);
+      expect(refused).toMatch(/^error unbound/);
+      expect(refused).toContain("nothing was written");
+      const log = async () =>
+        ((await user("task.get", { task: "M-3", sections: ["log"] }))["sections"] as Json)[
+          "log"
+        ] as Json[];
+      expect((await log()).some((entry) => entry["text"] === args.text)).toBe(false);
+      // The retry: the connection's session ended, so the call acts as its unbound agent home.
+      const retried = await text(args);
+      expect(retried).toContain("on M-3");
+      const written = (await log()).filter((entry) => entry["text"] === args.text);
+      expect(written.map((entry) => entry["author"])).toEqual(["agent:done-agent"]);
     },
   );
 });
