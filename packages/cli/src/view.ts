@@ -53,9 +53,9 @@ export async function viewCommand(
     else {
       const checked = Number(result["checked"]);
       const queued = Number(result["queued"]);
-      io.stdout(
-        `Checked ${String(checked)} generated files. ${String(queued)} tasks are rendered again in the background.\n`,
-      );
+      const files = checked === 1 ? "1 generated file" : `${String(checked)} generated files`;
+      const tasks = queued === 1 ? "1 task is" : `${String(queued)} tasks are`;
+      io.stdout(`Checked ${files}. ${tasks} rendered again in the background.\n`);
     }
     return 0;
   } catch (error) {

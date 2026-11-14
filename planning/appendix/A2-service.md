@@ -448,7 +448,7 @@ Code: `packages/cli/src/` (`main.ts`, `args.ts`, `verbs.ts`, `output.ts`, `conne
 
 #### 3.10.1 Entry point
 
-One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `roots`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden) and `setup t3`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
+One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `roots`, `view`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden) and `setup t3`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
 
 **`tasks space`** verbs are rpc methods `space/*`, not registry entries, because a backup, restore or claim is no A1 operation. Only `space list` is open to scripts and agents. The CLI never opens a space database: create, backup and restore run in a worker of their own in the service.
 - A new space goes under the install's own data folder, so a test install never writes into the daily folder.
@@ -459,6 +459,8 @@ One command, `tasks`, at the stable path. **Operation verbs** are generated from
 - Tests: `A2.3.10.cli.space`, `A2.3.10.cli.space-use`.
 
 **`tasks roots`.** `roots [list]` is open to every class. `roots add` is user-only, refuses a folder places would never resolve through, and replaces the service's roots at once (`hub/roots.ts`).
+
+**`tasks view rebuild [<space>]`** is the rpc method `view/rebuild`, user-only: the space's projection reconciles every file it placed and queues every task again, removing nothing it cannot prove it wrote (A1 3.13), and answers the files checked and the tasks queued. Test: `A1.5.projection.cli`.
 
 #### 3.10.2 Conventions
 

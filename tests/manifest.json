@@ -3034,6 +3034,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.projection.cli",
+      "title": "tasks view rebuild from the CLI: the user rebuilds a space's view from an interactive terminal and a deleted generated file comes back, a script is refused with forbidden, and help names the command",
+      "source": "A1 3.13, A2 3.10, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-03.e2e.rows",
       "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
       "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",

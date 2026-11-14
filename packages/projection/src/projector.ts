@@ -28,8 +28,10 @@
 // on disk the record does not hold is left alone.
 //
 // **A kill** leaves temporary files and the journal. The next start plays the journal forward: a
-// file that reached its place with the journal's bytes goes into the record. Then it removes the
-// temporary files (tree.ts, rule 4), writes the record, drops the journal and reconciles. A record
+// file that reached its place with the journal's bytes goes into the record; a task whose file is
+// not there as the journal meant it is queued again, since the writer may have marked it rendered.
+// Then it removes the temporary files (tree.ts, rule 4), writes the record, drops the journal and
+// reconciles. A record
 // that is missing or does not read back whole, or that was made for another identity of the space
 // (a restore, a claim) or another format, starts the reconciliation from scratch with every task
 // queued: nothing is deleted on its word.
@@ -354,8 +356,20 @@ export class Projector {
     return { dirty, mark: `${String(p.rows)}:${String(p.newest)}:${String(p.lastSeq)}` };
   }
 
-  /** One batch (see the header). Throws when it could not run, or its record not be written. */
+  /**
+   * One batch (see the header). Throws when it could not run, or its record not be written. A batch
+   * that failed, thrown or counted, has the next one reconcile first (rule 5).
+   */
   async step(): Promise<StepReport> {
+    try {
+      return await this.#step();
+    } catch (error) {
+      if (this.#reconcile === "none") this.#reconcile = "files";
+      throw error;
+    }
+  }
+
+  async #step(): Promise<StepReport> {
     // A record the last batch could not write goes first: no journal replaces the one it covers.
     if (this.#unsaved) {
       this.#save();
