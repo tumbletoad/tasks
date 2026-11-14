@@ -2,11 +2,13 @@
 // built side by side, checked together. Fixed scenarios first: an undo of a request whose draft
 // matched a task takes back only what the request wrote on the match; an undone create holds no
 // key; a redo never brings back a second active holder of a key, whether the key's source row is
-// taken (the unique key) or shared (the holder rule), in either order of two humans' redos; an
-// undo or redo never shares a request with a create, and dedupe's start state sees what they
-// left; a check-off undone is no finish, and a finish set back keeps its own instant; a receipt
-// replays after an undo; a link an undo removed comes back only with its link version. Then a
-// property test: overlapping keys, completions, reopens, undo and redo of two humans together.
+// taken (the unique key) or shared (the holder rule), in either order of two humans' redos, when
+// the redo brings the key's source back too, and when it brings back several holders itself; a
+// key that was double before a restore is not the restore's doing; an undo or redo never shares
+// a request with a create, and dedupe's start state sees what they left; a check-off undone is no
+// finish, and a finish set back keeps its own instant; a receipt replays after an undo; a link an
+// undo removed comes back only with its link version. Then a property test: overlapping keys,
+// completions, reopens, explicit links, undo and redo of two humans together.
 // Fixture text only.
 import { join } from "node:path";
 import fc from "fast-check";
@@ -225,8 +227,9 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(holdersOf(fx.reader, "jira:FIX-2")).toEqual([a.id]);
     expect(holdersOf(fx.reader, "jira:FIX-3")).toEqual([x.id]);
 
-    // Undone again, its keys are free, and new tasks take them: the next redo would make a
-    // second active holder of each, so it is a conflict naming them, and writes nothing.
+    // Undone again, its keys are free, and new tasks take them with source rows of their own:
+    // the next redo would take each key's unique row, so it is a conflict naming those rows, and
+    // writes nothing.
     applied(undo());
     const c2 = draft(["jira:FIX-2"]);
     const c3 = draft(["jira:FIX-3"]);
@@ -237,12 +240,10 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     expect(refused.error?.code).toBe("UNDO_CONFLICT");
     const s2 = sourceOf("jira:FIX-2");
     const s3 = sourceOf("jira:FIX-3");
-    expect(refused.conflicts.map((c) => [c.entity, c.id, c.field, c.ref]).sort()).toEqual(
+    expect(refused.conflicts.map((c) => [c.entity, c.id, c.field]).sort()).toEqual(
       [
-        ["sources", s2, "deleted", undefined],
-        ["sources", s3, "deleted", undefined],
-        ["task_sources", `${c2.id}|${s2}`, "removed", ref(c2.id)],
-        ["task_sources", `${c3.id}|${s3}`, "removed", ref(c3.id)],
+        ["sources", s2, "deleted"],
+        ["sources", s3, "deleted"],
       ].sort(),
     );
     expect(lastSeq()).toBe(seq);
@@ -264,22 +265,20 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     const seq = lastSeq();
     const refused = redo();
     expectStatus(refused, "conflict");
-    // The source row with the key (the unique index), and B, the active task that holds it:
-    // never two live tasks with one key, never a constraint error.
+    // The source row with the key (the unique index), created with B: never two live rows with
+    // one key, never a constraint error. A's link would come back to its own source, which stays
+    // tombstoned, so A would hold no key and no holder is named.
     expect(refused.conflicts).toMatchObject([
-      { entity: "sources", id: source, field: "deleted" },
       {
-        entity: "task_sources",
-        id: `${b.id}|${source}`,
-        task: b.id,
-        ref: ref(b.id),
-        field: "removed",
+        entity: "sources",
+        id: source,
+        field: "deleted",
         value: null,
         version: made.seq,
         by: { label: "Codex · work" },
       },
     ]);
-    expect(refused.conflicts).toHaveLength(2);
+    expect(refused.conflicts).toHaveLength(1);
     expect(lastSeq()).toBe(seq);
     expect(deleted(a.id)).toBe(true);
     // Finished, B still holds the source row: the unique key alone keeps A's redo off.
@@ -370,17 +369,185 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
           field: "removed",
           by: { actor: as(first).principal_id },
         };
-        // With its own source the key's row is taken as well; a shared source is one row.
+        // With its own source the key's row is taken, and the unique key names it; a shared
+        // source is one row, which the holder rule guards.
         expect(refused.conflicts).toMatchObject(
           path === "own source"
-            ? [{ entity: "sources", id: linked, field: "deleted" }, holder]
+            ? [{ entity: "sources", id: linked, field: "deleted", by: holder.by }]
             : [holder],
         );
+        expect(refused.conflicts).toHaveLength(1);
         expect(lastSeq()).toBe(seq);
         expect(deleted(held)).toBe(true);
         expect(activeOf(fx.reader, key)).toEqual([back]);
       }
     }
+  });
+
+  /** A task without sources, made by `who`. */
+  const plainTask = (who: Who = "codex"): Id<"t"> => {
+    const id = newId("t");
+    applied(send(who, [{ kind: "task.create", id, title: "Call the clinic back" }]));
+    return id;
+  };
+  /** One request of `who` that links each task to the keyed source `key`. */
+  const link = (who: Who, key: string, tasks: Id<"t">[]): WriteResult =>
+    applied(
+      send(
+        who,
+        tasks.map((task) => ({ kind: "source.add", task, source: ticket(key) })),
+      ),
+    );
+
+  test("a source a redo brings back counts: the redo that revives it beside another's active link is refused", () => {
+    // A is finished and B active. The human adds a new keyed source to A; the partner links B to
+    // it. The partner undoes, the human undoes (the source is tombstoned), Codex reopens A.
+    const a = plainTask();
+    lifecycle("task.complete", a);
+    const b = plainTask();
+    link("human", "jira:FIX-1", [a]);
+    const source = sourceOf("jira:FIX-1");
+    link("partner", "jira:FIX-1", [b]);
+    applied(undo("partner"));
+    applied(undo("human"));
+    expect(deleted(a)).toBe(false);
+    lifecycle("task.reopen", a);
+    // The partner's redo revives B's link to a tombstoned source: B holds no key yet.
+    const theirs = applied(redo("partner"));
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([]);
+    // The human's redo would bring back the source and A's link: A and B would both be active
+    // holders. The partner's link is the conflict, and nothing is written.
+    const seq = lastSeq();
+    const refused = redo("human");
+    expectStatus(refused, "conflict");
+    expect(refused.error?.code).toBe("UNDO_CONFLICT");
+    expect(refused.conflicts).toMatchObject([
+      {
+        entity: "task_sources",
+        id: `${b}|${source}`,
+        task: b,
+        ref: ref(b),
+        field: "removed",
+        value: null,
+        version: theirs.seq,
+        by: { actor: partner.principal_id },
+      },
+    ]);
+    expect(refused.conflicts).toHaveLength(1);
+    expect(lastSeq()).toBe(seq);
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([]);
+    // Once A is finished again, the redo brings it all back beside B, the one active holder.
+    lifecycle("task.complete", a);
+    applied(redo("human"));
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([a, b].sort());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b]);
+  });
+
+  test("restores of one plan never make two active holders together: none of them comes back, and each one's lifecycle is named", () => {
+    // Y finished with the key, so its source row is shared. One request of the human links A,
+    // finished, and B, active, to it; the undo removes both links; Codex reopens A.
+    const y = draft(["jira:FIX-1"]);
+    applied(send("codex", y.ops));
+    lifecycle("task.complete", y.id);
+    const a = plainTask();
+    lifecycle("task.complete", a);
+    const b = plainTask();
+    const bMade = Number(task(b)["created_seq"]);
+    link("human", "jira:FIX-1", [a, b]);
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b]);
+    applied(undo());
+    const reopened = lifecycle("task.reopen", a);
+    const seq = lastSeq();
+    const refused = redo();
+    expectStatus(refused, "conflict");
+    // Both links would come back: A and B active together. Neither does, and the conflict names
+    // what makes each active: Codex's reopen of A, B's create.
+    expect(refused.conflicts).toMatchObject([
+      {
+        entity: "tasks",
+        id: a,
+        task: a,
+        ref: ref(a),
+        field: "lifecycle",
+        value: { lifecycle: "active" },
+        version: reopened.seq,
+        by: { label: "Codex · work" },
+      },
+      { entity: "tasks", id: b, task: b, field: "lifecycle", version: bMade },
+    ]);
+    expect(refused.conflicts).toHaveLength(2);
+    expect(lastSeq()).toBe(seq);
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([]);
+    // Finished again, A comes back with B, the one active holder.
+    lifecycle("task.complete", a);
+    applied(redo());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([b]);
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([a, b, y.id].sort());
+  });
+
+  test("a create of several tasks with one key, redone after another human's redo reopened one of them, is refused", () => {
+    // One request creates T1, finishes it, and creates T2 with the same key: new work after it.
+    const t1 = draft(["jira:FIX-1"], { dedupe: "new" });
+    const t2 = draft(["jira:FIX-1"]);
+    const made = applied(
+      send("human", [...t1.ops, { kind: "task.complete", task: t1.id }, ...t2.ops], {
+        base: fx.base(),
+      }),
+    );
+    expect(made.results.map((r) => r.status)).toContain("created");
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([t1.id, t2.id].sort());
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([t2.id]);
+    // The partner reopens T1 and undoes it; the human undoes the create; the partner's redo then
+    // reopens T1 while it is tombstoned (its guard is provenance only, A1 3.10).
+    lifecycle("task.reopen", t1.id, "partner");
+    applied(undo("partner"));
+    applied(undo("human"));
+    expect(deleted(t1.id) && deleted(t2.id)).toBe(true);
+    const back = applied(redo("partner"));
+    expect(task(t1.id)["lifecycle"]).toBe("active");
+    // The human's redo would bring back two active tasks with the key: neither comes back.
+    const seq = lastSeq();
+    const refused = redo("human");
+    expectStatus(refused, "conflict");
+    expect(refused.conflicts).toMatchObject([
+      { entity: "tasks", id: t1.id, field: "lifecycle", version: back.seq },
+      { entity: "tasks", id: t2.id, field: "lifecycle", version: made.seq },
+    ]);
+    expect(refused.conflicts).toHaveLength(2);
+    expect(lastSeq()).toBe(seq);
+    expect(deleted(t1.id) && deleted(t2.id)).toBe(true);
+  });
+
+  test("a key that had two active holders before a restore is not the restore's doing", () => {
+    // X and Y hold the key, both active: Codex reopened Y, which dedupe does not guard.
+    const x = draft(["jira:FIX-1"]);
+    applied(send("codex", x.ops));
+    lifecycle("task.complete", x.id);
+    const y = draft(["jira:FIX-1"], { dedupe: "new" });
+    applied(send("codex", y.ops));
+    lifecycle("task.reopen", x.id);
+    expect(activeOf(fx.reader, "jira:FIX-1")).toEqual([x.id, y.id].sort());
+    // The human links a finished task to the key and undoes it; the redo brings back a finished
+    // holder only, so the double that stood before is no reason to refuse it.
+    const z = plainTask();
+    lifecycle("task.complete", z);
+    link("human", "jira:FIX-1", [z]);
+    applied(undo());
+    applied(redo());
+    expect(holdersOf(fx.reader, "jira:FIX-1")).toEqual([x.id, y.id, z].sort());
+    // A restore that would add a third active holder is refused: it names both.
+    const w = plainTask();
+    link("human", "jira:FIX-1", [w]);
+    applied(undo());
+    const refused = redo();
+    expectStatus(refused, "conflict");
+    const s = sourceOf("jira:FIX-1");
+    expect(refused.conflicts.map((c) => [c.entity, c.id]).sort()).toEqual(
+      [
+        ["task_sources", `${x.id}|${s}`],
+        ["task_sources", `${y.id}|${s}`],
+      ].sort(),
+    );
   });
 
   test("an undo or redo never shares a request with a create; dedupe's start state sees what an undo tombstoned and a redo restored", () => {

@@ -22,9 +22,10 @@
 //   under that guard.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
-//   tombstoned, and that row is the conflict: the unique indexes allow one live row each. A task
-//   or a link that would make an active task hold a source key another active task holds stays
-//   too, and that task's link is the conflict: dedupe never makes two active tasks for one item.
+//   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
+// - A restore never makes a second active holder of a source key: dedupe never makes two active
+//   tasks for one item. This one rule is decided on the state the inversion makes, not predicted
+//   from the state before it (applyInversions, the holder rule below).
 // - Launch, session, run and machine records are never inverted (A1 3.6, 3.10.3).
 //
 // A task's lifecycle and wrap-up obey one CHECK (an active task has no wrap state). An inversion of
@@ -241,22 +242,19 @@ const SQL = {
   placeTaken:
     "SELECT * FROM places WHERE owner_kind = $kind AND owner_id = $owner " +
     "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
-  /** The links to keyed sources of tasks a plan brings back or relinks, with their tasks' state. */
-  keyedLinks:
-    "SELECT ts.task_id AS task_id, ts.source_id AS source_id, ts.removed_at AS removed_at, " +
-    "s.source_key AS source_key, t.lifecycle AS lifecycle, t.deleted_at AS deleted_at " +
+  /**
+   * The active holders, as they stand, of the keyed sources in `$sources` and of those the tasks
+   * in `$tasks` link to (A1 3.6): an active task that is not deleted, with a live link to the live
+   * source. One pass over `task_sources`, which has no index by source; the tasks' own links are
+   * read by its primary key.
+   */
+  activeHolders:
+    "SELECT ts.task_id AS task_id, ts.source_id AS source_id " +
     "FROM task_sources ts JOIN sources s ON s.id = ts.source_id JOIN tasks t ON t.id = ts.task_id " +
-    "WHERE ts.task_id IN (SELECT value FROM json_each($tasks)) AND s.source_key IS NOT NULL",
-  liveSources:
-    "SELECT id, source_key FROM sources WHERE deleted_at IS NULL " +
-    "AND source_key IN (SELECT value FROM json_each($keys))",
-  /** The live links of live tasks to these sources: one pass, as `task_sources` has no index. */
-  keyHolders:
-    "SELECT ts.task_id AS task_id, ts.source_id AS source_id, ts.created_seq AS created_seq, " +
-    "ts.version AS version, ts.fv AS fv, ts.fp AS fp, t.lifecycle AS lifecycle " +
-    "FROM task_sources ts JOIN tasks t ON t.id = ts.task_id " +
-    "WHERE ts.source_id IN (SELECT value FROM json_each($sources)) AND ts.removed_at IS NULL " +
-    "AND t.deleted_at IS NULL",
+    "WHERE ts.source_id IN (SELECT value FROM json_each($sources) UNION " +
+    "SELECT source_id FROM task_sources WHERE task_id IN (SELECT value FROM json_each($tasks))) " +
+    "AND s.source_key IS NOT NULL AND s.deleted_at IS NULL AND ts.removed_at IS NULL " +
+    "AND t.deleted_at IS NULL AND t.lifecycle = 'active' ORDER BY ts.source_id, t.ref",
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
 } as const;
 
@@ -398,6 +396,48 @@ const parsed = (json: string): unknown => {
   }
 };
 
+/** Where a conflict is: what a guard knows. The namer adds who wrote it, when, and the reference. */
+type Where = Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">;
+
+/**
+ * Names conflicts for operation `op`: a conflict on `where`, with the commit at `version` (who
+ * wrote the field, and when) and its task's reference.
+ */
+function namer(
+  conn: Connection,
+  options: { refPrefix: string; op: number },
+): (where: Where, version: number) => FieldConflict {
+  const refs = new Map<string, string>();
+  return (where, version) => {
+    const by = conn.prepare(SQL.author).get({ seq: version });
+    if (by === undefined) throw invalidValue(where.entity, "fv");
+    const r = new RowReader("commits", by);
+    let ref: string | undefined;
+    if (where.task !== undefined) {
+      ref = refs.get(where.task);
+      if (ref === undefined) {
+        const found = conn.prepare(SQL.taskRef).get({ id: where.task });
+        if (found === undefined) throw invalidValue("changes", "task_id");
+        ref = formatTaskRef(options.refPrefix, new RowReader("tasks", found).int("ref", "taskRef"));
+        refs.set(where.task, ref);
+      }
+    }
+    return {
+      op: options.op,
+      ...where,
+      ...(ref === undefined ? {} : { ref }),
+      version,
+      by: {
+        actor: r.id("actor", "ac"),
+        kind: r.text("kind"),
+        label: r.text("label"),
+        origin: r.text("origin"),
+      },
+      at: r.int("at", "instant"),
+    };
+  };
+}
+
 /**
  * Plans the inversion of `changes` (A1 3.10): each set row under its provenance guard, each create
  * row under the create guard with `creating` as the creating commits. Reads only; a refusal that
@@ -410,7 +450,6 @@ export function planInversions(
 ): InversionPlan {
   const plan: InversionPlan = { inversions: [], conflicts: [] };
   const rows = new Map<string, RowState>();
-  const refs = new Map<string, string>();
   const kids = liveChildren(conn, changes);
   /**
    * Each (row, field) is named once: a child row of a create can block both its own create and
@@ -440,37 +479,7 @@ export function planInversions(
     return row;
   };
   /** A conflict on `where`, named with the commit at `version`: who wrote it and when. */
-  const conflict = (
-    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
-    version: number,
-  ): FieldConflict => {
-    const by = conn.prepare(SQL.author).get({ seq: version });
-    if (by === undefined) throw invalidValue(where.entity, "fv");
-    const r = new RowReader("commits", by);
-    let ref: string | undefined;
-    if (where.task !== undefined) {
-      ref = refs.get(where.task);
-      if (ref === undefined) {
-        const found = conn.prepare(SQL.taskRef).get({ id: where.task });
-        if (found === undefined) throw invalidValue("changes", "task_id");
-        ref = formatTaskRef(options.refPrefix, new RowReader("tasks", found).int("ref", "taskRef"));
-        refs.set(where.task, ref);
-      }
-    }
-    return {
-      op: options.op,
-      ...where,
-      ...(ref === undefined ? {} : { ref }),
-      version,
-      by: {
-        actor: r.id("actor", "ac"),
-        kind: r.text("kind"),
-        label: r.text("label"),
-        origin: r.text("origin"),
-      },
-      at: r.int("at", "instant"),
-    };
-  };
+  const conflict = namer(conn, options);
   /** A field of a row that does not hold the write an inversion needs. */
   const fieldConflict = (
     entity: InvertibleEntity,
@@ -607,14 +616,9 @@ export function planInversions(
     });
   }
   if (options.partial) keepTogether(plan, read);
-  const name = (
-    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
-    version: number,
-  ): void => {
+  keepActiveUnwrapped(plan, read, (where, version) => {
     blocked(conflict(where, version));
-  };
-  keepActiveUnwrapped(plan, read, name);
-  keepOneActiveHolder(conn, plan, name);
+  });
   return plan;
 }
 
@@ -707,10 +711,7 @@ function columnOf(json: string, column: string): unknown {
 function keepActiveUnwrapped(
   plan: InversionPlan,
   read: (entity: InvertibleEntity, id: string) => RowState,
-  name: (
-    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
-    version: number,
-  ) => void,
+  name: (where: Where, version: number) => void,
 ): void {
   const planned = new Map<string, Restore[]>();
   for (const inversion of plan.inversions) {
@@ -762,110 +763,6 @@ function keepActiveUnwrapped(
         unsafe.has(i.id)
       ),
   );
-}
-
-/**
- * A restore never makes a second active holder of a source key (A1 3.6, 3.10). A row the plan
- * brings back, a task's tombstone cleared or a task's link to a keyed source revived, takes the
- * place of the create or the link that made it, and dedupe never creates a task, or links a key
- * to one, beside an active task that holds that key. So when the task is active after the plan
- * and another active task outside the restore holds one of its keys by a live link, the restore
- * stays undone and that holder's link is the conflict, named with who created or revived it. A
- * finished holder never blocks: a task beside a finished one is what `dedupe: "new"` makes.
- * Setting a lifecycle back is not a restore: it repeats a complete or a reopen, which dedupe does
- * not guard either.
- *
- * The plan as it will stand decides: rows it tombstones hold nothing, lifecycles it sets back
- * count with their new value. A task's keys are those of the sources its live links name, whatever
- * the source's own state, so a source that a unique key keeps tombstoned still names the holder.
- * Three statements, whatever the plan's size: a redo of an importer's commit restores thousands.
- */
-function keepOneActiveHolder(
-  conn: Connection,
-  plan: InversionPlan,
-  name: (
-    where: Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">,
-    version: number,
-  ) => void,
-): void {
-  const planned = new Map<string, Inversion>();
-  for (const i of plan.inversions) planned.set(`${i.entity}|${i.id}|${i.field}`, i);
-  /** Whether a row is live once the plan applies: what it sets its tombstone to, else as now. */
-  const liveAfter = (entity: InvertibleEntity, id: string, now: boolean): boolean => {
-    const i = planned.get(`${entity}|${id}|${TABLES[entity].tombstone}`);
-    if (i === undefined) return now;
-    return i.kind === "restore" && isLive(parsed(i.value));
-  };
-  const activeAfter = (task: string, now: unknown): boolean => {
-    const i = planned.get(`tasks|${task}|lifecycle`);
-    return (i?.kind === "restore" ? columnOf(i.value, "lifecycle") : now) === "active";
-  };
-  /** What the plan brings back: tasks by ID, links by `task|source`. */
-  const tasks = new Map<string, Inversion>();
-  const links = new Map<string, Inversion>();
-  for (const i of plan.inversions) {
-    if (i.kind !== "restore" || !isLive(parsed(i.value))) continue;
-    if (i.entity === "tasks" && i.field === "deleted") tasks.set(i.id, i);
-    if (i.entity === "task_sources" && i.field === "removed") links.set(i.id, i);
-  }
-  if (tasks.size === 0 && links.size === 0) return;
-  const owners = new Set(tasks.keys());
-  for (const link of links.keys()) owners.add(keyOf("task_sources", link)["task"] ?? "");
-  /** Each key a restore makes an active task hold, with the inversions that make it. */
-  const claims = new Map<string, { tasks: Set<string>; by: Set<Inversion> }>();
-  for (const row of conn.prepare(SQL.keyedLinks).all({ tasks: JSON.stringify([...owners]) })) {
-    const r = new RowReader("task_sources", row);
-    const task = r.text("task_id");
-    const link = `${task}|${r.text("source_id")}`;
-    const restored = tasks.get(task);
-    const revived = links.get(link);
-    const by = restored ?? revived;
-    if (by === undefined) continue;
-    if (!liveAfter("task_sources", link, r.optInt("removed_at", "instant") === null)) continue;
-    if (!liveAfter("tasks", task, r.optInt("deleted_at", "instant") === null)) continue;
-    if (!activeAfter(task, r.text("lifecycle"))) continue;
-    const key = r.text("source_key");
-    const claim = claims.get(key) ?? { tasks: new Set<string>(), by: new Set<Inversion>() };
-    claim.tasks.add(task);
-    claim.by.add(by);
-    claims.set(key, claim);
-  }
-  if (claims.size === 0) return;
-  const sources = new Map<string, string>();
-  for (const row of conn
-    .prepare(SQL.liveSources)
-    .all({ keys: JSON.stringify([...claims.keys()]) })) {
-    const r = new RowReader("sources", row);
-    const id = r.text("id");
-    if (liveAfter("sources", id, true)) sources.set(id, r.text("source_key"));
-  }
-  if (sources.size === 0) return;
-  const blocking = new Set<Inversion>();
-  for (const row of conn
-    .prepare(SQL.keyHolders)
-    .all({ sources: JSON.stringify([...sources.keys()]) })) {
-    const r = new RowReader("task_sources", row);
-    const task = r.text("task_id");
-    const source = r.text("source_id");
-    const claim = claims.get(sources.get(source) ?? "");
-    if (claim === undefined || claim.tasks.has(task)) continue;
-    const link = `${task}|${source}`;
-    if (!liveAfter("task_sources", link, true) || !liveAfter("tasks", task, true)) continue;
-    if (!activeAfter(task, r.text("lifecycle"))) continue;
-    for (const by of claim.by) blocking.add(by);
-    const state = rowState("task_sources", row, TABLES.task_sources.fields);
-    name(
-      {
-        entity: "task_sources",
-        id: link,
-        task: task as Id<"t">,
-        field: TABLES.task_sources.tombstone,
-        value: null,
-      },
-      versionOf(state, TABLES.task_sources.tombstone),
-    );
-  }
-  if (blocking.size > 0) plan.inversions = plan.inversions.filter((i) => !blocking.has(i));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -929,17 +826,175 @@ function tombstoneJson(entity: InvertibleEntity, at: number, principal: Id<"ac">
   return entity === "tasks" ? fieldJson({ deleted_at: at, deleted_by: principal }) : fieldJson(at);
 }
 
+/** The commit an inversion writes, and how its conflicts are named. */
+export interface ApplyOptions {
+  seq: number;
+  at: number;
+  principal: Id<"ac">;
+  /** The request's operation index the conflicts name. */
+  op: number;
+  /** The space's reference prefix, for the conflicts' task references. */
+  refPrefix: string;
+  /** A partial inversion applies what the holder rule leaves; a full one then applies nothing. */
+  partial: boolean;
+}
+
+/** What an inversion wrote: its change rows, in the plan's order, and the tasks it touched. */
+export interface Applied {
+  changes: InvertedChange[];
+  tasks: Set<Id<"t">>;
+}
+
 /**
- * Applies `inversions` as commit `seq`: one UPDATE per row with every field it sets (the task
+ * Applies `plan` as commit `seq` (A1 3.10), and decides the holder rule on the state it made: a
+ * restore never makes a second active holder of a source key (A1 3.6). The guards before it
+ * (planInversions) are decided on the state before the plan; this one rule is not, because what
+ * the plan makes of a key depends on every row it brings back at once.
+ *
+ * - A **restore** is an inversion that clears a tombstone: a task's `deleted`, a link's `removed`
+ *   or a source's `deleted`. Only these make a key's holder; setting a lifecycle back repeats a
+ *   complete or a reopen, which dedupe does not guard either.
+ * - After the plan applies, one statement reads the active holders of every keyed source the plan
+ *   brought back, linked again, or that a task it brought back links to.
+ * - A key is **broken** when it has two or more active holders and the plan restored the key's
+ *   source, or the task or the link of one of them. A holder whose task, link and source were all
+ *   live before the plan **stands**: a key whose active holders all stand was double before the
+ *   plan, or became so by a lifecycle the plan set back, and is not the plan's doing.
+ * - On a broken key none of the plan's restores of its holders and its source applies. The
+ *   conflict names each standing holder's link, with who created or revived it; when every holder
+ *   is one the plan brings back, none of them comes back, and the conflict names each one's
+ *   lifecycle, with who made it active.
+ *
+ * On a broken key the writes roll back to a savepoint, the conflicts are named on the state before
+ * the plan, and a partial inversion applies the rest; leaving out a restore only takes holders
+ * away, so the rest breaks no key. A full inversion then applies nothing and returns undefined,
+ * and `plan.conflicts` says why.
+ */
+export function applyInversions(
+  conn: Connection,
+  plan: InversionPlan,
+  options: ApplyOptions,
+): Applied | undefined {
+  const restores = restoresOf(plan.inversions);
+  if (restores.size === 0) return writeInversions(conn, plan.inversions, options);
+  conn.exec("SAVEPOINT holders");
+  const applied = writeInversions(conn, plan.inversions, options);
+  const broken = brokenKeys(conn, restores);
+  if (broken.undone.size === 0) {
+    conn.exec("RELEASE holders");
+    return applied;
+  }
+  conn.exec("ROLLBACK TO holders");
+  const conflict = namer(conn, options);
+  const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
+  for (const holder of broken.named) {
+    const entity = holder.field === "lifecycle" ? "tasks" : "task_sources";
+    const id = entity === "tasks" ? holder.task : `${holder.task}|${holder.source}`;
+    if (named.has(`${entity}|${id}|${holder.field}`)) continue;
+    named.add(`${entity}|${id}|${holder.field}`);
+    const row = readRow(conn, entity, id);
+    if (row === undefined) throw misuse("A holder the plan read has gone");
+    plan.conflicts.push(
+      conflict(
+        {
+          entity,
+          id,
+          task: holder.task,
+          field: holder.field,
+          value: columnsValue(row.raw, TABLES[entity].fields[holder.field] ?? []),
+        },
+        versionOf(row, holder.field),
+      ),
+    );
+  }
+  plan.inversions = plan.inversions.filter((i) => !broken.undone.has(i));
+  if (!options.partial) {
+    conn.exec("RELEASE holders");
+    return undefined;
+  }
+  const rest = writeInversions(conn, plan.inversions, options);
+  conn.exec("RELEASE holders");
+  return rest;
+}
+
+/** A plan's restores, by `<entity>|<id>`: the inversions that clear a key holder's tombstone. */
+function restoresOf(inversions: readonly Inversion[]): Map<string, Inversion> {
+  const restores = new Map<string, Inversion>();
+  for (const i of inversions) {
+    if (i.kind !== "restore" || i.field !== TABLES[i.entity].tombstone) continue;
+    if (i.entity !== "tasks" && i.entity !== "task_sources" && i.entity !== "sources") continue;
+    if (isLive(parsed(i.value))) restores.set(`${i.entity}|${i.id}`, i);
+  }
+  return restores;
+}
+
+/** A holder a broken key's conflict names: by its link, or by its lifecycle. */
+interface NamedHolder {
+  task: Id<"t">;
+  source: string;
+  field: "removed" | "lifecycle";
+}
+
+/**
+ * The broken keys on the state the plan made (applyInversions): the restores that stay undone,
+ * and the holders their conflicts name, in key order, then reference order.
+ */
+function brokenKeys(
+  conn: Connection,
+  restores: ReadonlyMap<string, Inversion>,
+): { undone: Set<Inversion>; named: NamedHolder[] } {
+  const tasks: string[] = [];
+  const sources = new Set<string>();
+  for (const i of restores.values()) {
+    if (i.entity === "tasks") tasks.push(i.id);
+    else if (i.entity === "sources") sources.add(i.id);
+    else sources.add(keyOf("task_sources", i.id)["source"] ?? "");
+  }
+  /** Each touched key's active holders, by its live source: one live source per key. */
+  const holders = new Map<string, Id<"t">[]>();
+  for (const row of conn.prepare(SQL.activeHolders).all({
+    tasks: JSON.stringify(tasks),
+    sources: JSON.stringify([...sources]),
+  })) {
+    const r = new RowReader("task_sources", row);
+    const source = r.text("source_id");
+    const list = holders.get(source);
+    if (list === undefined) holders.set(source, [r.id("task_id", "t")]);
+    else list.push(r.id("task_id", "t"));
+  }
+  const undone = new Set<Inversion>();
+  const named: NamedHolder[] = [];
+  for (const [source, active] of holders) {
+    if (active.length < 2) continue;
+    /** The restores that make each holder one: its task's, its link's. */
+    const made = active.map((task) =>
+      [restores.get(`tasks|${task}`), restores.get(`task_sources|${task}|${source}`)].filter(
+        (i): i is Inversion => i !== undefined,
+      ),
+    );
+    const sourceBack = restores.get(`sources|${source}`);
+    if (sourceBack === undefined && made.every((m) => m.length === 0)) continue;
+    if (sourceBack !== undefined) undone.add(sourceBack);
+    for (const m of made) for (const i of m) undone.add(i);
+    const standing = active.filter((_, k) => made[k]?.length === 0);
+    for (const task of standing.length > 0 ? standing : active) {
+      named.push({ task, source, field: standing.length > 0 ? "removed" : "lifecycle" });
+    }
+  }
+  return { undone, named };
+}
+
+/**
+ * Writes `inversions` as commit `seq`: one UPDATE per row with every field it sets (the task
  * CHECKs hold only on the whole row), its version, `fv` and `fp`, and the touched mark of each task
  * whose row or child row changed. Returns the change rows to insert, in the plan's order, and the
  * tasks it touched.
  */
-export function applyInversions(
+function writeInversions(
   conn: Connection,
   inversions: readonly Inversion[],
   commit: { seq: number; at: number; principal: Id<"ac">; op: number },
-): { changes: InvertedChange[]; tasks: Set<Id<"t">> } {
+): Applied {
   const groups = new Map<string, Inversion[]>();
   for (const inversion of inversions) {
     const key = `${inversion.entity}|${inversion.id}`;

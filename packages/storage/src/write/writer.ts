@@ -1617,8 +1617,9 @@ export class SpaceWriter {
   /**
    * An undo or a redo. The principal's stack decides what it inverts: an undo the newest `done`
    * commit's change rows, a redo the rows of the oldest `undone` commit's undo. History (history.ts)
-   * plans the inversion under each field's provenance, and one commit of kind `undo` or `redo`
-   * writes it and moves the stack: the undone commit becomes `undone` with `undone_by`, a redone
+   * plans the inversion under each field's provenance, applies it and checks the holder rule on
+   * what it made, and one commit of kind `undo` or `redo` records it and moves the stack: the
+   * undone commit becomes `undone` with `undone_by`, a redone
    * one `done` again. An undo is all or nothing unless it is partial, and a partial undo leaves the
    * stack even when it inverts nothing, so the next undo reaches the commit below; a redo is all or
    * nothing. The commit itself never joins the stack.
@@ -1663,8 +1664,8 @@ export class SpaceWriter {
       partial,
       op: 0,
     });
-    if (plan.conflicts.length > 0 && !partial) {
-      return refused(
+    const conflict = (): WriteResult =>
+      refused(
         "conflict",
         asOf,
         {
@@ -1676,11 +1677,24 @@ export class SpaceWriter {
         },
         plan.conflicts,
       );
-    }
+    if (plan.conflicts.length > 0 && !partial) return conflict();
     const seq = nextSeq(space);
     const commitId = newId("op", this.#random);
     conn.exec("SAVEPOINT exec");
     try {
+      // The inversions first: the holder rule is decided on the state they make (A1 3.10).
+      const applied = applyInversions(conn, plan, {
+        seq,
+        at,
+        principal,
+        op: 0,
+        refPrefix: space.refPrefix,
+        partial,
+      });
+      if (applied === undefined) {
+        rollBack(conn);
+        return conflict();
+      }
       conn.prepare(SQL.insertHistoryCommit).run({
         seq,
         id: commitId,
@@ -1710,7 +1724,6 @@ export class SpaceWriter {
         undo_of: undo ? target.seq : null,
         redo_of: undo ? null : target.seq,
       });
-      const applied = applyInversions(conn, plan.inversions, { seq, at, principal, op: 0 });
       const inverted = applied.changes.map((c) => ({ ...c, action: "set" as const }));
       insertChanges(conn, seq, inverted);
       // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
