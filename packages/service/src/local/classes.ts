@@ -92,6 +92,8 @@ export const RPC_METHODS = {
   "session/end": USER,
   "session/unbind": USER,
   "session/rebind": USER,
+  // `tasks doctor --live` (A3 3.14, M4.05): which instances' tool calls this start saw.
+  "setup/seen": CLI,
   "launch.claim": SHIM,
   "launch.attach": SHIM,
   "launch.started": SHIM,

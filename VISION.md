@@ -86,3 +86,5 @@ Before accepting a design, ask:
 - Does it give attention back to the person, or ask for more of it?
 
 When visual quiet and practical usefulness pull apart, preserve usefulness and find a quieter way to express it.
+
+When speed and a more useful, more complete or more dependable product pull apart, keep the product. A target for speed, memory or size is a guide chosen before anyone had used the thing: real use decides what it should be.

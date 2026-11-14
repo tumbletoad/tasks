@@ -142,7 +142,17 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     // [[spaces]] errors stop the service; the others only drop their entry.
     expect(new Set(fatalProblems(result.problems).map(sectionOf))).toEqual(new Set(["spaces"]));
     expect(new Set(result.problems.map(sectionOf))).toEqual(
-      new Set(["other", "log", "http", "spaces", "roots", "terminal", "instance", "approvals"]),
+      new Set([
+        "other",
+        "log",
+        "http",
+        "spaces",
+        "roots",
+        "terminal",
+        "instance",
+        "approvals",
+        "setup",
+      ]),
     );
   });
 

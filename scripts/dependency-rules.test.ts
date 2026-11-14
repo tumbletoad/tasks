@@ -85,6 +85,8 @@ const files: Record<string, string> = {
   "packages/service/src/b.ts": imports("./a.ts"),
   "packages/service/src/missing.ts": imports("./nowhere.ts"),
   "packages/runs/src/index.ts": imports("tiny-pkg"),
+  "packages/cli/src/doctor-agents.ts": imports("node:child_process"),
+  "packages/service/src/setup/run.ts": imports("node:child_process"),
 
   // Violations that stay strict in tests.
   "packages/launch/src/index.test.ts": imports(STORAGE),
@@ -103,6 +105,8 @@ const expected = [
   "bridge-few-builtins: packages/bridge/src/spawn.ts -> child_process",
   "core-no-io: packages/core/src/io.ts -> fs",
   "core-only-contracts: packages/core/src/uses-storage.ts -> packages/storage/src/index.ts",
+  "helpers-through-the-runner: packages/cli/src/doctor-agents.ts -> child_process",
+  "helpers-through-the-runner: packages/service/src/setup/run.ts -> child_process",
   // dependency-cruiser reports a cycle once, at its first edge.
   "no-circular: packages/service/src/a.ts -> packages/service/src/b.ts",
   "no-storage-from-launch-runs-importer: packages/importer-planning/test/import.ts -> packages/storage/src/index.ts",

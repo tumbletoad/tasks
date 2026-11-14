@@ -17,6 +17,7 @@ import { join, posix, win32 } from "node:path";
 import {
   DEFAULT_TERMINAL,
   entryKey,
+  isAbsoluteFor,
   isTable,
   keyPath,
   keyUnder,
@@ -75,6 +76,11 @@ export interface MachineConfig {
   readonly instances: readonly Instance[];
   /** `[approvals]`: approval hash to verdict (A4 3.2). */
   readonly approvals: ReadonlyMap<string, Verdict>;
+  /**
+   * `[setup.managed] paths` (A3 3.12 rule 4): files, or folders of files, that another source
+   * generates. Setup writes nothing there and prints the change instead.
+   */
+  readonly setup: { readonly managedPaths: readonly string[] };
 }
 
 /** The configuration of a machine without machine.toml. */
@@ -89,7 +95,30 @@ export const DEFAULT_CONFIG: MachineConfig = {
   terminal: DEFAULT_TERMINAL,
   instances: [],
   approvals: new Map(),
+  setup: { managedPaths: [] },
 };
+
+/** `[setup]` (A3 3.12): `[setup.managed] paths`, each an absolute path. A bad path drops itself. */
+function readSetup(doc: TomlDocument, platform: NodeJS.Platform, problems: Problems): string[] {
+  const setup = tableOf(doc, "setup", problems);
+  if (setup === undefined) return [];
+  const managed = setup.raw("managed");
+  setup.done();
+  if (managed === undefined) return [];
+  if (!isTable(managed)) {
+    setup.error("managed", "wrong_type");
+    return [];
+  }
+  const table = new TableReader(managed, "setup.managed", problems);
+  const listed = table.strings("paths") ?? [];
+  table.done();
+  const paths: string[] = [];
+  for (const [i, path] of listed.entries()) {
+    if (isAbsoluteFor(platform, path)) paths.push(path);
+    else problems.error(entryKey("setup.managed.paths", i), "not_absolute");
+  }
+  return paths;
+}
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
 
@@ -196,6 +225,7 @@ export function checkMachineConfig(
     terminal: readTerminal(doc["terminal"], platform, problems),
     instances: readInstances(doc["instance"], platform, problems),
     approvals: readApprovals(doc["approvals"], problems),
+    setup: { managedPaths: readSetup(doc, platform, problems) },
   };
   return { config, problems: problems.list };
 }
