@@ -1,0 +1,5 @@
+.out {
+  max-width: 560px;
+  padding: 24px var(--k-gutter);
+  color: var(--k-text-2);
+}

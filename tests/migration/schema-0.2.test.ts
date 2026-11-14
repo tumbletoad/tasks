@@ -1,0 +1,391 @@
+// Schema 0.2 (A7 3.10 M3.01) on a real 0.1 space: the Mira sample built by the 0.1 chain through
+// the write path (testkit's seedMira with STEPS_0_1, whose known digest is the 0.1 builds'), not a
+// checked-in database. The migration test from it, a fault at every statement boundary of the
+// migration, and an older build that refuses the migrated space as its writer. Fixture data only,
+// in temporary folders removed by their full names.
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { step0001 } from "../../packages/storage/migrations/0001-schema-0.1.ts";
+import {
+  SCHEMA_0_2_STATEMENTS,
+  TABLES_0_2_NEW,
+} from "../../packages/storage/migrations/0002-schema-0.2.ts";
+import { backupSpace } from "../../packages/storage/src/backup/backup.ts";
+import type { Connection } from "../../packages/storage/src/driver.ts";
+import { StorageError } from "../../packages/storage/src/errors.ts";
+import { readManifest } from "../../packages/storage/src/manifest.ts";
+import { migrateSpaceWith } from "../../packages/storage/src/migrate/runner.ts";
+import { nodeSqliteDriver } from "../../packages/storage/src/node-sqlite.ts";
+import { restoreBackup, restoreBackupWith } from "../../packages/storage/src/restore/restore.ts";
+import { openSpace } from "../../packages/storage/src/space.ts";
+import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
+import { StorageWorker } from "../../packages/storage/src/worker/client.ts";
+import type { MachineInfo } from "../../packages/storage/src/write/writer.ts";
+import {
+  createSpaceAt,
+  openSpaceAt,
+  STEPS_0_1,
+  STEPS_0_2,
+} from "../../packages/storage/test/revisions.ts";
+import { rejection, workerWithSteps } from "../../packages/storage/test/worker-helpers.ts";
+import { digestSchema, digestSpace } from "../../packages/testkit/src/digest.ts";
+import { RELEASED_SCHEMAS } from "../../packages/testkit/src/known.ts";
+import { checkedDriver, MIRA, seedMira } from "../../packages/testkit/src/mira.ts";
+import { faultingDriver, StatementFault } from "./faults.ts";
+
+// Tests that open spaces, start workers and take backups get generous time limits: a slow runner
+// only waits.
+
+const made: string[] = [];
+const temp = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "tasks-schema-02-"));
+  made.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+/** A table's rows as JSON, in primary key order (rowid for a table without one). */
+function rowsOf(conn: Connection, table: string): unknown[] {
+  if (!/^[a-z_]+$/.test(table)) throw new Error("not a table name");
+  const key = conn
+    .prepare("SELECT name FROM pragma_table_info($t) WHERE pk > 0 ORDER BY pk")
+    .all<{ name: string }>({ t: table })
+    .map((c) => c.name);
+  const order = key.length > 0 ? key.join(", ") : "rowid";
+  return conn.prepare(`SELECT * FROM ${table} ORDER BY ${order}`).all();
+}
+
+/** The schema as SQLite stores it: every table and index with its SQL. */
+const schemaOf = (conn: Connection): unknown[] =>
+  conn
+    .prepare(
+      "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' " +
+        "ORDER BY type, name",
+    )
+    .all();
+
+interface Facts {
+  /** Every row and column, the revision and space.json (testkit's digest). */
+  digest: string;
+  /** Every table, index and trigger with its SQL, which the digest does not cover. */
+  schema: unknown[];
+  /** testkit's digestSchema of it. */
+  schemaDigest: string;
+  lastSeq: number;
+  counts: Record<string, number>;
+  rows: Record<string, unknown[]>;
+}
+
+async function factsOf(folder: string): Promise<Facts> {
+  const checked = await checkedDriver();
+  const { conn, space } = openSpace(checked, folder, { role: "reader" });
+  try {
+    const tables = conn
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      .all<{ name: string }>()
+      .map((t) => t.name);
+    const rows = Object.fromEntries(tables.map((t) => [t, rowsOf(conn, t)]));
+    return {
+      digest: digestSpace(checked, folder),
+      schema: schemaOf(conn),
+      schemaDigest: digestSchema(conn),
+      lastSeq: space.lastSeq,
+      counts: Object.fromEntries(tables.map((t) => [t, rows[t]?.length ?? 0])),
+      rows,
+    };
+  } finally {
+    conn.close();
+  }
+}
+
+let fixture: { folder: string; machine: MachineInfo; facts: Facts };
+
+beforeAll(async () => {
+  const seeded = await seedMira(temp(), { seed: "migration-0.1", tasks: 40, steps: STEPS_0_1 });
+  fixture = {
+    folder: seeded.folder,
+    machine: { id: seeded.machine, name: MIRA.machine.name, os: MIRA.machine.os },
+    facts: await factsOf(seeded.folder),
+  };
+  // A populated 0.1 space: user_version 1, every 0.1 table with rows, no 0.2 table, and the 0.1
+  // release's schema to the last index and CHECK.
+  expect(Object.keys(fixture.facts.counts).sort()).toEqual([...step0001.tables].sort());
+  expect(fixture.facts.schemaDigest).toBe(RELEASED_SCHEMAS["0.1"]);
+  for (const [table, n] of Object.entries(fixture.facts.counts)) {
+    expect(n, table).toBeGreaterThan(0);
+  }
+}, 180_000);
+
+/** A copy of the 0.1 fixture in a folder of its own, as `mira`. */
+function copyOfFixture(): string {
+  const folder = join(temp(), "mira");
+  cpSync(fixture.folder, folder, { recursive: true });
+  return folder;
+}
+
+describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to 0.2 behind its verified barrier backup", () => {
+  test("every 0.1 row stays, the new tables are empty, the schema is a new 0.2 space's, and the backup restores the fixture", async () => {
+    const before = fixture.facts;
+    const folder = copyOfFixture();
+    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    try {
+      // The storage worker's writer migrates on open, under the space's claim (A1 3.17).
+      const writer = await worker.openSpaceWriter(folder, { machine: fixture.machine });
+      expect(writer.revision).toEqual({ major: 0, minor: 2 });
+      expect(writer.migration).toMatchObject({
+        from: { major: 0, minor: 1 },
+        to: { major: 0, minor: 2 },
+        seqs: [before.lastSeq + 1],
+        manifestWritten: true,
+      });
+      // The barrier backup is the fixture: its revision, last_seq and every table's count.
+      expect(writer.migration?.backup.sidecar).toMatchObject({
+        kind: "pre-migrate",
+        user_version: 1,
+        seq: before.lastSeq,
+        counts: before.counts,
+      });
+      await writer.close();
+    } finally {
+      await worker.close();
+    }
+
+    const checked = await checkedDriver();
+    const opened = openSpace(checked, folder, { role: "reader" });
+    let migratedSchema: unknown[];
+    try {
+      const { conn } = opened;
+      expect(opened.revision).toEqual({ major: 0, minor: 2 });
+      expect(opened.readOnlyReasons).toEqual([]);
+      expect(conn.pragma("user_version")).toBe(2);
+      expect(conn.pragma("integrity_check")).toBe("ok");
+      expect(conn.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      // Every row of every 0.1 table is as it was, but the space row and the new commit.
+      for (const table of step0001.tables) {
+        if (table === "space" || table === "commits") continue;
+        expect(rowsOf(conn, table), table).toEqual(before.rows[table]);
+      }
+      const space = rowsOf(conn, "space");
+      expect(space).toEqual([
+        {
+          ...(before.rows["space"]?.[0] as object),
+          format_minor: 2,
+          last_seq: before.lastSeq + 1,
+          hold: null,
+        },
+      ]);
+      const commits = rowsOf(conn, "commits");
+      expect(commits.slice(0, -1)).toEqual(before.rows["commits"]);
+      expect(commits.at(-1)).toMatchObject({
+        seq: before.lastSeq + 1,
+        kind: "migration",
+        origin: "migration",
+        actor_kind: "system",
+        scope_id: "system",
+        affected: 0,
+      });
+      expect(JSON.parse((commits.at(-1) as { ops: string }).ops)).toEqual([
+        {
+          v: 1,
+          op: "schema.migrate",
+          target: (space[0] as { space_id: string }).space_id,
+          input: { step: 2, from: "0.1", to: "0.2" },
+        },
+      ]);
+      for (const table of TABLES_0_2_NEW) expect(rowsOf(conn, table), table).toEqual([]);
+      migratedSchema = schemaOf(conn);
+      expect(digestSchema(conn)).toBe(RELEASED_SCHEMAS["0.2"]);
+    } finally {
+      opened.conn.close();
+    }
+    // A new 0.2 space has the same schema, byte for byte: create runs the same two steps.
+    const fresh = createSpaceAt(
+      checked,
+      join(temp(), "fresh"),
+      { name: "Fresh", ownerLabel: "Mira Okafor", machineId: fixture.machine.id },
+      STEPS_0_2,
+    );
+    const freshConn = openSpace(checked, fresh.folder, { role: "reader" }).conn;
+    try {
+      expect(migratedSchema).toEqual(schemaOf(freshConn));
+    } finally {
+      freshConn.close();
+    }
+    // space.json speaks for 0.2.
+    const manifest = readManifest(folder);
+    expect(manifest.state === "present" ? manifest.safety : undefined).toMatchObject({
+      format: { major: 0, minor: 2 },
+      min_reader: "0.0.0",
+      min_writer: "0.0.0",
+    });
+
+    // The downgrade is a restore of the pre-migration backup (A1 3.17): the fixture's counts,
+    // last_seq and rows, with the read-only mark of a restored copy on the space row.
+    const restoredFolder = join(temp(), "mira");
+    const backups = (await import("../../packages/storage/src/backup/list.ts")).listBackups(
+      join(folder, "backups"),
+    ).backups;
+    const barrier = backups.find((b) => b.sidecar?.kind === "pre-migrate");
+    if (barrier === undefined) throw new Error("no barrier backup");
+    const restored = await restoreBackup(checked, barrier.file, restoredFolder);
+    expect(restored.revision).toEqual({ major: 0, minor: 1 });
+    expect(restored.space.lastSeq).toBe(before.lastSeq);
+    const after = await factsOf(restoredFolder);
+    expect(after.counts).toEqual(before.counts);
+    expect(after.lastSeq).toBe(before.lastSeq);
+    for (const table of step0001.tables) {
+      if (table !== "space") expect(after.rows[table], table).toEqual(before.rows[table]);
+    }
+  }, 180_000);
+});
+
+describe("[A1.5.migration.statement-faults] a fault at every statement boundary of the migration leaves the space at 0.1", () => {
+  test("each boundary fails in turn: the data is unchanged, the space opens read-only with A1's message, and the 0.1 build still writes it", async () => {
+    const fault = new StatementFault();
+    const faulting = await CheckedDriver.check(faultingDriver(nodeSqliteDriver, fault));
+    const migrate = (folder: string) =>
+      migrateSpaceWith(
+        faulting,
+        folder,
+        {},
+        {
+          at: (point) => {
+            if (point === "backed-up") fault.armed = true;
+          },
+        },
+      );
+
+    // A clean run counts the boundaries: every statement of the step, and the runner's own.
+    fault.reset(undefined);
+    const clean = await migrate(copyOfFixture());
+    expect(clean.state).toBe("migrated");
+    expect(fault.began).toBe(true);
+    const boundaries = fault.count;
+    const trace = [...fault.trace];
+    // The step's statements run in order inside the transaction, each one its own boundary.
+    const at = SCHEMA_0_2_STATEMENTS.map((sql) => trace.indexOf(sql));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(trace.at(-1)).toBe("COMMIT");
+    expect(boundaries).toBeGreaterThan(SCHEMA_0_2_STATEMENTS.length + 5);
+
+    const checked = await checkedDriver();
+    /** Nothing changed: the fixture's rows, schema and space.json, and it still opens at 0.1. */
+    const expectFixture = (at: string, where: string): void => {
+      expect(digestSpace(checked, at), where).toBe(fixture.facts.digest);
+      // This build reads it, read-only with the reason, and its schema is the fixture's to the
+      // last index; the 0.1 build still writes it.
+      const reader = openSpace(checked, at, { role: "reader" });
+      try {
+        expect(reader.readOnlyReasons, where).toEqual(["older_revision"]);
+        expect(reader.revision, where).toEqual({ major: 0, minor: 1 });
+        expect(schemaOf(reader.conn), where).toEqual(fixture.facts.schema);
+      } finally {
+        reader.conn.close();
+      }
+      openSpaceAt(checked, at, { role: "writer" }, STEPS_0_1).conn.close();
+    };
+    for (let n = 0; n < boundaries; n += 1) {
+      const folder = copyOfFixture();
+      fault.reset(n);
+      const outcome = await migrate(folder);
+      const where = `boundary ${String(n)} (${trace[n] ?? "?"})`;
+      expect(fault.hit, where).toBe(true);
+      if (outcome.state !== "failed") throw new Error(`${where}: the migration did not fail`);
+      expect(outcome.stage, where).toBe("migration");
+      expect(outcome.error.code, where).toBe("MIGRATION_FAILED");
+      // A1 3.17's message: the cause's code, never a path.
+      expect(outcome.error.message, where).toBe(
+        "Migration to 0.2 failed (DURABILITY_FAILED). Your data is unchanged. " +
+          `The space stays at 0.1. Backup: ${outcome.backup?.name ?? "?"}`,
+      );
+      expect(outcome.error.message, where).not.toContain(folder);
+      expectFixture(folder, where);
+    }
+
+    // SQLite itself refuses the COMMIT, after every statement and boundary ran: the driver's own
+    // failed-COMMIT path rolls everything back too.
+    {
+      const folder = copyOfFixture();
+      fault.reset(undefined, true);
+      const outcome = await migrate(folder);
+      expect(fault.hit).toBe(true);
+      if (outcome.state !== "failed") throw new Error("a refused COMMIT did not fail");
+      expect(outcome.stage).toBe("migration");
+      expect(outcome.error.code).toBe("MIGRATION_FAILED");
+      expect(outcome.error.message).toMatch(
+        /^Migration to 0\.2 failed \([A-Z_]+\)\. Your data is unchanged\. The space stays at 0\.1\. Backup: pre-migrate-/,
+      );
+      expectFixture(folder, "a refused COMMIT");
+    }
+
+    // And with no fault the same copy migrates: a failure leaves nothing that blocks the next try.
+    const folder = copyOfFixture();
+    fault.reset(boundaries);
+    expect((await migrate(folder)).state).toBe("migrated");
+    expect(fault.hit).toBe(false);
+  }, 600_000);
+});
+
+describe("[A1.5.migration.older-build] an older build refuses to open a 0.2 space writable", () => {
+  test("the 0.1 build's writer is refused and changes nothing, its reader reads, and it restores no 0.2 backup", async () => {
+    const checked = await checkedDriver();
+    const folder = copyOfFixture();
+    const migrated = await migrateSpaceWith(checked, folder, {}, {});
+    expect(migrated.state).toBe("migrated");
+    const before = digestSpace(checked, folder);
+    const schemaBefore = (await factsOf(folder)).schema;
+
+    // In the calling thread, with the 0.1 chain: refused before anything persistent.
+    let refused: unknown;
+    try {
+      openSpaceAt(checked, folder, { role: "writer" }, STEPS_0_1).conn.close();
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(StorageError);
+    expect((refused as StorageError).code).toBe("SPACE_TOO_NEW");
+    expect(digestSpace(checked, folder)).toBe(before);
+    // Its reader reads the space it does not know, through space.json's min_reader.
+    const reader = openSpaceAt(checked, folder, { role: "reader" }, STEPS_0_1);
+    try {
+      expect(reader.readOnlyReasons).toEqual(["newer_revision"]);
+      expect(reader.revision).toEqual({ major: 0, minor: 2 });
+      expect(reader.conn.prepare("SELECT count(*) AS n FROM tasks").get()?.["n"]).toBe(
+        fixture.facts.counts["tasks"],
+      );
+    } finally {
+      reader.conn.close();
+    }
+
+    // The 0.1 build's storage worker, as its service opens a space: refused as the writer.
+    const old = await workerWithSteps("0.1");
+    try {
+      const error = await rejection(old.openSpaceWriter(folder, { machine: fixture.machine }));
+      expect(error.code).toBe("SPACE_TOO_NEW");
+      const { conn, info } = await old.openSpaceReader(folder);
+      expect(info.readOnlyReasons).toEqual(["newer_revision"]);
+      await conn.close();
+    } finally {
+      await old.close();
+    }
+    expect(digestSpace(checked, folder)).toBe(before);
+    expect((await factsOf(folder)).schema).toEqual(schemaBefore);
+
+    // A backup of the 0.2 space does not restore on the 0.1 build.
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    let restoreError: unknown;
+    try {
+      await restoreBackupWith(checked, backup.file, join(temp(), "mira"), {}, { steps: STEPS_0_1 });
+    } catch (error) {
+      restoreError = error;
+    }
+    expect((restoreError as StorageError).code).toBe("SPACE_TOO_NEW");
+  }, 180_000);
+});

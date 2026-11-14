@@ -1,0 +1,31 @@
+# Text files are stored and checked out with LF on every OS, so Prettier, tests and generated
+# files agree on Windows and Ubuntu.
+* text=auto eol=lf
+
+# The synthetic Planning prototype is byte-exact generator output with CRLF lines on purpose
+# (A7 3.14 M7.01): never converted.
+fixtures/planning-prototype/** -text
+
+# Node's public release files (SHASUMS256.txt, its OpenPGP signature, the release keyring) are
+# signed bytes that the build's tests verify: never converted.
+fixtures/node-v26.13.1/** -text
+
+# Windows batch files need CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary files are never converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.exe binary
+*.dll binary
+*.gz binary
+*.zip binary
+*.db binary
+*.sqlite binary

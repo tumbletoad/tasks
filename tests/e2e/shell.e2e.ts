@@ -1,0 +1,381 @@
+// The app shell end to end (A7 3.12 M5.01), in Chromium and Firefox, against the real service
+// process with fixture data.
+//
+// Verify line: No style is blocked under the strict CSP. Switching space in one tab leaves another
+// tab on its space, and a new tab opens the default space. (The contrast and the lint are unit
+// tests: packages/web/src/theme/contrast.test.ts, scripts/lint-rules.test.ts.)
+import { expect, type Page } from "@playwright/test";
+import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import { test } from "./fixture.ts";
+import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
+import { SLOW_MS } from "./world.ts";
+
+const THEME_KEY = `${PRODUCT_ID}.theme`;
+
+const field = (page: Page) => page.getByRole("textbox", { name: "New task" });
+const spaces = (page: Page) => page.getByRole("dialog", { name: "Spaces on this machine" });
+
+/** Chooses a theme the way a person does: a press on its label (the radio itself is hidden). */
+async function choose(page: Page, theme: string): Promise<void> {
+  await page.locator("label", { hasText: theme }).click();
+  await expect(page.getByRole("radio", { name: new RegExp(`^${theme}`) })).toBeChecked();
+}
+
+/** Opens the switcher and picks `name`: this tab only moves to that space. */
+async function switchTo(page: Page, from: string, name: string): Promise<void> {
+  await spaceSwitcher(page, from).click();
+  await spaces(page).getByRole("link", { name }).click();
+  await showsSpace(page, name);
+}
+
+test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new tab opens the default", () => {
+  test("switching space in one tab leaves another tab on its space, and a new tab opens the default space", async ({
+    context,
+    world,
+  }) => {
+    const { origin, mira, studio } = world;
+    const project = test.info().project.name;
+    const a = await context.newPage();
+    const b = await context.newPage();
+    await a.goto(await world.signInUrl(`/s/${mira.id}`));
+    await showsSpace(a, mira.name);
+    await expect(a).toHaveURL(`${origin}/s/${mira.id}/today`);
+    // The second tab uses the token the first one stored, on a view of its own.
+    await b.goto(`${origin}/s/${mira.id}/inbox`);
+    await showsSpace(b, mira.name);
+    await expect(b.getByRole("link", { name: /^Inbox, \d+ tasks?$/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    // Drafts in both tabs, then tab A switches to Studio.
+    const draftA = `Ask about the lease (${project})`;
+    const draftB = `Return the library books (${project})`;
+    await field(a).fill(draftA);
+    await field(b).fill(draftB);
+    await switchTo(a, mira.name, studio.name);
+    await expect(a).toHaveURL(`${origin}/s/${studio.id}/today`);
+    await expect(
+      a.locator('[data-part="title"]', { hasText: "Sketch the spring poster" }),
+    ).toBeVisible();
+    await expect(field(a)).toHaveValue("");
+
+    // Tab B is still on Mira: its route, its draft, and a feed of Mira's that still delivers.
+    await expect(b).toHaveURL(`${origin}/s/${mira.id}/inbox`);
+    await showsSpace(b, mira.name);
+    await expect(field(b)).toHaveValue(draftB);
+    await field(b).press("Enter");
+    await expect(b.locator('[data-part="title"]', { hasText: draftB })).toBeVisible();
+    await expect(a.locator('[data-part="title"]', { hasText: draftB })).toHaveCount(0);
+
+    // Back to Mira in tab A: its draft is still there.
+    await switchTo(a, studio.name, mira.name);
+    await expect(field(a)).toHaveValue(draftA);
+    await expect(a.locator('[data-part="title"]', { hasText: draftB })).toBeVisible();
+
+    // Make default: Studio. It changes only what a new tab opens.
+    await spaceSwitcher(a, mira.name).click();
+    await spaces(a)
+      .getByRole("button", { name: `Make ${studio.name} the default space` })
+      .click();
+    await expect(a.getByText(`New tabs open ${studio.name}.`)).toBeVisible();
+    await expect(spaces(a).getByText("Default", { exact: true })).toBeVisible();
+    await a.keyboard.press("Escape");
+    await expect(a).toHaveURL(`${origin}/s/${mira.id}/today`);
+    await expect(b).toHaveURL(`${origin}/s/${mira.id}/inbox`);
+    await showsSpace(b, mira.name);
+
+    const c = await context.newPage();
+    await c.goto(`${origin}/`);
+    await expect(c).toHaveURL(`${origin}/s/${studio.id}/today`, { timeout: SLOW_MS });
+    await showsSpace(c, studio.name);
+    // A task link without a space opens in the default space too.
+    await c.goto(`${origin}/?task=S-1`);
+    await expect(c).toHaveURL(`${origin}/s/${studio.id}/task/S-1`);
+
+    // And back: Mira is the default again, so the world's other tests see the machine as it was.
+    await spaceSwitcher(c, studio.name).click();
+    await spaces(c)
+      .getByRole("button", { name: `Make ${mira.name} the default space` })
+      .click();
+    await expect(c.getByText(`New tabs open ${mira.name}.`)).toBeVisible();
+    const d = await context.newPage();
+    await d.goto(`${origin}/`);
+    await expect(d).toHaveURL(`${origin}/s/${mira.id}/today`, { timeout: SLOW_MS });
+    await expect(c).toHaveURL(`${origin}/s/${studio.id}/task/S-1`);
+  });
+});
+
+test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", () => {
+  test("no style is blocked: React Aria's style takes the nonce, the bundled fonts load, nothing leaves the origin", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const requests: string[] = [];
+    page.on("request", (request) => requests.push(request.url()));
+    const response = await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    const csp = response?.headers()["content-security-policy"] ?? "";
+    expect(csp).toMatch(/style-src 'self' 'nonce-[A-Za-z0-9+/]{22}=='/);
+    expect(csp).not.toMatch(/unsafe-inline|unsafe-eval/);
+    await showsSpace(page, world.mira.name);
+
+    // A press on React Aria's controls: the switcher's popover, Settings' radio group.
+    await spaceSwitcher(page, world.mira.name).click();
+    await expect(spaces(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByRole("link", { name: "Settings" }).click();
+    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/settings/appearance`);
+    const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    expect(await background()).toBe("rgb(23, 22, 20)");
+    await choose(page, "Washi");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "washi");
+    expect(await background()).toBe("rgb(245, 242, 235)");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await choose(page, "System");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
+    expect(await background()).toBe("rgb(23, 22, 20)");
+    await page.emulateMedia({ colorScheme: "light" });
+    expect(await background()).toBe("rgb(245, 242, 235)");
+    // The choice holds after a reload.
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
+    await choose(page, "Sumi");
+    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
+    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_KEY)).toBe("sumi");
+
+    // The narrow layout's drawer is a React Aria modal too.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Menu" }).click();
+    const drawer = page.getByRole("dialog", { name: "Views and areas" });
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole("link", { name: /^Open, \d+ tasks?$/ }).click();
+    await expect(drawer).toBeHidden();
+    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/open`);
+
+    // Every style element carries the page's nonce; no inline style attribute came from markup.
+    const styles = await page.evaluate(() => {
+      const nonce = document.querySelector('meta[name="csp-nonce"]')?.getAttribute("content");
+      return [...document.querySelectorAll("style")].map((s) => ({
+        id: s.id,
+        ok: nonce !== null && nonce !== undefined && s.nonce === nonce,
+      }));
+    });
+    expect(styles.length).toBeGreaterThan(0);
+    expect(styles.every((s) => s.ok)).toBe(true);
+
+    // The bundled faces load from this origin.
+    const faces = await page.evaluate(async () => {
+      await document.fonts.ready;
+      return [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family);
+    });
+    expect(faces.map((f) => f.replaceAll('"', ""))).toContain("Inter Variable");
+    for (const url of requests) {
+      expect(url.startsWith(`${world.origin}/`) || url.startsWith("ws://127.0.0.1:"), url).toBe(
+        true,
+      );
+    }
+
+    // The web app manifest, its icons, and no service worker.
+    const manifest = await page.request.get(`${world.origin}/manifest.webmanifest`);
+    expect(manifest.status()).toBe(200);
+    const body = (await manifest.json()) as {
+      name: string;
+      start_url: string;
+      icons: { src: string }[];
+    };
+    expect(body.name).toBe(PRODUCT_NAME);
+    expect(body.start_url).toBe("/");
+    for (const icon of body.icons) {
+      expect((await page.request.get(`${world.origin}${icon.src}`)).status(), icon.src).toBe(200);
+    }
+    const workers = await page.evaluate(async () =>
+      "serviceWorker" in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+    );
+    expect(workers).toBe(0);
+    expect(await violations(page)).toEqual([]);
+  });
+});
+
+test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide and narrow", () => {
+  test("screenshots of every theme at 1,440 and 390 px, with the switcher and the drawer open", async ({
+    page,
+    world,
+  }) => {
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
+    const row = page.locator(`li[data-task="${world.task.ref}"]`);
+    await expect(row).toHaveAttribute("data-expanded", "true");
+    // System is shown with the computer in light mode, so it differs from Sumi.
+    const themes = [
+      { theme: "sumi", scheme: "dark" },
+      { theme: "washi", scheme: "dark" },
+      { theme: "system", scheme: "light" },
+    ] as const;
+    for (const { theme, scheme } of themes) {
+      // Reduced motion: no transition is caught half way in a screenshot.
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+      await page.evaluate(
+        (value) => {
+          localStorage.setItem(value.key, value.theme);
+        },
+        { key: THEME_KEY, theme },
+      );
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.reload();
+      await expect(row).toHaveAttribute("data-expanded", "true");
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        const scroll = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(scroll, `horizontal scroll at ${String(width)} px`).toBeLessThanOrEqual(0);
+        await page.screenshot({
+          path: test.info().outputPath(`shell-${theme}-${String(width)}.png`),
+          fullPage: true,
+        });
+      }
+      await page.getByRole("button", { name: "Menu" }).click();
+      await expect(page.getByRole("dialog", { name: "Views and areas" })).toBeVisible();
+      await page.screenshot({ path: test.info().outputPath(`shell-${theme}-390-drawer.png`) });
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await spaceSwitcher(page, world.mira.name).click();
+      await expect(spaces(page).getByRole("link", { name: world.studio.name })).toBeVisible();
+      await page.screenshot({ path: test.info().outputPath(`shell-${theme}-1440-spaces.png`) });
+      await page.keyboard.press("Escape");
+    }
+  });
+});
+
+/** The tab's feed sockets, each with a switch that holds what the service sends it. */
+interface Feed {
+  hold: boolean;
+  readonly held: (string | Buffer)[];
+  release(): void;
+}
+
+/** Routes the page's feed sockets through the test, so a test can hold back a confirmation. */
+async function feeds(page: Page): Promise<Feed[]> {
+  const sockets: Feed[] = [];
+  await page.routeWebSocket(/\/api\/v1\/ws/, (ws) => {
+    const server = ws.connectToServer();
+    const feed: Feed = {
+      hold: false,
+      held: [],
+      release() {
+        this.hold = false;
+        for (const message of this.held.splice(0)) ws.send(message);
+      },
+    };
+    sockets.push(feed);
+    server.onMessage((message) => {
+      if (feed.hold) feed.held.push(message);
+      else ws.send(message);
+    });
+  });
+  return sockets;
+}
+
+test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and its text goes once", () => {
+  test("Enter again before the feed confirms sends nothing more; the add lands once", async ({
+    page,
+    world,
+  }) => {
+    const sockets = await feeds(page);
+    const adds: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.add")) adds.push(request.url());
+    });
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await showsSpace(page, world.mira.name);
+    await expect(field(page)).toBeEnabled();
+    const feed = sockets.at(-1);
+    if (feed === undefined) throw new Error("the page opened no feed");
+
+    // The service takes the add, but its confirmation is held back.
+    feed.hold = true;
+    const title = `Water the office plants (${test.info().project.name})`;
+    await field(page).fill(title);
+    await Promise.all([page.waitForResponse("**/api/v1/op/task.add"), field(page).press("Enter")]);
+    await field(page).press("Enter");
+    await page.getByRole("button", { name: "Add the task" }).click();
+    await expect(field(page)).toHaveValue(title);
+
+    feed.release();
+    await expect(page.locator('[data-part="title"]', { hasText: title })).toHaveCount(1, {
+      timeout: SLOW_MS,
+    });
+    await expect(field(page)).toHaveValue("");
+    expect(adds).toHaveLength(1);
+  });
+
+  test("a switch of space before the feed confirms an add leaves no draft of it behind", async ({
+    page,
+    world,
+  }) => {
+    const sockets = await feeds(page);
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await showsSpace(page, world.mira.name);
+    await expect(field(page)).toBeEnabled();
+    const feed = sockets.at(-1);
+    if (feed === undefined) throw new Error("the page opened no feed");
+
+    feed.hold = true;
+    const title = `Send the meeting notes (${test.info().project.name})`;
+    await field(page).fill(title);
+    await Promise.all([page.waitForResponse("**/api/v1/op/task.add"), field(page).press("Enter")]);
+    // The old space's session stops with its confirmation still held back.
+    await switchTo(page, world.mira.name, world.studio.name);
+    await switchTo(page, world.studio.name, world.mira.name);
+    await expect(page.locator('[data-part="title"]', { hasText: title })).toHaveCount(1, {
+      timeout: SLOW_MS,
+    });
+    await expect(field(page)).toHaveValue("");
+  });
+});
+
+test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens that task", () => {
+  test("the chooser of a machine without a default keeps the task a link named", async ({
+    page,
+    world,
+  }) => {
+    // The machine's default is unset, as the page reads it: the person chooses the space.
+    await page.route("**/api/v1/space/list", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { result: Record<string, unknown> };
+      await route.fulfill({
+        response,
+        json: { ...body, result: { ...body.result, default: null } },
+      });
+    });
+    // The link `tasks open <task>` makes without a space.
+    await page.goto(await world.signInUrl(`/task/${world.task.ref}`));
+    await page.getByRole("link", { name: world.mira.name }).click();
+    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/task/${world.task.ref}`);
+    await expect(page.locator(`li[data-task="${world.task.ref}"]`)).toHaveAttribute(
+      "data-expanded",
+      "true",
+    );
+  });
+
+  test("going from one task's route to another's, and back, expands the task each names", async ({
+    page,
+    world,
+  }) => {
+    const first = page.locator(`li[data-task="${world.task.ref}"]`);
+    const second = page.locator(`li[data-task="${world.spare.ref}"]`);
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
+    await expect(first).toHaveAttribute("data-expanded", "true");
+    // A navigation inside the page, as the router makes one.
+    await page.evaluate((path) => {
+      history.pushState(null, "", path);
+    }, `/s/${world.mira.id}/task/${world.spare.ref}`);
+    await expect(second).toHaveAttribute("data-expanded", "true");
+    await expect(first).not.toHaveAttribute("data-expanded", "true");
+    await page.goBack();
+    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/task/${world.task.ref}`);
+    await expect(first).toHaveAttribute("data-expanded", "true");
+    await expect(second).not.toHaveAttribute("data-expanded", "true");
+  });
+});

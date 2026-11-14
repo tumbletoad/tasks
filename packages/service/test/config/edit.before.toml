@@ -1,0 +1,36 @@
+# Mira's machine.toml, written by hand. Every byte outside an edit must survive.
+#   [approvals]   <- a header in a comment is not a header
+
+[log]
+level   =   "info"      # spacing and this comment stay
+
+[[spaces]]
+id = "sp_3z8sm956jp8dajmtsar5kx026c"
+path = "/home/mira/Tasks/work"
+
+[[instance]]
+id = "codex-work"
+target = "codex-cli"
+label = "Codex · work"
+extra_args = [
+  "--search",   # a comment inside an array
+  "]]\n[approvals]",
+]
+note = """
+[[instance]]
+id = "not-an-instance"
+\"""still the string\"""
+"""
+literal = '''
+[approvals]
+'''
+
+[instance.env]
+CODEX_HOME = "/home/mira/.codex"
+
+# The next block documents approvals.
+
+[approvals]
+"sha256-bbb50b140ef4052560a197c58ac0d48a02a61125e068cb6d6eed256d6ee340d9" = "deny"   # kept
+
+# Trailing words at the end of the file.

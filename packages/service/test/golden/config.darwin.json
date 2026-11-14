@@ -1,0 +1,71 @@
+{
+  "config": {
+    "service": {
+      "defaultSpace": null
+    },
+    "http": {
+      "port": null
+    },
+    "ui": {
+      "openMode": "tab"
+    },
+    "updates": {
+      "channel": "stable",
+      "check": true,
+      "auto": false
+    },
+    "log": {
+      "level": "warn"
+    },
+    "spaces": [
+      {
+        "id": "sp_3z8sm956jp8dajmtsar5kx026c",
+        "path": "/Users/mira/Tasks/work",
+        "enabled": true
+      }
+    ],
+    "roots": [
+      {
+        "id": "work",
+        "label": "work",
+        "path": "/Users/mira/work",
+        "runs": false
+      }
+    ],
+    "terminal": {
+      "app": "custom",
+      "path": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+      "window": "new",
+      "fallbacks": [],
+      "afterExit": "close-on-success",
+      "custom": [
+        "{terminal}",
+        "--working-directory={cwd}",
+        "-e",
+        "{shim}"
+      ]
+    },
+    "instances": [
+      {
+        "id": "claude-work",
+        "target": "claude-cli",
+        "label": "Claude Code · work",
+        "account": "work",
+        "spaces": [],
+        "exec": "/Users/mira/.local/bin/claude-work",
+        "argsPrefix": [],
+        "configHome": "/Users/mira/.claude-work",
+        "env": {},
+        "openPermission": "inherit",
+        "runPermission": "inherit",
+        "extraArgs": [],
+        "prompt": "sent",
+        "viaLoginShell": true,
+        "remoteAllowed": false,
+        "enabled": true
+      }
+    ],
+    "approvals": {}
+  },
+  "problems": []
+}

@@ -1,0 +1,567 @@
+/*
+ * The task row (A5 3.6, 3.20): marker 16 px, check 24 px, title and summary (flex), then fixed
+ * columns: due 64, age 40, priority 28, sources 76, folder 24, star 24, launch 30. Widths are fixed,
+ * so columns line up on every row. Narrow lists drop sources, folder, age and priority, in that
+ * order; due, star and launch never drop. Hover gives a subtle background and nothing else. Tokens
+ * only.
+ */
+
+.row {
+  list-style: none;
+  border-radius: 8px;
+}
+
+/* In a virtual list every item sits at its offset from the list's top (List.tsx). */
+:global([data-virtual="true"]) .row {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  transform: translateY(var(--k-y, 0));
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 16px 24px minmax(0, 1fr) auto;
+  align-items: start;
+  min-height: 52px;
+  padding: 9px 10px 9px 0;
+  border-radius: 8px;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.row:not([data-expanded="true"]) .line:hover {
+  background: var(--k-hover);
+}
+
+/* Expanded: a card on `raised`, in place, with room around it (A5 3.7). */
+.row[data-expanded="true"] {
+  padding-block: 6px 10px;
+}
+
+.row[data-expanded="true"] .line {
+  padding-top: 14px;
+  border-radius: 12px 12px 0 0;
+  background: var(--k-raised);
+}
+
+.body {
+  padding: 0 20px 16px 40px;
+  border-radius: 0 0 12px 12px;
+  background: var(--k-raised);
+}
+
+/* Marker: at most one, the changed dot or the needs-input ring (A5 3.6). */
+.marker {
+  display: grid;
+  place-items: center;
+  height: 20px;
+}
+
+.marker > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.marker[data-kind="changed"] > span {
+  background: var(--k-accent);
+}
+
+.marker[data-kind="needs_input"] > span {
+  border: 1.5px solid var(--k-review);
+}
+
+/* Check: a 16 px circle with a 1.5 px control line, in a 24 px target. */
+.check {
+  display: grid;
+  place-items: center;
+  height: 20px;
+}
+
+.box {
+  appearance: none;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    transparent 6.5px,
+    var(--k-control) 6.75px 8px,
+    transparent 8.25px
+  );
+  cursor: pointer;
+}
+
+.box:disabled {
+  cursor: default;
+}
+
+.main {
+  min-width: 0;
+  padding-inline-end: 12px;
+}
+
+.tline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chip keeps its words up to 45 % of the line; the title gives way first. */
+.chip {
+  flex: none;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  max-width: 45%;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--k-hover);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  color: var(--k-text-2);
+  white-space: nowrap;
+}
+
+.chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.chip[data-kind="waiting"] {
+  background: var(--k-waiting-soft);
+  color: var(--k-waiting);
+}
+
+.chip[data-kind="review"] {
+  background: var(--k-review-soft);
+  color: var(--k-review);
+}
+
+.summary {
+  margin-top: 1px;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.prefix {
+  color: var(--k-text-2);
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--k-slot);
+}
+
+.prefix + .text::before {
+  content: "·";
+  margin-inline: 6px;
+  color: var(--k-muted);
+}
+
+.row[data-expanded="true"] .title,
+.row[data-expanded="true"] .summary {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.row[data-expanded="true"] .summary {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--k-text-2);
+}
+
+/* The fixed columns, on the title line. */
+.slots {
+  display: grid;
+  grid-template-columns: 64px 40px 28px 76px 24px 24px 30px;
+  align-items: center;
+  column-gap: 6px;
+  height: 24px;
+  margin-top: -2px;
+  color: var(--k-muted);
+}
+
+/* The expanded task's body owns these facts: the slots go, the star stays (A5 3.7). */
+.row[data-expanded="true"] .due,
+.row[data-expanded="true"] .age,
+.row[data-expanded="true"] .prio,
+.row[data-expanded="true"] .sources,
+.row[data-expanded="true"] .folder,
+.row[data-expanded="true"] .launch {
+  visibility: hidden;
+}
+
+.due,
+.age {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.due {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.due svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.due[data-tone="late"] {
+  color: var(--k-late);
+}
+
+.due[data-tone="soon"] {
+  color: var(--k-due);
+}
+
+.due[data-tone="follow_up"] {
+  color: var(--k-waiting);
+}
+
+.prio {
+  justify-self: start;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+
+.prio[data-level="1"] {
+  padding: 0 6px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  color: var(--k-text-2);
+}
+
+.sources {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.source {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 24px;
+  color: var(--k-muted);
+}
+
+a.source:hover {
+  color: var(--k-text);
+}
+
+.more {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.slot {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 24px;
+}
+
+.icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--k-fast) var(--k-ease),
+    color var(--k-fast) var(--k-ease);
+}
+
+.icon:hover {
+  color: var(--k-text);
+  background: var(--k-bg);
+}
+
+.icon[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.icon[data-on="true"] {
+  color: var(--k-star);
+}
+
+.icon[data-on="true"] svg {
+  fill: currentColor;
+}
+
+/* The launch tile: the instance's monogram in a small box whose 1 px outline is its ring colour,
+   muted (A5 3.6). A 30 x 24 target around an 18 px box. */
+.tile {
+  --k-ring: var(--k-control);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 0.75rem;
+  color: var(--k-text-2);
+  cursor: pointer;
+}
+
+.tile::before {
+  content: "";
+  position: absolute;
+  inset: 3px 2px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k-ring) 75%, transparent);
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.tile:hover::before {
+  background: var(--k-bg);
+  box-shadow: inset 0 0 0 1px var(--k-ring);
+}
+
+.tile[data-ring="1"] {
+  --k-ring: var(--k-slot-1);
+}
+.tile[data-ring="2"] {
+  --k-ring: var(--k-slot-2);
+}
+.tile[data-ring="3"] {
+  --k-ring: var(--k-slot-3);
+}
+.tile[data-ring="4"] {
+  --k-ring: var(--k-slot-4);
+}
+.tile[data-ring="5"] {
+  --k-ring: var(--k-slot-5);
+}
+.tile[data-ring="6"] {
+  --k-ring: var(--k-slot-6);
+}
+.tile[data-ring="7"] {
+  --k-ring: var(--k-slot-7);
+}
+.tile[data-ring="8"] {
+  --k-ring: var(--k-slot-8);
+}
+
+.tile[data-state="opening"]::after,
+.tile[data-state="not_confirmed"]::after,
+.tile[data-state="connected"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 -1px;
+  border: 1.5px solid var(--k-accent);
+  border-radius: 7px;
+}
+
+.tile[data-state="opening"] {
+  cursor: default;
+}
+
+.tile[data-state="opening"]::after {
+  border-color: var(--k-accent) transparent;
+  animation: spin 1.2s linear infinite;
+}
+
+.tile[data-state="connected"] {
+  color: var(--k-accent);
+}
+
+.tile[data-state="connected"]::after {
+  animation: pulse 2s var(--k-ease) infinite;
+}
+
+.tile[data-state="unavailable"],
+.tile[data-state="elsewhere"] {
+  opacity: 0.5;
+}
+
+.tile[data-state="elsewhere"] {
+  cursor: default;
+}
+
+.tile[data-state="copy_only"]::before {
+  box-shadow: none;
+}
+
+.tile[data-state="copy_only"] {
+  color: var(--k-muted);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* A row an agent just added fades in with an accent-soft background (A5 3.15 item 7, 3.20). */
+.row[data-fresh] .line {
+  animation: fresh 1.2s var(--k-ease);
+}
+
+@keyframes fresh {
+  from {
+    background: var(--k-accent-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile[data-state="opening"]::after,
+  .tile[data-state="connected"]::after {
+    animation: none;
+  }
+
+  /* Under reduced motion the flash is a static highlight for the same 1.2 s. */
+  .row[data-fresh] .line {
+    animation: fresh-static 1.2s steps(1, end);
+  }
+
+  .line,
+  .icon,
+  .tile::before {
+    transition: none;
+  }
+}
+
+@keyframes fresh-static {
+  from {
+    background: var(--k-accent-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* Narrow lists drop columns: sources, then folder, then age, then priority (A5 3.6). The list is
+   a size container, so this follows the list's width, not the window's. */
+@container (max-width: 659px) {
+  .slots {
+    grid-template-columns: 64px 40px 28px 24px 24px 30px;
+  }
+
+  .sources {
+    display: none;
+  }
+}
+
+@container (max-width: 589px) {
+  .slots {
+    grid-template-columns: 64px 40px 28px 24px 30px;
+  }
+
+  .folder {
+    display: none;
+  }
+}
+
+@container (max-width: 549px) {
+  .slots {
+    grid-template-columns: 64px 28px 24px 30px;
+  }
+
+  .age {
+    display: none;
+  }
+}
+
+@container (max-width: 509px) {
+  .slots {
+    grid-template-columns: 56px 24px 30px;
+    column-gap: 4px;
+  }
+
+  .prio {
+    display: none;
+  }
+
+  .line {
+    padding-inline-end: 4px;
+  }
+
+  .main {
+    padding-inline-end: 6px;
+  }
+}
+
+@media (forced-colors: active) {
+  .tile::before,
+  .box {
+    box-shadow: none;
+    border: 1px solid ButtonText;
+  }
+
+  .marker[data-kind="changed"] > span {
+    background: Highlight;
+  }
+}

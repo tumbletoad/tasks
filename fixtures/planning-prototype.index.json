@@ -1,0 +1,2603 @@
+{
+  "fixture": "fixtures/planning-prototype",
+  "generator": "pnpm seed --planning",
+  "conventions": {
+    "source": "Every rule here is the prototype's own, read from its code (A7 3.15.2)",
+    "lines": "Each ledger is split as Python's str.splitlines() splits: at LF, CRLF, CR, U+000B, U+000C, U+001C, U+001D, U+001E, U+0085, U+2028 and U+2029. Each piece is matched on its own. Line numbers are 1-based in that split. A line never holds its line end",
+    "grammar": "Task line ^- \\[([ xX])\\] \\*\\*(.+?)\\*\\*\\s*(.*)$. The title is the bold text with every trailing dot stripped. A line starting '## ' sets the group to the rest of the line, trimmed; before any heading the group is Other. After the split no line holds a line terminator, so JavaScript's `.` matches what Python's does without the s flag",
+    "done": "Every task line in DONE.md is done whatever its checkbox. In TODO.md x or X is done",
+    "markers": "<!-- task:ID --> with ID [a-z0-9_-]+. The first marker anywhere in the line, title included, gives the ID. The body is the text after the title with every marker removed, then trimmed",
+    "fallbackId": "t- and eight lower-case hex digits of 32-bit FNV-1a (offset basis 2166136261, prime 16777619, modulo 2^32) over the Unicode code points of <group>|<title>, the title without its trailing dots. Each whole code point is XORed in, then multiplied. Not UTF-8 bytes, not UTF-16 units",
+    "events": "Every events/*.json is read, in sorted file-name order. A file whose name starts with web- counts only when events/<same stem>.ready (an empty file) exists. Any other file counts as soon as it exists. An event is an object {id, task, action, at}: action check, uncheck, focus or unfocus; id and task [a-zA-Z0-9_-]{1,100}; at \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,9})?)?(Z|[+-]\\d{2}:\\d{2}). An invalid file makes the prototype's read of the folder fail as a whole: every event file here is valid",
+    "eventOrder": "Counted events apply in order of the instant of at, then id as text. The last check or uncheck per task wins, and the last focus or unfocus sets the star. No two times here differ by less than a microsecond",
+    "eventWriters": "The page writes events/web-<lower-case UUID>.json, then the .ready file. Its JSON is written compactly here with a millisecond UTC time (the fixture's choice). The prototype's import command writes <id>.json as two-space JSON with a final newline, and a .ready file only when the id starts with web-",
+    "reconcile": "reconcile writes a DONE line as the TODO line with its marker removed, '- [ ]' turned into '- [x]', right-trimmed, then ' (done YYYY-MM-DD; <evidence>) <!-- task:<id> -->'. New lines go after the first line of DONE.md, separated by blank lines",
+    "optionalFiles": "data/metadata.json: one object keyed by task ID (missing: {}). data/jira.json: a list of ticket rows (missing: []); a row without key is skipped, key and url (path /browse/<KEY>) are read, other fields are free. data/audit.json: one free-form object (missing: {}) with a scalar reviewed time and nested objects or lists the page only displays",
+    "hosts": "Every URL host is a reserved example domain (RFC 2606)"
+  },
+  "me": "Mira Okafor",
+  "roots": {
+    "work": "/home/mira/work",
+    "oss": "/home/mira/oss"
+  },
+  "spaceTask": {
+    "seed": "mira",
+    "tasks": 24,
+    "ref": "M-1",
+    "title": "Fix appointment time zones",
+    "key": "jira:LUM-1000"
+  },
+  "counts": {
+    "todoTaskLines": 37,
+    "doneTaskLines": 9,
+    "taskLines": 46,
+    "metadataEntries": 30,
+    "metadataOrphans": 3,
+    "taskLinesWithoutMetadata": 19,
+    "eventFiles": 16,
+    "readyFiles": 4,
+    "countedEventFiles": 15
+  },
+  "tasks": [
+    {
+      "id": "t-b3fc07df",
+      "file": "TODO.md",
+      "line": 5,
+      "group": "Other",
+      "title": "Order printer toner",
+      "body": "For the home office. (added 2026-10-03, codex)",
+      "marked": false,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-eb2a8db7",
+      "file": "TODO.md",
+      "line": 8,
+      "group": "Lumen",
+      "title": "Follow up on the time zone fix for the clinic",
+      "body": "The clinic still sees shifted times in two reports. Next: compare the November exports. Refs: LUM-1000. (added 2026-10-05, claude)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-7b0d59b4",
+      "file": "TODO.md",
+      "line": 9,
+      "group": "Lumen",
+      "title": "Review the invoice export",
+      "body": "Tomas sends the corrected file. Refs: mail thread. (added 2026-10-07, codex)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-8ae0f771",
+      "file": "TODO.md",
+      "line": 10,
+      "group": "Lumen",
+      "title": "Draft the Q1 portal roadmap",
+      "body": "Outline is in the shared doc. (added 2026-10-09, claude)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-7e820ac6",
+      "file": "TODO.md",
+      "line": 11,
+      "group": "Lumen",
+      "title": "Answer the clinic about sync delays",
+      "body": "Draft reply is in the chat.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-b5679597",
+      "file": "TODO.md",
+      "line": 12,
+      "group": "Lumen",
+      "title": "Update the onboarding checklist",
+      "body": "Aiko took this over. (added 2026-10-12, codex)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-c77640f4",
+      "file": "TODO.md",
+      "line": 13,
+      "group": "Lumen",
+      "title": "Prepare the sprint demo",
+      "body": "Next: book the demo room and send the agenda. (added 2026-10-14, claude)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-9b8dbc3a",
+      "file": "TODO.md",
+      "line": 14,
+      "group": "Lumen",
+      "title": "Waiting on design sign-off for the portal header",
+      "body": "Noor reviews the mock-ups.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-9a0298cb",
+      "file": "TODO.md",
+      "line": 15,
+      "group": "Lumen",
+      "title": "Clean up the flags from v2.1",
+      "body": "",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-1d168059",
+      "file": "TODO.md",
+      "line": 16,
+      "group": "Lumen",
+      "title": "Write the release notes for 2.3",
+      "body": "Notes merged, waiting for reconcile. (added 2026-10-15, codex)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "t-3caf46f3",
+      "file": "TODO.md",
+      "line": 17,
+      "group": "Lumen",
+      "title": "Check the backup restore drill",
+      "body": "Ran it on staging.",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "lum_report-api",
+      "file": "TODO.md",
+      "line": 22,
+      "group": "Clinic sync",
+      "title": "Migrate the reports to the new API",
+      "body": "Two reports left. Refs: LUM-1042. (added 2026-10-16, claude)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-f857f3b4",
+      "file": "TODO.md",
+      "line": 23,
+      "group": "Clinic sync",
+      "title": "Read the accessibility audit",
+      "body": "Section 4 covers the report pages. Refs: LUM-1042.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-5216665d",
+      "file": "TODO.md",
+      "line": 26,
+      "group": "Home",
+      "title": "Book the dentist",
+      "body": "Ask for an early slot.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-c06f2944",
+      "file": "TODO.md",
+      "line": 27,
+      "group": "Home",
+      "title": "Renew the passport",
+      "body": "Photos are done. Book the appointment at the town hall.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-6e1e9b9a",
+      "file": "TODO.md",
+      "line": 28,
+      "group": "Home",
+      "title": "Plant the spring bulbs",
+      "body": "Tulips along the fence. (added 2026-10-20, codex)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "home-fence",
+      "file": "TODO.md",
+      "line": 29,
+      "group": "Home",
+      "title": "Repair the garden fence",
+      "body": "Two posts are loose.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-b4618591",
+      "file": "TODO.md",
+      "line": 30,
+      "group": "Home",
+      "title": "Reply to Zoë about the café booking",
+      "body": "(added 2026-10-21, claude)",
+      "marked": false,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-c768ea6d",
+      "file": "TODO.md",
+      "line": 31,
+      "group": "Home",
+      "title": "Pick up the 🎂 for Aiko's birthday",
+      "body": "Order it at the bakery on Main Street first.",
+      "marked": false,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-9de100f7",
+      "file": "TODO.md",
+      "line": 32,
+      "group": "Home",
+      "title": "Sort the photo archive",
+      "body": "Started with 2019. (added 2026-09-31, codex)",
+      "marked": false,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-ae318657",
+      "file": "TODO.md",
+      "line": 33,
+      "group": "Home",
+      "title": "Collect every garden idea from the green notebook, the photos on the kitchen board and the notes from the allotment meeting into one plan for the spring, with the beds along the fence, the herbs by the back door, the compost corner, the rain barrel and the new path to the shed, and decide which of them fit the budget this year",
+      "body": "Start with the beds along the fence.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-3a7b6ae3",
+      "file": "TODO.md",
+      "line": 34,
+      "group": "Home",
+      "title": "Renew the library card",
+      "body": "Bring the old card.",
+      "marked": false,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "home-bike",
+      "file": "TODO.md",
+      "line": 38,
+      "group": "Home",
+      "title": "Fix the bike light <!-- task:home-bike -->",
+      "body": "The rear one flickers.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "home-receipts",
+      "file": "TODO.md",
+      "line": 39,
+      "group": "Home",
+      "title": "Sort the receipts",
+      "body": "Start with October.  Then file them by month.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-de4f5a3d",
+      "file": "TODO.md",
+      "line": 42,
+      "group": "Errands",
+      "title": "Return the library books",
+      "body": "Due back at the branch on Main Street.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-cd015091",
+      "file": "TODO.md",
+      "line": 43,
+      "group": "Errands",
+      "title": "Buy coffee beans",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-4ed417b2",
+      "file": "TODO.md",
+      "line": 44,
+      "group": "Errands",
+      "title": "Buy oat milk",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-3781cf0d",
+      "file": "TODO.md",
+      "line": 45,
+      "group": "Errands",
+      "title": "Buy batteries",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-7c9180f4",
+      "file": "TODO.md",
+      "line": 46,
+      "group": "Errands",
+      "title": "Buy light bulbs",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-0cf50703",
+      "file": "TODO.md",
+      "line": 47,
+      "group": "Errands",
+      "title": "Buy stamps",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-11f39526",
+      "file": "TODO.md",
+      "line": 48,
+      "group": "Errands",
+      "title": "Buy bin bags",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-b1800612",
+      "file": "TODO.md",
+      "line": 49,
+      "group": "Errands",
+      "title": "Buy dish soap",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-d17fc050",
+      "file": "TODO.md",
+      "line": 50,
+      "group": "Errands",
+      "title": "Buy rice",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-88f5ce83",
+      "file": "TODO.md",
+      "line": 51,
+      "group": "Errands",
+      "title": "Buy tea",
+      "body": "From the corner shop.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-505646c0",
+      "file": "TODO.md",
+      "line": 54,
+      "group": "Lumen",
+      "title": "Plan the team offsite",
+      "body": "Venue shortlist is in the doc. (added 2026-10-22, claude)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-a9f461a4",
+      "file": "TODO.md",
+      "line": 55,
+      "group": "Lumen",
+      "title": "Order printer toner",
+      "body": "For the office printer on the second floor.",
+      "marked": false,
+      "checked": false,
+      "done": false,
+      "metadata": false
+    },
+    {
+      "id": "t-0e7b3bc1",
+      "file": "TODO.md",
+      "line": 58,
+      "group": "Open source",
+      "title": "Answer the tidy-md issue about tables",
+      "body": "A user reports broken column alignment. (added 2026-10-25, codex)",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
+      "id": "t-2d795674",
+      "file": "DONE.md",
+      "line": 3,
+      "group": "Other",
+      "title": "Water the balcony plants",
+      "body": "Every other day. (added 2026-10-26, codex) (done 2026-11-07; set up the drip tray)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": false
+    },
+    {
+      "id": "t-9428c833",
+      "file": "DONE.md",
+      "line": 5,
+      "group": "Other",
+      "title": "Send the clinic the sync timeline",
+      "body": "Shared in the clinic chat. (added 2026-10-28, claude) (done 2026-11-06; sent in the clinic chat)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "t-78155be0",
+      "file": "DONE.md",
+      "line": 8,
+      "group": "Lumen",
+      "title": "Ship the 2.2 hotfix",
+      "body": "Patched the token refresh. (added 2026-09-20, codex) (done 2026-09-24; released as 2.2.1)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "t-4ad8bad5",
+      "file": "DONE.md",
+      "line": 9,
+      "group": "Lumen",
+      "title": "Retire the old status page",
+      "body": "(done 2026-10-01; archived: replaced by the portal banner)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": false
+    },
+    {
+      "id": "t-a83b66b1",
+      "file": "DONE.md",
+      "line": 10,
+      "group": "Lumen",
+      "title": "Rename the staging bucket",
+      "body": "Renamed, links updated.",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "t-c3fab670",
+      "file": "DONE.md",
+      "line": 11,
+      "group": "Lumen",
+      "title": "Fix the login redirect",
+      "body": "(done 2026-02-30; fixed in 2.1)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "t-025e96e5",
+      "file": "DONE.md",
+      "line": 14,
+      "group": "Home",
+      "title": "Pay the water bill",
+      "body": "(done 2026-10-12; paid online)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "t-a1d04fae",
+      "file": "DONE.md",
+      "line": 15,
+      "group": "Home",
+      "title": "Archive the 2025 invoices",
+      "body": "Filed in the cabinet. (done 2026-10-18; scanned and filed)",
+      "marked": false,
+      "checked": true,
+      "done": true,
+      "metadata": false
+    },
+    {
+      "id": "t-5b9fb0b9",
+      "file": "DONE.md",
+      "line": 18,
+      "group": "Lumen",
+      "title": "Close the Q3 survey",
+      "body": "Results shared with the team.",
+      "marked": true,
+      "checked": false,
+      "done": true,
+      "metadata": true
+    }
+  ],
+  "cases": {
+    "added-clause": {
+      "description": "A body with `(added YYYY-MM-DD, <agent>)`",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 5,
+          "task": "t-b3fc07df"
+        },
+        {
+          "file": "TODO.md",
+          "line": 8,
+          "task": "t-eb2a8db7"
+        },
+        {
+          "file": "TODO.md",
+          "line": 30,
+          "task": "t-b4618591"
+        }
+      ]
+    },
+    "astral-fallback": {
+      "description": "An unmarked title with a character above U+FFFF: code points, UTF-16 units and UTF-8 bytes each give another fallback ID. Only the code points are right",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 31,
+          "task": "t-c768ea6d",
+          "expect": {
+            "id": "t-c768ea6d",
+            "utf8BytesWouldGive": "t-e3680ec4",
+            "utf16UnitsWouldGive": "t-01313087"
+          }
+        }
+      ]
+    },
+    "checked-in-todo": {
+      "description": "A checked task line ([x] or [X]) still in TODO.md: done",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 16,
+          "task": "t-1d168059"
+        },
+        {
+          "file": "TODO.md",
+          "line": 17,
+          "task": "t-3caf46f3"
+        }
+      ]
+    },
+    "confidence-free-text": {
+      "description": "confidence as a sentence",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "confidence"
+        }
+      ]
+    },
+    "confidence-missing": {
+      "description": "No confidence",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c77640f4",
+          "key": "confidence"
+        }
+      ]
+    },
+    "confidence-number": {
+      "description": "confidence as a number in text",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "confidence"
+        }
+      ]
+    },
+    "confidence-word": {
+      "description": "confidence as a word",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "confidence"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "confidence"
+        }
+      ]
+    },
+    "crlf": {
+      "description": "A line that ends in CRLF. DONE.md is CRLF throughout; TODO.md mixes LF and CRLF",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 21
+        },
+        {
+          "file": "TODO.md",
+          "line": 22,
+          "task": "lum_report-api"
+        },
+        {
+          "file": "TODO.md",
+          "line": 23,
+          "task": "t-f857f3b4"
+        },
+        {
+          "file": "TODO.md",
+          "line": 24
+        },
+        {
+          "file": "DONE.md",
+          "line": 1
+        },
+        {
+          "file": "DONE.md",
+          "line": 2
+        },
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674"
+        },
+        {
+          "file": "DONE.md",
+          "line": 4
+        },
+        {
+          "file": "DONE.md",
+          "line": 5,
+          "task": "t-9428c833"
+        },
+        {
+          "file": "DONE.md",
+          "line": 6
+        },
+        {
+          "file": "DONE.md",
+          "line": 7
+        },
+        {
+          "file": "DONE.md",
+          "line": 8,
+          "task": "t-78155be0"
+        },
+        {
+          "file": "DONE.md",
+          "line": 9,
+          "task": "t-4ad8bad5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 10,
+          "task": "t-a83b66b1"
+        },
+        {
+          "file": "DONE.md",
+          "line": 11,
+          "task": "t-c3fab670"
+        },
+        {
+          "file": "DONE.md",
+          "line": 12
+        },
+        {
+          "file": "DONE.md",
+          "line": 13
+        },
+        {
+          "file": "DONE.md",
+          "line": 14,
+          "task": "t-025e96e5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 15,
+          "task": "t-a1d04fae"
+        },
+        {
+          "file": "DONE.md",
+          "line": 16
+        },
+        {
+          "file": "DONE.md",
+          "line": 17
+        },
+        {
+          "file": "DONE.md",
+          "line": 18,
+          "task": "t-5b9fb0b9"
+        }
+      ]
+    },
+    "default-group": {
+      "description": "A task line before the first heading: group Other",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 5,
+          "task": "t-b3fc07df"
+        },
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674"
+        },
+        {
+          "file": "DONE.md",
+          "line": 5,
+          "task": "t-9428c833"
+        }
+      ]
+    },
+    "done-reconciled": {
+      "description": "A DONE.md line exactly as reconcile writes it from the TODO line in `expect.from`: marker removed, '- [ ]' turned into '- [x]', right-trimmed, then ' (done <date>; <evidence>) <!-- task:<id> -->'. It sits after the first line, between blank lines, before any heading",
+      "where": [
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674",
+          "expect": {
+            "from": "- [ ] **Water the balcony plants** Every other day. (added 2026-10-26, codex)",
+            "date": "2026-11-07",
+            "evidence": "set up the drip tray"
+          }
+        },
+        {
+          "file": "DONE.md",
+          "line": 5,
+          "task": "t-9428c833",
+          "expect": {
+            "from": "- [X] **Send the clinic the sync timeline** Shared in the clinic chat. (added 2026-10-28, claude) <!-- task:t-9428c833 -->",
+            "date": "2026-11-06",
+            "evidence": "sent in the clinic chat",
+            "note": "a [X] line has no '- [ ]' to turn, so it stays [X]"
+          }
+        }
+      ]
+    },
+    "done-reconciled-fallback": {
+      "description": "A reconciled line whose TODO line had no marker: reconcile writes the fallback ID it had in TODO.md as the marker, so the ID survives the move to group Other",
+      "where": [
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674",
+          "expect": {
+            "id": "t-2d795674",
+            "todoGroup": "Home",
+            "fallbackHere": "t-cd2e614d"
+          }
+        }
+      ]
+    },
+    "done-unchecked-box": {
+      "description": "A DONE.md line with an empty checkbox: done all the same",
+      "where": [
+        {
+          "file": "DONE.md",
+          "line": 18,
+          "task": "t-5b9fb0b9",
+          "expect": {
+            "checked": false,
+            "done": true
+          }
+        }
+      ]
+    },
+    "done-with-suffix": {
+      "description": "A DONE.md line with `(done YYYY-MM-DD; <evidence>)` before the marker",
+      "where": [
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674"
+        },
+        {
+          "file": "DONE.md",
+          "line": 5,
+          "task": "t-9428c833"
+        },
+        {
+          "file": "DONE.md",
+          "line": 8,
+          "task": "t-78155be0"
+        },
+        {
+          "file": "DONE.md",
+          "line": 9,
+          "task": "t-4ad8bad5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 11,
+          "task": "t-c3fab670"
+        },
+        {
+          "file": "DONE.md",
+          "line": 14,
+          "task": "t-025e96e5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 15,
+          "task": "t-a1d04fae"
+        }
+      ]
+    },
+    "done-without-suffix": {
+      "description": "A DONE.md line without the (done ...) clause",
+      "where": [
+        {
+          "file": "DONE.md",
+          "line": 10,
+          "task": "t-a83b66b1"
+        },
+        {
+          "file": "DONE.md",
+          "line": 18,
+          "task": "t-5b9fb0b9"
+        }
+      ]
+    },
+    "due-invalid": {
+      "description": "An invalid due date: dropped and reported",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "due"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-c06f2944",
+          "key": "due"
+        }
+      ]
+    },
+    "due-missing": {
+      "description": "No due date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "due"
+        }
+      ]
+    },
+    "due-valid": {
+      "description": "A valid due date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "due"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-de4f5a3d",
+          "key": "due"
+        }
+      ]
+    },
+    "empty-body": {
+      "description": "A task line with nothing after the title but the marker",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 15,
+          "task": "t-9a0298cb"
+        }
+      ]
+    },
+    "event-file-shape": {
+      "description": "The page's compact JSON without a final newline, and the import command's two-space JSON with one",
+      "where": [
+        {
+          "file": "events/web-8ea5b0ee-f465-438e-a9dc-bed3c261da73.json",
+          "event": "web-8ea5b0ee-f465-438e-a9dc-bed3c261da73",
+          "task": "t-6e1e9b9a"
+        },
+        {
+          "file": "events/cli-0002.json",
+          "event": "cli-0002",
+          "task": "t-6e1e9b9a",
+          "expect": {
+            "starred": false
+          }
+        }
+      ]
+    },
+    "event-import-web": {
+      "description": "A web- event brought in by the prototype's import command: two-space JSON, and a .ready file",
+      "where": [
+        {
+          "file": "events/web-a577fdb4-7812-40f6-9d5e-a9ffdde79c5e.json",
+          "event": "web-a577fdb4-7812-40f6-9d5e-a9ffdde79c5e",
+          "task": "t-ae318657",
+          "expect": {
+            "counted": true,
+            "starred": true
+          }
+        }
+      ]
+    },
+    "event-non-web": {
+      "description": "A file not named web-*, without .ready: it counts as soon as it exists",
+      "where": [
+        {
+          "file": "events/cli-0001.json",
+          "event": "cli-0001",
+          "task": "t-8ae0f771"
+        },
+        {
+          "file": "events/cli-0002.json",
+          "event": "cli-0002",
+          "task": "t-6e1e9b9a",
+          "expect": {
+            "starred": false
+          }
+        },
+        {
+          "file": "events/cli-0003.json",
+          "event": "cli-0003",
+          "task": "home-fence",
+          "expect": {
+            "starred": true,
+            "focusOn": "2026-11-03"
+          }
+        },
+        {
+          "file": "events/cli-0004.json",
+          "event": "cli-0004",
+          "task": "t-9de100f7",
+          "expect": {
+            "checked": true
+          }
+        },
+        {
+          "file": "events/cli-0005.json",
+          "event": "cli-0005",
+          "task": "t-0badc0de"
+        },
+        {
+          "file": "events/cli-0007.json",
+          "event": "cli-0007",
+          "task": "t-c06f2944",
+          "expect": {
+            "starred": true
+          }
+        },
+        {
+          "file": "events/cli-0006.json",
+          "event": "cli-0006",
+          "task": "t-c06f2944"
+        },
+        {
+          "file": "events/cli-0009.json",
+          "event": "cli-0009",
+          "task": "t-0e7b3bc1"
+        },
+        {
+          "file": "events/cli-0008.json",
+          "event": "cli-0008",
+          "task": "t-0e7b3bc1",
+          "expect": {
+            "starred": false,
+            "note": "as instants the focus (07:30Z) comes first; as text it sorts last"
+          }
+        },
+        {
+          "file": "events/cli-0010.json",
+          "event": "cli-0010",
+          "task": "t-de4f5a3d"
+        },
+        {
+          "file": "events/cli-0011.json",
+          "event": "cli-0011",
+          "task": "t-de4f5a3d",
+          "expect": {
+            "starred": false,
+            "note": "as instants the focus (07:45:00) comes first; as text it sorts last"
+          }
+        }
+      ]
+    },
+    "event-on-fallback-id": {
+      "description": "An event for an unmarked task, by its fallback ID",
+      "where": [
+        {
+          "file": "events/cli-0004.json",
+          "event": "cli-0004",
+          "task": "t-9de100f7",
+          "expect": {
+            "checked": true
+          }
+        }
+      ]
+    },
+    "event-ready": {
+      "description": "A file named web-* with its .ready file: it counts",
+      "where": [
+        {
+          "file": "events/web-679845b9-e316-4910-8919-713813d9e892.json",
+          "event": "web-679845b9-e316-4910-8919-713813d9e892",
+          "task": "t-505646c0",
+          "expect": {
+            "checked": true
+          }
+        },
+        {
+          "file": "events/web-dd34ae1a-5273-4292-8895-eb53dd61da77.json",
+          "event": "web-dd34ae1a-5273-4292-8895-eb53dd61da77",
+          "task": "t-8ae0f771",
+          "expect": {
+            "checked": false
+          }
+        },
+        {
+          "file": "events/web-8ea5b0ee-f465-438e-a9dc-bed3c261da73.json",
+          "event": "web-8ea5b0ee-f465-438e-a9dc-bed3c261da73",
+          "task": "t-6e1e9b9a"
+        },
+        {
+          "file": "events/web-a577fdb4-7812-40f6-9d5e-a9ffdde79c5e.json",
+          "event": "web-a577fdb4-7812-40f6-9d5e-a9ffdde79c5e",
+          "task": "t-ae318657",
+          "expect": {
+            "counted": true,
+            "starred": true
+          }
+        }
+      ]
+    },
+    "event-tie-by-id": {
+      "description": "Two events with the same instant: the event ID, as text, orders them",
+      "where": [
+        {
+          "file": "events/cli-0007.json",
+          "event": "cli-0007",
+          "task": "t-c06f2944",
+          "expect": {
+            "starred": true
+          }
+        },
+        {
+          "file": "events/cli-0006.json",
+          "event": "cli-0006",
+          "task": "t-c06f2944"
+        }
+      ]
+    },
+    "event-time-forms": {
+      "description": "A time without seconds and one with a nine-digit fraction, both valid: instant order and text order disagree",
+      "where": [
+        {
+          "file": "events/cli-0010.json",
+          "event": "cli-0010",
+          "task": "t-de4f5a3d"
+        },
+        {
+          "file": "events/cli-0011.json",
+          "event": "cli-0011",
+          "task": "t-de4f5a3d",
+          "expect": {
+            "starred": false,
+            "note": "as instants the focus (07:45:00) comes first; as text it sorts last"
+          }
+        }
+      ]
+    },
+    "event-unknown-task": {
+      "description": "An event for a task ID no ledger has",
+      "where": [
+        {
+          "file": "events/cli-0005.json",
+          "event": "cli-0005",
+          "task": "t-0badc0de"
+        }
+      ]
+    },
+    "event-web-without-ready": {
+      "description": "A file named web-* without .ready: it does not count, and is reported",
+      "where": [
+        {
+          "file": "events/web-71ae44e1-0013-4e92-8ad8-32ae5a68c25e.json",
+          "event": "web-71ae44e1-0013-4e92-8ad8-32ae5a68c25e",
+          "task": "t-8ae0f771",
+          "expect": {
+            "counted": false,
+            "checked": false
+          }
+        }
+      ]
+    },
+    "event-zone-order": {
+      "description": "Two events whose times have different zones: instant order and text order disagree",
+      "where": [
+        {
+          "file": "events/cli-0009.json",
+          "event": "cli-0009",
+          "task": "t-0e7b3bc1"
+        },
+        {
+          "file": "events/cli-0008.json",
+          "event": "cli-0008",
+          "task": "t-0e7b3bc1",
+          "expect": {
+            "starred": false,
+            "note": "as instants the focus (07:30Z) comes first; as text it sorts last"
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "description": "Metadata evidence",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "evidence"
+        }
+      ]
+    },
+    "generic-source-label": {
+      "description": "A source label that only names the kind (\"Email\", \"Chat\")",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "sources"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "sources"
+        }
+      ]
+    },
+    "group-as-area": {
+      "description": "A task whose metadata has no category: the group becomes the area",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-de4f5a3d",
+          "key": "category"
+        }
+      ]
+    },
+    "heading-trimmed": {
+      "description": "A heading with whitespace after its name: the group is the name, trimmed",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 41,
+          "expect": {
+            "group": "Errands"
+          }
+        }
+      ]
+    },
+    "invalid-date": {
+      "description": "Any invalid date: due, reviewed, source_date, added or done",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "source_date"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "reviewed"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "due"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-c06f2944",
+          "key": "due"
+        },
+        {
+          "file": "TODO.md",
+          "line": 32,
+          "task": "t-9de100f7"
+        },
+        {
+          "file": "DONE.md",
+          "line": 11,
+          "task": "t-c3fab670"
+        }
+      ]
+    },
+    "jira-row-without-key": {
+      "description": "A data/jira.json row without key: skipped",
+      "where": [
+        {
+          "file": "data/jira.json",
+          "note": "the third row",
+          "expect": {
+            "skipped": true
+          }
+        }
+      ]
+    },
+    "line-separators": {
+      "description": "A line ended by a separator other than LF or CRLF: CR alone, U+000B, U+000C, U+001C, U+001D, U+001E, U+0085, U+2028 or U+2029. Each ends the line, like LF",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 34,
+          "task": "t-3a7b6ae3",
+          "expect": {
+            "end": "U+2028"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 36,
+          "expect": {
+            "end": "U+2028"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 43,
+          "task": "t-cd015091",
+          "expect": {
+            "end": "U+000B"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 44,
+          "task": "t-4ed417b2",
+          "expect": {
+            "end": "U+000C"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 45,
+          "task": "t-3781cf0d",
+          "expect": {
+            "end": "U+001C"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 46,
+          "task": "t-7c9180f4",
+          "expect": {
+            "end": "U+001D"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 47,
+          "task": "t-0cf50703",
+          "expect": {
+            "end": "U+001E"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 48,
+          "task": "t-11f39526",
+          "expect": {
+            "end": "U+0085"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 49,
+          "task": "t-b1800612",
+          "expect": {
+            "end": "U+2029"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 50,
+          "task": "t-d17fc050",
+          "expect": {
+            "end": "CR"
+          }
+        }
+      ]
+    },
+    "long-title": {
+      "description": "A title over 300 characters",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 33,
+          "task": "t-ae318657"
+        }
+      ]
+    },
+    "marked": {
+      "description": "A task line with an ID marker",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 8,
+          "task": "t-eb2a8db7"
+        },
+        {
+          "file": "TODO.md",
+          "line": 9,
+          "task": "t-7b0d59b4"
+        },
+        {
+          "file": "TODO.md",
+          "line": 10,
+          "task": "t-8ae0f771"
+        },
+        {
+          "file": "TODO.md",
+          "line": 11,
+          "task": "t-7e820ac6"
+        },
+        {
+          "file": "TODO.md",
+          "line": 12,
+          "task": "t-b5679597"
+        },
+        {
+          "file": "TODO.md",
+          "line": 13,
+          "task": "t-c77640f4"
+        },
+        {
+          "file": "TODO.md",
+          "line": 14,
+          "task": "t-9b8dbc3a"
+        },
+        {
+          "file": "TODO.md",
+          "line": 15,
+          "task": "t-9a0298cb"
+        },
+        {
+          "file": "TODO.md",
+          "line": 16,
+          "task": "t-1d168059"
+        },
+        {
+          "file": "TODO.md",
+          "line": 17,
+          "task": "t-3caf46f3"
+        },
+        {
+          "file": "TODO.md",
+          "line": 22,
+          "task": "lum_report-api"
+        },
+        {
+          "file": "TODO.md",
+          "line": 23,
+          "task": "t-f857f3b4"
+        },
+        {
+          "file": "TODO.md",
+          "line": 26,
+          "task": "t-5216665d"
+        },
+        {
+          "file": "TODO.md",
+          "line": 27,
+          "task": "t-c06f2944"
+        },
+        {
+          "file": "TODO.md",
+          "line": 28,
+          "task": "t-6e1e9b9a"
+        },
+        {
+          "file": "TODO.md",
+          "line": 29,
+          "task": "home-fence"
+        },
+        {
+          "file": "TODO.md",
+          "line": 33,
+          "task": "t-ae318657"
+        },
+        {
+          "file": "TODO.md",
+          "line": 38,
+          "task": "home-bike"
+        },
+        {
+          "file": "TODO.md",
+          "line": 39,
+          "task": "home-receipts"
+        },
+        {
+          "file": "TODO.md",
+          "line": 42,
+          "task": "t-de4f5a3d"
+        },
+        {
+          "file": "TODO.md",
+          "line": 43,
+          "task": "t-cd015091"
+        },
+        {
+          "file": "TODO.md",
+          "line": 44,
+          "task": "t-4ed417b2"
+        },
+        {
+          "file": "TODO.md",
+          "line": 45,
+          "task": "t-3781cf0d"
+        },
+        {
+          "file": "TODO.md",
+          "line": 46,
+          "task": "t-7c9180f4"
+        },
+        {
+          "file": "TODO.md",
+          "line": 47,
+          "task": "t-0cf50703"
+        },
+        {
+          "file": "TODO.md",
+          "line": 48,
+          "task": "t-11f39526"
+        },
+        {
+          "file": "TODO.md",
+          "line": 49,
+          "task": "t-b1800612"
+        },
+        {
+          "file": "TODO.md",
+          "line": 50,
+          "task": "t-d17fc050"
+        },
+        {
+          "file": "TODO.md",
+          "line": 51,
+          "task": "t-88f5ce83"
+        },
+        {
+          "file": "TODO.md",
+          "line": 54,
+          "task": "t-505646c0"
+        },
+        {
+          "file": "TODO.md",
+          "line": 58,
+          "task": "t-0e7b3bc1"
+        },
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674"
+        },
+        {
+          "file": "DONE.md",
+          "line": 5,
+          "task": "t-9428c833"
+        },
+        {
+          "file": "DONE.md",
+          "line": 8,
+          "task": "t-78155be0"
+        },
+        {
+          "file": "DONE.md",
+          "line": 9,
+          "task": "t-4ad8bad5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 10,
+          "task": "t-a83b66b1"
+        },
+        {
+          "file": "DONE.md",
+          "line": 11,
+          "task": "t-c3fab670"
+        },
+        {
+          "file": "DONE.md",
+          "line": 14,
+          "task": "t-025e96e5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 18,
+          "task": "t-5b9fb0b9"
+        }
+      ]
+    },
+    "marker-in-title": {
+      "description": "A marker inside the bold title: the first marker anywhere in the line gives the ID, and the title keeps the marker text",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 38,
+          "task": "home-bike",
+          "expect": {
+            "id": "home-bike",
+            "title": "Fix the bike light <!-- task:home-bike -->",
+            "body": "The rear one flickers."
+          }
+        }
+      ]
+    },
+    "metadata-on-fallback-id": {
+      "description": "A metadata entry keyed by an unmarked line's fallback ID",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-9de100f7",
+          "key": "category"
+        }
+      ]
+    },
+    "metadata-orphan": {
+      "description": "A metadata entry with no task line",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-a3aa2367",
+          "note": "keyed by the marker of the U+2028 line, which is on no task line"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-7ba0b660"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-f2692dae"
+        }
+      ]
+    },
+    "multiple-sources": {
+      "description": "Two sources on one task",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-0e7b3bc1",
+          "key": "sources"
+        }
+      ]
+    },
+    "next-empty": {
+      "description": "No metadata next and no Next: clause",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-9a0298cb",
+          "key": "next"
+        }
+      ]
+    },
+    "next-from-body": {
+      "description": "No metadata next, and the body has a Next: clause",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c77640f4",
+          "key": "next"
+        }
+      ]
+    },
+    "next-set": {
+      "description": "Metadata next",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "next"
+        }
+      ]
+    },
+    "no-added-clause": {
+      "description": "A body without an (added ...) clause",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 11,
+          "task": "t-7e820ac6"
+        },
+        {
+          "file": "TODO.md",
+          "line": 55,
+          "task": "t-a9f461a4"
+        }
+      ]
+    },
+    "no-project": {
+      "description": "A task with a category and no project",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "project"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-505646c0",
+          "key": "project"
+        }
+      ]
+    },
+    "non-ascii-fallback": {
+      "description": "An unmarked title with characters between U+0080 and U+07FF: code points and UTF-16 units give the same fallback ID, UTF-8 bytes another",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 30,
+          "task": "t-b4618591",
+          "expect": {
+            "id": "t-b4618591",
+            "utf8BytesWouldGive": "t-211945ff"
+          }
+        }
+      ]
+    },
+    "non-task-line": {
+      "description": "A line that is neither a heading nor a task line: prose, a plain bullet, a bullet without bold",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 1
+        },
+        {
+          "file": "TODO.md",
+          "line": 3
+        },
+        {
+          "file": "TODO.md",
+          "line": 18
+        },
+        {
+          "file": "TODO.md",
+          "line": 19
+        },
+        {
+          "file": "TODO.md",
+          "line": 35
+        },
+        {
+          "file": "TODO.md",
+          "line": 36
+        },
+        {
+          "file": "TODO.md",
+          "line": 37
+        }
+      ]
+    },
+    "not-imported": {
+      "description": "A file or folder the importer copies or leaves frozen but never imports or runs (A7 3.15.7)",
+      "where": [
+        {
+          "file": "planning.py"
+        },
+        {
+          "file": "index.html"
+        },
+        {
+          "file": "AGENTS.md"
+        },
+        {
+          "file": "context/clinic-sync.md"
+        },
+        {
+          "file": "reviews/2026-10-30.md"
+        },
+        {
+          "file": "snapshots/TODO-2026-10-01.md"
+        }
+      ]
+    },
+    "optional-audit": {
+      "description": "data/audit.json, one free-form object with the scalar reviewed time",
+      "where": [
+        {
+          "file": "data/audit.json",
+          "expect": {
+            "reviewed": "2026-10-30T09:10:00Z",
+            "note": "the scalar reviewed time: the Refresh watermark"
+          }
+        }
+      ]
+    },
+    "optional-jira": {
+      "description": "data/jira.json, the ticket inventory: a list of ticket rows",
+      "where": [
+        {
+          "file": "data/jira.json",
+          "expect": {
+            "keys": [
+              "LUM-1000",
+              "LUM-1042"
+            ]
+          }
+        }
+      ]
+    },
+    "owner-me": {
+      "description": "The owner is the user (`me`)",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "owner"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "home-fence",
+          "key": "owner"
+        }
+      ]
+    },
+    "owner-missing": {
+      "description": "No owner",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c77640f4",
+          "key": "owner"
+        }
+      ]
+    },
+    "owner-other-delegated": {
+      "description": "Another person on a delegated task: waiting_on",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "owner"
+        }
+      ]
+    },
+    "owner-other-open": {
+      "description": "Another person owns an open task: owner",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-9a0298cb",
+          "key": "owner"
+        }
+      ]
+    },
+    "owner-other-waiting": {
+      "description": "Another person on a waiting task: waiting_on",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "owner"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-9b8dbc3a",
+          "key": "owner"
+        }
+      ]
+    },
+    "path-in-root": {
+      "description": "A first path under a root",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "paths"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-0e7b3bc1",
+          "key": "paths"
+        }
+      ]
+    },
+    "path-outside-roots": {
+      "description": "A path under none of the roots in `roots`",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "paths"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "home-fence",
+          "key": "paths"
+        }
+      ]
+    },
+    "paths-extra": {
+      "description": "More than one path: paths[1...] go to ext.planning.paths",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "paths"
+        }
+      ]
+    },
+    "priority-missing": {
+      "description": "No priority: imported as 3",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c77640f4",
+          "key": "priority"
+        }
+      ]
+    },
+    "priority-p1": {
+      "description": "Priority P1",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "priority"
+        }
+      ]
+    },
+    "priority-p2": {
+      "description": "Priority P2",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "priority"
+        }
+      ]
+    },
+    "priority-p3": {
+      "description": "Priority P3",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "priority"
+        }
+      ]
+    },
+    "project-paren-suffix": {
+      "description": "A project name ending in (...): the slug ignores it",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "project"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-0e7b3bc1",
+          "key": "project"
+        }
+      ]
+    },
+    "rank-missing": {
+      "description": "No rank in a project where other tasks have one",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c77640f4",
+          "key": "rank"
+        }
+      ]
+    },
+    "rank-set": {
+      "description": "A rank",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "rank"
+        }
+      ]
+    },
+    "rank-tie": {
+      "description": "Two tasks of one project with the same rank: file order decides",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "rank"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-8ae0f771",
+          "key": "rank"
+        }
+      ]
+    },
+    "refs-clause": {
+      "description": "A body with a Refs: clause",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 8,
+          "task": "t-eb2a8db7"
+        }
+      ]
+    },
+    "repeated-heading": {
+      "description": "A `## ` heading that appears a second time in the same file",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 53
+        },
+        {
+          "file": "DONE.md",
+          "line": 17
+        }
+      ]
+    },
+    "reviewed-invalid": {
+      "description": "An invalid reviewed date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "reviewed"
+        }
+      ]
+    },
+    "reviewed-missing": {
+      "description": "No reviewed date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "reviewed"
+        }
+      ]
+    },
+    "reviewed-valid": {
+      "description": "A valid reviewed date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "reviewed"
+        }
+      ]
+    },
+    "rollback-checked": {
+      "description": "A task a folded check event completes",
+      "where": [
+        {
+          "file": "events/web-679845b9-e316-4910-8919-713813d9e892.json",
+          "event": "web-679845b9-e316-4910-8919-713813d9e892",
+          "task": "t-505646c0",
+          "expect": {
+            "checked": true
+          }
+        }
+      ]
+    },
+    "rollback-focus": {
+      "description": "A focus event: the task is starred",
+      "where": [
+        {
+          "file": "events/cli-0003.json",
+          "event": "cli-0003",
+          "task": "home-fence",
+          "expect": {
+            "starred": true,
+            "focusOn": "2026-11-03"
+          }
+        }
+      ]
+    },
+    "rollback-unchecked": {
+      "description": "A task checked, then unchecked: it stays active",
+      "where": [
+        {
+          "file": "events/cli-0001.json",
+          "event": "cli-0001",
+          "task": "t-8ae0f771"
+        },
+        {
+          "file": "events/web-dd34ae1a-5273-4292-8895-eb53dd61da77.json",
+          "event": "web-dd34ae1a-5273-4292-8895-eb53dd61da77",
+          "task": "t-8ae0f771",
+          "expect": {
+            "checked": false
+          }
+        }
+      ]
+    },
+    "rollback-unfocus": {
+      "description": "A focus, then an unfocus event: the star is cleared",
+      "where": [
+        {
+          "file": "events/web-8ea5b0ee-f465-438e-a9dc-bed3c261da73.json",
+          "event": "web-8ea5b0ee-f465-438e-a9dc-bed3c261da73",
+          "task": "t-6e1e9b9a"
+        },
+        {
+          "file": "events/cli-0002.json",
+          "event": "cli-0002",
+          "task": "t-6e1e9b9a",
+          "expect": {
+            "starred": false
+          }
+        }
+      ]
+    },
+    "same-title-two-groups": {
+      "description": "One title, unmarked, under two groups: two different fallback IDs",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 5,
+          "task": "t-b3fc07df"
+        },
+        {
+          "file": "TODO.md",
+          "line": 55,
+          "task": "t-a9f461a4"
+        }
+      ]
+    },
+    "shared-source-legacy": {
+      "description": "Two active legacy tasks naming one ticket URL",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "lum_report-api",
+          "key": "sources"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-f857f3b4",
+          "key": "sources"
+        }
+      ]
+    },
+    "shared-source-space": {
+      "description": "A legacy task whose source key the Mira sample space's task already has (`spaceTask`)",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-calendar": {
+      "description": "A calendar source",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c06f2944",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-chat": {
+      "description": "A chat source",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-date-invalid": {
+      "description": "An invalid source_date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "source_date"
+        }
+      ]
+    },
+    "source-date-missing": {
+      "description": "No source_date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "source_date"
+        }
+      ]
+    },
+    "source-date-valid": {
+      "description": "A valid source_date",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "source_date"
+        }
+      ]
+    },
+    "source-doc": {
+      "description": "A document source",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-8ae0f771",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-drive": {
+      "description": "A drive source",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-email": {
+      "description": "A mail source",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-issue": {
+      "description": "A code-host issue",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-0e7b3bc1",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-pr": {
+      "description": "A code-host pull request",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-0e7b3bc1",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-ticket": {
+      "description": "A ticket source: /browse/<KEY>-<n>",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "sources"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "lum_report-api",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-web": {
+      "description": "A web source of no other kind",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-6e1e9b9a",
+          "key": "sources"
+        }
+      ]
+    },
+    "status-backlog": {
+      "description": "Metadata status backlog",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-c77640f4",
+          "key": "status"
+        }
+      ]
+    },
+    "status-delegated": {
+      "description": "Metadata status delegated",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "status"
+        }
+      ]
+    },
+    "status-missing-open": {
+      "description": "No status, and the title does not start \"Waiting on \": open",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-9a0298cb",
+          "key": "status"
+        }
+      ]
+    },
+    "status-missing-waiting-title": {
+      "description": "No status, and the title starts \"Waiting on \": waiting",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-9b8dbc3a",
+          "key": "status"
+        }
+      ]
+    },
+    "status-needs-review": {
+      "description": "Metadata status needs_review",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "status"
+        }
+      ]
+    },
+    "status-open": {
+      "description": "Metadata status open",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "status"
+        }
+      ]
+    },
+    "status-waiting": {
+      "description": "Metadata status waiting",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7b0d59b4",
+          "key": "status"
+        }
+      ]
+    },
+    "task-line-without-metadata": {
+      "description": "A task line with no metadata entry",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 5,
+          "task": "t-b3fc07df"
+        },
+        {
+          "file": "TODO.md",
+          "line": 30,
+          "task": "t-b4618591"
+        },
+        {
+          "file": "TODO.md",
+          "line": 31,
+          "task": "t-c768ea6d"
+        },
+        {
+          "file": "TODO.md",
+          "line": 34,
+          "task": "t-3a7b6ae3"
+        },
+        {
+          "file": "TODO.md",
+          "line": 38,
+          "task": "home-bike"
+        },
+        {
+          "file": "TODO.md",
+          "line": 39,
+          "task": "home-receipts"
+        },
+        {
+          "file": "TODO.md",
+          "line": 43,
+          "task": "t-cd015091"
+        },
+        {
+          "file": "TODO.md",
+          "line": 44,
+          "task": "t-4ed417b2"
+        },
+        {
+          "file": "TODO.md",
+          "line": 45,
+          "task": "t-3781cf0d"
+        },
+        {
+          "file": "TODO.md",
+          "line": 46,
+          "task": "t-7c9180f4"
+        },
+        {
+          "file": "TODO.md",
+          "line": 47,
+          "task": "t-0cf50703"
+        },
+        {
+          "file": "TODO.md",
+          "line": 48,
+          "task": "t-11f39526"
+        },
+        {
+          "file": "TODO.md",
+          "line": 49,
+          "task": "t-b1800612"
+        },
+        {
+          "file": "TODO.md",
+          "line": 50,
+          "task": "t-d17fc050"
+        },
+        {
+          "file": "TODO.md",
+          "line": 51,
+          "task": "t-88f5ce83"
+        },
+        {
+          "file": "TODO.md",
+          "line": 55,
+          "task": "t-a9f461a4"
+        },
+        {
+          "file": "DONE.md",
+          "line": 3,
+          "task": "t-2d795674"
+        },
+        {
+          "file": "DONE.md",
+          "line": 9,
+          "task": "t-4ad8bad5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 15,
+          "task": "t-a1d04fae"
+        }
+      ]
+    },
+    "trailing-dots": {
+      "description": "A bold title ending in one or more dots: the title is stored without them",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 15,
+          "task": "t-9a0298cb",
+          "expect": {
+            "title": "Clean up the flags from v2.1"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 17,
+          "task": "t-3caf46f3",
+          "expect": {
+            "title": "Check the backup restore drill"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 26,
+          "task": "t-5216665d",
+          "expect": {
+            "title": "Book the dentist"
+          }
+        },
+        {
+          "file": "DONE.md",
+          "line": 11,
+          "task": "t-c3fab670",
+          "expect": {
+            "title": "Fix the login redirect"
+          }
+        }
+      ]
+    },
+    "two-markers": {
+      "description": "Two markers in the body: the first gives the ID, and both are removed from the body. The spaces around a removed marker stay; only the ends are trimmed",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 39,
+          "task": "home-receipts",
+          "expect": {
+            "id": "home-receipts",
+            "body": "Start with October.  Then file them by month."
+          }
+        }
+      ]
+    },
+    "u2028": {
+      "description": "U+2028 in a task body before the marker ends the line there (str.splitlines()). The task keeps the cut body, has no marker and so gets the fallback ID. The marker sits on the next line, which is no task line",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 34,
+          "task": "t-3a7b6ae3",
+          "expect": {
+            "taskLine": true,
+            "title": "Renew the library card",
+            "body": "Bring the old card.",
+            "marked": false,
+            "note": "the marker is on the next line"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 35,
+          "expect": {
+            "taskLine": false,
+            "marker": "t-a3aa2367",
+            "note": "the rest of t-3a7b6ae3's line"
+          }
+        }
+      ]
+    },
+    "u2028-in-title": {
+      "description": "U+2028 inside the bold title: the first piece has no closing ** and the second does not start with '- [', so neither is a task line and the task is not there at all",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 36,
+          "expect": {
+            "taskLine": false,
+            "note": "no closing **"
+          }
+        },
+        {
+          "file": "TODO.md",
+          "line": 37,
+          "expect": {
+            "taskLine": false,
+            "marker": "t-7f372f22"
+          }
+        }
+      ]
+    },
+    "unknown-metadata-key": {
+      "description": "A metadata key the importer does not know: ext.planning.<key>",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-f857f3b4",
+          "key": "estimate"
+        }
+      ]
+    },
+    "unmarked-task-line": {
+      "description": "A task line without an ID marker: the ID is the fallback ID",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 5,
+          "task": "t-b3fc07df"
+        },
+        {
+          "file": "TODO.md",
+          "line": 30,
+          "task": "t-b4618591"
+        },
+        {
+          "file": "TODO.md",
+          "line": 31,
+          "task": "t-c768ea6d"
+        },
+        {
+          "file": "TODO.md",
+          "line": 32,
+          "task": "t-9de100f7"
+        },
+        {
+          "file": "TODO.md",
+          "line": 34,
+          "task": "t-3a7b6ae3"
+        },
+        {
+          "file": "TODO.md",
+          "line": 55,
+          "task": "t-a9f461a4"
+        },
+        {
+          "file": "DONE.md",
+          "line": 15,
+          "task": "t-a1d04fae"
+        }
+      ]
+    }
+  }
+}

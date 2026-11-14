@@ -1,0 +1,85 @@
+.bar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The field: at most 440 px, a pill, with its `/` hint (A5 3.3). */
+.field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  max-width: 440px;
+}
+
+.input {
+  width: 100%;
+  height: 36px;
+  padding: 0 36px 0 14px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 999px;
+  background: var(--k-sunken);
+  transition: border-color var(--k-fast) var(--k-ease);
+}
+
+.input::placeholder {
+  color: var(--k-muted);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  outline-offset: 0;
+  border-color: var(--k-focus);
+  border-radius: 999px;
+}
+
+.input:disabled {
+  cursor: default;
+}
+
+.hint {
+  position: absolute;
+  inset-inline-end: 10px;
+  padding: 0 5px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 4px;
+  color: var(--k-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  pointer-events: none;
+}
+
+.input:focus ~ .hint {
+  visibility: hidden;
+}
+
+.button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--k-fast) var(--k-ease),
+    color var(--k-fast) var(--k-ease);
+}
+
+.button[data-hovered] {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.button[data-disabled] {
+  cursor: default;
+}

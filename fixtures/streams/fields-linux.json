@@ -1,0 +1,257 @@
+{
+  "codex-exec": {
+    "error": {
+      "count": 1,
+      "fields": {
+        "message": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.completed:agent_message": {
+      "count": 6,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.completed:error": {
+      "count": 1,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.message": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.completed:mcp_tool_call": {
+      "count": 2,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.error": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.result": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.result.content": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "item.result.content[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.result.content[].text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.result.content[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.result.structured_content": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.server": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.status": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.tool": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.started:mcp_tool_call": {
+      "count": 4,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.error": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.result": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.server": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.status": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.tool": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "thread.started": {
+      "count": 5,
+      "fields": {
+        "thread_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "turn.completed": {
+      "count": 2,
+      "fields": {
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_write_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cached_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.reasoning_output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        }
+      }
+    },
+    "turn.failed": {
+      "count": 1,
+      "fields": {
+        "error": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "error.message": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "turn.started": {
+      "count": 5,
+      "fields": {
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,72 @@
+.settings {
+  padding-block: 16px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* t-label: 12 / 16, muted. */
+.label {
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 360px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.option[data-hovered] {
+  background: var(--k-hover);
+}
+
+.option[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 2px;
+}
+
+/* The radio's mark: a ring, filled with the accent when chosen. */
+.dot {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--k-control);
+  border-radius: 50%;
+}
+
+.option[data-selected] .dot {
+  border: 5px solid var(--k-accent);
+}
+
+.name {
+  color: var(--k-text);
+}
+
+.note {
+  margin-inline-start: auto;
+  color: var(--k-muted);
+  font-size: 0.8125rem;
+}
+
+@media (forced-colors: active) {
+  .option[data-selected] .dot {
+    border-color: Highlight;
+  }
+}

@@ -1,0 +1,37 @@
+# The fixture user's desktop (A2 3.2.4, A4 3.2). Fixture paths only.
+[[spaces]]
+id = "sp_3d2mcy0g1b3q1zamnjbesf54hx"
+path = 'C:\Users\mira\Tasks\life'
+
+[roots.projects]
+label = "Projects"
+path = 'C:\Users\mira\Projects'
+runs = true
+
+[roots.share]
+path = '\\nas\share\mira'
+
+[terminal]
+app = "wt"
+window = "tabs"
+after_exit = "pause"
+
+[[instance]]
+id = "codex-personal"
+target = "codex-cli"
+label = "Codex · personal"
+account = "personal"
+exec = 'C:\Program Files\nodejs\node.exe'
+args_prefix = ['C:\Users\mira\npm-global\node_modules\@openai\codex\bin\codex.js']
+config_home = 'C:\Users\mira\.codex-personal'
+env = { CODEX_HOME = 'C:\Users\mira\.codex-personal' }
+open_permission = "full-access"
+run_permission = "full-access"
+
+[[instance]]
+id = "claude"
+target = "claude-cli"
+label = "Claude Code"
+account = "personal"
+exec = "C:/Users/mira/.local/bin/claude.exe"
+extra_args = ["--verbose"]

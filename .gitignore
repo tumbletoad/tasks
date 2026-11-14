@@ -1,0 +1,17 @@
+# Local only, never committed: this checkout's private setup and workflow notes,
+# and planning reference material.
+/local/
+/planning/references/
+
+# Dependencies and build output.
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.eslintcache
+
+# Agent worktrees and local agent state.
+.claude/
+
+# Playwright output of pnpm e2e: screenshots and failure artefacts.
+tests/e2e/results/

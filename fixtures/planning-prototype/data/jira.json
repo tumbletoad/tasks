@@ -1,0 +1,22 @@
+[
+  {
+    "key": "LUM-1000",
+    "summary": "Appointment times shift after the DST change",
+    "status": "In Progress",
+    "url": "https://tickets.lumen.example/browse/LUM-1000"
+  },
+  {
+    "key": "LUM-1042",
+    "summary": "Move the clinic reports to the v2 API",
+    "status": "To Do",
+    "labels": [
+      "clinic",
+      "reports"
+    ],
+    "url": "https://tickets.lumen.example/browse/LUM-1042"
+  },
+  {
+    "summary": "Draft row without a key",
+    "url": "https://tickets.lumen.example/browse/LUM-1099"
+  }
+]

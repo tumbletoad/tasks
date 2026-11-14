@@ -1,0 +1,135 @@
+# @tasks/launcher-win
+
+`tasks.exe` and `tasksw.exe`, Tasks's Windows launchers (A2 3.12.3, 3.3.2). One C source, `src/launcher.c`, built with MSVC by `src/build.ts`. A2 3.12.3 states the rules, and this file the details.
+
+| Program | Subsystem | Runs Node |
+|---|---|---|
+| `tasks.exe` | console | once, inside a kill-on-close job object, with the caller's standard handles. Returns Node's exit code |
+| `tasksw.exe` | GUI (no console window) | with arguments: once, without a window and outside any job. With no arguments, as a stable launcher: supervises `tasks serve` |
+
+## Modes
+
+The same binary has two modes, chosen by where it sits. Let `P` be the parent of the launcher's own folder. The launcher uses the long form of its own path, so the paths it passes on never carry 8.3 names.
+
+- **Version-local:** `P`'s parent folder is named `versions` and `P\manifest.json` is a file. The version folder is `P` and the install root is the parent of `versions`. The launcher never reads `current`. Install and update run every check of a candidate through its own `versions\<v>\bin\tasks.exe`, so it works in a fresh install with no `current` and during an update while `current` still names the old version.
+- **Stable dispatch:** otherwise. The launcher reads `<root>\current` at every start and the version folder is `<root>\versions\<v>`. The install root depends on where the launcher sits (A2 3.2.1):
+  - **A `TASKS_HOME` install:** `P\home.marker` is a file. The root is `P`, which holds `bin\`, `versions\`, `current` and the data folders together.
+  - **The daily install:** otherwise. The launcher sits in the command folder, `%USERPROFILE%\.local\bin`, and the root is `P\share\tasks`, `%USERPROFILE%\.local\share\tasks`. Before it reads `current`, the launcher requires `P\share` and `P\share\tasks` to be plain folders, as it does `versions` below them, so a link or junction there cannot point the command folder at another install. A command folder with no `share\tasks` beside it exits 70 naming what is missing.
+
+`current` must hold 1 to 64 characters from `[0-9A-Za-z.+-]` that start and end with a letter or digit, with no two dots in a row and no Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9`, alone or before a dot). Nothing else is accepted: no newline, whitespace, byte order mark, separator or colon. So it can only name a folder directly under `versions`, never `versions` itself, the root, a staging folder or a name Windows would rewrite.
+
+Under the version folder the launcher needs `runtime\node.exe` and `lib\tasks.mjs`. Anything missing exits 70 with a message naming the path. In both modes `versions` and the version folder are checked before anything under them, so a launcher started through a junction there exits 70 too.
+
+## What reaches Node
+
+- **Command line:** `"<version>\runtime\node.exe" --report-exclude-env "<version>\lib\tasks.mjs" <tail>`, where the tail is the launcher's own command line after `argv[0]`, copied verbatim from `GetCommandLineW` by the C runtime's rule for `argv[0]`. Nothing is re-quoted and no `cmd.exe` is involved, so agent-supplied text reaches Node exactly as given. A command line too long for Windows exits 70.
+- **Environment:** the caller's, with these changes. Every copy of a name is handled, in any case, because a block can hold a name twice. Names compare as Windows compares them (`CompareStringOrdinal`, ignoring case).
+
+  | Variable | Value |
+  |---|---|
+  | every name that starts with `NODE_`, except `NODE_EXTRA_CA_CERTS` | removed |
+  | `OPENSSL_CONF`, `OPENSSL_CONF_INCLUDE`, `OPENSSL_MODULES`, `OPENSSL_ENGINES` | removed |
+  | `TASKS_ROOT` | the install root |
+  | `TASKS_LAUNCHER` | the launcher's own path |
+  | `TASKS_LAUNCH_MODE` | `stable` or `version` |
+  | `TASKS_PACKAGE` | the package full name (`GetCurrentPackageFullName`), removed outside a package |
+  | `TASKS_HOME` | the install root when `<root>\home.marker` exists, removed otherwise |
+  | `TASKS_SERVICE_MANAGER` | `tasksw` while `tasksw.exe` supervises the service, removed otherwise. The service records it as its manager in `service.json` and its status (M1.12) |
+
+  The six `TASKS_` names are removed in the same pass as the `NODE_` and `OPENSSL_` names, every copy, and then set. Everything else passes through unchanged, including `NODE_EXTRA_CA_CERTS`, the proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` in any case) and `SSL_CERT_FILE` and `SSL_CERT_DIR`. Trust assumption 6 says why. A variable that cannot be removed exits 70. An unexpected error from `GetCurrentPackageFullName` leaves `TASKS_PACKAGE` unset rather than stopping the launch, because the variable only informs the entry and guards nothing. `--package-info`, which the installer relies on, exits 70 on that error.
+- **Handles and folders:** the launcher's standard input, output and error, and no other handle. Each is duplicated as an inheritable handle and named in `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so an unrelated inheritable handle the caller passed to the launcher stays there. A standard handle that is missing, or a value that names no file, pipe or console (a closed one), leaves Node without it (Windows then fills that slot of a console program with its console's handle). A duplicate or handle list that Windows refuses exits 70. The working directory is the caller's, because the CLI resolves relative paths against it. `tasks.exe` without any console, and `tasksw.exe` always, start Node with `CREATE_NO_WINDOW`.
+
+## `tasks.exe` and its job
+
+Node runs only inside a job with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`. The job is created and configured before Node exists, and Node starts suspended, is assigned and only then resumed. If Windows refuses any of the four steps, the launcher terminates the suspended Node, waits for it and exits 70 naming the step: Node never runs without the job. Killing `tasks.exe` (an agent app ending the bridge it started) kills Node. Silent breakaway keeps Node's own children out of the job, so a detached run outlives the CLI call that started it. Ctrl+C and Ctrl+Break reach Node, which decides; the launcher ignores them through a handler function, which Node does not inherit.
+
+## `tasksw.exe` and the supervisor
+
+With no arguments in stable-dispatch mode, `tasksw.exe` starts `tasks serve` from the version `current` names, waits, and applies A2 3.3.1's exit-code table. The policy constants are at the top of `src/launcher.c`.
+
+| `tasks serve` exits | Supervisor |
+|---|---|
+| 0, 64, 73 | stops and exits with that code |
+| 75 | starts again at once, re-reading `current`. More than 5 such restarts within the window count as failures, so a service that always asks for a restart cannot spin |
+| anything else, or Node cannot be started | a failure: restart after 1, 2, 4 and 8 s. The 5th failure within 10 minutes writes `<state>\crash\supervisor-gave-up.json` and the supervisor exits 70 |
+
+`<state>` is the service's own: `<root>\state` in a `TASKS_HOME` install, else `%USERPROFILE%\.tasks\state` (the data folder, A2 3.2.1). The supervisor makes the data folder, `state` and `state\crash` when they are missing. `USERPROFILE` must be a full path (a drive letter and a backslash, or a UNC share); otherwise the supervisor prints `tasks: USERPROFILE names no folder, …`, writes no record and still exits 70. The give-up record holds only times and exit codes: `{"format":1,"event":"supervisor.gave_up","t":"…","window_ms":600000,"failures":[{"t":"…","exit":70},{"t":"…","exit":null,"start":"failed"},…]}`, oldest first. `state` and `state\crash` must be plain folders: a link or junction there is refused with a message and no record. The record is written to a new temporary file (`CREATE_NEW` under a name with the process ID, the tick count and an attempt number, so nothing that exists is opened or truncated), flushed, and that same file is renamed over the old record through its handle. A hard link planted at either name keeps its contents. On any failure, such as a folder or a file held open at the record's name, the supervisor prints `tasks: cannot write … (error N)`, deletes the temporary file, leaves what stands at the name unchanged and still exits 70. The folder checks and the file creation are separate steps, so a process of the same user that swaps `state` for a junction between them can redirect the record. Trust assumption 1 excludes that writer. If it ever has to be covered, the supervisor must hold verified folder handles through the creation and the rename. A successful start leaves an old record in place: doctor compares its time with the service's start (A2 3.3.2).
+
+The service never runs in a job object of the launcher's, so processes it starts detached outlive both. `tasksw.exe` still inherits any job of the process that starts it, and one that kills on close would take the supervisor with it: the service registration (M1.12) starts it through the route A2 3.3.2 names (the Run value, from Explorer) and tests that the supervisor is in no such job. `tasksw.exe` with no arguments inside a version folder exits 64: a supervisor there would pin the service to that version.
+
+## Exit codes of the launchers themselves
+
+| Code | When |
+|---|---|
+| 64 | `--package-info` with another argument. `tasksw.exe` with no arguments inside a version folder |
+| 70 | Node cannot run: no own path, a variable that cannot be removed, a bad or unreadable `current`, a missing file, a link below the root, a command line that is too long, a standard handle or handle list Windows refuses, a refused job step, a failed `CreateProcessW`. The supervisor after giving up |
+| Node's code | otherwise, unchanged |
+
+`--package-info` prints the package full name, or `none` outside a package, and exits 0. It answers before anything else is read, so the installer can ask a candidate first.
+
+## Limits
+
+**Path length: the install root may be at most 168 characters long.** Every path buffer holds 32,768 characters, but the launchers are linked without a manifest (no `longPathAware`), so the Win32 calls they make still stop at `MAX_PATH`: 259 characters and the terminating null. The longest path the launcher uses below the root is `\versions\<version>\runtime\node.exe`: 10 + 64 (`VERSION_MAX`) + 17 = 91 characters, so the root gets 259 − 91 = 168. With a longer root and a long version, the launcher exits 70 with `missing …\runtime\node.exe`, even when its own path is well under 260 characters (checked on the Windows lab machine with a 64-character version: a 168-character root runs through all four launchers, 169 exits 70). Every other path is shorter: `lib\tasks.mjs` and `manifest.json` 88 characters, the version-local `tasksw.exe` 89, and the give-up record's temporary file at most 70 (`\state\crash\supervisor-gave-up.` and a process ID of up to 10 digits, a tick count of up to 20 and an attempt of up to 2). Install (M1.14) must refuse a custom root longer than 168 characters (A2 3.12.3, path length).
+
+## Building
+
+```
+pnpm exec node packages/launcher-win/src/build.ts [--out <dir>] [--test-hooks]
+```
+
+Windows only. It needs Visual Studio 2022 (Build Tools are enough) with the x64 C++ tools and a Windows 10 or 11 SDK, which the `windows-2025` runner has. `cl.exe` is found through `vswhere`, the SDK by its default folder, and `INCLUDE`, `LIB` and `PATH` go to `cl.exe` directly: no `vcvars` batch file and no shell. The default output folder is `packages/launcher-win/dist/` (git-ignored). `buildLaunchers(outDir, options)` is the same build as a function, exported as `@tasks/launcher-win/build` for the release build (M1.13).
+
+The caller's compiler and linker variables never reach the tools. `cl.exe` reads `CL` and `_CL_` as options and `INCLUDE` and `LIBPATH` as search paths, `link.exe` reads `LINK` and `_LINK_` as options and `LIB` as a search path (Microsoft Learn, "CL environment variables" and the linker reference), and `EXTERNAL_INCLUDE` matters with `/external:env`: the build removes all eight in any case, then sets `INCLUDE` and `LIB` from its own discovery. `CL=/DTASKS_TEST_HOOKS` could otherwise put the test hooks into a release build. Every release build then runs `assertReleaseBinary` on both launchers, which fails on any test hook name (UTF-16 or single-byte); a failing build deletes its binaries. The release build (M1.13) runs the same check on the binaries it ships.
+
+Flags: warnings as errors (`/W4 /WX /sdl`), buffer checks (`/GS`), Control Flow Guard, CET shadow-stack compatibility, high-entropy ASLR, DEP, the static C runtime (no runtime DLL to plant), imported DLLs loaded from System32 only (`/DEPENDENTLOADFLAG:0x800`) and reproducible output (`/Brepro`).
+
+## Test builds
+
+`--test-hooks` defines `TASKS_TEST_HOOKS`. Only this package's tests use it, and its output must never ship. In a test build:
+
+| Variable | Effect |
+|---|---|
+| `TASKS_TEST_JOB_FAIL` = `create`, `limits`, `assign` or `resume` | `tasks.exe` fails that job step with `ERROR_ACCESS_DENIED`, as if Windows refused it |
+| `TASKS_TEST_TIME_UNIT_MS` (1 to 60000) | replaces the supervisor's one-second time unit, for the delays and the window |
+| `TASKS_TEST_TRACE` | the supervisor appends each decision to this file: `exit <code>`, `start-failed`, `wait <units>`, `restart`, `stop <code>`, `gave-up` |
+
+A release build contains none of these names: `buildLaunchers` checks every release build, and the build test checks that too.
+
+## Tests
+
+`pnpm verify` runs them on Windows (the `windows-2025` CI job). On other platforms every test is collected and skipped. They build both launchers in a temporary folder, lay out installs there with the Node that runs the tests as the runtime (hard-linked, so nothing is downloaded) and `test/stub/tasks.mjs` as the entry, and never touch a real install, the registry or `PATH`. `test/native.ts` compiles three small fixtures from `test/fixtures/` with the same MSVC: a stand-in OpenSSL provider DLL that leaves a marker when loaded, a stand-in `node.exe` that reports the handles it received, and a starter that runs a launcher with chosen standard handles, an unrelated inheritable handle and raw environment entries (a name can appear twice). Each security test has a control that shows the attack works on Node started directly.
+
+| Manifest ID | Proves |
+|---|---|
+| `A2.3.12.3.launcher-win.build` | Console and GUI subsystems, ASLR, DEP and CFG in the PE header, no test hooks in a release build. `CL`, `_CL_` and `cl` set to `/DTASKS_TEST_HOOKS` cannot put the hooks into a release build, and the release check refuses a test build |
+| `A2.3.12.3.launcher-win.argv` | 33 hostile arguments (spaces, quotes, backslash runs, trailing backslashes, empty strings, `%`, `^&\|<>`, tabs, newlines, emoji, combining marks, right-to-left text) reach Node unchanged through both launchers in both modes, alone and at once. A raw, unbalanced command line reaches Node exactly as Node parses it directly. `NODE_OPTIONS` and `NODE_PATH` are removed in any case. Exit codes pass through. A too-long command line exits 70. The launcher's variables come from its location whatever the caller set |
+| `A2.3.12.3.launcher-win.env` | Through both launchers in both modes: a provider DLL that `OPENSSL_CONF` (in any case) activates is not loaded; `NODE_DEBUG` prints nothing and `NODE_COMPILE_CACHE` and `NODE_V8_COVERAGE` create no folder; with names twice in different cases, only `NODE_EXTRA_CA_CERTS` of the `NODE_` and `OPENSSL_` names reaches Node and Node loads its certificate, and the proxy and `SSL_CERT_` variables arrive unchanged. With 70 differently cased copies of each of the six `TASKS_` names, Node gets exactly one copy of each name the launcher sets, with the launcher's value, and no `TASKS_HOME`, `TASKS_PACKAGE` or `TASKS_SERVICE_MANAGER` |
+| `A2.3.12.3.launcher-win.handles` | Through both launchers in both modes: a file the caller holds open through an inheritable handle never reaches Node, a standard handle that is NULL, `INVALID_HANDLE_VALUE` or a value naming no handle, alone or all three, leaves Node without it while Node runs and gets the others, and one handle value in both stdout and stderr (`> out.log 2>&1`) carries both streams into the file |
+| `A2.3.12.3.launcher-win.job` | Killing `tasks.exe` kills Node in both modes. A detached child of Node survives. Each refused job step exits 70 before Node runs, and the release build ignores the hook |
+| `A2.3.12.3.launcher-win.modes` | A version-local launcher runs its own runtime and bundle in a fresh install with no `current`, and during an update while `current` names the old version or is broken. Stable dispatch follows `current`. 35 hostile `current` contents (traversal, dots, staging names, device names, whitespace, byte order mark, NUL, colons and stream names, too long) exit 70. A junction at `versions`, the version folder, `runtime` or `lib` is refused by both launchers in both modes. The working directory, `PATH` and the caller's variables do not steer what runs. `--package-info` |
+| `A2.3.3.2.launcher-win.supervisor` | With a stub service and a shortened time unit: the service gets `TASKS_SERVICE_MANAGER=tasksw` whatever the caller set, restarts after 1, 2, 4 and 8 units (decisions traced, waits checked against the stub's clock), give-up at the 5th failure with its record, stop on 0, 64 and 73, an immediate restart on 75 from the version `current` names now, the quick-restart limit, failures leaving the window, a start that fails, no supervision from a version folder, the service surviving `tasksw.exe`, and a release build waiting a real second and ignoring the hooks. The release build's give-up leaves files hard-linked at the record's name and the old temporary name unchanged, and a junction at `state` or `state\crash` is refused with nothing written outside the install. A folder, or a file held open without delete sharing, at the record's name gets a warning and exit 70, stays unchanged, and no temporary file is left |
+
+## Trust assumptions
+
+A launcher is a small trusted program that picks which runtime and which bundle to run. These are the assumptions behind that choice.
+
+1. **The install belongs to the user.** The root and everything under it are writable only by the user, SYSTEM and Administrators (the profile ACL, A2 3.2.2 rule 5). A process running as the same user can replace any file in the install, so the launchers do not defend against it. That also covers the short window between the launcher's checks and `CreateProcessW`.
+2. **The install is where the launcher sits.** The launcher trusts its own path (`GetModuleFileNameW`). A copy placed elsewhere is a launcher of whatever install surrounds it, and fails with exit 70 where none is. From the daily install's command folder the install is `share\tasks` beside it, a fixed path from the launcher's own location.
+3. **`current` is the only data the launcher reads**, and only in stable-dispatch mode. Its strict validation (above) means a hostile `current` can at most name another folder directly under `versions`, or stop the launcher.
+4. **No links below the root.** `versions`, the version folder, `runtime`, `lib`, `node.exe` and `tasks.mjs` must not be symbolic links, junctions or other name-surrogate reparse points, in either mode, so the runtime and bundle are always inside the install. The supervisor applies the same rule to `state` and `state\crash` before it writes the give-up record. Links above the root are allowed (a moved or redirected profile). Other reparse points, such as cloud files, count as what they hold. `<root>\current` is validated by its content, not checked for being a link: a linked `current` can still only name another folder directly under `versions` (assumption 3), and putting a link there takes the same-user writer that assumption 1 excludes. The command folder itself (`<root>\bin`, or `%USERPROFILE%\.local\bin`) is not checked, because the launcher trusts its own location (assumption 2); from that command folder, `share` and `share\tasks` are checked like `versions`, since they lie below the launcher's location but are not part of its path. A custom install root that other users can write to is not covered: install (M1.14) must give it trusted ACLs before any candidate code runs (A2 3.12.4).
+5. **Not the working directory, not `PATH`.** Every path the launcher runs from comes from its own location. The one variable it reads is `USERPROFILE`, as the service does, and only to find where the supervisor writes its give-up record. `CreateProcessW` gets the absolute path of `node.exe`, so no search order applies, and Node loads the entry by its absolute path.
+6. **Node's and OpenSSL's start-up settings never come from the caller.** Node reads its `NODE_` variables, and the OpenSSL inside it its loader settings, while it starts, before the entry runs any code, so the entry cannot undo them: `OPENSSL_CONF` can activate a provider DLL from any path, `NODE_DEBUG` prints child arguments and secrets, and `NODE_COMPILE_CACHE` and `NODE_V8_COVERAGE` write folders. So the launcher removes every variable whose name starts with `NODE_`, in any case and every copy, except `NODE_EXTRA_CA_CERTS` (A2 3.12.3 keeps corporate certificates), and OpenSSL's loader settings `OPENSSL_CONF`, `OPENSSL_CONF_INCLUDE`, `OPENSSL_MODULES` and `OPENSSL_ENGINES` (OpenSSL's `openssl-env` page). An allow-list within `NODE_` also covers the variables a later Node adds, and it removes `NODE_TLS_REJECT_UNAUTHORIZED`, `NODE_USE_ENV_PROXY`, `NODE_USE_SYSTEM_CA` and `NODE_ENV`: the entry owns networking policy and turns on what it wants itself. The proxy variables and `SSL_CERT_FILE` and `SSL_CERT_DIR` pass, because they select data, not code. Everything else passes through. The launcher does not set an empty `OPENSSL_CONF`, so OpenSSL still reads the machine's default file under the official build's `OPENSSLDIR`, `C:\Program Files\Common Files\SSL\openssl.cnf`, which only an administrator can create: an administrator's configuration is at the machine's own trust level, like System32. An empty value would be inherited by every tool Tasks starts and make them skip their own system configuration, and it would switch off an administrator's FIPS or policy configuration for Tasks. The residual case: protecting that file does not protect every path it names. If an administrator's configuration activates a provider by a bare or relative module name, OpenSSL looks in the build's `MODULESDIR`, a build-machine path under `C:\ws` that any user can create, so on such a machine a standard user could supply the DLL. A configuration can also expand environment values and use relative includes. Without such a configuration nothing names a module: the launcher's command line names none and the legacy provider is built in. The variables Tasks removes are also gone for the processes Node starts.
+7. **The command line is never interpreted.** The tail is copied verbatim and no shell runs. The quoted paths cannot contain a double quote.
+8. **DLLs come from System32.** The C runtime is linked statically and imported DLLs load from System32 only.
+9. **The job fails closed.** `tasks.exe` never runs Node without its job. Nested jobs work on Windows 8 and later, and the launcher imports an API that exists only from Windows 8 (A2 3.12.3 step 5).
+10. **Packaged callers are reported, not refused.** `TASKS_PACKAGE` tells Node about a package context. The service refuses to run in one (A2 3.3.1), and the installer stops on it through `--package-info` (A2 3.12.4).
+11. **The launchers are not signed yet.** Smart App Control is off on the Windows lab machine (lab row R12). SignPath signing comes before the first public Windows build (A2 3.12.7).
+12. **Test hooks never ship.** They exist only in a build with `TASKS_TEST_HOOKS`. The build's default is a release build, the caller's `CL`, `_CL_`, `LINK`, `_LINK_` and search-path variables never reach the compiler or linker, and every release build fails and deletes its binaries if either contains a hook name. The release build (M1.13) must not pass `--test-hooks` and runs `assertReleaseBinary` on the binaries it ships.
+13. **Node inherits only the standard handles.** An inheritable handle the caller passed to the launcher (an open file, a pipe, a job) stays with the launcher, through `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. A missing or closed standard handle is not replaced by anything of the launcher's.
+
+## Not here
+
+- `--replace` (A2 3.12.3 step 9): Windows refuses it for a running launcher (lab row S08, A2 3.12.6), and for an idle file Node's own rename does the same. The update path renames a running launcher aside and the new one in.
+- `--port-owner` (A2 3.12.3 step 8): with the HTTP listener and its port checks (M2.12).
+- Sibling repair (A2 3.12.3 step 10): with the stable-launcher swap and its startup repair (M6.13). Before M6 no update replaces a launcher.
+- Code signing (A2 3.12.7).

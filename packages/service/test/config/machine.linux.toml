@@ -1,0 +1,98 @@
+# The fixture user's laptop (A2 3.2.4, A4 3.2). Fixture paths only.
+[service]
+default_space = "sp_3z8sm956jp8dajmtsar5kx026c"   # new tabs and unbound CLI calls only
+
+[http]
+port = 7713
+
+[ui]
+open_mode = "tab"
+
+[updates]
+channel = "stable"
+check = true
+auto = false
+
+[log]
+level = "debug"
+
+[[spaces]]
+id = "sp_3z8sm956jp8dajmtsar5kx026c"
+path = "/home/mira/Tasks/work"
+enabled = true
+
+[[spaces]]
+id = "sp_43f0gjcvzgaa1gh5my6qxwcj7m"
+path = "/home/mira/Tasks/life"
+enabled = false
+
+[roots.work]                 # the key is the root ID
+label = "Work"
+path  = "/home/mira/work"
+runs  = true
+
+[roots.oss]
+path = "/home/mira/oss"
+
+[terminal]
+app = "ghostty"
+path = ""
+window = "new"
+fallbacks = ["gnome-terminal", "x-terminal-emulator"]
+after_exit = "close-on-success"
+
+[[instance]]
+id = "codex-work"
+target = "codex-cli"
+label = "Codex · work"
+account = "work"
+spaces = ["work"]
+exec = "/home/mira/.local/bin/codex-work"
+config_home = "/home/mira/.codex"
+env = {}
+open_permission = "inherit"
+run_permission = "full-access"
+extra_args = []
+via_login_shell = false
+remote_allowed = false
+
+[[instance]]
+id = "codex-personal"
+target = "codex-cli"
+label = "Codex · personal"
+account = "personal"
+exec = "/home/mira/.local/bin/codex-personal"
+config_home = "/home/mira/.codex-personal"
+run_permission = "full-access"
+prompt = "prefill"            # A4 L7: the assisted open, the person sends the first message
+enabled = false
+
+[[instance]]
+id = "t3-codex-work"
+target = "t3"
+label = "T3 · Codex"
+account = "work"
+t3_environment = "local"
+t3_provider_instance = "codex"
+t3_model = ""
+open_permission = "full-access"
+remote_allowed = true
+
+[[instance]]
+id = "codex-app"
+target = "codex-app"
+label = "Codex app"
+account = "work"
+config_home = "/home/mira/.codex"
+
+[approvals]
+sha256-bbb50b140ef4052560a197c58ac0d48a02a61125e068cb6d6eed256d6ee340d9 = "allow"
+
+# Reserved for later steps: passed by unchecked.
+[[custom_target]]
+id = "custom:cursor-agent"
+label = "Cursor Agent"
+argv = ["{exec}", "--workspace", "{cwd}", "{extra_args}", "--", "{brief}"]
+
+[override.claude-desktop.link]
+budget = 1500

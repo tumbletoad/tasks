@@ -1,0 +1,2653 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "A7.3.18.6.manifest-check",
+      "title": "The test-manifest check fails on missing, unknown, uncovered and duplicate IDs, untagged skipped tests, .only and stray test files",
+      "source": "A7 3.18.6",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.3.gen.freshness",
+      "title": "The generated-file freshness check finds missing, changed and extra files",
+      "source": "A7 3.3",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.2.dependency-rules",
+      "title": "Every dependency rule fires on a fixture tree with violations, and tests are exempt only from the production layering rules",
+      "source": "A7 3.2",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.3.lint.custom-rules",
+      "title": "The custom lint rules refuse os.tmpdir(), shell: true, .cmd spawns, exec and execSync through any binding, AppData paths in package code, and stdout writes, console and dynamic loads in the bridge",
+      "source": "A7 3.3, A2 3.2.2, A4",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.3.verify.lab-selection",
+      "title": "pnpm verify runs the serial lab tests on --lab, TASKS_VERIFY_LAB=1, an unknown base or a change to lab or shared files, and otherwise says it skipped them",
+      "source": "A7 3.3, A7 3.7",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.2.brand.names",
+      "title": "Product names live in one place: TT Tasks, Tasks inside the app, by TumbleToad; the CLI name and the environment prefix derive from the identifier, the MCP key is a plain identifier of its own",
+      "source": "A7 3.2, A2 3.2.1, A3 3.2.4",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-kit.self-test",
+      "title": "The M0 spike kit self-test: handshake and its deadlines, MCP envelopes of both eras, forwarder, page, token, WebSocket and Reveal, shim and run shim, probe redaction, owner-only permissions, socket folder, scratch tree, bench",
+      "source": "A7 3.7 (M0.02), A2 3.6-3.8, A4 3.6.3",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-ui.self-test",
+      "title": "The M0 spike page (U rows) builds with Vite and loads under the strict CSP: fresh style nonce in header and meta, no inline script or style, same-origin assets with matching integrity hashes, WOFF2 fonts from the origin within budget, no service worker file, the runner's result files hold no token",
+      "source": "A7 3.7 (M0.08), A2 3.8.3, A5 3.20, 3.24-3.26",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-lifecycle.self-test",
+      "title": "The M0.07 lifecycle lab: the forwarder reconnects and replays initialize, also one sent during a slow handshake, the service's environment snapshot, its parsers and E01's differences, the tasksw.exe supervisor stand-in, the lab release folder and its entry",
+      "source": "A7 3.7 (M0.07), A2 3.3.2, 3.7.4, 3.7.5, A4 3.8",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-session3.cold-start",
+      "title": "Lab session 3's cold-start timers count an answer only when the expected service gave it, check both replies by their JSON structure after the clock stops (a malformed reply, the right fragments in the wrong structure, a wrong id or a notification never count), reject a stale service.json and a process of the install's runtime with another entry, and stop every process they start, also at a hung bridge, a failure or a signal; E01 stops the Windows supervisor and service when it fails",
+      "source": "A7 3.7 (M0.07 review), A2 3.7.7",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.storage-bench.one-percent",
+      "title": "The storage bench runs its generators and R02 to R06 at 1 % scale and writes complete result files",
+      "source": "A7 3.7 M0.04, A1 3.20",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.storage-bench.seeded-generator",
+      "title": "The storage bench's fixture generator gives the same corpus for the same seed",
+      "source": "A7 3.7 M0.04, A1 3.20",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.storage-bench.failure-cleanup",
+      "title": "A failed storage bench run closes its connections, removes its run folder and reports the original error, with the removal error when that fails too",
+      "source": "A7 3.7 M0.04",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.storage-bench.verdict-conditions",
+      "title": "A storage bench row gives a verdict only when the run meets its prescribed scale, counts and durations, and is indicative otherwise",
+      "source": "A7 3.7 M0.04 rows R02 to R06, A1 3.20",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.storage-bench.write-shape",
+      "title": "The storage bench's timed writes use random A1 IDs and agent sessions, and its projection rebuild records projection_files and acknowledges the outbox",
+      "source": "A7 3.7 M0.04, A1 3.3, 3.7, 3.8, 3.13",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.1.spike.runtime-gate",
+      "title": "Packaging spike: the runtime gate passes on the pinned Node 26.13.1 with SQLite 3.54.1 and fails when a check fails",
+      "source": "A2 3.12.1, A7 3.7 R01",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.1.spike.node-download",
+      "title": "Packaging spike: the Node download must match SHASUMS256.txt, its gpgv-verified signature and the pinned digest",
+      "source": "A2 3.12.1, A2 S19",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.2.spike.version-folder",
+      "title": "Packaging spike: the version folder layout, its manifest and reproducible tar.gz and zip archives",
+      "source": "A2 3.12.2, A2 3.12.4",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.spike.launcher-argv",
+      "title": "Packaging spike: the POSIX and C launchers pass hostile argv to Node byte for byte and remove NODE_OPTIONS",
+      "source": "A2 3.12.3, A2 S21, A7 3.7 R09",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.spike.install-verify",
+      "title": "Packaging spike: install.sh and install.ps1 verify the SHA256SUMS signature and the archive hash before anything from the archive runs",
+      "source": "A2 3.12.4, A2 S22, A2 S31, A7 3.7 R09",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.lab-checks.self-test",
+      "title": "M0.05 lab checks: the sync detector on fixture trees, owner-only modes and ACLs in a temporary folder, and the identifier and Smart App Control classifiers",
+      "source": "A7 3.7 M0.05, A1 3.2, A6 3.4, A6 3.16.6, A2 M0-S13",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-agents.self-test",
+      "title": "The M0.09 lab code: a child of the clean spawner sees no agent variables, the probe records names, matches and ID formats but no values, the key-level recorder compares every named file and proves exact removal through a fake CLI, the removal rule refuses anything not strictly inside the run scratch folder, no CLI output reaches the lab logs or files, and every child ends through one cleanup path",
+      "source": "A7 3.7 (M0.09), A3 5 M0 items 1, 2, 6-8, 10",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-launch.trust-patch",
+      "title": "The M0.10 lab code: the text-level trust-entry patch for Claude Code's .claude.json and Codex's config.toml, and its undo, restore every fixture file byte for byte by the config recorder (no file, no projects, other entries, comments and odd whitespace, CRLF and LF, a byte order mark, an existing entry with another value); a file changed after the patch reverts only Tasks's key, and only while it still holds Tasks's value; unsupported layouts and files the scanner cannot account for are refused untouched; the lab command refuses a scratch folder it did not create",
+      "source": "A7 3.7 (M0.10, row L10), A4 3.14, A4 M0-L16",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-runs.self-test",
+      "title": "The M0.11 lab code through fake CLIs: the recorder keeps the raw stream in its folder with exit code, line structure and schema event keys, refuses agent variables, leaves through one cleanup path (also for a missing executable), cancels by console event, taskkill or signal and sweeps what is left by PID, name and start time; the console helper refuses an unreadable process list; the sanitiser gives every allow-listed field one treatment whatever the input (the reviewer's adversarial values, wrong types, e-mail keys), names unknown fields by placeholders and publishes all or nothing after the checks; the lab refuses desktop-only commands and full access off Windows, and keeps CLI stderr, errors and events with private values out of its console, results and fixtures",
+      "source": "A7 3.7 (M0.11), A4 3.11.4, 3.11.8, M0-L12-L14",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-runs.fixture-content",
+      "title": "The committed stream fixtures pass the content check: the decoded keys and values of every line hold no user or host name, home path, e-mail address, token or key shape, IPv4 or IPv6 address or machine name from a deny-list built at run time; every value is one its schema treatment can produce, every inventory path and index field is a schema name or placeholder, every fixture line is JSON except the one cut final line, and a truncated fixture is its source cut",
+      "source": "A7 3.7 (M0.11, N05)",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-bridge-bench.self-test",
+      "title": "The M0 bridge harness runs B01 to B07 at a tiny size, reads process memory from outside, writes a result file per row and judges none of them",
+      "source": "A7 3.7 (M0.06), A2 3.7.7",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.7.m0-bridge-bench.cleanup",
+      "title": "The M0 bridge harness stops every forwarder and service process it started when a row fails: a memory reading, the service start or the direct client",
+      "source": "A7 3.7 (M0.06), A2 3.7.7",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.lint-describe",
+      "title": "The registry lint rejects a field without .describe() or with a description over 80 characters",
+      "source": "A3 3.2.1, A7 3.8 M1.01",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.lint-rules",
+      "title": "The registry check rejects every other schema, metadata, operation, naming, budget, CLI and example rule on a failing fixture entry",
+      "source": "A3 3.2.1, 3.2.3, 3.2.4, 3.2.5, 3.4.1, A1 3.6, A6 3.3, R7",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.zod-ajv-parity",
+      "title": "Zod and Ajv give the same verdict on every example and its mutations, and at the boundaries of every field, used by an example or not",
+      "source": "A3 5, A3 decision 2, A7 3.8 M1.01",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.soundness",
+      "title": "Values fuzzed from each JSON Schema: Zod and Ajv agree, parseInput returns a value its schema accepts again unchanged, the agent input stays within the full input, every agent rule and default in the entry data takes effect, and every schema the registry check accepts, hostile probes included, holds all of these",
+      "source": "A3 3.2.1, A3 5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.json-schema",
+      "title": "Every generated JSON Schema is valid draft 2020-12, every entry's metadata is consistent and every result can express what its input asks for",
+      "source": "A3 5, A6 3.3",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.generated",
+      "title": "The generated files match a fresh render and are byte-stable: LF, sorted keys, no timestamps, no absolute paths",
+      "source": "A3 3.2.2, A7 3.3, A7 3.8 M1.01",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.registry.agent-projection",
+      "title": "The agent input built from an entry's rules drops hidden fields, requires the required ones and applies the agent limits by path, and mcp-tools.json lists only agent entries with an MCP face",
+      "source": "A3 3.1, 3.2.1, 3.2.3, 3.4, A1 3.7",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.10.safe-text",
+      "title": "SafeText strips tag, bidirectional, control and zero-width characters and normalises to NFC with LF; limits count code points and hold on the normalised text",
+      "source": "A3 3.10, A1 3.7",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.2.client",
+      "title": "The generated client posts to the generated routes and throws AppError on an error envelope",
+      "source": "A3 3.2.2",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.driver.contract",
+      "title": "Driver contract suite: open, busy timeout first and A1's pragma order, statements, transactions, BEGIN IMMEDIATE, typed errors, close, missing and corrupt files, single-step backup into a new file only, and no ATTACH or VACUUM INTO of a named file",
+      "source": "A1 3.19, A1 3.9, A1 5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.driver.startup-check",
+      "title": "The start-up check asks the driver for its own SQLite, and a simulated build without FTS5, or with an old version, no JSON, no STRICT or no backup API, refuses to open",
+      "source": "A1 3.19, A1 5, A2 3.12.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.driver.worker",
+      "title": "Connections in storage worker threads: the typed protocol, and a writer and two readers that start together open cleanly in repeated rounds",
+      "source": "A1 3.9, A1 3.19",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.schema.lint",
+      "title": "Schema lint on a freshly created space: every table STRICT, no forbidden column names, primary keys, the WITHOUT ROWID rule, ID and instant types, version maps, resolvable foreign keys, enum and JSON CHECKs that match the code and refuse bad values",
+      "source": "A1 3.4, A1 5, A7 3.8 M1.03",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.ids.property",
+      "title": "ID property test: a typed prefix and 26 Crockford base32 characters that encode exactly the 128 bits of the OS random source, with one spelling per ID and strict validation",
+      "source": "A1 3.3, A7 3.8 M1.03",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.refs.short",
+      "title": "Short references: task references and entry ordinals format and parse as the contracts patterns do, the default prefix avoids taken ones, and allocation inside a transaction never reuses and stops at its range",
+      "source": "A1 3.3",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.space.create-open",
+      "title": "Create and open a space folder: space.json, schema 0.1, epoch 1 and a random incarnation, owner-only modes; refusals for an existing or missing folder, another database, a newer, unknown or inconsistent revision and a mismatched space_id, each leaving the database's bytes and journal mode as they were; a rollback journal or an empty database file refused before SQLite opens it; a change between inspection and the writer refused before any persistent pragma, and before the first read when the file system shows it; space.json rebuilt by the writer only when it is missing or stale",
+      "source": "A1 3.1, A1 3.4, A1 3.5, A1 3.17",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.space.manifest",
+      "title": "space.json's safety fields (space_id, format, min_reader, min_writer) are each read on their own and honoured whatever else is damaged; a damaged manifest (not a JSON object, too large, no marker, a safety field missing or invalid) makes the writer refuse and is never rewritten, and a reader reads on; app versions compare by SemVer precedence",
+      "source": "A1 3.1, A1 3.17",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.space.atomic-write",
+      "title": "An atomic file write writes every byte through short writes, removes its temporary file on any failure and throws the first error; a failing cleanup never replaces it, and no error carries a path or a native message",
+      "source": "A1 3.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.space.path-rules",
+      "title": "Space path rules: absolute, a portable slug as the folder name, and on Windows no trailing dot or space, reserved character or device name in any component",
+      "source": "A1 3.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.space.row-domain",
+      "title": "Row decoders refuse a bigint, a fraction, a wrong type or a value outside the guarded integer ranges, which match the contracts wire patterns",
+      "source": "A1 3.4",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.under-writers",
+      "title": "A backup taken under 10 writers restores into a new folder with a passing integrity_check, and last_seq and the counts equal the sidecar's; the snapshot is transactionally consistent",
+      "source": "A1 3.18, A7 3.8 M1.06",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.verified",
+      "title": "A backup is a single-step copy from a read-only connection, checked with integrity_check, compressed and read back, with a sidecar of the snapshot's facts and owner-only files under A1's name, reserved so that two backups never share or replace one name, in a backups folder synced into its parent when new",
+      "source": "A1 3.18, MIL-02",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.crash-windows",
+      "title": "A crash at each point of a backup leaves either a complete backup or leftovers that are never listed as one, and the space untouched; a failure removes everything the backup wrote",
+      "source": "A1 3.7, A1 3.18, A1 5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.list",
+      "title": "Listing a space's backups: complete ones newest first, a missing or resized data file and an invalid sidecar by state, crash leftovers named and removable, only a backup's own files ever removed and only once untouched for an hour, sidecars found by path as a restore finds them, out-of-range names ignored",
+      "source": "A1 3.18",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.bundle-limits",
+      "title": "The shared BundlePolicy on .db.gz files: a highly compressible space round-trips; a database over the limit is refused before a backup writes and while a restore streams, leaving no folder; free disk space is checked",
+      "source": "A1 3.18, A1 5, DA-17",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.retention",
+      "title": "Daily backups are due after 03:00 local time or at start after 24 hours, a future-dated one aside; retention of one space's backups keeps 7 daily, 4 weekly, pre-migration backups for 30 days, manual ones, the newest complete backup, and never the newest that passes every check a restore makes; it removes only the regular files it listed",
+      "source": "A1 3.18",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.barrier",
+      "title": "A migration whose barrier backup fails, at any point, never starts; a write between the backup and the migration stops it too; the space then opens read-only with the reason",
+      "source": "A1 3.17, A1 3.18, A7 3.8 M1.06, MIL-02",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.stand-in-steps",
+      "title": "The migration runner from 0.1 through the real 0.2 and a stand-in 0.3: one system commit per step, user_version, format, undo floor and space.json; a step that fails midway, in its verify or on a foreign key leaves the space at its revision, and it still opens",
+      "source": "A1 3.17, A1 5, A7 3.8 M1.06, A7 3.10 M3.01",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.from-0.1",
+      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to 0.2 behind its verified barrier backup: every 0.1 row stays, one migration commit, the new tables empty, the schema equal to a new 0.2 space's, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "source": "A1 3.4, A1 3.17, A1 5, A7 3.10 M3.01, MIL-02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.statement-faults",
+      "title": "A fault at every statement boundary of the 0.1 to 0.2 migration, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the fixture's, it opens read-only with A1's message, the 0.1 build still writes it, and without the fault it migrates",
+      "source": "A1 3.17, A1 5, A7 3.10 M3.01",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.older-build",
+      "title": "An older build refuses to open a 0.2 space writable: the 0.1 chain's writer, in the calling thread and in its storage worker, is refused with SPACE_TOO_NEW and changes nothing, its reader reads, and it restores no 0.2 backup",
+      "source": "A1 3.17, A1 5, A7 3.10 M3.01",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.drill",
+      "title": "The installed-build migration failure and restore drill with the real 0.2: a populated 0.1 fixture space, a fault planted in its migration, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
+      "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
+      "owner": "M3",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.new-folder",
+      "title": "Restore into a new folder verifies sizes, SHA-256, integrity_check, revision and the sidecar's facts before the folder appears; a tampered, mismatched, linked or newer backup is refused and leaves nothing",
+      "source": "A1 3.18",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.read-only-copy",
+      "title": "A backup restored into a new folder is a read-only copy until claimed: a writer is refused with SPACE_READ_ONLY_COPY, a reader reads, the mark lives in the database so a copy of the folder or the database and a missing or damaged space.json keep it, and a claim gives a new epoch and incarnation in one commit and leaves the original untouched",
+      "source": "A1 3.18, A6 3.5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.one-writer",
+      "title": "Restore in place, recovery and the claim of a read-only copy hold the space's claim in the process: each is refused while the space's writer is open, and no writer opens while one runs",
+      "source": "A1 3.18",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.claim",
+      "title": "Restore in place moves the old folder aside and keeps it, and claims the restored copy with a new epoch above every known one and a new incarnation; two claims of one backup make two incarnations",
+      "source": "A1 3.18, A6 3.5, A7 3.8 M1.06",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.crash-windows",
+      "title": "A crash at each point of a restore in place leaves the old space, the claimed new one, or a missing space that finishInterruptedRestore completes; never an unclaimed or half-built space under the space's name",
+      "source": "A1 3.18, A1 5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.recovery",
+      "title": "A space refused with SPACE_NEEDS_RECOVERY recovers from a copy whose rollback journal SQLite played back, keeping the original folder; the copy is judged as open judges a writer, so space.json's gates stay; a copy that does not verify or is refused changes nothing, and a restore from a backup still works",
+      "source": "A1 3.18",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.detect",
+      "title": "Synced folders and network file systems: a fixture tree for every row of A1 3.2 (Syncthing, Dropbox, OneDrive, Google Drive, Cloud Files, iCloud and macOS cloud folders, Nextcloud, Git, network, conflict copies), through a host that never looks outside its tree, with A1's words",
+      "source": "A1 3.2, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.statfs",
+      "title": "Network types from statfs samples captured on real machines and constructed from the kernel's values, mapped drives and drive types on Windows, macOS mount types, and the Windows facts read back",
+      "source": "A1 3.2, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.read-only",
+      "title": "The service serves a space in a synced folder read-only with A1's words until the person confirms the folder is excluded, per machine and per path, and kept across a restart; a network file system refuses a new space, is read-only when found and takes no confirmation; writes are refused with the same words",
+      "source": "A1 3.2, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.way-out",
+      "title": "A space read-only for its synced folder or its network file system names the ways out under its words: space open --excluded for a synced folder, and a backup restored into a new folder and claimed; the commands it prints work as printed, and the old folder stays where it is",
+      "source": "A1 3.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.crash.slice",
+      "title": "A short slice of the crash harness: a real child process killed at each kind of named point (the migration between its steps and after COMMIT, its barrier backup, a write before and after COMMIT, a backup before and after its data takes its name, a restore in place before, between and after its renames), by timer and not at all; every invariant holds after each kill and the run leaves no folder behind",
+      "source": "A1 5, A7 3.8 M1.07, A7 3.18.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.crash.checker",
+      "title": "The crash harness's invariant checker names each guarantee broken on purpose in a real space: a lost commit, a commit without its receipt and a receipt without its commit, half a request, fv off its latest change and a broken change chain, a revision between whole migrations, counters gone back, an incarnation changed without a restore, an incomplete or missing backup, a lost replaced folder, a missing space, a retry decided again or replayed differently (its conflicts included), a commit that does not hold what its request asked, a row that differs from its history, a decision cut off after COMMIT that is gone or one cut off before COMMIT that stayed, a restore that swapped in a copy it had not claimed or claimed another backup than asked, a no-op whose end state does not hold, a change no operation accounts for, a created row off the writer's defaults, a stored result that differs from the answer, and a backup or replaced folder harmed after its first check, also with its modification time kept",
+      "source": "A1 5, A7 3.8 M1.07",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.crash.seams",
+      "title": "The write path's fault seams sit inside the request's transaction before COMMIT and after COMMIT before the result returns, both carry the request and its decision, a failure at the first leaves no commit and no receipt, and a replay passes both",
+      "source": "A1 5, A7 3.8 M1.07",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.crash.reports",
+      "title": "A violation stops the crash harness in the round it happened, with the seed, the kill and the invariant, and the run still removes its folder; an error the child reports fails its round even when a kill at a point follows",
+      "source": "A7 3.8 M1.07",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.space.lineage-bound",
+      "title": "A lineage that outgrows space.json's 64 KiB keeps all its entries in the database, and space.json holds the newest ones that fit, ending with the current authority, so open and claims keep working",
+      "source": "A1 3.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.lost-update",
+      "title": "Property test against a reference model with three actors reading and writing the same tasks with their own bases: every write applies, conflicts or is refused as the model predicts, nothing is lost, every fv equals its latest change row, and with receipts on a retried request never applies twice and never changes the model",
+      "source": "A1 3.5, A1 3.7, A1 3.8, A1 5, A7 3.8 M1.04, A7 3.8 M1.05",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.14.planning-fixture.deterministic",
+      "title": "pnpm seed --planning regenerates the synthetic Planning prototype byte for byte, equal to the committed fixture with its CRLF lines",
+      "source": "A7 3.14 (M7.01), A7 3.15",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.coalesce",
+      "title": "A request that writes one field twice records one change row with the first before-value and the final after-value, a field that ends where it started gets no row and keeps its versions, and sets on a new row fold into its create row",
+      "source": "A1 3.7, A1 5, A7 3.8 M1.04",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.read-your-writes",
+      "title": "An operation never fails against an earlier write of its own request: the base is checked once against the start state, and each operation sees the writes before it",
+      "source": "A1 3.5, A1 3.7 (X11), A1 5, A7 3.8 M1.04",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.operations",
+      "title": "task.create, task.patch, task.move, task.complete and task.reopen: valid input, limits, each error code, base pass and fail per logical field, references, positions, the commit row, change rows, outbox rows and machine.register on first open",
+      "source": "A1 3.3, A1 3.5 to 3.7, A1 5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.positions",
+      "title": "Positions are a fractional index: a new position sorts strictly between its neighbours as SQLite compares text, appends stay short, and invalid or unordered neighbours are refused",
+      "source": "A1 3.4, A7 3.8 M1.04",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.children",
+      "title": "note.add, log.add, source.add and place.set: ordinals, sources found by key and linked once, a live link unchanged, a revival only with its link version or a base, a place per owner and machine whose change needs a base, their checks, change rows, touched marks and results",
+      "source": "A1 3.4, A1 3.5, A1 3.6, A1 3.15, A7 3.8 M1.05",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.errors.codes",
+      "title": "Every code the write path and the storage worker raise maps to a registry error code, retryable storage codes stay retryable, a crash recovery's SQLite codes map to SPACE_NEEDS_RECOVERY and STORAGE_RECOVERING, and SafeText stores a lone surrogate as the writer does",
+      "source": "A1 3.7, A1 3.8, A1 3.9, A3 3.5, A7 3.8 M1.05",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.5.error-map",
+      "title": "A1's error codes map onto the registry's catalogue with A1's code as data.cause, reasons and retry rules only where A3 3.5 carries them, and an unknown code is internal",
+      "source": "A3 3.5, A1 3.7, A7 3.8 M1.05",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.receipts",
+      "title": "A repeated request ID returns the stored result for applied results and no-ops, a different intent returns REQUEST_ID_REUSED, a no-op retried after the state changed replays the no-op; every decided outcome has one receipt in its request's transaction, keyed by writer scope, and undecided requests store none",
+      "source": "A1 3.7, A1 3.8 (X12), A3 3.2.3, A3 3.7.9, A7 3.8 M1.05",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.writer.worker",
+      "title": "The writer worker opens a space with openSpace inside the storage worker, allows one writer per space in the process, takes operations only, and bounds each request with a timeout and the queue with a limit",
+      "source": "A1 3.9",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.writer.file-names",
+      "title": "Every file name reaches SQLite as one literal path that the writer claim is computed from: a file: URI, a path that starts with file:, a relative path and ? or # are paths for every open, a backup writes only a new file, SQL can neither ATTACH nor VACUUM INTO a named file, and a backup into the live database's URI loses no committed row",
+      "source": "A1 3.9, A1 3.18, A1 3.19",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.writer.cross-process",
+      "title": "One writer per space across processes: every StorageWorker route that opens a space for writing (openSpaceWriter, claimSpace, restoreInPlace, recoverSpace) takes writer.lock with writer.json and holds it for the writer's life; another process's opener is refused with SPACE_LOCKED_ELSEWHERE naming the holder; a dead holder's lock is free at once; a database file with a second name is refused before anything opens it; restore in place and recovery swap the folder on every OS and leave no holder record, rename nothing when their lock was lost before the swap, and undo the swap when the space was written while the lock had ended for it (Windows); a rejected swap whose move back fails is marked, and the next start moves the live folder back instead of completing it",
+      "source": "A2 3.4, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.14.planning-fixture.index",
+      "title": "The synthetic Planning prototype's index names a place for every edge case of the M7.01 row, and each place holds what it names",
+      "source": "A7 3.14 (M7.01), A7 3.15.2",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.fixture",
+      "title": "Every case of the synthetic prototype's index parses to exactly what the index states: tasks with ID, group, title, body and flags, the counts, the counted event files, the folded check, star and focus day, the orphans, the optional files, and only the problems the cases name",
+      "source": "A7 3.14 (M7.02), A7 3.15.1, A7 3.15.2",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.fallback-id",
+      "title": "The fallback ID is 32-bit FNV-1a over the code points of <group>|<title> and matches the prototype's output for every unmarked synthetic title, including the two that tell code points from UTF-8 bytes and UTF-16 units",
+      "source": "A7 3.14 (M7.02), A7 3.15.2",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.total",
+      "title": "Every importer parser returns a result for any input and never throws, and its problems carry only a file, a line, a task ID, a field and a fixed code, never input text",
+      "source": "A7 3.14 (M7.02), A7 3.15.2",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.grammar",
+      "title": "The ledger, metadata, event and optional-file rules on small synthetic inputs: Python's line split and whitespace, markers, clauses, duplicate IDs, field types, event validity, microsecond order and the .ready rule",
+      "source": "A7 3.14 (M7.02), A7 3.15.2",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.bounds",
+      "title": "Each importer bound (file sizes, line length, task lines, entries, items, event files) gives its typed problem at the bound instead of unbounded work",
+      "source": "A7 3.14 (M7.02), A7 3.15.2",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.input-copy",
+      "title": "The input copy copies only the inputs into a new folder, records their SHA-256, refuses an existing or nested destination, follows no link, and reports any source file that changed, appeared or went away",
+      "source": "A7 3.14 (M7.02), A7 3.15.1",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.3.seed.deterministic",
+      "title": "pnpm seed with a fixed seed builds the same Mira sample space twice, proven by a content digest over every row that equals a fixed value on every OS",
+      "source": "A7 3.3, A7 3.8 M1.03",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.3.page.headers",
+      "title": "The page's API calls carry the page's build and the tab's space in the header names the service reads, names that derive from the identifier and that fetch accepts",
+      "source": "A2 3.8.3, A2 3.8.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.build",
+      "title": "The launcher build makes a console tasks.exe and a GUI tasksw.exe with ASLR, DEP and CFG, and release builds carry no test hooks",
+      "source": "A2 3.12.3, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.argv",
+      "title": "Hostile argv reaches Node byte for byte through tasks.exe and tasksw.exe in both modes, NODE_OPTIONS and NODE_PATH are removed, the launcher's variables come from its location and exit codes pass through",
+      "source": "A2 3.12.3, A2 5, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.env",
+      "title": "Through both launchers in both modes, no NODE_ variable but NODE_EXTRA_CA_CERTS and none of OpenSSL's loader settings reaches Node, in any case or when named twice: an OpenSSL provider DLL is not loaded, NODE_DEBUG prints nothing and no compile cache or coverage folder appears; proxies and SSL_CERT_ variables pass",
+      "source": "A2 3.12.3, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.handles",
+      "title": "Node inherits only the launcher's standard handles through both launchers in both modes: an unrelated inheritable handle of the caller never reaches it, and a missing or invalid standard handle leaves Node without that handle",
+      "source": "A2 3.12.3, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.job",
+      "title": "Killing tasks.exe kills Node through its job object, a detached child of Node survives, and a refused job step stops Node before it runs",
+      "source": "A2 3.12.3, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.modes",
+      "title": "A version-local launcher runs its own version without reading current, in a fresh install and during an update; stable dispatch finds the root from its location (a TASKS_HOME root with home.marker, else share\\tasks beside the daily command folder), validates current and refuses hostile contents and links, share and share\\tasks included; nothing in the working directory or environment steers it",
+      "source": "A2 3.12.3, A2 5, SL-02, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.2.launcher-win.supervisor",
+      "title": "tasksw.exe supervises tasks serve: restarts after 1, 2, 4 and 8 s, gives up at the 5th failure in 10 minutes with its record (in the daily install, in %USERPROFILE%\\.tasks\\state; none when USERPROFILE names no folder), stops on 0, 64 and 73, restarts at once on 75 re-reading current, and leaves the service outside any job",
+      "source": "A2 3.3.1, A2 3.3.2, A7 3.8 M1.11",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.hub.paths",
+      "title": "Folders per OS from fake environments: the data in ~/.tasks and the program in ~/.local/share/tasks with the command in ~/.local/bin on every OS, neither inside the other, a default space path the space rules accept; the account's home on Linux and macOS whatever HOME a snap sets, USERPROFILE on Windows, XDG variables never read, TASKS_HOME holding the whole install and refused when relative",
+      "source": "A2 3.2.1, A2 3.2.2, A2 5, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.data-folder.kept",
+      "title": "No command removes anything in the data folder unasked: with a daily install's ~/.tasks full of configuration, spaces, logs, cache and an empty folder, service install then uninstall leaves it file for file as it was on Windows, Linux and macOS, and the logs folder install makes for launchd stays",
+      "source": "A2 3.2.1, A2 3.3",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.hub.install-id",
+      "title": "The install ID: symlinked, trailing-separator and Windows case variants of one state path give one ID, two TASKS_HOME paths that end in the same name give different IDs, and the ID names the runtime folder, the socket or pipe and the launch folders",
+      "source": "A2 3.2.1, A2 S30, A2 5, SL-03, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.hub.refusals",
+      "title": "The service refuses root, an elevated Administrator, an elevation it cannot check and package identity with 64 before writing anything, reads the integrity level by SID from the whoami in the loader's System32 whatever SystemRoot says, refuses a state folder others can write, and refuses a file where the state folder belongs with 64 and a line",
+      "source": "A2 3.3.1, A2 3.5, A6 3.16.1, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.hub.exit-codes",
+      "title": "tasks serve's exit codes as a process: a graceful stop drains and exits 0, a stop from outside over tasks-local/1 (service/shutdown, refused to an agent's connection) exits 0 on every OS and 75 with restart, the caller getting its reply first, package identity exits 64 with its record, an uncaught exception or unhandled rejection exits 70 with a crash file, and main.ts applies the real identity check. A failed bind exits 70 without a stale service.json, a drain whose file steps fail still ends with its code, and a stop does not wait for a space still opening",
+      "source": "A2 3.3.1, A2 3.13, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.4.hub.single-instance",
+      "title": "10 simultaneous starts on one state folder, existing and new: one service reaches ready, nine exit 73, and the running one keeps its service.json, endpoint and log. 10 processes that try one lock at the same instant have exactly one winner in every round",
+      "source": "A2 3.4, A2 5, A7 3.7 S06, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.4.hub.lock-deleted",
+      "title": "Deleting service.lock makes the service exit 70 within 10 s on Linux and macOS, Windows refuses to delete or rename a held lock, and the ownership watch reports a missing or replaced file, at once when it is already gone as the watch begins",
+      "source": "A2 3.4, A2 5, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.4.hub.two-installs",
+      "title": "Two state paths give two install IDs and two endpoints, both ready at once, and the second starting and stopping leaves the first's service.json, endpoint and socket file as they were",
+      "source": "A2 3.4, A2 5, A2 S28, SL-03, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.4.hub.stale-recovery",
+      "title": "After a hard kill the next start takes the lock, replaces the stale service.json and socket file, gets a new instance and serves its endpoint",
+      "source": "A2 3.3.1, A2 3.4, A2 5, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.4.hub.writer-lock",
+      "title": "Two services of two state folders registered with one space: one opens it with writer.lock and writer.json, the other reports it unavailable(locked_elsewhere) naming the holder, and a stop releases it. A process that opens the space for writing through storage without the service is refused while the service holds it and told who holds it. A writer.lock deleted under an open space ends the service with 70 at once and another service can take the space, and a database file with a second name (hard or symbolic link) is never opened for writing, not even writer.lock is created",
+      "source": "A2 3.1, A2 3.4, A2 5, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.startup",
+      "title": "The start-up sequence for spaces in A1 3.18's order: an interrupted restore in place is finished before the open, an older revision is migrated by the writer's open behind its barrier backup, a failed migration, a read-only copy and another machine's space are read_only with their reason, an open space's own backups folder loses its old leftovers and gets its daily backup and retention while a machine-local backup.dir is used and never cleaned, and a restore in place and a claim through the space manager close the space, go above every epoch this machine has seen and open it again, none while the space's open has not ended; an open past its bound keeps watching its writer.lock through a later close of the space, a lock reported after the bound is watched only until its worker closes, and the drain waits for a restore in progress",
+      "source": "A2 3.1, A1 3.17, A1 3.18, A6 3.5, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.failed-migration",
+      "title": "A failed migration is not tried again by itself: ten opens of a space whose migration fails leave one barrier backup and one failure record, and the nine later opens write nothing (backups folder, settings file and database byte for byte) and serve it read-only with a message that names the retry; the record survives a restart; another build, another state of the database (a restore in place, another writer) and the person's explicit retry each try again behind a new barrier backup; the retry is refused for a caller that is not the user; a successful retry migrates and forgets the record; a damaged or unreadable record is no record",
+      "source": "A1 3.17, A1 3.18, A2 3.1, A2 3.6.5, A7 3.10 M3.01, MIL-02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.migration-timeout",
+      "title": "An open whose migration runs past the open's bound stops its worker before it reads the space again: a migration that fails, or still runs within the close's bound and fails, leaves the space unchanged and read-only (ETIMEDOUT) with no failure record; one that succeeds within the close's bound leaves it at the new revision and served for writing, never reported unchanged; one still running when the close's bound passes serves no reader, the space is unavailable, and the next start finds the state it left intact",
+      "source": "A1 3.17, A2 3.1, A7 3.10 M3.01",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.13.hub.logs-content-free",
+      "title": "The log takes only catalogue events and typed fields, drops free text cast past the types, takes error codes and classes from closed lists only, rotates at the file's real size only in the lock holder, stays bounded while the holder is idle, takes tasks-local/1's events whole with only their listed words, and a grep of a service's logs and crash files for fixture strings finds nothing",
+      "source": "A2 3.13, A2 S27, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.13.hub.crash-files",
+      "title": "A crash file keeps the error's class and code and stack frames cut to base names, never the message or a path, even when the message holds lines shaped like frames",
+      "source": "A2 3.13, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.service-install.golden",
+      "title": "Golden unit file, Run values and plist per install ID: plain names for the daily install, the install ID in a test install's unit, Run value and label, two test folders with one name kept apart, paths quoted or refused as each format needs, and an entry at the install's name counted as ours only when it starts a Tasks launcher",
+      "source": "A2 3.2.2, A2 3.3.2, A2 3.3.3, A2 3.3.4, SL-03, A7 3.8 M1.12",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.2.service-install.reg-export",
+      "title": "The reader of reg.exe export files: every value type, escaped names and data, continued hex lines, the default value, subkeys, and a value's own key only",
+      "source": "A2 3.3.2, A7 3.8 M1.12",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.2.service-install.no-trace-registry",
+      "title": "Windows, in a scratch HKCU key of the test's own: install adds exactly its Run value, keeps another program's values and another install's value, never touches Task Manager's off record, refuses a foreign value at its name, and install then uninstall leaves no trace in a key-level diff",
+      "source": "A2 3.3.2, A2 3.3.5, A2 3.5, A7 3.8 M1.12",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.3.service-install.no-trace-files",
+      "title": "Linux and macOS, in temporary folders with a stand-in systemctl and launchctl: install writes exactly its unit or plist and runs A2's commands, keeps other files, refuses a foreign file at its name, never enables linger, and install then uninstall leaves no trace in a file-level diff",
+      "source": "A2 3.3.3, A2 3.3.4, A2 3.3.5, A7 3.8 M1.12",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.4.service-install.launchd-wrapper",
+      "title": "The tasks-launchd wrapper with a stub service under /bin/sh: exits 0, 64 and 73 map to 0, 70 and other crashes pass through, 75 restarts at once and more than 5 in a row exit 75, SIGTERM is forwarded, and a stop during a 75 restart ends in 0",
+      "source": "A2 3.3.1, A2 3.3.4, A2 5, A7 3.8 M1.12",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.5.service-install.commands",
+      "title": "tasks service install, uninstall, start, stop and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, and status with the entry, Startup apps, systemd and linger state and the service's answer",
+      "source": "A2 3.3.2, A2 3.3.3, A2 3.3.5, A2 3.5, A2 3.10.3, A7 3.8 M1.12",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.tolerance",
+      "title": "Truncated, unknown and 1 MB lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
+      "source": "A4 3.11.4, A4 5.1, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.recordings",
+      "title": "Every recording in fixtures/streams parses to the outcome its recording states, whole or line by line",
+      "source": "A4 3.11.4, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.events",
+      "title": "The stream parsers map each CLI's events to normalised run events: native ID, session, one progress label per call, messages, usage totals, declined commands, and the outcome judged by is_error or the final turn event with the exit",
+      "source": "A4 3.11.1, A4 3.11.4, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.fuzz",
+      "title": "Property test over mutated recordings: a stream parser never throws, never logs, keeps memory bounded, gives the same events however the bytes are chunked, and only vocabulary labels and reasons",
+      "source": "A4 5.1, A7 3.18.1, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.fake-agents.replay",
+      "title": "Fake agents replay a recording as a child process: the bytes of the recording, its exit code, a hold where it was cancelled, the recorded tail on a graceful signal, a kill that ends with SIGTERM, and a report of argv, cwd, environment names and the brief's hash",
+      "source": "A4 5.1, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.launch.state-machine",
+      "title": "Property test of the launch state machine with the service killed at any store call or external step, before or after it takes effect, recovery included, and restarted, with two calls at once, start-up recovery beside live calls and wall clock steps: at most one dispatch, one agent process and one T3 thread per intent, no agent without a durable claim, Failed never hiding a started session, Dispatching durable before the external step, Unknown never leading to a dispatch, a T3 repeat or a claim, on the in-memory store and on the space database",
+      "source": "A4 3.9, A4 5.1, A4 5.2, A7 3.9 M2.05",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.launch.machine",
+      "title": "The launch state machine's rules one by one: each dispatch outcome per route, one dispatch per intent, expiry, a claim once and only within its window, confirmation needing a claim, restart recovery per route with T3's repeat only under the same grant, races of claims, sweeps, recoveries and lost reports with a held call (a dispatch, a claim's reply, a T3 repeat), an early or cut-off confirmation, T3's lost or refused reply, a clipboard launch never lost, and wall clock steps, a repeated old click included",
+      "source": "A4 3.6.3, A4 3.9.1 to 3.9.3, A7 3.9 M2.05",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.launch.sections",
+      "title": "One call at a time per intent, each with deadlines, on the in-memory store and on the space database: recovery decides on the record it reads in the intent's section, a late lost write never changes the record under a T3 repeat or before recovery decides, a dispatch, a store call or a claim's reply that never answers owns its intent only until its deadline, calls run in arrival order, and every confirmation is applied whole whatever it carries, cut off anywhere",
+      "source": "A4 3.9.1 to 3.9.3, A4 3.16.1, A7 3.9 M2.05",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.execution-store.contract",
+      "title": "The ExecutionStore contract suite on every backend (in memory, the space database in the writer's thread and through a storage worker): one Prepared record per click with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart, records of IDs and codes only, and the writer's copy of A4's rules",
+      "source": "A4 3.16.1, A4 5.1, X7, A7 3.9 M2.05",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.reattach",
+      "title": "Restart the service after both ticket windows have passed: a real tasks shim reattaches with its attachment credential, reports its fake agent's exit, and cannot obtain a second claim, its ticket's bridge role is spent too, and neither secret reaches the log",
+      "source": "A4 3.6.3, A4 3.9.3, A4 5.1, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.claim",
+      "title": "The one spawn claim: a ticket claims once, within its window, only its own launch, only for a live process with exactly the start time it names; a credential is never a ticket; the claim is durable before its reply, which alone carries argv, folder, environment and the credential; a lost reply starts nothing; the ticket's bridge role once within 15 minutes of the agent's start",
+      "source": "A4 3.1, A4 3.6.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.attach",
+      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended",
+      "source": "A4 3.6.3, A4 3.9.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.environment",
+      "title": "The agent's environment is an allow-list of the base plus the instance's env, with the home variables removed first and A4's additions last, never a pass-through: a fake agent started by a real shim sees exactly the expected names",
+      "source": "A4 3.8, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.process-identity",
+      "title": "A process's start time as the OS records it (Linux /proc with the boot ID, Windows creation time): equal for the same process, different for another, absent once the process has ended",
+      "source": "A4 3.1, A4 3.6.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.entry",
+      "title": "tasks shim is entered before the CLI loads: it loads only its own modules, the protocol client, discovery and two leaf modules of launch, and a bad argument exits 2 without echoing it",
+      "source": "A4 3.6.3, A2 3.7.1, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.folder",
+      "title": "The launch's folder (A4 3.3): resolved right before the launch with this machine's live roots, or the space's work folder for a task without a place; the terminal starts in it and the claim's reply alone carries its check; the shim checks its own working directory before anything else and starts the agent there without a working-directory option: an unchanged folder runs the agent in exactly that directory, a folder swapped after the resolve is refused with folder_changed and starts nothing, a place that does not resolve disables the route with its reason",
+      "source": "A4 3.3, A4 3.6.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.4.hub.drain-ownership",
+      "title": "The ownership watch runs through the drain and latches a loss, and ownership is checked again right before every stop step that touches a shared path: a second start that takes a replaced service.lock while the first drains keeps its runtime folder, launch root and socket, and the first notes the loss",
+      "source": "A2 3.2.1, A2 3.3.1, A2 3.4, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.launch.open-replay",
+      "title": "A repeated Open request (the same request ID) returns its original intent as it is now, without the folder's preflight and without making machine state again, although the folder went meanwhile; a new request is checked before an intent is made, and the same ID with another click is the store's refusal",
+      "source": "A1 3.8, A4 3.3, A4 3.9.1, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.work-folder",
+      "title": "The space's work folder for a task without a place: before anything is made or entered, workdirs and the space's folder must each be a real folder (no link, junction or other reparse point), this user's, user-only on POSIX and inside its parent by identity, or the launch is refused with unsafe_folder and nothing is made through a link; a link that appears between the check and the creation is refused by the check after it",
+      "source": "A4 3.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.reply",
+      "title": "The shim reads the claim's reply strictly: exact fields, types and bounds; a reply it cannot follow (another protocol, a missing or malformed check, an unknown field, a field past its bound, no object at all) starts nothing and is reported as launch.failed on the claim's connection, or in exit.json when the envelope names one, with one line and never a crash or a silent exit",
+      "source": "A4 3.6.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.installed",
+      "title": "pnpm accept m2 --part build --installed: tasks shim through a built version folder's launcher against that folder's own bundled service claims its ticket, runs a fake agent as its child in the checked folder and reports its exit; without --installed the same test runs the source",
+      "source": "A4 3.6.3, A2 3.12.2, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.1.hub.runtime-folder",
+      "title": "Linux's per-user runtime folder under a runtime base of the test's own: a clean stop removes it when it holds no launch folder and keeps it whole while one is left for the next start; only empty folders go; a service test's cleanup removes the folder it caused by its full name, also after a test that stopped halfway, and fails when anything else is left under its base",
+      "source": "A2 3.2.1, A4 3.6.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.shim.client",
+      "title": "The shim's own steps: a refused claim, a failed verify and a spawn error start no agent and say why in one line; the exit is reported on its connection, or written to exit.json when the service is down; the shim exits with the agent's code",
+      "source": "A4 3.6.3, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.launch.shim-property",
+      "title": "Property test of the state machine with the real shim host: shims that claim late, twice, after a restart, after their window, with another launch's ticket or a credential, whose reply is lost, that reattach and report or die: at most one agent per intent, none without a durable claim and a reply, an attachment never a claim",
+      "source": "A4 3.6.3, A4 3.9, A4 5.1, A7 3.9 M2.08",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.command-lines",
+      "title": "Golden terminal argv per adapter and OS, compared as arrays: each adapter's fixed flags, then the product's command, shim and the ticket, never a title, folder or task text; Windows Terminal refuses an element with ; before anything starts; a custom command line takes {terminal} and one whole {shim} and refuses {cwd} and {title}; x-terminal-emulator takes its target's kind; Linux wraps the line in a systemd-run --user --scope unit named by install and launch; the Windows console is started by a hidden PowerShell with a fixed script whose two variables carry the product's command, quoted so a Windows runtime parses it back exactly",
+      "source": "A4 3.6.2, A4 3.7, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.chain",
+      "title": "The terminal chain: auto picks the session's TERMINAL, the xdg-terminals lists, then A4's order of installed terminals on Linux, Windows Terminal when its app execution alias exists else the console on Windows; a chosen terminal comes first with its fallbacks, the console always last on Windows",
+      "source": "A4 3.6.1, A4 3.6.2, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.acceptance",
+      "title": "Acceptance per terminal adapter: a handoff client is Dispatched once spawned whatever its exit, a direct terminal when it runs after 2 s, exited 0 or its ticket was spent; only a definite error before activation (no program, a refused line, a spawn error, a direct terminal's non-zero exit within 2 s before any claim, after its ticket is revoked) tries the next terminal; none left is Failed refused",
+      "source": "A4 3.6.2, SL-09, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.service",
+      "title": "Through a real service with fake terminals from testkit and a real tasks shim: the fake terminal receives only tasks shim <ticket>; a handoff client that exits 0 at once and whose shim claims after 5 s gives one window and Confirmed; a direct terminal that dies at once has its ticket revoked and refused, and the next terminal claims; Linux scopes and the setsid fallback; the terminal's environment",
+      "source": "A4 3.6.2, A4 3.6.3, A4 3.7, SL-09, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.hostile",
+      "title": "Hostile titles and folders (quotes, spaces, newlines, percent signs and carets, dollar signs and backticks, leading dashes, non-ASCII, very long values) reach the fake agent byte for byte, in its argv and as its working directory by identity, or the launch is refused before an agent starts; none reaches a terminal's argv",
+      "source": "A4 3.6.2, A4 3.6.3, A4 3.6.4, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.brief.sanitiser",
+      "title": "The brief's sanitiser: a title is one well-formed NFC line without controls, bidi, zero-width, tag or variation-selector characters, double quotes of any script or backticks, within 120 grapheme clusters and 512 code units, and idempotent; paths stay on one line; composer text keeps its line breaks and says what it lost",
+      "source": "A4 3.15.6, A4 5.1, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.brief.renderer",
+      "title": "The brief renderer: A4 3.15.2's sent, prefilled and pointer templates; no hostile title, folder or label leaves its fence or changes a template line; composer text replaces the last line and over budget becomes a note with the last line pointing at it; nothing is cut, a brief over budget without composer text is refused; the hash covers the brief with its reference as a slot and never the composer text",
+      "source": "A4 3.15.1-3.15.4, A4 3.15.6, A4 5.1, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.golden-argv",
+      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief after --; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; Codex's assisted open without a prompt; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
+      "source": "A4 3.4.2, A4 3.4.3, A4 3.6.4, A4 5.1, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.opener",
+      "title": "The OS's URL opener: rundll32's FileProtocolHandler or gio open with the URL as one element, a fallback only when the opener before it never started, xdg-open's codes 3 and 4 as no handler, no session without a display, a hung opener stopped and unknown",
+      "source": "A4 3.6.5, A4 3.9.2, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.service",
+      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, long words saved once as a note; refusals that record nothing",
+      "source": "A4 3.4.2, A4 3.4.3, A4 3.4.6, A4 3.6.5, A4 3.15, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.codex-match",
+      "title": "Codex's reference match in fake session folders: another folder, the same folder without the reference, a compressed file, a file from before the launch, a link and two launches in one folder; only the exact match is accepted, a file whose prompt is still to come is read again, and only the first 64 KB is read",
+      "source": "A4 3.4.3, A4 5.1, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.homes",
+      "title": "The agent home an instance launches with, one rule for launch and setup: the home variable of the instance's env in any case on Windows, then config_home, then the default folder; only an instance on the default home takes the claude-cli:// link",
+      "source": "A4 3.2, A4 3.4.2, A4 3.4.3, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.environment.scrub",
+      "title": "A4 3.8's scrub after merging (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE, every TASKS_*), the home variables before the instance's env, the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
+      "source": "A4 3.8, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.environment.layers",
+      "title": "The environment's layers: only the bytes between the snapshot's fences count, the session names from systemctl show-environment with $'…' decoded exactly, the session beats the snapshot and the snapshot's SSH agent only when its socket exists, and Windows' registry layers expanded and joined as a logon builds them",
+      "source": "A4 3.8, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.environment.snapshot",
+      "title": "The login-shell snapshot has a 10 s deadline and a defined result when the shell hangs (its process group killed), prints noise or half the output, fails or prints without end; the previous snapshot stays in use, and with none the base is the service's through the allow-list; it is stored 0600, never with the service's own variables, and taken again at a new boot, a new login or once a day",
+      "source": "A4 3.8, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.environment.login-shell",
+      "title": "via_login_shell takes a fresh login-shell snapshot in the task's folder before the launch, and the agent still starts directly from the shim with that environment after the folder check and A4's scrub: no profile runs between them, so it can change neither the folder nor a scrubbed or home variable; Windows has none",
+      "source": "A4 3.8, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.launches",
+      "title": "launch.create and launch.transition through the write path: a Prepared record with a reference, create and state changes that carry no task and queue no projection, receipts and replay, the 5-second focus on the wall clock, compare-and-set on the state and the version, evidence of A4's keys and kinds that only grows, A4's edges and each state's reasons, R7 and no undo, IDs and codes only, task, place and machine checks, and openLaunches",
+      "source": "A1 3.4, A1 3.6, A4 3.9, A4 3.16, A7 3.9 M2.05",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.clear-append",
+      "title": "place.clear and task.context_append through the write path: a clear tombstones the owner's place on the request's machine with one change row and needs a base, a place bound after the base conflicts, nothing bound is unchanged, a place is never bound and cleared in one request; an append needs no base, two appends both land after a blank line, a stale replace conflicts with them, and the total stays within 64 KiB",
+      "source": "A1 3.5, A1 3.6, A1 3.15, A7 3.9 M2.03",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.framing",
+      "title": "tasks-local/1 framing: split and merged chunks give the same lines, the line limit closes the decoder for good, invalid UTF-8 fails only its line, a BOM is kept for the parser to refuse, and a line without its terminator is never returned",
+      "source": "A2 3.6.2, A2 5, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.proofs",
+      "title": "tasks-local/1 proofs: the formulas of A2 3.6.3, RFC 8785 canonical JSON, a proof with another key, instance, protocol, mode or nonce never matches, a replayed client proof fails against a new nonce, and every proof comparison runs through timingSafeEqual",
+      "source": "A2 3.6.3, A2 5, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.pre-auth-bytes",
+      "title": "Against a fake endpoint that sends a challenge and a bad, missing or late server proof, the client's bytes are one hello line whose params hold only protocol, mode, nonce and proof, and for random contexts and random fake replies no client sends any other byte before the proof verifies",
+      "source": "A2 3.6.3, A2 3.7.6, A2 5, A3 5 (X2), A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.handshake",
+      "title": "tasks-local/1 end to end over a socket or pipe: both modes bind, a client with a wrong key receives no byte after its hello, a replayed hello is refused, a bind with a tampered protocol, mode or context fails its proof, a tampered bind result fails at the client, and the service's events hold no nonce, proof or context",
+      "source": "A2 3.6.3, A2 3.13, A2 5, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.versions",
+      "title": "Version negotiation for every combination of client and service protocol in [current - 2, current + 1]: accepted, client_too_old or service_too_old, each in an authenticated bind result",
+      "source": "A2 3.6.6, A2 5, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.bounds",
+      "title": "A peer that sends garbage, oversize or pipelined bytes, stalls, or closes at any byte of the hello or the bind gets nothing but the challenge, never crashes or hangs the server and leaves no socket open; the caps on unauthenticated and total connections hold; a name in use is refused",
+      "source": "A2 3.4, A2 3.6.2, A2 3.6.3, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.rpc",
+      "title": "rpc mode: results, A3 errors in data, JSON-RPC protocol errors, notifications both ways, $/cancel, the in-flight limit and frame_too_large; under backpressure every line reaches the wire once and in order; a peer that stops reading is closed at the output deadline while a slow but steady reader is not; mcp mode passes whole lines both ways; a close with a grace answers the requests in flight before it ends each connection, and destroys what is left after the grace",
+      "source": "A2 3.6.2, A2 3.6.4, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.classes",
+      "title": "Connection classes from client.tty and the agent markers, decided by the service from the bind; a shim connection may call only A4's methods and no other class may call them",
+      "source": "A2 3.6.4, A2 3.6.5, A2 5, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.local.grants",
+      "title": "The grants table: one row per kind, no raw secret stored, a token lookup that hashes and compares every row in constant time, the UI expiry, and revocation that closes every live connection that used the row",
+      "source": "A2 3.2.5, A2 5, A6 3.3, A7 3.8 M1.09",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.pre-auth-bytes",
+      "title": "Against a fake endpoint that sends a challenge and a wrong proof, no proof, a close or silence, every connection of the forwarder carries one hello line whose params hold only protocol, mode, nonce and proof, never the context, ticket, handle, cwd, environment, client details or mcp_init, and the agent gets offline answers with untrusted_endpoint",
+      "source": "A2 3.6.3, A2 3.7.6, A3 3.7.2 (X2), A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.handshake",
+      "title": "The forwarder binds with the right key and sends exactly the allow-listed bind context; a wrong key and a tampered bind result give untrusted_endpoint and trust nothing from the peer; a service that refuses the protocol as too old gives restart_session and no more attempts; a forwarder newer than the real hub gets service_too_old",
+      "source": "A2 3.6.3, A2 3.6.6, A2 3.7.6, A7 3.9 M2.01, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.offline",
+      "title": "The offline responder answers both MCP eras from the cache for this build or the build's own file, validates every 2026-07-28 request's version, gives each transport reason its text, lists the same tools offline and online, and a session that started offline goes on online from mcp_init without a restart",
+      "source": "A2 3.7.3, A2 3.7.4, A2 5, A3 3.3, A3 3.5, A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.restart",
+      "title": "10 bridges through a service restart see at most one connection_lost each and keep their binding through resume.handle and mcp_init; calls made during the outage wait for the new service; a service that stays down gets the offline answer after the hold; the reconnect backoff and hold follow A2 3.7.4",
+      "source": "A2 3.7.4, A2 3.7.5, A2 5, A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.frames",
+      "title": "The forwarder delivers random message sequences under random chunking unchanged and in order both ways, passes lines up to the 8 MiB limit both ways, drops an oversized stdin line and goes on, and treats an oversized service line as a lost connection",
+      "source": "A2 3.6.2, A2 3.7.2, A2 3.7.6, A2 5, A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.backpressure",
+      "title": "A stalled agent app or service does not grow the forwarder's memory without bound: stdin is read only while the socket takes lines, service lines only while stdout takes them, held and in-flight requests are capped, and a cancelled request stops counting",
+      "source": "A2 3.6.2, A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.hygiene",
+      "title": "The forwarder writes only MCP frames to stdout and content-free lines to stderr, copies only allow-listed environment values, imports only the Node built-ins A2 3.7.1 allows and never starts the service, refuses bad arguments with exit 2, and exits on a closed stdin leaving no process or connection behind",
+      "source": "A2 3.7.1, A2 3.7.2, A3 3.7.2, A7 3.9 M2.01, A7 A.3",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.discovery",
+      "title": "The bridge finds the same state and cache folders as the hub on every OS, its fixed names match the product's, and it reads service.json and ipc.key per attempt with a reason for each failure",
+      "source": "A2 3.2.1, A2 3.2.2, A2 3.6.1, A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.bridge.cli-entry",
+      "title": "tasks mcp through the CLI's entry hands over to the bridge before the CLI loads: its arguments reach the bridge unparsed, only the bridge's modules and the allowed built-ins load, stdout holds only MCP frames, and the exit codes are the bridge's",
+      "source": "A2 3.7.1, A2 3.10, A2 3.12.2, A7 3.9 M2.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.3.mcp.clients",
+      "title": "Official MCP clients of both eras (SDK 1.x, and SDK 2.x in legacy, auto and pinned 2026-07-28 modes) start tasks mcp as real processes, through the CLI's entry and the bridge's direct entry, against a real service with a space from machine.toml: each lists the five tools, reads the server instructions and calls a tool",
+      "source": "A3 3.3, A3 5 (M0 item 7), A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.3.mcp.eras",
+      "title": "Contract tests for both envelopes: 2025-11-25 negotiated at initialize and held, 2026-07-28 validated on every request (an unsupported version is -32022 with supported and requested, a missing one -32602), the modern result fields, tools only (other methods -32601, an unknown tool -32602), and service_unavailable with service_too_old for a bridge newer than the service in both eras",
+      "source": "A3 3.3, A3 3.5, A3 5, A2 3.6.6, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.3.mcp.tool-list",
+      "title": "tools/list is byte-identical on every connection, whatever its bind context (unbound, ticket, native IDs, resume handle, another instance or space), online and offline, in both eras; initialize and server/discover equal the offline file's results",
+      "source": "A3 3.3 (X3), A3 5, A2 3.7.3, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.3.mcp.transport",
+      "title": "The endpoint's transport: one line at a time with drained() when send backs up and nothing waiting without a bound, requests in flight capped in number and bytes with a retryable refusal, a duplicate ID refused, a cancellation settles its request, and mcp_init replayed with its answer dropped and later lines held in order",
+      "source": "A3 3.3, A2 3.6.4, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.3.mcp.calls",
+      "title": "A tool call goes to the request path as the connection's unbound principal (agent:<instance>, a machine-qualified writer scope, the entry's --space, never TASKS_SPACE), user-only fields are refused, and an error comes back as a tool result in A3 3.5's text form",
+      "source": "A3 3.3, A3 3.5, A3 3.7.3, A3 3.7.4, A3 3.7.8, A3 3.7.9, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.6.mcp.instructions",
+      "title": "The server instructions v0: ASCII, at most 3,500 bytes and about 2 KB, the trigger and start rule within the first 240 characters, and every tool they name is a listed tool",
+      "source": "A3 3.2.5, A3 3.6, A3 5, M0 row A06, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.5.mcp.definition-report",
+      "title": "The definition report matches the generated definitions: each tool's bytes and estimated tokens at 2.0 bytes per token, and the total; status and get_task load at start",
+      "source": "A3 3.2.5, M0 rows A08 and A09, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.5.mcp.result-budget",
+      "title": "Every tool's compact text stays within its result budget at 1.5 bytes per token for every example and for worst cases at the field limits; a cut keeps the fixed parts, takes the lower parts first, ends with a +N more line that says how to ask for the rest, and never cuts inside a note the user addressed to agents",
+      "source": "A3 3.2.5, A3 3.9.6, A3 5, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.tools.five",
+      "title": "The five tools through the request path: status's here (exact, inside, below, across nested roots, best first, with a hint), its session and the work guide; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its place resolved now, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
+      "source": "A3 3.4.2, A3 3.4.4, A3 3.4.6, A3 3.4.7, A3 3.4.8, A3 3.5, A3 3.9.6, A7 3.9 M2.03",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.ticket",
+      "title": "The ticket from the bind frame binds the launch's session once, the actor and the launch's bound_at follow, no secret reaches machine state; a forged, malformed, other install's or other space's ticket, one before the agent started or past its 15-minute window, one presented again while its session's connection is open, and one after the agent ended bind nothing; presented again with the session's native ID or once its connection closed it binds the same session",
+      "source": "A3 3.7.2, A3 3.7.3, A3 3.7.4, A3 5, A4 3.1, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.reference",
+      "title": "get_task with a launch reference binds once; the same connection again and a resumed one get the same binding, another gets launch_used with the task; a bound connection gets already_bound; mistyped, unclaimed, ended and over 24-hour references bind nothing; a connection that cannot hold a binding resolves the reference for its call only and uses nothing up",
+      "source": "A3 3.4.4, A3 3.5, A3 3.7.3, A3 3.7.5, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.explicit",
+      "title": "get_task with task and bind true binds an ad-hoc session: later calls default to its task, an explicit task applies to its call only, its writes carry the session's actor, and a retry after binding replays the unbound first attempt",
+      "source": "A3 3.4.1, A3 3.7.3, A3 3.7.4, A3 3.7.9, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.folder",
+      "title": "A working folder never binds: the bind frame's cwd, TASKS_TASK and TASKS_SPACE, status with one exact match and get_task with only cwd leave the connection unbound, and a tool argument naming a session is refused",
+      "source": "A3 3.7.1, A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.space",
+      "title": "A session is pinned to its space: a call naming another space is forbidden, a resume through a bind frame naming another space keeps the session's, and a pinned space no longer served is space_unavailable, never another space",
+      "source": "A2 3.7.1, A2 3.10.3, A3 3.7.8, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.cli",
+      "title": "A cli-agent call's ticket maps to its launch's live session and acts as it in the session's space, binding nothing new, and a retry of a write it made before the mapping replays, also while that write is still in flight; without a session it maps to nothing, writes as agent:unknown and spends no role",
+      "source": "A2 3.10.5, A3 3.7.4, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.bridge-process",
+      "title": "A real bridge process started with a launched agent's ticket in its environment is bound at its bind frame, writes as the session, and after a service restart resumes the same binding with its handle, a retry replaying",
+      "source": "A2 3.7.5, A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.records",
+      "title": "Session records and binding handles survive a restart through their store, are checked one by one when read back, hold no handle; two connections redeeming one launch at once bind one session; a launch bound before leaves no session; a store that cannot write binds nothing and spends no ticket, a re-presented one included; a connection unbound at its bind keeps its unbound scope as a lookup, on disk with its handle; a reference bind the launch does not take leaves no slot bound, a resumed one included, and calls meanwhile wait for it; a launch that does not answer binds nothing yet, the same connection's retry recognises a late write as its own, and a later refusal leaves nothing bound; a shared connection stays shared across a reconnect and a restart, and a thread ID its session does not hold joins no session; at capacity a bind makes room without evicting a live session and survives a restart; presented native IDs are checked",
+      "source": "A2 3.6.4, A3 3.7.3, A3 3.7.4, A4 3.10, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.shared",
+      "title": "Over a real mcp mode connection that carries two thread IDs, a call is the bound session's only when its own ID proves it: another thread's call inherits no task or actor, its launch reference resolves for its call only and is not used up, and the bound thread keeps its binding, also after the bridge reconnects with its handle",
+      "source": "A3 3.7.2, A3 3.7.5, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.resume",
+      "title": "A binding handle restores its binding; another instance's, a forged or a malformed handle restores nothing; one unused for a day answers lost, and the connection continues unbound, says its session ended and works with an explicit task",
+      "source": "A2 3.6.4, A2 3.7.5, A3 3.7.3, A3 3.7.4, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.ui-tabs",
+      "title": "Through the real service, two UI tabs with their feeds and an agent bound to a task: one tab switches space; the bound session keeps its space and task and its write lands there, the other tab sees it in its view and feed, and the switched tab's space is untouched",
+      "source": "A2 3.10.5, A3 3.7.1, A3 3.7.8, A3 5, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.wire",
+      "title": "Over real mcp mode connections the bind result carries the binding, and get_task by a launch reference, status's session line and launch_used read as A3's texts",
+      "source": "A2 3.6.4, A3 3.4.4, A3 3.7.3, A7 3.9 M2.04",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.5.tools.budget-corpus",
+      "title": "Property test over spaces of up to 200 tasks with long and odd text (controls, lone surrogates, very long lines, CJK, emoji, planted markers): every result of the five tools, and every error, fits its budget, keeps its data blocks and markers whole and says the way on whenever it leaves something out; paging a sections read returns every character of a long note, context or log entry once, in order, with no gap or overlap, each page whole within its budget",
+      "source": "A3 3.2.5, A3 3.4.4, A3 3.9.6, A3 3.10, A3 5, A7 3.9 M2.03",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.10.mcp.framing",
+      "title": "Stored text and editable names appear only inside the data block, whose marker is drawn per response and drawn again when the payload holds it; the text of every result and error is the entry's rendering of the structured result",
+      "source": "A3 3.10 (X14), A3 3.3, A3 3.5, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.7.mcp.offline-cache",
+      "title": "The service writes <cache>/mcp-offline.json for its build at every start, equal to the build's lib/mcp-offline.json, user-only, and the bridge answers offline from it",
+      "source": "A2 3.7.3, A7 3.9 M2.02",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.actors.first-act",
+      "title": "The space's human is the user's actor, and an agent actor such as script or agent:unknown joins a space on its first act in a system commit of its own, once",
+      "source": "A3 3.7.4, A1 3.6, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.ops.request-path",
+      "title": "op/call and op/list: each M1 entry parsed with its contract for the caller's audience, expanded into operations, sent to the space's writer with the connection's writer scope and the intent, reads through a reader; every outcome and error becomes the contract's result or error body; user-only methods refuse script and agent classes",
+      "source": "A2 3.6.4, A2 3.6.5, A3 3.4.1, A3 3.5, A3 3.7.9, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.6.ops.launch-rule",
+      "title": "Launches stay the user's on the request path: every operation op/call sends is one its entry declares and none is a launch, run or routine, each class writes as its own actor with the registry intent, and an entry that declares one of R7's operations is user-only and refused to the script and agent classes",
+      "source": "A2 3.6.5, A3 3.2.3, A6 3.3, A7 3.8 M1.10, R7",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.ops.contract",
+      "title": "The contract suite of the request path: every example of every entry gives a result that matches its schema and the documented result, or is listed with the later step that owns its feature; reusable by later transports",
+      "source": "A3 3.2.1, A3 3.2.2, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.parse",
+      "title": "The CLI's argument parser from cli-spec.json: positionals, flags, key=value, repeated flags, --input, global flags; usage errors name the option and never its value",
+      "source": "A2 3.10.1, A2 3.10.2, A3 3.2.2, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.exit-codes",
+      "title": "Every error code and transport reason maps to A2's exit code; --json prints exactly the result or {error} with its class; human output on stdout and diagnostics on stderr",
+      "source": "A2 3.10.2, A2 3.10.3, A3 3.5, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.accept",
+      "title": "pnpm accept m1 --part cli against a real service child in a temporary TASKS_HOME: two parallel tasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, tasks show --json matches its schema",
+      "source": "A2 3.10, A3 3.4.1, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.space",
+      "title": "tasks space create, list, open, close, backup, backups list, restore (new folder and in place), claim and recover through the service; the user-only verbs refuse the script and agent classes",
+      "source": "A2 3.10.1, A1 3.18, A6 3.3, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.13.cli.doctor",
+      "title": "tasks doctor --self-test with the service checks: not running, untrusted endpoint, a running service's handshake, versions and spaces, recent crash files; works without a service; --json",
+      "source": "A2 3.13, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.18.6.accept.parts",
+      "title": "pnpm accept m<N> [--part <name>] takes the ci entries owned by M1 to M<N> in the profile, and a part's listed entries only",
+      "source": "A7 3.3, A7 3.18.6, A7 3.8 M1.10",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.approval.hash",
+      "title": "Approval hashes: the canonical form is stable under key order, ignores only reference keys, refuses values JSON cannot carry, and changing any one byte of an approved definition disables it",
+      "source": "A4 3.2, A4 3.12.1, A4 5.1, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.catalogue.invariants",
+      "title": "The built-in target catalogue: known targets once each, argv and URL templates with known placeholders only, whole-element placeholders alone and the brief after --, budgets within limits, A4 3.11.6's permission flags",
+      "source": "A4 3.2, A4 3.4, A4 3.6.4, A4 3.11.6, A4 3.15.3, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.detect.golden",
+      "title": "Instance detection per OS on fixture homes (golden files for Linux, Windows and macOS): commands on PATH, npm entries run by Node, shims never run, homes and wrappers by name only, wrappers win, configured instances not proposed, nothing read inside an agent home",
+      "source": "A4 3.2, A4 3.4.1 to 3.4.3, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.detect.real",
+      "title": "Detection on the real file system with fake commands and homes in a temporary folder and an injected PATH: the version from --version, wrappers never run, files in agent homes never opened",
+      "source": "A4 3.2, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.4.config.golden",
+      "title": "machine.toml per OS (golden files for Linux, Windows and macOS): every section read strictly into typed values, remote_allowed false by default, and typed problems that name the key and a fixed code, never the value",
+      "source": "A2 3.2.4, A4 3.2, A4 3.6.1, A1 3.15, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.4.config.edit",
+      "title": "Edits to machine.toml keep every other byte (comments, order, spacing, CRLF), are verified by parsing the result, refuse layouts they cannot place and a file changed meanwhile, and write atomically",
+      "source": "A2 3.2.4, A4 3.2, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.root-rev",
+      "title": "Each root's root_rev in machine state starts at 1 and rises whenever its mapping changes, also across a removal and re-adding, and never otherwise",
+      "source": "A4 3.2, A6 3.8.3, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.t3.fake-server",
+      "title": "The T3 primary route against a fake T3 server: an idle thread with the launch ID as clientRequestId and the grant on the intent, a lost reply then one repeat returning the same thread across an HTTP reconnect, a T3 restart and a service restart, Unknown and no thread after an OAuth reauthorization, a 401 leading to Reconnect T3, a nested folder that asks and never uses the containing project, the folder check and the thread link with the draft",
+      "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A4 5.1, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.t3.binding",
+      "title": "Exact-folder binding for T3 by directory identity: an exact project root through a link or another case, an existing git worktree, never a containing project, a sibling clone, a submodule or a subfolder of a worktree, and an archived project gone from the list",
+      "source": "A4 3.4.1, A4 5.1, R11, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.pairing",
+      "title": "Pairing with T3 by OAuth: discovery, dynamic registration and PKCE with S256 only, a fresh verifier and state per attempt, the redirect on loopback, the state compared before any exchange, a deadline on every wait, loopback endpoints only, and no secret in a URL Tasks makes, an error or a refusal",
+      "source": "A4 3.4.1, A4 3.16, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.setup",
+      "title": "tasks setup t3 through the service: user-only, the browser hand-off, the token in a 0600 file in a 0700 folder of machine state and nowhere else (not machine.toml, the log, service.json or an answer), a new grant ID at every pairing, and the status",
+      "source": "A4 3.4.1, A4 3.16, A2 3.10, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.exact",
+      "title": "tasks setup agents on scratch homes with fake commands: the preview gives the exact argv, environment and key-level diff and writes nothing; apply registers the entry with each app's own command (Codex's two keys by a single-key patch that keeps CRLF, the byte order mark and the mode); remove leaves every file key-identical, and byte-identical here; the record holds no other server's value",
+      "source": "A3 3.13.1, A3 3.13.2, A3 3.13.4, A7 3.9 M2.14",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.refuse",
+      "title": "tasks setup agents refuses a home it does not understand and runs nothing there (not UTF-8, invalid JSON or TOML, a duplicate key, a link or a generated file, servers inline or as dotted keys, an entry it did not write, no usable command), leaves an entry changed by hand alone, forgets one removed by hand, and takes back a command that failed",
+      "source": "A3 3.13.1, A3 3.12, A7 3.9 M2.14",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.cli",
+      "title": "tasks setup agents through the CLI and the service: the preview names the served space and writes nothing, a script or an agent is refused before anything is written, apply keeps one agent-home row per home in the grants table and reuses it, status shows entries and rows, remove takes entries and rows back",
+      "source": "A3 3.13.1, A3 3.7.4, A2 3.2.5, A7 3.9 M2.14",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.client",
+      "title": "The MCP client of T3 reads a streamed answer event by event: a reply ended by CRLF, LF or CR in any mix, also split across chunks, is taken at once from a stream T3 keeps open; a request from the server with the same ID is not the reply; an answer over the size limit or not UTF-8 is unreadable",
+      "source": "A4 3.4.1, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.16.t3.state",
+      "title": "T3's machine state: the plans file stays within the size its reader takes, dropping the oldest plans first and never the newest, so a write never loses the plans a repeat or a folder check still needs",
+      "source": "A4 3.16, A7 3.9 M2.11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.4.hub.spaces",
+      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
+      "source": "A2 3.2.4, A2 3.3.1, A7 3.9 M2.06",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.4.hub.space-id",
+      "title": "A [[spaces]] entry opens only the space its ID names: a folder that holds another space, or none, is unavailable with nothing written, locked or kept, also when two entries name one folder",
+      "source": "A2 3.2.4, A2 3.1, A7 3.9 M2.06 (review finding R2-5)",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.writer.named-space",
+      "title": "A writer named for one space refuses a folder that holds another before anything is claimed, locked or written, and a space swapped in before the writer's lock is refused before its migration",
+      "source": "A1 3.9, A2 3.4, A7 3.9 M2.06 (review finding R2-5)",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.matrix",
+      "title": "A2 3.8.3 request checks: every combination of Host, Origin, Sec-Fetch-Site, method, content type, token presence and route gets the status of the first rule it breaks; DNS rebinding gets 421; a page of another origin cannot reach the API or the WebSocket",
+      "source": "A2 3.8.3, A2 5, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.csp",
+      "title": "The response headers: a CSP with worker-src none, Trusted Types and a style nonce only on index.html, never unsafe-inline, unsafe-eval or wasm-unsafe-eval, and never a CORS header",
+      "source": "A2 3.8.3, A5 3.26, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.listener",
+      "title": "The UI listener over real sockets: a fresh style nonce per index.html repeated in its meta tag, scripts with matching integrity hashes, the security headers with worker-src none on every response including errors, the check matrix, DNS rebinding and cross-origin refusals, probe, single-use code and ticket, rate limits, a stale build, body, header and connection bounds with the idle deadline, the Linux peer check before any byte, the macOS redeem check, the blocked state and a content-free log",
+      "source": "A2 3.8.1, A2 3.8.3, A2 3.8.4, A2 5, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.tokens",
+      "title": "UI tokens: tasks_u_ and 256 bits, hash-only storage in service.sqlite, valid across a restart, refused 7 days after last use and 30 days after creation, revocation durable and told to listeners, dead rows dropped, uses written at most once a minute; codes and tickets single use with their expiry; the probe HMAC",
+      "source": "A2 3.2.5, A2 3.8.4, A2 5, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.holders",
+      "title": "Port-owner and peer facts from captured samples: /proc/net/tcp and tcp6 (IPv4, IPv6, many rows, a missing entry), netstat in any display language, lsof including a busy port lsof cannot attribute and the service own reversed socket that must never match",
+      "source": "A2 3.8.2, A2 3.8.4, A2 5, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.port",
+      "title": "The port rule with injected owners: 7713 to 7733 on a first start, a fallback only when this user holds the persisted port, no listener and a recorded sighting when another user holds or held it, the 60 s retry that keeps, moves back or blocks",
+      "source": "A2 3.8.2, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.hub",
+      "title": "The listener in the service: bound before ready and reported in service.json and service/status, closed by the drain; ui/mint_code for the operator classes only; another user on the persisted port leaves no UI, every UI token revoked durably and the socket working, until tasks service port resolves it; this user own holder gives a fallback for the run and the retry moves back",
+      "source": "A2 3.3.1, A2 3.8.2, A2 3.8.4, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.feed",
+      "title": "The change feed over WebSocket: hello, a snapshot of the open set with its cursor, batches in the compact form with their coverage interval and cursor, writes from the page and the CLI, the heartbeat empty batch, resumption from a cursor, a fresh snapshot on another incarnation or a cursor ahead, a filtered feed whose hidden commits give empty batches, 4401 on revocation, 1008 and 1009, and a peer that reads or answers nothing closed instead of buffered for",
+      "source": "A1 3.7, A2 3.8.4, A5 3.15, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.9.cli.open",
+      "title": "tasks open against a real service: a code minted over the socket, the listener proved by its HMAC probe before the port is trusted, the code only in the URL fragment and redeemable once, --space and --task as the route, --print-url with its warning, an agent shell told to ask the user, A2 message and exit 6 when another user holds the port, the moved line, tasks service port with --reuse for the person only",
+      "source": "A2 3.8.2, A2 3.8.4, A2 3.9, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.13.cli.doctor-http",
+      "title": "tasks doctor: other interactive user accounts warn per OS from injected facts, an agent app sandbox accounts are not counted; the http row passes the live self-test (Host evil.example gets 421, a fresh nonce repeated in the meta tag, worker-src none), fails with A2 message when blocked, warns when moved, and parses Windows excluded port ranges",
+      "source": "A2 3.13, A2 3.8.2, A6 3.3, R18, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.cross-user",
+      "title": "On a GitHub-hosted Linux runner only, with a second account the test creates: that account holding the persisted UI port leaves no UI, every UI token revoked, the socket working and the sighting recorded with its UID; its connection to the UI port is closed before any byte. Skipped everywhere else",
+      "source": "A2 3.8.2, A2 3.8.4, A2 5, A7 3.9 M2.12, AGENTS.md (second users only on throwaway runners)",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.2.build.version-manifest",
+      "title": "manifest.json lists the SHA-256 of every other file of a version folder, one sorted line each; the checker finds changed, missing, extra and linked files, a current that names no installed version and a missing stable launcher, and refuses any manifest outside the format",
+      "source": "A2 3.12.2, A2 3.13, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.1.build.runtime-gate",
+      "title": "The runtime gate passes on the pinned Node 26.13.1 with SQLite 3.54.1 (FTS5, JSON, STRICT, backup API) started with --report-exclude-env, and fails on another Node or SQLite, without the launcher flag, or with a SQLite that lacks FTS5",
+      "source": "A2 3.12.1, A7 3.7 R01, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.1.build.node-download",
+      "title": "The build's Node pin names .node-version and four platforms whose digests equal SHASUMS256.txt and pnpm-lock.yaml; a wrong digest, a missing entry and a malformed file are refused; gpgv accepts Node's real signature and refuses a changed file or an unknown key",
+      "source": "A2 3.12.1, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.build.archives",
+      "title": "The tar.gz and zip writers are reproducible (sorted entries, fixed time, uid 0, gzip OS byte fixed), keep the exec bits, read back unchanged and refuse unsafe paths, duplicates and odd modes",
+      "source": "A2 3.12.4, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.build.signing",
+      "title": "SHA256SUMS lists each archive as sha256sum does; one Ed25519 key signs it raw (64 bytes) and as an SSHSIG byte for byte as ssh-keygen -Y sign, which ssh-keygen -Y verify and on Linux openssl pkeyutl accept; a test signing keeps its throwaway key in memory",
+      "source": "A2 3.12.4, A2 3.12.5, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.2.build.bundle",
+      "title": "The esbuild bundles: the build's stamps and worker-entry rewrites match the sources exactly once, the guard refuses a module URL a bundle cannot keep, lib/ holds the entry, the CLI and the three worker entries, imports only built-ins, holds no machine path, ships its licences, is reproducible, and the entry runs with the compile cache on",
+      "source": "A2 3.12.2, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.2.build.version-folder",
+      "title": "Each platform's version folder follows A2 3.12.2; versions and build labels are checked; the machine-path scan finds every spelling; and a folder for this machine built offline archives exactly and passes the runtime gate through its own launcher",
+      "source": "A2 3.12.2, A2 3.12.8, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.build.posix-launcher",
+      "title": "The POSIX launcher passes hostile argv to Node unchanged, removes every NODE_ variable but NODE_EXTRA_CA_CERTS and OpenSSL's loader settings, takes TASKS_HOME from its location only, and passes exit codes through, by its own path and through current",
+      "source": "A2 3.12.3, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-script",
+      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder and no terminal",
+      "source": "A2 3.12.8, A7 2 P9, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.13.cli.doctor-version",
+      "title": "tasks doctor checks the version folder it runs from: integrity against manifest.json and current, and the runtime gate against the manifest's pins; both are skipped from source",
+      "source": "A2 3.13, A2 3.12.1, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.resolve",
+      "title": "resolve() returns exactly a place's folder with its identity, or a reason: symbolic link and junction escapes, .., Windows case and short names, a missing root, a missing nested folder, a file, a root that is a link and a sibling clone each give their reason, and no case returns another folder",
+      "source": "A1 3.15, A4 3.3, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.inverse",
+      "title": "An absolute folder becomes the closest root and a relative path that resolves back to the same directory by identity; a folder under no root, two roots naming one folder, a missing folder, a name a place cannot hold and a volume without file numbers give their reason",
+      "source": "A1 3.15, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.syntax",
+      "title": "A place's relative path and an absolute folder by each OS's rules: the writer's rules everywhere, Win32 names (trailing dot or space, reserved characters, device names), drive, UNC, extended and device forms on Windows",
+      "source": "A1 3.15, A4 3.3, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.git-remote",
+      "title": "The Git remote read from the repository's config file (origin first, a worktree's .git file and commondir followed, bounded reads, UTF-8 only), kept only as a network address without credentials; a repository it cannot read exactly is unreadable, never a guess",
+      "source": "A1 3.15, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.git-config",
+      "title": "The Git config reader follows git's syntax (sections, subsections, quotes, escapes, continued lines, comments, case) and agrees with git config --list on random valid and broken files and on URLs git writes into a repository; includes, URL rewrites that apply, per-worktree config, empty URLs and values beyond the bounds are unreadable",
+      "source": "A1 3.15, git-config(1)",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.prop",
+      "title": "Property with an oracle: for random folder trees with links inside, outside and nowhere, built by a model that knows what every path names, resolve returns exactly the model's directory (identity and real path) or its reason, and that directory turns back into the place the model expects; three wrong resolvers fail the property",
+      "source": "A1 3.15, R11, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.race",
+      "title": "With a change before each file system call of resolve (the remote's reads included), after its last call, and as every A-B-A pair, resolve returns only the identity of a directory the place named during the call, and the in-folder check in a real child accepts exactly a child in that directory, at its depth below the root's directory, with the recorded remote; a volume without file numbers fails closed",
+      "source": "A1 3.15, A4 3.3, R11",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.working-folder",
+      "title": "The in-folder check in real child processes started in the resolved folder: unchanged it passes and an agent the child starts is there too; a swap before the start is refused; a swap between the start and the check leaves the child in the resolved directory (Linux) or is impossible (Windows); A-B-A swaps are refused, except Windows' documented residual through a link taken out again; a changed remote, a removed folder and a folder moved out of the root are refused",
+      "source": "A4 3.3",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.places.request-path",
+      "title": "place.set through op/call from cwd, an absolute folder or a root and path: the closest root and a relative path with the Git remote, a folder under no root a warning for a new task and a refusal for an update or a follow-up, a repository whose config cannot be read exactly bound without a remote and with a warning, a retry replayed after the folder went, and no absolute path in the space's files, the log or an error",
+      "source": "A1 3.15, A3 3.4.5, A3 3.4.6, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.roots.add",
+      "title": "tasks roots add is the user's only, edits machine.toml keeping its other bytes, gives the root its revision and binds places under it at once; an ID in use, a folder another root names, a missing folder and a bad ID are refused with the file unchanged",
+      "source": "A1 3.15, A2 3.2.4, A4 3.2, A7 3.9 M2.07",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.2.permissions.rule",
+      "title": "Who else can write a file or folder: another owner, write for every user and write for the group all refuse, whatever the group, and the socket folder lets no one else in; the service and doctor say in plain words what is wrong with which file or folder and give one command that fixes all of it, and the log names only the code",
+      "source": "A2 3.2.2, A2 3.2.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.2.permissions.umask",
+      "title": "Every file and folder the product creates (state, config, runtime and space folders, their files, backups) has exactly its planned mode under umask 000, and under umask 077 the product still reads, opens and serves everything it made; the umask is read without ever setting it (no process.umask() in product code; without /proc a child says it within a deadline, and a mask that cannot be read refuses the start)",
+      "source": "A2 3.2.2, A2 3.2.3, A1 3.1, A6 3.16.6",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.2.permissions.create",
+      "title": "The creation helpers set a mode only on what this call created: a folder that was there or that another process made in between keeps its mode, a new folder replaced by a link is not followed, a log append never creates a file without its mode or through a link, a lock file is never created by SQLite, and a copy into a file that cannot be created leaves no stream behind",
+      "source": "A2 3.2.2, A2 3.2.3, A1 3.1",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.2.permissions.repair",
+      "title": "One place turns a path's facts (kind, owner, mode, link) into the words and the command, from the whole rule for that object: run against fixtures without root, each command makes the next start pass, and where root is needed the text is exact; an existing config folder is judged before machine.toml exists and nothing is written into one that fails; configuration is never read or written through a link, and no command that changes an owner is given for a link or a path below one; a folder this user cannot look into says what it hides",
+      "source": "A2 3.2.2, A2 3.2.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.render",
+      "title": "The install scripts pin one value, the release keys: a release build fails while it holds its placeholder or a key that does not sign the release, a test build pins a throwaway key and says so, and a template never rendered trusts nothing",
+      "source": "A2 3.12.4, A2 3.12.5, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.script",
+      "title": "install.sh and install.ps1 install into a temporary TASKS_HOME through each verifier path (ssh-keygen, then openssl or the Authenticode-checked node.exe): signature, hash, self-test through the version-local launcher, then current, with its own install ID and install.json",
+      "source": "A2 3.12.4, A2 3.2.2, SL-02, SL-03, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.tamper",
+      "title": "A tampered archive or SHA256SUMS is refused before any candidate file runs through each verifier path, and so is a signed archive with a file changed after hashing, a name that leaves its folder, an absolute name or a link; the canary stand-ins stay quiet and nothing is left",
+      "source": "A2 3.12.4, SL-13, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.root",
+      "title": "The install root is named, absolute, at most 168 long, and changed by no one else (Unix permissions of the root and above it, the root's Windows ACL); an unkeyed script trusts nothing",
+      "source": "A2 3.2.2, A2 3.12.3, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.install.finish",
+      "title": "tasks install --finish switches only its own separate install: update.lock held by another stops it with nothing changed, current and the stable command are switched, changed Windows launchers are renamed aside, install.json records the versions and what the installer created",
+      "source": "A2 3.12.4, A2 3.12.6, A2 3.2.3, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.candidate.checks",
+      "title": "The candidate's checks of doctor --self-test: a temporary space written and backed up through the worker threads, a temporary endpoint with a handshake and a call, and the bridge's tools/list from its offline file, each in a folder of its own that is removed; a failure is a failed row, never a throw",
+      "source": "A2 3.12.6, A2 3.13, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.2.install.side-by-side",
+      "title": "Two installs made by the install script into two temporary TASKS_HOMEs have two install IDs and endpoints, and the second's service started and stopped beside the first leaves the first's CLI and bridge calls working before, during and after",
+      "source": "A2 3.2.1, A2 3.2.2, SL-03, A7 3.7 G2 (S06), A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.installed-root",
+      "title": "pnpm accept m1 --installed <root> on an install an install script made: its stable command runs current, doctor's integrity, runtime, install and candidate rows pass in it, install.json names its own install ID, and its service starts and stops through its stable command",
+      "source": "A2 3.12.4, A2 3.12.8 smoke, A7 3.18.4, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.replace",
+      "title": "Installing the same release again keeps its folder, a version folder that is not exactly it runs nothing, a newer version becomes current, and one that fails its self-test leaves the previous install working",
+      "source": "A2 3.12.4, A7 3.8 M1.14",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.9.m2-13.e2e.open",
+      "title": "Playwright with fakes, in Chromium and Firefox against the real service process: Open on a row's tile sends exactly `<cli> shim <ticket>` to the fake terminal, the receipt reaches Confirmed live in the expanded row, and an agent's log entry appears without a reload",
+      "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A4 3.6.2",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.9.m2-10.e2e.copy",
+      "title": "Playwright in Chromium and Firefox against the real service process: Copy on a row puts the pointer brief on the clipboard (its first line the task's reference, quoted title and launch reference, then the folder line), records its launch, and the expanded row shows it as copied, under the strict CSP",
+      "source": "A7 3.9 M2.10, A4 3.4.6, A4 3.15.4, A5 3.8",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.9.m2-13.e2e.two-tabs",
+      "title": "Two tabs on two spaces stay on their own space: each shows its space's tasks, a task added in one lands only there, and a reload keeps each on its route's space",
+      "source": "A7 3.9 M2.13, A5 3.3, A2 3.8.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.4.e2e.page-secrets",
+      "title": "In a real browser the fragment is gone before any request, no request URL carries the sign-in code or the token, and a hostile value under the token's localStorage key is dropped and signs the page out",
+      "source": "A2 3.8.4, A2 3.8.6, A5 3.26, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.3.e2e.strict-csp",
+      "title": "In Chromium and Firefox the built page loads under the strict CSP with no violation, every script and stylesheet carries a sha384 integrity hash, and no service worker is registered",
+      "source": "A2 3.8.3, A5 3.24, A5 3.26, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.19.e2e.screens",
+      "title": "The app shell in Sumi, Washi and System (light) at 1,440 and 390 px, with an expanded row, the space switcher and the narrow drawer open, has no horizontal scroll; the screenshots are written for review",
+      "source": "A5 3.3, A5 3.19, A5 3.22, A7 3.9 M2.13, A7 3.12 M5.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.9.m2-13.web.build",
+      "title": "The page as built: every script and stylesheet a hashed file with the integrity of its bytes, nothing inline, no service worker, eval or remote URL, React's production build within A5's JavaScript budget; the service refuses a folder with a changed asset, an inline script or an unhashed stylesheet, and serves it with a fresh nonce in CSP and meta tag, its own build, and the page's routes",
+      "source": "A7 3.9 M2.13, A2 3.8.3, A5 3.24, A5 3.25, A5 3.26",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.26.web.stored-token",
+      "title": "A value read back from localStorage is used only when it has a token's exact shape; markup, JSON, wrong lengths, other types and blocked storage read as signed out, are removed and never throw",
+      "source": "A5 3.26, A2 3.8.4, A2 3.8.6, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.web.route",
+      "title": "The page's paths by shape only: the space's views, areas, projects and task links, the skeleton's task links and a task without a space mapped onto them, anything else refused; the fragment gives a code of the sign-in code's shape and a page path, and nothing else",
+      "source": "A5 3.3, A2 3.8.4, A7 3.9 M2.13, A7 3.12 M5.01",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.5.web.groups",
+      "title": "Open tasks group as Inbox, the areas in order with their projects, then tasks without an area; open first and backlog last in a group; every task exactly once; an area's colour slot is its stored one or its place in the order",
+      "source": "A5 3.5, A5 3.19, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.live",
+      "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped), never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
+      "source": "A5 3.15, A1 3.7, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.store.interleavings",
+      "title": "Property test against a model of the service's feed: under any loss, repeat, reordering and replay of snapshots and capped batches (withheld rows, empty batches, hidden commits, resumed and fresh subscriptions, authority changes, another space's messages), the live store's core holds exactly the model's visible snapshot at its cursor or has asked for a fresh one, reports each commit once, and reaches the head once the network is orderly",
+      "source": "A7 3.12 M5.02, A5 3.15, A1 3.7, A1 3.5",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.store.frames",
+      "title": "Per-frame batching with a fake frame clock: every queued message applies, in arrival order, at most one render per frame; a reconnect applies the queue before it resumes; a gap asks for one fresh snapshot and batches wait for it; a message that arrives while a frame drains waits for the next frame",
+      "source": "A7 3.12 M5.02, A5 3.15, A5 3.25",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.store.own-writes",
+      "title": "An own write's overlay shows at once and stays after the HTTP answer until the feed brings its request ID or its cursor covers the answer's as_of (a snapshot too); a refused write leaves no optimistic state; under any order of answers, events and refusals no overlay outlives its write",
+      "source": "A7 3.12 M5.02, A5 3.15, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.store.queries",
+      "title": "Query-level invalidation: a task that starts to match an open Completed view appears in it by a restart that loads as many rows as were shown; one that starts to match an open search offers Refresh, which shows it; shown rows take new values in place; only the newest read applies; a snapshot counts as a change to every query",
+      "source": "A7 3.12 M5.02, A5 3.13, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.store.service",
+      "title": "The live store's core on the real service's feed reads: after task adds, edits, log entries, completion and reopening, read in batches capped at one to three commits (with withheld rows) and resumed after a fresh snapshot when needed, it holds exactly the service's own snapshot",
+      "source": "A7 3.12 M5.02, A5 3.15, A1 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-02.e2e.live",
+      "title": "Against the real service in Chromium and Firefox: a task an agent adds, or one reopened at the terminal, appears in the open view without a reload, a completed one leaves it, a burst of side-by-side agent writes lands whole and once, an edit changes a shown row in place, and a task added in the page clears its field when the feed confirms it, before the HTTP answer arrives",
+      "source": "A7 3.12 M5.02, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.6.web.tile",
+      "title": "The launch tile's state follows its instance's latest receipt (Ready, Opening, Not confirmed for a link launch in Dispatched, Connected), and only a Ready tile opens: Opening does nothing, Not confirmed and Connected expand the task",
+      "source": "A5 3.6, A5 3.9, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.9.web.refetch",
+      "title": "Of several reads of a task's receipts or log, only the answer to the newest applies, whatever order the answers arrive in",
+      "source": "A5 3.9, A5 3.15, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.9.m2-13.e2e.races",
+      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
+      "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.9.http.launch-tile",
+      "title": "The page's launch tile on the hub's launch machines: the snapshot names machine.toml's instances that open here, a click is launch.open over HTTP and records a Prepared intent through the writer, its terminal starts once, a repeated click starts nothing, the feed carries the launch event, Copy gives the pointer brief, and bad input, an unknown instance, another space, no token or the old routes are refused",
+      "source": "A4 3.9, A4 3.4.6, A5 3.6, A5 3.9, A7 3.9 M2.13, M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.default-space",
+      "title": "Make default over the UI's route and space/use write [service] default_space to machine.toml; a new tab and an unbound call of the person use it, a tab that names its space and an agent's CLI never do, only the user changes it, and a default that is not served is space_unavailable, never another space",
+      "source": "A2 3.1, A2 3.2.4, A2 3.10.5, A5 3.3, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.19.web.contrast",
+      "title": "Every allowed foreground and background token pair of Sumi and Washi meets its WCAG 2.x threshold (4.5:1 text, 3:1 controls, focus and marks), computed from the theme data the stylesheet is built from; the formula reproduces A5's values, the decorative pairs stay below 3:1 and outside the allowed pairs, and a token change that breaks a pair is caught",
+      "source": "A5 3.19, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.19.web.theme-data",
+      "title": "A theme is validated token data: only allowlisted token names, every token present, colours only as #rrggbb, a known name and scheme; anything else, CSS fragments included, is refused",
+      "source": "A5 3.19, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.19.web.styles",
+      "title": "The page's stylesheets write no colour outside the theme data, no uppercase or capitalised text and no letter spacing above 0.01em, never colour text with a hairline token, and keep selected text in the text colour",
+      "source": "A5 3.19, A5 3.20, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.23.web.catalogue",
+      "title": "Every message of the en catalogue is ICU that FormatJS formats, plurals and selects included, every message is used by the page, and no message spells out a product name",
+      "source": "A5 3.23, A7 3.2, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.23.lint.literal-strings",
+      "title": "Lint refuses a literal UI string in the page's JSX (text, aria-label, title, placeholder, alt, a string expression) and passes catalogue words, data and icon markup; tests and other packages are not the page",
+      "source": "A5 3.23, A7 3.3, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.23.lint.ui-prose",
+      "title": "Lint refuses prose (two words or more) anywhere in the page's code outside the catalogue: in a variable, a template string or a .ts module; errors meant for developers, single tokens, tests and other packages pass",
+      "source": "A5 3.23, A7 3.3, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.web.views",
+      "title": "The sidebar's views: Inbox and the status views are disjoint and their counts add up, Today lists every open task until M5.04, Completed and Agents have no list yet, and an area or project view holds every status of its area or project",
+      "source": "A5 3.3, A5 3.5, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.web.landing",
+      "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice",
+      "source": "A2 3.1, A5 3.3, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-01.web.build",
+      "title": "The shell's build: one script (a lazy chunk would load without integrity), a stylesheet with every token of both themes from the theme data, Inter and Fira Code as files of the build with Latin within A5's font budget and their OFL licences in THIRD_PARTY.txt, the libraries named, and a web app manifest with the brand's name and its icons, linked and served",
+      "source": "A5 3.20, A5 3.24, A5 3.25, A2 3.8.3, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-01.e2e.space-per-tab",
+      "title": "In Chromium and Firefox against the real service: switching space in one tab moves only that tab (route, rows, feed, an empty field) while another tab keeps its space, view, draft and live feed; a draft survives a switch away and back; Make default changes only what a new tab opens, and a new tab and a task link without a space open the default space",
+      "source": "A5 3.3, A5 5, A2 3.1, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-01.e2e.strict-csp",
+      "title": "In Chromium and Firefox the shell under the strict CSP: React Aria's popover, radio group and drawer press without a violation, every style element carries the response's nonce, the theme switches live (System follows the colour scheme) and holds after a reload, the bundled fonts load, no request leaves the origin, the manifest and its icons are served and no service worker is registered",
+      "source": "A5 3.19, A5 3.24, A5 3.26, A2 3.8.3, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-01.e2e.add-once",
+      "title": "In Chromium and Firefox against the real service, with the feed's confirmation held back: an add the service took is not sent again by Enter or the button while its text waits for the feed, and lands once; a switch of space before the confirmation leaves no draft of the add behind in the space it was made in",
+      "source": "A5 3.3, A5 3.15, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-01.e2e.task-links",
+      "title": "In Chromium and Firefox: a task link opened on a machine without a default keeps its task through the space chooser, and a navigation from one task's route to another's, and Back, expands the task each route names",
+      "source": "A5 3.3, A2 3.1, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.space-use",
+      "title": "tasks space use sets the machine's default space by name or folder through space/use, tasks space list marks it, an unbound command of the person then uses it while an agent's still names its space, scripts and agents are refused, and an unknown space is a usage error",
+      "source": "A2 3.1, A2 3.10.5, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.verify",
+      "title": "tasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
+      "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.switch",
+      "title": "The update self-tests the candidate before current changes, writes the journal before each step that needs it, switches current, swaps changed Windows launchers one at a time, records install.json, restarts the service and waits for the new version; both versions stay; a failed self-test changes nothing; a service that does not come back is rolled back; --rollback goes to the previous version; a person's data is byte-identical through an update and a rollback",
+      "source": "A2 3.12.6, A2 3.2.3, SL-02, SL-08, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.repair",
+      "title": "A repair finishes or rolls back every state a cut-off update leaves (by what current names and whether the new version is intact), brings each Windows launcher to its side from an aside copy or a version folder, removes the named staging folder and the journal, is finished by the next repair when cut off at any of its own steps, keeps current's version for an unreadable journal, and runs before an install's finish switches",
+      "source": "A2 3.12.6, SL-08, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.lock",
+      "title": "A second update waits while update.lock is held, changing nothing, goes on once it is released, and gives up after its bound with exit 4",
+      "source": "A2 3.12.6, A2 3.2.3, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.kill",
+      "title": "With real builds in a temporary TASKS_HOME, an updater child killed at every journal step, or the service killed there while the updater goes on, ends on the complete old or new version after the next start through the stable command; a repair killed at each of its steps is finished by the next start; a running service finishes an update whose updater died; a session's bridge keeps running through an update and answers after it",
+      "source": "A2 3.12.6, A2 3.11, SL-02, SL-08, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.installed",
+      "title": "tasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
+      "source": "A2 3.12.6, A2 3.13, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.6.web.render-row",
+      "title": "renderRow, one case per view with A5 3.5's context (Today, Inbox, Open, Waiting by person and by area, Review, Backlog, an area view): what each row shows, what its view or group implies and leaves out, the summary prefix on views that mix areas, the chips, and the accessible description in A5 3.22's order",
+      "source": "A5 3.6, A5 3.5, A5 3.22, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.6.web.row-columns",
+      "title": "renderRow's columns: due (late, today, tomorrow, within six days, later, another year, a timed due in the viewer's zone, a planned or follow-up day, a day filter), age buckets, priority marks, the launch tile from the first pinned instance and its receipts with Copy only and the blocks, sources with safe schemes only and +N, the folder slot, the marker, and purity",
+      "source": "A5 3.6, A5 3.9, A5 3.23, A5 3.26, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.25.web.items",
+      "title": "A grouped list as one sequence of items: group headings and project labels are items, each row knows its place and its list's size, rows keep their area and project rows by identity, and keyboard moves (next, previous, first, last, next and previous group) skip headings",
+      "source": "A5 3.25, A5 3.22, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.25.web.render-count",
+      "title": "With the real live store in a DOM: a store update that touches one task renders that task's row and no other, in a short list and in a virtualised one; a row's own star overlay renders only that row",
+      "source": "A5 3.25, A5 3.15, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.22.web.list-keys",
+      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, or is the view's last row, and a held row stays the current row for the tab order and the keys",
+      "source": "A5 3.22, A5 3.21, A5 3.15, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.overlay-clear",
+      "title": "An own write's overlay can clear a task's fields (unstarring clears focus_on) and the confirmed row comes back when the write settles",
+      "source": "A5 3.15, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-03.e2e.scroll-5000",
+      "title": "In Chromium and Firefox against the real service with 5,000 open fixture tasks: the built page virtualises the list, scrolling from top to bottom and back keeps the mounted rows bounded and leaves no frame with an uncovered gap, the focused row keeps focus while it leaves and re-enters the window, End and Home move focus across the whole list, an agent's add above the viewport keeps the first visible row in place, and no CSP violation is reported",
+      "source": "A5 3.25, A5 3.22, A5 3.15, A5 3.26, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-03.e2e.rows",
+      "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
+      "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    }
+  ]
+}

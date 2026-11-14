@@ -1,0 +1,17 @@
+{
+  "name": "@tasks/runs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fake-agents": "./test/fake-agents.ts"
+  },
+  "dependencies": {
+    "@tasks/brand": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2",
+    "vitest": "5.1.0"
+  }
+}

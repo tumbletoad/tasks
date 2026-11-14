@@ -1,0 +1,17 @@
+{
+  "name": "@tasks/bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./discovery": "./src/mcp/discovery.ts",
+    "./mcp": "./src/mcp/index.ts",
+    "./mcp/names": "./src/mcp/names.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./test/endpoint": "./test/endpoint.ts"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2",
+    "vitest": "5.1.0"
+  }
+}

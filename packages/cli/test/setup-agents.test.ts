@@ -1,0 +1,378 @@
+// `tasks setup agents` through the CLI and a real service (A3 3.13.1, A2 3.2.5; A7 3.9 M2.14): the
+// preview names the served space and writes nothing, only the user applies and removes, the
+// service keeps one agent-home row per home in its grants table and revokes it with the entry, and
+// the homes come back key for key. A real service in this process, the CLI in this process, fake
+// `claude` and `codex` commands (testkit) on a scratch PATH, scratch homes in a temporary folder.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { CLI_NAME, MCP_SERVER_KEY } from "@tasks/brand";
+import { startService, type RunningService } from "@tasks/service/hub";
+import { removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "@tasks/service/test/harness";
+import { classSession } from "@tasks/service/test/ops-helpers";
+import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
+import { runMain } from "./cli-harness.ts";
+
+const SLOW = 180_000;
+const windows = process.platform === "win32";
+
+let service: RunningService;
+let root: string;
+let home: string;
+let user: string;
+let fakes: FakeAgents;
+let space: string;
+let cleanup: () => void;
+
+beforeAll(async () => {
+  const temp = tempRoot("sa");
+  cleanup = temp.cleanup;
+  root = temp.root;
+  home = join(temp.root, "h");
+  user = join(temp.root, "u");
+  mkdirSync(user);
+  fakes = installFakeAgents(join(temp.root, "t"), user);
+  service = await startService({
+    env: serviceEnv(home),
+    identity: () => ({ root: false, elevated: false, package: null }),
+    maintenance: false,
+    say: () => undefined,
+  });
+  const session = await classSession(home, service.endpoint.path, "cli-interactive");
+  try {
+    await session.call(
+      "space/create",
+      { name: "Mira", path: join(temp.root, "s", "mira"), ref_prefix: "M" },
+      { timeoutMs: 120_000 },
+    );
+    const listed = (await session.call("space/list", {}, { timeoutMs: 30_000 })) as {
+      spaces: { id: string }[];
+    };
+    space = listed.spaces[0]?.id ?? "";
+  } finally {
+    session.close();
+  }
+  // The install's stable command, which every entry runs.
+  mkdirSync(join(home, "bin"), { recursive: true });
+  writeFileSync(join(home, "bin", windows ? "tasks.exe" : "tasks"), "");
+  // A Claude Code home with another server, and a Codex home.
+  mkdirSync(join(user, ".claude"));
+  writeFileSync(
+    join(user, ".claude.json"),
+    JSON.stringify({ mcpServers: { other: { command: "/opt/other", args: [] } } }, null, 2),
+  );
+  mkdirSync(join(user, ".codex"));
+  writeFileSync(
+    join(user, ".codex", "config.toml"),
+    'model = "m"\n\n[mcp_servers.other]\ncommand = "x"\n',
+  );
+}, SLOW);
+
+afterAll(async () => {
+  await service.stop();
+  removeRuntimeDir(service);
+  cleanup();
+}, SLOW);
+
+const files = () => [join(user, ".claude.json"), join(user, ".codex", "config.toml")];
+const read = () => files().map((f) => readFileSync(f, "utf8"));
+const recordFile = () => join(stateOf(home), "setup", "agents.json");
+
+/** `tasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
+const run = (argv: string[], tty = true, env: Record<string, string> = {}) =>
+  runMain(argv, { home, tty, env, main: { agents: { env: fakes.env, home: user } } });
+
+/** The live agent-home rows, as any CLI may read them. */
+async function rows(): Promise<
+  { grant: string; app: string; home: string; instance: string; spaces: string[] }[]
+> {
+  const session = await classSession(home, service.endpoint.path, "cli-script");
+  try {
+    const result = (await session.call("setup/homes", {}, { timeoutMs: 30_000 })) as {
+      homes: { grant: string; app: string; home: string; instance: string; spaces: string[] }[];
+    };
+    return result.homes;
+  } finally {
+    session.close();
+  }
+}
+
+describe("[A3.3.13.setup.cli] tasks setup agents through the CLI and the service", () => {
+  test(
+    "preview writes nothing; only the user applies; one row per home; remove takes entries and rows back",
+    async () => {
+      const before = read();
+
+      const preview = await run(["setup", "agents", "--json"], false);
+      expect(preview.code, preview.stderr).toBe(0);
+      const planned = JSON.parse(preview.stdout) as {
+        space: string;
+        plan: string;
+        apply: string[];
+        homes: {
+          app: string;
+          state: string;
+          sha256: string;
+          change: { args: string[]; diff: string[] };
+        }[];
+      };
+      expect(planned.space).toBe(space);
+      // The preview's exact apply: its plan and the space it resolved, by ID.
+      expect(planned.apply).toEqual([
+        CLI_NAME,
+        "setup",
+        "agents",
+        "--apply",
+        "--plan",
+        planned.plan,
+        "--space",
+        space,
+      ]);
+      expect(planned.homes.map((h) => [h.app, h.state]).sort()).toEqual([
+        ["claude-code", "not_registered"],
+        ["codex", "not_registered"],
+      ]);
+      for (const h of planned.homes) {
+        expect(h.sha256).toMatch(/^[0-9a-f]{64}$/u);
+        expect(h.change.args).toContain(join(home, "bin", windows ? "tasks.exe" : "tasks"));
+        expect(h.change.args).toContain(space);
+      }
+      const text = await run(["setup", "agents"], false);
+      expect(text.code).toBe(0);
+      expect(text.stdout).toContain(`mcp add ${MCP_SERVER_KEY} --`);
+      // The command as the person's shell takes it literally, the home's variable first.
+      const codexHome = join(user, ".codex");
+      expect(text.stdout).toContain(
+        windows ? `runs: $env:CODEX_HOME = '${codexHome}'; & ` : `runs: CODEX_HOME=${codexHome} `,
+      );
+      expect(text.stdout).toContain("+ startup_timeout_sec = 20");
+      expect(text.stdout).toContain(
+        `Nothing was changed. To make these 2 changes, run: ${planned.apply.join(" ")}`,
+      );
+      expect(read()).toEqual(before);
+      expect(existsSync(recordFile())).toBe(false);
+
+      // A script and an agent are refused before anything is read or written.
+      for (const [tty, env] of [
+        [false, {}],
+        [true, { CLAUDECODE: "1" }],
+      ] as const) {
+        const refused = await run([...planned.apply.slice(1), "--json"], tty, env);
+        expect(refused.code).toBe(5);
+        expect(JSON.parse(refused.stdout)).toMatchObject({
+          error: { code: "forbidden", data: { rule: "user_only" } },
+        });
+      }
+      expect(read()).toEqual(before);
+      expect(existsSync(recordFile())).toBe(false);
+      expect(await rows()).toEqual([]);
+
+      // Apply carries out a preview or nothing: without the plan it is a usage error, and with a
+      // plan the homes no longer match it changes nothing.
+      expect((await run(["setup", "agents", "--apply"])).code).toBe(2);
+      const codexFile = files()[1] ?? "";
+      writeFileSync(codexFile, `${before[1] ?? ""}# touched since the preview\n`);
+      const stale = await run([...planned.apply.slice(1), "--json"]);
+      expect(stale.code, stale.stdout).toBe(4);
+      expect(JSON.parse(stale.stdout)).toMatchObject({ error: { code: "conflict" } });
+      writeFileSync(codexFile, before[1] ?? "");
+      expect(read()).toEqual(before);
+      expect(existsSync(recordFile())).toBe(false);
+      expect(await rows()).toEqual([]);
+
+      const applied = await run([...planned.apply.slice(1), "--json"]);
+      expect(applied.code, applied.stdout + applied.stderr).toBe(0);
+      expect(
+        (JSON.parse(applied.stdout) as { homes: { result: string }[] }).homes.map((h) => h.result),
+      ).toEqual(["applied", "applied"]);
+      const granted = await rows();
+      expect(granted.map((r) => [r.app, r.instance, r.spaces]).sort()).toEqual([
+        ["claude-code", "claude", [space]],
+        ["codex", "codex", [space]],
+      ]);
+      const status = await run(["setup", "agents", "--status", "--json"], false);
+      const homes = (
+        JSON.parse(status.stdout) as { homes: { state: string; row: string; grant: string }[] }
+      ).homes;
+      expect(homes.map((h) => h.state)).toEqual(["registered", "registered"]);
+      for (const h of homes) expect(h.row).toBe(h.grant);
+      expect(granted.map((r) => r.grant).sort()).toEqual(homes.map((h) => h.row).sort());
+
+      // Applying again keeps the entries and the rows.
+      const renew = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
+        apply: string[];
+      };
+      const again = await run([...renew.apply.slice(1), "--json"]);
+      expect(
+        (JSON.parse(again.stdout) as { homes: { result: string }[] }).homes.map((h) => h.result),
+      ).toEqual(["unchanged", "unchanged"]);
+      expect((await rows()).map((r) => r.grant).sort()).toEqual(granted.map((r) => r.grant).sort());
+
+      // Remove: refused for a script, then the user's takes back entries and rows.
+      expect((await run(["setup", "agents", "--remove", "--json"], false)).code).toBe(5);
+      const removed = await run(["setup", "agents", "--remove"]);
+      expect(removed.code, removed.stdout + removed.stderr).toBe(0);
+      expect(removed.stdout).toContain("removed");
+      expect(await rows()).toEqual([]);
+      expect(read()).toEqual(before);
+      const log = readFileSync(join(stateOf(home), "logs", "service.log"), "utf8");
+      expect(log).toContain('"setup.home_granted"');
+      expect(log).toContain('"setup.home_revoked"');
+      expect(log).not.toContain(user);
+    },
+    SLOW,
+  );
+
+  test(
+    "the service's rows: user-only, one live row per home, a served space only, bad input refused",
+    async () => {
+      const script = await classSession(home, service.endpoint.path, "cli-script");
+      const person = await classSession(home, service.endpoint.path, "cli-interactive");
+      const grant = (params: Record<string, unknown>) =>
+        person.call("setup/home_grant", params, { timeoutMs: 30_000 }) as Promise<{
+          grant: { grant: string; instance: string };
+          created: boolean;
+        }>;
+      const failure = async (promise: Promise<unknown>) => {
+        try {
+          await promise;
+        } catch (error) {
+          return (error as { data?: { code?: string } }).data?.code;
+        }
+        return "none";
+      };
+      try {
+        const row = {
+          app: "codex",
+          home: join(user, ".codex-x"),
+          instance: "codex-x",
+          account: "x",
+        };
+        expect(
+          await failure(script.call("setup/home_grant", { ...row, space }, { timeoutMs: 30_000 })),
+        ).toBe("forbidden");
+        const first = await grant({ ...row, space });
+        expect(first.created).toBe(true);
+        // The same answer keeps the row; another one replaces it.
+        expect(await grant({ ...row, space })).toMatchObject({
+          created: false,
+          grant: { grant: first.grant.grant },
+        });
+        const second = await grant({ ...row, instance: "codex-y", space });
+        expect(second.created).toBe(true);
+        expect((await rows()).map((r) => [r.grant, r.instance])).toEqual([
+          [second.grant.grant, "codex-y"],
+        ]);
+        for (const bad of [
+          { ...row, app: "cursor", space },
+          { ...row, instance: "Not An ID", space },
+          { ...row, account: "x\ny", space },
+          { ...row, account: "x".repeat(65), space },
+          { ...row, account: 7, space },
+          { ...row, space: "sp_00000000000000000000000000" },
+        ]) {
+          expect(await failure(grant(bad))).not.toBe("none");
+        }
+        expect(
+          await failure(
+            person.call("setup/home_revoke", { grants: ["not-an-id"] }, { timeoutMs: 30_000 }),
+          ),
+        ).toBe("invalid_input");
+        expect(
+          await person.call(
+            "setup/home_revoke",
+            { grants: [second.grant.grant] },
+            { timeoutMs: 30_000 },
+          ),
+        ).toEqual({ revoked: 1 });
+        expect(await rows()).toEqual([]);
+        // An instance without an account label (machine.toml's `account` is optional) is a row too.
+        const unlabelled = await grant({ ...row, account: "", space });
+        expect(unlabelled.created).toBe(true);
+        expect(
+          await person.call(
+            "setup/home_revoke",
+            { grants: [unlabelled.grant.grant] },
+            { timeoutMs: 30_000 },
+          ),
+        ).toEqual({ revoked: 1 });
+        expect(await rows()).toEqual([]);
+      } finally {
+        script.close();
+        person.close();
+      }
+    },
+    SLOW,
+  );
+
+  test("--help prints the help; a wrong option or two modes are usage errors", async () => {
+    const help = await run(["setup", "agents", "--help"]);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain("agents --apply");
+    expect((await run(["setup", "agents", "--force"])).code).toBe(2);
+    expect((await run(["setup", "agents", "--apply", "--remove"])).code).toBe(2);
+    expect((await run(["setup", "agents", "--app", "cursor"])).code).toBe(2);
+    expect((await run(["setup", "agents", "--apply", "--plan", "not-a-plan"])).code).toBe(2);
+    expect((await run(["setup", "agents", "--remove", "--plan", "0123456789abcdef"])).code).toBe(2);
+  });
+
+  test(
+    "--space names the space, and the printed apply keeps the preview's selection",
+    async () => {
+      const session = await classSession(home, service.endpoint.path, "cli-interactive");
+      let listed: { spaces: { id: string; name: string }[] };
+      try {
+        await session.call(
+          "space/create",
+          { name: "Ostra", path: join(root, "s", "ostra"), ref_prefix: "O" },
+          { timeoutMs: 120_000 },
+        );
+        listed = (await session.call("space/list", {}, { timeoutMs: 30_000 })) as typeof listed;
+      } finally {
+        session.close();
+      }
+      const other = listed.spaces.find((s) => s.name === "Ostra")?.id ?? "";
+      expect(other).not.toBe(space);
+      const before = read();
+
+      const argv = ["setup", "agents", "--instance", "codex", "--space", "Ostra"];
+      const preview = await run([...argv, "--json"], false);
+      expect(preview.code, preview.stderr).toBe(0);
+      const planned = JSON.parse(preview.stdout) as {
+        space: string;
+        plan: string;
+        apply: string[];
+        homes: { app: string; change: { args: string[] } }[];
+      };
+      expect(planned.space).toBe(other);
+      expect(planned.homes.map((h) => h.app)).toEqual(["codex"]);
+      expect(planned.homes[0]?.change.args).toContain(other);
+      expect(planned.apply).toEqual([
+        CLI_NAME,
+        "setup",
+        "agents",
+        "--apply",
+        "--plan",
+        planned.plan,
+        "--instance",
+        "codex",
+        "--space",
+        other,
+      ]);
+      expect((await run(argv, false)).stdout).toContain(`run: ${planned.apply.join(" ")}`);
+      // Two served spaces and no default: without --space nothing is planned.
+      expect((await run(["setup", "agents", "--json"], false)).code).not.toBe(0);
+
+      const applied = await run([...planned.apply.slice(1), "--json"]);
+      expect(applied.code, applied.stdout + applied.stderr).toBe(0);
+      expect((await rows()).map((r) => [r.app, r.instance, r.spaces])).toEqual([
+        ["codex", "codex", [other]],
+      ]);
+      const removed = await run(["setup", "agents", "--remove", "--json"]);
+      expect(removed.code, removed.stdout).toBe(0);
+      expect(await rows()).toEqual([]);
+      expect(read()).toEqual(before);
+    },
+    SLOW,
+  );
+});

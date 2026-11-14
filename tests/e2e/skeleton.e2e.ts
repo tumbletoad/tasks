@@ -1,0 +1,216 @@
+// The skeleton page end to end (A7 3.9 M2.13), in Chromium and Firefox, against the real service
+// process with fixture data and the fake terminal behind the launch tile.
+//
+// Verify line: Open sends the shim to the fake terminal, the receipt reaches Confirmed, a log entry
+// appears. Two tabs on two spaces stay on their own space.
+import { expect } from "@playwright/test";
+import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import { FAKE_INSTANCE } from "./fake-terminal.ts";
+import { test } from "./fixture.ts";
+import { showsSpace, violations, watchViolations } from "./page.ts";
+import { SLOW_MS } from "./world.ts";
+
+const TOKEN_KEY = `${PRODUCT_ID}.token`;
+
+test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
+  test("Open sends the shim to the fake terminal, the receipt reaches Confirmed, a log entry appears", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const before = world.terminal().length;
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await showsSpace(page, world.mira.name);
+    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/today`);
+
+    const row = page.locator(`li[data-task="${world.task.ref}"]`);
+    await expect(row.locator('[data-part="title"]')).toHaveText(world.task.title);
+    // The row's one tile is the effective instance's (A5 3.6).
+    const tile = row.locator('[data-part="tile"]');
+    await expect(tile).toHaveAccessibleName(`Open in ${FAKE_INSTANCE.label}`);
+    // Expanding the row shows its thread and a button per instance; Open on the fake agent's.
+    await row.locator('[data-part="title"]').click();
+    await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
+    await row
+      .getByRole("toolbar")
+      .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+      .click();
+
+    // The fake terminal got exactly the shim's command line, and nothing of the task.
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
+    const call = world.terminal().at(-1);
+    expect(call?.argv.slice(0, 2)).toEqual([CLI_NAME, "shim"]);
+    expect(call?.argv).toHaveLength(3);
+    // A4 3.1's ticket: 24 symbols of A1's alphabet in upper case.
+    expect(call?.argv[2]).toMatch(/^[0-9A-HJKMNP-TV-Z]{24}$/);
+    expect(JSON.stringify(call)).not.toContain(world.task.title);
+
+    // The receipt reaches Confirmed, live in the expanded row, and the tile shows it.
+    const confirmed = row.locator('[data-entry][data-state="confirmed"]');
+    await expect(confirmed).toBeVisible({ timeout: SLOW_MS });
+    await expect(confirmed).toContainText(`Open in ${FAKE_INSTANCE.label}`);
+    await expect(tile).toHaveAttribute("data-state", "connected");
+
+    // The agent logs on the task, as an agent does: the entry appears without a reload.
+    const text = `Reproduced the time zone shift in ${test.info().project.name}.`;
+    await world.agentLog(world.mira.id, world.task.id, text);
+    await expect(row.locator('[data-part="entry-text"]', { hasText: text })).toBeVisible({
+      timeout: SLOW_MS,
+    });
+
+    expect(await violations(page)).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath("open-confirmed.png") });
+  });
+});
+
+test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipboard", () => {
+  test("Copy copies the pointer brief, records its launch, and the receipt says it was copied", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await showsSpace(page, world.mira.name);
+    // What the page writes to the clipboard, kept in the page: no clipboard permission needed.
+    await page.evaluate(() => {
+      const copied: string[] = [];
+      (window as unknown as { copied: string[] }).copied = copied;
+      navigator.clipboard.writeText = (text: string) => {
+        copied.push(text);
+        return Promise.resolve();
+      };
+    });
+    const row = page.locator(`li[data-task="${world.spare.ref}"]`);
+    // Copy sits in the expanded task's strip (A5 3.7): expand the row, then copy.
+    await row.locator('[data-part="title"]').click();
+    await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
+    await row
+      .getByRole("toolbar")
+      .getByRole("button", { name: `Copy ${world.spare.title}` })
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { copied: string[] }).copied.length), {
+        timeout: SLOW_MS,
+      })
+      .toBe(1);
+    const brief = await page.evaluate(() => (window as unknown as { copied: string[] }).copied[0]);
+    const lines = (brief ?? "").split("\n");
+    expect(lines[0]).toMatch(
+      new RegExp(
+        `^${PRODUCT_NAME} task ${world.spare.ref} ".*" \\(launch L[0-9A-Z]{5}\\)\\.$`,
+        "u",
+      ),
+    );
+    expect(lines[4]).toMatch(/^Folder: /u);
+    expect(lines).toHaveLength(6);
+    // Its launch shows in the expanded row as copied.
+    await expect(row.locator('[data-entry][data-state="dispatched"]')).toContainText(
+      "Brief copied",
+      {
+        timeout: SLOW_MS,
+      },
+    );
+    expect(await violations(page)).toEqual([]);
+  });
+});
+
+test.describe("[A7.3.9.m2-13.e2e.two-tabs] Each tab keeps its own space", () => {
+  test("Two tabs on two spaces stay on their own space", async ({ context, world }) => {
+    const mira = await context.newPage();
+    const studio = await context.newPage();
+    await mira.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await studio.goto(await world.signInUrl(`/s/${world.studio.id}`));
+    await showsSpace(mira, world.mira.name);
+    await showsSpace(studio, world.studio.name);
+    await expect(studio.locator('[data-part="title"]')).toHaveText(["Sketch the spring poster"]);
+
+    // A task added in one tab lands in that tab's space only.
+    const project = test.info().project.name;
+    const forStudio = `Frame the poster proofs (${project})`;
+    const forMira = `Book the clinic visit (${project})`;
+    await studio.getByRole("textbox", { name: "New task" }).fill(forStudio);
+    await studio.getByRole("textbox", { name: "New task" }).press("Enter");
+    await mira.getByRole("textbox", { name: "New task" }).fill(forMira);
+    await mira.getByRole("textbox", { name: "New task" }).press("Enter");
+    await expect(studio.locator('[data-part="title"]', { hasText: forStudio })).toBeVisible();
+    await expect(mira.locator('[data-part="title"]', { hasText: forMira })).toBeVisible();
+    await expect(studio.locator('[data-part="title"]', { hasText: forMira })).toHaveCount(0);
+    await expect(mira.locator('[data-part="title"]', { hasText: forStudio })).toHaveCount(0);
+
+    // A reload keeps each tab on its space, from its route and the stored token.
+    await studio.reload();
+    await mira.reload();
+    await showsSpace(studio, world.studio.name);
+    await showsSpace(mira, world.mira.name);
+    await expect(studio).toHaveURL(`${world.origin}/s/${world.studio.id}/today`);
+    await expect(studio.locator('[data-part="title"]', { hasText: forStudio })).toBeVisible();
+    await expect(studio.locator('[data-part="title"]', { hasText: forMira })).toHaveCount(0);
+  });
+});
+
+test.describe("[A2.3.8.4.e2e.page-secrets] The code and the token stay out of URLs", () => {
+  test("no request carries the code or the token in its URL, and a hostile stored value signs out", async ({
+    page,
+    world,
+  }) => {
+    const urls: string[] = [];
+    page.on("request", (request) => urls.push(request.url()));
+    const signIn = await world.signInUrl(`/s/${world.mira.id}`);
+    const code = new URLSearchParams(new URL(signIn).hash.slice(1)).get("k") ?? "";
+    expect(code).not.toBe("");
+    await page.goto(signIn);
+    await showsSpace(page, world.mira.name);
+    expect(page.url()).not.toContain("#");
+    const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
+    expect(token).toMatch(/^tasks_u_[A-Za-z0-9_-]{43}$/);
+    for (const url of urls) {
+      expect(url).not.toContain(code);
+      expect(url).not.toContain(token ?? "no token");
+    }
+
+    // A value another page wrote under the token's key is not a token: dropped, signed out.
+    await page.evaluate((key) => {
+      localStorage.setItem(key, '{"token":"tasks_u_x"}<img src=x onerror=alert(1)>');
+    }, TOKEN_KEY);
+    await page.reload();
+    await expect(page.getByText(`Run ${CLI_NAME} open to sign in this browser.`)).toBeVisible();
+    expect(await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY)).toBeNull();
+  });
+});
+
+test.describe("[A2.3.8.3.e2e.strict-csp] The built page under the strict CSP", () => {
+  test("every script and stylesheet has an integrity hash, nothing is blocked, no service worker", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const response = await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    const csp = response?.headers()["content-security-policy"] ?? "";
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("worker-src 'none'");
+    expect(csp).not.toContain("unsafe-inline");
+    await showsSpace(page, world.mira.name);
+    const tags = await page.evaluate(() => {
+      const nonce = document.querySelector('meta[name="csp-nonce"]')?.getAttribute("content");
+      return [...document.querySelectorAll("script, link[rel=stylesheet], style")].map((el) => ({
+        tag: el.tagName,
+        src: el.getAttribute("src") ?? el.getAttribute("href"),
+        integrity: el.getAttribute("integrity"),
+        // A runtime style element (React Aria's, M5.01) carries the response's nonce instead.
+        nonced: el instanceof HTMLStyleElement && nonce !== null && el.nonce === nonce,
+      }));
+    });
+    const files = tags.filter((tag) => tag.tag !== "STYLE");
+    expect(files.length).toBeGreaterThanOrEqual(2);
+    for (const tag of files) {
+      expect(tag.src, tag.tag).toMatch(/^\/assets\//);
+      expect(tag.integrity, `${tag.tag} ${String(tag.src)}`).toMatch(/^sha384-/);
+    }
+    for (const tag of tags.filter((t) => t.tag === "STYLE")) expect(tag.nonced).toBe(true);
+    const workers = await page.evaluate(async () =>
+      "serviceWorker" in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+    );
+    expect(workers).toBe(0);
+    expect(await violations(page)).toEqual([]);
+  });
+});

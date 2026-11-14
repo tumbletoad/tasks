@@ -1,0 +1,5 @@
+# Signature and keyring fixtures are bytes: never convert them.
+*.sig binary
+*.kbx binary
+# The launcher and install scripts run under sh: LF only.
+*.sh text eol=lf

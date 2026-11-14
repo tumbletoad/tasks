@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000001"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Fixture error message (model)."}}
+{"type":"turn.started"}
+{"type":"error","message":"Fixture error message (model)."}
+{"type":"turn.failed","error":{"message":"Fixture error message (model)."}}

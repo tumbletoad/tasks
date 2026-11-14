@@ -1,0 +1,156 @@
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  margin-block-end: 12px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--k-text);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.trigger[data-hovered],
+.trigger[data-pressed] {
+  background: var(--k-hover);
+}
+
+.trigger svg {
+  flex: none;
+  color: var(--k-muted);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover {
+  min-width: 260px;
+  max-width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--k-line-strong);
+  border-radius: 12px;
+  background: var(--k-raised);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .popover[data-entering] {
+    animation: appear var(--k-fast) var(--k-ease);
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.dialog {
+  padding: 6px;
+}
+
+.dialog:focus-visible {
+  outline: none;
+}
+
+.spaces {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.space {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px 0 4px;
+  border-radius: 8px;
+  color: var(--k-text);
+  text-decoration: none;
+}
+
+a.pick:hover {
+  background: var(--k-hover);
+}
+
+.pick[data-disabled] {
+  color: var(--k-muted);
+}
+
+.mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--k-accent);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state,
+.default {
+  flex: none;
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.default {
+  padding: 0 8px;
+}
+
+.make {
+  flex: none;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition:
+    background-color var(--k-fast) var(--k-ease),
+    color var(--k-fast) var(--k-ease);
+}
+
+.make[data-hovered],
+.make[data-focus-visible] {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.make[data-disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.note {
+  margin: 6px 8px;
+  color: var(--k-muted);
+}

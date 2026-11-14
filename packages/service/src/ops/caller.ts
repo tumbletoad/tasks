@@ -1,0 +1,189 @@
+// Who calls (A2 3.6.5, A3 3.7.4, 3.7.9): the connection class decides the audience of the input,
+// the actor in history and the writer scope. The client never names a principal. A session binding
+// (M2.04, binding.ts) gives a bound connection its session's principal and scope, and keeps the
+// earlier scope of a connection that wrote unbound; a run's (M6) will do the same.
+import { PRODUCT_NAME } from "@tasks/brand";
+import type { AnyEntry } from "@tasks/contracts";
+import { AppError } from "@tasks/contracts";
+import type { ConnectionClass } from "../local/index.ts";
+import type { BoundSession, Slot } from "./binding.ts";
+
+export interface Caller {
+  readonly class: ConnectionClass;
+  /** The bind context's environment: the agent markers and TASKS_SPACE (A2 3.6.4). */
+  readonly env: Readonly<Record<string, string>>;
+  /**
+   * The UI's grant row (A2 3.2.5), for the `ui` class: its writer scope is the grant's (A3
+   * 3.7.9 "`ui`: the user's UI scope, A2's UI grant"), so each browser session has its own.
+   */
+  readonly grant?: string;
+  /**
+   * The principal the transport determined for this connection while it is unbound, when its class
+   * has no fixed one: an MCP connection's (mcp/principal.ts). Otherwise the class's. A bound slot's
+   * session decides the principal instead (`sessionPrincipal`).
+   */
+  readonly principal?: Principal;
+  /**
+   * What the connection says about the agent app it serves, for `status`'s session line (A3
+   * 3.4.2): the bridge's instance and app words from its entry. Shown, never trusted (A3 3.3).
+   */
+  readonly client?: { readonly instance?: string; readonly app?: string };
+  /**
+   * The connection's binding (binding.ts): an MCP connection's for its life, or a `cli-agent`
+   * call's whose ticket maps to a live session. Absent: the connection cannot bind.
+   */
+  readonly binding?: Slot;
+}
+
+export interface Principal {
+  /** Which input an entry parses (A3 3.2.1): agents and routines get the agent input. */
+  readonly audience: "user" | "agent";
+  /** A1's actor kind of the principal. */
+  readonly actorKind: "human" | "agent";
+  /** The actor's label: `user` for the space's human, else A3 3.7.4's name. */
+  readonly label: string;
+  /** The writer scope (A3 3.7.9): receipts are keyed by it. Stable across processes. */
+  readonly scope: string;
+  /** A writer scope the connection wrote under before it bound (A3 3.7.9). */
+  readonly earlierScope?: string;
+  readonly origin: "cli" | "ui" | "mcp";
+  /** The bound session (`se_` ID): A1's credential carries it into every commit and log entry. */
+  readonly session?: string;
+}
+
+/**
+ * The principal of an unbound connection of `cls` on machine `machine` (A3 3.7.4, 3.7.9). Each
+ * scope names the machine: receipts live in the space, which can move between machines.
+ */
+export function principalOf(cls: ConnectionClass, machine: string, grant?: string): Principal {
+  switch (cls) {
+    case "cli-interactive":
+      return {
+        audience: "user",
+        actorKind: "human",
+        label: "user",
+        scope: `user-cli:${machine}`,
+        origin: "cli",
+      };
+    case "ui":
+      // A UI session's grant ID is unique for its life (`gr_` and 128 random bits), so its scope
+      // needs no machine; a caller without a grant (an in-process caller) keeps the machine's.
+      return {
+        audience: "user",
+        actorKind: "human",
+        label: "user",
+        scope: grant === undefined ? `user-ui:${machine}` : `ui:${grant}`,
+        origin: "ui",
+      };
+    case "cli-script":
+      return {
+        audience: "agent",
+        actorKind: "agent",
+        label: "script",
+        scope: `script:${machine}`,
+        origin: "cli",
+      };
+    case "cli-agent":
+      return {
+        audience: "agent",
+        actorKind: "agent",
+        label: "agent:unknown",
+        scope: `agent:unknown:${machine}`,
+        origin: "cli",
+      };
+    case "bridge":
+    case "shim":
+      // The bridge's tools pass their own (Caller.principal, mcp/principal.ts); A4's shim calls no
+      // operation.
+      throw new AppError({
+        code: "forbidden",
+        message: "This connection cannot call operations.",
+        data: { rule: "connection_class", class: cls },
+      });
+  }
+}
+
+/**
+ * The principal of a call on a slot bound to `session` (A3 3.7.4, 3.7.9): the actor
+ * `agent:<instance>:<session>`, the session as writer scope, and the connection's unbound scope as
+ * a second receipt lookup when it wrote unbound before it bound.
+ */
+export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
+  return {
+    audience: "agent",
+    actorKind: "agent",
+    label: `agent:${session.instance}:${session.id}`,
+    scope: `session:${session.id}`,
+    ...(slot.wroteUnbound && slot.unboundScope !== undefined
+      ? { earlierScope: slot.unboundScope }
+      : {}),
+    origin: slot.origin,
+    session: session.id,
+  };
+}
+
+/** Whether the class may call user-only entries: `ui` and `cli-interactive` (A2 3.6.5, A3 3.2.3). */
+export const isUserClass = (cls: ConnectionClass): boolean =>
+  cls === "ui" || cls === "cli-interactive";
+
+const USER_ONLY = (): AppError =>
+  new AppError({
+    code: "forbidden",
+    message: "Only the user can do this.",
+    hint: `Ask the user to do this in ${PRODUCT_NAME}.`,
+    data: { rule: "user_only" },
+  });
+
+/**
+ * Whether `cls` may call `entry` at all (A3 3.2.3): user-only entries refuse every class but `ui`
+ * and `cli-interactive`, UI-only ones every class but `ui`, run-only ones every connection that is
+ * not bound to a run (none in M1).
+ */
+export function checkExposure(entry: AnyEntry, cls: ConnectionClass): void {
+  switch (entry.actors) {
+    case "user":
+      if (!isUserClass(cls)) throw USER_ONLY();
+      return;
+    case "ui":
+      if (cls !== "ui") {
+        throw new AppError({
+          code: "forbidden",
+          message: `Only ${PRODUCT_NAME}'s UI can do this.`,
+          data: { rule: "ui_only" },
+        });
+      }
+      return;
+    case "run":
+      throw new AppError({
+        code: "not_permitted",
+        message: "This works only in a run or routine.",
+        data: { binding: "none" },
+      });
+    case "agent":
+      return;
+  }
+}
+
+/** The steps of a path such as `tasks[].log`: field names, and `[]` for every element. */
+function present(value: unknown, steps: readonly string[]): boolean {
+  if (steps.length === 0) return value !== undefined;
+  const [step, ...rest] = steps;
+  if (step === "[]") {
+    return Array.isArray(value) && value.some((item: unknown) => present(item, rest));
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return step !== undefined && Object.hasOwn(record, step) && present(record[step], rest);
+}
+
+/**
+ * Refuses a user-only field that an agent sent (A3 3.2.1: `agentProjection()` drops it, and the
+ * handler rejects it from agent actors with `forbidden`, rule `user_only`).
+ */
+export function checkHiddenFields(entry: AnyEntry, input: unknown, audience: "user" | "agent") {
+  if (audience !== "agent") return;
+  for (const path of entry.agent?.hidden ?? []) {
+    const steps = path.match(/[a-z][a-z0-9_]*|\[\]/g) ?? [];
+    if (present(input, steps)) throw USER_ONLY();
+  }
+}

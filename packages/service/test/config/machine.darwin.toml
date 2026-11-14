@@ -1,0 +1,24 @@
+# A Mac (A2 3.2.4). Fixture paths only.
+[log]
+level = "warn"
+
+[[spaces]]
+id = "sp_3z8sm956jp8dajmtsar5kx026c"
+path = "/Users/mira/Tasks/work"
+
+[roots.work]
+path = "/Users/mira/work"
+
+[terminal]
+app = "custom"
+custom = ["{terminal}", "--working-directory={cwd}", "-e", "{shim}"]
+path = "/Applications/Ghostty.app/Contents/MacOS/ghostty"
+
+[[instance]]
+id = "claude-work"
+target = "claude-cli"
+label = "Claude Code · work"
+account = "work"
+exec = "/Users/mira/.local/bin/claude-work"
+config_home = "/Users/mira/.claude-work"
+via_login_shell = true

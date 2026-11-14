@@ -1,0 +1,192 @@
+// A generated verb (A2 3.10.1, A3 3.4.13): its arguments into the entry's input, the fields the CLI
+// fills itself (A3 3.2.2's `auto`), one `op/call`, and the result printed.
+//
+// Retries (A3 3.4.1, A2 3.10.2). A write gets a request ID from --request-id, or a new one that the
+// CLI prints on stderr so a retry can pass it. A write that needs a base reads one only when no
+// receipt exists: with --request-id the CLI first asks for the receipt in its own writer scope
+// (`receipt.get`), and when there is one it sends the same input with the receipt's `as_of` as
+// base. The receipt's fingerprint covers the input without the base, so the service replays the
+// stored result and nothing is expanded again. Without a receipt it reads the task and sends that
+// read's `as_of`.
+import { randomBytes } from "node:crypto";
+import { isAbsolute, join, resolve } from "node:path";
+import { LocalError } from "@tasks/bridge/protocol";
+import {
+  isRequestId,
+  parseVerb,
+  REQUEST_ID_RULE,
+  UsageError,
+  type Globals,
+  type VerbSpec,
+} from "./args.ts";
+import { connectService, transportError, type ConnectOptions, type Session } from "./connect.ts";
+import type { Io } from "./io.ts";
+import { bodyOf, printError, printUsage, render } from "./output.ts";
+
+/** A new request ID: 128 random bits, 22 characters from A3 3.4.1's alphabet. */
+export const newRequestId = (): string => randomBytes(16).toString("base64url");
+
+/** A transport failure from the client library, as A3's body. */
+export function asAppError(error: unknown): unknown {
+  return error instanceof LocalError
+    ? transportError(error.reason, error.retryable, error.detail)
+    : error;
+}
+
+async function readInput(io: Io, source: string): Promise<Record<string, unknown>> {
+  let text: string;
+  try {
+    text =
+      source === "-"
+        ? await io.readStdin()
+        : await io.readFile(isAbsolute(source) ? source : join(io.cwd, source));
+  } catch {
+    throw new UsageError("--input cannot be read");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new UsageError("--input is not JSON");
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new UsageError("--input is not a JSON object");
+  }
+  return value as Record<string, unknown>;
+}
+
+/**
+ * A place given as a folder relative to the working folder (`--place .`, `place=../portal`) made
+ * absolute here, as `tasks space` does with its folders: the service never reads a relative path
+ * against its own working folder. `cwd` stays `cwd`. Every place field of the input: a task
+ * update's `set.place`, a draft's or a follow-up's `place`.
+ */
+function absolutePlaces(input: Record<string, unknown>, cwd: string): void {
+  const fix = (holder: unknown): void => {
+    if (typeof holder !== "object" || holder === null || Array.isArray(holder)) return;
+    const record = holder as Record<string, unknown>;
+    const place = record["place"];
+    if (typeof place === "string" && place !== "cwd" && place !== "" && !isAbsolute(place)) {
+      record["place"] = resolve(cwd, place);
+    }
+  };
+  fix(input["set"]);
+  for (const list of [input["tasks"], input["follow_ups"]]) {
+    if (Array.isArray(list)) list.forEach(fix);
+  }
+}
+
+/** One `op/call` with the call's time limit. */
+export function opCall(
+  session: Session,
+  globals: Globals,
+  op: string,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  return session.call(
+    "op/call",
+    { op, input, ...(globals.space === undefined ? {} : { space: globals.space }) },
+    { timeoutMs: globals.timeoutS * 1000 },
+  );
+}
+
+/** The space a result names, for a person's output: by its task reference's prefix. */
+function spaceName(session: Session, globals: Globals, result: Record<string, unknown>): string {
+  const spaces = session.bound.spaces as { id?: string; name?: string; ref_prefix?: string }[];
+  const wanted = globals.space;
+  if (wanted !== undefined) {
+    const found = spaces.find(
+      (s) => s.id === wanted || s.name?.toLowerCase() === wanted.toLowerCase(),
+    );
+    if (found?.name !== undefined) return found.name;
+  }
+  const tasks = result["tasks"] as { ref?: string }[] | undefined;
+  const ref = (typeof result["task"] === "string" ? result["task"] : tasks?.[0]?.ref) ?? "";
+  const prefix = ref.slice(0, Math.max(0, ref.indexOf("-")));
+  return (
+    spaces.find((s) => s.ref_prefix === prefix)?.name ??
+    spaces.find((s) => s.name !== undefined)?.name ??
+    "the space"
+  );
+}
+
+export async function runVerb(
+  io: Io,
+  globals: Globals,
+  verb: VerbSpec,
+  args: readonly string[],
+  options: ConnectOptions,
+): Promise<number> {
+  let input: Record<string, unknown>;
+  try {
+    const base = globals.input === undefined ? undefined : await readInput(io, globals.input);
+    // stdin is read once: by `--input -`, or by one text argument `-`, never both.
+    const stdin =
+      globals.input === "-"
+        ? () => Promise.reject(new UsageError("Only one argument can read stdin"))
+        : () => io.readStdin();
+    input = (await parseVerb(verb, args, stdin, base)).input;
+  } catch (error) {
+    if (error instanceof UsageError) return printUsage(io, globals.json, error.message);
+    throw error;
+  }
+  const write = verb.kind === "write";
+  if (verb.auto.includes("cwd") && input["cwd"] === undefined) input["cwd"] = io.cwd;
+  absolutePlaces(input, io.cwd);
+  let generated = false;
+  if (verb.auto.includes("request_id")) {
+    const given = input["request_id"];
+    if (globals.requestId !== undefined && given !== undefined && given !== globals.requestId) {
+      return printUsage(io, globals.json, "--request-id and --input name two request IDs");
+    }
+    if (given !== undefined && !isRequestId(given)) {
+      return printUsage(io, globals.json, `--input's request_id ${REQUEST_ID_RULE}`);
+    }
+    if (given === undefined) {
+      input["request_id"] = globals.requestId ?? newRequestId();
+      generated = globals.requestId === undefined;
+    }
+  }
+  const requestId = isRequestId(input["request_id"]) ? input["request_id"] : undefined;
+  if (write && generated && requestId !== undefined && !globals.quiet) {
+    io.stderr(`request ${requestId}\n`);
+  }
+
+  let session: Session | undefined;
+  try {
+    session = await connectService(io, options);
+    if (verb.auto.includes("base") && input["base"] === undefined) {
+      // A retry finds its receipt first and reads no fresh base (A3 3.4.1): any request ID the
+      // caller gave, through --request-id or --input, may be a retry.
+      if (!generated && requestId !== undefined) {
+        const receipt = (await opCall(session, globals, "receipt.get", {
+          request: requestId,
+        })) as {
+          found: boolean;
+          as_of?: string;
+        };
+        if (receipt.found && receipt.as_of !== undefined) input["base"] = receipt.as_of;
+      }
+      if (input["base"] === undefined && typeof input["task"] === "string") {
+        const read = (await opCall(session, globals, "task.get", { task: input["task"] })) as {
+          as_of?: string;
+        };
+        if (typeof read.as_of === "string") input["base"] = read.as_of;
+      }
+    }
+    const result = (await opCall(session, globals, verb.entry, input)) as Record<string, unknown>;
+    if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
+    else if (!globals.quiet || !write)
+      io.stdout(render(verb.entry, result, spaceName(session, globals, result)));
+    return 0;
+  } catch (error) {
+    const body = bodyOf(asAppError(error));
+    // A write that may have applied is retried with its request ID, also a generated one.
+    if (write && requestId !== undefined && body.data?.["retryable"] === true && !globals.quiet) {
+      io.stderr(`Retry with: --request-id ${requestId}\n`);
+    }
+    return printError(io, globals.json, body);
+  } finally {
+    session?.close();
+  }
+}

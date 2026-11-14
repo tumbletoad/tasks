@@ -1,0 +1,213 @@
+# Status
+
+One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
+
+**Done so far:** 49 of 104.
+
+**Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 8 · M5 13 · M6 15 · M7 10 · total 104. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
+
+## How to read and use it
+
+**States.**
+
+| State | Meaning |
+|---|---|
+| `todo` | Not started. Some dependency is not done yet. |
+| `ready` | Every dependency is done. The step can start. |
+| `doing` | Someone works on it, on its own branch. |
+| `review` | Its pull request is open, waiting for checks or review. |
+| `done` | Merged. |
+| `blocked` | Waiting on a gate, a real-machine session or a decision. The row says which. |
+| `conditional` | Applies only when an M0 measurement calls for it. Not in the base count. |
+
+**Sizes.** `S` is one focused session, `M` one long session. `RM` marks a step that ends with a check on a real machine. A step that turns out larger than its size is split before work starts, and the split is recorded here (A7 3.4).
+
+**Taking a step.** Pick a `ready` row, set it to `doing` in your branch and name the step in your pull request. "Needs" names the code a step builds on, not a milestone: a step can start on top of an unmerged branch it needs. Rows keep their IDs: never renumber or reuse one.
+
+## Real-machine sessions
+
+Some checks need the owner at a real machine: the Windows reference machine or the Linux reference machine (Ubuntu 24.04, no sudo rights). These are open:
+
+| Session | Machine | What it checks | Rows and steps |
+|---|---|---|---|
+| Lab session 1 | Windows | Launch routes opening the exact folder with the brief, agent apps, the UI in Firefox | L01–L09, L12, A03–A06, U02–U04, U06, S05 (M0.07 to M0.10) |
+| Lab session 2 | Linux | The same, plus the Claude Code parts | L01–L09, L11, L12, A03–A06, U01, U03, U04, U06, S11, and the Claude Code parts of A01, A06, E02 and N01 (M0.07 to M0.11) |
+| Lab session 3 | Both | Boot and sign-in start through the product's own `tasks service install`, cold bridge starts after a reboot, the unattended Refresh path | S01, S02, S03, B01, B06, B07, E01's boot and sign-in halves, N04 |
+| Acceptance | Both | The `RM` steps once their code exists | M1.15, M2.15, M3.16, M4.08, M5.13, M6.14, M6.15, M7.09, M7.10 |
+
+Gate G2 stays open until lab sessions 1 to 3 have run. Steps behind a G2 predicate are built meanwhile, to the lab's recorded findings, and their pull requests list what waits for a session. M1.15 and M2.15 are not claimed before the sessions.
+
+Merged steps left these checks for a session:
+- `tasks setup agents`, then `--apply`, then `--remove` in the real agent homes on each machine: the apps' own `mcp add` commands write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` (M2.15).
+- The installed-build migration drill (`pnpm accept m3 --part migration --installed <folder>`) against the Linux build on the Linux reference machine, before a build with schema 0.2 opens real spaces there.
+- The modes T3 Code gives its runtime file and `userdata` folder under umask 002, when the session that observes T3 runs (L05).
+
+## M0: the real-machine lab
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M0.01 | Repository bootstrap | none | S | done |
+| M0.02 | Spike kit | M0.01 | M | done |
+| M0.03 | Packaging spike | M0.01 | M | done |
+| M0.04 | Storage bench | M0.01 | M | done |
+| M0.05 | Lab run R (R01–R12) | M0.03, M0.04 | S RM | done |
+| M0.06 | Lab run B (B01–B07), bridge decision | M0.02, M0.03 | S RM | done |
+| G1 | Gate: R and B rows against G1 predicates | M0.05, M0.06 | | done |
+| M0.07 | Lab run S and E ● | M0.02, M0.03 | M RM | done |
+| M0.08 | Lab run U ● | M0.02 | S RM | done |
+| M0.09 | Lab run A ● | M0.02 | M RM | done |
+| M0.10 | Lab run L ● | M0.02, M0.07 | M RM | done |
+| M0.11 | Lab run N, stream fixtures | M0.02, M0.07 | S RM | done |
+| M0.12 | Lab report, decisions, plan deltas | all | S | done |
+| G2 | Gate: every M0 row observed, G2 predicates qualified | M0.05–M0.11, recorded in M0.12 | | blocked: lab sessions 1 to 3 |
+
+● = the step's unattended rows have run. Its rows that need the owner at a machine are in lab sessions 1 to 3 above.
+
+## M1: core slice (after G1)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M1.01 | Contracts registry and generator | M0.01 | M | done |
+| M1.02 | Storage driver | G1 | S | done |
+| M1.03 | Space folder, IDs, schema 0.1 | M1.02 | M | done |
+| M1.04 | Write path and writer worker | M1.03 | M | done |
+| M1.05 | Receipts and skeleton operations | M1.04 | M | done |
+| M1.06 | Migration runner and minimal backups | M1.03 | M | done |
+| M1.07 | Crash harness v1 | M1.05, M1.06 | S | done |
+| M1.08 | Service hub | M1.05 | M | done |
+| M1.09 | `tasks-local/1` protocol | M1.08 | M | done |
+| M1.10 | CLI | M1.01, M1.09 | M | done |
+| M1.11 | Windows launchers | M0.03 | S | done |
+| M1.12 | Service install | M1.08, M1.11 | S | done |
+| M1.13 | Build and signed `SHA256SUMS` | M1.10, M1.11 | M | done |
+| M1.14 | Install bootstrap and test installs | M1.12, M1.13 | M | done |
+| M1.15 | Real machines: install, drills, budgets | M1.12, M1.14 | S RM | blocked: lab session 3 |
+
+## M2: walking skeleton (after M1 and G2)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M2.01 | Bridge forwarder | M1.09 | M | done |
+| M2.02 | MCP endpoint, both eras | M1.01, M1.09 | M | done |
+| M2.03 | The first five tools | M2.02, M1.05 | M | done |
+| M2.04 | Binding v0 | M2.03, M2.05 | M | done |
+| M2.04b | Grant gate: an agent home reaches only the spaces its registration names | M2.04, M2.14 | M | doing |
+| M2.05 | Launch records | M1.05 | S | done |
+| M2.06 | Machine configuration and targets | M1.08 | S | done |
+| M2.07 | Places | M1.05, M2.06 | S | done |
+| M2.08 | Shim and attachment | M2.05, M2.06 | M | done |
+| M2.09 | Terminals, scopes, environment | M2.08 | M | done |
+| M2.10 | Brief and CLI routes | M2.07, M2.09 | M | done |
+| M2.11 | T3 primary route | M2.05, M2.07 | M | done |
+| M2.12 | HTTP and WebSocket | M1.09 | M | done |
+| M2.13 | Skeleton page | M2.12, M2.05 | M | done |
+| M2.14 | Setup v0 | M2.03 | S | done |
+| M2.15 | Real-machine acceptance | all | S RM | todo |
+
+M2.04b is not in the base count. Until it is merged, the agent-home rows that `tasks setup agents` writes restrict nothing: a registered agent can still write into a space it was not registered for.
+
+## M3: durable space (parallel with M4)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M3.01 | Schema 0.2 and migration | M2.01–M2.14, M1.06 | M | done |
+| M3.02 | Undo and redo | M3.01 | M | ready |
+| M3.03 | Revert commit and session | M3.02 | S | todo |
+| M3.04 | Lifecycle | M3.01 | S | ready |
+| M3.05 | Search | M3.01 | M | ready |
+| M3.06 | Source keys and dedupe | M3.01 | S | ready |
+| M3.07 | Export bundles and restore | M3.01, M1.06 | M | ready |
+| M3.08 | Authority, transfer and claim | M3.07 | M | todo |
+| M3.09 | Synced and network folder detection, read-only modes | M1.08 | S | done |
+| M3.10 | Projection | M3.01 | M | ready |
+| M3.11 | Preferences and feature flags | M3.01 | S | ready |
+| M3.12 | Hooks for later phases | M3.08, M2.12, M2.05 | S | todo |
+| M3.13 | Fallback driver | M1.02 | S | ready |
+| M3.14 | Redaction | M3.04, M3.05, M3.10 | S | todo |
+| M3.15 | Full crash and model suites | M3.02–M3.14 | M | todo |
+| M3.16 | Scale on Windows and Linux | M3.05, M3.10 | S RM | todo |
+
+M3.13 relies on a CI job that the local checks do not cover.
+
+## M4: agent interface (parallel with M3)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M4.01 | Remaining tools | M3.05, M3.06 | M | todo |
+| M4.02 | Autonomy and proposals | M3.01 | M | ready |
+| M4.03 | Digest v1 and framing | M3.01, M3.05 | M | todo |
+| M4.04 | Final server instructions | M4.01 | S | todo |
+| M4.05 | Setup for remaining apps, doctor | M2.14 | M | doing |
+| M4.06 | Binding complete | M2.04, M2.04b | M | todo |
+| M4.07 | Source ingestion | M4.01 | S | todo |
+| M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
+
+## M5: the planner UI (parallel with M6 and the importer)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M5.01 | App shell | M2.13 | M | done |
+| M5.02 | Live store | M2.12 | M | done |
+| M5.03 | Task row and virtual list | M5.01, M5.02 | M | done |
+| M5.04 | Today | M5.03 | S | ready |
+| M5.05 | Status, area, Completed, Agents views | M5.03 | S | ready |
+| M5.06 | Expanded task | M5.03 | M | ready |
+| M5.07 | Composer and action strip | M5.06 | S | todo |
+| M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | todo |
+| M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
+| M5.10 | Quick capture and search | M5.03, M3.05 | S | todo |
+| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | todo |
+| M5.12 | First-run setup | M5.11, M4.05 | S | todo |
+| M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
+
+## M6: runs, routines and every v1 target (parallel with M5)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M6.01 | Run records and states | M2.05 | M | ready |
+| M6.02 | Supervisor and limits | M6.01 | M | todo |
+| M6.03 | Run shim | M6.01, M2.08 | M | todo |
+| M6.04 | Cancellation | M6.03 | M | todo |
+| M6.05 | Stream parsers | M0.11 | S | done |
+| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | todo |
+| M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
+| M6.08 | The Tasks work folder | M6.06, M2.11 | S | todo |
+| M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | todo |
+| M6.10 | T3 CLI fallback route | M2.11 | S | doing |
+| M6.11 | Best-effort targets, context pack | M2.10 | S | ready |
+| M6.12 | Update from a local archive | M1.14 | M | done |
+| M6.13 | Stable Windows launchers | M6.12 | S | doing |
+| M6.14 | Real-run contract evals | M6.07, M4.08 | S RM | todo |
+| M6.15 | Real machines: Refresh, cancel, receipts | M6.01–M6.14 | S RM | todo |
+
+## M7: switch-over (v1)
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| M7.01 | Synthetic prototype fixture | M1.03 | S | done |
+| M7.02 | Pure parsers | M7.01 | S | done |
+| M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | todo |
+| M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | todo |
+| M7.05 | Apply, undo, idempotent re-import | M7.04 | M | todo |
+| M7.06 | Export to the prototype format | M7.03 | M | todo |
+| M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |
+| M7.08 | Trial tooling | M7.07 | S | todo |
+| M7.09 | Rehearsal on the Linux reference machine | M5, M6, M7.08 | S RM | todo |
+| M7.10 | Cutover and 10-day trial | M7.09 | S RM | todo |
+
+M7.01 and M7.02 run during M3 and M4. M7.03 to M7.08 run during M5 and M6. In M7 the work is fixing what the rehearsal and the trial find.
+
+## Conditional steps
+
+Not in the base count. Each applies only when an M0 measurement calls for it.
+
+| Step | Title | Needs | Size | State |
+|---|---|---|---|---|
+| F1 | Native forwarder: framing, handshake, bind | M2.01 | M | conditional |
+| F2 | Native forwarder: offline responder, reconnect | F1 | M | conditional |
+| F3 | Native forwarder builds per platform | F2 | S | conditional |
+| F4 | Native forwarder re-measured, default switched | F3 | S RM | conditional |
+| M6.04h | Windows console-attach cancel helper | M6.04 | S | todo |
+| M1.02 (fallback) | Fallback driver `better-sqlite3` as primary | G1 | S | conditional |
+
+F1 to F4 apply only if bridge rule 3 fires (A2 3.7.7). The Node forwarder ships, and lab session 3's cold bridge starts re-check that. M6.04h applies: lab row N03 showed that Windows needs the helper to cancel a console agent cleanly. The fallback driver as primary applies only if R01 or R02 fail, and both passed.

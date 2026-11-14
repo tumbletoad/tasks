@@ -1,0 +1,87 @@
+{
+  "platform": "darwin",
+  "commands": [
+    {
+      "target": "claude-cli",
+      "source": "path",
+      "exec": [
+        "/Users/mira/.local/bin/claude"
+      ]
+    },
+    {
+      "target": "codex-cli",
+      "source": "path",
+      "exec": [
+        "/opt/homebrew/bin/codex"
+      ],
+      "version": "0.167.1",
+      "tested": true
+    }
+  ],
+  "homes": [
+    {
+      "target": "claude-cli",
+      "path": "/Users/mira/.claude-work",
+      "suffix": "work",
+      "source": "home"
+    },
+    {
+      "target": "codex-cli",
+      "path": "/Users/mira/.codex",
+      "suffix": "",
+      "source": "home"
+    },
+    {
+      "target": "codex-cli",
+      "path": "/Users/mira/codex-homes/lab",
+      "suffix": "lab",
+      "source": "env"
+    }
+  ],
+  "wrappers": [
+    {
+      "target": "claude-cli",
+      "path": "/Users/mira/.local/bin/claude-work",
+      "suffix": "work"
+    }
+  ],
+  "t3Folder": false,
+  "proposals": [
+    {
+      "id": "claude-work",
+      "target": "claude-cli",
+      "label": "Claude Code · work",
+      "account": "work",
+      "source": "wrapper",
+      "exec": "/Users/mira/.local/bin/claude-work",
+      "configHome": "/Users/mira/.claude-work",
+      "needs": []
+    },
+    {
+      "id": "codex",
+      "target": "codex-cli",
+      "label": "Codex",
+      "account": "default",
+      "source": "home",
+      "exec": "/opt/homebrew/bin/codex",
+      "argsPrefix": [],
+      "configHome": "/Users/mira/.codex",
+      "needs": []
+    },
+    {
+      "id": "codex-lab",
+      "target": "codex-cli",
+      "label": "Codex · lab",
+      "account": "lab",
+      "source": "home",
+      "exec": "/opt/homebrew/bin/codex",
+      "argsPrefix": [],
+      "configHome": "/Users/mira/codex-homes/lab",
+      "env": {
+        "CODEX_HOME": "/Users/mira/codex-homes/lab"
+      },
+      "needs": []
+    }
+  ],
+  "configured": []
+}

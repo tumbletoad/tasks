@@ -1,0 +1,167 @@
+// Doctor's HTTP and accounts rows (A2 3.13): "Port moved, UI blocked by a foreign port holder
+// (3.8.2), port in a Windows excluded range, Host and Origin self-test (a request with
+// `Host: evil.example` must get 421), CSP present with a fresh nonce on index.html", and "Other
+// user accounts". Only codes, counts and ports reach the output: never a token, name or SID.
+import { spawnSync } from "node:child_process";
+import { win32 } from "node:path";
+import { PRODUCT_NAME } from "@tasks/brand";
+import { blockedMessage, movedMessage } from "@tasks/service/http/shared";
+import { countAccounts, type AccountFacts } from "./accounts.ts";
+import { listenerRequest } from "./listener-request.ts";
+
+/** A doctor row (doctor.ts has the same shape). */
+export interface Check {
+  readonly id: string;
+  readonly status: "ok" | "warn" | "fail" | "skip";
+  readonly detail: string;
+}
+
+/** The `http` field of `service/status`. */
+export interface HttpStatusView {
+  readonly port?: number | null;
+  readonly persisted?: number | null;
+  readonly moved?: boolean;
+  readonly blocked?: string | null;
+}
+
+interface Answer {
+  readonly status: number;
+  readonly csp: string;
+  readonly body: string;
+}
+
+/** A GET's deadline for the whole exchange, and the most of a page it reads. */
+const GET_MS = 5_000;
+const GET_MAX_BYTES = 256 * 1024;
+
+/** One GET of the listener with a chosen Host header, within `deadlineMs`. */
+async function get(
+  port: number,
+  path: string,
+  host: string,
+  deadlineMs: number,
+): Promise<Answer | undefined> {
+  const answer = await listenerRequest(port, {
+    method: "GET",
+    path,
+    headers: { Host: host },
+    deadlineMs,
+    maxBytes: GET_MAX_BYTES,
+  });
+  if (answer === undefined) return undefined;
+  return {
+    status: answer.status,
+    csp: String(answer.headers["content-security-policy"] ?? ""),
+    body: answer.body,
+  };
+}
+
+const nonceOf = (answer: Answer | undefined): string | undefined =>
+  answer === undefined ? undefined : /'nonce-([A-Za-z0-9+/=]+)'/.exec(answer.csp)?.[1];
+
+/**
+ * The listener's self-test: a rebinding Host is refused, and the shell's nonce is fresh. Each of
+ * its requests ends within `deadlineMs` (5 s), whatever answers on the port.
+ */
+export async function selfTest(port: number, deadlineMs = GET_MS): Promise<string[]> {
+  const problems: string[] = [];
+  const evil = await get(port, "/healthz", "evil.example", deadlineMs);
+  if (evil?.status !== 421)
+    problems.push(`Host evil.example got ${String(evil?.status ?? "no answer")}, not 421`);
+  const own = `127.0.0.1:${String(port)}`;
+  const first = await get(port, "/", own, deadlineMs);
+  const second = await get(port, "/", own, deadlineMs);
+  const n1 = nonceOf(first);
+  const n2 = nonceOf(second);
+  if (first?.status !== 200 || n1 === undefined) problems.push("index.html has no CSP nonce");
+  else if (n1 === n2) problems.push("index.html's nonce is not fresh");
+  else if (!first.body.includes(`<meta name="csp-nonce" content="${n1}">`))
+    problems.push("index.html's meta tag does not repeat the nonce");
+  if (first !== undefined && !first.csp.includes("worker-src 'none'"))
+    problems.push("the CSP lacks worker-src 'none'");
+  if (first !== undefined && /unsafe-inline|unsafe-eval/.test(first.csp))
+    problems.push("the CSP allows unsafe code");
+  return problems;
+}
+
+/** Windows: the excluded port ranges of `netsh interface ipv4 show excludedportrange`. */
+export function excludedRanges(text: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*(\d{1,5})\s+(\d{1,5})(?:\s|$)/.exec(line);
+    if (match !== null) ranges.push([Number(match[1]), Number(match[2])]);
+  }
+  return ranges;
+}
+
+function windowsExcluded(port: number, env: Readonly<Record<string, string | undefined>>) {
+  const system = env["SystemRoot"] ?? "C:\\Windows";
+  const result = spawnSync(
+    win32.join(system, "System32", "netsh.exe"),
+    ["interface", "ipv4", "show", "excludedportrange", "protocol=tcp"],
+    { encoding: "utf8", windowsHide: true, shell: false, timeout: 15_000 },
+  );
+  if (result.error !== undefined || result.status !== 0) return false;
+  return excludedRanges(result.stdout).some(([lo, hi]) => lo <= port && port <= hi);
+}
+
+/** The `http` row from a running service's status. */
+export async function httpCheck(
+  http: HttpStatusView | null | undefined,
+  platform: NodeJS.Platform,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<Check> {
+  if (http === null || http === undefined) {
+    return { id: "http", status: "warn", detail: "The service runs no UI listener." };
+  }
+  if (http.blocked !== null && http.blocked !== undefined) {
+    return { id: "http", status: "fail", detail: blockedMessage(http.port ?? null) };
+  }
+  const port = http.port ?? null;
+  if (port === null) return { id: "http", status: "warn", detail: "The UI listener has no port." };
+  const notes: string[] = [];
+  let status: Check["status"] = "ok";
+  if (http.moved === true && typeof http.persisted === "number") {
+    status = "warn";
+    notes.push(movedMessage(http.persisted, port));
+    if (platform === "win32" && windowsExcluded(http.persisted, env)) {
+      notes.push(`Port ${String(http.persisted)} lies in a Windows excluded port range.`);
+    }
+  }
+  const problems = await selfTest(port);
+  if (problems.length > 0) {
+    status = "fail";
+    notes.push(`Self-test: ${problems.join("; ")}.`);
+  }
+  return {
+    id: "http",
+    status,
+    detail:
+      notes.length === 0
+        ? `Listening on 127.0.0.1:${String(port)}; Host and CSP self-test passed.`
+        : notes.join(" "),
+  };
+}
+
+/** The `accounts` row (A2 3.13 "Other user accounts"). */
+export function accountsCheck(facts: AccountFacts | undefined): Check {
+  if (facts === undefined) {
+    return { id: "accounts", status: "skip", detail: "The machine's accounts could not be read." };
+  }
+  const { others, sandbox } = countAccounts(facts);
+  const left =
+    sandbox === 0
+      ? ""
+      : ` ${String(sandbox)} agent sandbox account${sandbox === 1 ? " is" : "s are"} not counted.`;
+  if (others === 0) {
+    return { id: "accounts", status: "ok", detail: `No other user accounts.${left}` };
+  }
+  return {
+    id: "accounts",
+    status: "warn",
+    detail:
+      `This machine has ${String(others)} other user account${others === 1 ? "" : "s"}. ` +
+      `${PRODUCT_NAME} v1 assumes one user per machine. Another account could serve a fake ` +
+      `${PRODUCT_NAME} page at the UI's address while ${PRODUCT_NAME} is stopped.${left}`,
+  };
+}

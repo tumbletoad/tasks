@@ -1,0 +1,126 @@
+{
+  "platform": "linux",
+  "commands": [
+    {
+      "target": "claude-cli",
+      "source": "path",
+      "exec": [
+        "/home/mira/.local/bin/claude"
+      ],
+      "version": "2.1.322",
+      "tested": true
+    },
+    {
+      "target": "codex-cli",
+      "source": "npm",
+      "exec": [
+        "/home/mira/.nvm/versions/node/v24.11.0/bin/node",
+        "/home/mira/.nvm/versions/node/v24.11.0/lib/node_modules/@openai/codex/bin/codex.js"
+      ],
+      "version": "0.166.0",
+      "tested": true
+    },
+    {
+      "target": "t3",
+      "source": "path",
+      "exec": [
+        "/home/mira/.local/bin/t3"
+      ],
+      "version": "0.1.7",
+      "tested": true
+    }
+  ],
+  "homes": [
+    {
+      "target": "claude-cli",
+      "path": "/home/mira/.claude",
+      "suffix": "",
+      "source": "home"
+    },
+    {
+      "target": "codex-cli",
+      "path": "/home/mira/.codex",
+      "suffix": "",
+      "source": "home"
+    },
+    {
+      "target": "codex-cli",
+      "path": "/home/mira/.codex-personal",
+      "suffix": "personal",
+      "source": "home"
+    }
+  ],
+  "wrappers": [
+    {
+      "target": "codex-cli",
+      "path": "/home/mira/.local/bin/codex-personal",
+      "suffix": "personal"
+    },
+    {
+      "target": "codex-cli",
+      "path": "/home/mira/.local/bin/codex-work",
+      "suffix": "work"
+    }
+  ],
+  "t3Folder": true,
+  "proposals": [
+    {
+      "id": "claude",
+      "target": "claude-cli",
+      "label": "Claude Code",
+      "account": "default",
+      "source": "home",
+      "exec": "/home/mira/.local/bin/claude",
+      "argsPrefix": [],
+      "configHome": "/home/mira/.claude",
+      "needs": []
+    },
+    {
+      "id": "codex-personal",
+      "target": "codex-cli",
+      "label": "Codex · personal",
+      "account": "personal",
+      "source": "wrapper",
+      "exec": "/home/mira/.local/bin/codex-personal",
+      "configHome": "/home/mira/.codex-personal",
+      "needs": []
+    },
+    {
+      "id": "codex-work",
+      "target": "codex-cli",
+      "label": "Codex · work",
+      "account": "work",
+      "source": "wrapper",
+      "exec": "/home/mira/.local/bin/codex-work",
+      "needs": [
+        "config_home"
+      ]
+    },
+    {
+      "id": "codex",
+      "target": "codex-cli",
+      "label": "Codex",
+      "account": "default",
+      "source": "home",
+      "exec": "/home/mira/.nvm/versions/node/v24.11.0/bin/node",
+      "argsPrefix": [
+        "/home/mira/.nvm/versions/node/v24.11.0/lib/node_modules/@openai/codex/bin/codex.js"
+      ],
+      "configHome": "/home/mira/.codex",
+      "needs": []
+    },
+    {
+      "id": "t3",
+      "target": "t3",
+      "label": "T3 Code",
+      "account": "default",
+      "source": "app",
+      "exec": "/home/mira/.local/bin/t3",
+      "argsPrefix": [],
+      "needs": [
+        "t3_provider_instance"
+      ]
+    }
+  ],
+  "configured": []
+}

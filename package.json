@@ -1,0 +1,42 @@
+{
+  "name": "@tasks/workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.13.1",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "verify": "node scripts/verify.ts",
+    "gen": "node scripts/gen.ts",
+    "seed": "node scripts/seed.ts",
+    "tasks": "node packages/cli/src/bin.ts",
+    "accept": "node scripts/accept.ts",
+    "build": "node scripts/build.ts",
+    "build:web": "node packages/web/build.ts",
+    "e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "release": "node scripts/release/main.ts",
+    "smoke": "node scripts/install/smoke.ts",
+    "crash": "node tests/crash/cli.ts",
+    "node-version": "node -p process.version"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "@types/node": "26.6.6",
+    "dependency-cruiser": "18.7.2",
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "eslint-plugin-formatjs": "8.1.4",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.7",
+    "vitest": "5.1.0"
+  }
+}

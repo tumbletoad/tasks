@@ -1,0 +1,23 @@
+{
+  "name": "@tasks/launch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./places": "./src/places.ts",
+    "./process": "./src/process.ts",
+    "./shim-wire": "./src/shim/wire.ts",
+    "./execution-store-contract": "./test/execution-store-contract.ts",
+    "./memory-store": "./test/memory-store.ts"
+  },
+  "dependencies": {
+    "@tasks/brand": "workspace:*",
+    "@tasks/files": "workspace:*"
+  },
+  "devDependencies": {
+    "@tasks/testkit": "workspace:*",
+    "fast-check": "4.10.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@tasks/launcher-win",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./build": "./src/build.ts"
+  },
+  "devDependencies": {
+    "vitest": "5.1.0"
+  }
+}

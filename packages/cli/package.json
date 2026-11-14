@@ -1,0 +1,22 @@
+{
+  "name": "@tasks/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "dependencies": {
+    "@tasks/brand": "workspace:*",
+    "@tasks/bridge": "workspace:*",
+    "@tasks/contracts": "workspace:*",
+    "@tasks/files": "workspace:*",
+    "@tasks/launch": "workspace:*",
+    "@tasks/service": "workspace:*"
+  },
+  "devDependencies": {
+    "@tasks/storage": "workspace:*",
+    "@tasks/testkit": "workspace:*",
+    "vitest": "5.1.0"
+  }
+}

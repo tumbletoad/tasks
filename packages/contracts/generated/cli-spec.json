@@ -1,0 +1,797 @@
+{
+  "auto": {
+    "base": "The CLI reads the task first and sends that read's as_of",
+    "cwd": "The CLI's working folder",
+    "request_id": "From --request-id, or generated and printed"
+  },
+  "common": [
+    {
+      "flag": "--json",
+      "help": "Print the result, or the error, as one JSON document"
+    },
+    {
+      "flag": "--input",
+      "help": "Read the input JSON from a file or stdin",
+      "value": "<file or ->"
+    }
+  ],
+  "errors": {
+    "already_bound": {
+      "class": "conflict",
+      "exit": 4
+    },
+    "ambiguous": {
+      "class": "not_found",
+      "exit": 3
+    },
+    "conflict": {
+      "class": "conflict",
+      "exit": 4
+    },
+    "cursor_expired": {
+      "class": "not_found",
+      "exit": 3
+    },
+    "forbidden": {
+      "class": "forbidden",
+      "exit": 5
+    },
+    "internal": {
+      "class": "internal",
+      "exit": 1
+    },
+    "invalid_input": {
+      "class": "usage",
+      "exit": 2
+    },
+    "launch_expired": {
+      "class": "not_found",
+      "exit": 3
+    },
+    "launch_unknown": {
+      "class": "not_found",
+      "exit": 3
+    },
+    "launch_used": {
+      "class": "not_found",
+      "exit": 3
+    },
+    "not_found": {
+      "class": "not_found",
+      "exit": 3
+    },
+    "not_permitted": {
+      "class": "forbidden",
+      "exit": 5
+    },
+    "op_unknown": {
+      "class": "version",
+      "exit": 7
+    },
+    "read_only": {
+      "class": "space",
+      "exit": 8
+    },
+    "request_id_conflict": {
+      "class": "conflict",
+      "exit": 4
+    },
+    "service_unavailable": {
+      "class": "service",
+      "exit": 6
+    },
+    "space_unavailable": {
+      "class": "space",
+      "exit": 8
+    },
+    "too_large": {
+      "class": "usage",
+      "exit": 2
+    },
+    "unbound": {
+      "class": "unbound",
+      "exit": 9
+    },
+    "wrong_tool": {
+      "class": "usage",
+      "exit": 2
+    }
+  },
+  "exitCodes": {
+    "conflict": 4,
+    "forbidden": 5,
+    "internal": 1,
+    "interrupted": 130,
+    "not_found": 3,
+    "partial": 10,
+    "service": 6,
+    "space": 8,
+    "success": 0,
+    "unbound": 9,
+    "usage": 2,
+    "version": 7
+  },
+  "verbs": [
+    {
+      "actors": "agent",
+      "auto": [
+        "cwd",
+        "request_id"
+      ],
+      "entry": "task.add",
+      "flags": [
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "propose: ask the user to decide",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply",
+            "propose"
+          ]
+        },
+        {
+          "field": "tasks[].summary",
+          "flag": "--summary",
+          "help": "One line: the next step",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].area",
+          "flag": "--area",
+          "help": "Area name or slug",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].project",
+          "flag": "--project",
+          "help": "Project name or slug",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].status",
+          "flag": "--status",
+          "help": "A status of the space; default open",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].inbox",
+          "flag": "--inbox",
+          "help": "Put it in the Inbox for the user",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "field": "tasks[].priority",
+          "flag": "--priority",
+          "help": "1 highest, 4 none",
+          "repeat": false,
+          "required": false,
+          "short": "-p",
+          "type": "integer"
+        },
+        {
+          "field": "tasks[].effort",
+          "flag": "--effort",
+          "help": "Effort, such as S, M or L",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].due",
+          "flag": "--due",
+          "help": "ISO date or phrase: fri, +3d",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].waiting_on",
+          "flag": "--waiting-on",
+          "help": "Who or what it waits on",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].place",
+          "flag": "--place",
+          "help": "Its folder: \"cwd\", an absolute folder, or root and path",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].context",
+          "flag": "--context",
+          "help": "Markdown context",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].log",
+          "flag": "--log",
+          "help": "Log entry; also added to a matched task",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "tasks[].on_existing",
+          "flag": "--on-existing",
+          "help": "When a source key matches; default return",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "return",
+            "add_sources",
+            "create_new"
+          ]
+        }
+      ],
+      "inputOnly": [
+        "tasks[].sources"
+      ],
+      "item": "tasks",
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "tasks[].title",
+          "help": "Title",
+          "name": "title",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it.",
+      "verb": "add"
+    },
+    {
+      "actors": "user",
+      "auto": [
+        "request_id"
+      ],
+      "entry": "launch.open",
+      "flags": [
+        {
+          "field": "instance",
+          "flag": "--instance",
+          "help": "The instance to open in, from this machine's; leave out to Copy",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "text",
+          "flag": "--text",
+          "help": "Your words for the agent: they replace the brief's last line",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID",
+          "name": "task",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Open a task in an agent app on this machine, or Copy its pointer brief.",
+      "verb": "brief"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "base",
+        "cwd",
+        "request_id"
+      ],
+      "entry": "task.finish",
+      "flags": [
+        {
+          "field": "status",
+          "flag": "--status",
+          "help": "dropped: abandoned",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "done",
+            "dropped"
+          ]
+        },
+        {
+          "field": "outcome",
+          "flag": "--outcome",
+          "help": "What changed and the evidence; agents must give it",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "learnings",
+          "flag": "--learning",
+          "help": "Lessons reusable beyond this task",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "propose: ask the user to decide",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply",
+            "propose"
+          ]
+        }
+      ],
+      "inputOnly": [
+        "follow_ups"
+      ],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID; default: the bound task",
+          "name": "task",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Finish or abandon a task with an outcome and learnings, and create its follow-ups.",
+      "verb": "done"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "request_id"
+      ],
+      "entry": "entry.add",
+      "flags": [
+        {
+          "field": "kind",
+          "flag": "--kind",
+          "help": "question flags it for the user; note: a note for the user",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "progress",
+            "evidence",
+            "decision",
+            "blocker",
+            "question",
+            "note"
+          ]
+        }
+      ],
+      "inputOnly": [
+        "links"
+      ],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID; default: the bound task",
+          "name": "task",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "text",
+          "help": "The entry, in Markdown",
+          "name": "text",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Append to a task's log, or record a note for the user.",
+      "verb": "log"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "request_id"
+      ],
+      "entry": "entry.add",
+      "fixed": {
+        "kind": "note"
+      },
+      "flags": [
+        {
+          "field": "for_agents",
+          "flag": "--for-agents",
+          "help": "Address the note to agents",
+          "repeat": false,
+          "required": false,
+          "type": "boolean",
+          "userOnly": true
+        }
+      ],
+      "inputOnly": [
+        "links"
+      ],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID; default: the bound task",
+          "name": "task",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "text",
+          "help": "The entry, in Markdown",
+          "name": "text",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Append to a task's log, or record a note for the user.",
+      "verb": "note"
+    },
+    {
+      "actors": "agent",
+      "auto": [],
+      "entry": "receipt.get",
+      "flags": [],
+      "inputOnly": [],
+      "kind": "read",
+      "positionals": [
+        {
+          "field": "request",
+          "help": "The request_id of the write to look up",
+          "name": "request",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "The stored result of a write, by its request_id, in the caller's own writer scope.",
+      "verb": "receipt"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "task.reopen",
+      "flags": [
+        {
+          "field": "reason",
+          "flag": "--reason",
+          "help": "Why it is open again",
+          "repeat": false,
+          "required": true,
+          "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "propose: ask the user to decide",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply",
+            "propose"
+          ]
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID",
+          "name": "task",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Reopen a completed or archived task. Its earlier outcome and learnings stay.",
+      "verb": "reopen"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "base",
+        "cwd",
+        "request_id"
+      ],
+      "entry": "task.update",
+      "flags": [
+        {
+          "field": "clear",
+          "flag": "--clear",
+          "help": "Fields to clear",
+          "repeat": true,
+          "required": false,
+          "type": "string",
+          "values": [
+            "summary",
+            "priority",
+            "effort",
+            "due",
+            "waiting_on",
+            "place",
+            "focus"
+          ]
+        },
+        {
+          "field": "remove_sources",
+          "flag": "--remove-source",
+          "help": "Source keys or URLs to unlink",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "reason",
+          "flag": "--reason",
+          "help": "Why, shown in history and proposals",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "propose: ask the user to decide",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply",
+            "propose"
+          ]
+        }
+      ],
+      "inputOnly": [
+        "context",
+        "add_sources"
+      ],
+      "keyValue": {
+        "field": "set",
+        "keys": [
+          {
+            "field": "set.title",
+            "help": "Title",
+            "key": "title",
+            "type": "string"
+          },
+          {
+            "field": "set.summary",
+            "help": "One line: the next step",
+            "key": "summary",
+            "type": "string"
+          },
+          {
+            "field": "set.status",
+            "help": "A status of the space",
+            "key": "status",
+            "type": "string"
+          },
+          {
+            "field": "set.inbox",
+            "help": "In the Inbox",
+            "key": "inbox",
+            "type": "boolean"
+          },
+          {
+            "field": "set.priority",
+            "help": "1 highest, 4 none",
+            "key": "priority",
+            "type": "integer"
+          },
+          {
+            "field": "set.effort",
+            "help": "Effort",
+            "key": "effort",
+            "type": "string"
+          },
+          {
+            "field": "set.due",
+            "help": "ISO date or phrase: fri, +3d",
+            "key": "due",
+            "type": "string"
+          },
+          {
+            "field": "set.waiting_on",
+            "help": "Who or what it waits on",
+            "key": "waiting_on",
+            "type": "string"
+          },
+          {
+            "field": "set.area",
+            "help": "Area name or slug",
+            "key": "area",
+            "type": "string"
+          },
+          {
+            "field": "set.project",
+            "help": "Project name or slug",
+            "key": "project",
+            "type": "string"
+          },
+          {
+            "field": "set.place",
+            "help": "\"cwd\", an absolute folder, or root and path",
+            "key": "place",
+            "type": "string"
+          },
+          {
+            "field": "set.focus",
+            "help": "Star it for today, only when the user asks",
+            "key": "focus",
+            "type": "boolean"
+          }
+        ]
+      },
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID; default: the bound task",
+          "name": "task",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Change an active task's fields, summary, context, group or sources.",
+      "verb": "set"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "cwd"
+      ],
+      "entry": "task.get",
+      "flags": [
+        {
+          "field": "launch",
+          "flag": "--launch",
+          "help": "Launch reference from the Brief: bind, then load",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "bind",
+          "flag": "--bind",
+          "help": "With task: bind this session to it",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "field": "sections",
+          "flag": "--section",
+          "help": "Return these in full instead of the digest",
+          "repeat": true,
+          "required": false,
+          "type": "string",
+          "values": [
+            "instructions",
+            "context",
+            "notes",
+            "log",
+            "sources",
+            "outcome",
+            "history"
+          ]
+        },
+        {
+          "field": "log_limit",
+          "flag": "--log-limit",
+          "help": "Log entries per page; default 20",
+          "repeat": false,
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "field": "before",
+          "flag": "--before",
+          "help": "With sections: the before token of the last page",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "read",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID; default: the bound task",
+          "name": "task",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Load a task as a bounded digest, or selected sections in full. With launch, bind first.",
+      "verb": "show"
+    },
+    {
+      "actors": "agent",
+      "auto": [
+        "cwd"
+      ],
+      "entry": "space.status",
+      "flags": [
+        {
+          "field": "include",
+          "flag": "--include",
+          "help": "Extra sections, up to 8 rows each",
+          "repeat": true,
+          "required": false,
+          "type": "string",
+          "values": [
+            "today",
+            "week",
+            "review",
+            "waiting",
+            "inbox",
+            "changes"
+          ]
+        },
+        {
+          "field": "since",
+          "flag": "--since",
+          "help": "For changes: 24h, 7d or an ISO time; default 24h",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "guide",
+          "flag": "--guide",
+          "help": "Return this workflow guide instead",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "work",
+            "refresh",
+            "triage",
+            "organize"
+          ]
+        }
+      ],
+      "inputOnly": [],
+      "kind": "read",
+      "positionals": [],
+      "summary": "Orientation: date, autonomy, this session's binding, tasks for a folder and counts.",
+      "verb": "status"
+    }
+  ],
+  "version": 1,
+  "versionReasons": [
+    "restart_session",
+    "service_too_old"
+  ]
+}

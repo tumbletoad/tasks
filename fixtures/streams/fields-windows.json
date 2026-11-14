@@ -1,0 +1,2203 @@
+{
+  "claude-print": {
+    "assistant": {
+      "count": 21,
+      "fields": {
+        "api_error_status": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "error": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "is_api_error_message": {
+          "types": ["boolean"],
+          "treatment": ["kept"]
+        },
+        "message": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.container": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.content": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "message.content[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.content[].caller": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.content[].caller.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.content[].id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "message.content[].input": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.content[].input.max_results": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.content[].input.query": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].input.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].name": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.content[].signature": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].thinking": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.context_management": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.diagnostics": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "message.input_transformations": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "message.model": {
+          "types": ["string"],
+          "treatment": ["kept", "synthetic-name"]
+        },
+        "message.role": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.stop_details": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.stop_reason": {
+          "types": ["null", "string"],
+          "treatment": ["kept"]
+        },
+        "message.stop_sequence": {
+          "types": ["null", "string"],
+          "treatment": ["fixture-text", "kept"]
+        },
+        "message.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.usage": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.usage.cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.usage.cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.fallback_credit": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.usage.inference_geo": {
+          "types": ["null", "string"],
+          "treatment": ["fixture-value", "kept"]
+        },
+        "message.usage.input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.iterations": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.usage.output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.output_tokens_details": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "message.usage.server_tool_use": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.usage.server_tool_use.web_fetch_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.server_tool_use.web_search_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "message.usage.service_tier": {
+          "types": ["null", "string"],
+          "treatment": ["fixture-value", "kept"]
+        },
+        "message.usage.speed": {
+          "types": ["null", "string"],
+          "treatment": ["fixture-value", "kept"]
+        },
+        "parent_tool_use_id": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "request_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "thinking_display": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "thinking_duration_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "timestamp": {
+          "types": ["string"],
+          "treatment": ["series-time"]
+        },
+        "tool_use_meta": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "tool_use_meta[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "tool_use_meta[].display_name": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "tool_use_meta[].id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "tool_use_meta[].server_display_name": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_use_meta[].tool_name": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "wire_tool_inputs": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "wire_tool_inputs.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "wire_tool_inputs.<map-key>.max_results": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "wire_tool_inputs.<map-key>.query": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "wire_tool_inputs.<map-key>.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        }
+      }
+    },
+    "rate_limit_event": {
+      "count": 7,
+      "fields": {
+        "rate_limit_info": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "rate_limit_info.isUsingOverage": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "rate_limit_info.overageDisabledReason": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "rate_limit_info.overageEnabled": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "rate_limit_info.overageStatus": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "rate_limit_info.rateLimitType": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "rate_limit_info.resetsAt": {
+          "types": ["number"],
+          "treatment": ["series-time"]
+        },
+        "rate_limit_info.status": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "rate_limit_info.surpassedThreshold": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "rate_limit_info.unifiedWindows": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "rate_limit_info.unifiedWindows.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "rate_limit_info.unifiedWindows.<map-key>.resetsAt": {
+          "types": ["number"],
+          "treatment": ["series-time"]
+        },
+        "rate_limit_info.unifiedWindows.<map-key>.status": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "rate_limit_info.unifiedWindows.<map-key>.surpassedThreshold": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "rate_limit_info.unifiedWindows.<map-key>.utilization": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "rate_limit_info.utilization": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        }
+      }
+    },
+    "result/error_during_execution": {
+      "count": 2,
+      "fields": {
+        "credential_expires_at": {
+          "types": ["string"],
+          "treatment": ["series-time"]
+        },
+        "duration_api_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "duration_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "errors": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "errors[]": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "fast_mode_disabled_reason": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "fast_mode_state": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "is_error": {
+          "types": ["boolean"],
+          "treatment": ["kept"]
+        },
+        "modelUsage": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "modelUsage.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "modelUsage.<map-key>.cacheCreationEphemeral1hInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheCreationEphemeral5mInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheCreationInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheReadInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.canonicalModel": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "modelUsage.<map-key>.contextWindow": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.costBasis": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "modelUsage.<map-key>.costUSD": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.inputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.maxOutputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.outputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.provider": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "modelUsage.<map-key>.thinkingTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.webSearchRequests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "model_usage_since_last_result.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationEphemeral1hInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationEphemeral5mInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheReadInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.canonicalModel": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "model_usage_since_last_result.<map-key>.contextWindow": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.costBasis": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "model_usage_since_last_result.<map-key>.costUSD": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.inputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.maxOutputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.outputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.provider": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "model_usage_since_last_result.<map-key>.thinkingTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.webSearchRequests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "num_turns": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "permission_denials": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "queued_turn_count": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "result_index": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "safety_stops": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "stop_reason": {
+          "types": ["null", "string"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.by_type": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.completed": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.failed": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.killed.parent": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed.system": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed.user": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.max_depth": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.refused.budget": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused.concurrency_limit": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused.depth_limit": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.requested.background": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested.foreground": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested.unset": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.spawned": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.spawned_by_subagents": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.started_in_background": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subtype": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "terminal_reason": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "total_cost_usd": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.fallback_credit": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "usage.inference_geo": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "usage.input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[].cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[].cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage.output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.output_tokens_details": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.output_tokens_details.thinking_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.server_tool_use": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.server_tool_use.web_fetch_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.server_tool_use.web_search_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.service_tier": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "usage.speed": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        }
+      }
+    },
+    "result/error_max_turns": {
+      "count": 1,
+      "fields": {
+        "credential_expires_at": {
+          "types": ["string"],
+          "treatment": ["series-time"]
+        },
+        "duration_api_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "duration_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "errors": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "errors[]": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "fast_mode_disabled_reason": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "fast_mode_state": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "is_error": {
+          "types": ["boolean"],
+          "treatment": ["kept"]
+        },
+        "modelUsage": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "modelUsage.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "modelUsage.<map-key>.cacheCreationEphemeral1hInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheCreationEphemeral5mInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheCreationInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheReadInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.canonicalModel": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "modelUsage.<map-key>.contextWindow": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.costBasis": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "modelUsage.<map-key>.costUSD": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.inputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.maxOutputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.outputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.provider": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "modelUsage.<map-key>.thinkingTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.webSearchRequests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "model_usage_since_last_result.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationEphemeral1hInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationEphemeral5mInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheReadInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.canonicalModel": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "model_usage_since_last_result.<map-key>.contextWindow": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.costBasis": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "model_usage_since_last_result.<map-key>.costUSD": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.inputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.maxOutputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.outputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.provider": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "model_usage_since_last_result.<map-key>.thinkingTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.webSearchRequests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "num_turns": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "permission_denials": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "queued_turn_count": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "result_index": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "safety_stops": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "stop_reason": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.by_type": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.completed": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.failed": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.killed.parent": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed.system": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed.user": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.max_depth": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.refused.budget": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused.concurrency_limit": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused.depth_limit": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.requested.background": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested.foreground": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested.unset": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.spawned": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.spawned_by_subagents": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.started_in_background": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subtype": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "terminal_reason": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "total_cost_usd": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.fallback_credit": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "usage.inference_geo": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "usage.input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[].cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[].cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage.output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.output_tokens_details": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.output_tokens_details.thinking_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.server_tool_use": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.server_tool_use.web_fetch_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.server_tool_use.web_search_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.service_tier": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "usage.speed": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        }
+      }
+    },
+    "result/success": {
+      "count": 3,
+      "fields": {
+        "api_error_status": {
+          "types": ["null", "number"],
+          "treatment": ["kept"]
+        },
+        "credential_expires_at": {
+          "types": ["string"],
+          "treatment": ["series-time"]
+        },
+        "duration_api_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "duration_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "fast_mode_disabled_reason": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "fast_mode_state": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "first_content_frame_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "is_error": {
+          "types": ["boolean"],
+          "treatment": ["kept"]
+        },
+        "modelUsage": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "modelUsage.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "modelUsage.<map-key>.cacheCreationEphemeral1hInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheCreationEphemeral5mInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheCreationInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.cacheReadInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.canonicalModel": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "modelUsage.<map-key>.contextWindow": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.costBasis": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "modelUsage.<map-key>.costUSD": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.inputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.maxOutputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.outputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.provider": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "modelUsage.<map-key>.thinkingTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "modelUsage.<map-key>.webSearchRequests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "model_usage_since_last_result.<map-key>": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationEphemeral1hInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationEphemeral5mInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheCreationInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.cacheReadInputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.canonicalModel": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "model_usage_since_last_result.<map-key>.contextWindow": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.costBasis": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "model_usage_since_last_result.<map-key>.costUSD": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.inputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.maxOutputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.outputTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.provider": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "model_usage_since_last_result.<map-key>.thinkingTokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "model_usage_since_last_result.<map-key>.webSearchRequests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "num_turns": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "permission_denials": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "queued_turn_count": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "result": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "result_index": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "safety_stops": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "stop_reason": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.by_type": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.completed": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.failed": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.killed.parent": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed.system": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.killed.user": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.max_depth": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.refused.budget": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused.concurrency_limit": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.refused.depth_limit": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "subagent_stats.requested.background": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested.foreground": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.requested.unset": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.spawned": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.spawned_by_subagents": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subagent_stats.started_in_background": {
+          "types": ["number"],
+          "treatment": ["kept"]
+        },
+        "subtype": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "terminal_reason": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "time_to_request_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "total_cost_usd": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "ttft_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "ttft_stream_ms": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.fallback_credit": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "usage.inference_geo": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "usage.input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[].cache_creation": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.iterations[].cache_creation.ephemeral_1h_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_creation.ephemeral_5m_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_creation_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].cache_read_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.iterations[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage.output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.output_tokens_details": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.output_tokens_details.thinking_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.server_tool_use": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.server_tool_use.web_fetch_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.server_tool_use.web_search_requests": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.service_tier": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "usage.speed": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        }
+      }
+    },
+    "system/init": {
+      "count": 9,
+      "fields": {
+        "additional_directories": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "agents": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "agents[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "analytics_disabled": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "apiKeySource": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "capabilities": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "capabilities[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "claude_code_version": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "cwd": {
+          "types": ["string"],
+          "treatment": ["fixture-path"]
+        },
+        "fast_mode_disabled_reason": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "fast_mode_state": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "mcp_servers": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "mcp_servers[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "mcp_servers[].name": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "mcp_servers[].source": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "mcp_servers[].status": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "memory_paths": {
+          "types": ["object"],
+          "treatment": ["container", "synthetic-key"]
+        },
+        "memory_paths.<map-key>": {
+          "types": ["string"],
+          "treatment": ["fixture-path"]
+        },
+        "messaging_socket_path": {
+          "types": ["string"],
+          "treatment": ["fixture-path"]
+        },
+        "model": {
+          "types": ["string"],
+          "treatment": ["synthetic-name"]
+        },
+        "original_cwd": {
+          "types": ["string"],
+          "treatment": ["fixture-path"]
+        },
+        "output_style": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        },
+        "per_turn_effort_active": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "permissionMode": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "plugins": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "plugins[]": {
+          "types": ["object"],
+          "treatment": ["rebuilt-list"]
+        },
+        "plugins[].name": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "plugins[].path": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "plugins[].source": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "powershell_path": {
+          "types": ["string"],
+          "treatment": ["fixture-path"]
+        },
+        "product_feedback_disabled": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "skills": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "skills[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "slash_commands": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "slash_commands[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "subtype": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "terminal_slash_commands": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "terminal_slash_commands[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "tools": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "tools[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "ultrathink_available": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "ultrathink_typed_raises": {
+          "types": ["boolean"],
+          "treatment": ["fixture-value"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "view_mode": {
+          "types": ["string"],
+          "treatment": ["fixture-value"]
+        }
+      }
+    },
+    "system/thinking_tokens": {
+      "count": 4,
+      "fields": {
+        "estimated_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "estimated_tokens_delta": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "subtype": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        }
+      }
+    },
+    "user": {
+      "count": 12,
+      "fields": {
+        "message": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.content": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "message.content[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.content[].content": {
+          "types": ["array", "string"],
+          "treatment": ["container", "fixture-text"]
+        },
+        "message.content[].content[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "message.content[].content[].text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].content[].tool_name": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.content[].content[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.content[].is_error": {
+          "types": ["boolean"],
+          "treatment": ["kept"]
+        },
+        "message.content[].text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "message.content[].tool_use_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "message.content[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "message.role": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "parent_tool_use_id": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "session_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "timestamp": {
+          "types": ["string"],
+          "treatment": ["series-time"]
+        },
+        "tool_result_meta": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "tool_result_meta[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "tool_result_meta[].id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "tool_result_meta[].non_execution_kind": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_result_meta[].permission_decision": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "tool_result_meta[].permission_decision.decision": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_result_meta[].permission_decision.reason_type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_result_meta[].permission_decision.source": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_use_result": {
+          "types": ["object", "string"],
+          "treatment": ["container", "fixture-text"]
+        },
+        "tool_use_result._meta": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "tool_use_result._meta.io.modelcontextprotocol/serverInfo": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "tool_use_result._meta.io.modelcontextprotocol/serverInfo.name": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_use_result._meta.io.modelcontextprotocol/serverInfo.version": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_use_result.content": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "tool_use_result.content[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "tool_use_result.content[].text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "tool_use_result.content[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "tool_use_result.matches": {
+          "types": ["array"],
+          "treatment": ["rebuilt-list"]
+        },
+        "tool_use_result.matches[]": {
+          "types": ["string"],
+          "treatment": ["rebuilt-list"]
+        },
+        "tool_use_result.query": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "tool_use_result.total_deferred_tools": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "uuid": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        }
+      }
+    }
+  },
+  "codex-exec": {
+    "error": {
+      "count": 1,
+      "fields": {
+        "message": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.completed:agent_message": {
+      "count": 8,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.completed:error": {
+      "count": 1,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.message": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.completed:mcp_tool_call": {
+      "count": 2,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.error": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.result": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.result.content": {
+          "types": ["array"],
+          "treatment": ["container"]
+        },
+        "item.result.content[]": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.result.content[].text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.result.content[].type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.result.structured_content": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.server": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.status": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.tool": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "item.started:mcp_tool_call": {
+      "count": 6,
+      "fields": {
+        "item": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "item.arguments.text": {
+          "types": ["string"],
+          "treatment": ["fixture-text"]
+        },
+        "item.error": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "item.result": {
+          "types": ["null"],
+          "treatment": ["kept"]
+        },
+        "item.server": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.status": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.tool": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "item.type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "thread.started": {
+      "count": 8,
+      "fields": {
+        "thread_id": {
+          "types": ["string"],
+          "treatment": ["synthetic-id"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "turn.completed": {
+      "count": 2,
+      "fields": {
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        },
+        "usage": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "usage.cache_write_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.cached_input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.input_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        },
+        "usage.reasoning_output_tokens": {
+          "types": ["number"],
+          "treatment": ["fixture-number"]
+        }
+      }
+    },
+    "turn.failed": {
+      "count": 1,
+      "fields": {
+        "error": {
+          "types": ["object"],
+          "treatment": ["container"]
+        },
+        "error.message": {
+          "types": ["string"],
+          "treatment": ["fixture-error-text"]
+        },
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    },
+    "turn.started": {
+      "count": 8,
+      "fields": {
+        "type": {
+          "types": ["string"],
+          "treatment": ["kept"]
+        }
+      }
+    }
+  }
+}

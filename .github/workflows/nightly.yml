@@ -1,0 +1,42 @@
+name: nightly
+
+# A7 3.18.4's nightly job, on main. M1.07 brings its first part: the 30-minute crash run per OS
+# (pnpm crash, tests/crash/harness.ts). The long property and model runs, the scale bench,
+# relative performance and the fallback-driver suite join with the steps that build them.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  crash:
+    name: crash (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # 30 minutes of rounds, the round that is running when they end, and the set-up.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pnpm comes from packageManager in package.json, Node 26.13.1 from devEngines.runtime.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      # A violation fails the job and prints the seed, the round, the kill and the invariant,
+      # and the command that replays it.
+      - run: pnpm crash --minutes 30

@@ -1,0 +1,127 @@
+// The A1 operation kinds an entry may declare in `ops` (A1 3.6), who may emit each one and the
+// grant scopes an entry that emits it may require (A3 3.2.3, 3.4.12, A6 3.3, 3.6.3). The registry
+// check reads this table: an unknown kind fails, and an agent-allowed entry can never declare a
+// kind that R7 or A3 3.2.3 keeps for the user.
+import type { Scope } from "./define.ts";
+
+/**
+ * Who may emit an operation kind.
+ * - `agent`: agents and the user.
+ * - `run`: only a run-only entry, which works on a connection bound to a run or routine
+ *   (A3 3.2.3, 3.4.12).
+ * - `user`: the user only (A3 3.2.3).
+ * - `system`: the service itself, never through an entry (A1 3.6, A3 3.7.4).
+ */
+export type OpClass = "agent" | "run" | "user" | "system";
+
+export interface OpSpec {
+  readonly class: OpClass;
+  /** The scopes an entry that emits it may require (A6 3.6.3). Empty for `system`. */
+  readonly scopes: readonly Scope[];
+  /**
+   * A1 3.6 always requires `base`: the operation changes existing fields (A1 3.5). False when
+   * the precondition is conditional, such as a link version or a base, or a base only when a
+   * place exists. The handler checks those (A1 3.6).
+   */
+  readonly base: boolean;
+  /** R7: launching agents, runs and routines belong to the user (A3 3.10 item 1). */
+  readonly r7?: true;
+}
+
+const WRITE: readonly Scope[] = ["space:write"];
+
+const agent = (base: boolean): OpSpec => ({ class: "agent", scopes: WRITE, base });
+const user = (): OpSpec => ({ class: "user", scopes: WRITE, base: false });
+const r7 = (...scopes: Scope[]): OpSpec => ({ class: "user", scopes, base: false, r7: true });
+
+/** Group operations (A1 3.6 `area.*`, `project.*`): create needs no base, the rest do. */
+function group(kind: "area" | "project"): Record<string, OpSpec> {
+  return {
+    [`${kind}.create`]: agent(false),
+    [`${kind}.patch`]: agent(true),
+    [`${kind}.move`]: agent(true),
+    [`${kind}.archive`]: agent(true),
+    [`${kind}.delete`]: agent(true),
+    [`${kind}.restore`]: agent(true),
+  };
+}
+
+/**
+ * Every operation kind, by exact name. A key ending in `.*` is a family that A4 owns: every kind
+ * under it has the family's spec. A later step that adds a kind adds it here.
+ */
+export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
+  "task.create": agent(false),
+  "task.patch": agent(true),
+  "task.context_append": agent(false),
+  "task.move": agent(true),
+  "task.complete": agent(true),
+  "task.wrap_up": agent(true),
+  "task.reopen": agent(true),
+  "task.archive": agent(true),
+  "task.delete": agent(true),
+  "task.restore": agent(true),
+  "task.label": agent(false),
+  "note.add": agent(false),
+  "note.patch": agent(true),
+  "note.delete": agent(true),
+  "log.add": agent(false),
+  "log.delete": agent(true),
+  // A link version for a revival.
+  "source.add": agent(false),
+  "source.patch": agent(true),
+  // A link version or a base.
+  "source.unlink": agent(false),
+  // A base only when the owner already has a place on this machine.
+  "place.set": agent(false),
+  "place.clear": agent(false),
+  ...group("area"),
+  ...group("project"),
+  "label.patch": agent(true),
+  "label.delete": agent(true),
+  // Agents write only keys whose declaration lists them. Policy keys are human-only and need
+  // admin (A6 3.6.3), so an entry for them may require admin. The handler refuses a policy key
+  // without both, with `forbidden` and rule `policy` (A1 3.16, A3 3.4.11, 3.8.3).
+  "pref.set": { class: "agent", scopes: ["space:write", "admin"], base: true },
+  // A4's run record, from a run or routine binding only (A3 3.2.3, 3.4.12).
+  "run.report": { class: "run", scopes: WRITE, base: false },
+  // No agent tool attaches files (A3 3.4).
+  "attachment.add": user(),
+  "proposal.accept": user(),
+  "proposal.reject": user(),
+  "space.patch": user(),
+  "space.hold": user(),
+  "space.release": user(),
+  "exchange.create": user(),
+  "exchange.apply": user(),
+  "exchange.abandon": user(),
+  undo: user(),
+  redo: user(),
+  revert: user(),
+  revert_session: user(),
+  redact: user(),
+  "session.unbind": user(),
+  "session.rebind": user(),
+  "session.end": user(),
+  // R7 (A3 3.2.3, 3.10 item 1, A6 3.6.3).
+  "launch.*": r7("launch:open", "launch:run"),
+  "run.start": r7("launch:run"),
+  "run.stop": r7("launch:run"),
+  // Running a routine needs launch:run. Every other routine kind edits one, which is policy and
+  // needs admin (A3 3.8.1, A4 3.12, A6 3.6.3).
+  "routine.run": r7("launch:run"),
+  "routine.*": r7("admin"),
+  "machine.register": { class: "system", scopes: [], base: false },
+  // An agent actor joins a space on its first act (A3 3.7.4, M1.10): the writer's own commit.
+  "actor.register": { class: "system", scopes: [], base: false },
+};
+
+/** The spec of an operation kind, by exact name, then by its family. */
+export function opSpec(kind: string): OpSpec | undefined {
+  if (kind.includes("*")) return undefined;
+  if (Object.hasOwn(OPERATIONS, kind)) return OPERATIONS[kind];
+  const dot = kind.indexOf(".");
+  if (dot <= 0) return undefined;
+  const family = `${kind.slice(0, dot)}.*`;
+  return Object.hasOwn(OPERATIONS, family) ? OPERATIONS[family] : undefined;
+}

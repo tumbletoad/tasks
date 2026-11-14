@@ -1,0 +1,10 @@
+{
+  "name": "Tasks M0 spike",
+  "short_name": "Tasks spike",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#171614",
+  "theme_color": "#171614",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

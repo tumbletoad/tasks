@@ -1,0 +1,15 @@
+/* A view's list: its empty line and the polite region that announces agents' changes. */
+
+.line {
+  margin: 24px 0;
+  color: var(--k-muted);
+}
+
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -1,0 +1,442 @@
+// Taking a verified backup of a space (A1 3.18, the minimal backup set of MIL-02).
+//
+// 1. A separate READ-ONLY connection copies the database with the driver's backup API in ONE step
+//    (pagesPerStep = SINGLE_STEP), so the copy is one consistent snapshot taken inside one read
+//    transaction, and WAL lets the writer go on meanwhile. node:sqlite restarts a multi-step backup
+//    whenever another connection writes, so a single step is required (A1 3.18).
+// 2. The copy opens read-only and passes PRAGMA integrity_check. The sidecar's facts (space, epoch,
+//    incarnation, last_seq, user_version, rows per table) are read from the copy itself, so they
+//    describe exactly the snapshot, whatever the writer did meanwhile.
+// 3. Compression with Node's zlib into a temporary file, flushed to disk, then read back through
+//    the bounded decompression a restore uses and compared, so the stored file is known to restore.
+// 4. The `.db.gz` is renamed to its name and the folder synced, then the sidecar is written the same
+//    way (temporary file, fsync, rename, folder fsync). The sidecar is the commit point.
+//
+// The name is RESERVED before anything is published under it: the `.db.gz` is created empty and
+// exclusively as soon as the name is known. Two backups that want one name (the same kind, time,
+// epoch and seq, for example two spaces whose backup.dir is one folder) cannot both have it: the
+// second fails with BACKUP_FAILED, and neither replaces the other's files. Only the backup that
+// holds the reservation renames over it, writes the sidecar, or removes them after a failure.
+//
+// Crash windows (each leaves the space untouched, because a backup only reads it):
+// - Before the reservation: temporary files `.backup.tmp-*` only. A listing reports them as
+//   leftovers, and removeBackupLeftovers deletes them when no backup runs (A1 3.7: at start).
+// - After the reservation or the `.db.gz` rename, before the sidecar's: a `.db.gz` without its
+//   sidecar. It is never listed as a backup, only as a leftover.
+// - After the sidecar's rename: a complete backup. Its folder fsync makes it durable.
+// A failure (not a crash) removes everything this backup wrote, the `.db.gz` included, while it is
+// still this backup's own file. A running backup keeps its files younger than cleanup's age rule
+// (list.ts), and succeeds only if its data is still the file it renamed once the sidecar landed.
+//
+// One writer per space (A1 3.9): the backup reads the live space through a read-only
+// connection only, and writes only new files of its own, by names no space has: the copy, which
+// the driver's backup creates exclusively (it refuses an existing destination), and the files
+// derived from it. The migration runner calls this from the space's writer, under its claim.
+//
+// Named seams (`BackupSeams.at`) mark each point for M1.07's crash harness.
+import { existsSync, lstatSync, statSync, utimesSync, type BigIntStats } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { SINGLE_STEP, type Connection } from "../driver.ts";
+import { misuse, StorageError } from "../errors.ts";
+import {
+  createEmptyFile,
+  errnoCode,
+  FILE_MODE,
+  FOLDER_MODE,
+  fsCall,
+  fsError,
+  fsyncFolder,
+  makeDirExact,
+  removeQuietly,
+  temporaryTag,
+  writeFileAtomic,
+  NODE_IO,
+  type FileIo,
+} from "../files.ts";
+import { isAppVersion } from "../manifest.ts";
+import { inRange } from "../rows.ts";
+import type { SchemaStep } from "../schema.ts";
+import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
+import { checkSpacePath } from "../space-path.ts";
+import type { CheckedDriver } from "../startup-check.ts";
+import {
+  BUNDLE_POLICY,
+  checkDatabaseSize,
+  compressFile,
+  inflateFile,
+  type BundlePolicy,
+} from "./policy.ts";
+import {
+  BACKUP_KINDS,
+  BACKUP_TEMP_PREFIX,
+  BACKUPS_FOLDER,
+  backupName,
+  DATA_SUFFIX,
+  SIDECAR_MARKER,
+  SIDECAR_SUFFIX,
+  SIDECAR_VERSION,
+  sidecarText,
+  type BackupKind,
+  type BackupSidecar,
+} from "./sidecar.ts";
+import { checkSnapshot } from "./snapshot.ts";
+
+export { BACKUP_TEMP_PREFIX };
+
+export interface SpaceBackupOptions {
+  kind: BackupKind;
+  /** The backups folder. Default: `<space>/backups` (machine-local `backup.dir` moves it). */
+  backupDir?: string;
+  appVersion?: string;
+  /** Milliseconds since 1970. Default: Date.now. */
+  now?: () => number;
+  busyTimeoutMs?: number;
+}
+
+/** A complete backup: its two files and what its sidecar says. */
+export interface BackupRecord {
+  /** The base name, such as `daily-20261113T031500.123Z-e1-s42`. */
+  name: string;
+  /** The `.db.gz` file. */
+  file: string;
+  sidecarFile: string;
+  sidecar: BackupSidecar;
+}
+
+/** The points M1.07's crash harness kills at, in order. Tests also throw there. */
+export type BackupPoint =
+  /** The snapshot is in its temporary file. */
+  | "copied"
+  /** The snapshot passed integrity_check and its facts were read. */
+  | "checked"
+  /** The `.db.gz` temporary file is written, flushed and read back. */
+  | "compressed"
+  /** The `.db.gz` has its name. No sidecar yet. */
+  | "data-renamed"
+  /** The sidecar has its name: the backup exists. */
+  | "sidecar-renamed";
+
+/** What tests inject. Not part of the package's interface. */
+export interface BackupSeams {
+  at?: (point: BackupPoint) => void;
+  /** The registered schema steps, for opening the space. Default: SCHEMA_STEPS. */
+  steps?: readonly SchemaStep[];
+  policy?: BundlePolicy;
+  io?: FileIo;
+}
+
+/** The backups folder of a space folder, unless machine-local settings move it. */
+export const backupsFolder = (spaceFolder: string): string =>
+  join(checkSpacePath(spaceFolder), BACKUPS_FOLDER);
+
+/**
+ * Takes a verified backup of the space at `folder` through its own read-only connection. Opening
+ * the space refuses as a reader's open does. Any later failure is BACKUP_FAILED (the cause's code
+ * in the message), or BUNDLE_LIMIT_EXCEEDED for a database larger than the policy allows.
+ */
+export async function backupSpace(
+  checked: CheckedDriver,
+  folder: string,
+  options: SpaceBackupOptions,
+): Promise<BackupRecord> {
+  return backupSpaceWith(checked, folder, options, {});
+}
+
+/** backupSpace with test seams. */
+export async function backupSpaceWith(
+  checked: CheckedDriver,
+  folder: string,
+  options: SpaceBackupOptions,
+  seams: BackupSeams,
+): Promise<BackupRecord> {
+  const dir = checkSpacePath(folder);
+  const opened = openSpaceWith(
+    checked,
+    dir,
+    {
+      role: "reader",
+      ...(options.appVersion === undefined ? {} : { appVersion: options.appVersion }),
+      ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
+    },
+    seams.steps === undefined ? {} : { steps: seams.steps },
+  );
+  try {
+    return await writeBackup(
+      checked,
+      opened.conn,
+      options.backupDir ?? join(dir, BACKUPS_FOLDER),
+      options,
+      seams,
+    );
+  } finally {
+    opened.conn.close();
+  }
+}
+
+/** A failure on the way, as the backup's error. A limit refusal keeps its own code. */
+function backupFailed(error: unknown): StorageError {
+  if (error instanceof StorageError && error.code === "BUNDLE_LIMIT_EXCEEDED") return error;
+  if (error instanceof StorageError && error.code === "BACKUP_FAILED") return error;
+  const cause = error instanceof StorageError ? error.code : "an unexpected error";
+  return new StorageError("BACKUP_FAILED", `The backup failed (${cause})`);
+}
+
+/**
+ * The backup pipeline from an open connection to the space database: copy, check, compress, read
+ * back, rename, sidecar. `source` should be a read-only connection that holds no transaction.
+ */
+export async function writeBackup(
+  checked: CheckedDriver,
+  source: Connection,
+  backupDir: string,
+  options: SpaceBackupOptions,
+  seams: BackupSeams = {},
+): Promise<BackupRecord> {
+  const policy = seams.policy ?? BUNDLE_POLICY;
+  const io = seams.io ?? NODE_IO;
+  const appVersion = options.appVersion ?? SOURCE_APP_VERSION;
+  if (!isAppVersion(appVersion)) throw misuse("An app version is major.minor.patch");
+  if (!BACKUP_KINDS.includes(options.kind)) throw misuse("Unknown backup kind");
+  const createdAt = (options.now ?? Date.now)();
+  if (!inRange(createdAt, "instant")) throw misuse("The clock gave an instant outside its range");
+  const tag = temporaryTag();
+  const copy = join(backupDir, `${BACKUP_TEMP_PREFIX}${tag}.db`);
+  const packed = join(backupDir, `${BACKUP_TEMP_PREFIX}${tag}${DATA_SUFFIX}`);
+  // Files this backup made under their final names, with their identity on disk (undefined where
+  // the file system gives none), sidecar first: removed again if it fails, while still theirs.
+  const named: { path: string; id: BigIntStats | undefined }[] = [];
+  // Every file this backup owns before its sidecar lands looks like a leftover to a cleanup in
+  // another process, which removes only what has been untouched for LEFTOVER_MIN_AGE_MS (list.ts).
+  // So the backup keeps them fresh: at each step, and on a timer while it streams.
+  const own = [copy, packed];
+  const refresh = (): void => {
+    const now = new Date();
+    for (const path of own) {
+      try {
+        utimesSync(path, now, now);
+      } catch {
+        // Not there (yet, or any more): nothing to keep fresh.
+      }
+    }
+    // A named file's recorded state follows its new time while it is still the same file.
+    for (const owned of named) {
+      if (owned.id !== undefined && sameIdentity(owned.path, owned.id)) {
+        owned.id = identity(owned.path);
+      }
+    }
+  };
+  const timer = setInterval(refresh, FRESH_INTERVAL_MS);
+  timer.unref();
+  try {
+    makeFolder(backupDir, io);
+    // The driver's backup() does not check its connection (A1 3.19): a closed or invalidated
+    // connection fails here instead.
+    source.pragma("user_version");
+    const pages = Number(source.pragma("page_count"));
+    const pageSize = Number(source.pragma("page_size"));
+    checkDatabaseSize(pages * pageSize, policy);
+
+    // The driver writes only a new file (A1 3.18): it creates the copy exclusively and
+    // owner-only under this backup's random temporary name, so the copy is owner-only from its
+    // first byte and no other file, a live space's least of all, can be written by mistake.
+    await checked.driver.backup(source, copy, { pagesPerStep: SINGLE_STEP });
+    refresh();
+    seams.at?.("copied");
+
+    checkDatabaseSize(
+      fsCall(() => statSync(copy).size),
+      policy,
+    );
+    const facts = checkSnapshot(checked, copy, options.busyTimeoutMs);
+    refresh();
+    seams.at?.("checked");
+
+    const name = backupName({
+      kind: options.kind,
+      createdAt,
+      epoch: facts.space.authority.epoch,
+      seq: facts.space.lastSeq,
+    });
+    const file = join(backupDir, `${name}${DATA_SUFFIX}`);
+    const sidecarFile = join(backupDir, `${name}${SIDECAR_SUFFIX}`);
+    reserve(file);
+    named.push({ path: file, id: identity(file) });
+    own.push(file);
+    // A sidecar left without its data (a removal cut short) would be taken for this backup's.
+    if (fsCall(() => existsSync(sidecarFile))) {
+      throw new StorageError("BACKUP_FAILED", "A backup with this name already exists");
+    }
+
+    const digests = await compressFile(copy, packed);
+    // Read the stored file back as a restore would, so a write that went wrong is caught now.
+    const again = await inflateFile(packed, undefined, {
+      maxBytes: policy.maxDatabaseBytes,
+      expectedBytes: digests.size,
+    });
+    if (
+      again.size !== digests.size ||
+      again.sha256 !== digests.sha256 ||
+      again.compressedSha256 !== digests.compressedSha256
+    ) {
+      throw new StorageError("BACKUP_FAILED", "The compressed backup does not read back");
+    }
+    refresh();
+    seams.at?.("compressed");
+
+    const sidecar: BackupSidecar = {
+      [SIDECAR_MARKER]: SIDECAR_VERSION,
+      kind: options.kind,
+      created_at: createdAt,
+      space_id: facts.space.spaceId,
+      epoch: facts.space.authority.epoch,
+      incarnation: facts.space.authority.incarnation,
+      seq: facts.space.lastSeq,
+      user_version: facts.userVersion,
+      size: digests.size,
+      sha256: digests.sha256,
+      compressed_size: digests.compressedSize,
+      compressed_sha256: digests.compressedSha256,
+      counts: facts.counts,
+      written_by: appVersion,
+    };
+    const text = sidecarText(sidecar);
+    if (Buffer.byteLength(text, "utf8") > policy.maxOtherFileBytes) {
+      throw new StorageError("BUNDLE_LIMIT_EXCEEDED", "The sidecar passes the bundle limit");
+    }
+
+    // Over this backup's own reservation, fresh, so the data is young when it takes its name.
+    refresh();
+    const data = fsCall(() => statSync(packed, { bigint: true }));
+    fsCall(() => {
+      io.renameSync(packed, file);
+    });
+    // The data now holds the name, with the packed file's identity.
+    named.splice(0, named.length, { path: file, id: data.ino === 0n ? undefined : data });
+    fsyncFolder(backupDir, io);
+    seams.at?.("data-renamed");
+
+    writeFileAtomic(backupDir, `${name}${SIDECAR_SUFFIX}`, text, io);
+    named.unshift({ path: sidecarFile, id: identity(sidecarFile) });
+    seams.at?.("sidecar-renamed");
+    // The backup exists only if its data is still the file it renamed: a cleanup that judged it a
+    // leftover before the sidecar landed (a backup stopped for over an hour) would leave a sidecar
+    // without data, and a migration would commit behind a backup that is not there.
+    if (!sameFile(file, data, digests.compressedSize)) {
+      throw new StorageError("BACKUP_FAILED", "The backup's data went away before it was complete");
+    }
+    named.length = 0;
+    return { name, file, sidecarFile, sidecar };
+  } catch (error) {
+    // Remove what this backup wrote, the sidecar first: without it the data file is no backup.
+    // Only a file that is still the one this backup wrote goes: another file that took one of its
+    // names since (a sync, another backup) stays as it is.
+    for (const owned of named) {
+      if (owned.id === undefined || isStill(owned.path, owned.id)) removeQuietly(owned.path, io);
+    }
+    throw backupFailed(error);
+  } finally {
+    clearInterval(timer);
+    for (const path of [copy, `${copy}-wal`, `${copy}-shm`, `${copy}-journal`, packed]) {
+      removeQuietly(path, io);
+    }
+  }
+}
+
+/**
+ * How often a running backup refreshes the times of its files: well inside the hour after which
+ * cleanup takes an untouched file for a leftover (list.ts LEFTOVER_MIN_AGE_MS).
+ */
+export const FRESH_INTERVAL_MS = 5 * 60_000;
+
+/** Whether `path` is still the regular file `before` described (same identity where known), of `size`. */
+function sameFile(path: string, before: BigIntStats, size: number): boolean {
+  let now: BigIntStats | undefined;
+  try {
+    now = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+  } catch {
+    return false;
+  }
+  if (now?.isFile() !== true || now.size !== BigInt(size)) return false;
+  // Where the file system gives file numbers, the renamed file keeps its own, and its time (a
+  // number alone can be a new file's: Linux reuses a removed file's number at once).
+  return (
+    before.ino === 0n ||
+    (now.ino === before.ino && now.dev === before.dev && now.mtimeNs === before.mtimeNs)
+  );
+}
+
+/** Whether `path` is a regular file with `before`'s identity on its volume. */
+function sameIdentity(path: string, before: BigIntStats): boolean {
+  try {
+    const now = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+    return now?.isFile() === true && now.ino === before.ino && now.dev === before.dev;
+  } catch {
+    return false;
+  }
+}
+
+/** The identity of the regular file at `path`, or undefined where the file system has none. */
+function identity(path: string): BigIntStats | undefined {
+  try {
+    const stats = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+    return stats?.isFile() === true && stats.ino !== 0n ? stats : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether `path` is still the regular file `before` described: the same identity on its volume,
+ * size and modification time. The file number alone is not enough: Linux file systems give a
+ * removed file's number to the next new file at once. A rename keeps the modification time.
+ */
+function isStill(path: string, before: BigIntStats): boolean {
+  try {
+    const now = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+    return (
+      now?.isFile() === true &&
+      now.ino === before.ino &&
+      now.dev === before.dev &&
+      now.size === before.size &&
+      now.mtimeNs === before.mtimeNs
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Makes the backups folder and every missing folder above it, owner-only, and syncs each new
+ * folder's entry into its parent: on POSIX a new folder is durable only once its parent is synced,
+ * and a migration must not commit while its barrier backup's folder could still vanish. The
+ * backups folder's own entries are synced after each file lands in it.
+ */
+function makeFolder(dir: string, io: FileIo): void {
+  // The folders missing now, from the backups folder up. (mkdirSync's own answer, the first folder
+  // it made, comes back as `\\?\C:\...` on Windows, so it is not compared with paths here.)
+  const missing: string[] = [];
+  for (let current = resolve(dir); !fsCall(() => existsSync(current)); current = dirname(current)) {
+    missing.push(current);
+    if (dirname(current) === current) break;
+  }
+  fsCall(() => {
+    makeDirExact(dir, FOLDER_MODE, { recursive: true });
+  });
+  // Each new folder's entry is in its parent, deepest first.
+  for (const folder of missing) fsyncFolder(dirname(folder), io);
+}
+
+/**
+ * Takes a backup's name: its `.db.gz` is created empty and exclusively, owner-only. A file already
+ * there, another backup's or a leftover, is BACKUP_FAILED and stays untouched.
+ */
+function reserve(file: string): void {
+  try {
+    createEmptyFile(file, FILE_MODE);
+  } catch (error) {
+    if (errnoCode(error) === "EEXIST") {
+      throw new StorageError("BACKUP_FAILED", "A backup with this name already exists");
+    }
+    throw fsError(error);
+  }
+}

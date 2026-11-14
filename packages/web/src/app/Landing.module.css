@@ -1,0 +1,37 @@
+.page {
+  max-width: 440px;
+  padding: 0 var(--k-gutter);
+}
+
+.line {
+  margin: 24px var(--k-gutter);
+  color: var(--k-muted);
+}
+
+.page .line {
+  margin-inline: 0;
+}
+
+.spaces {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.space {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--k-text);
+  text-decoration: none;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.space:hover {
+  background: var(--k-hover);
+}

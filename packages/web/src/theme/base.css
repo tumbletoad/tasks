@@ -1,0 +1,118 @@
+/*
+ * The page's global sheet (A5 3.20, 3.22): type, motion and focus, and nothing that is a colour.
+ * Colours are the theme's custom properties (`--k-<token>`), which the build writes from
+ * sumi.json and washi.json (tokens.ts). Components style themselves in CSS Modules and use tokens
+ * only: the styles test refuses a raw colour outside the theme files.
+ */
+
+:root {
+  /* Bundled faces first (A5 3.20, U16), then the fallbacks A5 names. */
+  --k-font-ui: "Inter Variable", "Segoe UI", system-ui, sans-serif;
+  --k-font-mono: "Fira Code Variable", ui-monospace, "Cascadia Code", monospace;
+  --k-ease: cubic-bezier(0.2, 0, 0, 1);
+  --k-fast: 120ms;
+  --k-gutter: 48px;
+  --k-sidebar: 216px;
+  --k-top: 64px;
+}
+
+@media (max-width: 1359px) {
+  :root {
+    --k-gutter: 32px;
+  }
+}
+
+@media (max-width: 599px) {
+  :root {
+    --k-gutter: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --k-fast: 0ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--k-bg);
+}
+
+body {
+  margin: 0;
+  background: var(--k-bg);
+  color: var(--k-text);
+  /* t-body: 14 / 21, in rem so the browser's text size applies. */
+  font: 400 0.875rem / 1.5 var(--k-font-ui);
+  /* Ligatures off in the UI, so paths and code show their real characters (A5 3.20). */
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--k-selection);
+  color: var(--k-text);
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* An area's colour slot (A5 3.19): areas store a slot, never a colour, so a theme switch keeps it. */
+.slot-1 {
+  --k-slot: var(--k-slot-1);
+}
+.slot-2 {
+  --k-slot: var(--k-slot-2);
+}
+.slot-3 {
+  --k-slot: var(--k-slot-3);
+}
+.slot-4 {
+  --k-slot: var(--k-slot-4);
+}
+.slot-5 {
+  --k-slot: var(--k-slot-5);
+}
+.slot-6 {
+  --k-slot: var(--k-slot-6);
+}
+.slot-7 {
+  --k-slot: var(--k-slot-7);
+}
+.slot-8 {
+  --k-slot: var(--k-slot-8);
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight;
+  }
+}

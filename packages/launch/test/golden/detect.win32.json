@@ -1,0 +1,105 @@
+{
+  "platform": "win32",
+  "commands": [
+    {
+      "target": "claude-cli",
+      "source": "path",
+      "exec": [
+        "C:\\Users\\mira\\.local\\bin\\claude.exe"
+      ],
+      "version": "2.1.322",
+      "tested": true
+    },
+    {
+      "target": "codex-cli",
+      "source": "npm",
+      "exec": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js"
+      ],
+      "version": "0.201.0",
+      "tested": false
+    },
+    {
+      "target": "t3",
+      "source": "app-folder",
+      "exec": [],
+      "unusable": "cmd_shim"
+    }
+  ],
+  "homes": [
+    {
+      "target": "claude-cli",
+      "path": "C:\\Users\\mira\\.claude",
+      "suffix": "",
+      "source": "home"
+    },
+    {
+      "target": "codex-cli",
+      "path": "C:\\Users\\mira\\.Codex",
+      "suffix": "",
+      "source": "home"
+    },
+    {
+      "target": "codex-cli",
+      "path": "C:\\Users\\mira\\.codex-personal",
+      "suffix": "personal",
+      "source": "home"
+    }
+  ],
+  "wrappers": [],
+  "t3Folder": true,
+  "proposals": [
+    {
+      "id": "claude",
+      "target": "claude-cli",
+      "label": "Claude Code",
+      "account": "default",
+      "source": "home",
+      "exec": "C:\\Users\\mira\\.local\\bin\\claude.exe",
+      "argsPrefix": [],
+      "configHome": "C:\\Users\\mira\\.claude",
+      "needs": []
+    },
+    {
+      "id": "codex",
+      "target": "codex-cli",
+      "label": "Codex",
+      "account": "default",
+      "source": "home",
+      "exec": "C:\\Program Files\\nodejs\\node.exe",
+      "argsPrefix": [
+        "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js"
+      ],
+      "configHome": "C:\\Users\\mira\\.Codex",
+      "needs": []
+    },
+    {
+      "id": "codex-personal",
+      "target": "codex-cli",
+      "label": "Codex · personal",
+      "account": "personal",
+      "source": "home",
+      "exec": "C:\\Program Files\\nodejs\\node.exe",
+      "argsPrefix": [
+        "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js"
+      ],
+      "configHome": "C:\\Users\\mira\\.codex-personal",
+      "env": {
+        "CODEX_HOME": "C:\\Users\\mira\\.codex-personal"
+      },
+      "needs": []
+    },
+    {
+      "id": "t3",
+      "target": "t3",
+      "label": "T3 Code",
+      "account": "default",
+      "source": "app",
+      "needs": [
+        "t3_provider_instance"
+      ]
+    }
+  ],
+  "configured": []
+}

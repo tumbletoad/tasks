@@ -1,0 +1,143 @@
+{
+  "config": {
+    "service": {
+      "defaultSpace": "sp_3z8sm956jp8dajmtsar5kx026c"
+    },
+    "http": {
+      "port": 7713
+    },
+    "ui": {
+      "openMode": "tab"
+    },
+    "updates": {
+      "channel": "stable",
+      "check": true,
+      "auto": false
+    },
+    "log": {
+      "level": "debug"
+    },
+    "spaces": [
+      {
+        "id": "sp_3z8sm956jp8dajmtsar5kx026c",
+        "path": "/home/mira/Tasks/work",
+        "enabled": true
+      },
+      {
+        "id": "sp_43f0gjcvzgaa1gh5my6qxwcj7m",
+        "path": "/home/mira/Tasks/life",
+        "enabled": false
+      }
+    ],
+    "roots": [
+      {
+        "id": "work",
+        "label": "Work",
+        "path": "/home/mira/work",
+        "runs": true
+      },
+      {
+        "id": "oss",
+        "label": "oss",
+        "path": "/home/mira/oss",
+        "runs": false
+      }
+    ],
+    "terminal": {
+      "app": "ghostty",
+      "path": null,
+      "window": "new",
+      "fallbacks": [
+        "gnome-terminal",
+        "x-terminal-emulator"
+      ],
+      "afterExit": "close-on-success",
+      "custom": null
+    },
+    "instances": [
+      {
+        "id": "codex-work",
+        "target": "codex-cli",
+        "label": "Codex · work",
+        "account": "work",
+        "spaces": [
+          "work"
+        ],
+        "exec": "/home/mira/.local/bin/codex-work",
+        "argsPrefix": [],
+        "configHome": "/home/mira/.codex",
+        "env": {},
+        "openPermission": "inherit",
+        "runPermission": "full-access",
+        "extraArgs": [],
+        "prompt": "sent",
+        "viaLoginShell": false,
+        "remoteAllowed": false,
+        "enabled": true
+      },
+      {
+        "id": "codex-personal",
+        "target": "codex-cli",
+        "label": "Codex · personal",
+        "account": "personal",
+        "spaces": [],
+        "exec": "/home/mira/.local/bin/codex-personal",
+        "argsPrefix": [],
+        "configHome": "/home/mira/.codex-personal",
+        "env": {},
+        "openPermission": "inherit",
+        "runPermission": "full-access",
+        "extraArgs": [],
+        "prompt": "prefill",
+        "viaLoginShell": false,
+        "remoteAllowed": false,
+        "enabled": false
+      },
+      {
+        "id": "t3-codex-work",
+        "target": "t3",
+        "label": "T3 · Codex",
+        "account": "work",
+        "spaces": [],
+        "exec": null,
+        "argsPrefix": [],
+        "configHome": null,
+        "env": {},
+        "openPermission": "full-access",
+        "runPermission": "inherit",
+        "extraArgs": [],
+        "prompt": "sent",
+        "viaLoginShell": false,
+        "remoteAllowed": true,
+        "enabled": true,
+        "t3": {
+          "environment": "local",
+          "providerInstance": "codex",
+          "model": ""
+        }
+      },
+      {
+        "id": "codex-app",
+        "target": "codex-app",
+        "label": "Codex app",
+        "account": "work",
+        "spaces": [],
+        "exec": null,
+        "argsPrefix": [],
+        "configHome": "/home/mira/.codex",
+        "env": {},
+        "openPermission": "inherit",
+        "runPermission": "inherit",
+        "extraArgs": [],
+        "prompt": "sent",
+        "viaLoginShell": false,
+        "remoteAllowed": false,
+        "enabled": true
+      }
+    ],
+    "approvals": {
+      "sha256-bbb50b140ef4052560a197c58ac0d48a02a61125e068cb6d6eed256d6ee340d9": "allow"
+    }
+  },
+  "problems": []
+}

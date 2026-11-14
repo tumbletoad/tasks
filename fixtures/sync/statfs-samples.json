@@ -1,0 +1,228 @@
+{
+  "about": "File system samples for the synced-folder and network check (A1 3.2, M3.09). 'captured' samples were read on a real machine with fs.statfs and the mount table (Node 26.13.1), keeping only the file system's type, never a source or a person's path. 'constructed' samples carry the values of the Linux kernel's include/uapi/linux/magic.h and the file systems' own sources, or macOS mount(8)'s output format, for file systems no machine here mounts. 'expect' is what the check reports: 'local', or the network file system's word.",
+  "linux": [
+    {
+      "source": "captured: WSL2 on the Windows lab machine, kernel 6.18 (/)",
+      "fstype": "ext4",
+      "statfs_type": "0xef53",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/mnt/wsl)",
+      "fstype": "tmpfs",
+      "statfs_type": "0x1021994",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/usr/lib/modules)",
+      "fstype": "overlay",
+      "statfs_type": "0x794c7630",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/mnt/c and /usr/lib/wsl/drivers, Windows folders over 9P)",
+      "fstype": "9p",
+      "statfs_type": "0x1021997",
+      "expect": "9p"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/init)",
+      "fstype": "rootfs",
+      "statfs_type": "0x1021994",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/dev)",
+      "fstype": "devtmpfs",
+      "statfs_type": "0x1021994",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/sys)",
+      "fstype": "sysfs",
+      "statfs_type": "0x62656572",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/proc)",
+      "fstype": "proc",
+      "statfs_type": "0x9fa0",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/dev/pts)",
+      "fstype": "devpts",
+      "statfs_type": "0x1cd1",
+      "expect": "local"
+    },
+    {
+      "source": "captured: WSL2 on the Windows lab machine (/sys/fs/cgroup)",
+      "fstype": "cgroup2",
+      "statfs_type": "0x63677270",
+      "expect": "local"
+    },
+    {
+      "source": "constructed: NFS_SUPER_MAGIC",
+      "fstype": "nfs4",
+      "statfs_type": "0x6969",
+      "expect": "nfs"
+    },
+    {
+      "source": "constructed: NFS_SUPER_MAGIC",
+      "fstype": "nfs",
+      "statfs_type": "0x6969",
+      "expect": "nfs"
+    },
+    {
+      "source": "constructed: CIFS_SUPER_MAGIC",
+      "fstype": "cifs",
+      "statfs_type": "0xff534d42",
+      "expect": "cifs"
+    },
+    {
+      "source": "constructed: SMB2_SUPER_MAGIC",
+      "fstype": "smb3",
+      "statfs_type": "0xfe534d42",
+      "expect": "smb2"
+    },
+    {
+      "source": "constructed: SMB_SUPER_MAGIC",
+      "fstype": "smbfs",
+      "statfs_type": "0x517b",
+      "expect": "smb"
+    },
+    {
+      "source": "constructed: AFS_SUPER_MAGIC",
+      "fstype": "afs",
+      "statfs_type": "0x5346414f",
+      "expect": "afs"
+    },
+    {
+      "source": "constructed: AFS_FS_MAGIC (kAFS)",
+      "fstype": "afs",
+      "statfs_type": "0x6b414653",
+      "expect": "afs"
+    },
+    {
+      "source": "constructed: CEPH_SUPER_MAGIC",
+      "fstype": "ceph",
+      "statfs_type": "0xc36400",
+      "expect": "ceph"
+    },
+    {
+      "source": "constructed: CODA_SUPER_MAGIC",
+      "fstype": "coda",
+      "statfs_type": "0x73757245",
+      "expect": "coda"
+    },
+    {
+      "source": "constructed: NCP_SUPER_MAGIC",
+      "fstype": "ncpfs",
+      "statfs_type": "0x564c",
+      "expect": "ncp"
+    },
+    {
+      "source": "constructed: FUSE_SUPER_MAGIC with sshfs",
+      "fstype": "fuse.sshfs",
+      "statfs_type": "0x65735546",
+      "expect": "fuse.sshfs"
+    },
+    {
+      "source": "constructed: FUSE_SUPER_MAGIC with rclone",
+      "fstype": "fuse.rclone",
+      "statfs_type": "0x65735546",
+      "expect": "fuse.rclone"
+    },
+    {
+      "source": "constructed: FUSE_SUPER_MAGIC with GNOME's gvfsd-fuse",
+      "fstype": "fuse.gvfsd-fuse",
+      "statfs_type": "0x65735546",
+      "expect": "fuse.gvfsd-fuse"
+    },
+    {
+      "source": "constructed: FUSE_SUPER_MAGIC with ntfs-3g (fuseblk, a local disk)",
+      "fstype": "fuseblk",
+      "statfs_type": "0x65735546",
+      "expect": "local"
+    },
+    {
+      "source": "constructed: BTRFS_SUPER_MAGIC",
+      "fstype": "btrfs",
+      "statfs_type": "0x9123683e",
+      "expect": "local"
+    },
+    {
+      "source": "constructed: XFS_SUPER_MAGIC",
+      "fstype": "xfs",
+      "statfs_type": "0x58465342",
+      "expect": "local"
+    },
+    {
+      "source": "constructed: MSDOS_SUPER_MAGIC",
+      "fstype": "vfat",
+      "statfs_type": "0x4d44",
+      "expect": "local"
+    }
+  ],
+  "windows": [
+    {
+      "source": "captured: the Windows lab machine, a drive letter mapped to \\\\wsl.localhost\\Ubuntu (net use), fs.realpath.native of W:\\tmp; .NET DriveInfo said Network, 9P",
+      "realpath": "\\\\wsl.localhost\\Ubuntu\\tmp",
+      "drive_type": "Network",
+      "format": "9P",
+      "expect": "unc"
+    },
+    {
+      "source": "captured: the Windows lab machine, the Google Drive virtual drive (DriveInfo: Fixed, FAT32, labelled Google Drive), a path on it",
+      "realpath": "G:\\My Drive\\mira",
+      "drive_type": "Fixed",
+      "format": "FAT32",
+      "expect": "local"
+    },
+    {
+      "source": "captured: the Windows lab machine, a local NTFS folder (the user's folder name replaced)",
+      "realpath": "C:\\Users\\fixture\\Tasks\\mira",
+      "drive_type": "Fixed",
+      "format": "NTFS",
+      "expect": "local"
+    }
+  ],
+  "macos": [
+    {
+      "source": "constructed: an SMB share",
+      "mount": "//fixture@nas.local/share on /Volumes/share (smbfs, nodev, nosuid, mounted by fixture)\n/dev/disk3s1 on /System/Volumes/Data (apfs, local, journaled, nobrowse)\n",
+      "path": "/Volumes/share/spaces/mira",
+      "expect": "smbfs"
+    },
+    {
+      "source": "constructed: an NFS export",
+      "mount": "nas:/export on /Volumes/export (nfs, nodev, nosuid, mounted by fixture)\n",
+      "path": "/Volumes/export/mira",
+      "expect": "nfs"
+    },
+    {
+      "source": "constructed: an AFP share",
+      "mount": "//fixture@nas._afpovertcp._tcp.local/home on /Volumes/home (afpfs, nodev, nosuid, mounted by fixture)\n",
+      "path": "/Volumes/home/mira",
+      "expect": "afpfs"
+    },
+    {
+      "source": "constructed: a WebDAV mount",
+      "mount": "https://dav.example/remote.php on /Volumes/dav (webdav, nodev, noexec, nosuid, mounted by fixture)\n",
+      "path": "/Volumes/dav/mira",
+      "expect": "webdav"
+    },
+    {
+      "source": "constructed: sshfs over macFUSE",
+      "mount": "fixture@host:/home on /Volumes/ssh (macfuse, nodev, nosuid, synchronous, mounted by fixture)\n",
+      "path": "/Volumes/ssh/mira",
+      "expect": "macfuse"
+    },
+    {
+      "source": "constructed: the data volume (APFS)",
+      "mount": "/dev/disk3s1 on /System/Volumes/Data (apfs, local, journaled, nobrowse)\n/dev/disk3s5 on / (apfs, sealed, local, read-only, journaled)\n",
+      "path": "/System/Volumes/Data/Users/fixture/Tasks/mira",
+      "expect": "local"
+    }
+  ]
+}

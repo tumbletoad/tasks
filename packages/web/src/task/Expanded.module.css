@@ -1,0 +1,164 @@
+/*
+ * The expanded row's body until M5.06 (A5 3.7, 3.9): the strip of instances and Copy, then the
+ * thread of log entries and launch receipts, oldest first. Tokens only.
+ */
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 12px 2px 6px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.8125rem;
+  color: var(--k-text-2);
+  cursor: pointer;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.button:last-child {
+  padding-inline-start: 12px;
+}
+
+.button:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.button[aria-disabled="true"] {
+  cursor: default;
+}
+
+.glyph {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 18px;
+  padding: 0 3px;
+  border: 1px solid var(--k-control);
+  border-radius: 5px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 0.75rem;
+}
+
+.button[data-ring="1"] .glyph {
+  border-color: var(--k-slot-1);
+}
+.button[data-ring="2"] .glyph {
+  border-color: var(--k-slot-2);
+}
+.button[data-ring="3"] .glyph {
+  border-color: var(--k-slot-3);
+}
+.button[data-ring="4"] .glyph {
+  border-color: var(--k-slot-4);
+}
+.button[data-ring="5"] .glyph {
+  border-color: var(--k-slot-5);
+}
+.button[data-ring="6"] .glyph {
+  border-color: var(--k-slot-6);
+}
+.button[data-ring="7"] .glyph {
+  border-color: var(--k-slot-7);
+}
+.button[data-ring="8"] .glyph {
+  border-color: var(--k-slot-8);
+}
+
+.button[data-state="connected"] .glyph {
+  border-color: var(--k-accent);
+  color: var(--k-accent);
+}
+
+.line {
+  margin: 12px 0;
+  color: var(--k-muted);
+}
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--k-line);
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  column-gap: 12px;
+  padding: 6px 0;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 6px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--k-text-2);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.8125rem;
+}
+
+.who {
+  font-weight: 500;
+}
+
+.when {
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.text {
+  margin: 2px 0 0;
+  color: var(--k-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.entry[data-state="confirmed"] .text::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 8px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background: var(--k-accent);
+}
+
+.entry[data-state="failed"] .text {
+  color: var(--k-late);
+}
+
+.entry[data-state="unknown"] .text {
+  color: var(--k-due);
+}
+
+@media (forced-colors: active) {
+  .glyph,
+  .mark {
+    border-color: ButtonText;
+  }
+}

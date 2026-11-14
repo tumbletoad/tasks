@@ -1,0 +1,101 @@
+// Who the service runs as, checked before it writes anything (A2 3.3.1, 3.5; A6 3.16.1 rule 7).
+// It refuses to run as root or as an elevated Administrator, because the agents it launches would
+// inherit those rights, and it refuses package identity, because a packaged parent may virtualise
+// its writes and so create a second service.
+//
+// - Package identity: tasks.exe and tasksw.exe pass GetCurrentPackageFullName to Node as
+//   TASKS_PACKAGE (A2 3.5 rule 2). Any non-empty value is a package.
+// - Root: UID or effective UID 0 on Linux and macOS.
+// - Elevated: Windows has no Node API for the token, so the service reads its own token's
+//   mandatory label with System32's whoami.exe, by SID, which no locale changes. High (12288) and
+//   above is elevated. A check that cannot run refuses too: the refusal is the safe side.
+//   System32 is the folder the loader took ntdll.dll from, never SystemRoot or windir: a parent
+//   sets those, and could point them at a whoami that answers "medium".
+import { spawnSync } from "node:child_process";
+import { win32 } from "node:path";
+import { envVar } from "@tasks/brand";
+
+export const TASKS_PACKAGE = envVar("PACKAGE");
+
+export interface Identity {
+  /** UID or effective UID 0 (Linux, macOS). */
+  readonly root: boolean;
+  /** Windows: elevated (true), not elevated (false), or the check could not run (undefined). */
+  readonly elevated: boolean | undefined;
+  /** The package's full name when the process has package identity, else null. */
+  readonly package: string | null;
+}
+
+/** The package identity the launcher passed, or null. */
+export function packageIdentity(env: Readonly<Record<string, string | undefined>>): string | null {
+  const value = env[TASKS_PACKAGE];
+  return value === undefined || value.trim() === "" ? null : value;
+}
+
+/** The mandatory label SIDs of Windows integrity levels (S-1-16-<rid>). */
+export const INTEGRITY = { medium: 8192, high: 12288, system: 16384 } as const;
+
+/**
+ * The integrity level in `whoami /groups /fo csv /nh` output: the RID of the one group whose SID
+ * is a mandatory label (S-1-16-<rid>), or undefined when there is none or more than one. The SID is
+ * the third quoted field, the same in every display language.
+ */
+export function integrityLevel(csv: string): number | undefined {
+  const levels = new Set<number>();
+  for (const line of csv.split(/\r?\n/)) {
+    const fields = [...line.matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? "");
+    const sid = /^S-1-16-(\d{1,6})$/.exec(fields[2] ?? "");
+    if (sid?.[1] !== undefined) levels.add(Number(sid[1]));
+  }
+  return levels.size === 1 ? [...levels][0] : undefined;
+}
+
+/**
+ * The System32 folder among a process's loaded modules: the folder of `ntdll.dll`, which Windows
+ * always maps from System32 and no environment variable moves. Undefined when it is not there.
+ */
+export function system32Of(modules: readonly string[]): string | undefined {
+  const ntdll = modules.find((path) => win32.basename(path).toLowerCase() === "ntdll.dll");
+  return ntdll === undefined ? undefined : win32.dirname(ntdll);
+}
+
+/** The full paths of the modules this process has loaded, from Node's diagnostic report. */
+function loadedModules(): readonly string[] {
+  const report = process.report.getReport() as { sharedObjects?: unknown };
+  const modules = report.sharedObjects;
+  return Array.isArray(modules) ? modules.filter((m): m is string => typeof m === "string") : [];
+}
+
+/**
+ * This process's System32 folder, from its loaded modules, or undefined when it cannot be told.
+ * Every System32 tool Tasks runs (whoami.exe, reg.exe, tasklist.exe) comes from here.
+ */
+export const system32 = (): string | undefined => system32Of(loadedModules());
+
+/** Whether the current Windows token is elevated, or undefined when that cannot be told. */
+export function windowsElevated(): boolean | undefined {
+  const folder = system32();
+  if (folder === undefined) return undefined;
+  const result = spawnSync(win32.join(folder, "whoami.exe"), ["/groups", "/fo", "csv", "/nh"], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 10_000,
+    shell: false,
+  });
+  if (result.error !== undefined || result.status !== 0) return undefined;
+  const level = integrityLevel(result.stdout);
+  return level === undefined ? undefined : level >= INTEGRITY.high;
+}
+
+/** The real identity of this process. Only the package identity comes from `env`. */
+export function detectIdentity(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  platform: NodeJS.Platform = process.platform,
+): Identity {
+  const root = platform !== "win32" && (process.getuid?.() === 0 || process.geteuid?.() === 0);
+  return {
+    root,
+    elevated: platform === "win32" ? windowsElevated() : false,
+    package: packageIdentity(env),
+  };
+}

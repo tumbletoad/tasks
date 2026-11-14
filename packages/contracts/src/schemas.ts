@@ -1,0 +1,284 @@
+// Shared field schemas for the entries (A3 3.4.1, A1 3.3, 3.5 and 3.7).
+//
+// Inputs carry the limits and SafeText, and leave the formats of references, `base`, paths and
+// source keys to the handler, which resolves them anyway and answers `invalid_input` or
+// `not_found` with a hint. Every pattern costs definition tokens in every tool that uses the field
+// (A3 3.2.5). Descriptions are short for the same reason. Outputs keep their patterns.
+//
+// Every pattern carries the `u` flag, so Zod reads it by code point, as Ajv and JSON Schema do.
+import { z } from "zod";
+import { under, type Pairs } from "./define.ts";
+import { safeLine, safeText } from "./safe-text.ts";
+
+/**
+ * A1 3.7's limits: what the user may send through the UI, the CLI and the RPC methods. Schemas
+ * count characters (code points). Where A1 gives a size in KiB, the schema allows that many
+ * characters (64 KiB is 65,536), and the writer checks A1's size of the stored text (A1 3.7).
+ * Fields A1 does not limit take A3 3.4's limit for both audiences.
+ */
+export const USER_LIMITS = {
+  title: 300,
+  summary: 400,
+  context: 65_536,
+  note: 65_536,
+  log: 16_384,
+  outcome: 4_096,
+  learning: 1_024,
+  learnings: 20,
+  sourceTitle: 300,
+  url: 2_048,
+} as const;
+
+/**
+ * A3 3.4's agent limits, tighter than A1's on purpose to keep results inside the token budgets
+ * (A3 3.1). Entries list them in `agent.max`, so `mcp-tools.json` carries them.
+ */
+export const AGENT_LIMITS = {
+  title: 200,
+  summary: 240,
+  context: 8_000,
+  /** A log entry or note through `add_entry`, and a draft's log entry (A3 3.4.5, 3.4.7). */
+  entry: 2_000,
+  outcome: 600,
+  learning: 300,
+  learnings: 8,
+  sourceTitle: 200,
+} as const;
+
+/** Crockford base32 in lower case, the alphabet of every ID (A1 3.3). */
+const B32 = "[0-9a-hjkmnp-tv-z]";
+
+export const patterns = {
+  taskRef: /^[A-Z]{1,6}-[1-9][0-9]{0,9}$/u,
+  /** `<epoch>.<seq>.<tag>`, such as `1.1046.5n0w8k3q` (A1 3.5). */
+  asOf: /^[0-9]{1,10}\.[0-9]{1,15}\.[0-9a-hjkmnp-tv-z]{8}$/u,
+  /** 16 to 64 characters from `[A-Za-z0-9_-]` (A3 3.4.1). */
+  requestId: /^[A-Za-z0-9_-]{16,64}$/u,
+  isoDate: /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u,
+  /** An instant in UTC, as `Date.toISOString()` writes it, with or without milliseconds. */
+  instant: /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3})?Z$/u,
+  /** A note or log entry ordinal within its task: `n2`, `l3` (A1 3.3). */
+  entryRef: /^[nl][1-9][0-9]{0,5}$/u,
+} as const;
+
+export const idPattern = (prefix: string) => new RegExp(`^${prefix}_${B32}{26}$`, "u");
+
+// ---------------------------------------------------------------------------------------------
+// Inputs
+
+/** A task reference (`M-14`) or ID (`t_...`), resolved as A1 3.3 defines. */
+export const TaskRefInput = z.string().max(40);
+
+/**
+ * The one `request_id` schema. Every write entry uses this object, and the registry check
+ * refuses any other (A3 3.4.1). Every input string states a maximum, even where its pattern
+ * bounds it.
+ */
+export const RequestId = z
+  .string()
+  .max(64)
+  .regex(patterns.requestId)
+  .describe("New per intended change; reuse it only to retry that call");
+
+/** The one `base` schema, which the registry check requires on writes that change fields. */
+export const Base = z.string().max(40).describe("as_of from your last read, verbatim");
+
+/** Each entry that takes it gives it the default `"apply"` in its `defaults`. */
+export const Mode = z
+  .enum(["apply", "propose"])
+  .describe("propose: ask the user to decide")
+  .optional();
+
+export const Cwd = z.string().max(4096).describe("Your working folder, as an absolute path");
+
+export const Priority = z.int().min(1).max(4);
+
+/** A one-line title: A1's 300 characters for the user. Entries give agents A3's 200. */
+export const TitleInput = safeLine(USER_LIMITS.title);
+
+/** A one-line summary: A1's 400 characters for the user. Entries give agents A3's 240. */
+export const SummaryInput = safeLine(USER_LIMITS.summary);
+
+/** Markdown context: A1's 64 KiB for the user. Entries give agents A3's 8,000 characters. */
+export const ContextInput = safeText(USER_LIMITS.context);
+
+/** A log entry: A1's 16 KiB for the user. Entries give agents A3's 2,000 characters. */
+export const LogInput = safeText(USER_LIMITS.log);
+
+/**
+ * The source kinds a caller may write (A3 3.4.5). Outputs take every kind A1 stores
+ * (`SOURCE_KINDS`).
+ */
+export const SOURCE_KINDS_IN = [
+  "email",
+  "chat",
+  "ticket",
+  "pr",
+  "issue",
+  "doc",
+  "calendar",
+  "session",
+  "web",
+] as const;
+
+/** A link to where a task came from (A3 3.4.5). Stored lean: no message bodies (A3 3.10). */
+export const SourceInput = z.strictObject({
+  key: z.string().max(512).describe("<namespace>:<id>, such as jira:LUM-212").optional(),
+  kind: z.enum(SOURCE_KINDS_IN).describe("Source kind"),
+  title: safeLine(USER_LIMITS.sourceTitle).describe("Subject, chat or ticket title"),
+  who: safeLine(120).describe("Sender or counterpart").optional(),
+  url: z.string().max(USER_LIMITS.url).describe("Link").optional(),
+  at: z.string().max(40).describe("When it was sent").optional(),
+});
+
+/**
+ * A task's folder (A1 3.15, R11): `"cwd"` (the caller's working folder, from `cwd`), an absolute
+ * folder on this machine, or a root and a relative path. The service turns the first two into a
+ * root of this machine and a relative path before anything is stored: the space never holds an
+ * absolute path (A6 3.3), and the root and path form never takes one. `"cwd"` and a folder are one
+ * text form: the schema grammar gives each JSON type one option of a union (A3 3.2.1).
+ */
+export const PlaceInput = z.union([
+  z
+    .string()
+    .max(4096)
+    .regex(/^(?:cwd$|\/|[A-Za-z]:[\\/]|[\\/]{2})/u),
+  z.strictObject({
+    root: safeLine(120).describe("Root name or ID"),
+    path: z.string().max(1024).describe("Relative path inside the root"),
+  }),
+]);
+
+/** One task to create (A3 3.4.5). */
+export const TaskDraft = z.strictObject({
+  title: TitleInput.describe("Title"),
+  summary: SummaryInput.describe("One line: the next step").optional(),
+  area: safeLine(120).describe("Area name or slug").optional(),
+  project: safeLine(120).describe("Project name or slug").optional(),
+  status: safeLine(40).describe("A status of the space; default open").optional(),
+  inbox: z.boolean().describe("Put it in the Inbox for the user").optional(),
+  priority: Priority.describe("1 highest, 4 none").optional(),
+  effort: safeLine(20).describe("Effort, such as S, M or L").optional(),
+  due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
+  waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
+  place: PlaceInput.describe('Its folder: "cwd", an absolute folder, or root and path').optional(),
+  sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
+  context: ContextInput.describe("Markdown context").optional(),
+  log: LogInput.describe("Log entry; also added to a matched task").optional(),
+  on_existing: z
+    .enum(["return", "add_sources", "create_new"])
+    .describe("When a source key matches; default return")
+    .optional(),
+});
+
+/** The agent limits of a source's fields, for an entry's `agent.max` through `under()`. */
+export const SOURCE_AGENT_MAX: Pairs<number> = [["title", AGENT_LIMITS.sourceTitle]];
+
+/** The agent limits of a task draft's fields, for an entry's `agent.max` through `under()`. */
+export const DRAFT_AGENT_MAX: Pairs<number> = [
+  ["title", AGENT_LIMITS.title],
+  ["summary", AGENT_LIMITS.summary],
+  ["context", AGENT_LIMITS.context],
+  ["log", AGENT_LIMITS.entry],
+  ...under("sources[]", SOURCE_AGENT_MAX),
+];
+
+/**
+ * What `entry.add` writes (A3 3.4.7): A1's log kinds except `handoff`, which A3 does not offer,
+ * and `note`. Outputs take every log kind A1 stores (`LOG_KINDS`).
+ */
+export const ENTRY_KINDS_IN = [
+  "progress",
+  "evidence",
+  "decision",
+  "blocker",
+  "question",
+  "note",
+] as const;
+
+// ---------------------------------------------------------------------------------------------
+// Outputs. Results are plain values: no transforms and no defaults. A field that carries a stored value
+// accepts every value A1 can store, not only what a caller may write.
+
+/** The log kinds A1 stores (A1 3.4, `log_entries.kind`). */
+export const LOG_KINDS = [
+  "progress",
+  "evidence",
+  "blocker",
+  "decision",
+  "question",
+  "handoff",
+] as const;
+
+/**
+ * The source kinds A1 stores (A1 3.4, `sources.kind`). A1 lists them without a CHECK
+ * constraint, so the writer refuses any other kind (A3 3.2.1).
+ */
+export const SOURCE_KINDS = [
+  "email",
+  "chat",
+  "ticket",
+  "pr",
+  "issue",
+  "doc",
+  "calendar",
+  "crash",
+  "session",
+  "book",
+  "web",
+  "other",
+] as const;
+
+export const AsOf = z
+  .string()
+  .regex(patterns.asOf)
+  .describe("Read position; pass it as base on your next write");
+
+export const TaskId = z.string().regex(idPattern("t")).describe("Task ID");
+export const TaskRef = z.string().regex(patterns.taskRef).describe("Task reference");
+export const ProposalId = z.string().regex(idPattern("pr")).describe("Proposal ID");
+export const Lifecycle = z.enum(["active", "completed", "archived"]).describe("Lifecycle");
+export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state");
+export const Replayed = z.boolean().describe("True when a retry returned the stored result");
+export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
+
+/**
+ * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a
+ * timed `due_at` with its IANA zone `due_tz`. A task without one leaves the field out.
+ */
+export const DueOutput = z.union([
+  z.string().regex(patterns.isoDate),
+  z.strictObject({
+    at: z.string().regex(patterns.instant).describe("Due time, in UTC"),
+    tz: z.string().describe("IANA time zone of the commitment"),
+  }),
+]);
+
+/** One task in a list (A3 3.4.2). */
+export const TaskRow = z.strictObject({
+  id: TaskId,
+  ref: TaskRef,
+  title: z.string().describe("Title"),
+  lifecycle: Lifecycle,
+  status: z.string().describe("Status key"),
+  inbox: z.boolean().describe("In the Inbox"),
+  priority: z.int().min(1).max(4).describe("1 highest, 4 none"),
+  effort: z.string().describe("Effort").optional(),
+  due: DueOutput.describe("Due date, or a due time with its zone").optional(),
+  area: z.string().describe("Area name").optional(),
+  project: z.string().describe("Project name").optional(),
+});
+
+export const SourceOutput = z.strictObject({
+  key: z.string().describe("Source key").optional(),
+  kind: z.enum(SOURCE_KINDS).describe("Source kind"),
+  title: z.string().describe("Title"),
+  who: z.string().describe("Sender or counterpart").optional(),
+  url: z.string().describe("Link").optional(),
+  at: z.string().describe("When it was sent").optional(),
+});
+
+export const PlaceOutput = z.strictObject({
+  root: z.string().describe("Root name"),
+  path: z.string().describe("Path inside the root"),
+});

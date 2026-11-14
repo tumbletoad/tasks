@@ -1,0 +1,124 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The areas, after a gap. */
+.list[data-group="areas"] {
+  margin-block-start: 20px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--k-text-2);
+  text-decoration: none;
+  transition:
+    background-color var(--k-fast) var(--k-ease),
+    color var(--k-fast) var(--k-ease);
+}
+
+.item svg {
+  flex: none;
+  color: var(--k-muted);
+}
+
+.item:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.item[aria-current="page"] {
+  background: var(--k-raised);
+  color: var(--k-text);
+}
+
+.item[aria-current="page"] svg {
+  color: var(--k-accent);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* t-meta: 12 / 16, tabular figures. */
+.count {
+  flex: none;
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty Inbox or Backlog keeps its place, so nothing below it moves. */
+.slot {
+  min-height: 32px;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-inline: 4px 3px;
+  border-radius: 50%;
+  background: var(--k-slot, var(--k-muted));
+}
+
+.projects {
+  margin: 2px 0 4px;
+  padding: 0;
+  padding-inline-start: 24px;
+  list-style: none;
+}
+
+.projects .item {
+  min-height: 28px;
+  font-size: 0.8125rem;
+}
+
+.foot {
+  margin-block-start: auto;
+  padding-block-start: 20px;
+}
+
+.gear {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--k-muted);
+  transition:
+    background-color var(--k-fast) var(--k-ease),
+    color var(--k-fast) var(--k-ease);
+}
+
+.gear:hover,
+.gear[aria-current="page"] {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+@media (forced-colors: active) {
+  .item[aria-current="page"] {
+    outline: 1px solid CanvasText;
+  }
+}

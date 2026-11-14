@@ -1,0 +1,20 @@
+# Markdown is not formatted: the plan, the agent instructions, README and docs keep the plan's
+# compact table style, which Prettier would pad on every edit.
+planning/
+.claude/
+*.md
+
+# Lockfile and generated output.
+pnpm-lock.yaml
+packages/contracts/generated/
+packages/bridge/lib/
+docs/agents/
+dist/
+coverage/
+
+# Byte-exact fixtures, written by pnpm seed --planning.
+fixtures/planning-prototype/
+fixtures/planning-prototype.index.json
+
+# Golden files: test output compared byte for byte (vitest's toMatchFileSnapshot).
+packages/*/test/golden/

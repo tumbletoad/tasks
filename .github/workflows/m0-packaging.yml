@@ -1,0 +1,64 @@
+name: m0-packaging
+
+# M0.03 packaging spike (A2 3.12, A7 3.7). Builds the version folder and archive per platform with
+# the official Node from nodejs.org, signs SHA256SUMS with a throwaway key made in this run, then
+# installs with the real install script, runs the runtime gate inside the packaged runtime, checks
+# hostile argv through the launchers and refuses tampered downloads (spikes/m0/packaging/README.md).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "spikes/m0/packaging/**"
+      - ".github/workflows/m0-packaging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m0-packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: package (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: windows-2025
+            platform: win-x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pnpm provides Node 26.13.1 for the scripts (A7 3.3). The packaged
+      # runtime is downloaded separately by the build, never taken from the runner.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the version folder and archive
+        run: pnpm exec node spikes/m0/packaging/scripts/build.ts --platform ${{ matrix.platform }} --build ${{ github.sha }} --work "${{ runner.temp }}/tasks-build"
+
+      - name: Sign SHA256SUMS with a throwaway key
+        run: pnpm exec node spikes/m0/packaging/scripts/sign.ts --throwaway "${{ runner.temp }}/tasks-throwaway-key"
+
+      - name: Install, runtime gate, hostile argv and tamper checks in the packaged runtime
+        run: pnpm exec node spikes/m0/packaging/scripts/smoke.ts --work "${{ runner.temp }}/tasks-smoke"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tasks-spike-${{ matrix.platform }}
+          path: |
+            spikes/m0/packaging/dist/tasks-*-${{ matrix.platform }}.*
+            spikes/m0/packaging/dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 3

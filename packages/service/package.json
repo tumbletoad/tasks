@@ -1,0 +1,50 @@
+{
+  "name": "@tasks/service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./config": "./src/config/index.ts",
+    "./hub": "./src/hub/index.ts",
+    "./http": "./src/http/index.ts",
+    "./http/shared": "./src/http/shared.ts",
+    "./install": "./src/install/index.ts",
+    "./mcp": "./src/mcp/index.ts",
+    "./paths": "./src/hub/paths.ts",
+    "./permissions": "./src/hub/permissions.ts",
+    "./setup": "./src/setup/index.ts",
+    "./test/contract": "./test/contract/suite.ts",
+    "./test/harness": "./test/harness.ts",
+    "./test/http-client": "./test/http-client.ts",
+    "./test/http-world": "./test/http-world.ts",
+    "./test/ops-helpers": "./test/ops-helpers.ts",
+    "./local": "./src/local/index.ts",
+    "./candidate": "./src/version/candidate.ts",
+    "./release-keys": "./src/version/release-keys.ts",
+    "./runtime-gate": "./src/version/runtime-gate.ts",
+    "./version-folder": "./src/version/folder.ts",
+    "./version-install": "./src/version/install.ts",
+    "./version-update": "./src/version/update.ts"
+  },
+  "dependencies": {
+    "@tasks/brand": "workspace:*",
+    "@tasks/bridge": "workspace:*",
+    "@tasks/contracts": "workspace:*",
+    "@tasks/files": "workspace:*",
+    "@tasks/launch": "workspace:*",
+    "@tasks/storage": "workspace:*",
+    "@modelcontextprotocol/server": "2.4.0",
+    "smol-toml": "1.9.1",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@tasks/launcher-win": "workspace:*",
+    "@tasks/runs": "workspace:*",
+    "@tasks/testkit": "workspace:*",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@types/ws": "8.18.1",
+    "fast-check": "4.10.2",
+    "vitest": "5.1.0"
+  }
+}

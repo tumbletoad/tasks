@@ -1,0 +1,260 @@
+// Open and Copy for a task (A4 3.4.2, 3.4.3, 3.4.6, 3.15; A5 3.8 `launch.open`): what the service
+// needs around the launch machine to turn a click into an intent and its route's one external
+// call. The choice of route per instance, the facts a launch reads about its task, the names the
+// brief takes from the registry, and the one fact a Codex launch reads from its home.
+import { join } from "node:path";
+import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@tasks/brand";
+import { cliFaces, findEntry } from "@tasks/contracts";
+import {
+  instanceHome,
+  isBuiltInTarget,
+  isToolEnvList,
+  routeOf,
+  targetDef,
+  type BriefKind,
+  type BriefNames,
+  type Instance,
+  type LaunchIntent,
+  type ResolveReason,
+  type Route,
+} from "@tasks/launch";
+import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
+
+/** Why an instance cannot open a task here: one word, which the page and the CLI word for people. */
+export const UNAVAILABLE_REASONS = [
+  /** No such enabled instance on this machine (A4 3.2 "Not set up on this machine"). */
+  "not_set_up",
+  /** The instance's target has no route this build opens (T3 through its own route, apps later). */
+  "no_route",
+  /** No product command or terminal for a terminal route. */
+  "no_terminal",
+  /** The task's place is on another machine only (A4 3.3 step 1, R11). */
+  "other_machine",
+  /** `claude-cli://` refuses a UNC folder (A4 3.3 step 4). */
+  "unc",
+  /** The brief does not fit the route's budget even without composer text (A4 3.15.3). */
+  "too_long",
+] as const;
+export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
+
+/**
+ * A click whose folder does not resolve on this machine (A4 3.3 step 5): the route is disabled for
+ * this task with the reason, and no intent is made. The reason is a fixed word (places.ts).
+ */
+export class LaunchFolderUnavailable extends Error {
+  override readonly name = "LaunchFolderUnavailable";
+  readonly reason: ResolveReason;
+  constructor(reason: ResolveReason) {
+    super(`The task's folder cannot be used on this machine: ${reason}`);
+    this.reason = reason;
+  }
+}
+
+export class LaunchUnavailable extends Error {
+  override readonly name = "LaunchUnavailable";
+  readonly reason: UnavailableReason;
+  constructor(reason: UnavailableReason) {
+    super(`This instance cannot open the task here: ${reason}`);
+    this.reason = reason;
+  }
+}
+
+/** What a launch reads about its task (the request path reads it, in one snapshot). */
+export interface LaunchTask {
+  /** `t_` ID. */
+  readonly id: string;
+  /** Its reference, such as `M-14`. */
+  readonly ref: string;
+  /** Its title as the space holds it: the brief sanitises it. */
+  readonly title: string;
+  readonly version: number;
+  /** Its folder place on this machine, or null. */
+  readonly place: {
+    readonly id: string;
+    readonly root: string;
+    readonly path: string;
+    readonly gitRemote?: string;
+  } | null;
+  /** It has a place on another machine and none here (A4 3.3 step 1). */
+  readonly elsewhere: boolean;
+}
+
+/** A click on Open or Copy (`launch.open`). */
+export interface OpenTaskRequest {
+  readonly space: string;
+  readonly task: LaunchTask;
+  /** The instance's key; undefined is Copy (A4 3.4.6). */
+  readonly instance: string | undefined;
+  /** The person's own words for the agent (A5 3.8), never stored in the space. */
+  readonly composer: string | undefined;
+  /** The click's request ID (A1 3.8): a repeat replays the same intent. */
+  readonly requestId: string;
+  /**
+   * Over budget, the composer text is saved as a note addressed to agents (A4 3.15.3), before the
+   * intent is recorded. The request path saves it under the click's own request ID.
+   */
+  readonly saveNote: (text: string) => Promise<void>;
+}
+
+/** What the click gives back. */
+export interface OpenTaskResult {
+  readonly intent: LaunchIntent;
+  /** Text for the person's clipboard: Copy's pointer brief, the Codex assisted open's brief. */
+  readonly copy: string | undefined;
+  /** Where the composer text went. */
+  readonly composer: "none" | "inline" | "note";
+  /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
+  readonly removed: boolean;
+}
+
+/** The route an instance takes for a click, and its brief. */
+export interface Choice {
+  readonly route: Route;
+  readonly kind: BriefKind;
+  /** The route's budget (A4 3.15.3). */
+  readonly budget: number;
+  /** Terminal routes: `sent`, or Codex's assisted open (`clipboard`). */
+  readonly prompt?: "sent" | "clipboard";
+  /** The brief goes on the clipboard as well (Copy, the assisted open). */
+  readonly copy: boolean;
+}
+
+/** Copy (A4 3.4.6): the pointer brief on the clipboard, a launch with route `clipboard`. */
+export const COPY: Choice = {
+  route: "clipboard",
+  kind: "pointer",
+  budget: routeOf("clipboard", "clipboard")?.budget ?? 20_000,
+  copy: true,
+};
+
+/** The instance key a Copy launch records (the catalogue's single clipboard target). */
+export const COPY_INSTANCE = "clipboard";
+
+/**
+ * Whether Claude Code's `claude-cli://` link may serve the instance (A4 3.4.2): the link always
+ * opens the default config home, so only the instance whose home is the default has it, by the
+ * rule setup uses too (instanceHome: a home variable in any case on Windows selects another).
+ */
+export function defaultClaudeHome(
+  instance: Instance,
+  home: string | undefined,
+  platform: NodeJS.Platform,
+): boolean {
+  return instanceHome(instance, home, platform)?.isDefault === true;
+}
+
+/**
+ * The route a click takes on an instance (A4 3.4): the primary unless it is unavailable before
+ * dispatch or the instance asks for the prefill route (`prompt = "prefill"`, A4 L7). A fallback is
+ * never chosen after a dispatch.
+ */
+export function chooseRoute(
+  instance: Instance,
+  options: {
+    readonly terminal: boolean;
+    readonly home: string | undefined;
+    readonly platform: NodeJS.Platform;
+  },
+): Choice {
+  if (!instance.enabled || !isBuiltInTarget(instance.target)) {
+    throw new LaunchUnavailable("not_set_up");
+  }
+  const terminal = options.terminal && instance.exec !== undefined;
+  switch (instance.target) {
+    case "claude-cli": {
+      const link = routeOf("claude-cli", "link");
+      const primary = routeOf("claude-cli", "terminal", "sent");
+      if (instance.prompt === "sent" && terminal && primary !== undefined) {
+        return {
+          route: "terminal",
+          kind: "sent",
+          budget: primary.budget,
+          prompt: "sent",
+          copy: false,
+        };
+      }
+      if (link !== undefined && defaultClaudeHome(instance, options.home, options.platform)) {
+        return { route: "link", kind: "prefilled", budget: link.budget, copy: link.copyBriefToo };
+      }
+      throw new LaunchUnavailable(terminal ? "no_route" : "no_terminal");
+    }
+    case "codex-cli": {
+      if (!terminal) {
+        throw new LaunchUnavailable(instance.exec === undefined ? "not_set_up" : "no_terminal");
+      }
+      const assisted = instance.prompt === "prefill";
+      const route = routeOf("codex-cli", "terminal", assisted ? "clipboard" : "sent");
+      if (route === undefined) throw new LaunchUnavailable("no_route");
+      return {
+        route: "terminal",
+        kind: assisted ? "prefilled" : "sent",
+        budget: route.budget,
+        prompt: assisted ? "clipboard" : "sent",
+        copy: route.copyBriefToo,
+      };
+    }
+    default:
+      // T3 opens through its own route (M2.11); the app links and custom targets come later.
+      throw new LaunchUnavailable("no_route");
+  }
+}
+
+/** The glyph a target shows on its tile (A4 3.2: a neutral monogram). */
+export const glyphOf = (instance: Instance): string =>
+  isBuiltInTarget(instance.target) ? targetDef(instance.target).glyph : "Cu";
+
+/** The names the brief takes from the registry (A4 3.15.1): the read tool and its CLI verb. */
+export function briefNames(): BriefNames {
+  const entry = findEntry("task.get");
+  const tool = entry?.faces.mcp?.tool ?? "get_task";
+  const verb = entry === undefined ? undefined : cliFaces(entry)[0]?.verb;
+  return { server: MCP_SERVER_KEY, tool, command: `${CLI_NAME} ${verb ?? "show"}` };
+}
+
+/**
+ * The Codex home an instance's agent uses (instanceHome, the rule setup shares): the `CODEX_HOME`
+ * its env sets (in any case on Windows), else its config home, else the default.
+ */
+export function codexHomeOf(
+  instance: Instance,
+  home: string | undefined,
+  platform: NodeJS.Platform,
+): string | undefined {
+  return instanceHome(instance, home, platform)?.path;
+}
+
+/**
+ * Whether Tasks's MCP entry in a Codex home declares the ticket in `env_vars` (A4 3.4.3): read
+ * only, one key of `<home>/config.toml`, through the bounded reader machine.toml uses. Nothing of
+ * the file is kept or logged but the names the entry lists, which the override must repeat (a
+ * `-c` override replaces the whole list). `unknown` when it cannot be read, or lists something
+ * other than plain variable names: the launch then adds nothing, since an override on a home
+ * without the entry would make an entry without a command, and one that drops a name would change
+ * what the person's entry passes.
+ */
+export function codexEntryOf(
+  home: string,
+):
+  | { readonly kind: "has_env_vars" | "absent" | "unknown" }
+  | { readonly kind: "lacks_env_vars"; readonly names: readonly string[] } {
+  const read = readConfigFile(join(home, "config.toml"));
+  if (read.kind === "missing") return { kind: "absent" };
+  if (read.kind !== "bytes") return { kind: "unknown" };
+  const decoded = decodeConfig(read.bytes);
+  if (!decoded.ok) return { kind: "unknown" };
+  const parsed = parseToml(decoded.text);
+  if (!parsed.ok) return { kind: "unknown" };
+  const servers = parsed.doc["mcp_servers"];
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
+    return { kind: "absent" };
+  }
+  const entry = (servers as Record<string, unknown>)[MCP_SERVER_KEY];
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+    return { kind: "absent" };
+  const names = (entry as Record<string, unknown>)["env_vars"];
+  if (names === undefined) return { kind: "lacks_env_vars", names: [] };
+  if (!Array.isArray(names) || !isToolEnvList(names)) return { kind: "unknown" };
+  return names.includes(envVar("TICKET"))
+    ? { kind: "has_env_vars" }
+    : { kind: "lacks_env_vars", names };
+}

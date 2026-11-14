@@ -1,0 +1,154 @@
+name: build
+
+# The build and smoke jobs of A2 3.12.8 (A7 3.8 M1.13 and M1.14). The build job: per platform, the
+# version folder and its archive with the official Node downloaded and verified against Node's
+# release keys, SHA256SUMS signed with a throwaway test key made in this run, the runtime gate
+# inside the version folder through its own launcher (with the candidate's checks of M1.14), and a
+# second build compared byte for byte. On Linux, M1.10's acceptance, the space
+# verbs and M2.08's launch shim then run against the built folder through its launcher (pnpm accept
+# m2 --part build --installed). Windows runners are elevated, and the service refuses to run
+# elevated (A2 3.3.1), so the service-backed acceptance runs on a real Windows machine instead; macOS is build
+# only (A7 3.8).
+#
+# The archives and SHA256SUMS are kept for three days. The test signatures are not uploaded: a
+# release is signed by hand by the owner (pnpm release sign, A2 3.12.8 "sign").
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # A draft pull request runs nothing (see check.yml).
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+            accept: true
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            accept: true
+          - os: windows-2025
+            platform: win-x64
+            accept: false
+          - os: macos-15
+            platform: darwin-arm64
+            accept: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The default version counts the commits on HEAD (scripts/build/build.ts).
+          fetch-depth: 0
+
+      # pnpm provides Node 26.13.1 for the scripts (A7 3.3). The packaged runtime is
+      # downloaded and verified by the build, never taken from the runner.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build, test-sign, run the runtime gate and check that the build is reproducible
+        run: pnpm build --platform ${{ matrix.platform }} --sign test --check-reproducible --work "${{ runner.temp }}/tasks-build"
+
+      # A2 3.12.4: on macOS the packaged Node must still carry its publisher's Developer ID
+      # signature, so Gatekeeper sees an official binary (the launcher is a script).
+      - name: Node's own code signature in the macOS version folder
+        if: matrix.platform == 'darwin-arm64'
+        run: |
+          for node in dist/darwin-arm64/*/runtime/node; do
+            codesign --verify --strict --verbose=2 "$node"
+            codesign -dv --verbose=2 "$node" 2>&1 | tee "$RUNNER_TEMP/codesign.txt"
+            grep -q '^Authority=Developer ID Application: ' "$RUNNER_TEMP/codesign.txt"
+          done
+
+      - name: The CLI's acceptance, the space verbs and the launch shim against the built version folder
+        if: matrix.accept
+        run: pnpm accept m2 --part build --installed dist/${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tasks-${{ matrix.platform }}
+          path: |
+            dist/tasks-*-${{ matrix.platform }}.*
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 3
+
+  # The smoke job of A2 3.12.8 and A7 3.18.4 (M1.14): the real install script on a build of this
+  # runner, test-signed in this job (the build job uploads no signature, and its throwaway key is
+  # gone with it). pnpm smoke installs into a temporary TASKS_HOME through each verifier path of the
+  # OS (ssh-keygen and openssl on Linux, ssh-keygen and the Authenticode-checked node.exe on
+  # Windows) and refuses the tampered downloads (a look-alike archive, a rewritten, re-signed or
+  # edited SHA256SUMS, a missing signature) before anything from them runs. Then, on Linux, the
+  # installed acceptance and M3.01's migration drill against that install. Windows runners are
+  # elevated and the service refuses to run elevated (A2 3.3.1), so there both run on a real Windows machine
+  # instead, as for the build job. macOS: the tasks-launchd wrapper's exit mapping runs in
+  # check.yml.
+  smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: smoke (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+            accept: true
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            accept: true
+          - os: windows-2025
+            platform: win-x64
+            accept: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: A test-signed build of this runner's platform
+        run: pnpm build --platform ${{ matrix.platform }} --sign test --work "${{ runner.temp }}/tasks-smoke-build" --dist "${{ runner.temp }}/tasks-smoke-dist"
+
+      # The installs go into the runner's home folder: the install script refuses a root below a
+      # folder that another account may rename, and runner.temp's drive on Windows runners need not
+      # be one that only this account and the administrators can change.
+      - name: Install with the real install script, through each verifier path, and refuse the tampered downloads
+        run: pnpm smoke --dist "${{ runner.temp }}/tasks-smoke-dist" --work "$HOME/tasks-smoke"
+
+      - name: The installed acceptance against that install
+        if: matrix.accept
+        run: pnpm accept m1 --installed "$HOME/tasks-smoke/home"
+
+      # M3.01's installed-build migration failure and restore drill (A1 5, MIL-02; A7 3.18.4)
+      # against the same install: a populated 0.1 fixture space whose migration to the real 0.2
+      # fails in the installed service, served read-only with A1's message, a restore of its
+      # pre-migration backup with the fixture's counts and last_seq, then the upgrade. On Windows
+      # it runs on a real Windows machine, as the acceptance does. Not yet run here (A7 3.18.4).
+      - name: The migration failure and restore drill against that install
+        if: matrix.accept
+        run: pnpm accept m3 --part migration --installed "$HOME/tasks-smoke/home"

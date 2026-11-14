@@ -1,0 +1,56 @@
+// @tasks/testkit: fixture generators and the sample space (A7 3.2). Private, and imported only by
+// tests and scripts (the dependency rules). Fixture text only.
+export { digestDatabase, digestSchema, digestSpace } from "./digest.ts";
+export { FIXED_SAMPLE, FIXED_SAMPLE_0_1, RELEASED_SCHEMAS } from "./known.ts";
+export { layoutTestInstall, type TestInstall } from "./install.ts";
+export {
+  checkedDriver,
+  DEFAULT_SEED,
+  DEFAULT_TASKS,
+  MAX_TASKS,
+  MIRA,
+  seedMira,
+  type MiraOptions,
+  type SeededSpace,
+} from "./mira.ts";
+export * from "./planning.ts";
+export { Rng } from "./rng.ts";
+export {
+  FAKE_AGENT,
+  FAKE_CLI_AGENT,
+  FAKE_SHELL,
+  FAKE_SYSTEMD_RUN,
+  FAKE_TERMINAL,
+  FakeSpawner,
+  interactiveAgentArgv,
+  readJsonLines,
+  type FakeSpawnerOptions,
+  type FakeSpawnRequest,
+  type CliAgentReport,
+  type InteractiveAgentReport,
+  type SpawnRecord,
+} from "./fakes/index.ts";
+export {
+  LAUNCH_MACHINE,
+  openLaunchSpace,
+  openLaunchSpaceInWorker,
+  type LaunchSpace,
+  type WorkerLaunchSpace,
+} from "./launch-space.ts";
+/**
+ * Storage's copies of A4's launch rules, which the launch package's tests compare with its own:
+ * launch code never imports storage (A7 3.2), and the writer checks the same rules again.
+ */
+export {
+  FOCUS_MS as STORAGE_FOCUS_MS,
+  isLaunchRef as storageIsLaunchRef,
+  LAUNCH_EDGES as STORAGE_LAUNCH_EDGES,
+  LAUNCH_EVIDENCE_FIELDS as STORAGE_LAUNCH_EVIDENCE_FIELDS,
+  LAUNCH_EVIDENCE_ID as STORAGE_LAUNCH_EVIDENCE_ID,
+  LAUNCH_FAIL_REASONS as STORAGE_LAUNCH_FAIL_REASONS,
+  LAUNCH_STATES as STORAGE_LAUNCH_STATES,
+  LAUNCH_UNKNOWN_REASONS as STORAGE_LAUNCH_UNKNOWN_REASONS,
+  OPEN_LAUNCH_STATES as STORAGE_OPEN_LAUNCH_STATES,
+  OPEN_SETS as STORAGE_OPEN_SETS,
+  REFERENCE_WINDOW_MS as STORAGE_REFERENCE_WINDOW_MS,
+} from "@tasks/storage";

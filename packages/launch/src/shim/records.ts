@@ -1,0 +1,398 @@
+// The shim's machine state (A4 3.6.3 "Launch folder", 3.9.1): one folder per launch
+// under the install's launch folders, `<launch root>/<launch ID>/`, 0700, holding
+// - `launch.json` (0600, replaced atomically, written by the service): the spawn plan (argv, the
+//   place or none, the instance's environment, the title), from dispatch the folder resolved right
+//   before the launch with the check the shim runs there, the ticket's hash and the use of its two
+//   roles, and once claimed the attachment credential's hash with the shim's PID and start time;
+// - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
+// None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
+// A2 3.2.1's: Linux `/run/user/<uid>/tasks-<install>/launch/` (tmpfs, gone at logout, when no shim
+// can be left either), Windows `<state>\launch\`.
+//
+// Folders are named after the launch ID, not its reference: a reference is unique within one space
+// only, and one machine's launch root holds the launches of all its spaces.
+import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWrite, makeDir } from "@tasks/files";
+import { isLaunchRef } from "../intents.ts";
+import { isPlacePath, RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
+import { ROOT_ID } from "../sections.ts";
+import { LAUNCH_ID, TASK_ID } from "../store.ts";
+import { isHash } from "./secrets.ts";
+import {
+  AFTER_EXIT_MODES,
+  checkFolderCheck,
+  AGENT_ENV_NAME,
+  FAILED_REASONS,
+  isBoundedText,
+  isPid,
+  REMOTE,
+  REPLY_BOUNDS,
+  START_TIME,
+  type AfterExit,
+  type ExitFile,
+  type FailedReason,
+} from "./wire.ts";
+
+/** A plan's place: a folder place of this machine, as the space stores it (A1 3.15). */
+export interface PlanPlace {
+  readonly root: string;
+  /** `/`-separated, relative to the root; `""` is the root itself. */
+  readonly path: string;
+  /** The repository's remote the place recorded at bind time, to be found again. */
+  readonly gitRemote?: string;
+}
+
+/** What the claim's reply hands the shim to start (A4 3.6.3 step 3), kept from the click. */
+export interface SpawnPlan {
+  /** The absolute executable first: the route's argv (M2.10 builds it). */
+  readonly argv: readonly string[];
+  /**
+   * Where the agent works: the task's place on this machine, or null for a task with no place at
+   * all (the space's work folder, folder.ts). Resolved right before the launch, never at the click
+   * only: the folder is a fact of this machine's tree at that moment (A1 3.15).
+   */
+  readonly place: PlanPlace | null;
+  /** The instance's `env` (A4 3.8 layer 3). */
+  readonly env: Readonly<Record<string, string>>;
+  /** For the terminal title and the announce line. */
+  readonly title: string;
+  readonly afterExit: AfterExit;
+  /**
+   * The instance's `via_login_shell` (A4 3.8, Linux and macOS): the agent's environment starts
+   * from a login-shell snapshot the service takes in the task's folder right before the launch,
+   * not from the stored one. The agent itself still starts directly. Absent: false.
+   */
+  readonly loginShell?: boolean;
+  /**
+   * The argv elements the resolved folder fills at the claim (A4 3.6.4 `{cwd}`, Codex's `-C`):
+   * the folder is resolved right before the launch, after the plan was written, so those elements
+   * are empty here. Absent: none.
+   */
+  readonly folderArgs?: readonly number[];
+  /**
+   * Codex's reference match (A4 3.4.3): the home whose session files the service reads for this
+   * launch's thread ID, after the agent started. Absent: no match.
+   */
+  readonly match?: { readonly home: string };
+}
+
+/** One launch's machine state. */
+export interface LaunchFile {
+  readonly format: 1;
+  readonly space: string;
+  readonly launch: string;
+  readonly reference: string;
+  readonly task: string | null;
+  /** When the plan was written, wall clock milliseconds. */
+  readonly createdAt: number;
+  readonly plan: SpawnPlan;
+  /**
+   * The folder resolved at dispatch, right before the terminal started in it, with what the shim
+   * checks there: written with the ticket, so a claim always has the check its terminal's folder
+   * was resolved with.
+   */
+  readonly folder?: { readonly path: string; readonly check: FolderCheck };
+  /** Issued at dispatch, when the ticket first leaves the service (A4 3.6.3). */
+  readonly ticket?: {
+    readonly hash: string;
+    readonly issuedAt: number;
+    readonly shimUsed: boolean;
+    readonly bridgeUsed: boolean;
+  };
+  /** Issued inside the claim, before its reply leaves (A4 3.1). */
+  readonly attachment?: { readonly hash: string; readonly pid: number; readonly startTime: string };
+  /** The agent, as `launch.started` reported it. */
+  readonly agent?: { readonly pid: number; readonly startedAt: number };
+}
+
+/** The shim's machine state, as the host reads and writes it. */
+export interface RecordStore {
+  list(): readonly LaunchFile[];
+  get(launch: string): LaunchFile | undefined;
+  /** Durable when it returns. */
+  put(file: LaunchFile): void;
+  /** The launch's folder and everything in it. */
+  remove(launch: string): void;
+  /** The shim's `exit.json` for the launch, when there is a valid one. */
+  readExit(launch: string): ExitFile | undefined;
+  /** Where the shim writes `exit.json`. */
+  exitPath(launch: string): string;
+}
+
+/** The largest launch file read back, and so the largest written. */
+const MAX_FILE = 1024 * 1024;
+/**
+ * The largest plan, as UTF-8 JSON: a quarter of a launch file, so a plan accepted at the click
+ * always fits with its ticket, attachment and agent, and is always read back after a restart.
+ */
+export const PLAN_MAX_BYTES = 256 * 1024;
+const INSTANT_MAX = 253_402_300_799_999;
+const SPACE_ID = /^sp_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const isInstant = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= INSTANT_MAX;
+const isText = isBoundedText;
+/** The instance's `env`: at most half of the names the reply may carry, the rest is the base's. */
+const isEnv = (value: unknown): value is Record<string, string> =>
+  isObject(value) &&
+  Object.keys(value).length <= REPLY_BOUNDS.env / 2 &&
+  Object.entries(value).every(
+    ([name, v]) => AGENT_ENV_NAME.test(name) && isText(v, REPLY_BOUNDS.value),
+  );
+
+/**
+ * A plan's place, checked: a root ID of machine.toml's form and a place's path by any OS's rules
+ * (the resolve applies this machine's), or null. Anything else is no place a launch can work in.
+ */
+export function checkPlanPlace(value: unknown): PlanPlace | null | undefined {
+  if (value === null) return null;
+  if (!isObject(value)) return undefined;
+  const { root, path, gitRemote } = value;
+  if (typeof root !== "string" || !ROOT_ID.test(root)) return undefined;
+  if (typeof path !== "string" || !isPlacePath(path, "linux")) return undefined;
+  if (gitRemote !== undefined && (typeof gitRemote !== "string" || !REMOTE.test(gitRemote))) {
+    return undefined;
+  }
+  return { root, path, ...(gitRemote === undefined ? {} : { gitRemote }) };
+}
+
+/** The plan, checked: a plan that is not one starts nothing. */
+export function checkPlan(value: unknown): SpawnPlan | undefined {
+  if (!isObject(value)) return undefined;
+  const { argv, env, title, afterExit, loginShell, folderArgs, match } = value;
+  if (!Array.isArray(argv) || argv.length === 0 || argv.length > REPLY_BOUNDS.argv) {
+    return undefined;
+  }
+  if (!argv.every((a): a is string => isText(a, REPLY_BOUNDS.arg))) return undefined;
+  const place = checkPlanPlace(value["place"]);
+  if (place === undefined || !isEnv(env) || !isText(title, REPLY_BOUNDS.title)) return undefined;
+  if (!(AFTER_EXIT_MODES as readonly unknown[]).includes(afterExit)) return undefined;
+  if (loginShell !== undefined && typeof loginShell !== "boolean") return undefined;
+  // The folder's elements: distinct indices of empty elements after the executable.
+  if (folderArgs !== undefined) {
+    if (!Array.isArray(folderArgs) || folderArgs.length > 16) return undefined;
+    const seen = new Set<number>();
+    for (const index of folderArgs as unknown[]) {
+      if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 1) return undefined;
+      if (index >= argv.length || argv[index] !== "" || seen.has(index)) return undefined;
+      seen.add(index);
+    }
+  }
+  if (match !== undefined) {
+    if (!isObject(match) || Object.keys(match).length !== 1) return undefined;
+    const home = match["home"];
+    if (!isText(home, REPLY_BOUNDS.path) || home === "") return undefined;
+  }
+  const plan: SpawnPlan = {
+    argv,
+    place,
+    env,
+    title,
+    afterExit: afterExit as AfterExit,
+    ...(loginShell === true ? { loginShell } : {}),
+    ...(folderArgs === undefined || (folderArgs as unknown[]).length === 0
+      ? {}
+      : { folderArgs: folderArgs as number[] }),
+    ...(match === undefined ? {} : { match: { home: (match as { home: string }).home } }),
+  };
+  return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
+}
+
+/** A launch file as read from disk, checked field by field; undefined when it is not one. */
+export function checkLaunchFile(value: unknown): LaunchFile | undefined {
+  if (!isObject(value) || value["format"] !== 1) return undefined;
+  const { space, launch, reference, task, createdAt, folder, ticket, attachment, agent } = value;
+  const plan = checkPlan(value["plan"]);
+  if (plan === undefined) return undefined;
+  if (typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
+  if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isLaunchRef(reference)) {
+    return undefined;
+  }
+  if (task !== null && (typeof task !== "string" || !TASK_ID.test(task))) return undefined;
+  if (!isInstant(createdAt)) return undefined;
+  const file: LaunchFile = { format: 1, space, launch, reference, task, createdAt, plan };
+  let out: LaunchFile = file;
+  if (folder !== undefined) {
+    if (!isObject(folder) || !isText(folder["path"], 4096) || folder["path"] === "") {
+      return undefined;
+    }
+    const check = checkFolderCheck(folder["check"]);
+    if (check === undefined) return undefined;
+    out = { ...out, folder: { path: folder["path"], check } };
+  }
+  if (ticket !== undefined) {
+    if (!isObject(ticket) || !isHash(ticket["hash"]) || !isInstant(ticket["issuedAt"])) {
+      return undefined;
+    }
+    if (typeof ticket["shimUsed"] !== "boolean" || typeof ticket["bridgeUsed"] !== "boolean") {
+      return undefined;
+    }
+    out = {
+      ...out,
+      ticket: {
+        hash: ticket["hash"],
+        issuedAt: ticket["issuedAt"],
+        shimUsed: ticket["shimUsed"],
+        bridgeUsed: ticket["bridgeUsed"],
+      },
+    };
+  }
+  if (attachment !== undefined) {
+    if (!isObject(attachment) || !isHash(attachment["hash"]) || !isPid(attachment["pid"])) {
+      return undefined;
+    }
+    const startTime = attachment["startTime"];
+    if (typeof startTime !== "string" || !START_TIME.test(startTime)) return undefined;
+    out = { ...out, attachment: { hash: attachment["hash"], pid: attachment["pid"], startTime } };
+  }
+  if (agent !== undefined) {
+    if (!isObject(agent) || !isPid(agent["pid"]) || !isInstant(agent["startedAt"])) {
+      return undefined;
+    }
+    out = { ...out, agent: { pid: agent["pid"], startedAt: agent["startedAt"] } };
+  }
+  return out;
+}
+
+/** An `exit.json`, checked; undefined when it is not one or names another launch. */
+export function checkExitFile(value: unknown, launch: string): ExitFile | undefined {
+  if (!isObject(value) || value["format"] !== 1 || value["launch"] !== launch) return undefined;
+  const { spawned, settled, code, signal, ran_ms: ran, failed, folder } = value;
+  if (typeof spawned !== "boolean" || typeof settled !== "boolean") return undefined;
+  if (code !== null && (typeof code !== "number" || !Number.isSafeInteger(code))) return undefined;
+  if (signal !== null && (typeof signal !== "string" || !/^[A-Z0-9]{1,16}$/.test(signal))) {
+    return undefined;
+  }
+  if (!isInstant(ran)) return undefined;
+  if (failed !== undefined && !(FAILED_REASONS as readonly unknown[]).includes(failed)) {
+    return undefined;
+  }
+  if (folder !== undefined && !isFolderReason(folder)) return undefined;
+  return {
+    format: 1,
+    launch,
+    spawned,
+    settled,
+    code,
+    signal,
+    ran_ms: ran,
+    ...(failed === undefined ? {} : { failed: failed as FailedReason }),
+    ...(folder === undefined ? {} : { folder }),
+  };
+}
+
+/** A reason of the shim's folder check (places.ts RESOLVE_REASONS). */
+export const isFolderReason = (value: unknown): value is ResolveReason =>
+  (RESOLVE_REASONS as readonly unknown[]).includes(value);
+
+function readBounded(path: string): unknown {
+  try {
+    if (statSync(path).size > MAX_FILE) return undefined;
+    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+export const LAUNCH_FILE = "launch.json";
+export const EXIT_FILE = "exit.json";
+
+/**
+ * The launch root and each launch folder, and the files in them (A2 3.2.1, A4 3.6.3): set on each
+ * new folder and file through @tasks/files, so no umask decides them. On Windows the folder's ACL
+ * decides.
+ */
+export const LAUNCH_FOLDER_MODE = 0o700;
+export const LAUNCH_FILE_MODE = 0o600;
+
+/** The machine state in folders under the install's launch root. */
+export class FolderRecords implements RecordStore {
+  readonly root: string;
+  readonly #files = new Map<string, LaunchFile>();
+
+  /**
+   * Creates the root (0700, and any missing folder above it) and reads every launch file in it. A
+   * damaged one is left out. The service judges the root before (hub/service.ts): it holds the
+   * commands a launch runs.
+   */
+  constructor(root: string) {
+    this.root = root;
+    makeDir(root, LAUNCH_FOLDER_MODE);
+    for (const name of readdirSync(root)) {
+      if (!LAUNCH_ID.test(name)) continue;
+      const file = checkLaunchFile(readBounded(join(root, name, LAUNCH_FILE)));
+      if (file?.launch === name) this.#files.set(name, file);
+    }
+  }
+
+  list(): readonly LaunchFile[] {
+    return [...this.#files.values()];
+  }
+
+  get(launch: string): LaunchFile | undefined {
+    return this.#files.get(launch);
+  }
+
+  put(file: LaunchFile): void {
+    if (!LAUNCH_ID.test(file.launch)) throw new Error("Not a launch ID");
+    const text = `${JSON.stringify(file)}\n`;
+    // Never a file the reader would leave out after a restart.
+    if (Buffer.byteLength(text, "utf8") > MAX_FILE) throw new Error("The launch file is too large");
+    const folder = join(this.root, file.launch);
+    makeDir(folder, LAUNCH_FOLDER_MODE);
+    atomicWrite(join(folder, LAUNCH_FILE), text, LAUNCH_FILE_MODE);
+    this.#files.set(file.launch, file);
+  }
+
+  remove(launch: string): void {
+    if (!LAUNCH_ID.test(launch)) return;
+    this.#files.delete(launch);
+    rmSync(join(this.root, launch), { recursive: true, force: true, maxRetries: 5 });
+  }
+
+  readExit(launch: string): ExitFile | undefined {
+    if (!LAUNCH_ID.test(launch)) return undefined;
+    return checkExitFile(readBounded(join(this.root, launch, EXIT_FILE)), launch);
+  }
+
+  exitPath(launch: string): string {
+    return join(this.root, launch, EXIT_FILE);
+  }
+}
+
+/** The machine state in memory: tests, and the property model, whose restarts keep the object. */
+export class MemoryRecords implements RecordStore {
+  readonly #files = new Map<string, LaunchFile>();
+  readonly exits = new Map<string, ExitFile>();
+  /** Called before each write takes effect: the model kills the service there. */
+  beforePut: ((file: LaunchFile) => void) | undefined;
+
+  list(): readonly LaunchFile[] {
+    return [...this.#files.values()];
+  }
+
+  get(launch: string): LaunchFile | undefined {
+    return this.#files.get(launch);
+  }
+
+  put(file: LaunchFile): void {
+    this.beforePut?.(file);
+    this.#files.set(file.launch, structuredClone(file));
+  }
+
+  remove(launch: string): void {
+    this.#files.delete(launch);
+    this.exits.delete(launch);
+  }
+
+  readExit(launch: string): ExitFile | undefined {
+    return this.exits.get(launch);
+  }
+
+  exitPath(launch: string): string {
+    return `memory:${launch}/${EXIT_FILE}`;
+  }
+}

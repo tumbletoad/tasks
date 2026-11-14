@@ -1,0 +1,45 @@
+// A home for a real service process with one space from machine.toml (A2 3.2.4): Mira,
+// prefix M, created with this home's machine as its authority, so the service opens it for
+// writing. For the tests that drive the MCP endpoint through real bridge processes. Tests only.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { createSpace, newId } from "@tasks/storage";
+import { checkedDriver } from "@tasks/testkit";
+import { READY_MS, readLog, registerSpaces, stateOf, waitFor } from "./harness.ts";
+
+/** Creates the space in `<home>/spaces/mira` and registers it in `<home>/config/machine.toml`. */
+export async function hubSpace(
+  home: string,
+): Promise<{ readonly id: string; readonly folder: string }> {
+  const machine = newId("m");
+  mkdirSync(stateOf(home), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(stateOf(home), "machine.json"),
+    JSON.stringify({
+      machine_id: machine,
+      name: "fixture-machine",
+      created_at: "2026-11-13T08:00:00.000Z",
+    }),
+    { mode: 0o600 },
+  );
+  mkdirSync(join(home, "spaces"), { recursive: true });
+  const space = createSpace(await checkedDriver(), join(home, "spaces", "mira"), {
+    name: "Mira",
+    ownerLabel: "Mira Okafor",
+    machineId: machine,
+    refPrefix: "M",
+  });
+  registerSpaces(home, [space.folder]);
+  return { id: space.space.spaceId, folder: space.folder };
+}
+
+/** Waits until the services of `home` have opened its space `times` times in all. */
+export const spaceOpen = (home: string, times = 1, ms = READY_MS): Promise<unknown> =>
+  waitFor(
+    () =>
+      readLog(home).filter((event) => event["ev"] === "space.open").length >= times
+        ? true
+        : undefined,
+    ms,
+    "the space opens",
+  );

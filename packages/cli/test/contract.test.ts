@@ -1,0 +1,52 @@
+// The contract suite (@tasks/service/test/contract) through the CLI's --json (A3 5 "Parity", A7 3.9
+// M2.03): every example goes in as `tasks <verb> --input - --json`, the CLI's own path from the
+// arguments to `op/call` and back, run in this process against a service in this process. The
+// user's calls come from a terminal (`cli-interactive`), the agent's from a script (`cli-script`).
+import { type ErrorBody } from "@tasks/contracts";
+import {
+  ContractError,
+  contractSuite,
+  contractWorld,
+  type ContractTransport,
+} from "@tasks/service/test/contract";
+import { CLI_SPEC } from "../src/args.ts";
+import { runMain } from "./cli-harness.ts";
+
+/** The verb of an entry: `note` for a note, `log` for the other entries of entry.add. */
+function verbOf(entry: string, input: Record<string, unknown>): string {
+  if (entry === "entry.add") return input["kind"] === "note" ? "note" : "log";
+  const verb = CLI_SPEC.verbs.find((v) => v.entry === entry)?.verb;
+  if (verb === undefined) throw new Error(`${entry} has no verb`);
+  return verb;
+}
+
+contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --json", async () => {
+  const w = await contractWorld("cj");
+  const transport: ContractTransport = {
+    portal: w.portal,
+    // The CLI holds no binding: `tasks show --launch` resolves the reference for that call.
+    binds: false,
+    launch: async (task) => (await w.launch(task)).reference,
+    call: async (entry, input, actor) => {
+      const ran = await runMain([verbOf(entry, input), "--input", "-", "--json"], {
+        home: w.home,
+        tty: actor === "user",
+        stdin: JSON.stringify(input),
+      });
+      const out = JSON.parse(ran.stdout) as Record<string, unknown>;
+      // A result may hold an `error` of its own (a receipt of a refusal): exit 0 is a result.
+      if (ran.code === 0) return out;
+      const error = out["error"] as ErrorBody | undefined;
+      if (error === undefined) throw new Error(`tasks exited ${String(ran.code)} without an error`);
+      // The CLI adds A2's class to A3's body; the suite compares A3's.
+      throw new ContractError({
+        code: error.code,
+        message: error.message,
+        ...(error.hint === undefined ? {} : { hint: error.hint }),
+        ...(error.data === undefined ? {} : { data: error.data }),
+      });
+    },
+    close: () => w.close(),
+  };
+  return transport;
+});

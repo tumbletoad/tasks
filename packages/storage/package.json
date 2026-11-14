@@ -1,0 +1,19 @@
+{
+  "name": "@tasks/storage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./driver-contract": "./test/driver-contract.ts",
+    "./revisions": "./test/revisions.ts"
+  },
+  "dependencies": {
+    "@tasks/files": "workspace:*"
+  },
+  "devDependencies": {
+    "@tasks/contracts": "workspace:*",
+    "fast-check": "4.10.2",
+    "vitest": "5.1.0"
+  }
+}

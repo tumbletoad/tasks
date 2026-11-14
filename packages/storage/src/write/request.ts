@@ -1,0 +1,1375 @@
+// What the writer accepts and returns (A1 3.5 to 3.7, 3.21). A request names 1 to 50 A1
+// operations, the credential fields A2 takes from the connection, an optional base and a reason.
+// These are the writer's internal interface, behind the registry entries of packages/contracts:
+// a handler expands an entry's input into these operations (A3 3.2.1), and the service sends them
+// to the space's writer worker. Everything here is checked before the writer's transaction starts,
+// because a request crosses a thread boundary as plain data.
+//
+// Text is normalised as A1 3.7 asks (NFC, LF line endings, NUL and the other C0 controls except tab
+// and newline removed) before any limit is checked, so the limit holds for the stored text. The
+// registry's SafeText (A3 3.10) normalises more at the boundary, and normalising again is harmless.
+import { isId, type Id } from "../ids.ts";
+import { inRange, RANGES } from "../rows.ts";
+import { OPEN_SETS } from "../schema.ts";
+import { isJsonData } from "./canonical.ts";
+import { PATCHABLE_FIELDS, type PatchableField } from "./fields.ts";
+
+// ---------------------------------------------------------------------------------------------
+// Limits (A1 3.7)
+
+export const WRITE_LIMITS = {
+  /** Operations per request. Internal importers may commit more in one commit (M7). */
+  ops: 50,
+  /** Bytes of JSON per request. */
+  requestBytes: 512 * 1024,
+  /** Characters. */
+  title: 300,
+  summary: 400,
+  /** UTF-8 bytes. */
+  context: 64 * 1024,
+  outcome: 4 * 1024,
+  /** Characters of a free one-line field A1 does not limit (owner, waiting on), and of a reason. */
+  line: 300,
+  reason: 1_000,
+  /** Characters of a status or effort key and of a writer scope. */
+  key: 40,
+  scope: 200,
+  /** UTF-8 bytes of a note's and a log entry's body. */
+  note: 64 * 1024,
+  log: 16 * 1024,
+  /** Characters of a source's title and URL, and of a source key (A1 3.6). */
+  sourceTitle: 300,
+  url: 2_048,
+  sourceKey: 512,
+  /** Characters of a place's relative path (A1 3.15). */
+  path: 1_024,
+} as const;
+
+// ---------------------------------------------------------------------------------------------
+// Errors and results
+
+/**
+ * The write path's error codes (A1 3.7). M1.05 maps them to the registry's error codes. A problem
+ * names the operation and the field, never a value: it can reach a log through the service.
+ */
+export const WRITE_ERROR_CODES = [
+  "VALIDATION_FAILED",
+  "TOO_LARGE",
+  "NOT_FOUND",
+  "DELETED",
+  "SPACE_MISMATCH",
+  "VERSION_CONFLICT",
+  "BASE_REQUIRED",
+  "BASE_FROM_FUTURE",
+  "EPOCH_CHANGED",
+  "INVALID_TRANSITION",
+  "TASK_NOT_ACTIVE",
+  "REQUEST_ID_REUSED",
+  "REQUEST_ID_INVALID",
+  "SPACE_READ_ONLY",
+] as const;
+
+export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
+
+export interface WriteProblem {
+  code: WriteErrorCode;
+  /** The index of the operation, when one operation caused it. */
+  op?: number;
+  /** The input path or logical field, such as `set.title` or `base`. */
+  field?: string;
+  /** One fixed sentence. It never quotes a value. */
+  message: string;
+  /** REQUEST_ID_REUSED: when the request that holds the ID was decided (A3 3.5). */
+  at?: number;
+  /**
+   * SPACE_READ_ONLY: why the space takes no write, a word A3 3.5's `read_only` passes on:
+   * `not_authority` (A2 3.1) now, `held` and `transfer_pending` with their steps (A1 3.6, 3.18).
+   */
+  reason?: string;
+}
+
+/** A1 3.5: an `as_of` is the triple (epoch, incarnation, last_seq) of one read. */
+export interface AsOf {
+  epoch: number;
+  incarnation: Id<"ai">;
+  seq: number;
+}
+
+/** The tables whose existing rows a request can change, and so conflict on. */
+export type ConflictEntity = "tasks" | "task_sources" | "places";
+
+/**
+ * One field that changed after the caller's base, or the link version the caller named (A1 3.5).
+ * A revival without a link version or a base lists the removed link here too, with who removed it.
+ */
+export interface FieldConflict {
+  op: number;
+  /** The row: its table and its `changes.entity_id`, `task_id|source_id` for a link. */
+  entity: ConflictEntity;
+  id: string;
+  /** The task the row is or belongs to, with its reference. A group's place has none. */
+  task?: Id<"t">;
+  ref?: string;
+  field: string;
+  /**
+   * The field's current value, as `changes.after` holds it. It is in the reply only: a receipt
+   * stores the conflict without it, so a replay never passes off an old read as current.
+   */
+  value?: unknown;
+  /** Its physical version: the commit that last wrote it. */
+  version: number;
+  /**
+   * Who wrote that commit's content, and when, with the commit's origin: text the user applied
+   * through an import is labelled as an import, not as the user (A3 3.10). A receipt stored before
+   * the origin was recorded has none.
+   */
+  by: { actor: Id<"ac">; kind: string; label: string; origin?: string };
+  at: number;
+}
+
+export interface OpResult {
+  i: number;
+  status: "created" | "updated" | "unchanged";
+  /** The row the operation acts on: a task, a note, a log entry, a source or a place. */
+  id: string;
+  /** The task the operation acts on or under, with its reference such as `M-14`. */
+  task?: Id<"t">;
+  ref?: string;
+  /** A note's or log entry's reference within its task, such as `n2` (A1 3.3). */
+  entry?: string;
+  /** The row's version after the request: for `source.add`, the link's version. */
+  version: number;
+  /** `source.add` on an existing source: the fields the input gives otherwise (A1 3.6). */
+  differs?: string[];
+}
+
+export type WriteStatus = "applied" | "unchanged" | "conflict" | "rejected";
+
+export interface WriteResult {
+  status: WriteStatus;
+  /** The as_of after the request: the new commit for `applied`, the state it was judged on else. */
+  as_of: string;
+  epoch: number;
+  incarnation: Id<"ai">;
+  seq: number;
+  /** The commit's `op_` ID, for `applied`. */
+  commit?: Id<"op">;
+  /** One per operation, for `applied` and `unchanged`. */
+  results: OpResult[];
+  /** Every conflict of the request together, for `conflict`. */
+  conflicts: FieldConflict[];
+  /** Why, for `rejected` and `conflict`. */
+  error?: WriteProblem;
+  warnings: string[];
+  /** A retry with the same intent got the stored result of the first decision (A1 3.8). */
+  replayed?: true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The request
+
+export const ACTOR_KINDS = ["human", "agent", "routine", "system", "import"] as const;
+export type ActorKind = (typeof ACTOR_KINDS)[number];
+export const ORIGINS = ["ui", "cli", "mcp", "http", "import", "system", "migration"] as const;
+export type Origin = (typeof ORIGINS)[number];
+
+/** The credential fields A2 takes from the connection (A1 3.21). */
+export interface Credential {
+  /** The writer scope (A3 3.7.9): receipts, rate limits and audit are keyed by it. */
+  scope_id: string;
+  /**
+   * The scope this connection wrote under before it bound (A3 3.7.9). The receipt lookup tries it
+   * after `scope_id`, so a retry after binding finds the first result. New receipts go under
+   * `scope_id`.
+   */
+  earlier_scope_id?: string;
+  principal_id: Id<"ac">;
+  actor_kind: ActorKind;
+  /** Who wrote the content. Default: the principal. */
+  author_id?: Id<"ac">;
+  /** The machine the request came from. */
+  machine_id: Id<"m">;
+  session_id?: Id<"se">;
+  run_id?: Id<"ru">;
+  origin: Origin;
+}
+
+/** A base: the `as_of` of a read, with the full incarnation ID or its 8-character tag. */
+export interface Base {
+  epoch: number;
+  /** An `ai_` ID, or the tag of the wire form. */
+  incarnation: string;
+  seq: number;
+}
+
+export type Due = { date: string } | { at: number; tz: string };
+
+/** The fields a task can be created with and `task.patch` can set. */
+export interface TaskValues {
+  title?: string;
+  summary?: string;
+  context?: string;
+  status?: string;
+  inbox?: boolean;
+  priority?: number;
+  effort?: string | null;
+  planned_for?: string | null;
+  focus?: string | null;
+  owner?: string | null;
+  waiting_on?: string | null;
+  source_at?: number | null;
+  reviewed_at?: number | null;
+  due?: Due | null;
+}
+
+/** Where a task goes: a group and, optionally, a sibling to stand next to. */
+export interface Placement {
+  /** An area ID or slug. `null`: no area. */
+  area?: string | null;
+  /** A project ID or slug. The task's area follows the project's. `null`: no project. */
+  project?: string | null;
+  /** A sibling task: the new position is right after it, or right before it. */
+  after?: string;
+  before?: string;
+}
+
+export interface TaskCreate extends TaskValues, Placement {
+  kind: "task.create";
+  /** A client-supplied ID (A1 3.3). Later operations of the request may name it. */
+  id?: Id<"t">;
+  title: string;
+}
+
+export interface TaskPatch {
+  kind: "task.patch";
+  /** A task ID, a reference such as `M-14`, or a legacy alias. */
+  task: string;
+  set?: TaskValues;
+  unset?: PatchableField[];
+}
+
+/**
+ * `task.context_append` (A1 3.6): an atomic append inside the writer. The new context is the
+ * current one, a blank line and the text (the text alone when the context is empty), at most
+ * A1's 64 KiB in all. A base-free insert (A1 3.5): it needs no base and two appends both land,
+ * but it writes the `context` field, so a stale replace conflicts with it.
+ */
+export interface TaskContextAppend {
+  kind: "task.context_append";
+  task: string;
+  text: string;
+}
+
+export interface TaskMove extends Placement {
+  kind: "task.move";
+  task: string;
+}
+
+export interface TaskComplete {
+  kind: "task.complete";
+  task: string;
+  outcome?: string;
+}
+
+export interface TaskReopen {
+  kind: "task.reopen";
+  task: string;
+  reason?: string;
+}
+
+/** Who a note is for (A1 3.4): the user, or the user's agents. */
+export const ADDRESSEES = ["self", "agents"] as const;
+export type Addressee = (typeof ADDRESSEES)[number];
+
+/** A1 3.4's log kinds. */
+export const LOG_KINDS = [
+  "progress",
+  "evidence",
+  "blocker",
+  "decision",
+  "question",
+  "handoff",
+] as const;
+export type LogKind = (typeof LOG_KINDS)[number];
+
+/** A1 3.4's source kinds, an open set that the writer checks (A1 3.4). */
+export const SOURCE_KINDS = OPEN_SETS["sources.kind"];
+export type SourceKind = (typeof SOURCE_KINDS)[number];
+
+/** What a source is to a task (A1 3.4). */
+export const LINK_ROLES = ["origin", "related", "evidence"] as const;
+export type LinkRole = (typeof LINK_ROLES)[number];
+
+export const PLACE_KINDS = ["folder", "file"] as const;
+export type PlaceKind = (typeof PLACE_KINDS)[number];
+
+/** `note.add` (A1 3.6): a new note on a task, with the task's next ordinal. */
+export interface NoteAdd {
+  kind: "note.add";
+  task: string;
+  body: string;
+  /** Default `self`. */
+  addressee?: Addressee;
+}
+
+/** `log.add` (A1 3.6): a new log entry. Its session and run come from the credential. */
+export interface LogAdd {
+  kind: "log.add";
+  task: string;
+  body: string;
+  /** Default `progress`. */
+  log_kind?: LogKind;
+}
+
+/** A source's own fields (A1 3.4). `key` is `<namespace>:<id>` (A1 3.6). */
+export interface SourceFields {
+  kind: SourceKind;
+  title: string;
+  key?: string;
+  who?: string;
+  ref?: string;
+  url?: string;
+  /** When it was sent, in milliseconds. */
+  at?: number;
+}
+
+/**
+ * `source.add` (A1 3.6): finds the source by its key or creates it, then links it to the task. A
+ * live link is unchanged. A removed link is revived, which needs the link's version or a base.
+ */
+export interface SourceAdd {
+  kind: "source.add";
+  task: string;
+  source: SourceFields;
+  /** Default `origin`. */
+  role?: LinkRole;
+  /** The link's version, for a revival (A1 3.5). */
+  link_version?: number;
+}
+
+/**
+ * `place.set` (A1 3.6, 3.15): binds the owner's folder on the request's machine, as a root ID and
+ * a relative path. The owner is one task, project or area. Changing an existing place needs a
+ * base. A2's handler turns an absolute path into these and reads the Git remote (M2.07).
+ */
+export interface PlaceSet {
+  kind: "place.set";
+  task?: string;
+  project?: string;
+  area?: string;
+  root: string;
+  /** `/`-separated, relative. `""` is the root itself. */
+  path: string;
+  /** Default `folder`. */
+  place_kind?: PlaceKind;
+  /** The repository's remote at bind time, stored in `identity`. */
+  git_remote?: string;
+}
+
+/**
+ * `place.clear` (A1 3.6, 3.15): unbinds the owner's folder on the request's machine. The place
+ * row stays, tombstoned (its `deleted` field), so history keeps the folder it held. Clearing an
+ * existing place needs a base, as changing it does; an owner without a place here is unchanged.
+ */
+export interface PlaceClear {
+  kind: "place.clear";
+  task?: string;
+  project?: string;
+  area?: string;
+}
+
+/** A launch's states (A4 3.9.1). */
+export const LAUNCH_STATES = [
+  "prepared",
+  "dispatching",
+  "dispatched",
+  "confirmed",
+  "failed",
+  "unknown",
+] as const;
+export type LaunchState = (typeof LAUNCH_STATES)[number];
+
+/**
+ * A launch record's evidence (A4 3.9.1, 3.16): a flat map from one of A4's keys to a value of that
+ * key's kind. A4 owns the list (packages/launch: EVIDENCE_FIELDS); the writer keeps this copy, as
+ * it keeps A4's edges, and checks every key and value against it, so no caller of the write path
+ * can store a key outside the list or a value of another kind. A launch test compares the copies.
+ */
+export type LaunchEvidence = Record<string, string | number | boolean>;
+
+/** A4's evidence keys and the kind of each value: an ID, an instant, a count or a flag. */
+export const LAUNCH_EVIDENCE_FIELDS = {
+  folder_id: "id",
+  preset: "id",
+  grant: "id",
+  replayed_at: "instant",
+  thread: "id",
+  claim: "id",
+  claimed_at: "instant",
+  pid: "count",
+  pid_started_at: "instant",
+  folder_checked: "flag",
+  exit_code: "count",
+  bound_at: "instant",
+} as const satisfies Record<string, "id" | "instant" | "count" | "flag">;
+
+/** An ID in evidence: a native session or thread ID, a grant, a claim, a file identity. */
+export const LAUNCH_EVIDENCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** A4's reason codes of Failed (A4 3.9.1–3.9.3). A launch test compares them with launch's. */
+export const LAUNCH_FAIL_REASONS = [
+  "expired",
+  "cancelled",
+  "refused",
+  "not_claimed",
+  "verify_failed",
+  "agent_exited",
+  "folder_mismatch",
+  "interrupted",
+] as const;
+
+/** A4's reason codes of Unknown. */
+export const LAUNCH_UNKNOWN_REASONS = ["no_answer", "lost", "regranted"] as const;
+
+/**
+ * `launch.create` (A4 3.9.1 Prepared): a click, as IDs and codes. The machine is the request's.
+ * The writer gives it its `la_` ID and launch reference. A second click on the same task and
+ * instance while an intent is in Dispatching or younger than 5 s returns that intent instead.
+ */
+export interface LaunchCreate {
+  kind: "launch.create";
+  /** The task's ID: a reference such as `M-14` is text a launch never takes. */
+  task: Id<"t">;
+  /** The instance's key in the machine's `machine.toml`. */
+  instance: string;
+  route: string;
+  /** The place the folder resolved from, or null for the space's Tasks work folder. */
+  place: Id<"pl"> | null;
+  task_version: number;
+  /** SHA-256 of the brief, lower-case hex. */
+  brief_hash: string;
+  session?: Id<"se">;
+  evidence?: LaunchEvidence;
+}
+
+/**
+ * `launch.transition` (A4 3.9.1, 3.16.1): one compare-and-set step of a launch. The launch must be
+ * in `expect`, and, when `expect_version` is given, still at that version: the record the caller
+ * decided on, so a decision on a record that has changed since (a claim landed, evidence grew)
+ * moves nothing. `expect → next` must be an edge of A4's machine. Evidence only grows: a key the
+ * record holds keeps its value.
+ */
+export interface LaunchTransition {
+  kind: "launch.transition";
+  launch: Id<"la">;
+  expect: LaunchState;
+  expect_version?: number;
+  next: LaunchState;
+  /** The reason code of Failed and Unknown. */
+  reason?: string;
+  evidence?: LaunchEvidence;
+}
+
+export type Operation =
+  | TaskCreate
+  | TaskPatch
+  | TaskContextAppend
+  | TaskMove
+  | TaskComplete
+  | TaskReopen
+  | NoteAdd
+  | LogAdd
+  | SourceAdd
+  | PlaceSet
+  | PlaceClear
+  | LaunchCreate
+  | LaunchTransition;
+export type OperationKind = Operation["kind"];
+
+export const OPERATION_KINDS = [
+  "task.create",
+  "task.patch",
+  "task.context_append",
+  "task.move",
+  "task.complete",
+  "task.reopen",
+  "note.add",
+  "log.add",
+  "source.add",
+  "place.set",
+  "place.clear",
+  "launch.create",
+  "launch.transition",
+] as const satisfies readonly OperationKind[];
+
+/**
+ * What the caller asked for, as A3 3.4.1 and A1 3.8 define the intent: the registry entry and its
+ * input as the caller sent it, after SafeText and the schema's normalisation, before relative
+ * dates, references, dedupe and expansion. The service sends it with the operations it expanded
+ * the input into, and the receipt's fingerprint covers it instead of the operations.
+ */
+export interface Intent {
+  entry: string;
+  input: unknown;
+}
+
+export interface WriteRequest {
+  /** The space the caller means: a request for another space is refused (SPACE_MISMATCH). */
+  space_id: Id<"sp">;
+  /** 16 to 64 characters from `[A-Za-z0-9_-]`, unique within the writer scope (A1 3.8). */
+  request_id: string;
+  actor: Credential;
+  /** Required when the request changes fields of rows that existed before it (A1 3.5). */
+  base?: Base | string;
+  reason?: string;
+  /** A human's undoable action: the commit joins the principal's undo stack (A1 3.10.1). */
+  undoable?: boolean;
+  /**
+   * Every task the request changes must be active: A3 3.4.6's `update_task` changes an active
+   * task. A completed or archived one refuses the request with TASK_NOT_ACTIVE, decided in the
+   * request's transaction, so it has a receipt and a retry answers the same.
+   */
+  active?: boolean;
+  /** The caller's intent. Without one, the intent is the operations themselves. */
+  intent?: Intent;
+  /**
+   * What the caller found before the writer and says with the result, such as a place bound
+   * without a remote check (A3 3.4.6). An applied or unchanged result carries them and its
+   * receipt stores them, so a replay says what the first answer said (A3 3.4.1); a retry's own
+   * findings never replace them. Not part of the intent's fingerprint. At most 50 lines (one per
+   * operation) of at most 500 characters, without controls; never task text.
+   */
+  warnings?: string[];
+  ops: Operation[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Validation
+
+/** A request that passed validation: text normalised, base parsed. */
+export interface CheckedRequest extends Omit<WriteRequest, "base"> {
+  base?: Base;
+}
+
+/** A decided refusal on its way to the result. It never leaves the write path as an error. */
+export class RequestProblem extends Error {
+  override readonly name = "RequestProblem";
+  readonly problem: WriteProblem;
+  /** Rows the refusal is about, such as a removed link a revival needs the version of. */
+  readonly conflicts: FieldConflict[];
+  constructor(problem: WriteProblem, conflicts: FieldConflict[] = []) {
+    super(problem.message);
+    this.problem = problem;
+    this.conflicts = conflicts;
+  }
+}
+
+/** Throws the problem. An empty field means the request as a whole. */
+function fail(code: WriteErrorCode, message: string, field?: string, op?: number): never {
+  throw new RequestProblem({
+    code,
+    message,
+    ...(op === undefined ? {} : { op }),
+    ...(field === undefined || field === "" ? {} : { field }),
+  });
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * A1 3.7's normalisation: LF line endings, NUL and the C0 controls but tab and newline removed,
+ * NFC. A lone surrogate becomes U+FFFD first, as SQLite's UTF-8 would store it, so the row and the
+ * history hold the same text.
+ */
+export function normaliseStored(text: string): string {
+  return (
+    text
+      .toWellFormed()
+      .replace(/\r\n?/g, "\n")
+      // eslint-disable-next-line no-control-regex -- the C0 controls are what this removes.
+      .replace(/[\u0000-\u0008\u000b-\u001f]/g, "")
+      .normalize("NFC")
+  );
+}
+
+const codePoints = (text: string): number => Array.from(text).length;
+
+const utf8Bytes = (text: string): number => Buffer.byteLength(text, "utf8");
+
+/** A1 3.8: a request ID is 16 to 64 characters from [A-Za-z0-9_-]. */
+export const REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
+const KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const ENTRY_NAME = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
+/** A root's ID: a key of the machine's `machine.toml` (A1 3.15). */
+const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const SOURCE_NAMESPACE = /^[a-z0-9.-]+$/;
+// Characters a place path never holds (A1 3.15): controls, bidirectional controls and zero-width
+// characters, and the backslash, which Windows reads as a separator, so "a\..\b" would climb.
+// The pattern is built from escapes, so the source holds no invisible character.
+const PATH_FORBIDDEN = new RegExp(
+  "[" +
+    "\\u0000-\\u001f\\u007f-\\u009f" + // C0 controls, DEL and the C1 controls
+    "\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069" + // bidirectional controls
+    "\\u200b-\\u200d\\u2060\\ufeff" + // zero-width characters
+    "\\\\" + // the backslash
+    "]",
+  "u",
+);
+
+/** The writer scope of the writer's own system commits, which no request may use. */
+export const SYSTEM_SCOPE = "system";
+
+/**
+ * A source key as A1 3.6 stores it, or undefined: trimmed, `<namespace>:<id>` with the namespace
+ * lower-cased and from `[a-z0-9.-]`, an ID that is not empty, kept as given, and at most 512
+ * characters in all. The text is normalised first, like every text the writer stores.
+ */
+export function normaliseSourceKey(text: string): string | undefined {
+  const key = normaliseStored(text).trim();
+  const cut = key.indexOf(":");
+  if (cut < 1 || cut === key.length - 1) return undefined;
+  const namespace = key.slice(0, cut).toLowerCase();
+  if (!SOURCE_NAMESPACE.test(namespace)) return undefined;
+  const result = `${namespace}${key.slice(cut)}`;
+  return codePoints(result) <= WRITE_LIMITS.sourceKey ? result : undefined;
+}
+
+/** A segment that starts with a drive letter and a colon, which Windows reads as a drive. */
+const DRIVE = /^[A-Za-z]:/;
+
+/**
+ * Whether `path` is a place's relative path (A1 3.15): `""` for the root itself, else segments
+ * joined by `/`, none empty, `.` or `..`, no control, bidirectional or zero-width character and no
+ * backslash, at most 1,024 characters, and no drive letter in front (`C:/x` and `C:x` leave the
+ * root on Windows; structured place fields never take an absolute path, A6 3.3). It is already its
+ * own normalisation: a caller checks the text as sent with `PATH_FORBIDDEN` first, so the
+ * normalisation never drops a control from a path.
+ */
+export function isRelPath(path: string): boolean {
+  if (path === "") return true;
+  if (codePoints(path) > WRITE_LIMITS.path || PATH_FORBIDDEN.test(path)) return false;
+  if (DRIVE.test(path)) return false;
+  return path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+}
+
+const isScope = (scope: unknown): scope is string =>
+  typeof scope === "string" &&
+  scope !== "" &&
+  scope.length <= WRITE_LIMITS.scope &&
+  normaliseStored(scope) === scope &&
+  !scope.includes("\n") &&
+  !scope.includes("\t") &&
+  scope !== SYSTEM_SCOPE;
+const DATE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
+const TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/;
+const AS_OF = /^([0-9]{1,10})\.([0-9]{1,15})\.([0-9a-hjkmnp-tv-z]{8})$/;
+
+/** Whether `text` is a calendar date `YYYY-MM-DD`. */
+export function isDate(text: unknown): text is string {
+  if (typeof text !== "string") return false;
+  const match = DATE.exec(text);
+  if (match === null) return false;
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+/** Whether `name` is an IANA time zone this runtime knows. A bare offset is refused (A1 3.4). */
+export function isTimeZone(name: unknown): name is string {
+  if (typeof name !== "string" || name.length > 64 || !TIME_ZONE.test(name)) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Parses the wire form of an `as_of`, `<epoch>.<seq>.<tag>` (A1 3.5), or returns undefined. */
+export function parseAsOf(text: unknown): Base | undefined {
+  if (typeof text !== "string") return undefined;
+  const match = AS_OF.exec(text);
+  if (match === null) return undefined;
+  const epoch = Number(match[1]);
+  const seq = Number(match[2]);
+  if (!inRange(epoch, "epoch") || !inRange(seq, "seq")) return undefined;
+  return { epoch, incarnation: match[3] ?? "", seq };
+}
+
+/** The wire form of an `as_of`: the tag is the first 8 characters of the incarnation's body. */
+export function formatAsOf(asOf: AsOf): string {
+  return `${String(asOf.epoch)}.${String(asOf.seq)}.${incarnationTag(asOf.incarnation)}`;
+}
+
+export const incarnationTag = (incarnation: string): string =>
+  incarnation.slice(incarnation.indexOf("_") + 1, incarnation.indexOf("_") + 9);
+
+/** Reads the fields of one object, refusing any key it does not know. */
+class Fields {
+  readonly #value: Record<string, unknown>;
+  readonly #path: string;
+  readonly #op: number | undefined;
+  readonly #seen = new Set<string>();
+
+  constructor(value: unknown, path: string, op?: number) {
+    this.#path = path;
+    this.#op = op;
+    if (!isRecord(value)) {
+      fail("VALIDATION_FAILED", "Expected an object", path === "" ? undefined : path, op);
+    }
+    this.#value = value;
+  }
+
+  #at(key: string): string {
+    return this.#path === "" ? key : key === "" ? this.#path : `${this.#path}.${key}`;
+  }
+
+  fail(code: WriteErrorCode, message: string, key: string): never {
+    return fail(code, message, this.#at(key), this.#op);
+  }
+
+  /** Whether the key is present: null counts, undefined does not. */
+  has(key: string): boolean {
+    return Object.hasOwn(this.#value, key) && this.#value[key] !== undefined;
+  }
+
+  raw(key: string): unknown {
+    this.#seen.add(key);
+    return Object.hasOwn(this.#value, key) ? this.#value[key] : undefined;
+  }
+
+  /** Text, normalised, single-line when `line`, within `max` characters or bytes. */
+  text(key: string, limits: { chars?: number; bytes?: number; line?: boolean; empty?: boolean }) {
+    const value = this.raw(key);
+    if (typeof value !== "string") return this.fail("VALIDATION_FAILED", "Expected text", key);
+    const text = normaliseStored(value);
+    if (limits.line === true && text.includes("\n")) {
+      this.fail("VALIDATION_FAILED", "Expected one line of text", key);
+    }
+    if (limits.empty !== true && text.trim() === "") {
+      this.fail("VALIDATION_FAILED", "Expected text that is not empty", key);
+    }
+    if (limits.chars !== undefined && codePoints(text) > limits.chars) {
+      this.fail("TOO_LARGE", "The text is longer than its limit", key);
+    }
+    if (limits.bytes !== undefined && utf8Bytes(text) > limits.bytes) {
+      this.fail("TOO_LARGE", "The text is larger than its limit", key);
+    }
+    return text;
+  }
+
+  optText(key: string, limits: Parameters<Fields["text"]>[1]): string | undefined {
+    return this.has(key) ? this.text(key, limits) : undefined;
+  }
+
+  /** Text or null. */
+  nullableText(key: string, limits: Parameters<Fields["text"]>[1]): string | null | undefined {
+    if (!this.has(key)) return undefined;
+    return this.raw(key) === null ? null : this.text(key, limits);
+  }
+
+  key(key: string): string {
+    const value = this.raw(key);
+    if (typeof value !== "string" || value.length > WRITE_LIMITS.key || !KEY.test(value)) {
+      return this.fail("VALIDATION_FAILED", "Expected a key of letters, digits, _, . and -", key);
+    }
+    return value;
+  }
+
+  id<P extends "t" | "ac" | "m" | "se" | "ru" | "sp" | "la">(key: string, prefix: P): Id<P> {
+    const value = this.raw(key);
+    if (!isId(value, prefix)) return this.fail("VALIDATION_FAILED", "Expected an ID", key);
+    return value;
+  }
+
+  reference(key: string): string {
+    const value = this.raw(key);
+    if (typeof value !== "string" || value === "" || value.length > 64) {
+      return this.fail("VALIDATION_FAILED", "Expected a reference", key);
+    }
+    return value;
+  }
+
+  /** An area or project: an ID or a slug, or null for none. */
+  group(key: string): string | null {
+    const value = this.raw(key);
+    if (value === null) return null;
+    if (typeof value !== "string" || value === "" || value.length > 120) {
+      return this.fail("VALIDATION_FAILED", "Expected an ID, a slug or null", key);
+    }
+    return value;
+  }
+
+  boolean(key: string): boolean {
+    const value = this.raw(key);
+    if (typeof value !== "boolean")
+      return this.fail("VALIDATION_FAILED", "Expected true or false", key);
+    return value;
+  }
+
+  oneOf<const T extends string>(key: string, values: readonly T[]): T {
+    const value = this.raw(key);
+    if (!values.includes(value as T))
+      return this.fail("VALIDATION_FAILED", "Not an allowed value", key);
+    return value as T;
+  }
+
+  int(key: string, min: number, max: number): number {
+    const value = this.raw(key);
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
+      return this.fail("VALIDATION_FAILED", "Expected a whole number in range", key);
+    }
+    return value;
+  }
+
+  instantOrNull(key: string): number | null {
+    const value = this.raw(key);
+    if (value === null) return null;
+    if (!inRange(value, "instant"))
+      return this.fail("VALIDATION_FAILED", "Expected an instant", key);
+    return value;
+  }
+
+  dateOrNull(key: string): string | null {
+    const value = this.raw(key);
+    if (value === null) return null;
+    if (!isDate(value)) return this.fail("VALIDATION_FAILED", "Expected a date YYYY-MM-DD", key);
+    return value;
+  }
+
+  due(key: string): Due | null {
+    const value = this.raw(key);
+    if (value === null) return null;
+    const due = new Fields(value, this.#at(key), this.#op);
+    if (due.has("date")) {
+      const date = due.raw("date");
+      if (!isDate(date)) due.fail("VALIDATION_FAILED", "Expected a date YYYY-MM-DD", "date");
+      due.done();
+      return { date: date as string };
+    }
+    const at = due.raw("at");
+    if (!inRange(at, "instant")) due.fail("VALIDATION_FAILED", "Expected an instant", "at");
+    const tz = due.raw("tz");
+    if (!isTimeZone(tz)) due.fail("VALIDATION_FAILED", "Expected an IANA time zone", "tz");
+    due.done();
+    return { at: at as number, tz: tz as string };
+  }
+
+  /**
+   * Refuses every key that was not read. A key whose value is undefined counts as missing. The
+   * problem names the object, not the key: an unknown key is input, and can hold any text.
+   */
+  done(): void {
+    for (const key of Object.keys(this.#value)) {
+      if (!this.#seen.has(key) && this.#value[key] !== undefined) {
+        this.fail("VALIDATION_FAILED", "The object has a field it does not take", "");
+      }
+    }
+  }
+}
+
+/** Reads the task values present in `f`. */
+function taskValues(f: Fields): TaskValues {
+  const values: TaskValues = {};
+  const line = { chars: WRITE_LIMITS.line, line: true };
+  if (f.has("title")) values.title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
+  if (f.has("summary")) {
+    values.summary = f.text("summary", { chars: WRITE_LIMITS.summary, line: true, empty: true });
+  }
+  if (f.has("context")) {
+    values.context = f.text("context", { bytes: WRITE_LIMITS.context, empty: true });
+  }
+  if (f.has("status")) values.status = f.key("status");
+  if (f.has("inbox")) values.inbox = f.boolean("inbox");
+  if (f.has("priority")) values.priority = f.int("priority", 1, 4);
+  if (f.has("effort")) values.effort = f.raw("effort") === null ? null : f.key("effort");
+  if (f.has("planned_for")) values.planned_for = f.dateOrNull("planned_for");
+  if (f.has("focus")) values.focus = f.dateOrNull("focus");
+  const owner = f.nullableText("owner", line);
+  if (owner !== undefined) values.owner = owner;
+  const waiting = f.nullableText("waiting_on", line);
+  if (waiting !== undefined) values.waiting_on = waiting;
+  if (f.has("source_at")) values.source_at = f.instantOrNull("source_at");
+  if (f.has("reviewed_at")) values.reviewed_at = f.instantOrNull("reviewed_at");
+  if (f.has("due")) values.due = f.due("due");
+  return values;
+}
+
+function placement(f: Fields): Placement {
+  const where: Placement = {};
+  if (f.has("area")) where.area = f.group("area");
+  if (f.has("project")) where.project = f.group("project");
+  if (f.has("after")) where.after = f.reference("after");
+  if (f.has("before")) where.before = f.reference("before");
+  if (where.after !== undefined && where.before !== undefined) {
+    f.fail("VALIDATION_FAILED", "Give after or before, not both", "before");
+  }
+  return where;
+}
+
+const fields = (value: unknown, path: string, op?: number): Fields => new Fields(value, path, op);
+
+function checkOperation(value: unknown, i: number): Operation {
+  const f = fields(value, `ops[${String(i)}]`, i);
+  const kind = f.oneOf("kind", OPERATION_KINDS);
+  let op: Operation;
+  switch (kind) {
+    case "task.create": {
+      if (!f.has("title")) f.fail("VALIDATION_FAILED", "A new task needs a title", "title");
+      const values = taskValues(f);
+      const create: TaskCreate = { kind, title: values.title ?? "", ...values, ...placement(f) };
+      if (f.has("id")) create.id = f.id("id", "t");
+      op = create;
+      break;
+    }
+    case "task.patch": {
+      const patch: TaskPatch = { kind, task: f.reference("task") };
+      if (f.has("set")) {
+        const set = fields(f.raw("set"), `ops[${String(i)}].set`, i);
+        patch.set = taskValues(set);
+        set.done();
+      }
+      if (f.has("unset")) {
+        const unset = f.raw("unset");
+        if (!Array.isArray(unset) || unset.length > PATCHABLE_FIELDS.length) {
+          f.fail("VALIDATION_FAILED", "Expected a list of fields", "unset");
+        }
+        const list = unset as unknown[];
+        for (const field of list) {
+          if (!PATCHABLE_FIELDS.includes(field as PatchableField) || field === "title") {
+            f.fail("VALIDATION_FAILED", "Not a field that can be cleared", "unset");
+          }
+        }
+        if (new Set(list).size !== list.length) {
+          f.fail("VALIDATION_FAILED", "A field is listed twice", "unset");
+        }
+        patch.unset = list as PatchableField[];
+      }
+      const set = Object.keys(patch.set ?? {});
+      if (set.length === 0 && (patch.unset ?? []).length === 0) {
+        f.fail("VALIDATION_FAILED", "A patch sets or clears at least one field", "set");
+      }
+      if (set.some((field) => patch.unset?.includes(field as PatchableField) === true)) {
+        f.fail("VALIDATION_FAILED", "A field is both set and cleared", "unset");
+      }
+      op = patch;
+      break;
+    }
+    case "task.context_append": {
+      // The total is checked against A1's 64 KiB in the writer, on the context as it is then.
+      op = {
+        kind,
+        task: f.reference("task"),
+        text: f.text("text", { bytes: WRITE_LIMITS.context }),
+      };
+      break;
+    }
+    case "task.move": {
+      const move: TaskMove = { kind, task: f.reference("task"), ...placement(f) };
+      if (Object.keys(move).length === 2) {
+        f.fail("VALIDATION_FAILED", "A move names a group or a sibling", "project");
+      }
+      op = move;
+      break;
+    }
+    case "task.complete": {
+      const complete: TaskComplete = { kind, task: f.reference("task") };
+      const outcome = f.optText("outcome", { bytes: WRITE_LIMITS.outcome });
+      if (outcome !== undefined) complete.outcome = outcome;
+      op = complete;
+      break;
+    }
+    case "task.reopen": {
+      const reopen: TaskReopen = { kind, task: f.reference("task") };
+      const reason = f.optText("reason", { chars: WRITE_LIMITS.reason });
+      if (reason !== undefined) reopen.reason = reason;
+      op = reopen;
+      break;
+    }
+    case "note.add": {
+      const note: NoteAdd = {
+        kind,
+        task: f.reference("task"),
+        body: f.text("body", { bytes: WRITE_LIMITS.note }),
+      };
+      if (f.has("addressee")) note.addressee = f.oneOf("addressee", ADDRESSEES);
+      op = note;
+      break;
+    }
+    case "log.add": {
+      const log: LogAdd = {
+        kind,
+        task: f.reference("task"),
+        body: f.text("body", { bytes: WRITE_LIMITS.log }),
+      };
+      if (f.has("log_kind")) log.log_kind = f.oneOf("log_kind", LOG_KINDS);
+      op = log;
+      break;
+    }
+    case "source.add": {
+      const add: SourceAdd = {
+        kind,
+        task: f.reference("task"),
+        source: sourceFields(fields(f.raw("source"), `ops[${String(i)}].source`, i)),
+      };
+      if (f.has("role")) add.role = f.oneOf("role", LINK_ROLES);
+      if (f.has("link_version")) add.link_version = f.int("link_version", 0, RANGES.seq.max);
+      op = add;
+      break;
+    }
+    case "place.set": {
+      const owners = (["task", "project", "area"] as const).filter((key) => f.has(key));
+      if (owners.length !== 1) {
+        f.fail("VALIDATION_FAILED", "A place has one owner: a task, a project or an area", "task");
+      }
+      const root = f.raw("root");
+      if (typeof root !== "string" || !ROOT_ID.test(root)) {
+        f.fail("VALIDATION_FAILED", "Expected a root ID of a-z, 0-9, _ and -", "root");
+      }
+      // The path as sent holds no character a path refuses, before the text normalisation, which
+      // would drop a control rather than refuse it (A1 3.15). Then the normalised path is checked.
+      const sent = f.raw("path");
+      if (typeof sent === "string" && PATH_FORBIDDEN.test(sent)) {
+        f.fail("VALIDATION_FAILED", "Expected a relative path inside the root", "path");
+      }
+      const path = f.text("path", { empty: true });
+      if (!isRelPath(path)) {
+        f.fail("VALIDATION_FAILED", "Expected a relative path inside the root", "path");
+      }
+      const place: PlaceSet = { kind, root: root as string, path };
+      const owner = owners[0];
+      if (owner === "task") place.task = f.reference("task");
+      else if (owner !== undefined) {
+        const group = f.group(owner);
+        if (group === null) return f.fail("VALIDATION_FAILED", "Expected an ID or a slug", owner);
+        place[owner] = group;
+      }
+      if (f.has("place_kind")) place.place_kind = f.oneOf("place_kind", PLACE_KINDS);
+      const remote = f.optText("git_remote", { chars: WRITE_LIMITS.url, line: true });
+      if (remote !== undefined) place.git_remote = remote;
+      op = place;
+      break;
+    }
+    case "place.clear": {
+      const owners = (["task", "project", "area"] as const).filter((key) => f.has(key));
+      if (owners.length !== 1) {
+        f.fail("VALIDATION_FAILED", "A place has one owner: a task, a project or an area", "task");
+      }
+      const clear: PlaceClear = { kind };
+      const owner = owners[0];
+      if (owner === "task") clear.task = f.reference("task");
+      else if (owner !== undefined) {
+        const group = f.group(owner);
+        if (group === null) return f.fail("VALIDATION_FAILED", "Expected an ID or a slug", owner);
+        clear[owner] = group;
+      }
+      op = clear;
+      break;
+    }
+    case "launch.create": {
+      const instance = f.raw("instance");
+      if (typeof instance !== "string" || !INSTANCE_KEY.test(instance)) {
+        f.fail("VALIDATION_FAILED", "Expected an instance key", "instance");
+      }
+      const place = f.raw("place");
+      if (place !== null && !isId(place, "pl")) {
+        f.fail("VALIDATION_FAILED", "Expected a place ID or null", "place");
+      }
+      const hash = f.raw("brief_hash");
+      if (typeof hash !== "string" || !SHA256_HEX.test(hash)) {
+        f.fail("VALIDATION_FAILED", "Expected a SHA-256 in lower-case hex", "brief_hash");
+      }
+      const create: LaunchCreate = {
+        kind,
+        task: f.id("task", "t"),
+        instance: instance as string,
+        route: f.oneOf("route", OPEN_SETS["launches.route"]),
+        place: place as Id<"pl"> | null,
+        task_version: f.int("task_version", RANGES.seq.min, RANGES.seq.max),
+        brief_hash: hash as string,
+      };
+      if (f.has("session")) create.session = f.id("session", "se");
+      if (f.has("evidence")) create.evidence = launchEvidence(f, "evidence");
+      op = create;
+      break;
+    }
+    case "launch.transition": {
+      const transition: LaunchTransition = {
+        kind,
+        launch: f.id("launch", "la"),
+        expect: f.oneOf("expect", LAUNCH_STATES),
+        next: f.oneOf("next", LAUNCH_STATES),
+      };
+      if (f.has("expect_version")) {
+        transition.expect_version = f.int("expect_version", RANGES.seq.min, RANGES.seq.max);
+      }
+      if (f.has("reason")) {
+        const reason = f.raw("reason");
+        if (typeof reason !== "string" || !CODE.test(reason)) {
+          f.fail("VALIDATION_FAILED", "Expected a reason code", "reason");
+        }
+        transition.reason = reason as string;
+      }
+      if (f.has("evidence")) transition.evidence = launchEvidence(f, "evidence");
+      op = transition;
+      break;
+    }
+  }
+  f.done();
+  return op;
+}
+
+/** An instance's key in machine.toml (A4 3.2). */
+const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+/** A fixed code: a reason. Never a sentence. The writer's stage checks it against A4's lists. */
+const CODE = /^[a-z][a-z0-9_]{0,39}$/;
+
+/**
+ * A launch's evidence (A4 3.16): A4's keys only, each with a value of its kind. A key outside the
+ * list or a value of another kind is refused under the object's name, never the key's own: both
+ * are input, and a key could carry text.
+ */
+function launchEvidence(f: Fields, key: string): LaunchEvidence {
+  const value = f.raw(key);
+  if (!isRecord(value)) {
+    return f.fail("VALIDATION_FAILED", "Expected evidence: A4's keys with their values", key);
+  }
+  const evidence: LaunchEvidence = {};
+  for (const [name, item] of Object.entries(value)) {
+    if (item === undefined) continue;
+    if (!Object.hasOwn(LAUNCH_EVIDENCE_FIELDS, name)) {
+      f.fail("VALIDATION_FAILED", "Expected evidence: A4's keys with their values", key);
+    }
+    const kind = LAUNCH_EVIDENCE_FIELDS[name as keyof typeof LAUNCH_EVIDENCE_FIELDS];
+    const fits =
+      kind === "flag"
+        ? typeof item === "boolean"
+        : kind === "id"
+          ? typeof item === "string" && LAUNCH_EVIDENCE_ID.test(item)
+          : inRange(item, kind);
+    if (!fits) f.fail("VALIDATION_FAILED", "Expected an ID, an instant, a count or a flag", key);
+    evidence[name] = item as string | number | boolean;
+  }
+  return evidence;
+}
+
+/** A source's fields (A1 3.4, 3.6, 3.7). */
+function sourceFields(f: Fields): SourceFields {
+  const line = { chars: WRITE_LIMITS.line, line: true };
+  const source: SourceFields = {
+    kind: f.oneOf("kind", SOURCE_KINDS),
+    title: f.text("title", { chars: WRITE_LIMITS.sourceTitle, line: true }),
+  };
+  if (f.has("key")) {
+    const raw = f.raw("key");
+    const key = typeof raw === "string" ? normaliseSourceKey(raw) : undefined;
+    if (key === undefined) {
+      f.fail("VALIDATION_FAILED", "A source key is <namespace>:<id> of at most 512", "key");
+    }
+    source.key = key;
+  }
+  const who = f.optText("who", line);
+  if (who !== undefined) source.who = who;
+  const ref = f.optText("ref", line);
+  if (ref !== undefined) source.ref = ref;
+  const url = f.optText("url", { chars: WRITE_LIMITS.url, line: true });
+  if (url !== undefined) source.url = url;
+  if (f.has("at")) {
+    const at = f.raw("at");
+    if (!inRange(at, "instant")) f.fail("VALIDATION_FAILED", "Expected an instant", "at");
+    source.at = at;
+  }
+  f.done();
+  return source;
+}
+
+function checkCredential(value: unknown): Credential {
+  const f = fields(value, "actor");
+  // A writer scope is an opaque line (A1 3.8). `system` is the writer's own, whose commits
+  // have no receipts, so no request may use it.
+  const scope = f.raw("scope_id");
+  if (!isScope(scope)) f.fail("VALIDATION_FAILED", "Expected a writer scope", "scope_id");
+  const credential: Credential = {
+    scope_id: scope as string,
+    principal_id: f.id("principal_id", "ac"),
+    actor_kind: f.oneOf("actor_kind", ACTOR_KINDS),
+    machine_id: f.id("machine_id", "m"),
+    origin: f.oneOf("origin", ORIGINS),
+  };
+  if (f.has("earlier_scope_id")) {
+    const earlier = f.raw("earlier_scope_id");
+    if (!isScope(earlier) || earlier === scope) {
+      f.fail("VALIDATION_FAILED", "Expected another writer scope", "earlier_scope_id");
+    }
+    credential.earlier_scope_id = earlier as string;
+  }
+  if (f.has("author_id")) credential.author_id = f.id("author_id", "ac");
+  if (f.has("session_id")) credential.session_id = f.id("session_id", "se");
+  if (f.has("run_id")) credential.run_id = f.id("run_id", "ru");
+  f.done();
+  return credential;
+}
+
+function checkBase(value: unknown): Base {
+  if (typeof value === "string") {
+    return parseAsOf(value) ?? fail("VALIDATION_FAILED", "Copy as_of verbatim as the base", "base");
+  }
+  const f = fields(value, "base");
+  const epoch = f.int("epoch", RANGES.epoch.min, RANGES.epoch.max);
+  const seq = f.int("seq", RANGES.seq.min, RANGES.seq.max);
+  const incarnation = f.raw("incarnation");
+  if (!isId(incarnation, "ai"))
+    f.fail("VALIDATION_FAILED", "Expected an incarnation ID", "incarnation");
+  f.done();
+  return { epoch, incarnation: incarnation as string, seq };
+}
+
+/**
+ * The caller's intent: an entry name and plain JSON data, which the fingerprint hashes as it is.
+ * The registry normalised the input before (A3 3.10), so the writer neither reads nor changes it.
+ */
+function checkIntent(value: unknown): Intent {
+  const f = fields(value, "intent");
+  const entry = f.raw("entry");
+  if (typeof entry !== "string" || entry.length > 64 || !ENTRY_NAME.test(entry)) {
+    f.fail("VALIDATION_FAILED", "Expected a registry entry name", "entry");
+  }
+  const input = f.raw("input");
+  if (!isJsonData(input)) {
+    f.fail("VALIDATION_FAILED", "Expected plain JSON data, at most 64 levels deep", "input");
+  }
+  f.done();
+  return { entry: entry as string, input };
+}
+
+/**
+ * Checks a request's shape and limits, before any transaction (A1 3.7). Returns the request with
+ * its text normalised, or throws RequestProblem. Nothing is stored for such a request.
+ */
+export function checkRequest(value: unknown): CheckedRequest {
+  let json: string | undefined;
+  try {
+    // JSON.stringify returns undefined for undefined and functions, which its type leaves out.
+    json = (JSON.stringify as (v: unknown) => string | undefined)(value);
+  } catch {
+    return fail("VALIDATION_FAILED", "The request is not JSON data", "");
+  }
+  if (utf8Bytes(json ?? "") > WRITE_LIMITS.requestBytes) {
+    fail("TOO_LARGE", "The request is larger than 512 KiB", "");
+  }
+  const f = fields(value, "");
+  const requestId = f.raw("request_id");
+  if (typeof requestId !== "string" || !REQUEST_ID.test(requestId)) {
+    return fail(
+      "REQUEST_ID_INVALID",
+      "A request ID is 16 to 64 characters from A-Z, a-z, 0-9, _ and -",
+      "request_id",
+    );
+  }
+  const spaceId = f.raw("space_id");
+  if (!isId(spaceId, "sp")) return fail("VALIDATION_FAILED", "Expected a space ID", "space_id");
+  const actor = checkCredential(f.raw("actor"));
+  const ops: unknown = f.raw("ops");
+  if (!Array.isArray(ops) || ops.length === 0) {
+    return fail("VALIDATION_FAILED", "A request has at least one operation", "ops");
+  }
+  const list = ops as unknown[];
+  if (list.length > WRITE_LIMITS.ops) {
+    fail("TOO_LARGE", "A request has at most 50 operations", "ops");
+  }
+  const request: CheckedRequest = {
+    space_id: spaceId,
+    request_id: requestId,
+    actor,
+    ops: list.map((op, i) => checkOperation(op, i)),
+  };
+  if (f.has("base")) request.base = checkBase(f.raw("base"));
+  if (f.has("intent")) request.intent = checkIntent(f.raw("intent"));
+  const reason = f.optText("reason", { chars: WRITE_LIMITS.reason });
+  if (reason !== undefined) request.reason = reason;
+  if (f.has("undoable")) {
+    request.undoable = f.boolean("undoable");
+    if (request.undoable && actor.actor_kind !== "human") {
+      f.fail("VALIDATION_FAILED", "Only a human's actions join an undo stack", "undoable");
+    }
+  }
+  if (f.has("active")) request.active = f.boolean("active");
+  if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
+  const launches = request.ops.some((op) => op.kind.startsWith("launch."));
+  if (launches) checkLaunchRequest(f, request);
+  f.done();
+  return request;
+}
+
+/**
+ * A request's warnings (WriteRequest.warnings): 1 to 500 characters each, one line, at most one per
+ * operation a request may hold (a 25-draft `add_tasks` binds up to 25 places, each may warn).
+ */
+function checkWarnings(value: unknown): string[] {
+  const ok =
+    Array.isArray(value) &&
+    value.length <= WRITE_LIMITS.ops &&
+    value.every(
+      (line) =>
+        typeof line === "string" &&
+        line !== "" &&
+        Array.from(line).length <= 500 &&
+        !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(line),
+    );
+  if (!ok) fail("VALIDATION_FAILED", "Expected at most 50 warnings of one line each", "warnings");
+  return [...(value as string[])];
+}
+
+/** A writer scope as a launch request carries it: an ID's characters, never a sentence. */
+const LAUNCH_SCOPE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/**
+ * A request with launch operations (A4 3.9, 3.16): it stores IDs, states, instants, counts, flags
+ * and fixed codes only, in every row it writes (the commit, its changes, the receipt), so the
+ * envelope may hold no text either. It carries launch operations alone, no reason (a launch's
+ * reason is the record's code), no registry intent (whose input the receipt's fingerprint would
+ * cover), no `active` mark (a launch changes no task), and a writer scope of an ID's characters.
+ * Each field is refused under its own name.
+ */
+function checkLaunchRequest(f: Fields, request: CheckedRequest): void {
+  const { actor } = request;
+  if (!request.ops.every((op) => op.kind.startsWith("launch."))) {
+    f.fail("VALIDATION_FAILED", "A launch request holds launch operations only", "ops");
+  }
+  // R7: launches are the user's. The service writes them for the person who clicked, or as the
+  // space's system for what it observes. No agent, routine or import writes one (A3 3.2.3).
+  if (actor.actor_kind !== "human" && actor.actor_kind !== "system") {
+    f.fail("VALIDATION_FAILED", "Launching is a user action", "actor.actor_kind");
+  }
+  // A launch record changes no history the undo stack could invert (A1 3.6: not undoable).
+  if (request.undoable === true) {
+    f.fail("VALIDATION_FAILED", "A launch is not undoable", "undoable");
+  }
+  if (request.reason !== undefined) {
+    f.fail(
+      "VALIDATION_FAILED",
+      "A launch request takes no reason: its record holds a code",
+      "reason",
+    );
+  }
+  if (request.intent !== undefined) {
+    f.fail("VALIDATION_FAILED", "A launch request takes no registry intent", "intent");
+  }
+  // `active` marks the tasks a request changes (A3 3.4.6), and a launch changes no task.
+  if (request.active !== undefined) {
+    f.fail("VALIDATION_FAILED", "A launch request changes no task: it takes no active", "active");
+  }
+  if (request.warnings !== undefined) {
+    f.fail("VALIDATION_FAILED", "A launch request holds no text: it takes no warnings", "warnings");
+  }
+  for (const [field, scope] of [
+    ["actor.scope_id", actor.scope_id],
+    ["actor.earlier_scope_id", actor.earlier_scope_id],
+  ] as const) {
+    if (scope !== undefined && !LAUNCH_SCOPE.test(scope)) {
+      f.fail("VALIDATION_FAILED", "A launch request's writer scope is an ID", field);
+    }
+  }
+}

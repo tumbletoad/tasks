@@ -1,0 +1,3862 @@
+{
+  "dialect": "https://json-schema.org/draft/2020-12/schema",
+  "methods": [
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "unbound",
+        "not_found",
+        "too_large",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "for_agents": {
+            "description": "Address the note to agents",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "progress",
+            "description": "question flags it for the user; note: a note for the user",
+            "enum": [
+              "progress",
+              "evidence",
+              "decision",
+              "blocker",
+              "question",
+              "note"
+            ],
+            "type": "string"
+          },
+          "links": {
+            "description": "Links that back the entry",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "description": "Link title",
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "url": {
+                  "description": "URL",
+                  "maxLength": 2048,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "url"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID; default: the bound task",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "text": {
+            "description": "The entry, in Markdown",
+            "maxLength": 65536,
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "entry.add",
+      "ops": [
+        "log.add",
+        "note.add"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "entry": {
+            "description": "Its ordinal: l3 for a log entry, n2 for a note",
+            "pattern": "^[nl][1-9][0-9]{0,5}$",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Entry kind",
+            "enum": [
+              "progress",
+              "evidence",
+              "decision",
+              "blocker",
+              "question",
+              "note"
+            ],
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "The entry was added",
+            "enum": [
+              "logged"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "Task reference",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "task",
+          "entry",
+          "kind",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Append to a task's log, or record a note for the user."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "forbidden",
+        "request_id_conflict",
+        "space_unavailable",
+        "read_only",
+        "too_large"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "instance": {
+            "description": "The instance to open in, from this machine's; leave out to Copy",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "text": {
+            "description": "Your words for the agent: they replace the brief's last line",
+            "maxLength": 65536,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "launch.open",
+      "ops": [
+        "launch.create",
+        "launch.transition"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "copy": {
+            "description": "Text for the clipboard: Copy's pointer brief, or the brief to paste",
+            "maxLength": 40000,
+            "type": "string"
+          },
+          "launch": {
+            "additionalProperties": false,
+            "description": "The launch's receipt: IDs, states, instants and codes only",
+            "properties": {
+              "at": {
+                "additionalProperties": false,
+                "description": "When it entered each state",
+                "properties": {
+                  "confirmed": {
+                    "description": "When a session was confirmed",
+                    "maximum": 253402300799999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "dispatched": {
+                    "description": "When the OS or app accepted it",
+                    "maximum": 253402300799999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "dispatching": {
+                    "description": "When its external step began",
+                    "maximum": 253402300799999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "failed": {
+                    "description": "When it failed",
+                    "maximum": 253402300799999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "prepared": {
+                    "description": "When it was recorded, in ms since 1970",
+                    "maximum": 253402300799999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "unknown": {
+                    "description": "When the service lost track of it",
+                    "maximum": 253402300799999,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "id": {
+                "description": "Launch ID",
+                "pattern": "^la_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "instance": {
+                "description": "The instance, or clipboard for Copy",
+                "maxLength": 64,
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why it failed or is unknown: a fixed code",
+                "maxLength": 40,
+                "type": "string"
+              },
+              "reference": {
+                "description": "The launch reference in the brief",
+                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                "type": "string"
+              },
+              "route": {
+                "description": "How it opens",
+                "enum": [
+                  "terminal",
+                  "link",
+                  "t3-mcp",
+                  "t3-cli",
+                  "clipboard"
+                ],
+                "type": "string"
+              },
+              "state": {
+                "description": "A4 3.9's state",
+                "enum": [
+                  "prepared",
+                  "dispatching",
+                  "dispatched",
+                  "confirmed",
+                  "failed",
+                  "unknown"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "reference",
+              "instance",
+              "route",
+              "state",
+              "at"
+            ],
+            "type": "object"
+          },
+          "text": {
+            "description": "Where your words went: none given, in the brief, or saved as a note",
+            "enum": [
+              "none",
+              "inline",
+              "note"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "launch",
+          "text"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "launch:open",
+      "summary": "Open a task in an agent app on this machine, or Copy its pointer brief."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "space_unavailable"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "description": "The request_id of the write to look up",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "receipt.get",
+      "ops": [],
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "found": {
+                "const": false,
+                "description": "No receipt for that request ID in this writer scope",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "found"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "Read position; pass it as base on your next write",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "commit": {
+                "description": "The commit it wrote",
+                "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "conflicts": {
+                "description": "Every conflicting field, without its value: read again",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "additionalProperties": false,
+                      "description": "Who wrote that version",
+                      "properties": {
+                        "actor": {
+                          "description": "Actor ID",
+                          "pattern": "^ac_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "Actor kind",
+                          "maxLength": 20,
+                          "type": "string"
+                        },
+                        "label": {
+                          "description": "Actor label",
+                          "type": "string"
+                        },
+                        "origin": {
+                          "description": "Where the commit came from; import: the user applied an import",
+                          "enum": [
+                            "ui",
+                            "cli",
+                            "mcp",
+                            "http",
+                            "import",
+                            "system",
+                            "migration"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "actor",
+                        "kind",
+                        "label"
+                      ],
+                      "type": "object"
+                    },
+                    "entity": {
+                      "description": "Table of the row",
+                      "enum": [
+                        "tasks",
+                        "task_sources",
+                        "places"
+                      ],
+                      "type": "string"
+                    },
+                    "field": {
+                      "description": "Logical field",
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "The row, or task_id|source_id for a link",
+                      "maxLength": 60,
+                      "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|s_[0-9a-hjkmnp-tv-z]{26})?$",
+                      "type": "string"
+                    },
+                    "op": {
+                      "description": "Index of the operation in the request",
+                      "maximum": 49,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ref": {
+                      "description": "Task reference",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "task": {
+                      "description": "Task ID",
+                      "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "The commit that last wrote it",
+                      "maximum": 999999999999999,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "entity",
+                    "id",
+                    "field",
+                    "version",
+                    "by",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "decided_at": {
+                "description": "When it was decided",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                "type": "string"
+              },
+              "error": {
+                "additionalProperties": false,
+                "description": "Why it was refused",
+                "properties": {
+                  "cause": {
+                    "description": "A1's error code",
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "field": {
+                    "description": "The input path or field",
+                    "maxLength": 80,
+                    "type": "string"
+                  },
+                  "message": {
+                    "description": "What was refused, in one sentence",
+                    "type": "string"
+                  },
+                  "op": {
+                    "description": "Index of the operation in the request",
+                    "maximum": 49,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "cause",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "found": {
+                "const": true,
+                "description": "The write was decided: its stored result follows",
+                "type": "boolean"
+              },
+              "incarnation": {
+                "description": "The authority incarnation it was decided under",
+                "pattern": "^ai_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "request": {
+                "description": "The request ID",
+                "pattern": "^[A-Za-z0-9_-]{16,64}$",
+                "type": "string"
+              },
+              "results": {
+                "description": "One result per operation",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "differs": {
+                      "description": "Fields of an existing source the input gave otherwise",
+                      "items": {
+                        "enum": [
+                          "kind",
+                          "title",
+                          "who",
+                          "ref",
+                          "url",
+                          "at"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "entry": {
+                      "description": "Note or log entry reference",
+                      "pattern": "^[nl][1-9][0-9]{0,5}$",
+                      "type": "string"
+                    },
+                    "i": {
+                      "description": "Index of the operation in the request",
+                      "maximum": 49,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        },
+                        {
+                          "maxLength": 64,
+                          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                          "type": "string"
+                        }
+                      ],
+                      "description": "The row it acted on, or a preference's key"
+                    },
+                    "ref": {
+                      "description": "Task reference",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "What the operation did",
+                      "enum": [
+                        "created",
+                        "updated",
+                        "unchanged",
+                        "existing",
+                        "proposed"
+                      ],
+                      "type": "string"
+                    },
+                    "task": {
+                      "description": "Task ID",
+                      "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "description": "The row's version after it; for a source, the link's",
+                      "maximum": 999999999999999,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "i",
+                    "status",
+                    "id",
+                    "version"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "status": {
+                "description": "The overall outcome",
+                "enum": [
+                  "applied",
+                  "proposed",
+                  "unchanged",
+                  "conflict",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              "warnings": {
+                "description": "Warnings, one sentence each",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "found",
+              "request",
+              "status",
+              "decided_at",
+              "as_of",
+              "incarnation",
+              "results",
+              "warnings"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "remote": "never",
+      "scope": "space:read",
+      "summary": "The stored result of a write, by its request_id, in the caller's own writer scope."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "space_unavailable"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "guide": {
+            "description": "Return this workflow guide instead",
+            "enum": [
+              "work",
+              "refresh",
+              "triage",
+              "organize"
+            ],
+            "type": "string"
+          },
+          "include": {
+            "description": "Extra sections, up to 8 rows each",
+            "items": {
+              "enum": [
+                "today",
+                "week",
+                "review",
+                "waiting",
+                "inbox",
+                "changes"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "since": {
+            "description": "For changes: 24h, 7d or an ISO time; default 24h",
+            "maxLength": 40,
+            "pattern": "^(?:24h|7d|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\\.[0-9]{1,9})?)?(?:Z|[+-][0-9]{2}:[0-9]{2}))$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "space.status",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "autonomy": {
+            "description": "Autonomy level for this session",
+            "enum": [
+              "full",
+              "review",
+              "suggest"
+            ],
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": false,
+            "description": "Counts of active tasks",
+            "properties": {
+              "inbox": {
+                "description": "Tasks in the Inbox",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "proposals": {
+                "description": "Pending proposals",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "statuses": {
+                "description": "Active tasks per status, in the space's order",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "description": "Active tasks with it",
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "description": "Status key",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "statuses",
+              "inbox",
+              "proposals"
+            ],
+            "type": "object"
+          },
+          "date": {
+            "description": "Today in the space's time zone",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "type": "string"
+          },
+          "guide": {
+            "description": "The workflow guide asked for",
+            "type": "string"
+          },
+          "here": {
+            "description": "Active tasks for cwd: exact, inside, below; up to 8",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "description": "Area name",
+                  "type": "string"
+                },
+                "due": {
+                  "anyOf": [
+                    {
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "Due time, in UTC",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "tz": {
+                          "description": "IANA time zone of the commitment",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "tz"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "description": "Due date, or a due time with its zone"
+                },
+                "effort": {
+                  "description": "Effort",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Task ID",
+                  "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "inbox": {
+                  "description": "In the Inbox",
+                  "type": "boolean"
+                },
+                "lifecycle": {
+                  "description": "Lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "live_sessions": {
+                  "description": "Live agent sessions on it",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "match": {
+                  "description": "Its folder is cwd, contains it or is in it",
+                  "enum": [
+                    "exact",
+                    "inside",
+                    "below"
+                  ],
+                  "type": "string"
+                },
+                "priority": {
+                  "description": "1 highest, 4 none",
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "project": {
+                  "description": "Project name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "status": {
+                  "description": "Status key",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ref",
+                "title",
+                "lifecycle",
+                "status",
+                "inbox",
+                "priority",
+                "match",
+                "live_sessions"
+              ],
+              "type": "object"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "here_total": {
+            "description": "Active tasks for cwd in all",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hint": {
+            "description": "What to do next",
+            "type": "string"
+          },
+          "sections": {
+            "description": "The sections asked for with include",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Section",
+                  "enum": [
+                    "today",
+                    "week",
+                    "review",
+                    "waiting",
+                    "inbox",
+                    "changes"
+                  ],
+                  "type": "string"
+                },
+                "tasks": {
+                  "description": "Up to 8 tasks",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "area": {
+                        "description": "Area name",
+                        "type": "string"
+                      },
+                      "due": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "description": "Due time, in UTC",
+                                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                                "type": "string"
+                              },
+                              "tz": {
+                                "description": "IANA time zone of the commitment",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "tz"
+                            ],
+                            "type": "object"
+                          }
+                        ],
+                        "description": "Due date, or a due time with its zone"
+                      },
+                      "effort": {
+                        "description": "Effort",
+                        "type": "string"
+                      },
+                      "id": {
+                        "description": "Task ID",
+                        "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      },
+                      "inbox": {
+                        "description": "In the Inbox",
+                        "type": "boolean"
+                      },
+                      "lifecycle": {
+                        "description": "Lifecycle",
+                        "enum": [
+                          "active",
+                          "completed",
+                          "archived"
+                        ],
+                        "type": "string"
+                      },
+                      "priority": {
+                        "description": "1 highest, 4 none",
+                        "maximum": 4,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "project": {
+                        "description": "Project name",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "Task reference",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "status": {
+                        "description": "Status key",
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Title",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "ref",
+                      "title",
+                      "lifecycle",
+                      "status",
+                      "inbox",
+                      "priority"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "tasks"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "session": {
+            "additionalProperties": false,
+            "description": "This session",
+            "properties": {
+              "app": {
+                "description": "Agent app",
+                "type": "string"
+              },
+              "instance": {
+                "description": "Agent instance",
+                "type": "string"
+              },
+              "notes_for_agents": {
+                "description": "Notes from the user to agents on the task",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "proposals_rejected": {
+                "description": "Proposals rejected since the last call",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "state": {
+                "description": "Binding of this session",
+                "enum": [
+                  "bound",
+                  "unbound",
+                  "routine"
+                ],
+                "type": "string"
+              },
+              "task": {
+                "description": "Task reference",
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          "space": {
+            "additionalProperties": false,
+            "description": "The space this session uses",
+            "properties": {
+              "id": {
+                "description": "Space ID",
+                "pattern": "^sp_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "name": {
+                "description": "Space name",
+                "type": "string"
+              },
+              "ref_prefix": {
+                "description": "Task reference prefix",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "ref_prefix"
+            ],
+            "type": "object"
+          },
+          "time_zone": {
+            "description": "IANA time zone of the space",
+            "type": "string"
+          }
+        },
+        "required": [
+          "as_of",
+          "date",
+          "time_zone",
+          "autonomy",
+          "space",
+          "session",
+          "counts"
+        ],
+        "type": "object"
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "Orientation: date, autonomy, this session's binding, tasks for a folder and counts."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "too_large",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "mode": {
+            "default": "apply",
+            "description": "propose: ask the user to decide",
+            "enum": [
+              "apply",
+              "propose"
+            ],
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "tasks": {
+            "description": "The tasks to create, 1 to 25",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "description": "Area name or slug",
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "context": {
+                  "description": "Markdown context",
+                  "maxLength": 65536,
+                  "type": "string"
+                },
+                "due": {
+                  "description": "ISO date or phrase: fri, +3d",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "effort": {
+                  "description": "Effort, such as S, M or L",
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                "inbox": {
+                  "description": "Put it in the Inbox for the user",
+                  "type": "boolean"
+                },
+                "log": {
+                  "description": "Log entry; also added to a matched task",
+                  "maxLength": 16384,
+                  "type": "string"
+                },
+                "on_existing": {
+                  "description": "When a source key matches; default return",
+                  "enum": [
+                    "return",
+                    "add_sources",
+                    "create_new"
+                  ],
+                  "type": "string"
+                },
+                "place": {
+                  "anyOf": [
+                    {
+                      "maxLength": 4096,
+                      "pattern": "^(?:cwd$|\\/|[A-Za-z]:[\\\\/]|[\\\\/]{2})",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": {
+                          "description": "Relative path inside the root",
+                          "maxLength": 1024,
+                          "type": "string"
+                        },
+                        "root": {
+                          "description": "Root name or ID",
+                          "maxLength": 120,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "root",
+                        "path"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "description": "Its folder: \"cwd\", an absolute folder, or root and path"
+                },
+                "priority": {
+                  "description": "1 highest, 4 none",
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "project": {
+                  "description": "Project name or slug",
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "sources": {
+                  "description": "Where it came from",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "description": "When it was sent",
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "key": {
+                        "description": "<namespace>:<id>, such as jira:LUM-212",
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "description": "Source kind",
+                        "enum": [
+                          "email",
+                          "chat",
+                          "ticket",
+                          "pr",
+                          "issue",
+                          "doc",
+                          "calendar",
+                          "session",
+                          "web"
+                        ],
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Subject, chat or ticket title",
+                        "maxLength": 300,
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Link",
+                        "maxLength": 2048,
+                        "type": "string"
+                      },
+                      "who": {
+                        "description": "Sender or counterpart",
+                        "maxLength": 120,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "status": {
+                  "description": "A status of the space; default open",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "One line: the next step",
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title",
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                "waiting_on": {
+                  "description": "Who or what it waits on",
+                  "maxLength": 80,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "type": "object"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "tasks",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "task.add",
+      "ops": [
+        "task.create",
+        "log.add",
+        "source.add",
+        "place.set"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "proposal": {
+            "description": "Proposal ID",
+            "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "tasks": {
+            "description": "One row per draft, in order",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "ambiguous": {
+                  "description": "Several active matches: pick one",
+                  "items": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "description": "Task ID",
+                  "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "lifecycle": {
+                  "description": "Lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "log_added": {
+                  "description": "The draft's log entry was added",
+                  "type": "boolean"
+                },
+                "matched_by": {
+                  "description": "How an existing task matched",
+                  "enum": [
+                    "source_key"
+                  ],
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "result": {
+                  "description": "created, matched an existing task, proposed, or created in the Inbox",
+                  "enum": [
+                    "created",
+                    "exists",
+                    "proposed",
+                    "inbox"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result",
+                "title",
+                "log_added"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "description": "Warnings, one sentence each",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "tasks",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "unbound",
+        "conflict",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "follow_ups": {
+            "description": "Tasks to create, as for task.add",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "description": "Area name or slug",
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "context": {
+                  "description": "Markdown context",
+                  "maxLength": 65536,
+                  "type": "string"
+                },
+                "due": {
+                  "description": "ISO date or phrase: fri, +3d",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "effort": {
+                  "description": "Effort, such as S, M or L",
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                "inbox": {
+                  "description": "Put it in the Inbox for the user",
+                  "type": "boolean"
+                },
+                "log": {
+                  "description": "Log entry; also added to a matched task",
+                  "maxLength": 16384,
+                  "type": "string"
+                },
+                "on_existing": {
+                  "description": "When a source key matches; default return",
+                  "enum": [
+                    "return",
+                    "add_sources",
+                    "create_new"
+                  ],
+                  "type": "string"
+                },
+                "place": {
+                  "anyOf": [
+                    {
+                      "maxLength": 4096,
+                      "pattern": "^(?:cwd$|\\/|[A-Za-z]:[\\\\/]|[\\\\/]{2})",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": {
+                          "description": "Relative path inside the root",
+                          "maxLength": 1024,
+                          "type": "string"
+                        },
+                        "root": {
+                          "description": "Root name or ID",
+                          "maxLength": 120,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "root",
+                        "path"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "description": "Its folder: \"cwd\", an absolute folder, or root and path"
+                },
+                "priority": {
+                  "description": "1 highest, 4 none",
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "project": {
+                  "description": "Project name or slug",
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "sources": {
+                  "description": "Where it came from",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "description": "When it was sent",
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "key": {
+                        "description": "<namespace>:<id>, such as jira:LUM-212",
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "description": "Source kind",
+                        "enum": [
+                          "email",
+                          "chat",
+                          "ticket",
+                          "pr",
+                          "issue",
+                          "doc",
+                          "calendar",
+                          "session",
+                          "web"
+                        ],
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Subject, chat or ticket title",
+                        "maxLength": 300,
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Link",
+                        "maxLength": 2048,
+                        "type": "string"
+                      },
+                      "who": {
+                        "description": "Sender or counterpart",
+                        "maxLength": 120,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "status": {
+                  "description": "A status of the space; default open",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "One line: the next step",
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title",
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                "waiting_on": {
+                  "description": "Who or what it waits on",
+                  "maxLength": 80,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "learnings": {
+            "description": "Lessons reusable beyond this task",
+            "items": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "mode": {
+            "default": "apply",
+            "description": "propose: ask the user to decide",
+            "enum": [
+              "apply",
+              "propose"
+            ],
+            "type": "string"
+          },
+          "outcome": {
+            "description": "What changed and the evidence; agents must give it",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "status": {
+            "default": "done",
+            "description": "dropped: abandoned",
+            "enum": [
+              "done",
+              "dropped"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID; default: the bound task",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "base",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "task.finish",
+      "ops": [
+        "task.complete",
+        "task.archive",
+        "task.wrap_up",
+        "task.create",
+        "log.add",
+        "source.add",
+        "place.set"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "follow_ups": {
+            "description": "One row per follow-up draft",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "result": {
+                  "description": "What happened to the draft",
+                  "enum": [
+                    "created",
+                    "exists",
+                    "proposed"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "learnings": {
+            "description": "Learnings recorded",
+            "maximum": 20,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lifecycle": {
+            "description": "Lifecycle",
+            "enum": [
+              "active",
+              "completed",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "proposal": {
+            "description": "Proposal ID",
+            "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "completed, already so, waiting for the user's check-off, or proposed",
+            "enum": [
+              "completed",
+              "no_change",
+              "review",
+              "proposed"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "Task reference",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          },
+          "wrap_state": {
+            "description": "Wrap-up state",
+            "enum": [
+              "pending",
+              "wrapped"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "task",
+          "lifecycle",
+          "learnings",
+          "follow_ups",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Finish or abandon a task with an outcome and learnings, and create its follow-ups."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "unbound",
+        "not_found",
+        "ambiguous",
+        "already_bound",
+        "launch_unknown",
+        "launch_expired",
+        "launch_used",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "before": {
+            "description": "With sections: the before token of the last page",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "bind": {
+            "description": "With task: bind this session to it",
+            "type": "boolean"
+          },
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "launch": {
+            "description": "Launch reference from the Brief: bind, then load",
+            "maxLength": 6,
+            "pattern": "^L[0-9A-Z]{5}$",
+            "type": "string"
+          },
+          "log_limit": {
+            "description": "Log entries per page; default 20",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sections": {
+            "description": "Return these in full instead of the digest",
+            "items": {
+              "enum": [
+                "instructions",
+                "context",
+                "notes",
+                "log",
+                "sources",
+                "outcome",
+                "history"
+              ],
+              "type": "string"
+            },
+            "maxItems": 7,
+            "type": "array"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID; default: the bound task",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "task.get",
+      "ops": [],
+      "output": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "Read position; pass it as base on your next write",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "bound": {
+                "description": "This call bound the session",
+                "type": "boolean"
+              },
+              "task": {
+                "additionalProperties": false,
+                "description": "The task",
+                "properties": {
+                  "area": {
+                    "description": "Area name",
+                    "type": "string"
+                  },
+                  "context": {
+                    "description": "Markdown context: the first 800 characters",
+                    "type": "string"
+                  },
+                  "cut": {
+                    "additionalProperties": false,
+                    "description": "Characters left out of the task's own texts",
+                    "properties": {
+                      "context": {
+                        "description": "Characters left out; a sections read has them",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "outcome": {
+                        "description": "Characters left out; a sections read has them",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "summary": {
+                        "description": "Characters left out; a sections read has them",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "title": {
+                        "description": "Characters left out; a sections read has them",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "due": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "description": "Due time, in UTC",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "tz": {
+                            "description": "IANA time zone of the commitment",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "tz"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "description": "Due date, or a due time with its zone"
+                  },
+                  "effort": {
+                    "description": "Effort",
+                    "type": "string"
+                  },
+                  "focus": {
+                    "description": "Starred for today",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Task ID",
+                    "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                    "type": "string"
+                  },
+                  "inbox": {
+                    "description": "In the Inbox",
+                    "type": "boolean"
+                  },
+                  "instructions": {
+                    "description": "Notes from the user to agents, newest first: up to 5, each whole",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 5,
+                    "type": "array"
+                  },
+                  "learnings": {
+                    "description": "Learnings",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "lifecycle": {
+                    "description": "Lifecycle",
+                    "enum": [
+                      "active",
+                      "completed",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "log": {
+                    "description": "Log entries: the 3 newest",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "kind": {
+                          "description": "Entry kind",
+                          "enum": [
+                            "progress",
+                            "evidence",
+                            "blocker",
+                            "decision",
+                            "question",
+                            "handoff"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Log ordinal, such as l3",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Entry text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "author",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 3,
+                    "type": "array"
+                  },
+                  "more": {
+                    "additionalProperties": false,
+                    "description": "What the digest left out: read it with sections",
+                    "properties": {
+                      "instructions": {
+                        "description": "Notes from the user to agents not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "log": {
+                        "description": "Log entries not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "notes": {
+                        "description": "Other notes not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sources": {
+                        "description": "Sources not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "instructions",
+                      "notes",
+                      "log",
+                      "sources"
+                    ],
+                    "type": "object"
+                  },
+                  "notes": {
+                    "description": "Other notes: the 3 newest",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 3,
+                    "type": "array"
+                  },
+                  "outcome": {
+                    "description": "Outcome of the last completion",
+                    "type": "string"
+                  },
+                  "place": {
+                    "additionalProperties": false,
+                    "description": "Its place on this machine",
+                    "properties": {
+                      "folder": {
+                        "description": "Its folder on this machine, resolved now",
+                        "type": "string"
+                      },
+                      "path": {
+                        "description": "Path inside the root",
+                        "type": "string"
+                      },
+                      "root": {
+                        "description": "Root name",
+                        "type": "string"
+                      },
+                      "unresolved": {
+                        "description": "Why it resolves to no folder here now",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "root",
+                      "path"
+                    ],
+                    "type": "object"
+                  },
+                  "priority": {
+                    "description": "1 highest, 4 none",
+                    "maximum": 4,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "project": {
+                    "description": "Project name",
+                    "type": "string"
+                  },
+                  "ref": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "sources": {
+                    "description": "Linked sources: the first 5",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When it was sent",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "key": {
+                          "description": "Source key",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "Source kind",
+                          "enum": [
+                            "email",
+                            "chat",
+                            "ticket",
+                            "pr",
+                            "issue",
+                            "doc",
+                            "calendar",
+                            "crash",
+                            "session",
+                            "book",
+                            "web",
+                            "other"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "description": "Title",
+                          "type": "string"
+                        },
+                        "url": {
+                          "description": "Link",
+                          "type": "string"
+                        },
+                        "who": {
+                          "description": "Sender or counterpart",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 5,
+                    "type": "array"
+                  },
+                  "status": {
+                    "description": "Status key",
+                    "type": "string"
+                  },
+                  "summary": {
+                    "description": "One line: the next step",
+                    "type": "string"
+                  },
+                  "title": {
+                    "description": "Title",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "Row version",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "waiting_on": {
+                    "description": "Who or what it waits on",
+                    "type": "string"
+                  },
+                  "wrap_state": {
+                    "description": "Wrap-up state",
+                    "enum": [
+                      "pending",
+                      "wrapped"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "ref",
+                  "title",
+                  "lifecycle",
+                  "status",
+                  "inbox",
+                  "priority",
+                  "summary",
+                  "context",
+                  "focus",
+                  "learnings",
+                  "instructions",
+                  "notes",
+                  "log",
+                  "sources",
+                  "more",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "view": {
+                "const": "digest",
+                "description": "A bounded digest of the task",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "bound",
+              "task"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "Read position; pass it as base on your next write",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "before": {
+                "description": "Paging token for the rest",
+                "type": "string"
+              },
+              "bound": {
+                "description": "This call bound the session",
+                "type": "boolean"
+              },
+              "sections": {
+                "additionalProperties": false,
+                "description": "The sections asked for",
+                "properties": {
+                  "context": {
+                    "description": "Markdown context",
+                    "type": "string"
+                  },
+                  "context_slice": {
+                    "additionalProperties": false,
+                    "description": "Only this part of the text is on this page",
+                    "properties": {
+                      "from": {
+                        "description": "First character here, counted from 0",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "of": {
+                        "description": "Characters in all",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "to": {
+                        "description": "The character after the last one here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "to",
+                      "of"
+                    ],
+                    "type": "object"
+                  },
+                  "history": {
+                    "description": "The last 20 operations on the task, newest first",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "actor": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "seq": {
+                          "description": "Commit sequence number",
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "what": {
+                          "description": "Operation kind and the fields it changed",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "actor",
+                        "what"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "description": "Notes from the user to agents, newest first, each whole",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "log": {
+                    "description": "Log entries, newest first, up to log_limit",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "kind": {
+                          "description": "Entry kind",
+                          "enum": [
+                            "progress",
+                            "evidence",
+                            "blocker",
+                            "decision",
+                            "question",
+                            "handoff"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "Log ordinal, such as l3",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Entry text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "kind",
+                        "author",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "notes": {
+                    "description": "Other notes, newest first",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "author": {
+                          "description": "Actor that wrote it, from history",
+                          "type": "string"
+                        },
+                        "cut": {
+                          "description": "Characters left out; a sections read has them",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "for_agents": {
+                          "description": "A note from the user addressed to agents",
+                          "type": "boolean"
+                        },
+                        "ref": {
+                          "description": "Note ordinal, such as n2",
+                          "pattern": "^[nl][1-9][0-9]{0,5}$",
+                          "type": "string"
+                        },
+                        "slice": {
+                          "additionalProperties": false,
+                          "description": "Only this part of the text is on this page",
+                          "properties": {
+                            "from": {
+                              "description": "First character here, counted from 0",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "of": {
+                              "description": "Characters in all",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "to": {
+                              "description": "The character after the last one here",
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to",
+                            "of"
+                          ],
+                          "type": "object"
+                        },
+                        "text": {
+                          "description": "Note text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "author",
+                        "for_agents",
+                        "at",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "outcome": {
+                    "additionalProperties": false,
+                    "description": "Outcome and learnings",
+                    "properties": {
+                      "learnings": {
+                        "description": "Learnings",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "outcome": {
+                        "description": "Outcome of the last completion",
+                        "type": "string"
+                      },
+                      "slice": {
+                        "additionalProperties": false,
+                        "description": "Only this part of the text is on this page",
+                        "properties": {
+                          "from": {
+                            "description": "First character here, counted from 0",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "of": {
+                            "description": "Characters in all",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "to": {
+                            "description": "The character after the last one here",
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "from",
+                          "to",
+                          "of"
+                        ],
+                        "type": "object"
+                      },
+                      "wrap_state": {
+                        "description": "Wrap-up state",
+                        "enum": [
+                          "pending",
+                          "wrapped"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "learnings"
+                    ],
+                    "type": "object"
+                  },
+                  "sources": {
+                    "description": "Linked sources",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "description": "When it was sent",
+                          "type": "string"
+                        },
+                        "key": {
+                          "description": "Source key",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "description": "Source kind",
+                          "enum": [
+                            "email",
+                            "chat",
+                            "ticket",
+                            "pr",
+                            "issue",
+                            "doc",
+                            "calendar",
+                            "crash",
+                            "session",
+                            "book",
+                            "web",
+                            "other"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "description": "Title",
+                          "type": "string"
+                        },
+                        "url": {
+                          "description": "Link",
+                          "type": "string"
+                        },
+                        "who": {
+                          "description": "Sender or counterpart",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "task": {
+                "additionalProperties": false,
+                "description": "The task",
+                "properties": {
+                  "area": {
+                    "description": "Area name",
+                    "type": "string"
+                  },
+                  "due": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "description": "Due time, in UTC",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "tz": {
+                            "description": "IANA time zone of the commitment",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "tz"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "description": "Due date, or a due time with its zone"
+                  },
+                  "effort": {
+                    "description": "Effort",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Task ID",
+                    "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                    "type": "string"
+                  },
+                  "inbox": {
+                    "description": "In the Inbox",
+                    "type": "boolean"
+                  },
+                  "lifecycle": {
+                    "description": "Lifecycle",
+                    "enum": [
+                      "active",
+                      "completed",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "priority": {
+                    "description": "1 highest, 4 none",
+                    "maximum": 4,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "project": {
+                    "description": "Project name",
+                    "type": "string"
+                  },
+                  "ref": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Status key",
+                    "type": "string"
+                  },
+                  "title": {
+                    "description": "Title",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "ref",
+                  "title",
+                  "lifecycle",
+                  "status",
+                  "inbox",
+                  "priority"
+                ],
+                "type": "object"
+              },
+              "view": {
+                "const": "sections",
+                "description": "The sections asked for, in full",
+                "type": "string"
+              }
+            },
+            "required": [
+              "view",
+              "as_of",
+              "bound",
+              "task",
+              "sections"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "as_of": {
+                "description": "Read position; pass it as base on your next write",
+                "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+                "type": "string"
+              },
+              "autonomy": {
+                "description": "Autonomy level for this session",
+                "enum": [
+                  "full",
+                  "review",
+                  "suggest"
+                ],
+                "type": "string"
+              },
+              "bound": {
+                "description": "This call bound the session",
+                "type": "boolean"
+              },
+              "counts": {
+                "additionalProperties": false,
+                "description": "Counts of active tasks",
+                "properties": {
+                  "inbox": {
+                    "description": "Tasks in the Inbox",
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "proposals": {
+                    "description": "Pending proposals",
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "statuses": {
+                    "description": "Active tasks per status, in the space's order",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "count": {
+                          "description": "Active tasks with it",
+                          "maximum": 1000000000,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "description": "Status key",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "count"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "statuses",
+                  "inbox",
+                  "proposals"
+                ],
+                "type": "object"
+              },
+              "date": {
+                "description": "Today in the space's time zone",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                "type": "string"
+              },
+              "guide": {
+                "description": "The workflow guide asked for",
+                "type": "string"
+              },
+              "here": {
+                "description": "Active tasks for cwd: exact, inside, below; up to 8",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "area": {
+                      "description": "Area name",
+                      "type": "string"
+                    },
+                    "due": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                          "type": "string"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "description": "Due time, in UTC",
+                              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                              "type": "string"
+                            },
+                            "tz": {
+                              "description": "IANA time zone of the commitment",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "tz"
+                          ],
+                          "type": "object"
+                        }
+                      ],
+                      "description": "Due date, or a due time with its zone"
+                    },
+                    "effort": {
+                      "description": "Effort",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "Task ID",
+                      "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "inbox": {
+                      "description": "In the Inbox",
+                      "type": "boolean"
+                    },
+                    "lifecycle": {
+                      "description": "Lifecycle",
+                      "enum": [
+                        "active",
+                        "completed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "live_sessions": {
+                      "description": "Live agent sessions on it",
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "match": {
+                      "description": "Its folder is cwd, contains it or is in it",
+                      "enum": [
+                        "exact",
+                        "inside",
+                        "below"
+                      ],
+                      "type": "string"
+                    },
+                    "priority": {
+                      "description": "1 highest, 4 none",
+                      "maximum": 4,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "project": {
+                      "description": "Project name",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Task reference",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "Status key",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Title",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ref",
+                    "title",
+                    "lifecycle",
+                    "status",
+                    "inbox",
+                    "priority",
+                    "match",
+                    "live_sessions"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              "here_total": {
+                "description": "Active tasks for cwd in all",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "hint": {
+                "description": "What to do next",
+                "type": "string"
+              },
+              "sections": {
+                "description": "The sections asked for with include",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Section",
+                      "enum": [
+                        "today",
+                        "week",
+                        "review",
+                        "waiting",
+                        "inbox",
+                        "changes"
+                      ],
+                      "type": "string"
+                    },
+                    "tasks": {
+                      "description": "Up to 8 tasks",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "area": {
+                            "description": "Area name",
+                            "type": "string"
+                          },
+                          "due": {
+                            "anyOf": [
+                              {
+                                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                                "type": "string"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "at": {
+                                    "description": "Due time, in UTC",
+                                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                                    "type": "string"
+                                  },
+                                  "tz": {
+                                    "description": "IANA time zone of the commitment",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "at",
+                                  "tz"
+                                ],
+                                "type": "object"
+                              }
+                            ],
+                            "description": "Due date, or a due time with its zone"
+                          },
+                          "effort": {
+                            "description": "Effort",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Task ID",
+                            "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                            "type": "string"
+                          },
+                          "inbox": {
+                            "description": "In the Inbox",
+                            "type": "boolean"
+                          },
+                          "lifecycle": {
+                            "description": "Lifecycle",
+                            "enum": [
+                              "active",
+                              "completed",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          "priority": {
+                            "description": "1 highest, 4 none",
+                            "maximum": 4,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "project": {
+                            "description": "Project name",
+                            "type": "string"
+                          },
+                          "ref": {
+                            "description": "Task reference",
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "status": {
+                            "description": "Status key",
+                            "type": "string"
+                          },
+                          "title": {
+                            "description": "Title",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "ref",
+                          "title",
+                          "lifecycle",
+                          "status",
+                          "inbox",
+                          "priority"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "tasks"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "session": {
+                "additionalProperties": false,
+                "description": "This session",
+                "properties": {
+                  "app": {
+                    "description": "Agent app",
+                    "type": "string"
+                  },
+                  "instance": {
+                    "description": "Agent instance",
+                    "type": "string"
+                  },
+                  "notes_for_agents": {
+                    "description": "Notes from the user to agents on the task",
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "proposals_rejected": {
+                    "description": "Proposals rejected since the last call",
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "state": {
+                    "description": "Binding of this session",
+                    "enum": [
+                      "bound",
+                      "unbound",
+                      "routine"
+                    ],
+                    "type": "string"
+                  },
+                  "task": {
+                    "description": "Task reference",
+                    "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "type": "object"
+              },
+              "space": {
+                "additionalProperties": false,
+                "description": "The space this session uses",
+                "properties": {
+                  "id": {
+                    "description": "Space ID",
+                    "pattern": "^sp_[0-9a-hjkmnp-tv-z]{26}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Space name",
+                    "type": "string"
+                  },
+                  "ref_prefix": {
+                    "description": "Task reference prefix",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "ref_prefix"
+                ],
+                "type": "object"
+              },
+              "time_zone": {
+                "description": "IANA time zone of the space",
+                "type": "string"
+              },
+              "view": {
+                "const": "status",
+                "description": "A routine's launch bound the space: the overview",
+                "type": "string"
+              }
+            },
+            "required": [
+              "as_of",
+              "date",
+              "time_zone",
+              "autonomy",
+              "space",
+              "session",
+              "counts",
+              "view",
+              "bound"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "Load a task as a bounded digest, or selected sections in full. With launch, bind first."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "mode": {
+            "default": "apply",
+            "description": "propose: ask the user to decide",
+            "enum": [
+              "apply",
+              "propose"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it is open again",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "reason",
+          "base",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "task.reopen",
+      "ops": [
+        "task.reopen"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "lifecycle": {
+            "description": "Lifecycle",
+            "enum": [
+              "active",
+              "completed",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "proposal": {
+            "description": "Proposal ID",
+            "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "reopened, already active, or proposed",
+            "enum": [
+              "reopened",
+              "no_change",
+              "proposed"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "description": "Status key",
+            "type": "string"
+          },
+          "task": {
+            "description": "Task reference",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "task",
+          "lifecycle",
+          "status",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Reopen a completed or archived task. Its earlier outcome and learnings stay."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "unbound",
+        "conflict",
+        "forbidden",
+        "wrong_tool",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "add_sources": {
+            "description": "Sources to link",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "When it was sent",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "key": {
+                  "description": "<namespace>:<id>, such as jira:LUM-212",
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Source kind",
+                  "enum": [
+                    "email",
+                    "chat",
+                    "ticket",
+                    "pr",
+                    "issue",
+                    "doc",
+                    "calendar",
+                    "session",
+                    "web"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Subject, chat or ticket title",
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Link",
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                "who": {
+                  "description": "Sender or counterpart",
+                  "maxLength": 120,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "title"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "clear": {
+            "description": "Fields to clear",
+            "items": {
+              "enum": [
+                "summary",
+                "priority",
+                "effort",
+                "due",
+                "waiting_on",
+                "place",
+                "focus"
+              ],
+              "type": "string"
+            },
+            "maxItems": 7,
+            "type": "array"
+          },
+          "context": {
+            "additionalProperties": false,
+            "description": "Change the context",
+            "properties": {
+              "mode": {
+                "description": "append needs no base",
+                "enum": [
+                  "append",
+                  "replace"
+                ],
+                "type": "string"
+              },
+              "text": {
+                "description": "Markdown",
+                "maxLength": 65536,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "text"
+            ],
+            "type": "object"
+          },
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "mode": {
+            "default": "apply",
+            "description": "propose: ask the user to decide",
+            "enum": [
+              "apply",
+              "propose"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, shown in history and proposals",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "remove_sources": {
+            "description": "Source keys or URLs to unlink",
+            "items": {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "set": {
+            "additionalProperties": false,
+            "description": "Fields to change",
+            "properties": {
+              "area": {
+                "description": "Area name or slug",
+                "maxLength": 120,
+                "type": "string"
+              },
+              "due": {
+                "description": "ISO date or phrase: fri, +3d",
+                "maxLength": 40,
+                "type": "string"
+              },
+              "effort": {
+                "description": "Effort",
+                "maxLength": 20,
+                "type": "string"
+              },
+              "focus": {
+                "description": "Star it for today, only when the user asks",
+                "type": "boolean"
+              },
+              "inbox": {
+                "description": "In the Inbox",
+                "type": "boolean"
+              },
+              "place": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "pattern": "^(?:cwd$|\\/|[A-Za-z]:[\\\\/]|[\\\\/]{2})",
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "description": "Relative path inside the root",
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "root": {
+                        "description": "Root name or ID",
+                        "maxLength": 120,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "root",
+                      "path"
+                    ],
+                    "type": "object"
+                  }
+                ],
+                "description": "\"cwd\", an absolute folder, or root and path"
+              },
+              "priority": {
+                "description": "1 highest, 4 none",
+                "maximum": 4,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "project": {
+                "description": "Project name or slug",
+                "maxLength": 120,
+                "type": "string"
+              },
+              "status": {
+                "description": "A status of the space",
+                "maxLength": 40,
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line: the next step",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "title": {
+                "description": "Title",
+                "maxLength": 300,
+                "type": "string"
+              },
+              "waiting_on": {
+                "description": "Who or what it waits on",
+                "maxLength": 80,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID; default: the bound task",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "task.update",
+      "ops": [
+        "task.patch",
+        "task.context_append",
+        "task.move",
+        "source.add",
+        "source.unlink",
+        "place.set",
+        "place.clear"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "fields": {
+            "description": "The fields the call changed",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "proposal": {
+            "description": "Proposal ID",
+            "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "updated, nothing changed, applied with a review mark, or proposed",
+            "enum": [
+              "updated",
+              "no_change",
+              "review",
+              "proposed"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "Task reference",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          },
+          "warnings": {
+            "description": "Warnings, one sentence each",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "result",
+          "task",
+          "fields",
+          "as_of",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Change an active task's fields, summary, context, group or sources."
+    }
+  ],
+  "version": 1
+}

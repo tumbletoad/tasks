@@ -1,0 +1,28 @@
+packages:
+  - packages/*
+  # M0 lab only: the spike page of lab run U (A7 3.7, M0.08). Never shipped, never imported.
+  - spikes/m0/ui
+  # Lab-only dependencies of M0.09 (official MCP SDKs, a tokenizer). Never shipped.
+  - spikes/m0/agents
+
+# Supply chain (A6 L6, A7 3.3). pnpm 12 reads these settings only from this file, not from .npmrc.
+# Dependency install scripts never run unless a package is listed here with `true`.
+# The allow-list is empty. better-sqlite3 joins it with the testkit package (A7 3.3).
+# `false` records a reviewed script that stays off: esbuild's postinstall (install.js) only checks
+# and links the platform binary that its @esbuild/<platform> optional dependency already holds,
+# and the build (M1.13) runs esbuild through its JavaScript API without it.
+allowBuilds:
+  esbuild: false
+# Fail the install when a dependency has a build script nobody reviewed.
+strictDepBuilds: true
+dangerouslyAllowAllBuilds: false
+# Dependencies are pinned to exact versions.
+saveExact: true
+# Never install a version published less than a day ago (the pnpm default, stated explicitly).
+minimumReleaseAge: 1440
+# Fail when a package's trust level drops compared to its earlier releases.
+trustPolicy: no-downgrade
+# Never install silently before a script runs. Run `pnpm install` yourself.
+verifyDepsBeforeRun: error
+# The runtime comes from devEngines.runtime in package.json. Fail rather than run on another Node.
+engineStrict: true
