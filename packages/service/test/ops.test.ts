@@ -544,7 +544,8 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
       },
     ]);
 
-    // A follow-up upserts too: it matches the other task.
+    // A follow-up upserts too: it matches the other task. One with a key of the task the call
+    // completes is new work after it: it is created, and later drafts find it (A3 3.4.8).
     const before = TaskGetResult.parse(await call(s, "task.get", { task: ref }, mira));
     const finished = TaskFinishResult.parse(
       await call(
@@ -553,16 +554,25 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
         {
           task: ref,
           outcome: "Fixture outcome.",
-          follow_ups: [{ title: "Fixture follow-up", sources: [ticket(3)] }],
+          follow_ups: [
+            { title: "Fixture follow-up", sources: [ticket(3)] },
+            { title: "Fixture follow-up of its ticket", sources: [ticket(2)] },
+          ],
           base: before.as_of,
           request_id: rid(),
         },
         mira,
       ),
     );
+    const followRef = finished.follow_ups[1]?.ref ?? "";
     expect(finished.follow_ups).toEqual([
       { result: "exists", ref: otherRef, title: "Fixture follow-up" },
+      { result: "created", ref: followRef, title: "Fixture follow-up of its ticket" },
     ]);
+    expect([ref, otherRef]).not.toContain(followRef);
+    expect((await add([{ title: "Fixture upsert", sources: [ticket(2)] }])).tasks[0]).toMatchObject(
+      { result: "exists", ref: followRef, lifecycle: "active" },
+    );
 
     // A finished match: exists with its lifecycle, and nothing follows it. Its receipt holds the
     // existing results, and a retry replays them.

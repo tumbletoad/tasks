@@ -8,16 +8,18 @@
 //   from its create on, so two drafts of one request with one key are one task, whatever the order
 //   of their source operations.
 // - A holder's lifecycle is its own at the start, or what the request's earlier `task.complete` and
-//   `task.reopen` left; a task finished in the request finished at the request's instant.
+//   `task.reopen` left. A task the request itself completes is no match: a draft after it is new
+//   work, as complete_task's follow-up of the same ticket is (A3 3.4.8).
 // - One active holder is the match, and the draft's entries follow it. Several are ambiguous: the
 //   first by reference is named, the rest listed, and nothing follows. With none, a holder finished
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
 //   and nothing follows: the caller decides whether to reopen it or create anew.
 //
-// A task's finish is its `completed_at`, else the instant of the commit that last wrote its
-// lifecycle (an archived task has no completion time). A removed link or a deleted task never
-// matches. Everything is read inside the writer's transaction, so two requests never both create a
-// task for one key: the single writer decides them one after the other (A1 3.9).
+// A task finished at its `completed_at`, else at the instant of the commit that last wrote its
+// lifecycle (an archived task has no completion time). Commit instants never go back, so two
+// finishes can share one: the later commit is the one finished last. A removed link or a deleted
+// task never matches. Everything is read inside the writer's transaction, so two requests never
+// both create a task for one key: the single writer decides them one after the other (A1 3.9).
 //
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
@@ -61,13 +63,34 @@ export interface Match {
 /** A task as dedupe compares it. */
 interface Holder {
   lifecycle: TaskLifecycle;
-  /** When it finished, or null while it is active. */
-  finishedAt: number | null;
+  /**
+   * When it finished: the instant, and the commit that wrote its lifecycle. Null while it is
+   * active, and for a task the request completes, which no draft of the request matches.
+   */
+  finished: { at: number; seq: number } | null;
   /** Reference order: existing tasks by reference, then the request's drafts as created. */
   rank: readonly [number, number];
 }
 
 const byRank = (a: Holder, b: Holder): number => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1];
+
+/** The one finished last first: by instant, then by commit, then by reference, highest first. */
+const byFinish = (a: Holder, b: Holder): number =>
+  (b.finished?.at ?? 0) - (a.finished?.at ?? 0) ||
+  (b.finished?.seq ?? 0) - (a.finished?.seq ?? 0) ||
+  byRank(b, a);
+
+/** The commit that last wrote a task's lifecycle: its `fv`, else its create. */
+function lifecycleSeq(r: RowReader): number {
+  const fv = r.json("fv");
+  const versioned =
+    typeof fv === "object" && fv !== null && !Array.isArray(fv)
+      ? (fv as Record<string, unknown>)["lifecycle"]
+      : undefined;
+  const seq = versioned === undefined ? r.int("created_seq", "seq") : versioned;
+  if (!inRange(seq, "seq")) throw invalidValue("tasks", "fv");
+  return seq;
+}
 
 /**
  * One request's dedupe state, against the start state and the request's own staged work. Without a
@@ -116,7 +139,7 @@ export class Dedupe {
     if (this.#keys.size === 0) return;
     this.#holders.set(id, {
       lifecycle: "active",
-      finishedAt: null,
+      finished: null,
       rank: [1, (this.#drafts += 1)],
     });
     for (const key of keys) this.link(key, id);
@@ -130,12 +153,15 @@ export class Dedupe {
     this.#links.set(key, tasks);
   }
 
-  /** The request completes (`completed`) or reopens (`active`) `task`. */
+  /**
+   * The request completes (`completed`) or reopens (`active`) `task`. A task it completes is no
+   * longer active and no finished match either: a later draft is new work after it.
+   */
   lifecycle(task: Id<"t">, lifecycle: "active" | "completed"): void {
     if (this.#keys.size === 0) return;
     const holder = this.#holder(task);
     holder.lifecycle = lifecycle;
-    holder.finishedAt = lifecycle === "active" ? null : this.#at;
+    holder.finished = null;
   }
 
   /**
@@ -170,8 +196,8 @@ export class Dedupe {
     }
     const since = this.#at - this.#window();
     const [last] = holders
-      .filter((h) => h.finishedAt !== null && h.finishedAt >= since)
-      .sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0) || byRank(b, a));
+      .filter((h) => h.finished !== null && h.finished.at >= since)
+      .sort(byFinish);
     if (last === undefined) return { active };
     return {
       active,
@@ -196,7 +222,10 @@ export class Dedupe {
         const r = new RowReader("task_sources", row);
         const key = sources.get(r.id("source_id", "s"));
         if (key === undefined) throw invalidValue("task_sources", "source_id");
-        holders.set(key, [...(holders.get(key) ?? []), r.id("task_id", "t")]);
+        // Appended in place: a source many tasks share costs one pass, not one copy per link.
+        const tasks = holders.get(key);
+        if (tasks === undefined) holders.set(key, [r.id("task_id", "t")]);
+        else tasks.push(r.id("task_id", "t"));
       }
     }
     this.#start = holders;
@@ -211,24 +240,18 @@ export class Dedupe {
     if (row === undefined) throw invalidValue("task_sources", "task_id");
     const r = new RowReader("tasks", row);
     const lifecycle = r.oneOf("lifecycle", ["active", "completed", "archived"]);
-    let finishedAt: number | null = null;
+    let finished: Holder["finished"] = null;
     if (lifecycle !== "active") {
-      finishedAt = r.optInt("completed_at", "instant") ?? this.#lifecycleAt(r);
+      const seq = lifecycleSeq(r);
+      finished = { at: r.optInt("completed_at", "instant") ?? this.#commitAt(seq), seq };
     }
-    const holder: Holder = { lifecycle, finishedAt, rank: [0, r.int("ref", "taskRef")] };
+    const holder: Holder = { lifecycle, finished, rank: [0, r.int("ref", "taskRef")] };
     this.#holders.set(id, holder);
     return holder;
   }
 
-  /** The instant of the commit that last wrote a task's lifecycle (its `fv`, else its create). */
-  #lifecycleAt(r: RowReader): number {
-    const fv = r.json("fv");
-    const versioned =
-      typeof fv === "object" && fv !== null && !Array.isArray(fv)
-        ? (fv as Record<string, unknown>)["lifecycle"]
-        : undefined;
-    const seq = versioned === undefined ? r.int("created_seq", "seq") : versioned;
-    if (!inRange(seq, "seq")) throw invalidValue("tasks", "fv");
+  /** The instant of a commit. */
+  #commitAt(seq: number): number {
     const commit = this.#conn.prepare(SQL.commitAt).get({ seq });
     if (commit === undefined) throw invalidValue("tasks", "fv");
     return new RowReader("commits", commit).int("at", "instant");

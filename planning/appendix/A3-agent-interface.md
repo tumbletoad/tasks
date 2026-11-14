@@ -244,7 +244,7 @@ Finish (`done`) or abandon (`dropped`) a task with an outcome and learnings, and
 | Completed or archived, `wrap_state` pending (the user checked it off, D12) | `task.wrap_up`: adds outcome and learnings and marks it wrapped. A4's Wrap-up routine uses this path. |
 | Already wrapped | `no_change` if the outcome is identical, otherwise `conflict` with the stored outcome |
 
-Wrap-up only adds text and never destroys any (A1). Until `task.wrap_up` exists (M3.04), `dropped`, `learnings` and wrapping up a completed task are refused. A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out. The task the call completes is a finished match for a follow-up with one of its keys.
+Wrap-up only adds text and never destroys any (A1). Until `task.wrap_up` exists (M3.04), `dropped`, `learnings` and wrapping up a completed task are refused. A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out. The task the call completes never matches a follow-up: a follow-up with one of its keys is new work after it, so it is created, and later lookups of that key find it first (A1 3.6).
 
 #### 3.4.9 `reopen_task`
 

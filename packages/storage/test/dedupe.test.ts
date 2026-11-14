@@ -465,12 +465,25 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       "existing",
     ]);
     expect(holders(fx.reader, "jira:FIX-2")).toEqual([c.id]);
-    // A task the request completes before the draft is a finished match.
-    const finished = submit([{ kind: "task.complete", task: a.id }, ...draft(["jira:FIX-1"]).ops], {
+    // A task the request completes before the draft is no match: the draft is new work after it,
+    // as complete_task's follow-up of the same ticket is (A3 3.4.8), and later drafts find it.
+    const after = draft(["jira:FIX-1"]);
+    const finished = submit([{ kind: "task.complete", task: a.id }, ...after.ops], {
       actor: "human",
       base: fx.base(),
     });
-    expect(finished.results[1]).toMatchObject({ status: "existing", lifecycle: "completed" });
+    expect(finished.results.map((r) => [r.status, r.task ?? r.id])).toEqual([
+      ["updated", a.id],
+      ["created", after.id],
+      ["created", after.id],
+    ]);
+    expect(holders(fx.reader, "jira:FIX-1")).toEqual([a.id, after.id].sort());
+    expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      id: after.id,
+      lifecycle: "active",
+    });
+    complete(after.id);
     // A task the request reopens is an active one, even when it finished before the window.
     clock.now += 40 * DAY;
     const reopened = submit(
@@ -485,54 +498,101 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     ]);
   });
 
-  test("a change to a matched draft's fields is left out; a sibling that names it is the match", () => {
+  test("a draft that may match by source key takes only entries, sources and a place: any other operation or a sibling that names it is refused, whatever the space holds", () => {
     const first = draft(["jira:FIX-1"]);
     submit(first.ops);
-    const again = draft(["jira:FIX-1"]);
-    const patched = submit([
-      ...again.ops,
-      { kind: "task.patch", task: again.id, set: { summary: "Next: call back" } },
-      { kind: "task.complete", task: again.id },
-      { kind: "task.move", task: again.id, area: "home" },
-    ]);
-    expectStatus(patched, "unchanged");
-    expect(patched.results.map((r) => [r.status, r.id])).toEqual([
-      ["existing", first.id],
-      ["existing", first.id],
-      ["existing", first.id],
-      ["existing", first.id],
-      ["existing", first.id],
-    ]);
-    expect(one("SELECT summary FROM tasks")).toBe("");
-    expect(one("SELECT lifecycle FROM tasks")).toBe("active");
-    expect(one("SELECT area_id FROM tasks")).toBe(null);
-    // What is left out is still checked: a move to an area the space lacks is refused as for a
-    // created draft, whatever dedupe found.
-    const unknown = submit([...again.ops, { kind: "task.move", task: again.id, area: "garden" }]);
-    expectStatus(unknown, "rejected");
-    expect(unknown.error).toMatchObject({ code: "NOT_FOUND", op: 2, field: "area" });
-    // Another draft placed after a matched draft stands right after the matched task.
-    const other = newId("t");
-    const matched = draft(["jira:FIX-1"]);
-    const placed = submit([
-      ...matched.ops,
-      { kind: "task.create", id: other, title: "Call the clinic", after: matched.id },
-    ]);
-    expect(placed.results.map((r) => r.status)).toEqual(["existing", "existing", "created"]);
-    const order = fx.reader
-      .prepare("SELECT id FROM tasks ORDER BY position")
-      .all()
-      .map((r) => r["id"]);
-    expect(order).toEqual([first.id, other]);
-    // A sibling that names an ambiguous draft has no one task to stand next to.
-    submit(draft(["jira:FIX-2"]).ops);
-    const ambiguous = draft(["jira:FIX-1", "jira:FIX-2"]);
-    const refused = submit([
-      ...ambiguous.ops,
-      { kind: "task.create", title: "Call the clinic", after: ambiguous.id },
-    ]);
-    expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", op: 3, field: "after" });
+    const receipts = one("SELECT count(*) FROM receipts");
+    // The same refusal whether the key matches a task (FIX-1) or not (FIX-9): it depends on the
+    // input alone, so it is checked before the transaction and stores nothing (A1 3.7).
+    for (const key of ["jira:FIX-1", "jira:FIX-9"]) {
+      const again = draft([key]);
+      const n = again.ops.length;
+      const at = (field: string) => ({
+        code: "VALIDATION_FAILED",
+        op: n,
+        field: `ops[${String(n)}].${field}`,
+      });
+      for (const op of [
+        { kind: "task.patch", task: again.id, set: { summary: "Next: call back" } },
+        { kind: "task.complete", task: again.id },
+        { kind: "task.reopen", task: again.id },
+        { kind: "task.move", task: again.id, area: "home" },
+        { kind: "place.clear", task: again.id },
+      ] satisfies Operation[]) {
+        const refused = submit([...again.ops, op]);
+        expectStatus(refused, "rejected");
+        expect(refused.error, op.kind).toMatchObject(at("task"));
+      }
+      const created = submit([
+        ...again.ops,
+        { kind: "task.create", title: "Call the clinic", after: again.id },
+      ]);
+      expect(created.error).toMatchObject(at("after"));
+      const moved = submit([...again.ops, { kind: "task.move", task: first.id, before: again.id }]);
+      expect(moved.error).toMatchObject(at("before"));
+    }
+    expect(one("SELECT count(*) FROM receipts")).toBe(receipts);
+    expect(one("SELECT count(*) FROM tasks")).toBe(1);
+    // A draft that never matches takes them: dedupe new or none, or no keyed source.
+    for (const [keys, dedupe] of [
+      [["jira:FIX-7"], "new"],
+      [["jira:FIX-1"], "none"],
+      [[], undefined],
+    ] as const) {
+      const fresh = draft(keys, dedupe === undefined ? {} : { dedupe });
+      const changed = submit(
+        [
+          ...fresh.ops,
+          { kind: "task.patch", task: fresh.id, set: { summary: "Next: call back" } },
+          { kind: "task.complete", task: fresh.id },
+        ],
+        { actor: "human" },
+      );
+      expectStatus(changed, "applied");
+      expect(changed.results[0]).toMatchObject({ status: "created", id: fresh.id });
+      expect(one("SELECT lifecycle FROM tasks WHERE id = $id", { id: fresh.id })).toBe("completed");
+    }
+  });
+
+  test("a matched draft's place is left out, and checked as a created draft's is", () => {
+    const first = draft(["jira:FIX-1"]);
+    submit(first.ops);
+    // The place binds a folder on the request's machine, which needs its record in the space
+    // whether or not the draft matches (A1 3.15).
+    for (const key of ["jira:FIX-1", "jira:FIX-9"]) {
+      const placed = draft([key], { place: true });
+      const result = fx.writer.submit(
+        fx.request({ ...fx.codex, machine_id: newId("m") }, placed.ops),
+      );
+      expectStatus(result, "rejected");
+      expect(result.error).toMatchObject({
+        code: "VALIDATION_FAILED",
+        op: 2,
+        field: "actor.machine_id",
+      });
+    }
+    expect(one("SELECT count(*) FROM tasks")).toBe(1);
+    expect(one("SELECT count(*) FROM places")).toBe(0);
+  });
+
+  test("of finished matches with one instant, the one whose commit came last", () => {
+    // Commit instants never go back (A1 3.9): after the clock does, two completions share one.
+    const a = draft(["jira:FIX-1"]);
+    submit(a.ops);
+    const b = draft(["jira:FIX-1"], { dedupe: "none" });
+    submit(b.ops);
+    complete(b.id);
+    clock.now -= 10 * DAY;
+    complete(a.id);
+    const at = (id: string): unknown =>
+      one("SELECT completed_at FROM tasks WHERE id = $id", { id });
+    expect(at(a.id)).toBe(at(b.id));
+    expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      id: a.id,
+      ref: "M-1",
+      lifecycle: "completed",
+    });
   });
 
   test("the input: a dedupe mode, and link_sources only with dedupe by source key", () => {

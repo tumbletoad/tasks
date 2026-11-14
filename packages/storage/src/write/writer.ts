@@ -1052,10 +1052,11 @@ export class SpaceWriter {
         problem("VALIDATION_FAILED", "Not an effort of this space", i, "effort");
       }
       const task = (given: string, field: string): Id<"t"> => {
-        // A matched draft's ID names the matched task: a sibling, or an operation that follows.
+        // A matched draft's ID names the matched task, for an operation that follows it. Only its
+        // entries and sources name it (checkRequest), and they follow one active match only.
         const rebound = matched.get(given);
-        if (rebound?.ambiguous !== undefined) {
-          problem("VALIDATION_FAILED", "The draft matched several tasks: name one", i, field);
+        if (rebound !== undefined && !rebound.follows) {
+          throw misuse("Only an operation that follows a match names a matched draft");
         }
         const found = resolveTask(conn, space, rebound?.task ?? given, drafts, i, field);
         if (found.row !== undefined) {
@@ -1100,14 +1101,8 @@ export class SpaceWriter {
         drafts.has(target)
           ? []
           : fields.map((field) => ({ entity: "tasks", id: target, field, task: target }));
-      /** A place's owner, and the request's machine, which must have its record (A1 3.15). */
-      const ownerOf = (op: { task?: string; project?: string; area?: string }) => {
-        const owner =
-          op.task !== undefined
-            ? { kind: "task" as const, id: task(op.task, "task") as string }
-            : op.project !== undefined
-              ? { kind: "project" as const, id: resolveProject(conn, op.project, i).id as string }
-              : { kind: "area" as const, id: resolveArea(conn, op.area ?? "", i) as string };
+      /** The request's machine, which a place binds a folder on: it must have its record. */
+      const placeMachine = (): string => {
         const machine = request.actor.machine_id;
         if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
           problem(
@@ -1117,17 +1112,29 @@ export class SpaceWriter {
             "actor.machine_id",
           );
         }
+        return machine;
+      };
+      /** A place's owner, and the request's machine, which must have its record (A1 3.15). */
+      const ownerOf = (op: { task?: string; project?: string; area?: string }) => {
+        const owner =
+          op.task !== undefined
+            ? { kind: "task" as const, id: task(op.task, "task") as string }
+            : op.project !== undefined
+              ? { kind: "project" as const, id: resolveProject(conn, op.project, i).id as string }
+              : { kind: "area" as const, id: resolveArea(conn, op.area ?? "", i) as string };
+        const machine = placeMachine();
         return { owner, machine, key: `${owner.kind}|${owner.id}` };
       };
 
       // A later operation of a matched draft: the rebinding rules (A1 3.6) either leave it out,
-      // or let it go on with the matched task, which `task` resolves the draft's ID to. A move left
-      // out still has its group and sibling checked, so whether a request is valid never depends
-      // on what dedupe finds.
+      // or let it go on with the matched task, which `task` resolves the draft's ID to. Only the
+      // draft's entries, sources and place name it (checkRequest refuses the rest from the input
+      // alone). A place left out is still checked as a created draft's is, so whether a request
+      // is valid never depends on what dedupe finds.
       const named = "task" in op ? op.task : undefined;
       const match = named === undefined ? undefined : matched.get(named);
       if (match !== undefined && !follows(op, match)) {
-        if (op.kind === "task.move") where(op);
+        if (op.kind === "place.set") placeMachine();
         return {
           i,
           op,
@@ -1984,9 +1991,8 @@ function resolveProject(
 /**
  * Whether a later operation of a matched draft goes on with the matched task (A1 3.6): only to one
  * active match, and only the draft's entries (`log.add`, `note.add`, `task.context_append`), with
- * its sources too when the draft asked to link them. The rest of a draft is what it would have
- * created (its place) or a change to fields of a task the caller never read as this one (a patch,
- * a move, a completion), so it is left out.
+ * its sources too when the draft asked to link them. Its place is what it would have created, so
+ * it is left out. No other operation names a draft that may match (checkRequest).
  */
 function follows(op: Operation, match: Match): boolean {
   if (!match.follows) return false;

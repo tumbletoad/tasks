@@ -1347,8 +1347,62 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
   const launches = request.ops.some((op) => op.kind.startsWith("launch."));
   if (launches) checkLaunchRequest(f, request);
+  checkMatchableDrafts(request.ops);
   f.done();
   return request;
+}
+
+/** The operations that may name a draft that dedupes by source key: its entries, sources, place. */
+const MATCHABLE_DRAFT_OPS: ReadonlySet<Operation["kind"]> = new Set([
+  "log.add",
+  "note.add",
+  "task.context_append",
+  "source.add",
+  "place.set",
+]);
+
+/**
+ * A draft that may match a task by its source keys (A1 3.6: a `task.create` with a client ID, the
+ * default `dedupe`, and a keyed `source.add` naming it) is named only by its entries, its sources
+ * and its place, and never as a sibling. Anything else would change a task the caller never read
+ * as this one, or be dropped unseen, so it is refused from the input alone: whether a request is
+ * valid never depends on what the space holds under its keys.
+ */
+function checkMatchableDrafts(ops: readonly Operation[]): void {
+  const keyed = new Set<string>();
+  for (const op of ops) {
+    if (op.kind === "source.add" && op.source.key !== undefined) keyed.add(op.task);
+  }
+  const matchable = new Set<string>();
+  for (const op of ops) {
+    if (
+      op.kind === "task.create" &&
+      op.id !== undefined &&
+      (op.dedupe ?? "source_key") === "source_key" &&
+      keyed.has(op.id)
+    ) {
+      matchable.add(op.id);
+    }
+  }
+  if (matchable.size === 0) return;
+  const message =
+    "A draft that may match a task by source key takes only entries, sources and a place: " +
+    "change it in a later request, or create it with dedupe new or none";
+  ops.forEach((op, i) => {
+    const at = `ops[${String(i)}]`;
+    const named = "task" in op ? op.task : undefined;
+    if (named !== undefined && matchable.has(named) && !MATCHABLE_DRAFT_OPS.has(op.kind)) {
+      fail("VALIDATION_FAILED", message, `${at}.task`, i);
+    }
+    if (op.kind === "task.create" || op.kind === "task.move") {
+      for (const side of ["after", "before"] as const) {
+        const sibling = op[side];
+        if (sibling !== undefined && matchable.has(sibling)) {
+          fail("VALIDATION_FAILED", message, `${at}.${side}`, i);
+        }
+      }
+    }
+  });
 }
 
 /**
