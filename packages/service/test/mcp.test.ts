@@ -1,7 +1,7 @@
 // The MCP endpoint of a running service, over real tasks-local/1 mcp mode connections in this
 // process (A3 3.3, A7 3.9 M2.02): one tool list on every connection and offline, both protocol
 // eras' envelopes, tool calls on the request path as the connection's principal, the offline
-// cache, and the contract suite over MCP for both eras.
+// cache, and the contract suite and the grant gate's refusal over MCP for both eras.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { offlineReply, parseOffline } from "@tasks/bridge/mcp";
@@ -9,13 +9,21 @@ import { LocalError, PROTOCOL } from "@tasks/bridge/protocol";
 import { findEntry, AppError } from "@tasks/contracts";
 import { Client } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, test } from "vitest";
-import { bridgePrincipal, clientOf, INSTRUCTIONS, renderResult } from "../src/mcp/index.ts";
-import { opCall } from "../src/ops/index.ts";
+import {
+  bridgePrincipal,
+  clientOf,
+  INSTRUCTIONS,
+  renderError,
+  renderResult,
+} from "../src/mcp/index.ts";
+import { grantRefused, opCall } from "../src/ops/index.ts";
 import {
   ContractError,
   contractSuite,
   contractWorld,
+  grantSuite,
   type ContractTransport,
+  type GrantTransport,
 } from "./contract/suite.ts";
 import { diagnostics, readLog } from "./harness.ts";
 import {
@@ -32,7 +40,7 @@ import {
   world,
   type Json,
 } from "./mcp-helpers.ts";
-import { classSession, errorOf } from "./ops-helpers.ts";
+import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
 
 const LONG = 180_000;
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -255,6 +263,10 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
         op: "task.add",
         input: { tasks: [{ title: "Fixture task one" }], request_id: "fixture-request-add-0001" },
       });
+      // The agent homes these entries name, registered for the one space as setup does.
+      for (const instance of ["codex-work", "test-agent"]) {
+        await grantHome(w.home, w.path, { instance, space: w.space });
+      }
       // TASKS_SPACE names a space the service does not serve: ignored, the one space is used.
       const context = bridgeContext({
         instance: "codex-work",
@@ -290,7 +302,8 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       const third = await b.request("tools/call", { name: "add_entry", arguments: args });
       expect(textOf(JSON.parse(third.result ?? "{}"))).toMatch(/^logged l1 on M-1 .*\(replayed\)$/);
 
-      // An entry without a valid instance writes as agent:manual.
+      // An entry without a valid instance writes as agent:manual, in the machine's default space
+      // (here the one space served, A3 3.7.4).
       const c = await raw(w, bridgeContext({ instance: "Not An Instance!" }));
       await c.initialize();
       await c.request("tools/call", {
@@ -307,14 +320,16 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       })) as { sections: { log: { author: string }[] } };
       expect(after.sections.log[0]?.author).toBe("agent:manual");
 
-      // The entry's --space: a space the service does not serve is space_unavailable, never another.
+      // The entry's --space: a space the home is not registered for is refused, never another
+      // (the grant comes first; a granted space no longer served is space_unavailable, as
+      // binding.test.ts shows).
       const d = await raw(w, bridgeContext({ space: "sp_00000000000000000000000000" }));
       await d.initialize();
       const elsewhere = JSON.parse(
         (await d.request("tools/call", { name: "status", arguments: {} })).result ?? "{}",
       ) as Json;
       expect(elsewhere["isError"]).toBe(true);
-      expect(textOf(elsewhere)).toMatch(/^error space_unavailable \(not_served\): /);
+      expect(textOf(elsewhere)).toBe(renderError(grantRefused().toBody()));
       const e = await raw(w, bridgeContext({ space: w.space }));
       await e.initialize();
       const here = JSON.parse(
@@ -381,6 +396,8 @@ const ERROR_TEXT = /^error ([a-z_]+)(?: \([a-z_]+\))?: /;
 function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport> {
   return async () => {
     const w = await contractWorld(`k${era[0] ?? ""}`);
+    // The agent's home, registered for the world's space as setup does.
+    await grantHome(w.home, w.path, { instance: "contract-agent", space: w.space });
     const context = bridgeContext({ instance: "contract-agent" });
     const principal = bridgePrincipal(context, w.service.ops.machine.id);
     const who = clientOf(context);
@@ -450,6 +467,59 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
     };
   };
 }
+
+/**
+ * The grant gate over MCP (A3 3.7.8): a real mcp mode connection whose entry names a home no row
+ * names, through the SDK's client in `era`. A tool's refusal is A3's text form of the body; an
+ * entry without a tool in this build goes to the request path as the same connection.
+ */
+function mcpGrant(era: "legacy" | "modern"): () => Promise<GrantTransport> {
+  return async () => {
+    const w = await contractWorld(`g${era[0] ?? ""}`);
+    const context = bridgeContext({ space: w.space, instance: "ungranted-agent" });
+    const session = await openMcp(w.home, w.path, context);
+    const client = new Client(
+      { name: "grant", version: "1.0.0" },
+      { versionNegotiation: { mode: era === "legacy" ? "legacy" : { pin: "2026-07-28" } } },
+    );
+    await client.connect(new SessionTransport(session));
+    expect(client.getProtocolEra()).toBe(era);
+    const [binding] = w.service.bindings.open();
+    return {
+      refused: async (name, input) => {
+        const tool = findEntry(name)?.faces.mcp?.tool;
+        if (tool === undefined) {
+          try {
+            await opCall(
+              w.service.ops,
+              {
+                class: "bridge",
+                env: {},
+                principal: bridgePrincipal(context, w.service.ops.machine.id),
+                home: "ungranted-agent",
+                ...(binding === undefined ? {} : { binding }),
+              },
+              { op: name, input },
+            );
+            return undefined;
+          } catch (error) {
+            if (error instanceof AppError) return error.toBody();
+            throw error;
+          }
+        }
+        const result = await client.callTool({ name: tool, arguments: input });
+        return result.isError === true ? textOf(result) : undefined;
+      },
+      close: async () => {
+        await client.close();
+        await w.close();
+      },
+    };
+  };
+}
+
+grantSuite("the grant gate over MCP (2025-11-25)", mcpGrant("legacy"));
+grantSuite("the grant gate over MCP (2026-07-28)", mcpGrant("modern"));
 
 contractSuite(
   "[A3.3.2.ops.contract] [A3.3.10.mcp.framing] the contract suite, over MCP (2025-11-25)",

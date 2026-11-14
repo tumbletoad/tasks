@@ -12,7 +12,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { McpChannel } from "../local/index.ts";
 import type { Bindings } from "../binding/index.ts";
 import { opCall, type OpsHost, type Slot } from "../ops/index.ts";
-import { bridgePrincipal, clientOf, spaceOf } from "./principal.ts";
+import { bridgePrincipal, clientOf, instanceOf, spaceOf } from "./principal.ts";
 import { renderError, renderResult } from "./render.ts";
 import { createServer, type ToolCall, type ToolResult } from "./server.ts";
 import { toolEntry, TOOLS } from "./tools.ts";
@@ -97,6 +97,8 @@ export function toolCaller(options: {
 }): ToolCall {
   const principal = bridgePrincipal(options.context, options.ops.machine.id);
   const client = clientOf(options.context);
+  // The agent home whose grant rows decide the spaces this connection may use (A3 3.7.8).
+  const home = instanceOf(options.context);
   const { slot, bindings } = options;
   const named = spaceOf(options.context);
   return async (tool, args, thread) => {
@@ -118,6 +120,7 @@ export function toolCaller(options: {
           env: {},
           principal,
           client,
+          home,
           ...(binding === undefined ? {} : { binding }),
         },
         { op: entry.name, input: args, ...(space === undefined ? {} : { space }) },

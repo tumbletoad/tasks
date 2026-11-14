@@ -69,6 +69,19 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     ]);
   });
 
+  test("an instance may not be called manual: the word is the hand-made MCP entry's (A3 3.7.4)", () => {
+    const text = (id: string) =>
+      `[[instance]]\nid = "${id}"\ntarget = "codex-cli"\nlabel = "Codex"\n`;
+    const manual = parseMachineConfig(text("manual"), "linux");
+    expect(manual.config.instances).toEqual([]);
+    expect(manual.problems).toEqual([
+      { key: "instance[1].id", code: "invalid_value", severity: "error" },
+    ]);
+    const other = parseMachineConfig(text("manual-codex"), "linux");
+    expect(other.config.instances.map((i) => i.id)).toEqual(["manual-codex"]);
+    expect(other.problems).toEqual([]);
+  });
+
   test("paths are judged by the machine's own OS: a Windows path is not absolute on Linux, and the reverse", () => {
     const windows = parseMachineConfig(fixture("machine.win32.toml"), "linux");
     expect(windows.config.spaces).toEqual([]);

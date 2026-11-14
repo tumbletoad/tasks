@@ -21,7 +21,10 @@
 // is never bound to something else (`already_bound`).
 //
 // A session is pinned to its space for its whole life (A3 3.7.8), and an unbound connection to the
-// space its bind frame named (or the default, A2 3.7.1). The UI's space plays no part.
+// space its bind frame named (or the default, A2 3.7.1). The UI's space plays no part. A ticket of a
+// space the connection's agent home is not granted binds nothing (the grant gate, ops/grant.ts);
+// a binding restored by its handle stays, and the request path refuses its calls while its home
+// is not granted its space, so a home registered again finds its sessions as they were.
 //
 // Three rules keep a binding consistent with what was written under it:
 // - Durable before irreversible: a session is on disk (with the connection's handle naming it)
@@ -39,17 +42,19 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import { AppError } from "@tasks/contracts";
-import { INSTANCE_ID, type BridgeTicket, type LaunchIntent } from "@tasks/launch";
+import { INSTANCE_ID, MANUAL_INSTANCE, type BridgeTicket, type LaunchIntent } from "@tasks/launch";
 import { isId, newId } from "@tasks/storage";
 import {
   MAX_PRESENTED,
   NATIVE_ID,
   principalOf,
   Slot,
+  grantRefused,
   type BindOutcome,
   type BindingPort,
   type BoundSession,
   type FoundLaunch,
+  type HomeGate,
   type NativeSource,
   type ServedSpace,
 } from "../ops/index.ts";
@@ -96,6 +101,8 @@ export const IGNORED = [
   "used",
   "routine",
   "unrecorded",
+  // A ticket of a space the connection's agent home is not granted (A3 3.7.8).
+  "grant",
 ] as const;
 export type Ignored = (typeof IGNORED)[number];
 
@@ -136,6 +143,11 @@ export interface BindingsOptions {
   readonly store: SessionStore;
   /** This machine (`m_` ID): an unbound connection's writer scope names it. */
   readonly machine: string;
+  /**
+   * The grant gate (ops/grant.ts, A3 3.7.8): a ticket binds only into a space the connection's
+   * agent home may use, so a refused home's bind frame writes nothing into that space.
+   */
+  readonly homes: HomeGate;
   readonly spaces: () => readonly ServedSpace[];
   readonly launches: LaunchPort;
   readonly log?: (event: BindingEvent) => void;
@@ -177,7 +189,7 @@ const view = (record: SessionRecord): BoundSession => ({
 /** The instance a bind context names: an A4 instance ID, else `manual` (mcp/principal.ts's rule). */
 const instanceIn = (context: JsonObject): string => {
   const value = context["instance"];
-  return typeof value === "string" && INSTANCE_ID.test(value) ? value : "manual";
+  return typeof value === "string" && INSTANCE_ID.test(value) ? value : MANUAL_INSTANCE;
 };
 
 export class Bindings implements BindingPort {
@@ -433,8 +445,8 @@ export class Bindings implements BindingPort {
 
   /**
    * The space an unbound connection pins at its bind (A2 3.7.1): the entry's `--space` when it is a
-   * space ID or the name of exactly one served space, else the one space served. Otherwise its
-   * first call pins it (`pin`).
+   * space ID or the name of exactly one served space, else the one space served when its agent home
+   * may use it. Otherwise its first allowed call pins it (`pin`).
    */
   #pinAtBind(slot: Slot): void {
     const live = this.#options.spaces().filter((s) => s.state !== "closed" && s.id !== undefined);
@@ -448,7 +460,11 @@ export class Bindings implements BindingPort {
       if (byName.length === 1) slot.space = byName[0]?.id;
       return;
     }
-    if (live.length === 1) slot.space = live[0]?.id;
+    // Chosen for it, not named by it: only a space its home may use, so a connection refused the
+    // one space served now pins nothing and follows the person's fix (a registration, another
+    // space opened as the default) at its first allowed call (ops/grant.ts).
+    const only = live.length === 1 ? live[0]?.id : undefined;
+    if (only !== undefined && this.#options.homes.may(slot.instance, only)) slot.space = only;
   }
 
   /**
@@ -483,7 +499,22 @@ export class Bindings implements BindingPort {
         this.#ignored("ticket", "unknown");
         return Promise.resolve(false);
       }
+      // A3 3.7.8: a home binds nothing in a space it may not use, so no session is made, the ticket
+      // is not spent and the launch records nothing of this connection (A3 has A4 refuse such a
+      // launch before dispatch). Asked here, in the section, so a row revoked while this bind
+      // waited for it counts.
+      if (!this.#options.homes.may(slot.instance, found.space)) {
+        this.#ignored("ticket", "grant");
+        return Promise.resolve(false);
+      }
       const existing = this.#sessionOfLaunch(found.launch);
+      // A session is its agent home's (A3 3.7.8): a connection of another instance never acts as
+      // it, as with a handle (rule 1), so the session's actor and the home the grant gate checks
+      // are one.
+      if (existing !== undefined && existing.instance !== slot.instance) {
+        this.#ignored("ticket", "instance");
+        return Promise.resolve(false);
+      }
       if (!now.used) {
         if (!now.inWindow) {
           this.#ignored("ticket", "window");
@@ -543,6 +574,9 @@ export class Bindings implements BindingPort {
   redeem(slot: Slot, launch: FoundLaunch): Promise<BindOutcome> {
     return this.#section(slot, () =>
       this.#section(`launch:${launch.id}`, async (): Promise<BindOutcome> => {
+        // The grant once more, in the section and before any record is made (A3 3.7.8): the call
+        // was admitted before it waited here, and its row may have been revoked meanwhile.
+        this.#granted(slot, launch.space);
         const current = this.#current(slot);
         if (current !== undefined) {
           if (!current.launches.includes(launch.id)) {
@@ -634,6 +668,8 @@ export class Bindings implements BindingPort {
 
   bindTask(slot: Slot, space: string, task: string): Promise<BindOutcome> {
     return this.#section(slot, (): Promise<BindOutcome> => {
+      // As in `redeem`: the grant once more, in the section, before the session is made.
+      this.#granted(slot, space);
       const current = this.#current(slot);
       if (current !== undefined) {
         return Promise.resolve(
@@ -992,6 +1028,14 @@ export class Bindings implements BindingPort {
       if (this.#sections.get(key) === settled) this.#sections.delete(key);
     });
     return run;
+  }
+
+  /**
+   * Throws the grant refusal (ops/grant.ts) unless the slot's agent home may use `space` now: a bind
+   * through a tool records nothing for a home whose row was revoked while its call waited.
+   */
+  #granted(slot: Slot, space: string): void {
+    if (!this.#options.homes.may(slot.instance, space)) throw grantRefused();
   }
 
   #ignored(input: "ticket" | "handle", reason: Ignored): void {

@@ -4,7 +4,12 @@
 import { describe, expect, test } from "vitest";
 import type { LaunchIntent } from "@tasks/launch";
 import { newId } from "@tasks/storage";
-import { sessionPrincipal, type FoundLaunch, type ServedSpace } from "../ops/index.ts";
+import {
+  sessionPrincipal,
+  type FoundLaunch,
+  type HomeGate,
+  type ServedSpace,
+} from "../ops/index.ts";
 import { Bindings, type BindingEvent, type LaunchPort } from "./bindings.ts";
 import { MAX_SESSIONS, MemorySessionStore, parseSessions, type SessionStore } from "./sessions.ts";
 
@@ -40,7 +45,12 @@ function launchSide(delayMs = 0): LaunchPort & { readonly bound: Map<string, num
 }
 
 function bindings(
-  options: { store?: SessionStore; launches?: LaunchPort; now?: () => number } = {},
+  options: {
+    store?: SessionStore;
+    launches?: LaunchPort;
+    now?: () => number;
+    homes?: HomeGate;
+  } = {},
 ): { bindings: Bindings; events: BindingEvent[] } {
   const events: BindingEvent[] = [];
   return {
@@ -48,6 +58,9 @@ function bindings(
     bindings: new Bindings({
       store: options.store ?? new MemorySessionStore(),
       machine: MACHINE,
+      // The grant gate is the request path's and the service's (test/grant-gate.test.ts): unless a
+      // test says otherwise, every home here may use the one space.
+      homes: options.homes ?? { may: () => true },
       spaces: () => [served],
       launches: options.launches ?? launchSide(),
       log: (event) => events.push(event),
@@ -70,6 +83,55 @@ const launchOf = (id = newId("la")): FoundLaunch => ({
   route: "clipboard",
   boundAt: undefined,
   exited: false,
+});
+
+describe("[A3.3.7.grant.space] a home granted one space reaches no other", () => {
+  test("an entry without --space pins the one space served at its bind only when its home may use it", async () => {
+    let granted = false;
+    const { bindings: b } = bindings({ homes: { may: () => granted } });
+    const refused = context({ space: null });
+    expect(await b.bridge(refused)).toMatchObject({ space: null, state: "unbound" });
+    expect(b.attach(refused)?.space).toBeUndefined();
+    granted = true;
+    const allowed = context({ space: null });
+    expect(await b.bridge(allowed)).toMatchObject({ space: SPACE, state: "unbound" });
+    expect(b.attach(allowed)?.space).toBe(SPACE);
+    // An entry that names the space keeps it, granted or not: the request path refuses its calls.
+    granted = false;
+    const named = context();
+    expect(await b.bridge(named)).toMatchObject({ space: SPACE, state: "unbound" });
+  });
+
+  test("a bind through a tool asks the gate again in its section: a home revoked meanwhile records nothing", async () => {
+    let granted = true;
+    const launches = launchSide(40);
+    const { bindings: b } = bindings({ launches, homes: { may: () => granted } });
+    const slotOf = async () => {
+      const connection = context();
+      await b.bridge(connection);
+      const slot = b.attach(connection);
+      if (slot === undefined) throw new Error("no slot");
+      return slot;
+    };
+    const first = await slotOf();
+    const second = await slotOf();
+    const launch = launchOf();
+    // The first holds the launch's section while its launch answers; the second waits for it, and
+    // the home's row is revoked meanwhile.
+    const bound = b.redeem(first, launch);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const waiting = b.redeem(second, launch);
+    granted = false;
+    expect(await bound).toEqual({ kind: "bound" });
+    await expect(waiting).rejects.toMatchObject({ code: "forbidden", data: { rule: "grant" } });
+    // An ad-hoc session is not made either.
+    await expect(b.bindTask(second, SPACE, TASK)).rejects.toMatchObject({
+      code: "forbidden",
+      data: { rule: "grant" },
+    });
+    expect(second.session).toBeUndefined();
+    expect(launches.bound.size).toBe(1);
+  });
 });
 
 describe("[A3.3.7.binding.records] session records and handles", () => {

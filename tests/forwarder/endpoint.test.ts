@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { hubSpace, spaceOpen } from "../../packages/service/test/mcp-hub.ts";
+import { hubGrant, hubSpace, spaceOpen } from "../../packages/service/test/mcp-hub.ts";
 import {
   Procs,
   isObject,
@@ -39,12 +39,17 @@ const modern = (params: Json = {}): Json => ({
   },
 });
 
-/** A home with a space in its machine.toml; the hub started on it and ready. */
+/**
+ * A home with a space in its machine.toml; the hub started on it and ready, and the bridges' agent
+ * home registered for the space, as setup does.
+ */
 async function served(label: string): Promise<{ home: Home; space: string; hub: Proc }> {
   const home = makeHome(label);
   homes.push(home);
   const space = await hubSpace(home.root);
-  return { home, space: space.id, hub: await startHub(home) };
+  const hub = await startHub(home);
+  await hubGrant(home.root, "test-agent", space.id);
+  return { home, space: space.id, hub };
 }
 
 async function startHub(home: Home, times = 1): Promise<Proc> {
@@ -142,6 +147,7 @@ describe("[A3.3.3.mcp.tool-list] through the forwarder: the live list is the off
       expect(isOfflineText(await bridge.call("status"), "service_down")).toBe(true);
 
       await startHub(home);
+      await hubGrant(home.root, "test-agent", space);
       let reply: Json = {};
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {

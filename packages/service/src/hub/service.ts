@@ -112,6 +112,7 @@ import {
 } from "../binding/index.ts";
 import { repairIfIdle, type RepairOutcome } from "../version/repair.ts";
 import { t3Files, t3FileNames, t3HomeOf, T3_STATE_DIR } from "./t3.ts";
+import { homeGate } from "./home-gate.ts";
 import { within } from "./wait.ts";
 
 /** A2 3.12.6: while it runs, the service looks for an interrupted update every 10 s. */
@@ -596,10 +597,18 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Made before the endpoint listens (its handler table takes the shim's methods), once the
     // socket folder, which holds the launch folders on Linux, has been checked below.
     const launching: { service?: LaunchService } = {};
+    // The grant gate (A3 3.7.8): an agent home's calls and tickets reach only the spaces its live
+    // agent-home rows name, read from the grants table at each call.
+    const homes = homeGate({
+      grants: grantsOf,
+      spaces: () => made.spaces?.served() ?? [],
+      defaultSpace: () => defaults.get(),
+    });
     // Session binding (A3 3.7): the launch side it needs is the launch service's, made below.
     const bindings = new Bindings({
       store: options.sessions ?? new FileSessionStore(layout.state),
       machine: machine.id,
+      homes,
       spaces: () => made.spaces?.served() ?? [],
       launches: {
         bridgeTicket: (ticket) => launching.service?.host.bridgeTicket(ticket),
@@ -633,6 +642,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         platform,
         bindings,
         defaultSpace: () => defaults.get(),
+        homes,
         // `launch.open` (A4 3.4, 3.15): the one launch machine per space this service keeps.
         launches: {
           openTask: (request: OpenTaskRequest) => {

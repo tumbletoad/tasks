@@ -162,6 +162,12 @@ export function readTerminal(
 
 /** An instance ID: a stable slug that space data refers to. */
 export const INSTANCE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/u;
+/**
+ * The instance an MCP entry without a usable `--instance` acts as (A3 3.7.4: a hand-made entry,
+ * `agent:manual`, in the machine's default space). No configured instance may take the word: its
+ * actor, writer scope, sessions and grant rows would be the hand-made entry's.
+ */
+export const MANUAL_INSTANCE = "manual";
 /** An environment variable name an instance may add. */
 export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 
@@ -280,6 +286,7 @@ function readInstance(
 ): Instance | undefined {
   const r = new TableReader(table, key, problems);
   const id = r.string("id", { required: true, pattern: INSTANCE_ID });
+  if (id === MANUAL_INSTANCE) r.error("id", "invalid_value");
   const targetText = r.string("target", { required: true });
   let target: TargetId | undefined;
   if (targetText !== undefined) {

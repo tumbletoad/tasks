@@ -15,6 +15,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { INSTRUCTIONS } from "../src/mcp/index.ts";
 import { removeRuntimeDir, Services, tempRoot, waitReady, type ServiceJson } from "./harness.ts";
 import { hubSpace, spaceOpen } from "./mcp-hub.ts";
+import { grantHome } from "./ops-helpers.ts";
 
 const CLI_BIN = fileURLToPath(new URL("../../cli/src/bin.ts", import.meta.url));
 const BRIDGE_MAIN = fileURLToPath(new URL("../../bridge/src/mcp/main.ts", import.meta.url));
@@ -127,8 +128,14 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through tasks mcp",
       const home = join(temp.root, "h");
       const space = await hubSpace(home);
       const service = services.start(home);
-      runtimeDirs.push(await waitReady(home, service.pid));
+      const ready = await waitReady(home, service.pid);
+      runtimeDirs.push(ready);
       await spaceOpen(home);
+      // The entry's agent home, registered for the space as setup does.
+      await grantHome(home, ready.endpoint?.path ?? "", {
+        instance: "test-agent",
+        space: space.id,
+      });
       const args = ["--space", space.id, "--instance", "test-agent", "--app", "test"];
       const entries = {
         "tasks mcp (the CLI's entry)": [CLI_BIN, "mcp", ...args],

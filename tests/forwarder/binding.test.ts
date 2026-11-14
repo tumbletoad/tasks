@@ -5,6 +5,7 @@
 // connection before any tool call. Then the service restarts: the bridge reconnects with its
 // binding handle, and the binding is the same. Fixture text and temporary folders only.
 import { afterEach, describe, expect, test } from "vitest";
+import { grantHome } from "../../packages/service/test/ops-helpers.ts";
 import { ShimLab } from "../../packages/service/test/shim-harness.ts";
 import { Bridge, Procs, cleanEnv, forwarderCommand, textOf } from "./harness.ts";
 
@@ -25,6 +26,16 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the
     async () => {
       const lab = await ShimLab.create("bind-bridge");
       labs.push(lab);
+      // The entry's agent home, registered for the space as setup does. The lab's service runs
+      // without its UI listener, so its grants table is this start's own: it is registered again
+      // after the restart below (a `tasks serve` keeps it in service.sqlite).
+      const register = async () => {
+        await grantHome(lab.home, lab.service?.endpoint.path ?? "", {
+          instance: "fixture-agent",
+          space: lab.spaceId,
+        });
+      };
+      await register();
       const intent = await lab.launch(lab.plan());
       // The agent runs: its shim reported its start.
       await lab.waitIntent(intent.id, (i) => i.evidence.pid !== undefined, "the agent's start");
@@ -60,6 +71,7 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the
       // handle and keeps its binding (its calls wait for the new service, A2 3.7.5).
       await lab.stopService();
       await lab.start();
+      await register();
       const after = await reply(bridge, "status");
       expect(after).toContain("Session: bound to M-1");
       // A retry of the first write after the restart replays it: the same session's scope.

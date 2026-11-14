@@ -29,6 +29,12 @@ export interface Caller {
    */
   readonly client?: { readonly instance?: string; readonly app?: string };
   /**
+   * The agent home an MCP connection belongs to, for the grant gate (grant.ts, A3 3.7.8): the
+   * instance its entry names, or `manual` for an entry without one. A slot's instance decides
+   * instead when the call has a binding.
+   */
+  readonly home?: string;
+  /**
    * The connection's binding (binding.ts): an MCP connection's for its life, or a `cli-agent`
    * call's whose ticket maps to a live session. Absent: the connection cannot bind.
    */
