@@ -325,6 +325,17 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
       });
     }
     expect(task(id)["outcome"]).toBe("Shipped in 2.3.");
+    // It judges removals on the start as well: an earlier operation that removes the same
+    // learning makes it no less a change, so the request is a conflict and removes nothing.
+    const [held] = learnings(id);
+    const remove = { remove: [held?.["id"] as Id<"lr">] };
+    expect(
+      submit([
+        { kind: "task.wrap_up", task: id, learnings: remove },
+        { kind: "task.wrap_up", task: id, learnings: remove, once: true },
+      ]),
+    ).toMatchObject({ status: "conflict", conflicts: [{ op: 1, field: "wrap" }] });
+    expect(live(id)).toEqual(["Pin the runtime."]);
     // A task the user checked off waits for its wrap-up: once wraps it.
     const checked = create();
     expectStatus(submit([{ kind: "task.complete", task: checked }]), "applied");

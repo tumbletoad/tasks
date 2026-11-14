@@ -1347,13 +1347,14 @@ export class SpaceWriter {
             if (row === undefined || row["task_id"] !== target) {
               problem("NOT_FOUND", "No learning of this task has this ID", i, "learnings.remove");
             }
-            // Removing it tombstones it: a base covers that it is still there. One removed
-            // already is left as it is.
-            if (row["deleted_at"] === null && !starts.has(rowKey("learnings", id))) {
-              starts.set(
-                rowKey("learnings", id),
-                rowState("learnings", row, CHILD_FIELDS.learnings),
-              );
+            // Removing it tombstones it: a base covers that it is still there. One removed at the
+            // start is left as it is. Each operation that removes a live one touches it, also
+            // after an earlier one of the request did, so `once` sees the change (A1 3.7).
+            if (row["deleted_at"] === null) {
+              const key = rowKey("learnings", id);
+              if (!starts.has(key)) {
+                starts.set(key, rowState("learnings", row, CHILD_FIELDS.learnings));
+              }
               touches.push({ entity: "learnings", id, field: "deleted", task: target });
             }
           }

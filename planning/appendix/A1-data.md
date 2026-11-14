@@ -289,6 +289,7 @@ All writes go through the space's writer. The only writes that bypass history ar
 - **Trusted statements only.** Every statement is a constant in `write/` with bound values. A space's writer handle refuses every raw SQL request (`STORAGE_MISUSE`): SQLite runs some pragmas while it compiles a statement (`prepare("PRAGMA foreign_keys=OFF; SELECT 1")` has changed the setting before it is refused), and transaction-control SQL could escape the worker's transaction.
 - Commit rows come only from `SpaceWriter.submit` or `writeSystemCommit`: one format and one clock rule (3.9).
 - **Staging (X11)** reads only the start state, and the base is checked once per (row, field) against it, so an operation never conflicts with its own request.
+- **Two views in staging.** A precondition (the base, `once`) is judged on the start state. An effect (whether an operation writes, what `commits.affected` counts, a task's tombstone and lifecycle, what dedupe sees) is judged on the state the request's earlier operations leave, as execution will find it. The cache of start rows only serves the base: no decision reads whether an earlier operation already cached a row.
 - **Execution** runs the operations in order after a `SAVEPOINT`, each seeing the writes before it, one `UPDATE` per operation (the CHECKs require a reopen to clear `wrap_state` in the statement that sets `lifecycle`). Coalescing leaves one change row per changed (row, field). A request that changed nothing rolls back, takes no seq and is `unchanged`.
 
 **Not built yet.**
