@@ -2,9 +2,9 @@
 // (3.8.2), port in a Windows excluded range, Host and Origin self-test (a request with
 // `Host: evil.example` must get 421), CSP present with a fresh nonce on index.html", and "Other
 // user accounts". Only codes, counts and ports reach the output: never a token, name or SID.
-import { spawnSync } from "node:child_process";
 import { win32 } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
+import { helperOutput } from "@tasks/launch/helpers";
 import { blockedMessage, movedMessage } from "@tasks/service/http/shared";
 import { countAccounts, type AccountFacts } from "./accounts.ts";
 import { listenerRequest } from "./listener-request.ts";
@@ -94,15 +94,25 @@ export function excludedRanges(text: string): [number, number][] {
   return ranges;
 }
 
-function windowsExcluded(port: number, env: Readonly<Record<string, string | undefined>>) {
+/** netsh runs as a helper of the runner (@tasks/launch helpers.ts, A3 3.14). */
+async function windowsExcluded(
+  port: number,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<boolean> {
   const system = env["SystemRoot"] ?? "C:\\Windows";
-  const result = spawnSync(
-    win32.join(system, "System32", "netsh.exe"),
-    ["interface", "ipv4", "show", "excludedportrange", "protocol=tcp"],
-    { encoding: "utf8", windowsHide: true, shell: false, timeout: 15_000 },
+  const out = await helperOutput(
+    [
+      win32.join(system, "System32", "netsh.exe"),
+      "interface",
+      "ipv4",
+      "show",
+      "excludedportrange",
+      "protocol=tcp",
+    ],
+    { env, cwd: system, deadlineMs: 15_000, maxChars: 1024 * 1024 },
   );
-  if (result.error !== undefined || result.status !== 0) return false;
-  return excludedRanges(result.stdout).some(([lo, hi]) => lo <= port && port <= hi);
+  if (out === undefined) return false;
+  return excludedRanges(out).some(([lo, hi]) => lo <= port && port <= hi);
 }
 
 /** The `http` row from a running service's status. */
@@ -124,7 +134,7 @@ export async function httpCheck(
   if (http.moved === true && typeof http.persisted === "number") {
     status = "warn";
     notes.push(movedMessage(http.persisted, port));
-    if (platform === "win32" && windowsExcluded(http.persisted, env)) {
+    if (platform === "win32" && (await windowsExcluded(http.persisted, env))) {
       notes.push(`Port ${String(http.persisted)} lies in a Windows excluded port range.`);
     }
   }

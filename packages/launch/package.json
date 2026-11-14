@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./helpers": "./src/helpers.ts",
     "./places": "./src/places.ts",
     "./process": "./src/process.ts",
     "./shell-line": "./src/shell-line.ts",

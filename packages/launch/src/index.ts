@@ -15,7 +15,7 @@ export * from "./catalogue.ts";
 export * from "./detect.ts";
 export * from "./git-remote.ts";
 export * from "./intents.ts";
-export * from "./kill.ts";
+export * from "./helpers.ts";
 export * from "./machine.ts";
 export * from "./places.ts";
 export * from "./problems.ts";

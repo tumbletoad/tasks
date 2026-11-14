@@ -637,7 +637,10 @@ export async function doctor(
   // stateDir names a layout that cannot be resolved; past it, the layout is this install's.
   const state = stateDir(io);
   const layout = resolveLayout(hostFacts(io.env, io.platform));
-  const accounts = (connect.accounts ?? (() => readAccounts(io.platform, io.env)))();
+  const accounts =
+    connect.accounts === undefined
+      ? await readAccounts(io.platform, io.env, io.cwd)
+      : connect.accounts();
   const checks = [
     ...localChecks(io, layout, now),
     configCheck(io),

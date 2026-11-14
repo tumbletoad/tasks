@@ -1946,6 +1946,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.14.doctor.helpers",
+      "title": "The helper runner that every program setup, detection and doctor start goes through ends the program and a descendant it started (one outside Node's job on Windows, in its process group elsewhere) when the starting process exits as Ctrl+C makes it (also while doctor reads an app's own mcp get), on stop and at the deadline, and on Linux and macOS when that process gets SIGTERM; their modules import no child_process (dependency-cruiser)",
+      "source": "A3 3.14, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.14.doctor.live",
       "title": "tasks doctor --live against fake apps: a headless claude -p and codex exec with the prompt on stdin start the home's entry and call status, the service records the call by instance (setup/seen), and the row passes only for a call seen after the run started; without --live nothing is run",
       "source": "A3 3.14, A7 3.11 M4.05",

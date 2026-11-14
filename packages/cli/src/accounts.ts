@@ -9,10 +9,11 @@
 //
 // An agent app's own sandbox accounts are not people and are not counted (A2 3.13): the
 // Codex CLI's Windows sandbox makes accounts in a group it manages, `CodexSandboxUsers`. Only the
-// counts leave this module: no account name or SID is printed or logged.
-import { spawnSync } from "node:child_process";
+// counts leave this module: no account name or SID is printed or logged. The OS's own tools run as
+// helpers of the runner (@tasks/launch helpers.ts, A3 3.14), like every program doctor starts.
 import { readFileSync } from "node:fs";
 import { win32 } from "node:path";
+import { helperOutput } from "@tasks/launch/helpers";
 
 /** Groups that agent apps manage for their own sandbox accounts (A2 3.13). */
 export const SANDBOX_GROUPS = ["CodexSandboxUsers"] as const;
@@ -107,34 +108,26 @@ const WINDOWS_QUERY = [
   "@{ me = $me; profiles = $p; sandbox = $s } | ConvertTo-Json -Compress",
 ].join("; ");
 
-function run(file: string, args: readonly string[]): string | undefined {
-  const result = spawnSync(file, args, {
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 30_000,
-    shell: false,
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  return result.error === undefined && result.status === 0 ? result.stdout : undefined;
-}
-
 /** This machine's facts, or undefined when the OS gave no answer. */
-export function readAccounts(
+export async function readAccounts(
   platform: NodeJS.Platform,
   env: Readonly<Record<string, string | undefined>>,
-): AccountFacts | undefined {
+  cwd: string,
+): Promise<AccountFacts | undefined> {
+  const run = (argv: readonly string[]) =>
+    helperOutput(argv, { env, cwd, deadlineMs: 30_000, maxChars: 4 * 1024 * 1024 });
   if (platform === "win32") {
     const root = env["SystemRoot"] ?? "C:\\Windows";
     const ps = win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const out = run(ps, ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_QUERY]);
+    const out = await run([ps, "-NoProfile", "-NonInteractive", "-Command", WINDOWS_QUERY]);
     return out === undefined ? undefined : windowsAccounts(out.trim());
   }
   const me = String(process.getuid?.() ?? -1);
   if (platform === "darwin") {
-    const out = run("/usr/bin/dscl", [".", "-list", "/Users", "UniqueID"]);
+    const out = await run(["/usr/bin/dscl", ".", "-list", "/Users", "UniqueID"]);
     return out === undefined ? undefined : { me, accounts: macAccounts(out), sandbox: [] };
   }
-  const passwd = run("getent", ["passwd"]);
+  const passwd = await run(["getent", "passwd"]);
   if (passwd === undefined) return undefined;
   let defs = "";
   try {

@@ -669,7 +669,7 @@ Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/docto
 
 **Crashes** write a record to `<state>/crash/` and exit 70 at once. The record never holds the error's message or function names, because a name can be data. Node's fatal reports exclude the environment. Nothing is uploaded.
 
-**`tasks doctor [--json] [--self-test] [--live] [--bundle]`** works without a service and opens no space database. Every check is non-interactive, so `--self-test` (for CI, the build, install and update) runs them all. Rows not built yet show as skipped. A1, A3 and A4 add rows: A3's agent rows are in `doctor-agents.ts`, loaded only by doctor, and `--live`, which spends tokens, runs only when asked (A3 3.14).
+**`tasks doctor [--json] [--self-test] [--live] [--bundle]`** works without a service and opens no space database. Every check is non-interactive, so `--self-test` (for CI, the build, install and update) runs them all. Every program doctor starts is a helper of A3 3.14's runner, which ends it with what it started at its deadline and when doctor exits. Rows not built yet show as skipped. A1, A3 and A4 add rows: A3's agent rows are in `doctor-agents.ts`, loaded only by doctor, and `--live`, which spends tokens, runs only when asked (A3 3.14).
 - `paths` says where the hidden data folder is. `config` reads `machine.toml` as the service does, with the same rule and words.
 - `runtime` is loaded by a dynamic import only doctor reaches, so no other command loads storage.
 - `accounts` counts other interactive accounts, never names them, and leaves out an agent app's sandbox accounts. v1 assumes one user per machine (3.8.6), so the row warns on every run and cannot be acknowledged.

@@ -26,7 +26,6 @@
 // Each row says what is wrong in plain words and the command that fixes it. Rows name a home by
 // its app and instance, never by its path; no entry content, prompt, model answer or token is
 // printed or logged. The headless run's prompt goes on stdin, never in argv.
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { uptime } from "node:os";
@@ -34,7 +33,7 @@ import { join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import generatedTools from "@tasks/contracts/generated/mcp-tools.json" with { type: "json" };
 import { makeDir } from "@tasks/files";
-import { killTree, nodeDetectHost, ownsGroup, type Env } from "@tasks/launch";
+import { helperOutput, startHelper, type Env } from "@tasks/launch";
 import {
   appLabel,
   codexEngines,
@@ -72,6 +71,8 @@ const BRIDGE_PROBE_MS = 20_000;
 const LIVE_MS = 180_000;
 /** How long an app's own `mcp get` may take. */
 const GET_MS = 30_000;
+/** At most this much of an app's own `mcp get` is read: more is no answer. */
+const GET_CHARS = 256 * 1024;
 
 /** The fixed prompt of `--live`. Product text, never task text; it goes on stdin. */
 const LIVE_PROMPT = `Call the ${MCP_SERVER_KEY} MCP tool "status" once, with no arguments. Then reply with the single word done.\n`;
@@ -390,21 +391,22 @@ function readsEntry(out: string | undefined, command: string): boolean {
   }
 }
 
-/** An app's command's stdout in the home's environment, or undefined when it failed. */
+/**
+ * An app's command's stdout in the home's environment, or undefined when it failed: a helper of
+ * the runner's (@tasks/launch helpers.ts), like every program doctor starts.
+ */
 function output(
   input: SetupInput,
   view: HomeView,
   argv: readonly string[],
 ): Promise<string | undefined> {
-  const [file, ...args] = argv;
-  if (file === undefined) return Promise.resolve(undefined);
   const { env } = commandEnv(input, view.home);
-  return nodeDetectHost({
-    platform: input.platform,
+  return helperOutput(argv, {
     env,
-    home: input.userHome,
-    timeoutMs: GET_MS,
-  }).output(file, args);
+    cwd: input.userHome,
+    deadlineMs: GET_MS,
+    maxChars: GET_CHARS,
+  });
 }
 
 /** A folder as the OS resolves it (links, case, short names), or as given when it cannot. */
@@ -555,12 +557,15 @@ async function desktopStarted(io: Io): Promise<number | "not_running" | undefine
   const powershell = win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   const script =
     "Get-CimInstance Win32_Process -Filter \"Name='claude.exe'\" | ForEach-Object { [string]$_.ExecutablePath + '|' + $_.CreationDate.ToUniversalTime().ToString('o') }";
-  const out = await nodeDetectHost({
-    platform: "win32",
-    env: io.env,
-    home: io.cwd,
-    timeoutMs: 15_000,
-  }).output(powershell, ["-NoProfile", "-NonInteractive", "-Command", script]);
+  const out = await helperOutput(
+    [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+    {
+      env: io.env,
+      cwd: io.cwd,
+      deadlineMs: 15_000,
+      maxChars: 1024 * 1024,
+    },
+  );
   if (out === undefined) return undefined;
   const starts = out
     .split(/\r?\n/u)
@@ -572,79 +577,11 @@ async function desktopStarted(io: Io): Promise<number | "not_running" | undefine
 }
 
 // ---------------------------------------------------------------------------------------------
-// Programs doctor starts: the entries' commands (the bridge probe) and the apps (--live)
-
-/** A program doctor started with a deadline. */
-interface Bounded {
-  /** Its exit code once it exits; null when it could not start or the deadline ended it. */
-  readonly ended: Promise<number | null>;
-  /** Whether the deadline ended it. */
-  timedOut(): boolean;
-  /** Ends it now, as the deadline does. */
-  stop(): void;
-}
-
-/**
- * The one way doctor starts a program: without a shell, leading a process group of its own on
- * Linux and macOS, with a deadline. At the deadline, or on `stop`, the program is killed with what
- * it started (@tasks/launch kill.ts: the group, or taskkill's tree on Windows) and doctor's ends of
- * its pipes are closed, so no program doctor starts can keep it waiting or outlive it. When the
- * program exits, what it left in its group goes with it. Exported for its test.
- */
-export function bounded(
-  argv: readonly string[],
-  env: Env,
-  cwd: string,
-  output: boolean,
-  deadlineMs: number,
-): { child: ChildProcess; run: Bounded } {
-  const [file = "", ...args] = argv;
-  const childEnv: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) if (v !== undefined) childEnv[k] = v;
-  const child = spawn(file, args, {
-    env: childEnv,
-    cwd,
-    stdio: ["pipe", output ? "pipe" : "ignore", "ignore"],
-    shell: false,
-    windowsHide: true,
-    detached: ownsGroup(process.platform),
-  });
-  child.stdin?.on("error", () => undefined);
-  let late = false;
-  const stop = () => {
-    killTree(child);
-    child.stdin?.destroy();
-    child.stdout?.destroy();
-  };
-  const deadline = setTimeout(() => {
-    late = true;
-    stop();
-  }, deadlineMs);
-  // Doctor ending first (Ctrl+C ends the CLI with process.exit) ends the program too: a headless
-  // run would otherwise go on, and spend tokens, after the person stopped doctor. The kill starts
-  // synchronously, so it happens on the way out.
-  const onExit = () => {
-    killTree(child);
-  };
-  process.once("exit", onExit);
-  const ended = new Promise<number | null>((resolve) => {
-    child.once("exit", (code) => {
-      process.removeListener("exit", onExit);
-      clearTimeout(deadline);
-      if (ownsGroup(process.platform)) killTree(child);
-      // Output still in the pipe is read first; a process the program started may hold the pipe
-      // open, so doctor's end closes after a moment either way.
-      setTimeout(() => child.stdout?.destroy(), 1_000).unref();
-      resolve(late ? null : code);
-    });
-    child.once("error", () => {
-      process.removeListener("exit", onExit);
-      clearTimeout(deadline);
-      resolve(null);
-    });
-  });
-  return { child, run: { ended, timedOut: () => late, stop } };
-}
+// Programs doctor starts (the entries' commands for the bridge probe, the apps for --live, the
+// apps' own `mcp get`, Windows PowerShell for desktop.restart) are all helpers of the runner in
+// @tasks/launch (helpers.ts, A3 3.14): it ends each with what it started at its deadline, on stop,
+// and when doctor exits, so a headless run never goes on, and spends tokens, after the person
+// stopped doctor. This file imports no child_process (dependency-cruiser checks it).
 
 // ---------------------------------------------------------------------------------------------
 // The bridge probe
@@ -666,13 +603,14 @@ interface Probe {
 }
 
 /**
- * The entry's command with stdio, as an agent app starts it: one JSON-RPC line at a time, through
- * `bounded`. A line that is not a JSON object is no answer; a line longer than the bound ends the
- * probe. When the program ends, by itself or by the deadline, every open request settles without
- * an answer.
+ * The entry's command with stdio, as an agent app starts it: one JSON-RPC line at a time, as a
+ * helper of the runner. A line that is not a JSON object is no answer; a line longer than the bound
+ * ends the probe. When the program ends, by itself or by the deadline, every open request settles
+ * without an answer. Throws when the command cannot be started at all.
  */
 function probe(argv: readonly string[], env: Env, cwd: string, deadlineMs: number): Probe {
-  const { child, run } = bounded(argv, env, cwd, true, deadlineMs);
+  const run = startHelper(argv, { env, cwd, deadlineMs, stdin: true, stdout: true });
+  const { child } = run;
   const replies = new Map<unknown, (message: Message | undefined) => void>();
   let ended = false;
   const settleAll = () => {
@@ -852,8 +790,8 @@ function liveArgv(app: HomeView["home"]["app"], exec: readonly string[]): string
 }
 
 /**
- * Runs `argv` through `bounded` with `stdin` and nothing kept of its output; its exit code, or null
- * when it could not start or its deadline ended it.
+ * Runs `argv` as a helper of the runner with `stdin` and nothing kept of its output; its exit code,
+ * or null when it could not start or its deadline ended it.
  */
 async function runHeadless(
   argv: readonly string[],
@@ -863,8 +801,8 @@ async function runHeadless(
   timeoutMs: number,
 ): Promise<number | null> {
   try {
-    const { child, run } = bounded(argv, env, cwd, false, timeoutMs);
-    child.stdin?.end(stdin);
+    const run = startHelper(argv, { env, cwd, deadlineMs: timeoutMs, stdin: true });
+    run.child.stdin?.end(stdin);
     return await run.ended;
   } catch {
     return null;
