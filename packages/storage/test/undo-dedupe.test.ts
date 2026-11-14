@@ -8,7 +8,8 @@
 // a request with a create, and dedupe's start state sees what they left; a check-off undone is no
 // finish, and a finish set back keeps its own instant; a receipt replays after an undo; a link an
 // undo removed comes back only with its link version. Then a property test: overlapping keys,
-// completions, reopens, explicit links, undo and redo of two humans together.
+// completions, reopens, explicit links, archives, wrap-ups, deletes and restores, undo and redo of
+// two humans together.
 // Fixture text only.
 import { join } from "node:path";
 import fc from "fast-check";
@@ -18,7 +19,6 @@ import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
 import {
   expectedDocuments,
-  indexChanges,
   storedDocuments,
   type SearchDocument,
 } from "../src/search/documents.ts";
@@ -844,8 +844,8 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
 });
 
 // ---------------------------------------------------------------------------------------------
-// Property: overlapping keys, completions, reopens, explicit links, archives and wrap-ups, undo
-// and redo of two humans together.
+// Property: overlapping keys, completions, reopens, explicit links, archives, wrap-ups with
+// learnings, deletes and restores, undo and redo of two humans together.
 
 /** The keys drafts name. */
 const KEYS = ["jira:FIX-1", "jira:FIX-2", "email:<3@x>"];
@@ -881,9 +881,19 @@ type Step =
   | { kind: "link"; actor: number; key: string; tasks: Pick[] }
   /** One create commit of two tasks with one key: the first created and finished, then new work. */
   | { kind: "several"; actor: number; key: string; save?: string }
-  /** M3.04's `task.archive` and `task.wrap_up` as they will write, between requests. */
+  /** `task.archive` of an active task. */
   | { kind: "archive"; actor: number; pick: Pick; save?: string }
-  | { kind: "wrap"; pick: Pick }
+  /** `task.wrap_up` of a finished task, adding learnings and removing its first live one. */
+  | { kind: "wrap"; actor: number; pick: Pick; add: string[]; remove: boolean }
+  /** `task.delete` of a live task. */
+  | { kind: "delete"; actor: number; pick: Pick }
+  /** `task.restore` of a deleted task, picked by `at` as a pick is. */
+  | { kind: "restore"; actor: number; at: number }
+  /**
+   * An undo of a delete beside a newer active holder: Codex creates R with the key, `who`
+   * deletes R, Codex creates another task with the key, and `who` undoes the delete.
+   */
+  | { kind: "revive"; who: number; key: number; partial: boolean }
   | { kind: "undo"; who: number; partial: boolean }
   | { kind: "redo"; who: number }
   | { kind: "cycle"; who: number }
@@ -984,7 +994,33 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   {
     arbitrary: fc.record({
       kind: fc.constant("wrap" as const),
+      actor,
       pick: fc.record({ lifecycle: fc.constant<Lifecycle>("finished"), at }),
+      add: fc.uniqueArray(fc.constantFrom("Ask early.", "Keep notes.", "Check the logs."), {
+        maxLength: 2,
+      }),
+      remove: fc.boolean(),
+    }),
+    weight: 2,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("delete" as const),
+      actor,
+      pick: fc.record({ lifecycle: lifecycles, at }),
+    }),
+    weight: 1,
+  },
+  {
+    arbitrary: fc.record({ kind: fc.constant("restore" as const), actor, at }),
+    weight: 1,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("revive" as const),
+      who,
+      key: fc.nat({ max: KEYS.length - 1 }),
+      partial: fc.boolean(),
     }),
     weight: 1,
   },
@@ -1114,9 +1150,25 @@ function expand(s: Step): Step[] {
     case "wrapped":
       return [
         { kind: "archive", actor: s.who, pick: { lifecycle: "active", at: -1 }, save: "w" },
-        { kind: "wrap", pick: slot("w") },
+        { kind: "wrap", actor: 2, pick: slot("w"), add: ["Ask early."], remove: false },
         { kind: "undo", who: s.who, partial: s.partial },
       ];
+    case "revive": {
+      const key = KEYS[s.key] ?? "";
+      const create = (save?: string): Step => ({
+        kind: "add",
+        actor: 2,
+        drafts: [{ keys: [key], mode: "new", log: false }],
+        ...(save === undefined ? {} : { save }),
+      });
+      return [
+        { kind: "finish", key },
+        create("r"),
+        { kind: "delete", actor: s.who, pick: slot("r") },
+        create(),
+        { kind: "undo", who: s.who, partial: s.partial },
+      ];
+    }
     case "stale": {
       const key = KEYS[s.key] ?? "";
       const probe = (mode: Mode, save?: string): Step => ({
@@ -1138,110 +1190,6 @@ function expand(s: Step): Step[] {
     default:
       return [s];
   }
-}
-
-/**
- * A commit that writes a task's lifecycle or its wrap field alone, as M3.04's `task.archive` and
- * `task.wrap_up` will (undo.test.ts has the same for its fixed scenarios): its change row, its
- * versions, touched mark, outbox and search rows, on `who`'s undo stack when `undoable` (which,
- * as an undoable write does, ends that human's redo). Written on a second connection between the
- * writer's requests, at instant `at`.
- */
-function loneWrite(
-  conn: Connection,
-  write: {
-    task: Id<"t">;
-    field: "lifecycle" | "wrap";
-    values: Record<string, unknown>;
-    who: Credential;
-    op: string;
-    undoable: boolean;
-    at: number;
-  },
-): number {
-  let done = 0;
-  conn.transaction("immediate", () => {
-    const space = conn.prepare("SELECT * FROM space").get();
-    const t = conn.prepare("SELECT * FROM tasks WHERE id = $id").get({ id: write.task });
-    if (space === undefined || t === undefined) throw new Error("no task");
-    const seq = Number(space["last_seq"]) + 1;
-    const fv = JSON.parse(String(t["fv"])) as Record<string, number>;
-    const fp = JSON.parse(String(t["fp"])) as Record<string, number>;
-    const columns = TASK_FIELDS[write.field];
-    const after = Object.fromEntries(columns.map((c) => [c, write.values[c] ?? null]));
-    const { who, field } = write;
-    conn
-      .prepare(
-        "INSERT INTO commits (seq, id, epoch, incarnation, at, actor_kind, principal_id, " +
-          "author_id, scope_id, machine_id, origin, request_id, kind, ops, undo_status) VALUES " +
-          "($seq, $op, $epoch, $incarnation, $at, $kind, $actor, $actor, $scope, $machine, " +
-          "$origin, $request, 'ops', $ops, $status)",
-      )
-      .run({
-        seq,
-        op: newId("op"),
-        epoch: space["authority_epoch"] as number,
-        incarnation: space["authority_incarnation"] as string,
-        at: write.at,
-        kind: who.actor_kind,
-        actor: who.principal_id,
-        scope: who.scope_id,
-        machine: TEST_MACHINE,
-        origin: who.origin,
-        request: newId("op").slice(3),
-        ops: JSON.stringify([{ v: 1, op: write.op, target: write.task, input: {} }]),
-        status: write.undoable ? "done" : null,
-      });
-    conn
-      .prepare(
-        "INSERT INTO changes (seq, n, op, entity, entity_id, task_id, action, field, before, " +
-          "after, before_ver, before_prov, after_prov) VALUES ($seq, 1, 0, 'tasks', $id, $id, " +
-          "'set', $field, $before, $after, $ver, $prov, $seq)",
-      )
-      .run({
-        seq,
-        id: write.task,
-        field,
-        before: JSON.stringify(columnsValue(t, columns)),
-        after: JSON.stringify(after),
-        ver: fv[field] ?? (t["created_seq"] as number),
-        prov: fp[field] ?? (t["created_seq"] as number),
-      });
-    conn
-      .prepare(
-        `UPDATE tasks SET ${columns.map((c) => `${c} = $${c}`).join(", ")}, version = $seq, ` +
-          "touched = $seq, fv = $fv, fp = $fp WHERE id = $id",
-      )
-      .run({
-        ...(after as Record<string, string | number | null>),
-        seq,
-        id: write.task,
-        fv: JSON.stringify({ ...fv, [field]: seq }),
-        fp: JSON.stringify({ ...fp, [field]: seq }),
-      });
-    if (write.undoable) {
-      conn
-        .prepare(
-          "UPDATE commits SET undo_status = 'dead' WHERE principal_id = $principal " +
-            "AND undo_status = 'undone'",
-        )
-        .run({ principal: who.principal_id });
-    }
-    indexChanges(conn, seq, [
-      { entity: "tasks", entityId: write.task, taskId: write.task, action: "set", field },
-    ]);
-    for (const key of [write.task, "*"]) {
-      conn
-        .prepare(
-          "INSERT INTO outbox (topic, key, first_seq, seq) VALUES ('projection', $key, $seq, " +
-            "$seq) ON CONFLICT (topic, key) DO UPDATE SET seq = excluded.seq",
-        )
-        .run({ key, seq });
-    }
-    conn.prepare("UPDATE space SET last_seq = $seq").run({ seq });
-    done = seq;
-  });
-  return done;
 }
 
 /**
@@ -1311,6 +1259,7 @@ function fieldsOf(conn: Connection): Map<string, Cell> {
     },
     { table: "sources", key: "id", fields: CHILD_FIELDS.sources },
     { table: "log_entries", key: "id", fields: CHILD_FIELDS.log_entries },
+    { table: "learnings", key: "id", fields: CHILD_FIELDS.learnings },
   ] as const;
   for (const { table, key, fields } of tables) {
     for (const row of conn.prepare(`SELECT ${key} AS entity_id, * FROM ${table}`).all()) {
@@ -1421,8 +1370,6 @@ const property = (seen: Record<string, number>) =>
     const count = (label: string): void => {
       seen[label] = (seen[label] ?? 0) + 1;
     };
-    /** The connection archives and wrap-ups are written on, opened when the first one is. */
-    let side: Connection | undefined;
     try {
       const actors: Credential[] = [space.human, await secondHuman(space), space.codex];
       const as = (n: number): Credential => actors[n] ?? space.codex;
@@ -1439,6 +1386,14 @@ const property = (seen: Record<string, number>) =>
       const undoable = (n: number): Partial<WriteRequest> => (n < 2 ? { undoable: true } : {});
       const taskRow = (id: string): Row =>
         conn.prepare("SELECT * FROM tasks WHERE id = $id").get({ id }) ?? {};
+      /** A task's live learnings, in their order. */
+      const learningsOf = (id: string): Id<"lr">[] =>
+        conn
+          .prepare(
+            "SELECT id FROM learnings WHERE task_id = $id AND deleted_at IS NULL ORDER BY position",
+          )
+          .all({ id })
+          .map((r) => r["id"] as Id<"lr">);
       /** The tasks composite steps saved, by name. */
       const slots = new Map<string, Id<"t">>();
       const resolve = (p: Pick): Id<"t"> | undefined => {
@@ -1599,46 +1554,58 @@ const property = (seen: Record<string, number>) =>
             count("several tasks with one key");
             if (s.save !== undefined) slots.set(s.save, finished.id);
           }
+        } else if (s.kind === "delete" || s.kind === "restore") {
+          const deleted = conn
+            .prepare("SELECT id FROM tasks WHERE deleted_at IS NOT NULL ORDER BY ref")
+            .all()
+            .map((r) => r["id"] as Id<"t">);
+          const picked =
+            s.kind === "delete"
+              ? resolve(s.pick)
+              : deleted[
+                  ((s.at % Math.max(deleted.length, 1)) + deleted.length) %
+                    Math.max(deleted.length, 1)
+                ];
+          if (picked === undefined) continue;
+          result = submit(
+            space.request(as(s.actor), [{ kind: `task.${s.kind}`, task: picked }], {
+              base: space.base(),
+              ...undoable(s.actor),
+            }),
+          );
+          expectStatus(result, "applied");
+          count(s.kind === "delete" ? "deleted" : "restored");
         } else if (s.kind === "archive" || s.kind === "wrap") {
           const picked = resolve(s.pick);
           if (picked === undefined) continue;
-          const row = taskRow(picked);
-          const archive = s.kind === "archive";
-          if (archive && row["lifecycle"] !== "active") continue;
-          if (!archive && (row["lifecycle"] === "active" || row["wrap_state"] === "wrapped")) {
-            continue;
-          }
-          side ??= openWriter(await checkedDriver(), join(space.folder, "space.db"));
-          const instant = (now += 1000);
-          loneWrite(
-            side,
-            archive
-              ? {
-                  task: picked,
-                  field: "lifecycle",
-                  values: { lifecycle: "archived", archived_reason: "Not needed now" },
-                  who: as(s.actor),
-                  op: "task.archive",
-                  undoable: s.actor < 2,
-                  at: instant,
-                }
+          // An archive takes an active task, a wrap-up a finished one.
+          if ((taskRow(picked)["lifecycle"] !== "active") !== (s.kind === "wrap")) continue;
+          const [first] = s.kind === "wrap" && s.remove ? learningsOf(picked) : [];
+          const op: Operation =
+            s.kind === "archive"
+              ? { kind: "task.archive", task: picked, reason: "Not needed now" }
               : {
+                  kind: "task.wrap_up",
                   task: picked,
-                  field: "wrap",
-                  values: {
-                    wrap_state: "wrapped",
-                    outcome: "Shipped",
-                    wrapped_at: instant,
-                    wrapped_by: space.codex.principal_id,
-                  },
-                  who: space.codex,
-                  op: "task.wrap_up",
-                  undoable: false,
-                  at: instant,
-                },
+                  outcome: "Shipped",
+                  learnings: { add: s.add, ...(first === undefined ? {} : { remove: [first] }) },
+                };
+          result = submit(
+            space.request(as(s.actor), [op], { base: space.base(), ...undoable(s.actor) }),
           );
-          if (archive && s.save !== undefined) slots.set(s.save, picked);
-          count(archive ? "archived" : "wrapped up");
+          if (result.status === "rejected") {
+            // A wrap-up that would take the task past 20 learnings (A1 3.11.2).
+            expect(`${String(result.error?.code)} ${String(result.error?.field)}`).toBe(
+              "TOO_LARGE learnings.add",
+            );
+          } else {
+            expect(["applied", "unchanged"]).toContain(result.status);
+            if (s.kind === "archive" && s.save !== undefined) slots.set(s.save, picked);
+            count(s.kind === "archive" ? "archived" : "wrapped up");
+            if (s.kind === "wrap" && (s.add.length > 0 || first !== undefined)) {
+              count("learnings written");
+            }
+          }
         } else if (s.kind === "undo" || s.kind === "redo") {
           const principal = as(s.who).principal_id;
           const undo = s.kind === "undo";
@@ -1673,8 +1640,18 @@ const property = (seen: Record<string, number>) =>
             for (const c of result.conflicts) {
               if (undo) {
                 // An undo's create guard names another's live child row: a link to a source the
-                // undone commit created, which keeps that source and its task.
-                if (c.entity === "task_sources" && !own.has(c.task)) count("undo kept by a link");
+                // undone commit created, which keeps that source and its task. An undo of a
+                // delete brings its task back, so the holder rule names an active holder's link.
+                const deletion = inverted.some(
+                  (n) => n["entity"] === "tasks" && n["field"] === "deleted",
+                );
+                if (c.entity === "task_sources" && !own.has(c.task)) {
+                  count(
+                    deletion
+                      ? "undo of a delete held off by an active holder"
+                      : "undo kept by a link",
+                  );
+                }
                 continue;
               }
               if (c.entity === "sources") count("redo held off by a taken source key");
@@ -1727,6 +1704,7 @@ const property = (seen: Record<string, number>) =>
             }
             const restored = rows.some((n) => n["entity"] === "tasks" && n["field"] === "deleted");
             if (restored) count(undo ? "create undone" : "create redone");
+            if (rows.some((n) => n["entity"] === "learnings")) count("learnings inverted");
             if (undo) {
               const ops = String(
                 conn.prepare("SELECT ops FROM commits WHERE seq = $seq").get({ seq: target.seq })?.[
@@ -1735,17 +1713,23 @@ const property = (seen: Record<string, number>) =>
               );
               if (ops.includes('"existing":true')) count("matched draft undone");
             }
-            if (!undo && restored) {
-              const back = new Set(
-                rows.filter((n) => n["entity"] === "tasks").map((n) => String(n["entity_id"])),
-              );
-              for (const held of keyHolders(conn).values()) {
-                if (
-                  [...held.keys()].some((t) => back.has(t)) &&
-                  [...held.values()].includes("completed")
-                ) {
-                  count("restored beside a finished holder");
-                }
+            // Tasks whose tombstone the inversion cleared: a redo of a create, an undo of a delete.
+            const back = new Set(
+              rows
+                .filter(
+                  (n) =>
+                    n["entity"] === "tasks" &&
+                    n["field"] === "deleted" &&
+                    (JSON.parse(String(n["after"])) as { deleted_at: unknown }).deleted_at === null,
+                )
+                .map((n) => String(n["entity_id"])),
+            );
+            for (const held of keyHolders(conn).values()) {
+              if (
+                [...held.keys()].some((t) => back.has(t)) &&
+                [...held.values()].some((l) => l !== "active")
+              ) {
+                count("restored beside a finished holder");
               }
             }
           }
@@ -1771,8 +1755,8 @@ const property = (seen: Record<string, number>) =>
           for (const t of active) {
             const was = keysBefore.get(key)?.get(t);
             if (was === "active") continue;
-            if (s.kind === "link" && was === undefined) {
-              count("explicit link beside an active holder");
+            if ((s.kind === "link" || s.kind === "restore") && was === undefined) {
+              count(`explicit ${s.kind} beside an active holder`);
               continue;
             }
             expect(
@@ -1789,13 +1773,12 @@ const property = (seen: Record<string, number>) =>
       expect(stray).toBe(0);
       expect(plainDocs(docs.values())).toEqual(plainDocs(expectedDocuments(conn).values()));
     } finally {
-      side?.close();
       space.close();
     }
   });
 
 describe("[A1.5.history.property] undo and redo with dedupe by source key", () => {
-  test("property: overlapping keys, completions, reopens, explicit links, archives and wrap-ups, undo and redo of two humans: no inversion moves a field whose provenance moved, no constraint error, a key gains a second active holder only by a lifecycle or an explicit link, and a draft matches as A1 3.6 says", async () => {
+  test("property: overlapping keys, completions, reopens, explicit links, archives, wrap-ups, deletes and restores, undo and redo of two humans: no inversion moves a field whose provenance moved, no constraint error, a key gains a second active holder only by a lifecycle or an explicit link or restore, and a draft matches as A1 3.6 says", async () => {
     // A fixed seed, whose runs must reach every outcome, then fresh random runs.
     const seen: Record<string, number> = {};
     await fc.assert(property(seen), { numRuns: 100, seed: 20261114 });
@@ -1819,6 +1802,11 @@ describe("[A1.5.history.property] undo and redo with dedupe by source key", () =
       "several tasks with one key",
       "archived",
       "wrapped up",
+      "learnings written",
+      "learnings inverted",
+      "deleted",
+      "restored",
+      "undo of a delete held off by an active holder",
       "archive undo kept from an active wrap-up",
       "archived finish set back",
       "refused new",

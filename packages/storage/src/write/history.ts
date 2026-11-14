@@ -23,9 +23,10 @@
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
-// - A restore never makes a second active holder of a source key: dedupe never makes two active
-//   tasks for one item. This one rule is decided on the state the inversion makes, not predicted
-//   from the state before it (applyInversions, the holder rule below).
+// - A restore never makes a second active holder of a source key (dedupe never makes two active
+//   tasks for one item), and never leaves a task more than 20 live learnings. These rules span
+//   rows, so they are decided on the state the inversion makes, not predicted from the state
+//   before it (applyInversions below).
 // - Launch, session, run and machine records are never inverted (A1 3.6, 3.10.3).
 //
 // A task's lifecycle and wrap-up obey one CHECK (an active task has no wrap state). An inversion of
@@ -41,12 +42,17 @@ import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
 import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
-import { RequestProblem, type ConflictEntity, type FieldConflict } from "./request.ts";
+import {
+  RequestProblem,
+  WRITE_LIMITS,
+  type ConflictEntity,
+  type FieldConflict,
+} from "./request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 
 /** The tables whose rows an inversion writes. */
 export type InvertibleEntity =
-  "tasks" | "notes" | "log_entries" | "sources" | "task_sources" | "places";
+  "tasks" | "notes" | "log_entries" | "learnings" | "sources" | "task_sources" | "places";
 
 interface Table {
   readonly fields: Readonly<Record<string, readonly string[]>>;
@@ -62,6 +68,7 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
   tasks: { fields: TASK_FIELDS, tombstone: "deleted", where: BY_ID },
   notes: { fields: CHILD_FIELDS.notes, tombstone: "deleted", where: BY_ID },
   log_entries: { fields: CHILD_FIELDS.log_entries, tombstone: "deleted", where: BY_ID },
+  learnings: { fields: CHILD_FIELDS.learnings, tombstone: "deleted", where: BY_ID },
   sources: { fields: CHILD_FIELDS.sources, tombstone: "deleted", where: BY_ID },
   task_sources: {
     fields: CHILD_FIELDS.task_sources,
@@ -105,7 +112,7 @@ const LINK_KEY = "task_id || '|' || source_id";
 
 /** A1 3.10: a task's notes, log entries, learnings, links, attachments and places. */
 const TASK_CHILDREN: readonly Child[] = [
-  ...(["notes", "log_entries"] as const).map((entity): Child => ({
+  ...(["notes", "log_entries", "learnings"] as const).map((entity): Child => ({
     entity,
     key: "id",
     task: "task_id",
@@ -116,8 +123,8 @@ const TASK_CHILDREN: readonly Child[] = [
     column: "deleted_at",
   })),
   // Schema 0.2's rows that no operation writes yet: their tombstone is their one field so far.
-  ...(["learnings", "attachments"] as const).map((entity): Child => ({
-    entity,
+  {
+    entity: "attachments",
     key: "id",
     task: "task_id",
     parent: "task_id",
@@ -125,7 +132,7 @@ const TASK_CHILDREN: readonly Child[] = [
     fields: { deleted: ["deleted_at"] },
     field: "deleted",
     column: "deleted_at",
-  })),
+  },
   {
     entity: "task_sources",
     key: LINK_KEY,
@@ -255,6 +262,10 @@ const SQL = {
     "SELECT source_id FROM task_sources WHERE task_id IN (SELECT value FROM json_each($tasks))) " +
     "AND s.source_key IS NOT NULL AND s.deleted_at IS NULL AND ts.removed_at IS NULL " +
     "AND t.deleted_at IS NULL AND t.lifecycle = 'active' ORDER BY ts.source_id, t.ref",
+  /** The live learnings of the tasks in `$tasks` (A1 3.11.2). */
+  liveLearnings:
+    "SELECT task_id, id FROM learnings WHERE deleted_at IS NULL " +
+    "AND task_id IN (SELECT value FROM json_each($tasks)) ORDER BY task_id, position",
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
 } as const;
 
@@ -835,7 +846,7 @@ export interface ApplyOptions {
   op: number;
   /** The space's reference prefix, for the conflicts' task references. */
   refPrefix: string;
-  /** A partial inversion applies what the holder rule leaves; a full one then applies nothing. */
+  /** A partial inversion applies what the rules across rows leave; a full one then nothing. */
   partial: boolean;
 }
 
@@ -846,29 +857,31 @@ export interface Applied {
 }
 
 /**
- * Applies `plan` as commit `seq` (A1 3.10), and decides the holder rule on the state it made: a
- * restore never makes a second active holder of a source key (A1 3.6). The guards before it
- * (planInversions) are decided on the state before the plan; this one rule is not, because what
- * the plan makes of a key depends on every row it brings back at once.
+ * Applies `plan` as commit `seq` (A1 3.10), and decides the rules that span rows on the state it
+ * made. The guards before it (planInversions) are decided on the state before the plan, which is
+ * exact for the fields of one row and for the unique keys; a rule across rows is not, because what
+ * the plan makes of it depends on every row it brings back at once.
  *
- * - A **restore** is an inversion that clears a tombstone: a task's `deleted`, a link's `removed`
- *   or a source's `deleted`. Only these make a key's holder; setting a lifecycle back repeats a
- *   complete or a reopen, which dedupe does not guard either.
- * - After the plan applies, one statement reads the active holders of every keyed source the plan
- *   brought back, linked again, or that a task it brought back links to.
- * - A key is **broken** when it has two or more active holders and the plan restored the key's
+ * A **restore** is an inversion that clears a tombstone. Two rules count restores, each read in
+ * one statement after the plan applies:
+ * - **One active holder of a source key** (A1 3.6). The statement reads the active holders of every
+ *   keyed source the plan brought back, linked again, or that a task it brought back links to. A
+ *   key is **broken** when it has two or more active holders and the plan restored the key's
  *   source, or the task or the link of one of them. A holder whose task, link and source were all
  *   live before the plan **stands**: a key whose active holders all stand was double before the
- *   plan, or became so by a lifecycle the plan set back, and is not the plan's doing.
- * - On a broken key none of the plan's restores of its holders and its source applies. The
- *   conflict names each standing holder's link, with who created or revived it; when every holder
- *   is one the plan brings back, none of them comes back, and the conflict names each one's
- *   lifecycle, with who made it active.
+ *   plan, or became so by a lifecycle the plan set back (not a restore: it repeats a complete or a
+ *   reopen, which dedupe does not guard either), and is not the plan's doing. On a broken key none
+ *   of the plan's restores of its holders and its source applies. The conflict names each standing
+ *   holder's link, with who created or revived it; when every holder is one the plan brings back,
+ *   none of them comes back, and the conflict names each one's lifecycle, with who made it active.
+ * - **At most 20 live learnings a task** (A1 3.11.2). The statement counts the live learnings of
+ *   every task the plan brought a learning back to. A task over the limit gets none of them back,
+ *   and the conflict names each live learning the plan did not bring back, with who wrote it.
  *
- * On a broken key the writes roll back to a savepoint, the conflicts are named on the state before
- * the plan, and a partial inversion applies the rest; leaving out a restore only takes holders
- * away, so the rest breaks no key. A full inversion then applies nothing and returns undefined,
- * and `plan.conflicts` says why.
+ * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
+ * before the plan, and a partial inversion applies the rest: leaving a restore out only takes
+ * holders and learnings away, so the rest breaks neither rule. A full inversion then applies
+ * nothing and returns undefined, and `plan.conflicts` says why.
  */
 export function applyInversions(
   conn: Connection,
@@ -877,79 +890,81 @@ export function applyInversions(
 ): Applied | undefined {
   const restores = restoresOf(plan.inversions);
   if (restores.size === 0) return writeInversions(conn, plan.inversions, options);
-  conn.exec("SAVEPOINT holders");
+  conn.exec("SAVEPOINT restores");
   const applied = writeInversions(conn, plan.inversions, options);
-  const broken = brokenKeys(conn, restores);
+  const broken: Broken = { undone: new Set(), named: [] };
+  brokenKeys(conn, restores, broken);
+  tooManyLearnings(conn, restores, broken);
   if (broken.undone.size === 0) {
-    conn.exec("RELEASE holders");
+    conn.exec("RELEASE restores");
     return applied;
   }
-  conn.exec("ROLLBACK TO holders");
+  conn.exec("ROLLBACK TO restores");
   const conflict = namer(conn, options);
   const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
-  for (const holder of broken.named) {
-    const entity = holder.field === "lifecycle" ? "tasks" : "task_sources";
-    const id = entity === "tasks" ? holder.task : `${holder.task}|${holder.source}`;
-    if (named.has(`${entity}|${id}|${holder.field}`)) continue;
-    named.add(`${entity}|${id}|${holder.field}`);
-    const row = readRow(conn, entity, id);
-    if (row === undefined) throw misuse("A holder the plan read has gone");
+  for (const n of broken.named) {
+    if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;
+    named.add(`${n.entity}|${n.id}|${n.field}`);
+    const row = readRow(conn, n.entity, n.id);
+    if (row === undefined) throw misuse("A row the plan read has gone");
     plan.conflicts.push(
       conflict(
         {
-          entity,
-          id,
-          task: holder.task,
-          field: holder.field,
-          value: columnsValue(row.raw, TABLES[entity].fields[holder.field] ?? []),
+          entity: n.entity,
+          id: n.id,
+          task: n.task,
+          field: n.field,
+          value: columnsValue(row.raw, TABLES[n.entity].fields[n.field] ?? []),
         },
-        versionOf(row, holder.field),
+        versionOf(row, n.field),
       ),
     );
   }
   plan.inversions = plan.inversions.filter((i) => !broken.undone.has(i));
   if (!options.partial) {
-    conn.exec("RELEASE holders");
+    conn.exec("RELEASE restores");
     return undefined;
   }
   const rest = writeInversions(conn, plan.inversions, options);
-  conn.exec("RELEASE holders");
+  conn.exec("RELEASE restores");
   return rest;
 }
 
-/** A plan's restores, by `<entity>|<id>`: the inversions that clear a key holder's tombstone. */
+/** The entities whose restores a rule across rows counts. */
+const COUNTED = new Set<InvertibleEntity>(["tasks", "task_sources", "sources", "learnings"]);
+
+/** A plan's restores, by `<entity>|<id>`: the inversions that clear a counted row's tombstone. */
 function restoresOf(inversions: readonly Inversion[]): Map<string, Inversion> {
   const restores = new Map<string, Inversion>();
   for (const i of inversions) {
     if (i.kind !== "restore" || i.field !== TABLES[i.entity].tombstone) continue;
-    if (i.entity !== "tasks" && i.entity !== "task_sources" && i.entity !== "sources") continue;
-    if (isLive(parsed(i.value))) restores.set(`${i.entity}|${i.id}`, i);
+    if (COUNTED.has(i.entity) && isLive(parsed(i.value))) restores.set(`${i.entity}|${i.id}`, i);
   }
   return restores;
 }
 
-/** A holder a broken key's conflict names: by its link, or by its lifecycle. */
-interface NamedHolder {
-  task: Id<"t">;
-  source: string;
-  field: "removed" | "lifecycle";
+/** What the rules across rows found: the restores that stay undone, and the rows that block them. */
+interface Broken {
+  undone: Set<Inversion>;
+  /** A standing holder's link, a holder's lifecycle, or a live learning. */
+  named: {
+    entity: "tasks" | "task_sources" | "learnings";
+    id: string;
+    task: Id<"t">;
+    field: string;
+  }[];
 }
 
-/**
- * The broken keys on the state the plan made (applyInversions): the restores that stay undone,
- * and the holders their conflicts name, in key order, then reference order.
- */
-function brokenKeys(
-  conn: Connection,
-  restores: ReadonlyMap<string, Inversion>,
-): { undone: Set<Inversion>; named: NamedHolder[] } {
+/** One active holder of a source key (applyInversions), in key order, then reference order. */
+function brokenKeys(conn: Connection, restores: ReadonlyMap<string, Inversion>, broken: Broken) {
   const tasks: string[] = [];
   const sources = new Set<string>();
   for (const i of restores.values()) {
     if (i.entity === "tasks") tasks.push(i.id);
     else if (i.entity === "sources") sources.add(i.id);
-    else sources.add(keyOf("task_sources", i.id)["source"] ?? "");
+    else if (i.entity === "task_sources") sources.add(keyOf("task_sources", i.id)["source"] ?? "");
   }
+  if (tasks.length === 0 && sources.size === 0) return;
   /** Each touched key's active holders, by its live source: one live source per key. */
   const holders = new Map<string, Id<"t">[]>();
   for (const row of conn.prepare(SQL.activeHolders).all({
@@ -962,8 +977,6 @@ function brokenKeys(
     if (list === undefined) holders.set(source, [r.id("task_id", "t")]);
     else list.push(r.id("task_id", "t"));
   }
-  const undone = new Set<Inversion>();
-  const named: NamedHolder[] = [];
   for (const [source, active] of holders) {
     if (active.length < 2) continue;
     /** The restores that make each holder one: its task's, its link's. */
@@ -974,14 +987,58 @@ function brokenKeys(
     );
     const sourceBack = restores.get(`sources|${source}`);
     if (sourceBack === undefined && made.every((m) => m.length === 0)) continue;
-    if (sourceBack !== undefined) undone.add(sourceBack);
-    for (const m of made) for (const i of m) undone.add(i);
+    if (sourceBack !== undefined) broken.undone.add(sourceBack);
+    for (const m of made) for (const i of m) broken.undone.add(i);
     const standing = active.filter((_, k) => made[k]?.length === 0);
-    for (const task of standing.length > 0 ? standing : active) {
-      named.push({ task, source, field: standing.length > 0 ? "removed" : "lifecycle" });
+    for (const task of standing) {
+      broken.named.push({
+        entity: "task_sources",
+        id: `${task}|${source}`,
+        task,
+        field: "removed",
+      });
+    }
+    if (standing.length > 0) continue;
+    for (const task of active) {
+      broken.named.push({ entity: "tasks", id: task, task, field: "lifecycle" });
     }
   }
-  return { undone, named };
+}
+
+/** At most 20 live learnings a task (applyInversions), in task order, then position order. */
+function tooManyLearnings(
+  conn: Connection,
+  restores: ReadonlyMap<string, Inversion>,
+  broken: Broken,
+): void {
+  /** The learnings the plan brings back, by their task. */
+  const back = new Map<Id<"t">, Inversion[]>();
+  for (const i of restores.values()) {
+    if (i.entity !== "learnings" || i.task === null) continue;
+    const list = back.get(i.task);
+    if (list === undefined) back.set(i.task, [i]);
+    else list.push(i);
+  }
+  if (back.size === 0) return;
+  const live = new Map<string, string[]>();
+  for (const row of conn
+    .prepare(SQL.liveLearnings)
+    .all({ tasks: JSON.stringify([...back.keys()]) })) {
+    const r = new RowReader("learnings", row);
+    const task = r.text("task_id");
+    const list = live.get(task);
+    if (list === undefined) live.set(task, [r.text("id")]);
+    else list.push(r.text("id"));
+  }
+  for (const [task, restored] of back) {
+    const ids = live.get(task) ?? [];
+    if (ids.length <= WRITE_LIMITS.learnings) continue;
+    for (const i of restored) broken.undone.add(i);
+    const mine = new Set(restored.map((i) => i.id));
+    for (const id of ids) {
+      if (!mine.has(id)) broken.named.push({ entity: "learnings", id, task, field: "deleted" });
+    }
+  }
 }
 
 /**

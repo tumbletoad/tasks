@@ -666,6 +666,86 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(scans).toBeLessThanOrEqual(8);
   });
 
+  /** A task's live learnings, in their order. */
+  const learnings = (id: Id<"t">): string[] =>
+    fx.reader
+      .prepare(
+        "SELECT id FROM learnings WHERE task_id = $id AND deleted_at IS NULL ORDER BY position",
+      )
+      .all({ id })
+      .map((r) => String(r["id"]));
+
+  test("an undo and a redo of a wrap-up take back and bring back its learnings", () => {
+    const id = create();
+    applied(write([{ kind: "task.complete", task: id }]));
+    applied(
+      write([
+        {
+          kind: "task.wrap_up",
+          task: id,
+          outcome: "Shipped",
+          learnings: { add: ["Ask early.", "Keep notes."] },
+        },
+      ]),
+    );
+    const made = learnings(id);
+    expect(made).toHaveLength(2);
+    // The undo tombstones the learnings the wrap-up added and sets the wrap back.
+    const u = applied(undo());
+    expect(learnings(id)).toEqual([]);
+    expect(task(id)).toMatchObject({ wrap_state: "pending", outcome: null });
+    expect(changesAt(u.seq).map((c) => [c["entity"], c["field"]])).toEqual([
+      ["tasks", "wrap"],
+      ["learnings", "deleted"],
+      ["learnings", "deleted"],
+    ]);
+    applied(redo());
+    expect(learnings(id)).toEqual(made);
+    expect(task(id)).toMatchObject({ wrap_state: "wrapped", outcome: "Shipped" });
+    // A removal comes back with its undo.
+    applied(
+      write([{ kind: "task.wrap_up", task: id, learnings: { remove: [made[0] as Id<"lr">] } }]),
+    );
+    expect(learnings(id)).toEqual(made.slice(1));
+    applied(undo());
+    expect(learnings(id)).toEqual(made);
+  });
+
+  test("an undo never leaves a task with more than 20 live learnings", () => {
+    const id = create();
+    applied(write([{ kind: "task.complete", task: id }]));
+    const texts = Array.from({ length: 20 }, (_, k) => `Fixture learning ${String(k + 1)}.`);
+    applied(
+      write([{ kind: "task.wrap_up", task: id, outcome: "Shipped", learnings: { add: texts } }]),
+    );
+    const [removed = ""] = learnings(id);
+    // Mira removes one; Codex adds another, so the task holds 20 again.
+    const mine = applied(
+      write([{ kind: "task.wrap_up", task: id, learnings: { remove: [removed as Id<"lr">] } }]),
+    );
+    const theirs = applied(
+      write([{ kind: "task.wrap_up", task: id, learnings: { add: ["From Codex."] } }], "codex"),
+    );
+    const held = learnings(id);
+    expect(held).toHaveLength(20);
+    // Codex's wrap-up rewrote the wrap, so the full undo conflicts there first.
+    const seq = lastSeq();
+    expect(undo().conflicts.map((c) => c.field)).toEqual(["wrap"]);
+    expect(lastSeq()).toBe(seq);
+    // A partial undo would bring the removed learning back as a 21st: it stays removed, named
+    // with the 20 that hold the place, and the change leaves the stack.
+    const u = applied(undo({ partial: true }));
+    expect(changesAt(u.seq)).toEqual([]);
+    expect(u.conflicts[0]).toMatchObject({ entity: "tasks", field: "wrap", version: theirs.seq });
+    const named = u.conflicts.slice(1);
+    expect(named.map((c) => [c.entity, c.id, c.field, c.task]).sort()).toEqual(
+      held.map((l) => ["learnings", l, "deleted", id]).sort(),
+    );
+    expect(named.find((c) => c.version === theirs.seq)).toMatchObject({ by: { kind: "agent" } });
+    expect(learnings(id)).toEqual(held);
+    expect(commitAt(mine.seq)["undo_status"]).toBe("undone");
+  });
+
   test("a restore never takes a place or a source key another row holds now", () => {
     const id = create();
     applied(
