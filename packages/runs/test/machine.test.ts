@@ -8,8 +8,13 @@ import {
   type RunResult,
   type RunState,
 } from "@tasks/contracts/runs";
+import { SpaceExecutionStore } from "@tasks/launch";
 import type { RunStore } from "@tasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
+import { openLaunchSpace } from "@tasks/testkit";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   finalFor,
@@ -511,6 +516,138 @@ describe("[A4.5.run.machine] the run machine's rules", () => {
     await b.machine.cancel(run.id, () => Promise.resolve());
     expect((await b.machine.report(run.id, { kind: "spawn_failed" }))?.state).toBe("cancelling");
   });
+
+  test("a start failure that arrives after a sweep found its shim gone still settles the run, on both stores: cancelled after a Stop, else failed", async () => {
+    // The shim reports that its check or the agent's spawn failed, and exits. Its report waits
+    // behind a sweep, which finds the shim gone without exit.json and settles the run `unknown`
+    // (`lost`). Then the report arrives: it is the definite end the run lacked, no agent started.
+    const parent = mkdtempSync(join(tmpdir(), "tasks-run-late-failure-"));
+    try {
+      const space = await openLaunchSpace(parent);
+      try {
+        const stores: [
+          string,
+          () => Promise<{ store: RunStore; task: string; machine: string }>,
+        ][] = [
+          [
+            "in memory",
+            () =>
+              Promise.resolve({
+                store: new MemoryExecutionStore(new MemoryDurable(() => Date.now())),
+                task: TASK,
+                machine: MACHINE,
+              }),
+          ],
+          [
+            "on the space database",
+            async () => ({
+              store: new SpaceExecutionStore({
+                writer: space.writer,
+                spaceId: space.spaceId,
+                credential: space.credential,
+              }),
+              task: await space.task(),
+              machine: space.machine,
+            }),
+          ],
+        ];
+        const orders = [
+          { stop: false, timedOut: false, expected: "failed" },
+          { stop: true, timedOut: false, expected: "cancelled" },
+          // The stop timed out before the sweep that found the shim gone.
+          { stop: true, timedOut: true, expected: "cancelled" },
+        ] as const;
+        for (const [where, open] of stores) {
+          for (const order of orders) {
+            for (const kind of ["verify_failed", "spawn_failed"] as const) {
+              const label = `${where}, ${JSON.stringify(order)}, ${kind}`;
+              const { store, task, machine: owner } = await open();
+              let gone = false;
+              let mono = 0;
+              const machine = new RunMachine({
+                store,
+                machine: owner,
+                recovery: {
+                  observe: () => Promise.resolve(gone ? { kind: "lost" } : { kind: "pending" }),
+                },
+                elapsed: () => mono,
+              });
+              const run = await machine.queue(
+                {
+                  task,
+                  routine: null,
+                  instance: "codex-work",
+                  adapter: "codex-exec",
+                  place: null,
+                  request: "Fix the export.",
+                  briefHash: "0a1b2c3d".repeat(8),
+                  permission: "auto-edit",
+                  limits: RUN_LIMITS.task,
+                },
+                `machine-test-${String((requests += 1)).padStart(8, "0")}`,
+              );
+              await machine.start(run.id, () => Promise.resolve({ kind: "spawned" }));
+              await machine.claim(run.id, "claim-1", () => Promise.resolve());
+              if (order.stop) await machine.cancel(run.id, () => Promise.resolve());
+              if (order.timedOut) {
+                mono += RUN_STOP_TIMEOUT_MS;
+                await machine.sweep();
+                expect(await store.readRun(run.id), label).toMatchObject({
+                  state: "unknown",
+                  reason: "stop_timed_out",
+                });
+              }
+              gone = true;
+              await machine.sweep();
+              expect(await store.readRun(run.id), label).toMatchObject({
+                state: "unknown",
+                reason: "lost",
+              });
+              const after = await machine.report(run.id, { kind });
+              expect(after, label).toMatchObject(
+                order.expected === "failed"
+                  ? { state: "failed", reason: kind, result: null }
+                  : { state: "cancelled", reason: null, result: null },
+              );
+            }
+          }
+          // Once the agent's PID is recorded, a start failure is not the run's, also when lost.
+          const { store, task, machine: owner } = await open();
+          const machine = new RunMachine({
+            store,
+            machine: owner,
+            recovery: { observe: () => Promise.resolve({ kind: "lost" }) },
+          });
+          const run = await machine.queue(
+            {
+              task,
+              routine: null,
+              instance: "codex-work",
+              adapter: "codex-exec",
+              place: null,
+              request: "Fix the export.",
+              briefHash: "0a1b2c3d".repeat(8),
+              permission: "auto-edit",
+              limits: RUN_LIMITS.task,
+            },
+            `machine-test-${String((requests += 1)).padStart(8, "0")}`,
+          );
+          await machine.start(run.id, () => Promise.resolve({ kind: "spawned" }));
+          await machine.claim(run.id, "claim-1", () => Promise.resolve());
+          await machine.report(run.id, { kind: "started", pid: 4242, pidStartedAt: 1 });
+          await machine.sweep();
+          expect(await machine.report(run.id, { kind: "spawn_failed" }), where).toMatchObject({
+            state: "unknown",
+            reason: "lost",
+          });
+        }
+      } finally {
+        space.close();
+      }
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   test("finalFor: cancelled after a stop, timed out at a limit, succeeded on success, failed with the outcome", () => {
     const run = { at: {} } as RunRecord;

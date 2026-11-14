@@ -65,7 +65,12 @@ export type Event =
   | { kind: "start"; pick: number; outcome: "spawned" | "refused" | "unknown" }
   | { kind: "claim"; pick: number; same: boolean }
   | { kind: "agent"; pick: number }
-  | { kind: "startFails"; pick: number; how: "verify_failed" | "spawn_failed" }
+  /**
+   * The shim's check or its spawn of the agent failed: it reports that and exits. With `late` the
+   * report waits in the service's queue behind a sweep that is running, which finds the shim gone,
+   * so it arrives after the sweep settled the run; it dies with the service if that crashes.
+   */
+  | { kind: "startFails"; pick: number; how: "verify_failed" | "spawn_failed"; late: boolean }
   | { kind: "native"; pick: number }
   | { kind: "exit"; pick: number; how: "ok" | "error" | "wall" | "idle" }
   | { kind: "die"; pick: number }
@@ -92,6 +97,12 @@ export interface ModelBackend {
    * cancel in every reachable state: `starting` split by its claim, `unknown` by its reason.
    */
   cancelledIn?: (state: string) => void;
+  /**
+   * Told the durable state of every run a late start failure reaches (`unknown` by its reason, and
+   * `:stopped` once a Stop is recorded), so a test can show its scenarios deliver one after a sweep
+   * settled the run.
+   */
+  lateIn?: (state: string) => void;
 }
 
 const RESULTS: Record<"ok" | "error" | "wall" | "idle" | "interrupted" | "none", RunResult> = {
@@ -344,6 +355,22 @@ export class World {
         // The shim's check or its spawn of the agent failed: it reports that and exits, with no
         // agent and no exit.json, also when the report never reaches a service.
         p.failedToStart = true;
+        if (event.late) {
+          // The shim exits after its report, while a sweep holds the run's section: the sweep
+          // finds the shim gone first. The report waits in this service's queue behind it.
+          p.shimAlive = false;
+          const life = this.#life;
+          await this.#service((m) => m.sweep());
+          if (this.#life !== life) return;
+          if (this.#backend.lateIn !== undefined) {
+            const before = await this.#backend.store().readRun(id);
+            if (before !== undefined) {
+              const state =
+                before.state === "unknown" ? `unknown:${before.reason ?? ""}` : before.state;
+              this.#backend.lateIn(before.at.cancelling === undefined ? state : `${state}:stopped`);
+            }
+          }
+        }
         await this.#service(async (m) => {
           await m.report(id, { kind: event.how });
           p.failureHeard = true;

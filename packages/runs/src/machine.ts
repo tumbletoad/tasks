@@ -451,12 +451,14 @@ export class RunMachine {
         return HELD.has(state) ? { next: state, patch: { evidence: report.evidence } } : undefined;
       case "verify_failed":
       case "spawn_failed":
-        // A definite end before any agent: no process will exit to settle the run. After a Stop
-        // it is cancelled, as every stopped run that ends, also once the stop timed out; once an
-        // agent's PID is recorded, a start failure is not this run's and its exit decides.
+        // A definite end before any agent: no process will exit to settle the run. It settles an
+        // `unknown` run too, whatever its reason: the shim exits after its report, so a sweep that
+        // ran while the report waited behind it found the shim gone and settled the run lost.
+        // After a Stop it is cancelled, as every stopped run that ends; once an agent's PID is
+        // recorded, a start failure is not this run's and its exit decides.
         if (run.evidence.claim === undefined || run.evidence.pid !== undefined) return undefined;
-        if (state === "cancelling" || awaitsExit(run)) return { next: "cancelled" };
-        if (state === "starting" || state === "reconciling") {
+        if (state === "cancelling") return { next: "cancelled" };
+        if (state === "starting" || state === "reconciling" || state === "unknown") {
           return run.at.cancelling === undefined
             ? { next: "failed", patch: { reason: report.kind } }
             : { next: "cancelled" };

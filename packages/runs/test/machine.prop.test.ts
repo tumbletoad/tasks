@@ -49,6 +49,7 @@ const event: fc.Arbitrary<Event> = fc.oneof(
       kind: fc.constant("startFails" as const),
       pick,
       how: fc.constantFrom("verify_failed" as const, "spawn_failed" as const),
+      late: fc.boolean(),
     }),
   },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("native" as const), pick }) },
@@ -98,13 +99,45 @@ const event: fc.Arbitrary<Event> = fc.oneof(
   },
 );
 
-const scenario = fc.array(event, { minLength: 4, maxLength: 40, size: "max" });
+const events = fc.array(event, { minLength: 4, maxLength: 40, size: "max" });
+
+/**
+ * Starting points deep in a run's life, which random events reach only rarely: a run claimed by
+ * its shim, then stopped, its stop timed out, its agent started, or its agent ended.
+ */
+const claimed: Event[] = [
+  { kind: "queue" },
+  { kind: "start", pick: 0, outcome: "spawned" },
+  { kind: "claim", pick: 0, same: false },
+];
+const stopped: Event[] = [...claimed, { kind: "cancel", pick: 0 }];
+const started: Event[] = [...claimed, { kind: "agent", pick: 0 }];
+const PREFIXES: Event[][] = [
+  claimed,
+  stopped,
+  [...stopped, { kind: "tick", ms: 61_000 }, { kind: "sweep" }],
+  started,
+  [...started, { kind: "exit", pick: 0, how: "ok" }],
+  [...started, { kind: "exit", pick: 0, how: "wall" }],
+];
+
+/** Random events, a fifth of them after one of the starting points. */
+const scenario = fc.oneof(
+  { weight: 4, arbitrary: events },
+  {
+    weight: 1,
+    arbitrary: fc
+      .tuple(fc.constantFrom(...PREFIXES), events)
+      .map(([prefix, rest]) => [...prefix, ...rest]),
+  },
+);
 
 describe("[A4.5.run.state-machine] the run state machine under cancels in every state and crashes at every boundary", () => {
   test("in memory: one spawn and one claimed agent per run, final states that match the processes, and every run settles", async () => {
     // The states the scenarios cancel in, so the test shows a cancel reaches each, not only that
-    // the property held.
+    // the property held. The same for the states a late start failure arrives in.
     const cancelledIn = new Map<string, number>();
+    const lateIn = new Map<string, number>();
     await fc.assert(
       fc.asyncProperty(scenario, async (events) => {
         const clock: { world?: World } = {};
@@ -114,6 +147,7 @@ describe("[A4.5.run.state-machine] the run state machine under cancels in every 
           store: () => new MemoryExecutionStore(durable),
           tasks: ["t_0000000000000000000000000a", "t_0000000000000000000000000b"],
           cancelledIn: (state) => cancelledIn.set(state, (cancelledIn.get(state) ?? 0) + 1),
+          lateIn: (state) => lateIn.set(state, (lateIn.get(state) ?? 0) + 1),
         });
         clock.world = world;
         for (const e of events) {
@@ -142,6 +176,11 @@ describe("[A4.5.run.state-machine] the run state machine under cancels in every 
       "cancelled",
     ];
     for (const state of states) expect(cancelledIn.get(state) ?? 0, state).toBeGreaterThan(0);
+    // A shim's start failure that arrives after a sweep found the shim gone and settled the run
+    // lost, without and with a Stop (A4 3.11.2).
+    for (const state of ["unknown:lost", "unknown:lost:stopped"]) {
+      expect(lateIn.get(state) ?? 0, state).toBeGreaterThan(0);
+    }
   }, 600_000);
 
   test("on the space database: the same property", async () => {
