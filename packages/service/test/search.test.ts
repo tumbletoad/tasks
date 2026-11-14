@@ -277,6 +277,11 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "rankw" }))).toContain(title);
     expect(ids(await search({ q: "Ra" }))).toContain(title);
     expect(ids(await search({ q: '"rankw"' }))).toEqual([]);
+    // The prefix goes to the last token: "R." has the one-letter token r, which gets none.
+    expect(ids(await search({ q: "rankw." }))).toContain(title);
+    expect(ids(await search({ q: "rankword R." }))).toEqual([]);
+    // Punctuation alone is no word, so it never empties the AND.
+    expect(ids(await search({ q: "rankword & —" }))).toContain(title);
     const without = ids(await search({ q: "rankword -again" }));
     expect(without).not.toContain(title);
     expect(without).toContain(note);

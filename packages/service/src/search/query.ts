@@ -381,8 +381,16 @@ export function parseQuery(given: string): Query {
       throw queryProblem("OR joins words with words or filters with filters");
     }
   }
-  return { groups };
+  // The index keeps letters and digits only (A1 3.12's unicode61), so a word or phrase without one
+  // could match nothing and would empty the whole AND: it is left out, and `parsed` shows that.
+  const kept = groups
+    .map((group) => group.filter((t) => t.type === "filter" || SEARCHABLE.test(t.text)))
+    .filter((group) => group.length > 0);
+  return { groups: kept };
 }
+
+/** A character FTS5's unicode61 keeps in a token: its default categories L*, N* and Co. */
+const SEARCHABLE = /[\p{L}\p{N}\p{Co}]/u;
 
 // ---------------------------------------------------------------------------------------------
 // Printing

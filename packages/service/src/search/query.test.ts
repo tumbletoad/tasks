@@ -99,6 +99,21 @@ describe("[A3.5.search.parser] the query language", () => {
     );
   });
 
+  test("a word or phrase without a letter or digit is not searched, and parsed leaves it out", () => {
+    const q = parseQuery('zone & clinic — "!!" -/ "a&b" 😀 OR report');
+    expect(q.groups.map((g) => g.map((t) => (t.type === "text" ? t.text : t.key)))).toEqual([
+      ["zone"],
+      ["clinic"],
+      ["a&b"],
+      ["report"],
+    ]);
+    expect(printQuery(q)).toBe('zone clinic "a&b" report');
+    expect(parseQuery("& status:open").groups.flat()).toMatchObject([{ key: "status" }]);
+    expect(parseQuery("— …").groups).toEqual([]);
+    // The OR rules hold for what was written.
+    expect(refusal(() => parseQuery("& OR status:open")).code).toBe("invalid_input");
+  });
+
   test("is:new and is:changed are refused naming the step that brings their data", () => {
     for (const later of ["is:new", "is:changed"]) {
       const error = refusal(() => parseQuery(later));

@@ -103,9 +103,16 @@ function ftsString(term: TextTerm, prefix: boolean): string {
   return `"${text.replaceAll('"', '""')}"${prefix ? "*" : ""}`;
 }
 
-/** Whether `term` takes FTS5's prefix: an unquoted word of two characters or more. */
-const prefixes = (term: TextTerm): boolean =>
-  !term.phrase && !term.negated && Array.from(term.text.trim()).length >= 2;
+/**
+ * Whether `term` takes FTS5's prefix: an unquoted word whose last token, as unicode61 cuts it
+ * (letters, digits and private-use characters, with marks inside a token), keeps two characters
+ * or more. The `*` applies to that token, so `M-1` gets none.
+ */
+function prefixes(term: TextTerm): boolean {
+  if (term.phrase || term.negated) return false;
+  const last = term.text.match(/[\p{L}\p{N}\p{Co}\p{M}]+/gu)?.at(-1) ?? "";
+  return (last.match(/[\p{L}\p{N}\p{Co}]/gu)?.length ?? 0) >= 2;
+}
 
 function positiveMatch(query: Query): string | null {
   const groups = query.groups.filter((g) => g[0]?.type === "text" && !g[0].negated);
