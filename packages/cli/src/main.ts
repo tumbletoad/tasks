@@ -28,6 +28,7 @@ import { MCP_VERB, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { ROOTS_HELP, rootsCommand } from "./roots.ts";
+import { SESSION_HELP, sessionCommand } from "./session.ts";
 import { SERVICE_HELP, serviceCommand } from "./service.ts";
 import { SETUP_HELP, setupCommand, type SetupOptions } from "./setup.ts";
 import { SPACE_HELP, spaceCommand } from "./space.ts";
@@ -72,6 +73,7 @@ const LOCAL: readonly [string, string][] = [
   ["service", SERVICE_HELP],
   ["space", "List, create, open, close, back up, restore, claim and recover spaces"],
   ["roots", "List and add this machine's roots, the folders places live under"],
+  ["session", "End, unbind or rebind an agent session (the user only)"],
   [
     "setup",
     "Connect this machine's agent apps: their MCP entries (setup agents), T3 Code (setup t3)",
@@ -169,11 +171,13 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
           ? SPACE_HELP
           : topic === "roots"
             ? ROOTS_HELP
-            : topic === "setup"
-              ? SETUP_HELP
-              : verb === undefined
-                ? shortHelp()
-                : verbHelp(verb),
+            : topic === "session"
+              ? SESSION_HELP
+              : topic === "setup"
+                ? SETUP_HELP
+                : verb === undefined
+                  ? shortHelp()
+                  : verbHelp(verb),
       );
       return 0;
     }
@@ -191,6 +195,8 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         return await spaceCommand(io, globals, args, options);
       case "roots":
         return await rootsCommand(io, globals, args, options);
+      case "session":
+        return await sessionCommand(io, globals, args, options);
       case "setup":
         return await setupCommand(io, globals, args, options);
       case "doctor":

@@ -149,9 +149,6 @@ export function windowsArgv(commandLine: string): string[] {
   return out;
 }
 
-/** How long one PowerShell read may take before it is killed: under the bind's own deadline. */
-const WINDOWS_READ_MS = HOST_DEADLINE_MS;
-
 /**
  * Windows: one Windows PowerShell call reads the process table through CIM (Win32_Process: the
  * parent and the command line) and walks it from `pid`. The script holds only integers checked
@@ -161,6 +158,8 @@ export async function windowsAncestors(
   pid: number,
   depth: number,
   env: Readonly<Record<string, string | undefined>> = process.env,
+  // How long the read may take before it is killed: the bind's own deadline.
+  timeoutMs = HOST_DEADLINE_MS,
 ): Promise<Ancestor[]> {
   if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(depth) || depth <= 0) {
     return [];
@@ -193,7 +192,7 @@ export async function windowsAncestors(
     const timer = setTimeout(() => {
       child.kill();
       resolve("");
-    }, WINDOWS_READ_MS);
+    }, timeoutMs);
     timer.unref();
     child.on("error", () => {
       clearTimeout(timer);

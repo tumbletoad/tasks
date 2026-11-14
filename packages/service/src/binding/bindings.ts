@@ -724,8 +724,8 @@ export class Bindings implements BindingPort {
       }
       const sessions = this.#launchSessions(found.launch);
       const existing = sessions.find((s) => s.ended_at === undefined);
-      // The user ended its session before any agent bound it: the launch binds nothing more.
-      if (existing === undefined && sessions.length > 0 && sessions.every((s) => s.via === null)) {
+      // Its session ended (the user ended it, or it went stale): the launch binds nothing more.
+      if (existing === undefined && sessions.length > 0) {
         this.#ignored("ticket", "ended");
         return Promise.resolve(false);
       }
@@ -1156,8 +1156,13 @@ export class Bindings implements BindingPort {
     this.#sessions.set(id, { ...session, ended_at: this.#now(), end_reason: reason });
     for (const slot of this.#attached) {
       if (slot.session?.id !== id) continue;
-      this.#unbindSlot(slot);
-      if (reason === "user") slot.lost = true;
+      if (reason === "user") {
+        // Its handle still names the ended session, so a reconnect hears `lost` too.
+        slot.session = undefined;
+        slot.lost = true;
+      } else {
+        this.#unbindSlot(slot);
+      }
       this.#markUnbound(slot);
     }
     if (reason === "unbound") {

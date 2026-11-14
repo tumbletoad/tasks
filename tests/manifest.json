@@ -1642,6 +1642,54 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.binding.launch-session",
+      "title": "A launch's session is made with its intent before dispatch, on disk with no agent binding yet and the launch's preset ID; a CLI call with the ticket maps to it before any bridge bound and writes as it; the bridge's ticket or a reference then binds that session for the binding connection's home, and a bind the launch does not take leaves it waiting; a session no agent bound ends stale after 7 quiet days and its ticket binds nothing",
+      "source": "A3 3.7.4, A3 3.7.7, A4 3.10, A7 3.11 M4.06",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.native",
+      "title": "Rule 3: Claude's preset session ID and T3's returned thread ID bind alone at the bind frame, Codex's reference-matched thread at the first tool call, and the launch records the binding; an ID a connection only presented, another instance's session, two sessions holding one ID and a space the home may not use bind nothing; a CLI call maps by a launch's ID alone",
+      "source": "A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.11 M4.06",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.hosts",
+      "title": "Host detection: Claude Desktop's chat without a session ID and a Codex entry under a Codex app-server are shared from the bind frame, their ticket binds nothing and is not spent, while Claude Desktop's Code tab and the Codex CLI are per session; on a shared connection a call carrying a thread its launch matched acts as that session for that call only; ancestors are read from the process table, at most four, and an unreadable table counts as per session",
+      "source": "A3 3.7.2, A3 3.7.5, A3 5, A7 3.11 M4.06",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.call-only",
+      "title": "On a shared connection get_task by launch reference or with bind true holds for its call only: the result says durable false with the hint to pass the task, the launch is not used up and its session reads opened by reference, not tracked; on a bound connection a call naming another task says which task the session stays bound to",
+      "source": "A3 3.4.4, A3 3.7.3, A3 3.7.5, A7 3.11 M4.06",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.user-ops",
+      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them",
+      "source": "A3 3.7.3, A3 3.2.3, A3 5, A7 3.11 M4.06",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.sessions",
+      "title": "get_task's sessions section lists a task's sessions newest first with their state, home, how they bound and their route, without native IDs; Resume is offered only with a native ID the launch set or received, or that the connection binding through the launch presented, of the source its target resumes by, and an instance that exists here; a Resume's intent continues its session",
+      "source": "A3 3.4.4, A3 3.7, A4 3.10, A7 3.11 M4.06",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.7.grant.space",
       "title": "A home granted one space reaches no other: its own space works; the other, named by ID or by name in its entry or picked as the machine default, is forbidden with rule grant before its reader or writer is touched, and is not pinned, at the bind or at a call; a target that does not resolve is the grant refusal unless the home is granted it; a launch reference, a ticket or a task of the other space binds and reads nothing there and is not used up; after a service restart the rows still decide",
       "source": "A3 3.7.3, A3 3.7.4, A3 3.7.8, A3 3.5, A7 3.9 M2.04b",
