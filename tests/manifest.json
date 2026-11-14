@@ -1906,6 +1906,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.t3.cli-route",
+      "title": "The T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
+      "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A7 3.13 M6.10",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.4.1.t3.cli-command",
+      "title": "The T3 CLI's command line: a .cmd shim read exactly or refused, hostile folder names reaching the fake CLI byte for byte (through the shim on Windows) or refused before anything starts, a shim naming another T3 home refused, each thread start answer mapped to its launch state, and a stage that refuses what the CLI cannot be given",
+      "source": "A4 3.4.1, A4 3.2, A4 3.6.4, A4 3.8, A7 3.13 M6.10",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.t3.binding",
       "title": "Exact-folder binding for T3 by directory identity: an exact project root through a link or another case, an existing git worktree, never a containing project, a sibling clone, a submodule or a subfolder of a worktree, and an archived project gone from the list",
       "source": "A4 3.4.1, A4 5.1, R11, A7 3.9 M2.11",
@@ -2677,6 +2693,38 @@
       "id": "A2.3.12.6.update.installed",
       "title": "tasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
       "source": "A2 3.12.6, A2 3.13, A7 3.8 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.stage",
+      "title": "An update stages each changed Windows launcher as bin\\<name>.new, checked, before current changes, and a staging failure changes nothing; a launcher that is not running is replaced by one rename and the stable path is never missing, a running one is renamed aside and the new one renamed in; one a launcher's sibling repair put in place counts as swapped; a repair uses the staged copy and removes it; the clean-up removes the aside and staged launchers no journal names, never one that still runs",
+      "source": "A2 3.12.6, SL-08, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.3.launcher-win.sibling",
+      "title": "From the stable bin folder, a launcher whose sibling is missing while an update's journal is there puts back a copy of the sibling of the version current names before it runs anything, and goes on; without a journal it puts back nothing; it places nothing else (no .new or .old-<n> file of bin, nothing through a link, nothing for a bad current), leaves a present sibling, a folder or link at its name and a version-local launcher's folder alone, and leaves no temporary file",
+      "source": "A2 3.12.3, A2 3.12.6, SL-08, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.2.launcher-win.handover",
+      "title": "A supervisor whose bin\\tasksw.exe was replaced while it ran starts the new one in its place before any restart of the service (after an exit 75, or after the wait after a failure), and exits 0; the new one supervises; one whose file is unchanged restarts the service itself",
+      "source": "A2 3.3.2, A2 3.12.6, A7 3.13 M6.13",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.launchers",
+      "title": "With real builds whose launchers differ, in a temporary TASKS_HOME on Windows, an updater killed at each step of each launcher's swap (staged, renamed aside, renamed in) while both launchers run, then started again through the stable command and through the supervisor, ends on one complete version: both launchers match its hashes, current names it, the stable command runs, and the supervisor that ran from the old file hands over to the new one",
+      "source": "A2 3.12.3, A2 3.12.6, SL-08, A7 3.13 M6.13",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

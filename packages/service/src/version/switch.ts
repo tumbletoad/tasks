@@ -4,27 +4,35 @@
 //   - `current`: a symbolic link to `versions/<v>` renamed over the old one (Linux, macOS), a text
 //     file holding `<v>` replaced by rename (Windows);
 //   - the stable command: `<root>/bin/tasks`, a link to `../current/bin/tasks` (Linux, macOS), or
-//     copies of the version's `tasks.exe` and `tasksw.exe` in `<root>\bin\` (Windows), a changed
-//     one renamed aside to `.old-<n>` first, which Windows allows while it runs (A2 3.12.6);
+//     copies of the version's `tasks.exe` and `tasksw.exe` in `<root>\bin\` (Windows). A changed
+//     one is replaced by one rename where Windows allows it (the launcher is not running, and the
+//     one it replaces can be found again in a version folder), so the stable path never goes
+//     missing; a running one is renamed aside to `.old-<n>` first, which Windows allows, and the
+//     new one renamed in (A2 3.12.6). An update stages each new launcher as `<name>.new`
+//     before current changes (A2 3.12.6 step 8);
 //   - `<state>/install.json`, the install receipt (A2 3.2.3).
 // Every path of an install is computed here or in hub/paths.ts, so the rename step changes it once.
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
-  copyFileSync,
+  closeSync,
   existsSync,
+  fsyncSync,
   lstatSync,
+  openSync,
   readdirSync,
   readFileSync,
   readlinkSync,
+  readSync,
   realpathSync,
   renameSync,
   rmdirSync,
   rmSync,
   symlinkSync,
+  writeSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { PRODUCT_ID } from "@tasks/brand";
-import { atomicWrite, makeDir } from "../hub/files.ts";
+import { atomicWrite, createFile, makeDir, removeStaleTemps } from "../hub/files.ts";
 import { canonicalStatePath, HOME_MARKER, installId } from "../hub/paths.ts";
 import { isVersionName, MANIFEST_FILE, sha256File } from "./folder.ts";
 
@@ -204,7 +212,7 @@ export function asideName(path: string): string {
 /**
  * Removes a launcher that was put in place. One that already runs (a client started it from bin)
  * cannot be deleted on Windows, but it can be renamed: it goes aside as `.old-<n>`, which the
- * clean-up removes later (cleanAsideLaunchers).
+ * clean-up removes later (cleanLaunchers).
  */
 export function removePlaced(path: string): void {
   try {
@@ -214,48 +222,223 @@ export function removePlaced(path: string): void {
   }
 }
 
+/** Where an update stages a stable launcher before the switch: `bin\<name>.new` (A2 3.12.6 step 8). */
+export const stagedPath = (path: string): string => `${path}.new`;
+
+/** Whether `source` is `path`'s own staged copy or one of its aside copies: a file in bin. */
+const besidePath = (source: string, path: string): boolean => {
+  if (dirname(source) !== dirname(path)) return false;
+  const name = basename(source);
+  const aside = `${basename(path)}.old-`;
+  return (
+    name === basename(stagedPath(path)) ||
+    (name.startsWith(aside) && /^\d+$/.test(name.slice(aside.length)))
+  );
+};
+
 /**
- * Puts a copy of `source` at `path`: a copy beside it first, checked against `digest` (the
- * source's own SHA-256 when not given), then the file at `path`, if any, renamed aside to
- * `.old-<n>` (Windows allows that while it runs, A2 3.12.6) and the copy renamed into place.
- * At every moment the path holds the old launcher, nothing (between the two renames), or the new
- * one. Returns where the old one went, or undefined when there was none.
+ * A new file beside `near` holding the bytes of `source`, hashed while they are copied, so what is
+ * written is what was checked, and flushed. Returns its path, or undefined (nothing left behind)
+ * when the bytes are not `digest`. Windows sets no mode; elsewhere 0755, as a launcher.
  */
-export function placeLauncher(path: string, source: string, digest?: string): string | undefined {
-  const want = digest ?? sha256File(source);
-  const fresh = temp(path);
-  copyFileSync(source, fresh);
-  if (sha256File(fresh) !== want) {
-    rmSync(fresh, { force: true });
-    throw new InstallError(`The copy of ${basename(source)} into bin does not match.`);
-  }
-  let aside: string | undefined;
-  if (exists(path)) {
-    aside = asideName(path);
-    try {
-      renameSync(path, aside);
-    } catch (error) {
-      rmSync(fresh, { force: true });
-      throw error;
-    }
-  }
+function checkedCopy(source: string, near: string, digest: string): string | undefined {
+  const fresh = temp(near);
+  const hash = createHash("sha256");
+  const input = openSync(source, "r");
+  let output: number | undefined;
   try {
-    renameSync(fresh, path);
+    output = createFile(fresh, 0o755);
+    const buffer = Buffer.alloc(64 * 1024);
+    for (;;) {
+      const n = readSync(input, buffer, 0, buffer.length, null);
+      if (n === 0) break;
+      hash.update(buffer.subarray(0, n));
+      for (let at = 0; at < n;) at += writeSync(output, buffer, at, n - at);
+    }
+    fsyncSync(output);
   } catch (error) {
+    if (output !== undefined) closeSync(output);
+    closeSync(input);
     rmSync(fresh, { force: true });
-    // The old one goes back to its name, so a failure here leaves the path as it was.
-    if (aside !== undefined && !exists(path)) renameSync(aside, path);
     throw error;
   }
+  closeSync(output);
+  closeSync(input);
+  if (hash.digest("hex") !== digest) {
+    rmSync(fresh, { force: true });
+    return undefined;
+  }
+  return fresh;
+}
+
+/**
+ * Stages a stable launcher for an update (A2 3.12.6 step 8): a checked, flushed copy of `source`
+ * at `<path>.new`, before current changes. One already there with `digest` is kept.
+ */
+export function stageLauncher(path: string, source: string, digest: string): void {
+  const staged = stagedPath(path);
+  if (digestOf(staged) === digest) return;
+  const fresh = checkedCopy(source, path, digest);
+  if (fresh === undefined) {
+    throw new InstallError(`${basename(source)} does not match the version's manifest.`);
+  }
+  try {
+    renameSync(fresh, staged);
+  } catch (error) {
+    rmSync(fresh, { force: true });
+    throw error;
+  }
+}
+
+/** Where a launcher swap can be cut off, for the crash tests (tests/update/). Off in the product. */
+export type SwapPoint = "aside" | "placed";
+/** A launcher's steps in an update: staged before the switch, then its swap. */
+export type LauncherPoint = "staged" | SwapPoint;
+
+export interface PlaceOptions {
+  /**
+   * Files where the launcher now at `path` can be found again (a version folder's own copy). When
+   * one of them holds its SHA-256, it may be replaced by one rename; otherwise it is kept aside as
+   * `.old-<n>`, for a rollback or an undo that needs it back.
+   */
+  readonly keptIn?: readonly string[];
+  readonly at?: (point: SwapPoint) => void;
+}
+
+/** A refusal Windows gives to replacing or deleting a running program (A2 3.12.6). */
+const isBusy = (error: unknown): boolean => {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+};
+
+/**
+ * Puts the launcher with SHA-256 `digest` (the source's own when not given) at `path`, from
+ * `source`: its own staged copy (`<path>.new`) or an aside copy (`<path>.old-<n>`) is renamed into
+ * place, anything else is copied beside it first (checked and flushed). Then:
+ *   - no launcher at `path`: the new one is renamed in;
+ *   - one that `keptIn` holds and Windows lets go (it is not running): one rename replaces it, so
+ *     the stable path is never missing (A2 3.12.6 step 10, where the OS allows it);
+ *   - otherwise (it runs, or nothing else holds it): it is renamed aside to `.old-<n>`, which
+ *     Windows allows while it runs, and the new one renamed in. Only between these two renames is
+ *     the path empty; a launcher's sibling repair or the next repair fills it.
+ * A launcher's sibling repair may put the wanted launcher there between the two renames: a path
+ * that holds `digest` afterwards counts as done. A failure otherwise puts the old one back.
+ * Returns where the old one went, or undefined when it was replaced or there was none.
+ */
+export function placeLauncher(
+  path: string,
+  source: string,
+  digest?: string,
+  options: PlaceOptions = {},
+): string | undefined {
+  const want = digest ?? sha256File(source);
+  if (exists(path) && !lstatSync(path).isFile()) {
+    throw new InstallError(`${path} is not what an install writes. It was left as it is.`, 4);
+  }
+  const movable = besidePath(source, path);
+  let fresh: string | undefined;
+  if (movable) {
+    if (digestOf(source) === want) fresh = source;
+  } else {
+    fresh = checkedCopy(source, path, want);
+  }
+  if (fresh === undefined) {
+    throw new InstallError(`The copy of ${basename(source)} into bin does not match.`);
+  }
+  const replacement = fresh;
+  /** A copy made here goes; a staged or aside copy stays where it is for a later try. */
+  const drop = () => {
+    if (!movable) rmSync(replacement, { force: true });
+  };
+  const old = digestOf(path);
+  const placedHere = (error: unknown): void => {
+    // A launcher's sibling repair put the wanted one there first: done.
+    if (digestOf(path) === want) {
+      drop();
+      return;
+    }
+    drop();
+    throw error;
+  };
+  if (old === want) {
+    // Already in place (A2 3.12.6: a launcher with the wanted hash counts as swapped).
+    drop();
+    options.at?.("placed");
+    return undefined;
+  }
+  if (old === null) {
+    try {
+      renameSync(replacement, path);
+    } catch (error) {
+      placedHere(error);
+    }
+    options.at?.("placed");
+    return undefined;
+  }
+  if (options.keptIn?.some((file) => digestOf(file) === old) === true) {
+    try {
+      renameSync(replacement, path);
+      options.at?.("placed");
+      return undefined;
+    } catch (error) {
+      // Running: Windows refuses to replace it (A2 3.12.6). Two renames below.
+      if (!isBusy(error)) {
+        drop();
+        throw error;
+      }
+    }
+  }
+  const aside = asideName(path);
+  try {
+    renameSync(path, aside);
+  } catch (error) {
+    drop();
+    throw error;
+  }
+  options.at?.("aside");
+  try {
+    renameSync(replacement, path);
+  } catch (error) {
+    try {
+      placedHere(error);
+    } catch (failed) {
+      // The old one goes back to its name, so a failure here leaves the path as it was.
+      if (!exists(path)) renameSync(aside, path);
+      throw failed;
+    }
+  }
+  options.at?.("placed");
   return aside;
 }
+
+export interface StableOptions {
+  /**
+   * The stable command's files that were there before current changed (stableFiles). A launcher
+   * that is there now but was not then was put there by a stable launcher's sibling repair, from
+   * the version current now names (launcher.c, while a stuck update's journal is there): it is
+   * this install's, recorded as created and undone, before anything about it can fail. Without
+   * it, what is there when each one is placed counts as there.
+   */
+  readonly before?: ReadonlySet<string>;
+  /** Tests only: after each launcher is in place (install.ts FinishOptions.afterStep). */
+  readonly afterStep?: () => void;
+}
+
+/** The stable command's files that are there now, for StableOptions.before. */
+export const stableFiles = (plan: readonly StableStep[]): ReadonlySet<string> =>
+  new Set(plan.map((step) => step.path).filter((path) => exists(path)));
 
 /**
  * Puts the stable command in place. Returns the root-relative paths it created. Pushes onto
  * `undo`, as it goes, what puts each change back, so a failure later in the finish leaves bin as
  * it was.
  */
-export function placeStable(root: string, plan: readonly StableStep[], undo: Undo[]): string[] {
+export function placeStable(
+  root: string,
+  plan: readonly StableStep[],
+  undo: Undo[],
+  options: StableOptions = {},
+): string[] {
   const created: string[] = [];
   const bin = join(root, "bin");
   if (!exists(bin)) {
@@ -283,12 +466,29 @@ export function placeStable(root: string, plan: readonly StableStep[], undo: Und
       continue;
     }
     const source = step.copyOf ?? "";
-    const had = exists(step.path);
-    if (had && sha256File(step.path) === sha256File(source)) continue;
+    const removeIt: Undo = {
+      what: rel,
+      run: () => {
+        if (exists(step.path)) removePlaced(step.path);
+      },
+    };
+    // A launcher's sibling repair put one here after the switch: it is this install's, recorded
+    // and undone before the hashing below can fail.
+    const appeared =
+      options.before !== undefined && !options.before.has(step.path) && exists(step.path);
+    if (appeared) {
+      created.push(rel);
+      undo.push(removeIt);
+    }
+    if (exists(step.path) && sha256File(step.path) === sha256File(source)) {
+      options.afterStep?.();
+      continue;
+    }
     const aside = placeLauncher(step.path, source);
     if (aside !== undefined) {
       // The new copy goes (aside, if a client started it meanwhile); the old one, which may run,
-      // is renamed back.
+      // is renamed back (and, when it had appeared, goes by the undo pushed above, which runs
+      // after this one).
       undo.push({
         what: rel,
         run: () => {
@@ -296,15 +496,11 @@ export function placeStable(root: string, plan: readonly StableStep[], undo: Und
           renameSync(aside, step.path);
         },
       });
-    } else {
+    } else if (!appeared) {
       created.push(rel);
-      undo.push({
-        what: rel,
-        run: () => {
-          if (exists(step.path)) removePlaced(step.path);
-        },
-      });
+      undo.push(removeIt);
     }
+    options.afterStep?.();
   }
   return created;
 }
@@ -321,13 +517,18 @@ export function digestOf(path: string): string | null {
 /**
  * Brings one stable launcher to `digest` from the first of `sources` that holds exactly it: does
  * nothing when it already does (a launcher already in place with the wanted hash counts as
- * swapped, A2 3.12.6), else places a copy (placeLauncher). Returns false when no source holds it.
+ * swapped, A2 3.12.6), else places it (placeLauncher). Returns false when no source holds it.
  */
-export function ensureLauncher(path: string, digest: string, sources: readonly string[]): boolean {
+export function ensureLauncher(
+  path: string,
+  digest: string,
+  sources: readonly string[],
+  options: PlaceOptions = {},
+): boolean {
   if (digestOf(path) === digest) return true;
   for (const source of sources) {
     if (digestOf(source) !== digest) continue;
-    placeLauncher(path, source, digest);
+    placeLauncher(path, source, digest, options);
     return true;
   }
   return false;
@@ -350,11 +551,16 @@ export function asideCopies(path: string): string[] {
 }
 
 /**
- * Deletes the launchers renamed aside (`bin/*.old-<n>`): single files that nothing starts by name.
- * Call it only with update.lock held and no journal naming them (A2 3.12.6 step
- * 14). A refused delete (one that still runs) leaves it for a later pass. Returns how many went.
+ * Deletes what a launcher swap leaves in bin once it is over (A2 3.12.6 step 14):
+ * the launchers renamed aside (`<name>.old-<n>`), staged copies (`<name>.new`) and the temporary
+ * copies of a swap or of a launcher's sibling repair that a kill left (`.<name>.….tmp`), for the
+ * stable launchers' names only. Call it only with update.lock held and no journal, so none of them
+ * is named by one. An aside launcher is a single file that nothing starts by name; one that still
+ * runs cannot be deleted on Windows, and a refused delete leaves it for a later pass. One with
+ * another hard link is kept: Windows refuses to delete a running program only through its last
+ * link, so its delete would prove nothing. Returns how many went.
  */
-export function cleanAsideLaunchers(root: string): number {
+export function cleanLaunchers(root: string): number {
   const bin = join(root, "bin");
   let names: string[];
   try {
@@ -362,12 +568,14 @@ export function cleanAsideLaunchers(root: string): number {
   } catch {
     return 0;
   }
-  let removed = 0;
+  let removed = removeStaleTemps(bin, WINDOWS_LAUNCHERS);
   for (const name of names) {
-    if (!/\.old-\d+$/.test(name)) continue;
     const path = join(bin, name);
+    const own = WINDOWS_LAUNCHERS.some((launcher) => besidePath(path, join(bin, launcher)));
+    if (!own) continue;
     try {
-      if (!lstatSync(path).isFile()) continue;
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.nlink !== 1) continue;
       rmSync(path);
       removed += 1;
     } catch {
