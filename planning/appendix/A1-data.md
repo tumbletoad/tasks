@@ -113,7 +113,7 @@ Never put a live space in a folder a sync client copies: a client can copy `spac
 - The projection and the backups may go to a synced folder (`projection.dir`, `backup.dir`), which gives a readable copy on other devices without risk to the database.
 
 **When the check fails** (`read_only(check_failed)`) the space takes no new backup, and the read-only words name two actions, both user-only and both leaving the folder as it is. Conflict copies are never deleted automatically.
-- **Restore the latest verified backup** into a new folder (`tasks space restore latest <space> --to <folder>`): the space's newest complete backup that passes every check a restore makes (`restore/rescue.ts` `newestVerifiedBackup`) restores as a read-only copy. A newer one that does not verify is skipped and kept.
+- **Restore the latest verified backup** into a new folder (`tasks space restore latest <space> --to <folder>`): the space's newest complete backup that passes every check a restore makes restores as a read-only copy (`restore/rescue.ts` `restoreLatest`). The candidates are restored newest first, each verified by its own restore: a newer one that does not verify, or that went away since the listing, is skipped and kept, and nothing is unpacked twice.
 - **Rescue readable data** (`tasks space rescue <space>`): a read-only connection writes every row it can still read into a new file `exchange/rescued/rescued-<utc>.jsonl` (3.18's `data.jsonl` format) for review. A table that fails partway keeps the rows read before the failure and is named in the result. Tests: `[A1.5.sync.check-failed-ways]`, `[A1.5.rescue.damaged]`. Their buttons on the read-only bar are A5's.
 
 **Not built yet.** The same `quick_check` after an unclean shutdown and after an outside write (3.9).

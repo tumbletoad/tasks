@@ -14,7 +14,7 @@
 //                   transfer waits for M3.08's machine keys and states)
 //   space/restore   a backup or a bundle into a new folder,   (restoreBackup, then served)
 //                   a read-only copy, or in place, claimed    (SpaceManager.restoreInPlace)
-//                   with a new epoch; `latest` of a space:    (newestVerifiedBackup)
+//                   with a new epoch; `latest` of a space:    (restoreLatest)
 //                   its newest backup that verifies, into a new folder (A1 3.2)
 //   space/rescue    the rows that can still be read, into     (rescueSpace)
 //                   `exchange/rescued/` (A1 3.2)

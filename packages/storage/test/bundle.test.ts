@@ -27,7 +27,7 @@ import { StorageError } from "../src/errors.ts";
 import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
 import { backupSpace } from "../src/backup/backup.ts";
-import { rescueSpace } from "../src/restore/rescue.ts";
+import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
@@ -757,6 +757,58 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     } finally {
       writer.conn.close();
     }
+  });
+});
+
+describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backup that restores", () => {
+  test("a newer one that does not verify, or that goes away meanwhile, is skipped and the next is restored; the target is checked first", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const id = space.spaceId;
+    const dir = join(folder, "backups");
+    const at = Date.UTC(2026, 10, 14);
+    await writeCommits(folder, 1);
+    const oldest = await backupSpace(checked, folder, { kind: "daily", now: () => at - 3_000 });
+    await writeCommits(folder, 1);
+    const middle = await backupSpace(checked, folder, { kind: "daily", now: () => at - 2_000 });
+    await writeCommits(folder, 1);
+    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    // The newest no longer verifies, though its size is right.
+    const bytes = readFileSync(newest.file);
+    bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
+    writeFileSync(newest.file, bytes);
+
+    // The middle one goes away after the listing, while its restore begins (retention, say).
+    const { rmSync } = await import("node:fs");
+    let calls = 0;
+    const parent = folders.make();
+    const { restored, backup } = await restoreLatest(
+      checked,
+      dir,
+      id,
+      join(parent, "mira"),
+      {},
+      {
+        freeBytes: () => {
+          calls += 1;
+          if (calls === 2) rmSync(middle.file);
+          return Number.MAX_SAFE_INTEGER;
+        },
+      },
+    );
+    expect(backup).toBe(oldest.name);
+    expect(restored.space.lastSeq).toBe(oldest.sidecar.seq);
+    expect(readdirSync(parent)).toEqual(["mira"]);
+    // The newer one that does not verify is kept.
+    expect(existsSync(newest.file)).toBe(true);
+
+    // The target is checked before any candidate: one already there is refused at once.
+    await expectCode(() => restoreLatest(checked, dir, id, join(parent, "mira")), "SPACE_EXISTS");
+    // No backup of the space restores.
+    await expectCode(
+      () => restoreLatest(checked, dir, newId("sp", osRandom), join(parent, "other")),
+      "BACKUP_INVALID",
+    );
   });
 });
 
