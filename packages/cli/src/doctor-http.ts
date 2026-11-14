@@ -109,7 +109,8 @@ async function windowsExcluded(
       "excludedportrange",
       "protocol=tcp",
     ],
-    { env, cwd: system, deadlineMs: 15_000, maxChars: 1024 * 1024 },
+    // netsh runs in this process's environment, as it always has.
+    { env: process.env, cwd: system, deadlineMs: 15_000, maxChars: 1024 * 1024 },
   );
   if (out === undefined) return false;
   return excludedRanges(out).some(([lo, hi]) => lo <= port && port <= hi);

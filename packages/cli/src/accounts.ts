@@ -114,8 +114,15 @@ export async function readAccounts(
   env: Readonly<Record<string, string | undefined>>,
   cwd: string,
 ): Promise<AccountFacts | undefined> {
+  // The OS's own tools run in this process's environment, as they always have: only where the
+  // system folder is comes from `env`.
   const run = (argv: readonly string[]) =>
-    helperOutput(argv, { env, cwd, deadlineMs: 30_000, maxChars: 4 * 1024 * 1024 });
+    helperOutput(argv, {
+      env: process.env,
+      cwd,
+      deadlineMs: 30_000,
+      maxChars: 4 * 1024 * 1024,
+    });
   if (platform === "win32") {
     const root = env["SystemRoot"] ?? "C:\\Windows";
     const ps = win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
