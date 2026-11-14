@@ -68,8 +68,9 @@ interface Entry {
 
 /** Every file and folder under `top` (and `top`), by its path below the root. */
 function walk(top: string, into: Map<string, Entry>): void {
-  if (lstatSync(top, { throwIfNoEntry: false }) === undefined) return;
-  const stat = lstatSync(top);
+  // One lstat: the projection renames its temporary files away while the walk runs.
+  const stat = lstatSync(top, { throwIfNoEntry: false });
+  if (stat === undefined) return;
   const type = stat.isDirectory()
     ? "folder"
     : stat.isFile()
