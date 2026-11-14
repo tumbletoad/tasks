@@ -1083,7 +1083,7 @@
     },
     {
       "id": "A4.5.run.state-machine",
-      "title": "Property test of the run state machine with cancels in every state and the service killed at every boundary (a store write or an external step, before or after it takes effect, recovery included) and restarted, with claims repeated also after their reply, agents started and exiting with every outcome and the shim's timeouts, shims dying without exit.json, shims ending while the service is down and wall clock steps: at most one spawn and one claim reply per run, no agent without a durable claim its shim was replied with, final states that match what the processes did, and every run final or still queued once every window has passed, never unknown when its shim left exit.json, on the in-memory store and on the space database",
+      "title": "Property test of the run state machine with cancels in every state and the service killed at every boundary (a store write or an external step, before or after it takes effect, recovery included) and restarted, with claims repeated also after their reply, agents started and exiting with every outcome and the shim's timeouts, shims dying without exit.json, shims ending while the service is down, start failures and wall clock steps: at most one spawn and one claim reply per run, no agent without a durable claim its shim was replied with, final states that match what the processes did, and every run final or still queued once every window has passed, never unknown when its shim left exit.json or a heard start failure, and cancels shown to reach every state a v1 run can be in, on the in-memory store and on the space database",
       "source": "A4 3.11.2, A4 3.11.9, A4 5.1, A4 5.2, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
@@ -1091,7 +1091,7 @@
     },
     {
       "id": "A4.5.run.machine",
-      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep finishing a run left reconciling, and the claim window on the monotonic and the wall clock",
+      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep applying recovery's rule to every open run, a start failure after a Stop, and the claim window on the monotonic and the wall clock",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",

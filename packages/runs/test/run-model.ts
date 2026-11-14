@@ -51,6 +51,10 @@ interface Processes {
   claims: string[];
   agents: number;
   agentRunning: boolean;
+  /** The shim reported that its check or the agent's spawn failed, and exited. */
+  failedToStart?: boolean;
+  /** A live service answered that report: the run then knows no agent started. */
+  failureHeard?: boolean;
   /** The stop step reached the shim. */
   stopped: boolean;
   exit?: RunExit;
@@ -61,6 +65,7 @@ export type Event =
   | { kind: "start"; pick: number; outcome: "spawned" | "refused" | "unknown" }
   | { kind: "claim"; pick: number; same: boolean }
   | { kind: "agent"; pick: number }
+  | { kind: "startFails"; pick: number; how: "verify_failed" | "spawn_failed" }
   | { kind: "native"; pick: number }
   | { kind: "exit"; pick: number; how: "ok" | "error" | "wall" | "idle" }
   | { kind: "die"; pick: number }
@@ -82,6 +87,11 @@ export interface ModelBackend {
   /** The store on the durable state, as a new service would open it. */
   store(): RunStore;
   tasks: readonly string[];
+  /**
+   * Told the durable state of every run a cancel reaches, so a test can show that its scenarios
+   * cancel in every reachable state: `starting` split by its claim, `unknown` by its reason.
+   */
+  cancelledIn?: (state: string) => void;
 }
 
 const RESULTS: Record<"ok" | "error" | "wall" | "idle" | "interrupted" | "none", RunResult> = {
@@ -326,6 +336,21 @@ export class World {
         );
         return;
       }
+      case "startFails": {
+        const id = this.#pick(event.pick);
+        if (id === undefined) return;
+        const p = this.#processes(id);
+        if (!p.shimAlive || p.replied === undefined || p.agents > 0 || p.exit !== undefined) return;
+        // The shim's check or its spawn of the agent failed: it reports that and exits, with no
+        // agent and no exit.json, also when the report never reaches a service.
+        p.failedToStart = true;
+        await this.#service(async (m) => {
+          await m.report(id, { kind: event.how });
+          p.failureHeard = true;
+        });
+        p.shimAlive = false;
+        return;
+      }
       case "native": {
         const id = this.#pick(event.pick);
         if (id === undefined) return;
@@ -364,6 +389,19 @@ export class World {
         const id = this.#pick(event.pick);
         if (id === undefined) return;
         this.cancels.add(id);
+        if (this.#backend.cancelledIn !== undefined) {
+          const before = await this.#backend.store().readRun(id);
+          if (before !== undefined) {
+            const claimed = before.evidence.claim === undefined ? "unclaimed" : "claimed";
+            this.#backend.cancelledIn(
+              before.state === "starting"
+                ? `starting:${claimed}`
+                : before.state === "unknown"
+                  ? `unknown:${before.reason ?? ""}`
+                  : before.state,
+            );
+          }
+        }
         const life = this.#life;
         const p = this.#processes(id);
         const stop = (): Promise<void> =>
@@ -472,8 +510,16 @@ export class World {
           if (started && p?.exit === undefined) throw new Error(`cancelled with no exit: ${where}`);
           break;
         case "failed":
-          if ((run.reason === "not_claimed" || run.reason === "spawn_failed") && started) {
+          if (
+            (run.reason === "not_claimed" ||
+              run.reason === "spawn_failed" ||
+              run.reason === "verify_failed") &&
+            started
+          ) {
             throw new Error(`failed as never started, with an agent: ${where}`);
+          }
+          if (run.reason === "verify_failed" && p?.failedToStart !== true) {
+            throw new Error(`failed its check without the shim saying so: ${where}`);
           }
           if (run.reason === "not_claimed" && run.evidence.claim !== undefined) {
             throw new Error(`a claimed run failed as unclaimed: ${where}`);
@@ -499,6 +545,10 @@ export class World {
         // A definite exit settles a run, however the service heard of it: live or from exit.json.
         if (run.state === "unknown" && p?.exit !== undefined && run.evidence.claim !== undefined) {
           throw new Error(`unknown although its shim left exit.json: ${where}`);
+        }
+        // A start failure the service heard is definite: no agent started.
+        if (run.state === "unknown" && p?.failureHeard === true) {
+          throw new Error(`unknown although the service heard its start fail: ${where}`);
         }
       }
     }

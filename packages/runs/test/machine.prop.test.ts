@@ -16,7 +16,7 @@ import { openLaunchSpace } from "@tasks/testkit";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { World, type Event } from "./run-model.ts";
 
 const MACHINE = "m_3q7k9d2xw8f4r6t1c5v0b2n8a7";
@@ -43,6 +43,14 @@ const event: fc.Arbitrary<Event> = fc.oneof(
     arbitrary: fc.record({ kind: fc.constant("claim" as const), pick, same: fc.boolean() }),
   },
   { weight: 4, arbitrary: fc.record({ kind: fc.constant("agent" as const), pick }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant("startFails" as const),
+      pick,
+      how: fc.constantFrom("verify_failed" as const, "spawn_failed" as const),
+    }),
+  },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("native" as const), pick }) },
   {
     weight: 3,
@@ -94,6 +102,9 @@ const scenario = fc.array(event, { minLength: 4, maxLength: 40, size: "max" });
 
 describe("[A4.5.run.state-machine] the run state machine under cancels in every state and crashes at every boundary", () => {
   test("in memory: one spawn and one claimed agent per run, final states that match the processes, and every run settles", async () => {
+    // The states the scenarios cancel in, so the test shows a cancel reaches each, not only that
+    // the property held.
+    const cancelledIn = new Map<string, number>();
     await fc.assert(
       fc.asyncProperty(scenario, async (events) => {
         const clock: { world?: World } = {};
@@ -102,6 +113,7 @@ describe("[A4.5.run.state-machine] the run state machine under cancels in every 
           machine: MACHINE,
           store: () => new MemoryExecutionStore(durable),
           tasks: ["t_0000000000000000000000000a", "t_0000000000000000000000000b"],
+          cancelledIn: (state) => cancelledIn.set(state, (cancelledIn.get(state) ?? 0) + 1),
         });
         clock.world = world;
         for (const e of events) {
@@ -114,6 +126,22 @@ describe("[A4.5.run.state-machine] the run state machine under cancels in every 
       }),
       { numRuns: 5_000 },
     );
+    // Every state a v1 run can be cancelled in. `waiting_for_input` is never entered in v1, and
+    // `reconciling` lasts only between recovery's two commits; [A4.5.run.machine] cancels in both.
+    const states = [
+      "queued",
+      "starting:unclaimed",
+      "starting:claimed",
+      "running",
+      "cancelling",
+      "unknown:lost",
+      "unknown:stop_timed_out",
+      "succeeded",
+      "failed",
+      "timed_out",
+      "cancelled",
+    ];
+    for (const state of states) expect(cancelledIn.get(state) ?? 0, state).toBeGreaterThan(0);
   }, 600_000);
 
   test("on the space database: the same property", async () => {

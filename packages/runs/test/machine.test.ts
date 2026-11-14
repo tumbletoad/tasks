@@ -458,6 +458,60 @@ describe("[A4.5.run.machine] the run machine's rules", () => {
     expect(durable.runs.get(run.id)?.result).toEqual(OK);
   });
 
+  test("the sweep applies recovery's rule: an observation that did not answer at start, or a shim lost while the service runs, settles without a restart", async () => {
+    let answers = false;
+    const seen = new Map<string, RunObservation>();
+    const b = bench((run) => {
+      if (!answers) throw new Error("The process table could not be read");
+      return seen.get(run.id) ?? { kind: "pending" };
+    });
+    const ended = await b.runIn("running");
+    const restarted = b.make();
+    seen.set(ended.id, { kind: "exited", exit: { result: OK } });
+    // At start the observation fails: the run waits, as for a live shim.
+    expect((await restarted.recover()).find((r) => r.id === ended.id)?.state).toBe("running");
+    answers = true;
+    expect((await restarted.sweep()).map((r) => [r.id, r.state])).toEqual([
+      [ended.id, "succeeded"],
+    ]);
+    // A shim that dies while this service runs, leaving nothing, is lost at the next sweep.
+    const died = await b.runIn("running");
+    seen.set(died.id, { kind: "lost" });
+    expect((await restarted.sweep()).map((r) => [r.id, r.state, r.reason])).toEqual([
+      [died.id, "unknown", "lost"],
+    ]);
+  });
+
+  test("a definite start failure after a Stop settles the run cancelled: no agent started", async () => {
+    for (const kind of ["verify_failed", "spawn_failed"] as const) {
+      const b = bench();
+      const run = await b.queue();
+      await b.machine.start(run.id, b.spawned);
+      await b.machine.claim(run.id, "claim-1", () => Promise.resolve());
+      expect((await b.machine.cancel(run.id, () => Promise.resolve()))?.state).toBe("cancelling");
+      const after = await b.machine.report(run.id, { kind });
+      expect(after, kind).toMatchObject({ state: "cancelled", reason: null, result: null });
+    }
+    // Also once the stop timed out: the failure is the definite end the unknown run waited for.
+    {
+      const b = bench();
+      const run = await b.queue();
+      await b.machine.start(run.id, b.spawned);
+      await b.machine.claim(run.id, "claim-1", () => Promise.resolve());
+      await b.machine.cancel(run.id, () => Promise.resolve());
+      b.clock.mono += RUN_STOP_TIMEOUT_MS;
+      await b.machine.sweep();
+      expect(await b.store.readRun(run.id)).toMatchObject({ state: "unknown" });
+      const after = await b.machine.report(run.id, { kind: "verify_failed" });
+      expect(after).toMatchObject({ state: "cancelled", reason: null });
+    }
+    // Once the agent's PID is recorded, a start failure is not the run's: the exit decides.
+    const b = bench();
+    const run = await b.runIn("running");
+    await b.machine.cancel(run.id, () => Promise.resolve());
+    expect((await b.machine.report(run.id, { kind: "spawn_failed" }))?.state).toBe("cancelling");
+  });
+
   test("finalFor: cancelled after a stop, timed out at a limit, succeeded on success, failed with the outcome", () => {
     const run = { at: {} } as RunRecord;
     expect(finalFor(run, { result: OK })).toEqual({ next: "succeeded", patch: { result: OK } });

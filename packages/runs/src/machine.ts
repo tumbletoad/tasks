@@ -15,7 +15,8 @@
 //    recorded as `reconciling` first, so a crash while its files are read leaves a record that says
 //    so. What the shim left comes before any time limit, and an `unknown` run whose stop timed out
 //    stays on the list until its exit settles it or its shim is found gone, because an exit the
-//    service did not hear while it was down is still a definite exit.
+//    service did not hear while it was down is still a definite exit. The sweep applies the same
+//    rule while the service runs, so what did not finish at start is tried again.
 // 4. What a shim reports never keeps a run open. A result the store refuses is left out and the
 //    transition commits without it; an outcome that names no reason of A4's is `no_result`.
 //
@@ -102,7 +103,7 @@ export type RunObservation =
   | { kind: "lost" };
 
 export interface RunRecovery {
-  /** Looks at a run's shim and files after a restart. Read-only. */
+  /** Looks at a run's shim and files, at start and at every sweep, also of a live run. Read-only. */
   observe(run: RunRecord): Promise<RunObservation>;
 }
 
@@ -330,14 +331,15 @@ export class RunMachine {
   }
 
   /**
-   * The live service's periodic check: a starting run unclaimed past its window is `failed`
-   * (`not_claimed`), a cancelling run whose process has not ended in time is `unknown`
-   * (`stop_timed_out`), and a `reconciling` run, whose shim is already known lost, is settled by
-   * recovery's rule: a write recovery or a live exit could not finish (a store call past its
-   * deadline that then failed) is finished here, not at the next restart. Returns the runs it moved.
+   * The live service's periodic check, recovery's rule again (#recoverOne): every open run is
+   * settled by what its shim left, then by its time limits (a starting run unclaimed past its
+   * window is `failed`, `not_claimed`; a cancelling run whose process has not ended in time is
+   * `unknown`, `stop_timed_out`). So an observation or a write that did not finish at start is
+   * tried again, and a shim lost while the service runs is settled without a restart. Returns the
+   * runs it moved.
    */
   async sweep(): Promise<RunRecord[]> {
-    const settled = await this.#settleAll("sweep");
+    const settled = await this.#settleAll();
     return settled.filter((s) => s.moved).map((s) => s.run);
   }
 
@@ -346,20 +348,18 @@ export class RunMachine {
    * It never spawns and never sends a stop. Returns the runs as recovery left them.
    */
   async recover(): Promise<RunRecord[]> {
-    const settled = await this.#settleAll("recover");
+    const settled = await this.#settleAll();
     return settled.map((s) => s.run);
   }
 
-  async #settleAll(mode: "sweep" | "recover"): Promise<{ run: RunRecord; moved: boolean }[]> {
+  async #settleAll(): Promise<{ run: RunRecord; moved: boolean }[]> {
     const { runs } = await this.#call(() => this.#store.openWork(this.#machine));
     const results = await Promise.allSettled(
       runs.map(async (candidate) => {
         let read: RunRecord | undefined;
         const after = await this.#section(candidate.id, async () => {
           read = await this.#read(candidate.id);
-          if (read === undefined) return undefined;
-          if (mode === "recover" || read.state === "reconciling") return this.#recoverOne(read);
-          return this.#decide(candidate.id, (r) => this.#timedOut(r), false, read);
+          return read === undefined ? undefined : this.#recoverOne(read);
         });
         return { run: after, moved: after !== undefined && after.version !== read?.version };
       }),
@@ -378,7 +378,10 @@ export class RunMachine {
     return out;
   }
 
-  /** Recovery's rule for one run, in its section, on the record read there. */
+  /**
+   * Recovery's rule for one run, in its section, on the record read there: at start and at every
+   * sweep. What the shim left comes first; a time limit applies only while the shim is pending.
+   */
   async #recoverOne(first: RunRecord): Promise<RunRecord | undefined> {
     let run: RunRecord | undefined = first;
     for (let attempt = 0; attempt < RETRIES && run !== undefined; attempt += 1) {
@@ -448,9 +451,17 @@ export class RunMachine {
         return HELD.has(state) ? { next: state, patch: { evidence: report.evidence } } : undefined;
       case "verify_failed":
       case "spawn_failed":
-        return state === "starting" && run.evidence.claim !== undefined
-          ? { next: "failed", patch: { reason: report.kind } }
-          : undefined;
+        // A definite end before any agent: no process will exit to settle the run. After a Stop
+        // it is cancelled, as every stopped run that ends, also once the stop timed out; once an
+        // agent's PID is recorded, a start failure is not this run's and its exit decides.
+        if (run.evidence.claim === undefined || run.evidence.pid !== undefined) return undefined;
+        if (state === "cancelling" || awaitsExit(run)) return { next: "cancelled" };
+        if (state === "starting" || state === "reconciling") {
+          return run.at.cancelling === undefined
+            ? { next: "failed", patch: { reason: report.kind } }
+            : { next: "cancelled" };
+        }
+        return undefined;
       case "exited":
         // The process ended: from every state a process may have been in, or that lost track of
         // it. A run never claimed had no process, so an exit report for it is not its own.
