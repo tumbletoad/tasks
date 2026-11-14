@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ImportProblem } from "@tasks/contracts";
 import { beforeAll, describe, expect, test } from "vitest";
 import {
   IMPORT_LOG,
@@ -768,7 +769,10 @@ describe("[A7.3.15.importer.mapping] each mapping row of A7 3.15.3 on its fixtur
     );
   });
 
-  test("the plan's problems carry no task text", () => {
+  test("the plan's problems carry no task text, and each fits the report's shape", () => {
+    for (const p of [...parse.problems, ...plan.problems]) {
+      expect(ImportProblem.safeParse(p).success, JSON.stringify(p)).toBe(true);
+    }
     const serialised = JSON.stringify(plan.problems);
     for (const t of index.tasks) {
       expect(serialised).not.toContain(t.title);
