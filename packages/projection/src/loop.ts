@@ -65,8 +65,10 @@ export async function runProjection(projector: Projector, options: LoopOptions):
     try {
       pending = projector.pending();
     } catch (error) {
+      // A reader that cannot read pauses like a failing batch, so the log is not flooded.
+      failures += 1;
       options.onError?.(error);
-      await sleep(poll);
+      await sleep(pauseAfter());
       continue;
     }
     const t = now();

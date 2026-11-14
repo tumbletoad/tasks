@@ -72,7 +72,7 @@ One package per area under `packages/`, named `@tasks/<name>`, private and never
 | `files` | Creating files and folders with an exact mode | A2 3.2.2 |
 | `core` (planned) | Pure domain logic with no I/O: operation rules, validation, undo planning, the autonomy table, digest rendering, the write-time sanitiser | A1, A3 |
 | `storage` | The SQLite driver, schema, migrations, writer and readers, backups, restore, recovery, the `launches` table | A1 |
-| `projection` (planned) | The `view/` renderer and `catalog.jsonl` | A1 3.13 |
+| `projection` | The `view/` renderer and `catalog.jsonl`, the outbox's consumer | A1 3.13 |
 | `service` | The hub, the local protocol server, HTTP and WebSocket, the MCP endpoint, binding, `machine.toml`, the service install, the request path, the launch service, T3 pairing, agent setup, install and update | A2 |
 | `bridge` | The wire library and the `tasks mcp` forwarder | A2 3.7 |
 | `launch` | Launch states and routes, targets, places, the shim's server side, terminals, the brief, the URL opener, the T3 client | A4 3.2–3.10, 3.15 |
@@ -86,6 +86,7 @@ One package per area under `packages/`, named `@tasks/<name>`, private and never
 **Where code lives, and why.** Each placement keeps a dependency rule true.
 - **Wire protocol.** `packages/bridge/src/protocol/` holds the wire code that the CLI, the shim and the bridge share, with Node built-ins only, so the bridge bundle stays small (A2 3.7.1). The server side is `packages/service/src/local/`, which imports it. `docs/protocol/tasks-local-1.md` documents the protocol.
 - **Files.** `packages/files` is a package of its own because `launch` and the shim need it and may import neither `service` nor `storage`. Storage uses its own `files.ts`, built on it behind the `FileIo` seam its tests inject failures into. `packages/service/src/hub/permissions.ts` holds the one rule for who else may write what the product trusts.
+- **Projection.** `packages/projection` reads a space through a reader connection and writes its outbox only through the writer's two bookkeeping calls (`projected`, `queueProjection`), so it needs no operation. The service runs it in `hub/projection-entry.ts`, one worker per open space.
 - **Hub.** `serve.ts` is the only code that touches process-wide state (crash handlers, signals, fatal reports), so tests run the lifecycle (`service.ts`) in-process. `paths.ts` is pure over the host's facts, so every OS's layout is tested on every OS.
 - **HTTP.** The CLI imports only `@tasks/service/http/shared`, which loads no storage.
 - **Machine configuration.** `@tasks/launch` reads the plain values of the `machine.toml` sections A4 owns, with no TOML dependency. The file itself is A2's (`@tasks/service/config`).

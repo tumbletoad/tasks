@@ -72,7 +72,7 @@ For a part that is built, this text is the contract: the guarantee, the interfac
   backups/, exports/           verified snapshots and the bundles the user asked for (3.18)
 ```
 
-A space may live in any folder `machine.toml` registers (A2). Only `space.db` and `attachments/` are irreplaceable: `space.json` is rebuilt from the database and `view/` from the outbox. `exchange/` holds files people may have edited, so nothing removes them automatically. Machine-local state (A2) is never inside a space folder; the per-space local settings are `<state>/spaces/<space_id>.json` (`packages/service/src/hub/space-settings.ts`). Not built yet there: `last_seq` in `spaces_seen` (A6), `projection.dir` (3.13), the last clean-shutdown marker (3.2) and `transfers_imported[]`, the transfer IDs this machine has imported, so a second import of one transfer bundle is refused (3.18).
+A space may live in any folder `machine.toml` registers (A2). Only `space.db` and `attachments/` are irreplaceable: `space.json` is rebuilt from the database and `view/` from the outbox. `exchange/` holds files people may have edited, the projection's rescued files among them (3.13), so nothing removes them automatically. Machine-local state (A2) is never inside a space folder; the per-space local settings are `<state>/spaces/<space_id>.json` (`packages/service/src/hub/space-settings.ts`), `projection.dir` and the projection's rescues among them (3.13). Not built yet there: `last_seq` in `spaces_seen` (A6), the last clean-shutdown marker (3.2) and `transfers_imported[]`, the transfer IDs this machine has imported, so a second import of one transfer bundle is refused (3.18).
 
 **Rules.**
 - **Exact modes whatever the umask:** every file and folder storage creates gets 0700 or 0600 through a descriptor, because the mode given to `open` or `mkdir` is masked by the umask. Only what this call created gets a mode; what already exists keeps its own. One implementation, `packages/files`, used through storage's `files.ts`; tests `[A2.3.2.2.permissions.*]`. An existing space folder is not judged for who else can write it (open item 16).
@@ -149,7 +149,7 @@ Schemas 0.1 and 0.2 are built and frozen (3.17). The SQL in `packages/storage/mi
 
 **System commits** are written only by `writeSystemCommit` (3.7), by the system actor in scope `system`, with no receipt: `machine.register`, `actor.register`, `schema.migrate` and `space.claim`. Their request ID names the row or incarnation, so each happens once. The space row has no history.
 
-**Tables for later steps**, from step 0003 on: `projection_files` (3.13), the search tables (3.12), and these:
+**Tables for later steps**, from step 0003 on: the search tables (3.12) and these. The projection's record of its files is no table: it is a file in the projection's folder, which it describes (3.13).
 
 ```sql
 CREATE TABLE history_text (hash TEXT PRIMARY KEY, text TEXT NOT NULL) STRICT;   -- text of 1 KiB or more
@@ -190,7 +190,6 @@ CREATE TABLE routines (                          -- A4 3.12.1; spec holds templa
 ```
 
 - From the step that adds `history_text`, text values of 1 KiB or more are stored there once by SHA-256 and referenced as `{"$t": hash}` in `changes` and `commits.ops`, so the after-value of one edit and the before-value of the next share storage.
-- `projection_files(path PRIMARY KEY, task_id, sha256, seq, entry)` records what the projection last wrote, including the task's catalogue line as rendered.
 
 **Records whose lifecycle A4 owns.** A4 writes launch intents, sessions and runs only through its `ExecutionStore` interface (X7). In v1 that interface writes these tables in the space database as A1 operations with their history; from L1 a machine without authority keeps them in a machine-local journal and publishes observations to the authority (A6). `launches` is built (0.1). A launch names its place, never an absolute path; a session's absolute folder stays in machine state (A4 3.10).
 
@@ -257,7 +256,7 @@ Later operations of the same request that name the draft's client ID are rebound
 
 ### 3.7 The write path
 
-All writes go through the space's writer. The only writes that bypass history are bookkeeping: receipts of requests that changed nothing (3.8), deleting processed outbox rows, `projection_files`, search maintenance and incremental vacuum. All but those receipts are derivable.
+All writes go through the space's writer. The only writes that bypass history are bookkeeping: receipts of requests that changed nothing (3.8), the projection's outbox rows (marked rendered, or queued for a rebuild, `write/outbox.ts`, 3.13), search maintenance and incremental vacuum. All but those receipts are derivable.
 
 **Where it lives.** `packages/storage/src/write/`: `request.ts` (types, `WRITE_LIMITS`, `WRITE_ERROR_CODES`, the checks before the transaction), `writer.ts` (`SpaceWriter`, `writeSystemCommit`), `fields.ts`, `positions.ts`, `receipts.ts`, `canonical.ts`, `launches.ts`. Storage keeps Zod out, because it would load in every worker. Tests: `[A1.5.write.*]`, including the model test `[A1.5.write.lost-update]`. Contracts map every storage code to a public code (`packages/contracts/src/a1-errors.ts`).
 
@@ -287,8 +286,7 @@ All writes go through the space's writer. The only writes that bypass history ar
 - The compact form carries `entities` with their post-change rows; the full form adds the `changes` rows (3.4). A child's event carries the child's row, and a subscriber that holds the task sets its `touched` itself. A launch moves nothing.
 - A redact commit's event names the redacted IDs and carries no content (3.11.4).
 
-**Crash behaviour.** Before `COMMIT` nothing of the request exists and a retry applies once; after it, a retry returns the stored result with `replayed: true`. The crash harness checks both (5). Not built yet:
-- After `COMMIT`, before the projection: the outbox rows exist and the projection catches up at start. A crash during a projection write leaves `view/**/.tmp-*` files, which are deleted at start.
+**Crash behaviour.** Before `COMMIT` nothing of the request exists and a retry applies once; after it, a retry returns the stored result with `replayed: true`. The crash harness checks both (5). After `COMMIT`, before the projection, the outbox rows exist and the projection catches up at start; a crash during a projection write leaves `.tmp-` files and a journal, which the next start removes and plays forward (3.13, `[A1.5.projection.kill]`). Not built yet:
 - An unreferenced attachment blob from a crash during staging is removed by `tasks space gc`.
 - A transfer interrupted in `preparing` or `published` is reconciled at start (3.18). A redact commit whose cleanup did not run has its `redact` outbox row, and the cleanup runs at start.
 - Disk full or an I/O error rolls back with `DURABILITY_FAILED`. The space then turns read-only until at least 200 MB are free and a `quick_check` passes (M3.15; today the error only reaches the caller). The UI keeps the unsaved edit visible.
@@ -314,7 +312,8 @@ Built: `write/receipts.ts` (its header states the fingerprint and what a receipt
 main thread (event loop): HTTP, socket and pipe, bridges, UI streams      no SQLite connection to a space
    ├── storage worker per open space: the space's only write connection, its claim and writer.lock
    ├── reader connections: read-only, short transactions
-   └── maintenance worker: projection, backups, retention, exports, import diffs, rebuilds
+   └── maintenance workers: the projection (one per open space, its own reader), backups,
+       retention, exports, import diffs, rebuilds
 ```
 
 **Workers** (`packages/storage/src/worker/`; tests `[A1.5.writer.worker]`, `[A1.5.driver.worker]`). A space is reached only through `StorageWorker.openSpaceWriter` and `openSpaceReader`, and the main thread never loads `node:sqlite`. A request that outlives `REQUEST_TIMEOUT_MS` may still be decided, so the caller retries with the same ID. A request keeps its queue place until the worker answers it, so timeouts cannot grow the real queue.
@@ -427,7 +426,7 @@ Not built yet (M3.04, M3.14).
 | `proposals.ops` and `alternatives` | Proposals that touch the entity become `superseded` (reason `redacted`) and their payloads are scrubbed | String replaced. Pending proposals that contained it become `superseded` |
 | `exchanges`, `exchange_items.base` | Items for the entity are deleted. Open exchanges that held it become `abandoned` | String replaced. Open exchanges that held it become `abandoned` |
 | `search_fts`, `search_docs`, `search_tri` | Documents deleted | Documents re-indexed |
-| `projection_files`, outbox rows | Rows for the entity deleted | Affected tasks marked dirty |
+| The projection's record and files, outbox rows | Rows for the entity deleted; its files go through the outbox (3.13) | Affected tasks marked dirty |
 
 After the commit, the outbox topic `redact` finishes the rest, so a crash only delays it:
 - The FTS index is rewritten with `optimize`, still with `secure_delete` on, so no deleted text survives in old segments or freed pages. Then a WAL checkpoint with `TRUNCATE` and an incremental vacuum remove old page images.
@@ -493,7 +492,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 
 ### 3.13 The projection (D10)
 
-Not built yet (M3.10). A generated, read-only Markdown tree plus a compact catalogue for people and file-only agents. Never a source of truth, never imported.
+Built (M3.10): `packages/projection`, each module's header holding its rules, run by the service in a worker thread per open space (`packages/service/src/hub/projection*.ts`); the writer's side is `write/outbox.ts`. Tests `[A1.5.projection.*]`. A generated, read-only Markdown tree plus a compact catalogue for people and file-only agents. Never a source of truth, never imported.
 
 ```text
 view/
@@ -501,26 +500,35 @@ view/
   catalog.jsonl                     one line per task that is not deleted
   index.md                          open tasks grouped by area, then project, one line each
   .projection.json                  {"space_id", "epoch", "incarnation", "seq", "generated_at", "format": 1}
+  .projection-files.json            the record: every file written, its hash, each task's catalogue line
   open/M-14-fix-appointment-time-zones.md
   completed/2026/M-9-migrate-ci-to-the-new-runner.md
   archived/2026/…
-  projects/lumen-portal.md          project brief and its task references
 ```
 
-- **File names** are `<reference>-<slug>.md`, with a slug of at most 48 ASCII characters, so an agent finds a task with `view/open/M-14-*.md`. A rename or a state change moves the file. Nothing links to projection paths by contract.
-- **Sequence labels.** Each file's front matter carries `seq` (the snapshot it reflects) and `version`. `.projection.json` and the catalogue header carry the **watermark** `seq`: every commit up to it is reflected in every file, and every path the catalogue names exists. Single files may be newer. A reader compares the watermark with `tasks status` to see staleness.
-- **Content.** Front matter starts with `generated: true` and has fixed keys on their own lines (`space`, `ref`, `id`, `status`, `lifecycle`, `priority`, `effort`, `due`, `area`, `project`, `place` as `machine:root/path`, `version`, `seq`), so `rg '^status: waiting' view/open` works. Then the title as H1, the summary line, and the sections Context, Sources, Notes and Log, each item a line such as `- n2 · 10 Nov · Mira → agents: …`. For completed tasks, Outcome and Learnings come first and the rest goes under "Record". Notes with an audience other than `all` are never written.
+- **File names** are `<reference>-<slug>.md`, with an ASCII slug of at most 48 characters cut at a word (`task` when the title has no ASCII letter or digit), so an agent finds a task with `view/open/M-14-*.md`. A completed or archived task goes under the year of its completion (of its creation when it has none) in the machine's time zone, as its dates do. A rename or a state change moves the file. Nothing links to projection paths by contract.
+- **Sequence labels.** Each file's front matter carries `seq`, the commit of the task's last change (its `touched`), and `version`: what a fresh render gives, so a file is rewritten only when what it shows changed. `.projection.json` and the catalogue header carry the **watermark** W: every commit up to it is reflected in every file, and every path the catalogue names exists. Single files may be newer. A reader compares W with `tasks status` to see staleness. A folder without `.projection.json` claims nothing.
+- **Content.** Front matter starts with `generated: true` and has fixed keys on their own lines (`space`, `ref`, `id`, `status`, `lifecycle`, `priority`, `effort`, `due`, `area`, `project`, `place` as `machine:root/path`, `version`, `seq`), each a value that reads back as the same string (plain where it can, double-quoted where not, empty for none), so `rg '^status: waiting' view/open` works. Then the title as H1, the summary line, and the sections Context, Sources, Notes and Log, each item a line such as `- n2 · 2026-11-10 · Mira Okafor → agents: …`, later lines of an item indented under it. A section without items is left out. For completed and archived tasks, Outcome and Learnings come first and the rest goes under "Record". Notes with an audience other than `all` are never read, so never written.
 - **`catalog.jsonl`.** A header line `{"kind":"header","space","epoch","incarnation","seq","generated_at"}`, then one line per task sorted by lifecycle, then reference, with `ref`, `id`, `title`, `summary`, `status`, `lifecycle`, `priority`, `effort`, `due`, `area`, `project`, `labels`, `path` and `version`.
+- **Read-only.** Files are 0400, or carry the Windows read-only attribute, from their creation: they hold task text, which every other file of a space keeps private (3.1).
 
 **Regeneration.**
 1. Commits upsert `projection` outbox rows: one per affected task, plus `*` when an index or the catalogue changes. Each row keeps `first_seq`, its oldest unrendered commit (3.7).
-2. The maintenance worker waits 500 ms after the last change, at most 5 s while changes keep coming. It reads up to 200 dirty tasks, oldest `first_seq` first, in one read transaction at snapshot `T`.
-3. For each file it renders the content and compares it with `projection_files`. If the file on disk does not match the hash last written, someone edited it: the worker moves it to `exchange/rescued/<timestamp>/` and records a diagnostic the UI shows once. This is best effort: a save between the check and the replace is lost, and nothing claims otherwise. The supported edit path is 3.14.
-4. It writes `<file>.tmp-<random>`, clears the old file's read-only flag, renames over it and sets the new file read-only (0444, or the Windows read-only attribute). It removes the file from its old path when the task moved. Rename retries 5 times over 1 s on Windows sharing violations.
-5. Through the writer it deletes the processed outbox rows `WHERE seq <= T`, sets `first_seq = T + 1` on rows that changed again after `T`, and updates `projection_files`.
-6. **Watermark.** After each batch the worker computes `W`: `T` when no task row with `first_seq ≤ T` remains, otherwise the smallest remaining `first_seq` minus 1. When `*` is dirty it assembles `catalog.jsonl` and `index.md` from the catalogue lines stored in `projection_files`, which are exactly what was rendered, so the catalogue never names a path that does not exist yet. Then it writes `.projection.json` and the catalogue header with `seq = W`. `W` never moves backwards and never claims an unrendered commit.
+2. The projection's worker looks at the outbox every 100 ms, waits 500 ms after the last change, at most 5 s while changes keep coming, and runs the next batch at once while a backlog waits. A batch reads up to 200 dirty tasks, oldest `first_seq` first, in one read transaction at snapshot `T`. A failing batch is tried again after a pause that doubles up to 30 s.
+3. For each task it renders the content. A file it replaces or removes must hash to what the record says it wrote there; anything else at that path (an edited file, a file of the person's, a folder, a link) is moved first to the space's `exchange/rescued/<stamp>/`, under its path in the tree, and the service records the batch's rescue in the space's machine-local settings (`projection_rescues`) for the UI to show once. This is best effort: a save between the check and the replace is lost, and nothing claims otherwise. The supported edit path is 3.14.
+4. A journal (`.projection-journal.json`) names every file the batch is about to place. Each file is written to `.<name>.tmp-<random>`, read-only from its creation, and renamed over the old one, whose read-only flag is cleared just before on Windows; a rename retries 5 times over 1 s on Windows sharing violations. A file a task left (it moved, or the task is gone) is retired, not removed: the catalogue on disk still names it.
+5. Through the writer (`write/outbox.ts`, a bookkeeping write, 3.7) it marks the tasks whose file is in place: their rows go `WHERE seq <= T`, and rows that changed again after `T` get `first_seq = T + 1`. A task that failed keeps its row, and the next batch takes it first.
+6. **Watermark.** In the same transaction the writer answers `W`: `T` when no task row with `first_seq ≤ T` remains, otherwise the smallest remaining `first_seq` minus 1. The worker then writes `README.md`, `index.md` and `catalog.jsonl` from the catalogue lines stored in the record, which are exactly what was rendered, and `.projection.json` last, both headers with `seq = W`. Only then do the retired files go, each when it still holds what was written (rescued otherwise), so every path the catalogue names exists at every moment. The record follows, then `*` is marked. `W` never moves backwards and never claims an unrendered commit. A commit that touches no task, such as a launch's, still moves it to `last_seq`.
 
-A full rebuild (`tasks view rebuild`, an empty `view/`, or a format change) renders into `view.new/`, then swaps directories; if the swap fails on Windows because a file is open, it updates in place file by file. The projection can be disabled (`projection.enabled = false`) or written elsewhere (machine-local `projection.dir`).
+**The record** (`.projection-files.json`) lives in the projection's folder, not in a table of the database: it describes the files of the folder it is in, so a moved, emptied or replaced folder cannot disagree with it, a new `projection.dir` starts a fresh tree, and no migration is needed. Every path it names is checked against the tree's grammar before it is used, so an edited record cannot reach outside the folder.
+
+**A kill** leaves at most `.tmp-` files, which the next start removes, and the journal, which it plays forward against the disk: a file that reached its place goes into the record and the path it replaced is retired, as is the file of a task the batch found gone. The outbox renders the rest. A kill never makes the projection rescue its own files, and never moves W past an unrendered commit.
+
+**A full rebuild** (no record, an empty `view/`, or a record of another space, epoch, incarnation or format) removes `.projection.json` first, so the folder claims nothing, has the writer queue every task with `first_seq = 1`, and renders them as batches like any other. The old tree's files are retired, and go at the end only where they still hold what was written. It runs in place, not in a `view.new/` swapped in beside the folder: `projection.dir` may be a folder the person chose, where a sibling would appear, and a swap fails on Windows while a file is open. A file the projection cannot prove it wrote is never removed; where it blocks a file the projection writes, it is rescued.
+
+**Where it runs.** Into the space's `view/`, or the machine-local `projection.dir` (3.16; read from `<state>/spaces/<space_id>.json`): an absolute folder outside the space's folder that does not hold it. One inside it, or holding it, is refused and nothing is written. A link where the folder or one of its folders goes is never followed: the folder itself is refused, a folder in it rescued. The service runs the projection only while the space is open as this machine's, in a worker thread with its own reader connection (3.9); a close stops it, after its batch in progress or at once after 5 s, before the writer it asks for its bookkeeping.
+
+**Not built yet:** `projection.enabled` (3.16, M3.11), `tasks view rebuild`, `projects/<slug>.md` (a project's brief and its task references), a rebuild queued by every migration (3.17), and redaction's pass (3.11.4, M3.14). Redaction reaches the projection through the outbox like any change: a task the reads no longer find renders as no file, so its file and its catalogue line go, and a changed text is rendered again; the record holds catalogue lines, so the same pass rewrites it. The copies under `exchange/rescued/` are the one store it leaves to redaction. An operation that changes what a task's file shows without touching the task (a project's or an area's slug, a source's fields, the reference prefix) upserts the outbox row of every task it shows in.
 
 **Never re-imported.** The importer accepts only working copies with an exchange manifest (3.14) and rejects any file with `generated: true`: "This is a generated view. Use `tasks export-edit` to get an editable copy."
 
@@ -812,6 +820,7 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.…]`, `[A1.3.15.�
 | Migrations | `migration.*`; `A2.3.1.hub.failed-migration`, `A2.3.1.hub.migration-timeout` | `test/migrate.test.ts`, `tests/migration/`, `packages/service/test/migration-open.test.ts`, `packages/cli/test/migration-drill.test.ts` |
 | Backups and restore | `backup.*`, `restore.*` | `test/backup.test.ts`, `test/retention.test.ts`, `test/restore.test.ts` |
 | Synced and network folders | `sync.*` | `packages/service/test/sync-folders.test.ts`, `synced-spaces.test.ts` |
+| Projection | `projection.*` | `packages/projection/test/`, `packages/storage/test/outbox.test.ts`, `packages/service/test/projection.test.ts` |
 | Places and roots | `A1.3.15.*` | `packages/launch/test/places*.test.ts`, `working-folder.test.ts`, `git-config.test.ts`, `packages/service/test/places*.test.ts`, `packages/cli/test/roots.test.ts` |
 | Crash harness | `crash.*` | `tests/crash/` |
 
@@ -834,7 +843,7 @@ Every test carries its ID from `tests/manifest.json` (`[A1.5.…]`, `[A1.3.15.�
 - **Undo, redo and revert lineage**, fixed scenarios before the property tests: two edits of one field, then two undos and two redos, all matching each step; partially overlapping field sets (C1 `{summary, due}`, C2 `{due, status}`: undo C2, then C1, then redo both); repeated undo and redo cycles keep passing while `fv` only grows; a foreign edit gives `UNDO_CONFLICT`, and after the foreign commit is reverted the original action's revert passes; session revert with S, Mira, S on one field (blocked without `allow_partial`, Mira's value with it and S's first change unresolved); session revert of a task S created and Mira annotated (no tombstone, a conflict naming her note; without the note, tombstoned).
 - **Property and model-based tests (fast-check).** The built model test (creates, patches with fresh and stale bases, moves, lifecycle changes, three actors) grows to 3 to 12 actors with appends, link removals and revivals, wrap-ups, deletes, undo, redo, revert and session revert, and these properties: no lost update; undo, redo and revert never change a field whose provenance differs from the guard, and undo then redo restores the original values; every field's `fv` is the `seq` of its latest change row and `fp` that row's `after_prov`; every field's value equals its provenance commit's after-value; search rows match a fresh rebuild; the projection after quiescence matches a fresh render; the import table of 3.14 holds for random B, C and E, and nothing is deleted.
 - **Redaction.** A unique sentinel goes into a task title, its context, a note, a log entry, a source title, a learning, a commit reason, a pending proposal and an open exchange, then a redaction in each mode. A byte scan of `space.db`, its WAL and every file under the space and state folders finds no sentinel, free pages and FTS segments included. The proposal is `superseded`, the exchange `abandoned`, and neither can bring the text back. Cursor pages show `redacted` placeholders.
-- **Projection.** 600 dirty tasks across three batches, with moves and deletes crossing batch boundaries. A checker reads `.projection.json` at random moments: every commit up to the watermark is reflected in every file, and every catalogue path exists.
+- **Projection.** Deletes crossing batch boundaries join `[A1.5.projection.fresh]`'s moves with `task.delete` (M3.04). The process crash harness gains the projection's rename (below); `tests/crash/checker.ts` then accepts outbox rows the projection consumed.
 - **Crash points added with their features:** during the projection rename, during attachment staging, during a barrier backup before an import, and after a redact commit before its cleanup; after each restart the projection catches up. **Pre-import backup:** a kill after the backup and before the import commit leaves the backup equal to the state before the import, and the import not applied; a failing backup stops the import with `BACKUP_FAILED`. **Transfer:** a kill at each step (before `preparing`, during the build, after the rename before `published` is committed, before `finalized`) ends, after reconciliation, either writable with no valid bundle at the final path or transferred out with exactly one; never writable with a valid bundle, never refusing writes with none. Disk full and a failed secret scan during the build return to writable. **Disk full** on a small loop or VHD file system: `DURABILITY_FAILED`, read-only, no partial commit. **Outside write:** a second process writes a row, and the service detects it within 5 s and turns read-only until checks pass.
 - **Scale tests.** The generator builds both corpora (3.20). The benchmark records each target on both reference machines and fails the build when a target regresses by more than 50 percent.
 - **Real-machine checks (D18, R17)** on both reference machines, user-level only: create a space under `~/.tasks/spaces`, run the 10-session load test, run a backup, export and restore, kill the service mid-load, and confirm with the detector that the file system is local and unsynced.
