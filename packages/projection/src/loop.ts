@@ -43,7 +43,9 @@ export async function runProjection(projector: Projector, options: LoopOptions):
   for (;;) {
     if (options.stopped()) return;
     try {
-      options.onStart?.(await projector.start());
+      // Not inside `onStart?.(…)`: an optional call skips its arguments when there is no callee.
+      const report = await projector.start();
+      options.onStart?.(report);
       failures = 0;
       break;
     } catch (error) {

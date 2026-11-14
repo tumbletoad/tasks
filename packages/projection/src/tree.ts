@@ -180,7 +180,7 @@ function entryOf(value: unknown, path: string): CatalogEntry | undefined {
     due: e["due"],
     area: e["area"],
     project: e["project"],
-    labels: labels as string[],
+    labels,
     path,
     version: e["version"],
   };
@@ -221,7 +221,8 @@ const pause = (ms: number): Promise<void> =>
   });
 
 /** What is at a path: nothing, a regular file and its hash, or anything else. */
-type Found = { kind: "missing" } | { kind: "file"; sha256: string; stats: Stats } | { kind: "other" };
+type Found =
+  { kind: "missing" } | { kind: "file"; sha256: string; stats: Stats } | { kind: "other" };
 
 /** The named points a batch's file work passes, for the crash tests (projector.ts). */
 export type FilePoint = "rename" | "renamed";

@@ -80,7 +80,11 @@ describe("[A1.5.projection.outbox] the projection marks what it rendered, and th
     fx.writer.projected({ seq: t, keys: [a, b, PROJECTION_ALL] });
     expect(fx.writer.queueProjection()).toBe(2);
     expect(rows().every((r) => r.first_seq === 1)).toBe(true);
-    expect(rows().map((r) => r.key).sort()).toEqual([PROJECTION_ALL, a, b].sort());
+    expect(
+      rows()
+        .map((r) => r.key)
+        .sort(),
+    ).toEqual([PROJECTION_ALL, a, b].sort());
     t = lastSeq();
     expect(fx.writer.projected({ seq: t, keys: [a] })).toBe(0);
     expect(fx.writer.projected({ seq: t, keys: [b, PROJECTION_ALL] })).toBe(t);
@@ -109,7 +113,10 @@ describe("[A1.5.projection.outbox] the projection marks what it rendered, and th
           fc.oneof(
             fc.record({ kind: fc.constant("create" as const) }),
             fc.record({ kind: fc.constant("patch" as const), pick: fc.nat() }),
-            fc.record({ kind: fc.constant("report" as const), picks: fc.array(fc.nat(), { maxLength: 4 }) }),
+            fc.record({
+              kind: fc.constant("report" as const),
+              picks: fc.array(fc.nat(), { maxLength: 4 }),
+            }),
           ),
           { minLength: 1, maxLength: 30 },
         ),

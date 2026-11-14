@@ -33,8 +33,7 @@ const SQL = {
   again:
     "UPDATE outbox SET first_seq = $next WHERE topic = 'projection' AND key = $key " +
     "AND first_seq <= $seq",
-  backlog:
-    "SELECT min(first_seq) AS first FROM outbox WHERE topic = 'projection' AND key <> '*'",
+  backlog: "SELECT min(first_seq) AS first FROM outbox WHERE topic = 'projection' AND key <> '*'",
   // `WHERE true` keeps SQLite from reading ON CONFLICT as part of the SELECT's join.
   queueTasks:
     "INSERT INTO outbox (topic, key, first_seq, seq) SELECT 'projection', id, 1, touched " +
@@ -100,5 +99,5 @@ export function queueProjection(conn: Connection): number {
   const queued = conn.prepare(SQL.queueTasks).run().changes;
   // A space without commits has nothing to render, and `first_seq <= seq` needs a commit.
   if (space.lastSeq >= 1) conn.prepare(SQL.queueAll).run({ seq: space.lastSeq });
-  return Number(queued);
+  return queued;
 }

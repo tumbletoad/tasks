@@ -4,23 +4,27 @@
 // A batch, in this order:
 // 1. One read transaction at snapshot T (read.ts): up to 200 dirty tasks, oldest `first_seq`
 //    first, with what the projection shows of each.
-// 2. Each task is rendered (render.ts). The journal records every file the batch is about to place
-//    or remove, then the files change (tree.ts): placed read-only by a rename, the old path removed
-//    when the task moved, a file that is not the projection's own rescued first.
-// 3. The writer marks the tasks whose files are all in place (write/outbox.ts) and answers the
+// 2. Each task is rendered (render.ts). The journal records every file the batch is about to
+//    place, then the files change (tree.ts): placed read-only by a rename, a file that is not the
+//    projection's own rescued first. A file the task left (it moved, or the task is gone) is
+//    retired, not removed: the catalogue on disk still names it.
+// 3. The writer marks the tasks whose files are in place (write/outbox.ts) and answers the
 //    watermark W: only through a fully rendered prefix. A task that failed keeps its row, so W stays
 //    below it, and the next batch takes it first.
 // 4. Unless a rebuild runs, the root files are written from the record's catalogue lines, which are
-//    exactly what was rendered, so the catalogue names only paths that exist: README.md, index.md,
-//    catalog.jsonl and, last, .projection.json, both headers with seq W. W never moves backwards.
+//    exactly what was rendered: README.md, index.md, catalog.jsonl and, last, .projection.json, both
+//    headers with seq W. W never moves backwards. Only then do the retired files go, each when it
+//    still holds what was written (rescued otherwise), so every path the catalogue names exists at
+//    every moment.
 // 5. The record is written and the journal dropped. Then `*` is reported, when it was dirty.
 //
 // A kill anywhere leaves at most temporary files (removed at start) and a journal. At start the
 // journal is played forward against what is on disk: a file that reached its place is taken into
-// the record, and the old path it replaced is retired; a removal the batch decided is finished.
-// Then the outbox, which the writer marked only for tasks whose files were all in place, renders
-// the rest. So a kill never makes the projection rescue its own files, never loses a person's file,
-// and never moves W past an unrendered commit.
+// the record, and the path it replaced is retired, as is the file of a task the batch found gone.
+// Then the outbox, which the writer marked only for tasks whose files were in place, renders the
+// rest, and `*`, reported only after a publish, publishes again. So a kill never makes the
+// projection rescue its own files, never loses a person's file, and never moves W past an
+// unrendered commit.
 //
 // A full rebuild (no record, a record of another space, epoch, incarnation or format) removes
 // `.projection.json` first, so the folder claims nothing, queues every task through the writer and
@@ -181,7 +185,8 @@ export class Projector {
   }
 
   get #rec(): TreeRecord {
-    if (this.#record === undefined) throw new ProjectionError("EINVAL", "The projector has not started");
+    if (this.#record === undefined)
+      throw new ProjectionError("EINVAL", "The projector has not started");
     return this.#record;
   }
 
@@ -232,12 +237,10 @@ export class Projector {
     for (const [id, next] of journal.tasks) {
       const old = record.tasks.get(id);
       if (next === null) {
+        // A planned removal: the task was gone at the batch's snapshot. Its file goes at the next
+        // publish, once the catalogue no longer names it.
         if (old === undefined) continue;
-        try {
-          this.#tree.remove(old.path, (hash) => hash === old.sha256);
-        } catch {
-          record.retired.set(old.path, old.sha256);
-        }
+        record.retired.set(old.path, old.sha256);
         record.tasks.delete(id);
         continue;
       }
@@ -340,7 +343,7 @@ export class Projector {
         watermark >= record.watermark &&
         (read.all || done.length > 0 || watermark > record.watermark)
       ) {
-        await this.#publish(read, watermark, journalTasks);
+        counts.removed = await this.#publish(read, watermark, journalTasks);
         published = true;
       }
     } finally {
@@ -391,54 +394,38 @@ export class Projector {
     return [{ key, old, next, content: rendered.content }];
   }
 
-  /** Places a task's file and removes the one it replaces. Throws when the new file is not placed. */
-  async #apply(
-    plan: Plan,
-    counts: { written: number; removed: number },
-  ): Promise<void> {
+  /**
+   * Places a task's file. The file it replaces at another path is retired, not removed: the
+   * catalogue on disk still names it until the next publish, which removes it after the new
+   * catalogue is in place, so a path the catalogue names exists at every moment. Throws when the
+   * new file is not placed.
+   */
+  async #apply(plan: Plan, counts: { written: number }): Promise<void> {
     const record = this.#rec;
     const { old, next } = plan;
     if (next !== null) {
       const ours = (hash: string): boolean =>
         (old?.path === next.path && old.sha256 === hash) || record.retired.get(next.path) === hash;
-      if ((await this.#tree.place(next.path, plan.content, ours)) === "written") counts.written += 1;
+      if ((await this.#tree.place(next.path, plan.content, ours)) === "written")
+        counts.written += 1;
       record.retired.delete(next.path);
       record.tasks.set(plan.key, next);
     } else {
       record.tasks.delete(plan.key);
     }
-    if (old !== undefined && old.path !== next?.path) {
-      try {
-        if (this.#tree.remove(old.path, (hash) => hash === old.sha256) === "removed") {
-          counts.removed += 1;
-        }
-      } catch {
-        // Its catalogue line is gone; the file goes at a later publish (retired).
-        record.retired.set(old.path, old.sha256);
-      }
-    }
+    if (old !== undefined && old.path !== next?.path) record.retired.set(old.path, old.sha256);
   }
 
-  /** The root files, from the record's catalogue lines, with the watermark (see the header). */
+  /**
+   * The root files, from the record's catalogue lines, with the watermark, then the retired files
+   * the new catalogue no longer names (see the header). Returns the files removed.
+   */
   async #publish(
     read: BatchRead,
     watermark: number,
     journalTasks: ReadonlyMap<string, TaskRecord | null>,
-  ): Promise<void> {
+  ): Promise<number> {
     const record = this.#rec;
-    const used = new Set([...record.tasks.values()].map((task) => task.path));
-    for (const [path, hash] of [...record.retired]) {
-      if (used.has(path) || record.files.has(path)) {
-        record.retired.delete(path);
-        continue;
-      }
-      try {
-        this.#tree.remove(path, (found) => found === hash);
-        record.retired.delete(path);
-      } catch {
-        // Kept for a later publish.
-      }
-    }
     const entries = [...record.tasks.values()].map((task) => task.entry);
     const mark: Watermark = {
       ...record.identity,
@@ -463,5 +450,20 @@ export class Projector {
       record.retired.delete(path);
     }
     record.watermark = watermark;
+    let removed = 0;
+    const used = new Set([...record.tasks.values()].map((task) => task.path));
+    for (const [path, hash] of [...record.retired]) {
+      if (used.has(path) || record.files.has(path)) {
+        record.retired.delete(path);
+        continue;
+      }
+      try {
+        if (this.#tree.remove(path, (found) => found === hash) === "removed") removed += 1;
+        record.retired.delete(path);
+      } catch {
+        // Kept for a later publish.
+      }
+    }
+    return removed;
   }
 }
