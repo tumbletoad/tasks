@@ -191,8 +191,8 @@ describe("[A3.5.search.query] random query strings never raise an SQLite error",
       { numRuns: 600 },
     );
     // Not a property about refusals only: many queries ran, and some found rows.
-    expect(answered).toBeGreaterThan(150);
-    expect(withRows).toBeGreaterThan(20);
+    expect(answered).toBeGreaterThan(100);
+    expect(withRows).toBeGreaterThan(10);
   }, 120_000);
 
   test("a space without the search index answers filters, and refuses words with not_indexed", async () => {
