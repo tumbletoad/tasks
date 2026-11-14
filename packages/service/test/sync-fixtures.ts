@@ -32,11 +32,29 @@ export const NO_WINDOWS: WindowsSyncFacts = {
   drives: [],
 };
 
+/**
+ * The facts with the fixture tree's own drive among the drives, when the tree is on a drive letter
+ * they do not list: a local fixed drive, as a temporary folder's is. A folder on a drive the facts
+ * do not list is unchecked (A1 3.2), and the tree is on a real drive of this machine.
+ */
+function withTreeDrive(facts: WindowsSyncFacts, root: string): WindowsSyncFacts {
+  const letter = /^([A-Za-z]):/.exec(root)?.[1]?.toUpperCase();
+  if (
+    letter === undefined ||
+    facts.drives.some((d) => d.root.slice(0, 1).toUpperCase() === letter)
+  ) {
+    return facts;
+  }
+  const drive = { root: `${letter}:\\`, type: "Fixed", format: "NTFS", label: "" };
+  return { ...facts, drives: [...facts.drives, drive] };
+}
+
 /** A host over the fixture tree `root`: real file looks inside it, nothing outside it. */
 export function fixtureHost(root: string, facts: SyncFacts = {}): SyncHost {
   const platform = facts.platform ?? process.platform;
   const inside = (path: string): boolean => isInside(process.platform, resolve(path), root);
-  const windows = facts.windows === null ? undefined : (facts.windows ?? NO_WINDOWS);
+  const windows =
+    facts.windows === null ? undefined : withTreeDrive(facts.windows ?? NO_WINDOWS, root);
   const real = realSyncHost({
     platform,
     env: facts.env ?? {},

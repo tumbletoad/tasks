@@ -7,7 +7,7 @@
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterAll, afterEach, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import type { StorageErrorCode } from "../src/errors.ts";
 import { openReader } from "../src/open.ts";
 import { StorageWorker, type WorkerConnection } from "../src/worker/client.ts";
@@ -23,7 +23,21 @@ const workers: StorageWorker[] = [];
 afterEach(async () => {
   await Promise.all(workers.splice(0).map((w) => w.close()));
 });
-afterAll(temp.cleanup);
+
+// The relative spellings are relative to the working folder, which must be on the temporary
+// folders' drive: on Windows a path on another drive has no relative spelling (path.relative
+// returns it absolute). So the file runs in a working folder of its own, beside the others, and
+// a file: URI read as a path could only appear there. Vitest runs each file in a process of its
+// own; the folder is left before it is removed, since Windows cannot remove a working folder.
+let previousCwd: string;
+beforeAll(() => {
+  previousCwd = process.cwd();
+  process.chdir(temp.make());
+});
+afterAll(() => {
+  process.chdir(previousCwd);
+  temp.cleanup();
+});
 
 async function startWorker(): Promise<StorageWorker> {
   const worker = await StorageWorker.start({ driver: "node:sqlite" });

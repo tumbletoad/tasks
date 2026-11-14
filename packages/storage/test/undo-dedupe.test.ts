@@ -828,8 +828,9 @@ const property = (seen: Record<string, number>) =>
         { kind: "redo", who: s.who },
       ];
     });
-    // With the search tables, so every undo and redo keeps the index too (A1 3.12).
-    const space = await writeFixture(temp.make(), { search: true });
+    // With the search tables, so every undo and redo keeps the index too (A1 3.12). 120 fresh
+    // spaces and thousands of commits: which writes apply does not depend on a flush.
+    const space = await writeFixture(temp.make(), { search: true, flush: false });
     let now = Date.UTC(2026, 10, 13, 8);
     space.reopen({ now: () => (now += 1000) });
     const count = (label: string): void => {

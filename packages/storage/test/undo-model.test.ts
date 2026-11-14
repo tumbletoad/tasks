@@ -466,7 +466,8 @@ const named = (ids: readonly Id<"t">[], conflicts: readonly { id: string; field:
 const property = (seen: Seen) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 50 }), async (generated) => {
     const steps = generated.flatMap(expand);
-    const fx = await writeFixture(temp.make());
+    // 80 fresh spaces and thousands of commits: which writes apply does not depend on a flush.
+    const fx = await writeFixture(temp.make(), { flush: false });
     try {
       const actors: Credential[] = [fx.human, fx.codex, fx.claude, await secondHuman(fx)];
       const as = (n: number): Credential => actors[n] ?? fx.codex;
