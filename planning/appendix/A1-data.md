@@ -356,6 +356,8 @@ Undo and redo are built (M3.02): `write/history.ts` reads change rows, plans the
 - **Never inverted:** launch, session, run and machine records (3.10.3). A commit holding one is refused with `VALIDATION_FAILED`.
 - **Lifecycle and wrap-up stay together.** A task's row CHECK allows no wrap state on an active task, so a partial inversion leaves both when either conflicts, and names the field that passed with the write that holds its partner. A full inversion of both restores a state the task had, and a field the commit did not write cannot break the CHECK.
 
+The guards are provenance only. One human's redo may therefore write a field of a task another human's undo has since tombstoned (the redo's own provenance still stands there); the task keeps that value when its tombstone is cleared, and every other write to a tombstoned task stays refused (`DELETED`).
+
 Physical versions never move backwards, so a stale base still conflicts after an undo. Value equality is never used (R2): a field set away and back by someone else would otherwise be overwritten without notice. For example, if Codex sets Mira's due date away and back, the value matches her write but its provenance does not, and her undo returns `UNDO_CONFLICT`.
 
 #### 3.10.1 The undo stack
