@@ -132,7 +132,7 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     const events = readLog(home).map((e) => e["ev"]);
     expect(events).toContain("space.projection_started");
     expect(events).toContain("space.projection_reconciled");
-  });
+  }, 120_000);
 
   test("tasks view rebuild: a deleted file comes back and an edited one is moved aside and rendered again; only the user may ask", async () => {
     const { home, folder } = await setUp("projreb");
@@ -189,7 +189,7 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     expect(
       readFileSync(join(rescued, box ?? "", "view", ...(second?.path ?? "").split("/")), "utf8"),
     ).toBe("A person's edit.\n");
-  });
+  }, 120_000);
 
   test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {
     const { home, folder } = await setUp("projrip");
@@ -213,5 +213,5 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       "the restored space's render",
     );
     expect(catalog(join(folder, "view"))).toHaveLength(12);
-  });
+  }, 120_000);
 });

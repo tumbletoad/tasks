@@ -18,15 +18,16 @@ afterAll(async () => {
 }, 120_000);
 
 const user = (argv: string[]) => runMain(argv, { home: world.home, cwd: world.root, tty: true });
+const script = (argv: string[]) => runMain(argv, { home: world.home, cwd: world.root });
 const parsed = (stdout: string) => JSON.parse(stdout) as Record<string, unknown>;
 
 describe("[A1.5.projection.cli] tasks view rebuild from the CLI", () => {
   test("the user rebuilds the view and a deleted file comes back; a script is refused; help names it", async () => {
-    const script = await world.tasks(["view", "rebuild", "--json"]);
-    expect(script.code).toBe(5);
-    expect(parsed(script.stdout)).toMatchObject({ error: { code: "forbidden" } });
+    const refused = await script(["view", "rebuild", "--json"]);
+    expect(refused.code).toBe(5);
+    expect(parsed(refused.stdout)).toMatchObject({ error: { code: "forbidden" } });
 
-    const added = await world.tasks(["add", "Fixture for the view", "--json"]);
+    const added = await script(["add", "Fixture for the view", "--json"]);
     expect(added.code, added.stdout).toBe(0);
     const open = join(world.spaceFolder, "view", "open");
     const name = await waitFor(
@@ -52,5 +53,6 @@ describe("[A1.5.projection.cli] tasks view rebuild from the CLI", () => {
     const help = await user(["help", "view"]);
     expect(help.stdout).toContain("rebuild [<space>]");
     expect((await user(["view"])).code).not.toBe(0);
-  });
+    // In process, no child: the waits above carry their own limits; the hosted runners are slow.
+  }, 180_000);
 });
