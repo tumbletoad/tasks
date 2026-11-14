@@ -65,9 +65,9 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       "- exists M-14 · by source key · log added: Fix appointment time zones",
     ]);
 
-    expect(renderResult("task.reopen", example("task.reopen", 0))).toBe(
-      `reopened M-3 · open · as_of ${NEXT}`,
-    );
+    const reopened = split(renderResult("task.reopen", example("task.reopen", 0)));
+    expect(reopened.outside).toEqual([`reopened M-3 · as_of ${NEXT}`]);
+    expect(reopened.inside).toEqual(["Status: open"]);
 
     const list = split(renderResult("group.manage", example("group.manage", 0)));
     expect(list.outside).toEqual([`2 areas · 2 projects · as_of ${AS_OF}`]);
@@ -164,6 +164,50 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       expect(inside.join("\n"), name).toContain(INJECTION);
       for (const line of outside) expect(line, name).not.toContain("Ignore previous");
     }
+  });
+
+  test("every field that can hold written text stands only inside the data block, in every example of the six tools", () => {
+    // A field whose schema takes the sentence in place of an example's string may hold text a
+    // person or an agent wrote (a status key, a name), so its renderer frames it. `warnings` are
+    // the product's own sentences, built from input paths, references and field names only.
+    const BUILT = new Set(["warnings"]);
+    const leaves = (value: unknown, path: (string | number)[] = []): (string | number)[][] => {
+      if (typeof value === "string") return [path];
+      if (Array.isArray(value)) return value.flatMap((v, i) => leaves(v, [...path, i]));
+      if (typeof value === "object" && value !== null) {
+        return Object.entries(value).flatMap(([k, v]) => leaves(v, [...path, k]));
+      }
+      return [];
+    };
+    const names = [
+      "task.search",
+      "task.add",
+      "task.reopen",
+      "group.manage",
+      "prefs.manage",
+      "run.report",
+    ];
+    let checked = 0;
+    for (const name of names) {
+      entry(name).examples.forEach((ex, i) => {
+        for (const path of leaves(ex.output)) {
+          if (BUILT.has(String(path[0]))) continue;
+          const result = structuredClone(ex.output) as Json;
+          let at: Record<string | number, unknown> = result;
+          for (const step of path.slice(0, -1)) at = at[step] as Record<string | number, unknown>;
+          at[path.at(-1) ?? ""] = INJECTION;
+          if (!entry(name).output.safeParse(result).success) continue;
+          checked += 1;
+          const { outside } = split(renderResult(name, result));
+          for (const line of outside) {
+            expect(line, `${name} example ${String(i)} at ${path.join(".")}`).not.toContain(
+              "Ignore previous",
+            );
+          }
+        }
+      });
+    }
+    expect(checked).toBeGreaterThan(20);
   });
 
   test("a close name in a refusal comes back inside the data block, never in the message", () => {

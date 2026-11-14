@@ -722,14 +722,23 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
   "task.reopen": (result: OutputOf<"task.reopen">) => {
     const head =
       result.result === "reopened"
-        ? `reopened ${result.task} · ${result.status}`
+        ? `reopened ${result.task}`
         : result.result === "no_change"
           ? `no change ${result.task} (already ${result.lifecycle})`
           : join(
               `proposed ${result.task}`,
               result.proposal !== undefined && `proposal ${result.proposal}`,
             );
-    return { parts: [fixed(`${head} · as_of ${result.as_of}${replayed(result)}`)], more: "" };
+    return {
+      parts: [
+        fixed(`${head} · as_of ${result.as_of}${replayed(result)}`),
+        // A status is a key of the space's own list (A1 3.16), which a person or an agent wrote.
+        ...(result.result === "reopened"
+          ? [{ data: true, fixed: true, units: [[`Status: ${result.status}`]] }]
+          : []),
+      ],
+      more: "",
+    };
   },
   "group.manage": (result: Groups, { tool }) => groupsRendered(result, tool),
   "prefs.manage": (result: Prefs) => prefsRendered(result),

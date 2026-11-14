@@ -59,7 +59,7 @@ export const GroupManageResult = z.strictObject({
   group: z
     .strictObject({
       kind: z.enum(["area", "project"]).describe("Area or project"),
-      id: z.string().describe("Its ID"),
+      id: z.string().regex(idPattern("[ap]")).describe("Its ID"),
       name: z.string().describe("Its name now"),
     })
     .describe("A write: the group it changed")

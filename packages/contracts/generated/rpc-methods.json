@@ -327,6 +327,7 @@
             "properties": {
               "id": {
                 "description": "Its ID",
+                "pattern": "^[ap]_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
               },
               "kind": {
