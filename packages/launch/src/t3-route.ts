@@ -64,7 +64,24 @@ export type T3Unavailable =
   /** The folder is no T3 project root or worktree, and the person chose Not now. */
   | "not_registered"
   /** The instance names a T3 provider instance without a model; T3 needs both together. */
-  | "model_required";
+  | "model_required"
+  // The CLI fallback route (t3-cli.ts, A4 3.4.1 "Fallback route"):
+  /** The instance names a model without a provider instance: the CLI takes both or neither. */
+  | "provider_required"
+  /** The instance's provider instance or model cannot be passed to T3's command line as it is. */
+  | "invalid_instance"
+  /** Not paired, and the instance names no `t3` command (`exec`). */
+  | "no_cli"
+  /** The instance's `t3` command cannot be run as Tasks runs it (its `.cmd` shim, its home). */
+  | "cli_unusable"
+  /** The folder is an existing worktree: only the paired route attaches one. */
+  | "worktree_needs_pairing"
+  /** The instance asks for a mode T3's command line cannot set: only the paired route can. */
+  | "mode_needs_pairing"
+  /** The brief does not fit the route. */
+  | "too_long"
+  /** The bound folder, or the project root T3 holds for it, is another folder now. */
+  | "folder_changed";
 
 /** A4 3.18's lines, for the UI and the CLI. */
 export const T3_TEXT = {
@@ -74,6 +91,16 @@ export const T3_TEXT = {
   no_answer: "T3 Code did not answer. Try again.",
   not_registered: "T3 opens only registered folders.",
   model_required: "Set t3_model for this instance: T3 takes a provider instance with its model.",
+  provider_required:
+    "Set t3_provider_instance for this instance: T3's command line takes a model with its provider instance.",
+  invalid_instance:
+    "This instance's t3_provider_instance or t3_model cannot be passed to T3's command line.",
+  no_cli: `Pair ${PRODUCT_NAME} with T3 Code first: ${CLI_NAME} setup t3`,
+  cli_unusable: `T3's command line cannot be run from ${PRODUCT_NAME}. Pair with T3 Code instead: ${CLI_NAME} setup t3`,
+  worktree_needs_pairing: `This folder is a git worktree. Pair ${PRODUCT_NAME} with T3 Code to open it there: ${CLI_NAME} setup t3`,
+  mode_needs_pairing: `T3's command line cannot set this instance's permission. Pair ${PRODUCT_NAME} with T3 Code: ${CLI_NAME} setup t3`,
+  too_long: "The brief is too long for T3 Code.",
+  folder_changed: "The task's folder changed. Open the task again.",
   register: (name: string) => `Register ${name} as a T3 project?`,
   folder_mismatch: "T3 bound a different folder.",
   regranted: (thread: string) =>
@@ -168,6 +195,12 @@ export class T3Route {
   /** The pairing as machine state holds it. */
   pairing(): T3Pairing | undefined {
     return readPairing(this.#options.files);
+  }
+
+  /** Whether T3's server runs, as its runtime file says: no request. False: "Start T3 Code". */
+  async running(): Promise<boolean> {
+    const home = this.#options.home;
+    return home !== undefined && (await readT3Origin(home, this.#platform)).status === "ok";
   }
 
   /** Whether T3 can be used now: machine state and T3's runtime file, no request. */
