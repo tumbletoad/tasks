@@ -117,13 +117,17 @@ export function toolCaller(options: {
   return async (tool, args, thread) => {
     const entry = toolEntry(tool);
     if (entry === undefined) return text(renderError(INTERNAL.toBody()), true);
-    // Codex's per-call thread ID (A3 3.7.2): recorded for a later bind, never a binding itself.
-    // On a connection that carries two conversations, a call whose own ID does not prove the
-    // bound session acts without the binding (A3 3.7.5), in the space the connection pinned.
+    // Codex's per-call thread ID (A3 3.7.2): rule 3 read per request (binding/bindings.ts
+    // `forCall`). On a connection that carries several conversations, a call whose own ID proves
+    // no session acts without a binding (A3 3.7.5), in the space the connection pinned, and its
+    // launch reference or bind holds for this call only.
     const native = typeof thread === "string" ? thread : undefined;
     const binding =
       slot === undefined || bindings === undefined ? slot : bindings.forCall(slot, "codex", native);
     const space = binding === undefined ? (slot?.space ?? named) : undefined;
+    // A shared connection's call says so whether or not its own native ID proved a session: either
+    // way nothing it does binds the connection (A3 3.7.5).
+    const shared = slot?.shared === true;
     try {
       const result = await opCall(
         options.ops,
@@ -135,6 +139,7 @@ export function toolCaller(options: {
           client,
           home,
           ...(binding === undefined ? {} : { binding }),
+          ...(shared ? { shared } : {}),
         },
         { op: entry.name, input: args, ...(space === undefined ? {} : { space }) },
       );

@@ -7,6 +7,7 @@ import {
   AGENT_LIMITS,
   AsOf,
   ENTRY_KINDS_IN,
+  BoundTask,
   Replayed,
   RequestId,
   TaskRef,
@@ -49,6 +50,7 @@ export const EntryAddResult = z.strictObject({
   kind: z.enum(ENTRY_KINDS_IN).describe("Entry kind"),
   as_of: AsOf,
   replayed: Replayed.optional(),
+  bound_task: BoundTask.optional(),
 });
 
 export const entryAdd = defineEntry({

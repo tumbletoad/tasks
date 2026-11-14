@@ -201,10 +201,14 @@ function entries<T extends { author: string; text: string }>(
   });
 }
 
-/** The page of a sections read from `read`, which `pageRanges(plan)` read. */
+/**
+ * The page of a sections read from `read`, which `pageRanges(plan)` read. `sessions` are the
+ * task's session rows (A3 3.7, binding/), newest first, when the plan asks for them.
+ */
 export function sectionsOf(
   read: TaskRead,
   plan: PagePlan,
+  sessions: readonly Readonly<Record<string, unknown>>[] = [],
 ): {
   sections: Record<string, unknown>;
   before?: string;
@@ -272,6 +276,15 @@ export function sectionsOf(
           }),
         );
         break;
+      case "sessions":
+        add(
+          sessions.slice(skip).map((value, i) => ({
+            value,
+            key: skip + i + 1,
+            extra: Object.values(value).reduce<number>((n, v) => n + bytes(String(v)), 0),
+          })),
+        );
+        break;
     }
   }
   const page = buildPage(inputs);
@@ -302,6 +315,7 @@ export function sectionsOf(
       }
       case "sources":
       case "history":
+      case "sessions":
         out[section] = placed.map((p) => p.value);
         break;
       default:

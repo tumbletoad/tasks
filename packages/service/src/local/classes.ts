@@ -88,6 +88,10 @@ export const RPC_METHODS = {
   "setup/homes": CLI,
   "setup/home_grant": USER,
   "setup/home_revoke": USER,
+  // `tasks session` (A3 3.7.3, M4.06): ending, unbinding and rebinding a session, for the user only.
+  "session/end": USER,
+  "session/unbind": USER,
+  "session/rebind": USER,
   // `tasks doctor --live` (A3 3.14, M4.05): which instances' tool calls this start saw.
   "setup/seen": CLI,
   "launch.claim": SHIM,

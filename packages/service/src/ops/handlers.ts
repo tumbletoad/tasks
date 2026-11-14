@@ -50,7 +50,12 @@ import {
   type OpenTaskRequest,
   type OpenTaskResult,
 } from "../launch/open.ts";
-import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
+import {
+  type BindOutcome,
+  type BindingPort,
+  type BoundSession,
+  type FoundLaunch,
+} from "./binding.ts";
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
@@ -146,6 +151,11 @@ interface Call {
   readonly host: OpsHost;
   readonly caller: Caller;
   readonly principal: Principal;
+  /**
+   * The session the principal was made from, as the call read it: a write goes to the writer only
+   * while the session is still so (submit, A3 3.7.3).
+   */
+  readonly bound?: BoundSession;
   readonly entry: AnyEntry;
   readonly space: ServedSpace;
   /** The input after the contract: SafeText, defaults and the audience's limits. */
@@ -260,11 +270,11 @@ async function callAs(
       ? sessionPrincipal(slot, bound)
       : (caller.principal ?? principalOf(caller.class, host.machine.id, caller.grant));
   const request = entry.kind === "write" ? requestIdOf(params) : undefined;
-  if (request === undefined) return callWith(host, caller, entry, params, principal);
+  if (request === undefined) return callWith(host, caller, entry, params, principal, bound);
   return writing(
     (scope) => `${host.machine.id}\n${scope}\n${request}`,
     principal,
-    () => callWith(host, caller, entry, params, principal),
+    () => callWith(host, caller, entry, params, principal, bound),
   );
 }
 
@@ -275,6 +285,7 @@ async function callWith(
   entry: AnyEntry,
   params: OpCallParams,
   principal: Principal,
+  bound: BoundSession | undefined,
 ): Promise<unknown> {
   const given = params.input ?? {};
   if (!isRecord(given)) throw invalid("input", "Expected an object");
@@ -297,6 +308,7 @@ async function callWith(
     host,
     caller,
     principal,
+    ...(principal.session === undefined || bound === undefined ? {} : { bound }),
     entry,
     space,
     input: parsed.data,
@@ -304,7 +316,7 @@ async function callWith(
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
-  const result = await handler(call);
+  const result = await withBoundTask(call, await handler(call));
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
     throw new AppError({
@@ -313,6 +325,38 @@ async function callWith(
     });
   }
   return result;
+}
+
+/** Where each entry's result names the task it acted on, as a reference (A3 3.7.3). */
+const RESULT_TASK: Readonly<Record<string, (result: Record<string, unknown>) => unknown>> = {
+  "task.get": (result) => (isRecord(result["task"]) ? result["task"]["ref"] : undefined),
+  "task.update": (result) => result["task"],
+  "entry.add": (result) => result["task"],
+  "task.finish": (result) => result["task"],
+  "task.reopen": (result) => result["task"],
+};
+
+/**
+ * A3 3.7.3: an explicit `task` applies to its call only. When a bound connection's call named
+ * another task, its result says which task the session stays bound to (`bound_task`), read from
+ * the binding now: it is no part of a write's stored result, so a replay says the binding then.
+ */
+async function withBoundTask(call: Call, result: unknown): Promise<unknown> {
+  const bound = call.caller.binding?.session?.task;
+  const pick = RESULT_TASK[call.entry.name];
+  if (typeof bound !== "string" || pick === undefined || typeof call.input["task"] !== "string") {
+    return result;
+  }
+  if (!isRecord(result) || result["view"] === "status") return result;
+  const named = pick(result);
+  if (typeof named !== "string") return result;
+  let ref: string | undefined;
+  try {
+    ref = await readTaskRef(readerOf(call.space), bound);
+  } catch {
+    return result;
+  }
+  return ref === undefined || ref === named ? result : { ...result, bound_task: ref };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -547,6 +591,26 @@ function intentInput(input: Record<string, unknown>): Record<string, unknown> {
  * found before the writer (a place bound without a remote check): the writer keeps them with an
  * accepted result, so they come back in `result.warnings`, and a replay returns the first call's.
  */
+/**
+ * The checks a write passes before anything of it reaches the space, and again right before the
+ * writer gets it. The session the call acts as is still as the call read it (A3 3.7.3): the
+ * user's end, unbind or rebind, or an agent's first bind of a session a CLI call mapped while it
+ * waited, may land after the call read its binding (`use`); the call then writes nothing, and its
+ * retry acts as its connection is bound now. Then the grant (A3 3.7.8), for the homes of the
+ * session as read: a row revoked while the call read and staged stops it.
+ */
+function checkWriter(call: Call): void {
+  const bindings = call.host.bindings;
+  if (call.bound !== undefined && bindings !== undefined && !bindings.holds(call.bound)) {
+    throw new AppError({
+      code: "unbound",
+      message: `Your ${PRODUCT_NAME} session changed while this call ran: nothing was written.`,
+      hint: "Call again: the call then acts as your session is now. Pass task, or ask the user.",
+    });
+  }
+  checkGrant(call.host.homes, homesOf(call.caller, { session: call.bound }), call.space.id);
+}
+
 async function submit(
   call: Call,
   ops: Operation[],
@@ -566,10 +630,10 @@ async function submit(
   }
   let result: WriteResult;
   try {
-    // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
-    // read and staged stops it before its actor is registered, and once more (below) before the
-    // writer gets the request.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    // The session and the grant again before anything reaches the space (A3 3.7.3, 3.7.8): a
+    // change that landed while this call read and staged stops it before its actor is registered,
+    // and once more (below) before the writer gets the request.
+    checkWriter(call);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
@@ -595,9 +659,10 @@ async function submit(
       intent: { entry: call.entry.name, input: intentInput(input) },
       ops,
     };
-    // The last step before the writer: no write is handed over after the revoke took effect. Only
-    // a request the writer holds already can still commit.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    // The last step before the writer: no write is handed over after the revoke took effect, or
+    // as a session that changed meanwhile (A3 3.7.3). Only a request the writer holds already can
+    // still commit.
+    checkWriter(call);
     // An unbound connection's write was registered when its call started (`opCall`), so a retry
     // after a lost reply, once bound, still finds this receipt.
     result = await writer.submit(request);
@@ -1176,12 +1241,21 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let task: string;
     // Whether this call bound the connection, or found it bound already to what it asked for.
     let bound = false;
+    // A3 3.7.5: a connection that carries several conversations binds for this call only.
+    const callOnly =
+      call.caller.shared === true &&
+      (typeof input["launch"] === "string" || input["bind"] === true);
     if (typeof input["launch"] === "string") {
       // A3 3.7.3: bind by the launch reference, then load its task. A connection that
       // cannot hold a binding resolves the reference for this call only.
       if (input["task"] !== undefined) throw invalid("task", "Pass task or launch, not both");
       const launch = await launchOf(call, input["launch"]);
-      if (slot !== undefined && bindings !== undefined) {
+      if (callOnly) {
+        // A3 3.7.5: on a shared connection the reference resolves for this call only, also when
+        // the call's own native ID proved a session: nothing binds, and its session, while no agent
+        // bound it, reads opened by reference, not tracked.
+        bindings?.untracked(launch.id);
+      } else if (slot !== undefined && bindings !== undefined) {
         bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
       }
       task = launch.task;
@@ -1201,29 +1275,39 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           );
     const read = await readTask(reader, task, { machine, ...ranges });
     // A3 3.7.3: an explicit task choice binds an ad-hoc session, once the task is found.
-    if (input["bind"] === true && input["launch"] === undefined) {
+    if (input["bind"] === true && input["launch"] === undefined && !callOnly) {
       if (slot !== undefined && bindings !== undefined) {
         const id = String(read.row["id"]);
         bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
       }
     }
+    const row = taskRow(read.row, read.space.refPrefix);
+    const once = callOnly
+      ? { durable: false, hint: `Pass task "${String(row["ref"])}" on later calls.` }
+      : {};
     if (asked.length === 0) {
       return {
         view: "digest",
         as_of: read.space.asOf,
         bound,
         task: digestOf(read, call.today, await placeStateOf(call, read.place)),
+        ...once,
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
-    const page = sectionsOf(read, pagePlan(asked, input["before"], logLimit));
+    // The session list (A3 3.7, A4 3.10) is the binding service's: machine state, not the space.
+    const sessions = asked.includes("sessions")
+      ? (bindings?.sessionsOf(read.space.id, String(read.row["id"])) ?? [])
+      : [];
+    const page = sectionsOf(read, pagePlan(asked, input["before"], logLimit), sessions);
     return {
       view: "sections",
       as_of: read.space.asOf,
       bound,
-      task: taskRow(read.row, read.space.refPrefix),
+      task: row,
       sections: page.sections,
       ...(page.before === undefined ? {} : { before: page.before }),
+      ...once,
     };
   },
 

@@ -570,11 +570,14 @@ describe("[A3.3.7.binding.space] a session is pinned to its space", () => {
 
 describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live session and redeems no role", () => {
   test(
-    "no session yet: agent:unknown, and the bridge still binds; then the session's actor; after the agent ended, nothing",
+    "an unmapped shell writes as agent:unknown and its retry replays once mapped; a mapped call is the launch's session, before and after its bridge bound",
     { timeout: LONG },
     async () => {
-      const launch = await w.launch("M-3");
-      const cli = await classSession(w.home, w.path, "cli-agent", { TASKS_TICKET: launch.ticket });
+      // The launch's own instance, whose agent home is registered: its session is that home's.
+      const launch = await w.launch("M-3", { instance: "test-agent" });
+      // An agent's shell that carries no ticket: no mapping, so the agent's CLI names its space
+      // (A2 3.10.5) and writes as agent:unknown.
+      const cli = await classSession(w.home, w.path, "cli-agent", { CLAUDECODE: "1" });
       const early = rid();
       const earlyInput = {
         task: "M-3",
@@ -584,8 +587,6 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
       };
       let first: Json;
       try {
-        // No session for the launch yet: no mapping, so the agent's CLI names its space (A2
-        // 3.10.5) and writes as agent:unknown. Its ticket is not spent by it.
         first = (await cli.call(
           "op/call",
           { space: w.space, op: "entry.add", input: earlyInput },
@@ -595,10 +596,10 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
       } finally {
         cli.close();
       }
-      const bridge = await connect({ env: { TASKS_TICKET: launch.ticket } });
-      expect(bridge.binding["state"]).toBe("bound");
-      const session = bridge.slot.session?.id ?? "";
-
+      // A3 3.7.7: the session was made with the launch intent, so the shell's call with the ticket
+      // maps to it before any bridge bound, and its ticket is not spent by it.
+      const made = w.service.bindings.sessionOfLaunch(launch.id)?.id ?? "";
+      expect(made).toMatch(/^se_/);
       const mapped = await classSession(w.home, w.path, "cli-agent", {
         TASKS_TICKET: launch.ticket,
       });
@@ -614,8 +615,35 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
         expect(retried).toMatchObject({ ...first, replayed: true });
         expect((await logOf("M-3"))[0]).toEqual(newest);
 
-        // No task, no space: the session's task in the session's space.
-        const logged = (await mapped.call(
+        // No task, no space: the session's task in the session's space, as the session.
+        const before = (await mapped.call(
+          "op/call",
+          {
+            op: "entry.add",
+            input: {
+              kind: "progress",
+              text: "Fixture progress, no bridge yet.",
+              request_id: rid(),
+            },
+          },
+          { timeoutMs: 60_000 },
+        )) as Json;
+        expect(before).toMatchObject({ task: "M-3" });
+        expect((await logOf("M-3"))[0]?.["author"]).toBe(`agent:test-agent:${made}`);
+      } finally {
+        mapped.close();
+      }
+      // The bridge binds the same session with the unspent ticket.
+      const bridge = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      expect(bridge.binding["state"]).toBe("bound");
+      const session = bridge.slot.session?.id ?? "";
+      expect(session).toBe(made);
+
+      const again = await classSession(w.home, w.path, "cli-agent", {
+        TASKS_TICKET: launch.ticket,
+      });
+      try {
+        const logged = (await again.call(
           "op/call",
           {
             op: "entry.add",
@@ -627,7 +655,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
         expect((await logOf("M-3"))[0]?.["author"]).toBe(`agent:test-agent:${session}`);
         // A mapped call binds nothing new.
         const other = await w.launch("M-1");
-        const refused = await mapped
+        const refused = await again
           .call(
             "op/call",
             { op: "task.get", input: { launch: other.reference } },
@@ -639,7 +667,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
           );
         expect(refused?.code).toBe("already_bound");
       } finally {
-        mapped.close();
+        again.close();
         bridge.close();
       }
     },

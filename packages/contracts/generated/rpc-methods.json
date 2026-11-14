@@ -99,6 +99,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "bound_task": {
+            "description": "This session stays bound to this task",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          },
           "entry": {
             "description": "Its ordinal: l3 for a log entry, n2 for a note",
             "pattern": "^[nl][1-9][0-9]{0,5}$",
@@ -1747,6 +1752,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "bound_task": {
+            "description": "This session stays bound to this task",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          },
           "follow_ups": {
             "description": "One row per follow-up draft",
             "items": {
@@ -1899,11 +1909,12 @@
                 "log",
                 "sources",
                 "outcome",
-                "history"
+                "history",
+                "sessions"
               ],
               "type": "string"
             },
-            "maxItems": 7,
+            "maxItems": 8,
             "type": "array"
           },
           "task": {
@@ -1930,6 +1941,20 @@
               "bound": {
                 "description": "This call bound the session",
                 "type": "boolean"
+              },
+              "bound_task": {
+                "description": "This session stays bound to this task",
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              },
+              "durable": {
+                "const": false,
+                "description": "The binding held for this call only",
+                "type": "boolean"
+              },
+              "hint": {
+                "description": "What to do next",
+                "type": "string"
               },
               "task": {
                 "additionalProperties": false,
@@ -2497,6 +2522,20 @@
                 "description": "This call bound the session",
                 "type": "boolean"
               },
+              "bound_task": {
+                "description": "This session stays bound to this task",
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              },
+              "durable": {
+                "const": false,
+                "description": "The binding held for this call only",
+                "type": "boolean"
+              },
+              "hint": {
+                "description": "What to do next",
+                "type": "string"
+              },
               "sections": {
                 "additionalProperties": false,
                 "description": "The sections asked for",
@@ -2853,6 +2892,99 @@
                       "learnings"
                     ],
                     "type": "object"
+                  },
+                  "sessions": {
+                    "description": "Agent sessions on the task, newest first: up to 20",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "end_reason": {
+                          "description": "Why it ended",
+                          "enum": [
+                            "idle",
+                            "stale",
+                            "user",
+                            "unbound",
+                            "rebound"
+                          ],
+                          "type": "string"
+                        },
+                        "ended": {
+                          "description": "When it ended, ISO date and time",
+                          "type": "string"
+                        },
+                        "id": {
+                          "description": "Session ID",
+                          "pattern": "^se_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        },
+                        "instance": {
+                          "description": "The agent instance",
+                          "maxLength": 64,
+                          "type": "string"
+                        },
+                        "last_seen": {
+                          "description": "Its last bind or call, ISO date and time",
+                          "type": "string"
+                        },
+                        "resume": {
+                          "description": "Resume is offered; otherwise Open starts a new session",
+                          "type": "boolean"
+                        },
+                        "route": {
+                          "description": "How its launch opened",
+                          "enum": [
+                            "terminal",
+                            "link",
+                            "t3-mcp",
+                            "t3-cli",
+                            "clipboard"
+                          ],
+                          "type": "string"
+                        },
+                        "started": {
+                          "description": "When it was made, ISO date and time",
+                          "type": "string"
+                        },
+                        "state": {
+                          "description": "opening: no agent bound yet; live: a connection or its agent runs",
+                          "enum": [
+                            "opening",
+                            "live",
+                            "unknown",
+                            "ended"
+                          ],
+                          "type": "string"
+                        },
+                        "untracked": {
+                          "const": true,
+                          "description": "Opened by reference on a shared connection: not tracked",
+                          "type": "boolean"
+                        },
+                        "via": {
+                          "description": "How it bound first",
+                          "enum": [
+                            "ticket",
+                            "launch_ref",
+                            "task",
+                            "native_id",
+                            "rebind"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "state",
+                        "instance",
+                        "started",
+                        "last_seen",
+                        "resume"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
                   },
                   "sources": {
                     "description": "Linked sources",
@@ -3509,6 +3641,11 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "bound_task": {
+            "description": "This session stays bound to this task",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          },
           "lifecycle": {
             "description": "Lifecycle",
             "enum": [
@@ -4163,6 +4300,11 @@
           "as_of": {
             "description": "Read position; pass it as base on your next write",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "bound_task": {
+            "description": "This session stays bound to this task",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
             "type": "string"
           },
           "fields": {

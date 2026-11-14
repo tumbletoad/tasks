@@ -39,6 +39,12 @@ export interface Caller {
    * call's whose ticket maps to a live session. Absent: the connection cannot bind.
    */
   readonly binding?: Slot;
+  /**
+   * The call comes over a connection that carries several conversations (A3 3.7.5): it acts as a
+   * session only when its own native ID proved one, for this call, and a launch reference or a
+   * bind resolves for this call only; the result says so (`durable: false`).
+   */
+  readonly shared?: boolean;
 }
 
 export interface Principal {
@@ -119,7 +125,8 @@ export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
     audience: "agent",
     actorKind: "agent",
     label: `agent:${session.instance}:${session.id}`,
-    scope: `session:${session.id}`,
+    // A rebound session writes under the scope of the session it replaced (A3 3.7.9).
+    scope: `session:${session.scope ?? session.id}`,
     ...(slot.wroteUnbound && slot.unboundScope !== undefined
       ? { earlierScope: slot.unboundScope }
       : {}),

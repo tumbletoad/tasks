@@ -1,4 +1,4 @@
-// Session records and binding handles in machine state (A3 3.7.4, 3.7.7; A4 3.10; M2.04).
+// Session records and binding handles in machine state (A3 3.7.4, 3.7.7; A4 3.10; M2.04, M4.06).
 //
 // Where they live, for now. A1 3.4 and A4 3.16 put session records in the space, in a `sessions`
 // table written through the execution store's `upsertSession`. Schema 0.1 has no such table, 0.1 is
@@ -8,25 +8,61 @@
 // reaches the space through the write path today: its actor joins with `actor.register`
 // (`agent:<instance>:<session>`), every commit and log entry carries its `session_id` from the
 // credential, and the launch it bound through records `bound_at` (A4 3.9.1). What moves with
-// the table: these records (id, space, task, instance, kind, via, launches, native IDs, times), the
-// `session.*` operations, the session list and Resume (M4.06).
+// the table: these records, behind the `SessionStore` interface below, and the user's `session.*`
+// operations (bindings.ts `unbind`, `rebind`, `end`), which then go through the writer.
 //
 // The file holds IDs, instants, fixed words and hashes only: never a task text, a ticket, a handle
 // or a path. It is replaced atomically (0600) after every change that must outlive a restart.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isId } from "@tasks/storage";
-import { INSTANCE_ID } from "@tasks/launch";
+import { INSTANCE_ID, isRoute, type Route } from "@tasks/launch";
 import { atomicWrite } from "../hub/files.ts";
 import { NATIVE_ID, NATIVE_SOURCES, type NativeSource } from "../ops/index.ts";
 
 export const SESSIONS_FILE = "sessions.json";
 
-/** How a session was bound first (A3 3.7.3): the ticket, the launch reference, a task choice. */
-export const VIA = ["ticket", "launch_ref", "task"] as const;
+/**
+ * How a session was bound first (A3 3.7.3): the ticket, the launch reference, a task choice, a
+ * native ID alone (rule 3), or the user's rebind of an earlier session (A3 3.7.3 "Rebinding").
+ */
+export const VIA = ["ticket", "launch_ref", "task", "native_id", "rebind"] as const;
 export type Via = (typeof VIA)[number];
 
-/** A session record (A4 3.10's logical fields, as far as this step uses them). */
+/**
+ * Where a native ID on a session came from (A4 3.10's `native_id_source`), which decides what it
+ * may do. `preset`, `returned` and `reference-match` are IDs the launch itself set or received (A4
+ * preset Claude's UUID, T3 returned its thread ID, the reference match found Codex's thread):
+ * each binds alone (A3 3.7.3 rule 3) and offers Resume. `bridge` is one a connection presented when
+ * it bound through the launch's ticket, reference or native ID: it offers Resume, binds nothing
+ * alone. `presented` is one a connection showed otherwise (an ad-hoc bind by task): it only lets the
+ * same session's ticket be presented again (rule 2) and marks a connection shared.
+ */
+export const TRUST = ["preset", "returned", "reference-match", "bridge", "presented"] as const;
+export type Trust = (typeof TRUST)[number];
+
+/** The IDs that bind alone (A3 3.7.3 rule 3): the launch's own. */
+export const BINDS_ALONE: ReadonlySet<Trust> = new Set<Trust>([
+  "preset",
+  "returned",
+  "reference-match",
+]);
+
+/** A native ID a session holds, with where it came from. */
+export interface NativeRecord {
+  readonly source: NativeSource;
+  readonly id: string;
+  readonly trust: Trust;
+}
+
+/**
+ * Why a session ended: a day without a connection, an agent or a call (`idle`); made with its
+ * launch and never bound for 7 days (`stale`); the user ended, unbound or rebound it.
+ */
+export const END_REASONS = ["idle", "stale", "user", "unbound", "rebound"] as const;
+export type EndReason = (typeof END_REASONS)[number];
+
+/** A session record (A4 3.10's logical fields, as far as the binding service uses them). */
 export interface SessionRecord {
   /** `se_` ID. */
   readonly id: string;
@@ -34,18 +70,34 @@ export interface SessionRecord {
   readonly space: string;
   /** Its task; null for a routine's (M6). */
   readonly task: string | null;
-  /** The instance whose connection bound it, or `manual`. */
+  /**
+   * The agent home it belongs to (A3 3.7.8): the instance of the connection that bound it first,
+   * or `manual`. A session made with its launch intent holds the launch's instance until then.
+   */
   readonly instance: string;
-  readonly via: Via;
+  /** How it was bound first; null while no agent has bound it (made with its launch, A3 3.7.7). */
+  readonly via: Via | null;
   /** The launches it was bound through, first open first. */
   readonly launches: readonly string[];
-  /** Native IDs its connections presented (A3 3.7.3), for a ticket presented again. */
-  readonly native: readonly { readonly source: NativeSource; readonly id: string }[];
+  /** Native IDs it holds (A3 3.7.3), each with where it came from. */
+  readonly native: readonly NativeRecord[];
+  /** The A4 instance its launch opened, for Resume (A4 3.10). */
+  readonly opened_with?: string;
+  /** How its first launch opened (A4 3.1's route). */
+  readonly route?: Route;
+  /** Its launch reference was resolved on a shared connection: opened, not tracked (A3 3.7.5). */
+  readonly untracked?: true;
+  /**
+   * The session whose writer scope it writes under (A3 3.7.9): the first of a chain of rebinds, so
+   * a retry after a rebind finds the receipt of a write made before it. Absent: its own.
+   */
+  readonly scope?: string;
   readonly created_at: number;
   /** The last bind or call (A3 3.7.7 `session.call`), kept at most a minute behind. */
   readonly seen_at: number;
-  /** When it ended: idle with no connection for a day. */
+  /** When it ended, and why. */
   readonly ended_at?: number;
+  readonly end_reason?: EndReason;
 }
 
 /** A binding handle (A2 3.6.4, A3 3.7.4): the hash of a secret only the bridge's memory holds. */
@@ -105,36 +157,54 @@ const isInstant = (value: unknown): value is number =>
 export const isInstance = (value: unknown): value is string =>
   typeof value === "string" && (value === "manual" || INSTANCE_ID.test(value));
 
+const isOneOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
+  (values as readonly unknown[]).includes(value);
+
 function sessionOf(value: unknown): SessionRecord | undefined {
   if (!isObject(value)) return undefined;
-  const { id, space, task, instance, via, launches, native, created_at, seen_at, ended_at } = value;
+  const { id, space, task, instance, via, launches, native, created_at, seen_at } = value;
+  const { opened_with, route, untracked, scope, ended_at, end_reason } = value;
   if (!isId(id, "se") || !isId(space, "sp") || !isInstance(instance)) return undefined;
   if (task !== null && !isId(task, "t")) return undefined;
-  if (!(VIA as readonly unknown[]).includes(via)) return undefined;
+  if (via !== null && !isOneOf(VIA, via)) return undefined;
   if (!Array.isArray(launches) || launches.length > MAX_LAUNCHES) return undefined;
   if (!launches.every((l) => isId(l, "la"))) return undefined;
   if (!Array.isArray(native) || native.length > MAX_NATIVE) return undefined;
-  const ids: { source: NativeSource; id: string }[] = [];
+  const ids: NativeRecord[] = [];
   for (const entry of native) {
     if (!isObject(entry)) return undefined;
-    const { source, id: nativeId } = entry;
-    if (!(NATIVE_SOURCES as readonly unknown[]).includes(source)) return undefined;
+    const { source, id: nativeId, trust } = entry;
+    if (!isOneOf(NATIVE_SOURCES, source)) return undefined;
     if (typeof nativeId !== "string" || !NATIVE_ID.test(nativeId)) return undefined;
-    ids.push({ source: source as NativeSource, id: nativeId });
+    // A record of an earlier build holds no trust: what it held was only presented.
+    if (trust !== undefined && !isOneOf(TRUST, trust)) return undefined;
+    ids.push({ source, id: nativeId, trust: trust ?? "presented" });
   }
+  if (opened_with !== undefined && !isInstance(opened_with)) return undefined;
+  if (route !== undefined && !isRoute(route)) return undefined;
+  if (untracked !== undefined && untracked !== true) return undefined;
+  if (scope !== undefined && !isId(scope, "se")) return undefined;
   if (!isInstant(created_at) || !isInstant(seen_at)) return undefined;
   if (ended_at !== undefined && !isInstant(ended_at)) return undefined;
+  if (end_reason !== undefined && (ended_at === undefined || !isOneOf(END_REASONS, end_reason))) {
+    return undefined;
+  }
   return {
     id,
     space,
     task,
     instance,
-    via: via as Via,
+    via,
     launches: launches,
     native: ids,
+    ...(opened_with === undefined ? {} : { opened_with }),
+    ...(route === undefined ? {} : { route }),
+    ...(untracked === true ? { untracked } : {}),
+    ...(scope === undefined ? {} : { scope }),
     created_at,
     seen_at,
     ...(ended_at === undefined ? {} : { ended_at }),
+    ...(end_reason === undefined ? {} : { end_reason }),
   };
 }
 

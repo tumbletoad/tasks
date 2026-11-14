@@ -106,7 +106,9 @@ import { LaunchService, type LaunchOptions, type OpenTaskRequest } from "../laun
 import {
   Bindings,
   FileSessionStore,
+  osAncestry,
   SESSIONS_FILE,
+  type Ancestry,
   type BindingEvent,
   type SessionStore,
 } from "../binding/index.ts";
@@ -210,6 +212,11 @@ export interface StartOptions {
   readonly http?: HttpStart;
   /** Where session records and binding handles are kept. Default: `<state>/sessions.json`. */
   readonly sessions?: SessionStore;
+  /**
+   * How a connection's ancestors are read, to tell a shared host (A3 3.7.5). Default: this OS's
+   * process table; null reads none. Tests pass a fake.
+   */
+  readonly ancestry?: Ancestry | null;
 }
 
 export type StopReason = "signal" | "request";
@@ -616,11 +623,17 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       defaultSpace: () => defaults.get(),
     });
     // Session binding (A3 3.7): the launch side it needs is the launch service's, made below.
+    // A3 3.7.5: a Codex connection's ancestors tell a shared app-server host.
+    const ancestry =
+      options.ancestry === null ? undefined : (options.ancestry ?? osAncestry(platform));
     const bindings = new Bindings({
       store: options.sessions ?? new FileSessionStore(layout.state),
       machine: machine.id,
       homes,
       spaces: () => made.spaces?.served() ?? [],
+      ...(ancestry === undefined ? {} : { ancestry }),
+      // A4 3.10: Resume needs an instance that exists here.
+      instances: () => config.instances,
       launches: {
         bridgeTicket: (ticket) => launching.service?.host.bridgeTicket(ticket),
         redeemBridge: (ticket) => launching.service?.host.redeemBridge(ticket),
@@ -792,6 +805,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       log,
       terminalSettings: config.terminal,
       instances: config.instances,
+      // A3 3.7.7: a click's session is made with its launch intent, before dispatch.
+      sessions: bindings,
       install,
       commandFolder: layout.bin,
       ...(accountHome === undefined ? {} : { home: accountHome }),

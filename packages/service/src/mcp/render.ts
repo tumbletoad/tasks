@@ -288,6 +288,47 @@ const storedPlace = (place: DigestTask["place"]): string[][] =>
 
 const SECTION_NAMES = ["context", "notes", "log", "sources", "outcome", "history"];
 
+/**
+ * A3 3.7.3, 3.7.5: what holds for this call only. A binding on a shared connection
+ * (`durable: false`, with the way on), and the task a bound session stays on when the call named
+ * another. The hint is the request path's own sentence, naming a task reference only.
+ */
+function callOnlyLines(result: {
+  readonly durable?: false | undefined;
+  readonly hint?: string | undefined;
+  readonly bound_task?: string | undefined;
+}): string[] {
+  return [
+    ...(result.durable === false
+      ? [`Session: not bound, this call only. ${clip(result.hint ?? "", 120)}`.trimEnd()]
+      : []),
+    ...boundTaskLine(result),
+  ];
+}
+
+/** The task this session stays bound to, when the call named another (A3 3.7.3). */
+const boundTaskLine = (result: { readonly bound_task?: string | undefined }): string[] =>
+  result.bound_task === undefined ? [] : [`This session is bound to ${result.bound_task}.`];
+
+/** One session of the session list (A4 3.10): IDs, words and times only. */
+const sessionRowLine = (row: SessionRowOut): string =>
+  `- ${join(
+    row.id,
+    row.state,
+    row.instance,
+    row.via !== undefined && `via ${row.via}`,
+    row.route,
+    row.untracked === true && "opened by reference, not tracked",
+    row.started.slice(0, 16).replace("T", " "),
+    row.ended !== undefined && `ended ${row.ended.slice(0, 16).replace("T", " ")}`,
+    row.end_reason,
+    row.resume ? "resume" : "open",
+  )}`;
+
+type SessionRowOut = NonNullable<
+  Extract<TaskGet, { view: "sections" }>["sections"]["sessions"]
+>[number];
+
 function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: string): Rendered {
   const task = result.task;
   const { more } = task;
@@ -297,6 +338,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       headerLine(task, result.as_of),
       task.place === undefined ? undefined : placeLine(task.place),
       result.bound ? "Session: bound to this task by this call" : undefined,
+      ...callOnlyLines(result),
     ),
     instructionsPart(
       task.instructions,
@@ -380,6 +422,8 @@ function sectionsRendered(
   });
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
   if (result.bound) parts.push(fixed("Session: bound to this task by this call"));
+  const once = callOnlyLines(result);
+  if (once.length > 0) parts.push(fixed(...once));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
     // Only what the user wrote stands outside the data block as instructions (A3 3.10).
@@ -440,6 +484,15 @@ function sectionsRendered(
       ),
     );
   }
+  if (sections.sessions !== undefined) {
+    parts.push(
+      section(
+        "Sessions, newest first:",
+        sections.sessions.map((row) => [sessionRowLine(row)]),
+        false,
+      ),
+    );
+  }
   if (result.before !== undefined) {
     parts.push(
       fixed(
@@ -483,6 +536,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
         fixed(
           `${head} · as_of ${result.as_of}${replayed(result)}`,
           ...result.warnings.map((w) => `warning: ${w}`),
+          ...boundTaskLine(result),
         ),
       ],
       more: "",
@@ -492,6 +546,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     parts: [
       fixed(
         `${result.kind === "note" ? `noted ${result.entry}` : `logged ${result.entry}`} on ${result.task}${result.kind === "note" ? "" : ` (${result.kind})`} · as_of ${result.as_of}${replayed(result)}`,
+        ...boundTaskLine(result),
       ),
     ],
     more: "",
@@ -515,7 +570,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
               );
     return {
       parts: [
-        fixed(`${head} · as_of ${result.as_of}${replayed(result)}`),
+        fixed(`${head} · as_of ${result.as_of}${replayed(result)}`, ...boundTaskLine(result)),
         {
           data: true,
           title: (kept, total) =>

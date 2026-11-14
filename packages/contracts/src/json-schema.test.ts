@@ -40,7 +40,7 @@ describe("[A3.5.registry.json-schema] generated JSON Schema and registry metadat
       properties: { sections: { items: { enum: string[] } } };
     };
     const offered = input.properties.sections.items.enum;
-    // sessions and proposals wait for M4.06 and M4.02, which define their records.
+    // proposals waits for M4.02, which defines its records.
     expect(offered).toEqual([
       "instructions",
       "context",
@@ -49,6 +49,7 @@ describe("[A3.5.registry.json-schema] generated JSON Schema and registry metadat
       "sources",
       "outcome",
       "history",
+      "sessions",
     ]);
     // A section's payload, and for the context the part a page holds of it (`context_slice`).
     const payloads = Object.keys(TaskSections.shape).filter((key) => key !== "context_slice");

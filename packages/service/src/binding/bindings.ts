@@ -1,12 +1,22 @@
-// Session binding (A3 3.7, M2.04): which task and space each agent connection writes to, and as
-// whom. The request path reads a connection's Slot (ops/binding.ts); this service is the only code
-// that changes one, and it decides only from what the connection presented in its authenticated
-// bind frame (A2 3.6.4: the entry's `--space` and `--instance`, `env.TASKS_TICKET`, the native IDs,
-// `resume.handle`) and from what the service itself issued (the ticket, the launch reference, the
-// handle). Nothing an agent chooses freely binds: not its working folder (`cwd` is never read
+// Session binding (A3 3.7, M2.04, M4.06): which task and space each agent connection writes to, and
+// as whom. The request path reads a connection's Slot (ops/binding.ts); this service is the only
+// code that changes one, and it decides only from what the connection presented in its
+// authenticated bind frame (A2 3.6.4: the entry's `--space`, `--instance` and `--app`,
+// `env.TASKS_TICKET`, the native IDs, `parent.pid`, `resume.handle`), from the native ID a tool
+// call carries (Codex's `_meta.threadId`, A3 3.7.2), and from what the service itself issued or
+// learned (the ticket, the launch reference, the handle, the native IDs its launches set or
+// received). Nothing an agent chooses freely binds: not its working folder (`cwd` is never read
 // here), not a tool argument (no tool names a session), not `TASKS_TASK` or `TASKS_SPACE`.
 //
+// A launch's session is made with its launch intent, before dispatch (A3 3.7.7, `launched`), so a
+// `cli-agent` call before any bridge bound maps to it. Until an agent binds it, it holds the
+// launch's instance and no `via`; the first connection that binds it makes it its home's.
+//
 // The rules, in A3 3.7.3's order:
+// 0. The host, read after rule 1 and before rule 2: a connection whose app runs one server for many
+//    conversations (hosts.ts, A3 3.7.5) is shared from its bind frame on; its ticket and native IDs
+//    bind nothing at the bind frame. Neither do those of a Codex entry whose host could not be read,
+//    which binds at its first call instead, by the thread ID that call carries.
 // 1. `resume.handle`: a handle this service issued to a connection of the same instance, used in
 //    the last 24 hours, restores its binding and its pinned space; one whose session ended answers
 //    `lost`, and the connection continues unbound.
@@ -15,16 +25,19 @@
 //    the connection presents a native ID the session holds, or no other connection of the session
 //    is open and the agent still runs (its MCP server restarted). Otherwise it is ignored and
 //    logged. A ticket of another space than the connection's is ignored.
-// 3. Native IDs alone bind nothing yet (M4.06); they are recorded on the session at a bind.
+// 3. A native ID alone: one that a launch set or received (Claude's preset, T3's thread ID, Codex's
+//    reference match) for exactly one live session of this instance binds it (`native_id`). The
+//    bind frame carries Claude's and T3's; Codex's comes with each tool call (`forCall`).
 // Then, through `get_task`: a launch reference binds once, the same connection again gets the same
 // binding, another gets `launch_used`; an explicit task binds an ad-hoc session. A bound connection
-// is never bound to something else (`already_bound`).
+// is never bound to something else (`already_bound`); the user unbinds, rebinds or ends a session.
 //
 // A session is pinned to its space for its whole life (A3 3.7.8), and an unbound connection to the
-// space its bind frame named (or the default, A2 3.7.1). The UI's space plays no part. A ticket of a
-// space the connection's agent home is not granted binds nothing (the grant gate, ops/grant.ts);
-// a binding restored by its handle stays, and the request path refuses its calls while its home
-// is not granted its space, so a home registered again finds its sessions as they were.
+// space its bind frame named (or the default, A2 3.7.1). The UI's space plays no part. A ticket or
+// native ID of a space the connection's agent home is not granted binds nothing (the grant gate,
+// ops/grant.ts); a binding restored by its handle stays, and the request path refuses its calls
+// while its home is not granted its space, so a home registered again finds its sessions as they
+// were.
 //
 // Three rules keep a binding consistent with what was written under it:
 // - Durable before irreversible: a session is on disk (with the connection's handle naming it)
@@ -32,14 +45,16 @@
 //   A launch that does not answer binds nothing yet; the same connection asks again with the same
 //   instant, so a late write is recognised as its own.
 // - A call sees a settled binding (`use`): a call on a session whose bind still waits on its launch
-//   waits for the outcome, and a slot whose session is gone or ended is unbound before a call
-//   reads it. Receipts survive the move from unbound to bound: a connection that was unbound at
-//   any time keeps that scope as a lookup (marked in its handle's first write), and a write with
+//   waits for the outcome, and a slot whose session is gone, ended or not bound is unbound before a
+//   call reads it. Receipts survive the move from unbound to bound: a connection that was unbound
+//   at any time keeps that scope as a lookup (marked in its handle's first write), and a write with
 //   an earlier scope waits for that scope's writes with its request ID (ops/handlers.ts).
-// - A connection that carries two conversations (two different native IDs of one source, or an
-//   ID its bound session does not hold, A3 3.7.5) is shared, and stays so in its handle: a call
-//   acts as the bound session only when its own ID proves that session, and no call binds it.
+// - A connection that carries two conversations (a shared host, two different native IDs of one
+//   source, or an ID its bound session does not hold, A3 3.7.5) is shared, and stays so in its
+//   handle: a call acts as a session only when its own native ID proves that session, and no call
+//   binds the connection.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { CLI_NAME } from "@tasks/brand";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import { AppError } from "@tasks/contracts";
 import { INSTANCE_ID, MANUAL_INSTANCE, type BridgeTicket, type LaunchIntent } from "@tasks/launch";
@@ -57,15 +72,21 @@ import {
   type HomeGate,
   type NativeSource,
   type ServedSpace,
+  type SessionRow,
 } from "../ops/index.ts";
+import { sharedHost, type Ancestry } from "./hosts.ts";
 import {
+  BINDS_ALONE,
   MAX_HANDLES,
   MAX_LAUNCHES,
   MAX_NATIVE,
   MAX_SESSIONS,
+  type EndReason,
   type HandleRecord,
+  type NativeRecord,
   type SessionRecord,
   type SessionStore,
+  type Trust,
   type Via,
 } from "./sessions.ts";
 
@@ -75,10 +96,14 @@ export const HANDLE_IDLE_MS = 24 * 60 * 60_000;
 export const HANDLE_KEEP_MS = 8 * 24 * 60 * 60_000;
 /** A session with no open connection, no running agent and no call for this long has ended. */
 export const SESSION_IDLE_MS = 24 * 60 * 60_000;
+/** A4 3.10: a session made with its launch that never bound ends `stale` after 7 quiet days. */
+export const SESSION_STALE_MS = 7 * 24 * 60 * 60_000;
 /** An ended session's record is kept this long (its launch keeps `bound_at` in the space). */
 export const SESSION_KEEP_MS = 30 * 24 * 60 * 60_000;
 /** A last-seen time is written at most this often; in memory it is always current. */
 export const SEEN_WRITE_MS = 60_000;
+/** At most this many sessions of a task are listed (`task.get`'s sessions section). */
+export const LISTED_SESSIONS = 20;
 
 /** A handle: `bh_` and 128 random bits (A2 3.6.4), never logged, never shown to the model. */
 export const HANDLE = /^bh_[A-Za-z0-9_-]{22}$/;
@@ -88,6 +113,17 @@ const NATIVE_ENV: Readonly<Record<string, NativeSource>> = {
   CLAUDE_CODE_SESSION_ID: "claude",
   T3CODE_THREAD_ID: "t3",
   CODEX_THREAD_ID: "codex",
+};
+
+/**
+ * Resume (A4 3.10): the native ID source each target resumes by. A target that is not here offers
+ * no Resume (Claude Desktop, Copy, a custom target): its button reads Open.
+ */
+const RESUMES: Readonly<Record<string, NativeSource>> = {
+  "claude-cli": "claude",
+  "codex-cli": "codex",
+  t3: "t3",
+  "codex-app": "codex",
 };
 
 /** Why a bind frame's input was not used (the log's closed list). Nothing of the input is logged. */
@@ -103,6 +139,12 @@ export const IGNORED = [
   "unrecorded",
   // A ticket of a space the connection's agent home is not granted (A3 3.7.8).
   "grant",
+  // A ticket or native ID at the bind frame of a connection that carries many conversations.
+  "shared",
+  // A ticket at the bind frame of a Codex entry whose host could not be read (hosts.ts).
+  "host",
+  // A ticket of a launch whose session ended before an agent bound it.
+  "ended",
 ] as const;
 export type Ignored = (typeof IGNORED)[number];
 
@@ -114,11 +156,12 @@ export type BindingEvent =
   | { readonly ev: "binding.bound"; readonly via: Via | "handle" }
   | {
       readonly ev: "binding.ignored";
-      readonly input: "ticket" | "handle";
+      readonly input: "ticket" | "handle" | "native";
       readonly reason: Ignored;
     }
   | { readonly ev: "binding.lost" }
   | { readonly ev: "binding.shared" }
+  | { readonly ev: "binding.ended"; readonly reason: EndReason }
   | { readonly ev: "binding.report_failed" }
   | { readonly ev: "binding.store_failed" }
   | { readonly ev: "binding.store_dropped"; readonly count: number };
@@ -139,6 +182,13 @@ export interface LaunchPort {
   confirm(space: string, launch: string, at: number): Promise<LaunchIntent | undefined>;
 }
 
+/** An instance of machine.toml as Resume needs it (A4 3.2, 3.10). */
+export interface ResumeInstance {
+  readonly id: string;
+  readonly target: string;
+  readonly enabled: boolean;
+}
+
 export interface BindingsOptions {
   readonly store: SessionStore;
   /** This machine (`m_` ID): an unbound connection's writer scope names it. */
@@ -150,10 +200,21 @@ export interface BindingsOptions {
   readonly homes: HomeGate;
   readonly spaces: () => readonly ServedSpace[];
   readonly launches: LaunchPort;
+  /** A connection's ancestors, for its host (hosts.ts, A3 3.7.5). None: no host is read. */
+  readonly ancestry?: Ancestry;
+  /** machine.toml's instances now: Resume needs one that exists (A4 3.10). Default: none. */
+  readonly instances?: () => readonly ResumeInstance[];
   readonly log?: (event: BindingEvent) => void;
   /** Wall clock milliseconds. Default: Date.now. */
   readonly now?: () => number;
 }
+
+/** What a user's change of a session (`end`, `unbind`, `rebind`) did. */
+export type SessionChange =
+  | { readonly kind: "changed"; readonly session: string; readonly next?: string }
+  | { readonly kind: "no_change"; readonly session: string }
+  | { readonly kind: "not_found" }
+  | { readonly kind: "ended"; readonly session: string };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -163,7 +224,15 @@ const unrecorded = (): AppError =>
   new AppError({
     code: "internal",
     message: "The service could not record this session, so the call bound nothing.",
-    hint: "Pass task on each call for now, and ask the user to run tasks doctor.",
+    hint: `Pass task on each call for now, and ask the user to run ${CLI_NAME} doctor.`,
+  });
+
+/** A user's change of a session that could not be put on disk: nothing changed. */
+const unrecordedChange = (): AppError =>
+  new AppError({
+    code: "internal",
+    message: "The service could not record this change, so the session is as it was.",
+    hint: `Run ${CLI_NAME} doctor, then try again.`,
   });
 
 const noop = (): void => undefined;
@@ -184,6 +253,8 @@ const view = (record: SessionRecord): BoundSession => ({
   task: record.task,
   instance: record.instance,
   launches: record.launches,
+  ...(record.via === null ? { waiting: true as const } : {}),
+  ...(record.scope === undefined ? {} : { scope: record.scope }),
 });
 
 /** The instance a bind context names: an A4 instance ID, else `manual` (mcp/principal.ts's rule). */
@@ -191,6 +262,35 @@ const instanceIn = (context: JsonObject): string => {
   const value = context["instance"];
   return typeof value === "string" && INSTANCE_ID.test(value) ? value : MANUAL_INSTANCE;
 };
+
+/** How far each trust goes: a native ID keeps the strongest it was recorded with. */
+const RANK: Readonly<Record<Trust, number>> = {
+  preset: 2,
+  returned: 2,
+  "reference-match": 2,
+  bridge: 1,
+  presented: 0,
+};
+
+/** The native IDs a launch set or received (A4 3.9.1 evidence `preset`, `thread`). */
+function launchNative(intent: LaunchIntent): NativeRecord[] {
+  const out: NativeRecord[] = [];
+  const { preset, thread } = intent.evidence;
+  if (typeof preset === "string" && NATIVE_ID.test(preset)) {
+    out.push({ source: "claude", id: preset, trust: "preset" });
+  }
+  if (typeof thread === "string" && NATIVE_ID.test(thread)) {
+    // T3 returns its thread ID; a terminal launch's thread is Codex's, from the reference match.
+    if (intent.route === "t3-mcp" || intent.route === "t3-cli") {
+      out.push({ source: "t3", id: thread, trust: "returned" });
+    } else if (intent.route === "terminal") {
+      out.push({ source: "codex", id: thread, trust: "reference-match" });
+    }
+  }
+  return out;
+}
+
+const iso = (at: number): string => new Date(at).toISOString();
 
 export class Bindings implements BindingPort {
   readonly #options: BindingsOptions;
@@ -210,6 +310,8 @@ export class Bindings implements BindingPort {
   readonly #provisional = new Map<string, Promise<void>>();
   /** Sessions a bind made and took back (its launch did not take it), newest last. */
   readonly #dropped = new Set<string>();
+  /** Sessions made or reopened with their launch whose write failed: none is acted as yet. */
+  readonly #unsaved = new Set<string>();
   /**
    * Reference binds whose launch did not answer, by launch: the instant sent and the handle of the
    * connection that sent it. Its retry sends the same instant, so a late write is its own.
@@ -229,7 +331,92 @@ export class Bindings implements BindingPort {
   }
 
   // -------------------------------------------------------------------------------------------
-  // The bind frame (A3 3.7.2, 3.7.3 rules 1 and 2)
+  // The launch side (A3 3.7.7, A4 3.10)
+
+  /**
+   * A launch intent as the space recorded it (launch/service.ts reports every record its launch
+   * machine writes). A new click's intent gets its session now, before dispatch, so a `cli-agent`
+   * call before any bridge bound maps to it; a Resume's (`intent.session`) joins the session it
+   * continues. The native IDs the launch set or received (Claude's preset, T3's thread, Codex's
+   * reference match) join the launch's live sessions, which rule 3 then binds by.
+   */
+  launched(space: string, intent: LaunchIntent): void {
+    if (intent.task === null || !isId(space, "sp") || !isId(intent.task, "t")) return;
+    let changed = false;
+    // The session this record made or reopened: one a CLI call may act as, so it must be on disk.
+    let made: string | undefined;
+    if (this.#launchSessions(intent.id).length === 0 && intent.state === "prepared") {
+      const continued = intent.session === null ? undefined : this.#sessions.get(intent.session);
+      if (continued !== undefined && continued.space === space && continued.task === intent.task) {
+        // A Resume: a new intent in the same session (A4 3.10). The session goes on.
+        const open: { -readonly [K in keyof SessionRecord]: SessionRecord[K] } = {
+          ...continued,
+          launches: [...continued.launches, intent.id].slice(-MAX_LAUNCHES),
+          seen_at: this.#now(),
+        };
+        delete open.ended_at;
+        delete open.end_reason;
+        this.#sessions.set(continued.id, open);
+        made = continued.id;
+        changed = true;
+      } else if (this.#room(1)) {
+        const now = this.#now();
+        const id = newId("se");
+        const instance = INSTANCE_ID.test(intent.instance) ? intent.instance : MANUAL_INSTANCE;
+        this.#sessions.set(id, {
+          id,
+          space,
+          task: intent.task,
+          instance,
+          via: null,
+          launches: [intent.id],
+          native: [],
+          opened_with: instance,
+          route: intent.route,
+          created_at: now,
+          seen_at: now,
+        });
+        made = id;
+        changed = true;
+      }
+    }
+    const learned = launchNative(intent);
+    if (learned.length > 0) {
+      for (const session of this.#launchSessions(intent.id)) {
+        if (session.ended_at !== undefined) continue;
+        const next = this.#joined(session, learned);
+        if (next !== session) {
+          this.#sessions.set(session.id, next);
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      this.#dirty = true;
+      // The launch goes on when the write fails (binding never breaks a launch), but no call acts
+      // as a session that is not on disk (`mapped`): a write under it would leave a receipt whose
+      // scope a restart forgets.
+      if (!this.#persist() && made !== undefined) this.#unsaved.add(made);
+    }
+  }
+
+  /**
+   * A launch reference was resolved on a shared connection, for that call only (A3 3.7.5): its
+   * session, while no agent bound it, says it was opened by reference and is not tracked.
+   */
+  untracked(launch: string): void {
+    for (const session of this.#launchSessions(launch)) {
+      if (session.via !== null || session.ended_at !== undefined || session.untracked === true) {
+        continue;
+      }
+      this.#sessions.set(session.id, { ...session, untracked: true });
+      this.#dirty = true;
+      this.#save(true);
+    }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // The bind frame (A3 3.7.2, 3.7.3 rules 0 to 3)
 
   /**
    * The bind frame of an mcp mode connection: resolves its binding and returns the bind result's
@@ -247,7 +434,8 @@ export class Bindings implements BindingPort {
       unboundScope: `bridge:${instance}:${this.#options.machine}`,
       ...(typeof named === "string" && named !== "" ? { named } : {}),
     });
-    this.#present(slot, context["env"]);
+    const env = isObject(context["env"]) ? context["env"] : {};
+    this.#present(slot, env);
 
     // Rule 1: a handle of this service restores the binding and the space it pinned.
     let state: BindState = "unbound";
@@ -259,11 +447,32 @@ export class Bindings implements BindingPort {
     // session a ticket binds reaches the disk with the handle that names it, in one write.
     handle ??= this.#issue(slot);
 
+    // Rule 0: a host that runs one server for many conversations (hosts.ts).
+    let unknownHost = false;
+    if (!slot.shared) {
+      const host = await sharedHost(
+        { app: context["app"], env, parent: context["parent"] },
+        this.#options.ancestry,
+      );
+      if (host === "unknown") unknownHost = true;
+      else if (host !== undefined) this.#share(slot);
+    }
+
     // Rule 2: the ticket, read from the bind frame only.
-    const env = isObject(context["env"]) ? context["env"] : {};
     const ticket = env["TASKS_TICKET"];
-    if (ticket !== undefined && slot.session === undefined && (await this.#ticket(slot, ticket))) {
-      state = "bound";
+    if (ticket !== undefined && slot.session === undefined) {
+      // A shared host's environment is every conversation's: its ticket proves none of them. A
+      // host that could not be read may be one: the connection binds at its first call instead,
+      // which carries its own thread ID, and the ticket is not spent.
+      if (slot.shared) this.#ignored("ticket", "shared");
+      else if (unknownHost) this.#ignored("ticket", "host");
+      else if (await this.#ticket(slot, ticket)) state = "bound";
+    }
+    // Rule 3: a native ID a launch set or received, alone.
+    if (slot.session === undefined && slot.presented.size > 0) {
+      if (slot.shared) this.#ignored("native", "shared");
+      else if (unknownHost) this.#ignored("native", "host");
+      else if (this.#byNative(slot, [...slot.presented])) state = "bound";
     }
     // Unbound now, so it may write unbound before it binds: that scope stays a receipt lookup,
     // marked in this write of the handle rather than at a later write that might not land.
@@ -335,8 +544,7 @@ export class Bindings implements BindingPort {
   }
 
   /** The native IDs a bind context's environment carries, kept on the slot. */
-  #present(slot: Slot, env: unknown): void {
-    if (!isObject(env)) return;
+  #present(slot: Slot, env: Record<string, unknown>): void {
     for (const [name, source] of Object.entries(NATIVE_ENV)) {
       const value = env[name];
       if (typeof value === "string") this.present(slot, source, value);
@@ -376,21 +584,60 @@ export class Bindings implements BindingPort {
   }
 
   /**
-   * The slot a tool call acts on, given the native ID the call carries (Codex's `_meta.threadId`):
-   * the connection's own, unless the connection is shared (A3 3.7.5). On a shared connection a
-   * call is its bound session's only when its own ID is one that session holds; any other call
-   * acts without a binding, so it inherits no task or actor and binds nothing (steps 5 and 6
-   * resolve for that call only).
+   * The slot a tool call acts on, given the native ID the call carries (Codex's `_meta.threadId`,
+   * which reaches only tool calls, A3 3.7.2). On a connection that is not shared, rule 3 is read
+   * here: an unbound connection whose call carries an ID a launch recorded for one live session of
+   * its instance binds to that session, for good. On a shared connection (A3 3.7.5) a call is a
+   * session's only when its own ID proves it, and for that call only: the connection's bound
+   * session when it holds the ID, else the one session whose launch recorded it. Any other call
+   * acts without a binding, so it inherits no task or actor and binds nothing (its launch reference
+   * or bind resolves for that call only).
    */
   forCall(slot: Slot, source: NativeSource, id: string | undefined): Slot | undefined {
+    this.#prune();
     if (id !== undefined) this.present(slot, source, id);
-    if (!slot.shared) return slot;
+    if (!slot.shared) {
+      if (id !== undefined && slot.session === undefined && slot.kind === "bridge") {
+        this.#byNative(slot, [[source, id]]);
+      }
+      return slot;
+    }
+    if (id === undefined || !NATIVE_ID.test(id)) return undefined;
     const session = slot.session === undefined ? undefined : this.#sessions.get(slot.session.id);
-    const proven =
-      id !== undefined &&
-      session !== undefined &&
-      session.native.some((n) => n.source === source && n.id === id);
-    return proven ? slot : undefined;
+    if (session?.native.some((n) => n.source === source && n.id === id) === true) return slot;
+    // Per call (A3 3.7.5): the one live session of this instance whose launch recorded the ID, in
+    // the space the connection pinned (A3 3.7.8), as rule 3 binds at the bind frame.
+    const found = this.#nativeSession(slot.instance, [[source, id]]);
+    if (
+      found === undefined ||
+      (slot.space !== undefined && slot.space !== found.space) ||
+      !this.#options.homes.may(slot.instance, found.space)
+    ) {
+      return undefined;
+    }
+    let bound = found;
+    if (found.via === null) {
+      // Proven by its launch's own ID: the first agent call makes it its home's.
+      bound = this.#claim(found, slot.instance, "native_id");
+      this.#sessions.set(bound.id, bound);
+      if (!this.#persist()) {
+        this.#sessions.set(found.id, found);
+        return undefined;
+      }
+      this.#log({ ev: "binding.bound", via: "native_id" });
+      const launch = bound.launches[0];
+      if (launch !== undefined) this.#confirmLater(bound.space, launch);
+    }
+    const call = new Slot({
+      kind: "mapped",
+      instance: slot.instance,
+      origin: slot.origin,
+      ...(slot.unboundScope === undefined ? {} : { unboundScope: slot.unboundScope }),
+      space: bound.space,
+      session: view(bound),
+    });
+    call.wroteUnbound = slot.wroteUnbound;
+    return call;
   }
 
   /** Rule 1. Returns the handle when it was restored as it is. */
@@ -427,11 +674,15 @@ export class Bindings implements BindingPort {
         this.#log({ ev: "binding.lost" });
         return undefined;
       }
-      this.#handleOf.set(slot, found.hash);
-      this.#handles.set(found.hash, { ...found, used_at: now });
-      this.#bindSlot(slot, session);
-      this.#log({ ev: "binding.bound", via: "handle" });
-      return raw;
+      if (session.via !== null) {
+        this.#handleOf.set(slot, found.hash);
+        this.#handles.set(found.hash, { ...found, used_at: now });
+        this.#bindSlot(slot, session);
+        this.#log({ ev: "binding.bound", via: "handle" });
+        return raw;
+      }
+      // A bind that was taken back before an agent bound the session: the handle binds nothing.
+      found = { ...found, session: null };
     }
     if (expired) {
       this.#ignored("handle", "expired");
@@ -507,11 +758,17 @@ export class Bindings implements BindingPort {
         this.#ignored("ticket", "grant");
         return Promise.resolve(false);
       }
-      const existing = this.#sessionOfLaunch(found.launch);
+      const sessions = this.#launchSessions(found.launch);
+      const existing = sessions.find((s) => s.ended_at === undefined);
+      // Its session ended (the user ended it, or it went stale): the launch binds nothing more.
+      if (existing === undefined && sessions.length > 0) {
+        this.#ignored("ticket", "ended");
+        return Promise.resolve(false);
+      }
       // A session is its agent home's (A3 3.7.8): a connection of another instance never acts as
       // it, as with a handle (rule 1), so the session's actor and the home the grant gate checks
-      // are one.
-      if (existing !== undefined && existing.instance !== slot.instance) {
+      // are one. A session no agent bound yet becomes the home's of the first connection to bind.
+      if (existing !== undefined && existing.via !== null && existing.instance !== slot.instance) {
         this.#ignored("ticket", "instance");
         return Promise.resolve(false);
       }
@@ -523,18 +780,21 @@ export class Bindings implements BindingPort {
         // The session on disk first, with this connection's handle naming it, then the role
         // spent: a crash between the two leaves a session its handle or its unspent ticket binds
         // again. A session that cannot be written spends nothing.
+        const before = existing;
         const session =
-          existing ?? this.#newSession(slot, found.space, task, "ticket", [found.launch]);
+          existing === undefined
+            ? this.#newSession(slot, found.space, task, "ticket", [found.launch])
+            : this.#claim(existing, slot.instance, "ticket");
         if (session === undefined) {
           this.#ignored("ticket", "unrecorded");
           return Promise.resolve(false);
         }
+        this.#sessions.set(session.id, session);
         this.#bindSlot(slot, session);
         const recorded = this.#persist();
         if (!recorded || this.#options.launches.redeemBridge(ticket) === undefined) {
           // Not on disk, or (in no case known) spent meanwhile: nothing of this bind stays.
-          if (existing === undefined) this.#drop(slot, session);
-          else this.#unbindSlot(slot);
+          this.#takeBack(slot, session, before);
           this.#ignored("ticket", recorded ? "used" : "unrecorded");
           return Promise.resolve(false);
         }
@@ -544,7 +804,7 @@ export class Bindings implements BindingPort {
       }
       // Presented again (A3 3.7.3): the same session only, when the connection presents a
       // native ID it holds, or no other connection of it is open and the agent still runs.
-      if (existing === undefined) {
+      if (existing?.via === null || existing === undefined) {
         this.#ignored("ticket", "used");
         return Promise.resolve(false);
       }
@@ -566,6 +826,60 @@ export class Bindings implements BindingPort {
       this.#log({ ev: "binding.bound", via: "ticket" });
       return Promise.resolve(true);
     });
+  }
+
+  /**
+   * Rule 3 (A3 3.7.3): a native ID that a launch set or received for exactly one live session of
+   * the slot's instance binds the slot to it, when its home may use that space and the slot is not
+   * pinned to another. The launch of a session no agent bound before records the binding: Claude
+   * Code's is confirmed by its preset session (A3 3.7.7). True when it bound the slot.
+   */
+  #byNative(slot: Slot, ids: readonly (readonly [NativeSource, string])[]): boolean {
+    const session = this.#nativeSession(slot.instance, ids);
+    if (session === undefined) return false;
+    if (!this.#options.homes.may(slot.instance, session.space)) {
+      this.#ignored("native", "grant");
+      return false;
+    }
+    if (slot.space !== undefined && slot.space !== session.space) {
+      this.#ignored("native", "space");
+      return false;
+    }
+    const claimed = this.#claim(session, slot.instance, "native_id");
+    this.#sessions.set(claimed.id, claimed);
+    this.#bindSlot(slot, claimed);
+    if (!this.#persist()) {
+      this.#takeBack(slot, claimed, session);
+      this.#ignored("native", "unrecorded");
+      return false;
+    }
+    this.#log({ ev: "binding.bound", via: "native_id" });
+    const launch = claimed.launches[0];
+    if (session.via === null && launch !== undefined) this.#confirmLater(claimed.space, launch);
+    return true;
+  }
+
+  /**
+   * The one live session that holds one of `ids` as an ID its launch set or received, of
+   * `instance` when one is given (a CLI call names none). Two such sessions: none, never a guess.
+   */
+  #nativeSession(
+    instance: string | undefined,
+    ids: readonly (readonly [NativeSource, string])[],
+  ): SessionRecord | undefined {
+    const found = new Set<SessionRecord>();
+    for (const session of this.#sessions.values()) {
+      if (session.ended_at !== undefined || this.#provisional.has(session.id)) continue;
+      // A session is its home's once an agent bound it; one still waiting is the first binder's.
+      if (instance !== undefined && session.via !== null && session.instance !== instance) continue;
+      const holds = session.native.some(
+        (n) =>
+          BINDS_ALONE.has(n.trust) &&
+          ids.some(([source, id]) => n.source === source && n.id === id),
+      );
+      if (holds) found.add(session);
+    }
+    return found.size === 1 ? [...found][0] : undefined;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -595,26 +909,37 @@ export class Bindings implements BindingPort {
         const handle = this.#handleOf.get(slot);
         const asked = this.#unanswered.get(launch.id);
         const again = asked !== undefined && asked.handle === handle ? asked : undefined;
+        const sessions = this.#launchSessions(launch.id);
         // Another connection's (A3 3.7.3), or bound before by a session whose record this
         // machine no longer holds: `launch_used`, with the task to pass instead.
         if (
-          this.#sessionOfLaunch(launch.id, true) !== undefined ||
+          sessions.some((s) => s.via !== null) ||
           (launch.boundAt !== undefined && launch.boundAt !== again?.at)
         ) {
           return { kind: "launch_used" };
         }
-        // A launch that ended binds nothing: it failed, or its agent exited.
-        if (launch.state === "failed" || launch.exited) return { kind: "launch_ended" };
+        // A launch that ended binds nothing: it failed, its agent exited, or the user ended its
+        // session before an agent bound it.
+        const waiting = sessions.find((s) => s.ended_at === undefined);
+        if (
+          launch.state === "failed" ||
+          launch.exited ||
+          (waiting === undefined && sessions.length > 0)
+        ) {
+          return { kind: "launch_ended" };
+        }
         // The session on disk first, with this connection's handle naming it, then the launch's
         // record: a crash between the two leaves a binding the handle restores, and the same
         // connection's next redemption records the launch's evidence again.
-        const session = this.#newSession(slot, launch.space, launch.task, "launch_ref", [
-          launch.id,
-        ]);
+        const session =
+          waiting === undefined
+            ? this.#newSession(slot, launch.space, launch.task, "launch_ref", [launch.id])
+            : this.#claim(waiting, slot.instance, "launch_ref");
         if (session === undefined) throw unrecorded();
+        this.#sessions.set(session.id, session);
         this.#bindSlot(slot, session);
         if (!this.#persist()) {
-          this.#drop(slot, session);
+          this.#takeBack(slot, session, waiting);
           throw unrecorded();
         }
         // Until the launch answers, a call on the session (this connection's, or one that resumed
@@ -645,7 +970,7 @@ export class Bindings implements BindingPort {
               if (oldest !== undefined) this.#unanswered.delete(oldest);
             }
           }
-          this.#drop(slot, session);
+          this.#takeBack(slot, session, waiting);
           settled();
           throw error;
         }
@@ -656,7 +981,7 @@ export class Bindings implements BindingPort {
           settled();
           return { kind: "bound" };
         }
-        this.#drop(slot, session);
+        this.#takeBack(slot, session, waiting);
         settled();
         // The launch took no binding: bound before (another session), ended, or never started an
         // agent (a terminal launch no shim claimed: its Brief reached no one).
@@ -681,9 +1006,10 @@ export class Bindings implements BindingPort {
       }
       const session = this.#newSession(slot, space, task, "task", []);
       if (session === undefined) return Promise.reject(unrecorded());
+      this.#sessions.set(session.id, session);
       this.#bindSlot(slot, session);
       if (!this.#persist()) {
-        this.#drop(slot, session);
+        this.#takeBack(slot, session, undefined);
         return Promise.reject(unrecorded());
       }
       this.#log({ ev: "binding.bound", via: "task" });
@@ -697,6 +1023,7 @@ export class Bindings implements BindingPort {
    * the session's last use. The call reads the slot's binding after this.
    */
   async use(slot: Slot): Promise<void> {
+    this.#prune();
     for (;;) {
       const id = slot.session?.id;
       const pending = id === undefined ? undefined : this.#provisional.get(id);
@@ -732,31 +1059,45 @@ export class Bindings implements BindingPort {
   }
 
   liveSessions(space: string): ReadonlyMap<string, number> {
+    this.#prune();
     const counts = new Map<string, number>();
     for (const session of this.#sessions.values()) {
       if (session.space !== space || session.task === null || session.ended_at !== undefined) {
         continue;
       }
-      const live =
-        this.#isOpen(session.id) ||
-        session.launches.some((launch) => this.#options.launches.agentRuns(launch));
-      if (live) counts.set(session.task, (counts.get(session.task) ?? 0) + 1);
+      if (this.#live(session)) counts.set(session.task, (counts.get(session.task) ?? 0) + 1);
     }
     return counts;
   }
 
   /**
-   * A `cli-agent` call's binding (A3 3.7.4): its ticket maps to the live session of the ticket's
-   * launch, and the call acts as that session. The CLI presents the ticket as an identifier and
-   * redeems no role: nothing is spent, and a launch without a session yet maps to nothing.
+   * A `cli-agent` call's binding (A3 3.7.4, 3.7.6): its ticket maps to the live session of the
+   * ticket's launch, and otherwise a native ID in its environment that a launch set or received
+   * (Claude's preset, Codex's matched thread, T3's thread) maps to the one live session holding it.
+   * The call acts as that session. The CLI presents the ticket as an identifier and redeems no
+   * role: nothing is spent. A session is made with its launch (`launched`), so a call before any
+   * bridge bound maps to it.
    */
   mapped(env: Readonly<Record<string, string>>): Slot | undefined {
+    this.#prune();
+    let session: SessionRecord | undefined;
     const ticket = env["TASKS_TICKET"];
-    if (ticket === undefined) return undefined;
-    const found = this.#options.launches.bridgeTicket(ticket);
-    if (found === undefined) return undefined;
-    const session = this.#sessionOfLaunch(found.launch);
-    if (session === undefined || session.space !== found.space) return undefined;
+    const found = ticket === undefined ? undefined : this.#options.launches.bridgeTicket(ticket);
+    if (found !== undefined) {
+      const live = this.#sessionOfLaunch(found.launch);
+      if (live?.space === found.space) session = live;
+    }
+    if (session === undefined) {
+      const ids: [NativeSource, string][] = [];
+      for (const [name, source] of Object.entries(NATIVE_ENV)) {
+        const value = env[name];
+        if (typeof value === "string" && NATIVE_ID.test(value)) ids.push([source, value]);
+      }
+      session = ids.length === 0 ? undefined : this.#nativeSession(undefined, ids);
+    }
+    if (session === undefined) return undefined;
+    // Durable before irreversible: a session a launch made acts once it is on disk.
+    if (this.#unsaved.has(session.id) && !this.#persist()) return undefined;
     const slot = new Slot({
       kind: "mapped",
       instance: session.instance,
@@ -772,10 +1113,195 @@ export class Bindings implements BindingPort {
     return slot;
   }
 
-  /** The live session bound through `launch`, if any. */
+  /** The live session of `launch`, if any: one an agent bound, or one waiting for its agent. */
   sessionOfLaunch(launch: string): BoundSession | undefined {
     const session = this.#sessionOfLaunch(launch);
     return session === undefined ? undefined : view(session);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // The session list and the user's changes (A3 3.7.3 "Rebinding", A4 3.10)
+
+  /**
+   * The sessions of a task, newest first (`task.get`'s sessions section): IDs, words and times,
+   * and whether Resume is offered. No native ID, folder or launch leaves here.
+   */
+  sessionsOf(space: string, task: string): readonly SessionRow[] {
+    this.#prune();
+    return [...this.#sessions.values()]
+      .filter((s) => s.space === space && s.task === task)
+      .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1))
+      .slice(0, LISTED_SESSIONS)
+      .map((s) => ({
+        id: s.id,
+        state:
+          s.ended_at !== undefined
+            ? "ended"
+            : s.via === null
+              ? "opening"
+              : this.#live(s)
+                ? "live"
+                : "unknown",
+        instance: s.instance,
+        ...(s.via === null ? {} : { via: s.via }),
+        ...(s.route === undefined ? {} : { route: s.route }),
+        ...(s.untracked === true ? { untracked: true } : {}),
+        started: iso(s.created_at),
+        last_seen: iso(s.seen_at),
+        ...(s.ended_at === undefined ? {} : { ended: iso(s.ended_at) }),
+        ...(s.end_reason === undefined ? {} : { end_reason: s.end_reason }),
+        resume: this.#resumable(s),
+      }));
+  }
+
+  /**
+   * Resume (A4 3.10) is offered only with a native ID Tasks trusts, of the source its launch's
+   * target resumes by, and an instance that exists here: an ID the launch set or received, or one
+   * the connection that bound through the launch presented. Never one a connection merely showed,
+   * never by folder and time.
+   */
+  #resumable(session: SessionRecord): boolean {
+    const id = session.opened_with;
+    if (id === undefined) return false;
+    const instance = (this.#options.instances?.() ?? []).find((i) => i.id === id && i.enabled);
+    const source = instance === undefined ? undefined : RESUMES[instance.target];
+    if (source === undefined) return false;
+    return session.native.some((n) => n.source === source && n.trust !== "presented");
+  }
+
+  holds(session: BoundSession): boolean {
+    const record = this.#sessions.get(session.id);
+    return (
+      record !== undefined &&
+      record.ended_at === undefined &&
+      record.instance === session.instance &&
+      (record.via === null) === (session.waiting === true)
+    );
+  }
+
+  /** A session as the user's commands name it, or undefined. */
+  session(id: string): BoundSession | undefined {
+    const found = this.#sessions.get(id);
+    return found === undefined ? undefined : view(found);
+  }
+
+  /**
+   * The user ends a session (A3 3.7.3, `session.end`): its record ends, its open connections are
+   * unbound and say their session ended (`lost`), and its handles answer `lost` at their next
+   * bind. Its launch's ticket binds it no more. The agent may go on unbound.
+   */
+  async end(id: string): Promise<SessionChange> {
+    await this.#settledBind(id);
+    return this.#endWith(id, "user");
+  }
+
+  /**
+   * The user unbinds a session (`session.unbind`): it ends, and its open connections and their
+   * handles go on unbound, quietly: they keep their space and may bind again.
+   */
+  async unbind(id: string): Promise<SessionChange> {
+    await this.#settledBind(id);
+    return this.#endWith(id, "unbound");
+  }
+
+  /**
+   * A user's change applies to a settled binding, as a call reads one (`use`): while a bind of the
+   * session through its launch reference waits on the launch's answer, the change waits too, so a
+   * bind taken back afterwards never writes back the session as it was before the change.
+   */
+  async #settledBind(id: string): Promise<void> {
+    for (;;) {
+      const pending = this.#provisional.get(id);
+      if (pending === undefined) return;
+      await pending;
+    }
+  }
+
+  /**
+   * A user's change is on disk before it is answered or reaches a connection: its records are
+   * written first, and a write that fails leaves everything as it was and says so.
+   */
+  #commitChange(sessions: readonly SessionRecord[], handles: readonly HandleRecord[]): void {
+    const before = {
+      sessions: sessions.map((s) => this.#sessions.get(s.id)),
+      handles: handles.map((h) => this.#handles.get(h.hash)),
+    };
+    for (const session of sessions) this.#sessions.set(session.id, session);
+    for (const handle of handles) this.#handles.set(handle.hash, handle);
+    this.#dirty = true;
+    if (this.#persist()) return;
+    sessions.forEach((session, i) => {
+      const was = before.sessions[i];
+      if (was === undefined) this.#sessions.delete(session.id);
+      else this.#sessions.set(session.id, was);
+    });
+    handles.forEach((handle, i) => {
+      const was = before.handles[i];
+      if (was !== undefined) this.#handles.set(handle.hash, was);
+    });
+    throw unrecordedChange();
+  }
+
+  #endWith(id: string, reason: "user" | "unbound"): SessionChange {
+    const session = this.#sessions.get(id);
+    if (session === undefined) return { kind: "not_found" };
+    if (session.ended_at !== undefined) return { kind: "no_change", session: id };
+    // `end`: its handles still name the ended session, so a reconnect hears `lost`. `unbind`: they
+    // name none, so a reconnect goes on unbound. Either way the connection may have written
+    // unbound since (A3 3.7.9).
+    const handles = [...this.#handles.values()]
+      .filter((h) => h.session === id)
+      .map((h) => ({
+        ...h,
+        ...(reason === "unbound" ? { session: null } : {}),
+        wrote_unbound: true,
+      }));
+    this.#commitChange([{ ...session, ended_at: this.#now(), end_reason: reason }], handles);
+    for (const slot of this.#attached) {
+      if (slot.session?.id !== id) continue;
+      slot.session = undefined;
+      slot.lost = reason === "user";
+      slot.wroteUnbound = true;
+    }
+    this.#log({ ev: "binding.ended", reason });
+    return { kind: "changed", session: id };
+  }
+
+  /**
+   * The user rebinds a session to another task of its space (`session.rebind`): the session ends,
+   * and a new one on that task takes its place, with its launches, native IDs and instance: its
+   * open connections and their handles are bound to the new one. A session on that task already
+   * is no change. `task` must be a task of the session's space (the caller resolved it there).
+   */
+  async rebind(id: string, task: string): Promise<SessionChange> {
+    await this.#settledBind(id);
+    const session = this.#sessions.get(id);
+    if (session === undefined) return { kind: "not_found" };
+    if (session.ended_at !== undefined) return { kind: "ended", session: id };
+    if (session.task === task) return { kind: "no_change", session: id };
+    if (!this.#room(1, id)) throw unrecordedChange();
+    const now = this.#now();
+    const next: SessionRecord = {
+      ...session,
+      id: newId("se"),
+      task,
+      // One no agent bound yet stays waiting for its agent, now on the other task.
+      via: session.via === null ? null : "rebind",
+      // A3 3.7.9: binding later never resets anything. It writes under the scope of the session
+      // it replaces, so a retry of a write made before the rebind finds its receipt.
+      scope: session.scope ?? session.id,
+      created_at: now,
+      seen_at: now,
+    };
+    const handles = [...this.#handles.values()]
+      .filter((h) => h.session === id)
+      .map((h) => ({ ...h, session: next.id }));
+    this.#commitChange([{ ...session, ended_at: now, end_reason: "rebound" }, next], handles);
+    for (const slot of this.#attached) {
+      if (slot.session?.id === id) slot.session = view(next);
+    }
+    this.#log({ ev: "binding.ended", reason: "rebound" });
+    return { kind: "changed", session: id, next: next.id };
   }
 
   // -------------------------------------------------------------------------------------------
@@ -784,14 +1310,27 @@ export class Bindings implements BindingPort {
   /**
    * The slot's session while it lives. A slot whose session ended (or whose record is gone) is
    * unbound and lost: its handle still names the session, so a reconnect hears `lost` too. One
-   * whose session a bind took back (its launch did not take it) is unbound, not lost.
+   * whose session a bind took back (its launch did not take it, or no agent bound it), or that
+   * the user unbound, is unbound, not lost.
    */
   #current(slot: Slot): SessionRecord | undefined {
     const id = slot.session?.id;
     if (id === undefined) return undefined;
     const session = this.#sessions.get(id);
-    if (session !== undefined && session.ended_at === undefined) return session;
-    if (this.#dropped.has(id)) {
+    // A CLI call maps to a session its agent has not bound yet (A3 3.7.7); a connection holds
+    // only one an agent bound.
+    if (
+      session !== undefined &&
+      session.ended_at === undefined &&
+      (session.via !== null || slot.kind === "mapped")
+    ) {
+      return session;
+    }
+    const quiet =
+      this.#dropped.has(id) ||
+      (session !== undefined &&
+        (session.ended_at === undefined || session.end_reason === "unbound"));
+    if (quiet) {
       this.#unbindSlot(slot);
     } else {
       slot.session = undefined;
@@ -801,13 +1340,14 @@ export class Bindings implements BindingPort {
     return undefined;
   }
 
-  /** The session bound through `launch`: live ones only, unless `any`. */
-  #sessionOfLaunch(launch: string, any = false): SessionRecord | undefined {
-    for (const session of this.#sessions.values()) {
-      if (!session.launches.includes(launch)) continue;
-      if (any || session.ended_at === undefined) return session;
-    }
-    return undefined;
+  /** Every session of `launch`, oldest first. */
+  #launchSessions(launch: string): SessionRecord[] {
+    return [...this.#sessions.values()].filter((s) => s.launches.includes(launch));
+  }
+
+  /** The live session of `launch`: bound, or waiting for its agent. */
+  #sessionOfLaunch(launch: string): SessionRecord | undefined {
+    return this.#launchSessions(launch).find((s) => s.ended_at === undefined);
   }
 
   #isOpen(session: string): boolean {
@@ -826,14 +1366,14 @@ export class Bindings implements BindingPort {
 
   /**
    * Room for `count` more sessions within MAX_SESSIONS: ended records go first, oldest first, then
-   * the least recently seen of those nothing keeps alive. A live session is never removed: false
-   * when only live ones are left.
+   * the least recently seen of those nothing keeps alive. A live session is never removed, nor
+   * `keep` (the session a change is about): false when only those are left.
    */
-  #room(count: number): boolean {
+  #room(count: number, keep?: string): boolean {
     const over = this.#sessions.size + count - MAX_SESSIONS;
     if (over <= 0) return true;
     const order = [...this.#sessions.values()]
-      .filter((s) => s.ended_at !== undefined || !this.#live(s))
+      .filter((s) => s.id !== keep && (s.ended_at !== undefined || !this.#live(s)))
       .sort(
         (a, b) =>
           (a.ended_at === undefined ? 1 : 0) - (b.ended_at === undefined ? 1 : 0) ||
@@ -844,7 +1384,7 @@ export class Bindings implements BindingPort {
     return this.#sessions.size + count <= MAX_SESSIONS;
   }
 
-  /** A new session record for the slot, or undefined when there is no room for one. */
+  /** A new session record for the slot, not yet kept, or undefined when there is no room. */
   #newSession(
     slot: Slot,
     space: string,
@@ -854,7 +1394,7 @@ export class Bindings implements BindingPort {
   ): SessionRecord | undefined {
     if (!this.#room(1)) return undefined;
     const now = this.#now();
-    const record: SessionRecord = {
+    return {
       id: newId("se"),
       space,
       task,
@@ -865,8 +1405,23 @@ export class Bindings implements BindingPort {
       created_at: now,
       seen_at: now,
     };
-    this.#sessions.set(record.id, record);
-    return record;
+  }
+
+  /**
+   * A session as the first agent connection binds it: a session made with its launch and bound by
+   * no agent yet takes the connection's instance (its home, A3 3.7.8) and how it bound. A session
+   * bound before stays as it is.
+   */
+  #claim(session: SessionRecord, instance: string, via: Via): SessionRecord {
+    if (session.via !== null) return session;
+    // An agent bound it: it is tracked from now on.
+    const claimed: { -readonly [K in keyof SessionRecord]: SessionRecord[K] } = {
+      ...session,
+      instance,
+      via,
+    };
+    delete claimed.untracked;
+    return claimed;
   }
 
   /** Binds the slot to `session`: its handle names it, and the native IDs the slot holds join it. */
@@ -884,35 +1439,72 @@ export class Bindings implements BindingPort {
   }
 
   /**
-   * A binding that did not take: the session made for it goes again, and every open slot bound
-   * to it (a reconnect may have resumed the handle meanwhile) is unbound. A slot not open yet
-   * finds it at its next call (`#current`).
+   * A binding that did not take: a session made for it goes again, and one that waited for its
+   * agent (`before`) is as it was. When this bind made or claimed the session, every open slot
+   * bound to it (a reconnect may have resumed the handle meanwhile) is unbound, and a slot not
+   * open yet finds it at its next call (`#current`). A session an agent bound before stays as it
+   * is, and so do its other connections: only this slot's binding goes.
    */
-  #drop(slot: Slot, session: SessionRecord): void {
-    this.#dropped.add(session.id);
-    if (this.#dropped.size > MAX_DROPPED) {
-      const oldest = this.#dropped.values().next().value;
-      if (oldest !== undefined) this.#dropped.delete(oldest);
-    }
+  #takeBack(slot: Slot, session: SessionRecord, before: SessionRecord | undefined): void {
     this.#unbindSlot(slot);
     this.#markUnbound(slot);
-    for (const other of this.#attached) {
+    const ours = before === undefined || before.via === null;
+    for (const other of ours ? this.#attached : []) {
       if (other.session?.id !== session.id) continue;
       this.#unbindSlot(other);
       this.#markUnbound(other);
     }
-    this.#sessions.delete(session.id);
+    if (before === undefined) {
+      this.#dropped.add(session.id);
+      if (this.#dropped.size > MAX_DROPPED) {
+        const oldest = this.#dropped.values().next().value;
+        if (oldest !== undefined) this.#dropped.delete(oldest);
+      }
+      this.#sessions.delete(session.id);
+    } else if (before.via === null) {
+      // As it was, with any ID its launch recorded meanwhile (`launched`), not this slot's.
+      const now = this.#sessions.get(before.id);
+      const learned = (now?.native ?? []).filter((n) => BINDS_ALONE.has(n.trust));
+      this.#sessions.set(before.id, this.#joined(before, learned));
+    }
+    // A session an agent bound before this call stays: only this binding goes.
+    this.#dirty = true;
     this.#save(true);
   }
 
-  /** The session with the slot's native IDs joined and `changes` applied. */
-  #record(session: SessionRecord, slot: Slot, changes: Partial<SessionRecord>): void {
-    const native = [...session.native];
-    for (const [source, id] of slot.presented) {
-      if (native.length >= MAX_NATIVE) break;
-      if (!native.some((n) => n.source === source && n.id === id)) native.push({ source, id });
+  /** `session` with `learned` joined: a native ID keeps the strongest trust it was recorded with. */
+  #joined(session: SessionRecord, learned: readonly NativeRecord[]): SessionRecord {
+    let native = session.native;
+    for (const entry of learned) {
+      const at = native.findIndex((n) => n.source === entry.source && n.id === entry.id);
+      if (at >= 0) {
+        const held = native[at];
+        if (held !== undefined && RANK[entry.trust] > RANK[held.trust]) {
+          native = native.map((n, i) => (i === at ? entry : n));
+        }
+      } else if (native.length < MAX_NATIVE) {
+        native = [...native, entry];
+      }
     }
-    const next: SessionRecord = { ...session, native, ...changes };
+    return native === session.native ? session : { ...session, native };
+  }
+
+  /**
+   * The session with the slot's native IDs joined and `changes` applied. An ID a connection
+   * presented is `bridge` when the session was bound through its launch (its ticket, reference or
+   * native ID, or a rebind of such a session) and the connection is not shared, else `presented`.
+   */
+  #record(session: SessionRecord, slot: Slot, changes: Partial<SessionRecord>): void {
+    const trust: Trust = session.via !== null && session.via !== "task" ? "bridge" : "presented";
+    // A shared connection's IDs are any of its conversations': none joins a session, since an ID a
+    // session holds proves a call its own on a shared connection (A3 3.7.5, `forCall`).
+    const joined = slot.shared
+      ? session
+      : this.#joined(
+          session,
+          [...slot.presented].map(([source, id]) => ({ source, id, trust })),
+        );
+    const next: SessionRecord = { ...joined, ...changes };
     this.#sessions.set(session.id, next);
     this.#dirty = true;
     if (slot.session?.id === session.id) slot.session = view(next);
@@ -948,8 +1540,11 @@ export class Bindings implements BindingPort {
   }
 
   /**
-   * Ends idle sessions and forgets old records (at most once a minute). A session ends after a
-   * day with no open connection, no running agent and no call; its record stays a month.
+   * Ends quiet sessions and forgets old records, before every bind frame, call, CLI mapping and
+   * listing reads them (at most once a minute), so no expired session maps, binds or is listed
+   * live, whichever door is used first. A session ends after a
+   * day with no open connection, no running agent and no call (`idle`); one made with its launch
+   * that no agent bound, after 7 such days (`stale`). Its record stays a month.
    */
   #prune(): void {
     const now = this.#now();
@@ -963,10 +1558,15 @@ export class Bindings implements BindingPort {
         }
         continue;
       }
-      const idle = now - session.seen_at >= SESSION_IDLE_MS;
+      const limit = session.via === null ? SESSION_STALE_MS : SESSION_IDLE_MS;
+      const idle = now - session.seen_at >= limit;
       if (!idle || this.#isOpen(session.id)) continue;
       if (session.launches.some((launch) => this.#options.launches.agentRuns(launch))) continue;
-      this.#sessions.set(session.id, { ...session, ended_at: now });
+      this.#sessions.set(session.id, {
+        ...session,
+        ended_at: now,
+        end_reason: session.via === null ? "stale" : "idle",
+      });
       this.#dirty = true;
     }
     const held = new Set([...this.#attached].map((s) => this.#handleOf.get(s)));
@@ -991,6 +1591,7 @@ export class Bindings implements BindingPort {
         handles: [...this.#handles.values()],
       });
       this.#dirty = false;
+      this.#unsaved.clear();
       this.#savedAt = this.#now();
       return true;
     } catch {
@@ -1038,7 +1639,7 @@ export class Bindings implements BindingPort {
     if (!this.#options.homes.may(slot.instance, space)) throw grantRefused();
   }
 
-  #ignored(input: "ticket" | "handle", reason: Ignored): void {
+  #ignored(input: "ticket" | "handle" | "native", reason: Ignored): void {
     this.#log({ ev: "binding.ignored", input, reason });
   }
 
