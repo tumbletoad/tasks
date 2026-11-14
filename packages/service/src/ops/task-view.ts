@@ -8,6 +8,7 @@ import {
   buildPage,
   parseToken,
   SECTION_ORDER,
+  textCost,
   type PageItem,
   type Placed,
   type Section,
@@ -138,6 +139,12 @@ export function digestOf(
 /** At most this many notes or log entries a page can hold: what the reader takes per list. */
 const PAGE_ITEMS = 64;
 
+/** The prefix of a learning's line in the compact text, `- learning: `, rounded up. */
+const LEARNING_BYTES = 16;
+
+/** The outcome section's item 0, its text; the items after it are the task's learnings. */
+const OUTCOME_TEXT = Symbol("outcome");
+
 /** The sections asked for, in the order a page shows them, and the token the page starts at. */
 export interface PagePlan {
   readonly asked: readonly Section[];
@@ -242,16 +249,24 @@ export function sectionsOf(
       case "context":
         add([{ value: null, key: 0, text: text(row["context"]), extra: 0 }]);
         break;
-      case "outcome":
-        add([
-          {
-            value: { ...present("wrap_state", row["wrap_state"]), learnings: [] },
-            key: 0,
-            text: text(row["outcome"]),
-            extra: 0,
-          },
-        ]);
+      case "outcome": {
+        // The outcome's text (item 0), then the task's own learnings, each whole and keyed by its
+        // rank, so they page like a list and each comes back once (A3 3.4.4).
+        const items: PageItem<unknown>[] =
+          here?.kind === "after"
+            ? []
+            : [{ value: OUTCOME_TEXT, key: 0, text: text(row["outcome"]), extra: 0 }];
+        for (const learning of read.learnings) {
+          if (here?.kind === "after" && learning.key <= here.item) continue;
+          items.push({
+            value: learning.text,
+            key: learning.key,
+            extra: LEARNING_BYTES + textCost(learning.text),
+          });
+        }
+        add(items);
         break;
+      }
       case "sources":
         add(
           read.sources.slice(skip).map((source, i) => {
@@ -290,13 +305,14 @@ export function sectionsOf(
         break;
       }
       case "outcome": {
-        const [part] = placed;
+        const part = placed.find((p) => p.value === OUTCOME_TEXT);
         out["outcome"] = {
-          ...(part?.value as Record<string, unknown>),
+          ...present("wrap_state", row["wrap_state"]),
           ...(part?.text === undefined || (part.text === "" && part.slice === undefined)
             ? {}
             : { outcome: part.text }),
           ...(part?.slice === undefined ? {} : { slice: part.slice }),
+          learnings: placed.filter((p) => p.value !== OUTCOME_TEXT).map((p) => p.value),
         };
         break;
       }
