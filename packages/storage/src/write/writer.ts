@@ -1576,7 +1576,7 @@ export class SpaceWriter {
         asOf,
         {
           code: "UNDO_CONFLICT",
-          message: "A field changed after this change: undo the rest, or keep it",
+          message: "Someone changed a field of it since: undo the rest, or keep theirs",
         },
         plan.conflicts,
       );

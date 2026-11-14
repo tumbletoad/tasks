@@ -18,10 +18,12 @@ and `cwd`.
 | `tasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `tasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `tasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
+| `tasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
 | `tasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
 | `tasks set` | `task.update` | Change an active task's fields, summary, context, group or sources. |
 | `tasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full. With launch, bind first. |
 | `tasks status` | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. |
+| `tasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
 
 ## `tasks add`
 
@@ -117,6 +119,16 @@ Usage: `tasks receipt <request> [flags]`
 |---|---|---|---|
 | `<request>` | `request` | string | The request_id of the write to look up |
 
+## `tasks redo`
+
+Redo the change you undid last, as long as nobody changed its fields since.
+
+Usage: `tasks redo [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `--commit` | `commit` | string | The change you mean: refused unless it is the next one to redo |
+
 ## `tasks reopen`
 
 Reopen a completed or archived task. Its earlier outcome and learnings stay.
@@ -183,3 +195,14 @@ Usage: `tasks status [flags]`
 | `--include` | `include` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | Extra sections, up to 8 rows each (repeatable) |
 | `--since` | `since` | string | For changes: 24h, 7d or an ISO time; default 24h |
 | `--guide` | `guide` | "work" \| "refresh" \| "triage" \| "organize" | Return this workflow guide instead |
+
+## `tasks undo`
+
+Undo your newest change in the space, field by field as long as nobody changed it.
+
+Usage: `tasks undo [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `--commit` | `commit` | string | The change you mean: refused when a newer one of yours stands before it |
+| `--partial` | `partial` | boolean | Undo the fields nobody changed since, and keep the others' changes |

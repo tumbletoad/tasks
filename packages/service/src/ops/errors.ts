@@ -69,7 +69,17 @@ export function storageFailure(error: unknown): AppError {
 /** The hint of a refusal whose remedy is another call (A3 3.4.6, 3.5). */
 const HINTS: Readonly<Record<string, string>> = {
   TASK_NOT_ACTIVE: "Reopen it first: reopen_task (tasks reopen).",
+  // A1 3.10.1: the person chooses; nothing is overwritten unseen.
+  UNDO_CONFLICT: "Pass partial to undo the rest (tasks undo --partial), or set the value again.",
+  UNDO_BEFORE_FLOOR: "Changes from before the space's last format change stay as they are.",
 };
+
+/**
+ * Who wrote a version, as people read it (A3 3.10): an import, the user, else the actor's label.
+ * read.ts labels entries and history rows by the same rule.
+ */
+export const byOf = (by: { kind: string; label: string; origin?: string }): string =>
+  by.origin === "import" ? "import" : by.kind === "human" ? "user" : by.label;
 
 /** A conflict or a refusal the writer decided, as its body (A3 3.5). */
 export function resultFailure(result: WriteResult): AppError {
@@ -92,16 +102,21 @@ export function resultFailure(result: WriteResult): AppError {
   }
   const conflicts = result.conflicts.map((c) => ({
     ...(c.ref === undefined ? {} : { task: c.ref }),
+    // A row other than the task itself: a link, a place, or a child row that keeps a create from
+    // being undone (A1 3.10).
+    ...(c.entity === "tasks" ? {} : { entity: c.entity }),
     field: c.field,
     ...(c.value === undefined ? {} : { value: c.value }),
+    // An undo's: what the change wrote, and what undoing it would set back ("Restore mine").
+    ...(c.wrote === undefined ? {} : { wrote: c.wrote }),
+    ...(c.restore === undefined ? {} : { restore: c.restore }),
     version: c.version,
-    // As read.ts labels entries and history (A3 3.10): an import, the user, else the actor.
-    by: c.by.origin === "import" ? "import" : c.by.kind === "human" ? "user" : c.by.label,
+    by: byOf(c.by),
     at: new Date(c.at).toISOString(),
   }));
   return new AppError({
     ...base,
-    hint: "Read the task again, then send the change with a new request ID.",
+    hint: hint ?? "Read the task again, then send the change with a new request ID.",
     data: {
       ...base.data,
       as_of: result.as_of,

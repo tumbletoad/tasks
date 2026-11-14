@@ -2,6 +2,8 @@
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
 import { entryAdd } from "./entries/entry-add.ts";
+import { historyRedo } from "./entries/history-redo.ts";
+import { historyUndo } from "./entries/history-undo.ts";
 import { launchOpen } from "./entries/launch-open.ts";
 import { receiptGet } from "./entries/receipt-get.ts";
 import { spaceStatus } from "./entries/space-status.ts";
@@ -11,7 +13,10 @@ import { taskGet } from "./entries/task-get.ts";
 import { taskReopen } from "./entries/task-reopen.ts";
 import { taskUpdate } from "./entries/task-update.ts";
 
-/** Every entry. The generated files list them sorted by name, so the order here is free. */
+/**
+ * Every entry. The generated files list them sorted by name. The contract suite runs the examples
+ * in this order, so undo and redo come after the writes whose change they take back.
+ */
 export const registry = [
   spaceStatus,
   taskGet,
@@ -22,6 +27,8 @@ export const registry = [
   taskReopen,
   receiptGet,
   launchOpen,
+  historyUndo,
+  historyRedo,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];
