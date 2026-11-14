@@ -102,6 +102,9 @@ export function digestOf(
     context: field("context", text(row["context"]), DIGEST_LIMITS.context),
     ...present("waiting_on", row["waiting_on"]),
     focus: row["focus_on"] === today,
+    ...(typeof row["created_at"] === "number" && Number.isFinite(row["created_at"])
+      ? { created: new Date(row["created_at"]).toISOString() }
+      : {}),
     ...(read.place === undefined
       ? {}
       : {
