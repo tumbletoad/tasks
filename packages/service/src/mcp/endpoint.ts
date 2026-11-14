@@ -112,7 +112,9 @@ export function toolCaller(options: {
     const binding =
       slot === undefined || bindings === undefined ? slot : bindings.forCall(slot, "codex", native);
     const space = binding === undefined ? (slot?.space ?? named) : undefined;
-    const shared = slot?.shared === true && binding === undefined;
+    // A shared connection's call says so whether or not its own native ID proved a session: either
+    // way nothing it does binds the connection (A3 3.7.5).
+    const shared = slot?.shared === true;
     try {
       const result = await opCall(
         options.ops,

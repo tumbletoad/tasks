@@ -15,7 +15,8 @@
 // The rules, in A3 3.7.3's order:
 // 0. The host, read after rule 1 and before rule 2: a connection whose app runs one server for many
 //    conversations (hosts.ts, A3 3.7.5) is shared from its bind frame on; its ticket and native IDs
-//    bind nothing at the bind frame.
+//    bind nothing at the bind frame. Neither do those of a Codex entry whose host could not be read,
+//    which binds at its first call instead, by the thread ID that call carries.
 // 1. `resume.handle`: a handle this service issued to a connection of the same instance, used in
 //    the last 24 hours, restores its binding and its pinned space; one whose session ended answers
 //    `lost`, and the connection continues unbound.
@@ -140,6 +141,8 @@ export const IGNORED = [
   "grant",
   // A ticket or native ID at the bind frame of a connection that carries many conversations.
   "shared",
+  // A ticket at the bind frame of a Codex entry whose host could not be read (hosts.ts).
+  "host",
   // A ticket of a launch whose session ended before an agent bound it.
   "ended",
 ] as const;
@@ -436,24 +439,30 @@ export class Bindings implements BindingPort {
     handle ??= this.#issue(slot);
 
     // Rule 0: a host that runs one server for many conversations (hosts.ts).
+    let unknownHost = false;
     if (!slot.shared) {
       const host = await sharedHost(
         { app: context["app"], env, parent: context["parent"] },
         this.#options.ancestry,
       );
-      if (host !== undefined) this.#share(slot);
+      if (host === "unknown") unknownHost = true;
+      else if (host !== undefined) this.#share(slot);
     }
 
     // Rule 2: the ticket, read from the bind frame only.
     const ticket = env["TASKS_TICKET"];
     if (ticket !== undefined && slot.session === undefined) {
-      // A shared host's environment is every conversation's: its ticket proves none of them.
+      // A shared host's environment is every conversation's: its ticket proves none of them. A
+      // host that could not be read may be one: the connection binds at its first call instead,
+      // which carries its own thread ID, and the ticket is not spent.
       if (slot.shared) this.#ignored("ticket", "shared");
+      else if (unknownHost) this.#ignored("ticket", "host");
       else if (await this.#ticket(slot, ticket)) state = "bound";
     }
     // Rule 3: a native ID a launch set or received, alone.
     if (slot.session === undefined && slot.presented.size > 0) {
       if (slot.shared) this.#ignored("native", "shared");
+      else if (unknownHost) this.#ignored("native", "host");
       else if (this.#byNative(slot, [...slot.presented])) state = "bound";
     }
     // Unbound now, so it may write unbound before it binds: that scope stays a receipt lookup,
@@ -576,6 +585,7 @@ export class Bindings implements BindingPort {
    * or bind resolves for that call only).
    */
   forCall(slot: Slot, source: NativeSource, id: string | undefined): Slot | undefined {
+    this.#prune();
     if (id !== undefined) this.present(slot, source, id);
     if (!slot.shared) {
       if (id !== undefined && slot.session === undefined && slot.kind === "bridge") {
@@ -586,9 +596,14 @@ export class Bindings implements BindingPort {
     if (id === undefined || !NATIVE_ID.test(id)) return undefined;
     const session = slot.session === undefined ? undefined : this.#sessions.get(slot.session.id);
     if (session?.native.some((n) => n.source === source && n.id === id) === true) return slot;
-    // Per call (A3 3.7.5): the one live session of this instance whose launch recorded the ID.
+    // Per call (A3 3.7.5): the one live session of this instance whose launch recorded the ID, in
+    // the space the connection pinned (A3 3.7.8), as rule 3 binds at the bind frame.
     const found = this.#nativeSession(slot.instance, [[source, id]]);
-    if (found === undefined || !this.#options.homes.may(slot.instance, found.space)) {
+    if (
+      found === undefined ||
+      (slot.space !== undefined && slot.space !== found.space) ||
+      !this.#options.homes.may(slot.instance, found.space)
+    ) {
       return undefined;
     }
     let bound = found;
@@ -999,6 +1014,7 @@ export class Bindings implements BindingPort {
    * the session's last use. The call reads the slot's binding after this.
    */
   async use(slot: Slot): Promise<void> {
+    this.#prune();
     for (;;) {
       const id = slot.session?.id;
       const pending = id === undefined ? undefined : this.#provisional.get(id);
@@ -1034,6 +1050,7 @@ export class Bindings implements BindingPort {
   }
 
   liveSessions(space: string): ReadonlyMap<string, number> {
+    this.#prune();
     const counts = new Map<string, number>();
     for (const session of this.#sessions.values()) {
       if (session.space !== space || session.task === null || session.ended_at !== undefined) {
@@ -1053,6 +1070,7 @@ export class Bindings implements BindingPort {
    * bridge bound maps to it.
    */
   mapped(env: Readonly<Record<string, string>>): Slot | undefined {
+    this.#prune();
     let session: SessionRecord | undefined;
     const ticket = env["TASKS_TICKET"];
     const found = ticket === undefined ? undefined : this.#options.launches.bridgeTicket(ticket);
@@ -1098,6 +1116,7 @@ export class Bindings implements BindingPort {
    * and whether Resume is offered. No native ID, folder or launch leaves here.
    */
   sessionsOf(space: string, task: string): readonly SessionRow[] {
+    this.#prune();
     return [...this.#sessions.values()]
       .filter((s) => s.space === space && s.task === task)
       .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1))
@@ -1507,7 +1526,9 @@ export class Bindings implements BindingPort {
   }
 
   /**
-   * Ends quiet sessions and forgets old records (at most once a minute). A session ends after a
+   * Ends quiet sessions and forgets old records, before every bind frame, call, CLI mapping and
+   * listing reads them (at most once a minute), so no expired session maps, binds or is listed
+   * live, whichever door is used first. A session ends after a
    * day with no open connection, no running agent and no call (`idle`); one made with its launch
    * that no agent bound, after 7 such days (`stale`). Its record stays a month.
    */

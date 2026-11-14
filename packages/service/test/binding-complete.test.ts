@@ -343,6 +343,35 @@ describe("[A3.3.7.binding.call-only] a shared connection binds for its call only
   );
 
   test(
+    "a shared connection's call whose own thread proves its session: a bind holds for that call only, and says so",
+    { timeout: LONG },
+    async () => {
+      const thread = "019a0000-0000-7000-8000-0000000000d1";
+      const launch = await w.launch("M-1", { instance: "chat-agent" });
+      const intent = await w.service.launches.read(w.space, launch.id);
+      if (intent === undefined) throw new Error("no launch intent");
+      // The launch matched its Codex thread (A4 3.4.3), as the launch service reports it.
+      w.service.bindings.launched(w.space, {
+        ...intent,
+        evidence: { ...intent.evidence, thread },
+      });
+      const chat = await connect({ instance: "chat-agent", app: "claude-desktop" });
+      try {
+        expect(chat.slot.shared).toBe(true);
+        const loaded = await chat.tool("get_task", { task: "M-1", bind: true }, thread);
+        expect(loaded.error).toBe(false);
+        expect(loaded.text).toContain(
+          'Session: not bound, this call only. Pass task "M-1" on later calls.',
+        );
+        expect(loaded.text).not.toContain("bound to this task by this call");
+        expect(chat.slot.session).toBeUndefined();
+      } finally {
+        chat.close();
+      }
+    },
+  );
+
+  test(
     "a bound connection's call naming another task applies to it, and its result says the session stays bound to its task",
     { timeout: LONG },
     async () => {

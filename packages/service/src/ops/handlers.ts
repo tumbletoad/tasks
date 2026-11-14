@@ -1277,6 +1277,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
     }
     const row = taskRow(read.row, read.space.refPrefix);
+    // On a shared connection nothing binds for good, also when the call's own native ID proved its
+    // session for this call (A3 3.7.5): the result says so, never "bound by this call".
+    if (callOnly) bound = false;
     const once = callOnly
       ? { durable: false, hint: `Pass task "${String(row["ref"])}" on later calls.` }
       : {};

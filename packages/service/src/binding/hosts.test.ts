@@ -67,7 +67,7 @@ describe("[A3.3.7.binding.hosts] a shared host is told from the bind frame and t
     );
   });
 
-  test("a Codex entry under an app-server is shared, a Codex CLI's is not, and an unread table is not", async () => {
+  test("a Codex entry under an app-server is shared, a Codex CLI's is not, and an unread table is unknown", async () => {
     const fromProc: Ancestry = (pid, depth) => Promise.resolve(linuxAncestors(pid, depth, proc));
     const at = (pid: number) => ({ app: "codex", env: {}, parent: { pid } });
     expect(await sharedHost(at(4200), fromProc)).toBe("app-server");
@@ -80,12 +80,15 @@ describe("[A3.3.7.binding.hosts] a shared host is told from the bind frame and t
       return fromProc(pid, depth);
     };
     expect(await sharedHost({ ...at(4200), app: "test" }, counting)).toBeUndefined();
-    expect(await sharedHost({ ...at(-1) }, counting)).toBeUndefined();
-    expect(await sharedHost({ app: "codex", env: {}, parent: "4200" }, counting)).toBeUndefined();
+    expect(await sharedHost({ ...at(-1) }, counting)).toBe("unknown");
+    expect(await sharedHost({ app: "codex", env: {}, parent: "4200" }, counting)).toBe("unknown");
     expect(read).toBe(0);
-    // A table that cannot be read counts as a per-session host: M2.04's guard remains.
+    // A table that cannot be read, or shows no ancestor, is unknown: its ticket binds nothing.
     const failing: Ancestry = () => Promise.reject(new Error("fixture: no process table"));
-    expect(await sharedHost(at(4200), failing)).toBeUndefined();
+    expect(await sharedHost(at(4200), failing)).toBe("unknown");
+    expect(await sharedHost(at(9999), fromProc)).toBe("unknown");
+    // No reader on this OS: the host is not read at all.
+    expect(await sharedHost(at(4200), undefined)).toBeUndefined();
   });
 
   test("ancestors are read upwards from the parent, at most four, and stop at a process that is gone", () => {

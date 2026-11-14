@@ -1659,7 +1659,7 @@
     },
     {
       "id": "A3.3.7.binding.hosts",
-      "title": "Host detection: Claude Desktop's chat without a session ID and a Codex entry under a Codex app-server are shared from the bind frame, their ticket binds nothing and is not spent, while Claude Desktop's Code tab and the Codex CLI are per session; on a shared connection a call carrying a thread its launch matched acts as that session for that call only; ancestors are read from the process table, at most four, and an unreadable table counts as per session",
+      "title": "Host detection: Claude Desktop's chat without a session ID and a Codex entry under a Codex app-server are shared from the bind frame, their ticket binds nothing and is not spent, while Claude Desktop's Code tab and the Codex CLI are per session; on a shared connection a call carrying a thread its launch matched acts as that session for that call only; ancestors are read from the process table, at most four; a Codex entry whose table cannot be read is unknown: its ticket binds nothing and is not spent, and it binds at its first call by its own thread; a call's thread proves a session only in the space the connection pinned",
       "source": "A3 3.7.2, A3 3.7.5, A3 5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",
@@ -1667,7 +1667,7 @@
     },
     {
       "id": "A3.3.7.binding.call-only",
-      "title": "On a shared connection get_task by launch reference or with bind true holds for its call only: the result says durable false with the hint to pass the task, the launch is not used up and its session reads opened by reference, not tracked; on a bound connection a call naming another task says which task the session stays bound to",
+      "title": "On a shared connection get_task by launch reference or with bind true holds for its call only, also when the call's own thread proved its session: the result says durable false with the hint to pass the task, the launch is not used up and its session reads opened by reference, not tracked; on a bound connection a call naming another task says which task the session stays bound to",
       "source": "A3 3.4.4, A3 3.7.3, A3 3.7.5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",

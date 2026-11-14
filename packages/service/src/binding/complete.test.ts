@@ -229,6 +229,18 @@ describe("[A3.3.7.binding.launch-session] a launch's session is made with its in
     expect(b.sessionsOf(SPACE, TASK)[0]).toMatchObject({ state: "ended", end_reason: "stale" });
     expect(events).toContainEqual({ ev: "binding.ignored", input: "ticket", reason: "ended" });
   });
+
+  test("a session past its quiet time ends at the first door that reads it, not only at a bind frame", () => {
+    let now = 1_800_000_000_000;
+    const { bindings: b } = bindings({ now: () => now });
+    const intent = intentOf({ evidence: { preset: CLAUDE } });
+    b.launched(SPACE, intent);
+    expect(b.mapped({ CLAUDE_CODE_SESSION_ID: CLAUDE })?.session?.waiting).toBe(true);
+    now += SESSION_STALE_MS + 60_000;
+    // A CLI call maps to it no more, and the list says it ended.
+    expect(b.mapped({ CLAUDE_CODE_SESSION_ID: CLAUDE })).toBeUndefined();
+    expect(b.sessionsOf(SPACE, TASK)[0]).toMatchObject({ state: "ended", end_reason: "stale" });
+  });
 });
 
 describe("[A3.3.7.binding.native] a native ID a launch set or received binds alone (rule 3)", () => {
@@ -341,6 +353,59 @@ describe("[A3.3.7.binding.hosts] a shared host binds nothing durably; a call's o
     // A Codex CLI (no app-server among its ancestors) is per session.
     const cli = bindings({ ancestry: () => Promise.resolve([{ argv: ["codex"] }]) }).bindings;
     expect((await connect(cli, { app: "codex", parent: { pid: 4321 } })).slot.shared).toBe(false);
+  });
+
+  test("a Codex host that cannot be read: its ticket binds nothing and is not spent; its first call binds with its own thread", async () => {
+    const launches = launchSide();
+    const unreadable: Ancestry = () => Promise.reject(new Error("fixture: no process table"));
+    const { bindings: b, events } = bindings({ launches, ancestry: unreadable });
+    const intent = intentOf({ route: "clipboard", instance: "clipboard" });
+    b.launched(SPACE, intent);
+    launches.tickets.set("ticket-5", { launch: intent.id, used: false });
+    const host = await connect(b, {
+      app: "codex",
+      parent: { pid: 4321 },
+      env: { TASKS_TICKET: "ticket-5" },
+    });
+    expect(host.state).toBe("unbound");
+    expect(host.slot.shared).toBe(false);
+    expect(events).toContainEqual({ ev: "binding.ignored", input: "ticket", reason: "host" });
+    expect(launches.tickets.get("ticket-5")?.used).toBe(false);
+    // The Brief's call carries its thread: the reference binds, and the thread is the session's.
+    expect(b.forCall(host.slot, "codex", THREAD)).toBe(host.slot);
+    expect(
+      await b.redeem(host.slot, {
+        id: intent.id,
+        reference: "L00000",
+        space: SPACE,
+        task: TASK,
+        taskRef: "M-1",
+        state: "dispatched",
+        route: "clipboard",
+        boundAt: undefined,
+        exited: false,
+      }),
+    ).toEqual({ kind: "bound" });
+    // Another thread through it: shared from then on, and that thread's calls are not the session's.
+    const other = "019a0000-0000-7000-8000-0000000000c3";
+    expect(b.forCall(host.slot, "codex", other)).toBeUndefined();
+    expect(host.slot.shared).toBe(true);
+    expect(b.forCall(host.slot, "codex", THREAD)).toBe(host.slot);
+  });
+
+  test("a call's own thread proves a session only in the space its shared connection pinned", async () => {
+    const appServer: Ancestry = () => Promise.resolve([{ argv: ["codex", "app-server"] }]);
+    const { bindings: b } = bindings({ ancestry: appServer });
+    const elsewhere = newId("sp");
+    const intent = intentOf();
+    b.launched(elsewhere, intent);
+    b.launched(elsewhere, { ...intent, state: "dispatched", evidence: { thread: THREAD } });
+    const host = await connect(b, { app: "codex", parent: { pid: 4321 } });
+    expect(host.slot.shared).toBe(true);
+    expect(host.slot.space).toBe(SPACE);
+    expect(b.forCall(host.slot, "codex", THREAD)).toBeUndefined();
+    // Not claimed either: its session still waits for its agent.
+    expect(b.sessionOfLaunch(intent.id)?.waiting).toBe(true);
   });
 
   test("a reference opened on a shared connection marks its waiting session opened by reference, not tracked", () => {

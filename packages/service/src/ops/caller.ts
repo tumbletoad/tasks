@@ -40,9 +40,9 @@ export interface Caller {
    */
   readonly binding?: Slot;
   /**
-   * The call comes over a connection that carries several conversations and acts without its
-   * binding (A3 3.7.5): a launch reference or a bind resolves for this call only, and the result
-   * says so (`durable: false`).
+   * The call comes over a connection that carries several conversations (A3 3.7.5): it acts as a
+   * session only when its own native ID proved one, for this call, and a launch reference or a
+   * bind resolves for this call only; the result says so (`durable: false`).
    */
   readonly shared?: boolean;
 }

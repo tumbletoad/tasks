@@ -11,9 +11,10 @@
 //
 // Every input comes from the authenticated bind frame: the entry's `--app`, its environment, and
 // `parent.pid` (the bridge's parent, A3 3.7.2), whose ancestors the service reads only to tell the
-// host. An ancestor's command line is compared in memory and never kept or logged. A host the
-// service cannot read in time counts as not shared: M2.04's guard still marks a connection shared
-// once two conversations show through it.
+// host. An ancestor's command line is compared in memory and never kept or logged. A Codex host
+// the service cannot read in time is `unknown`: its ticket binds nothing at the bind frame, since
+// an app-server's environment would be every thread's, and the connection binds at its first call,
+// which carries its own thread ID; M2.04's guard marks it shared once two conversations show.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { powershellPath } from "@tasks/launch";
@@ -53,12 +54,15 @@ export function runsAppServer(argv: readonly string[]): boolean {
   );
 }
 
-/** Which shared host a bind frame shows, if any. */
-export type SharedHost = "claude-desktop" | "app-server";
+/**
+ * Which shared host a bind frame shows, if any. `unknown`: a Codex entry whose ancestors could not
+ * be read in time, which may be an app-server's.
+ */
+export type SharedHost = "claude-desktop" | "app-server" | "unknown";
 
 /**
  * The shared host of a connection (A3 3.7.5), from its entry's app word, its bind frame's
- * environment and its ancestors. Undefined: a per-session host, or one that could not be read.
+ * environment and its ancestors. Undefined: a per-session host, or no reader on this OS.
  */
 export async function sharedHost(
   facts: {
@@ -79,7 +83,7 @@ export async function sharedHost(
       ? (facts.parent as Record<string, unknown>)["pid"]
       : undefined;
   if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0 || pid > 2_147_483_647) {
-    return undefined;
+    return "unknown";
   }
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<undefined>((resolve) => {
@@ -90,7 +94,8 @@ export async function sharedHost(
   });
   try {
     const found = await Promise.race([ancestry(pid, ANCESTORS).catch(() => undefined), late]);
-    return found?.some((a) => runsAppServer(a.argv)) === true ? "app-server" : undefined;
+    if (found === undefined || found.length === 0) return "unknown";
+    return found.some((a) => runsAppServer(a.argv)) ? "app-server" : undefined;
   } finally {
     clearTimeout(timer);
   }
