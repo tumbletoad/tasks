@@ -1330,6 +1330,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.history.undo-redo",
+      "title": "Undo and redo through the write path, fixed scenarios: two edits of one field, then two undos and two redos, match each step; overlapping field sets (C1 summary and due, C2 due and status) undo C2, then C1, then redo both; repeated cycles keep passing while fv only grows and a stale base still conflicts; a foreign edit gives UNDO_CONFLICT with the value written, the value now and who changed it when, and a partial undo leaves it and lists it; a create is undone by a tombstone that the creating commit's own rows pass and another actor's child row blocks, and redone by a restore that a taken place refuses; one stack per human, a new undoable action ends the redo, the named commit, nothing to undo or redo, the undo floor, and retries replay",
+      "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.property",
+      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks; undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row",
+      "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.history",
+      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, UNDO_CONFLICT as conflict with the value written, the value now and the value undo restores, a partial undo's unresolved fields, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and tasks undo and tasks redo on the CLI",
+      "source": "A1 3.10.1, A3 3.2.3, A3 3.5, A5 3.12, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.6.local.framing",
       "title": "tasks-local/1 framing: split and merged chunks give the same lines, the line limit closes the decoder for good, invalid UTF-8 fails only its line, a BOM is kept for the parser to refuse, and a line without its terminator is never returned",
       "source": "A2 3.6.2, A2 5, A7 3.8 M1.09",

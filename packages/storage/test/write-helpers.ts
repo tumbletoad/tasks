@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
 import { openSpace } from "../src/space.ts";
-import { TASK_FIELDS, type TaskField } from "../src/write/fields.ts";
+import { CHILD_FIELDS, TASK_FIELDS, type TaskField } from "../src/write/fields.ts";
 import { isPosition } from "../src/write/positions.ts";
 import {
   formatAsOf,
@@ -177,15 +177,82 @@ interface ChangeRow {
 }
 
 /**
- * A1's history invariants on every task (A1 3.4, 3.5, 3.7):
+ * Checks one field's chain of change rows against the row (A1 3.4, 3.5, 3.10): each change's
+ * before-value, before-version and before-provenance are the previous change's after-value, seq and
+ * after-provenance, or the create row's; an ordinary write holds its own provenance and an undo or
+ * redo sets back an earlier one; the row holds the latest after-value; `fv` names the latest change
+ * and `fp` its provenance (a missing key means created_seq); and the field holds exactly the value
+ * its provenance commit wrote for it. Returns the field's latest seq.
+ */
+function checkChain(
+  label: string,
+  history: readonly ChangeRow[],
+  created: { seq: number; row: Record<string, unknown> },
+  row: Record<string, unknown>,
+  columns: readonly string[],
+  maps: { fv: Record<string, number>; fp: Record<string, number> },
+  field: string,
+  kinds: ReadonlyMap<number, string>,
+): number {
+  const valueOf = (r: Record<string, unknown>): string =>
+    JSON.stringify(
+      columns.length === 1
+        ? (r[columns[0] ?? ""] ?? null)
+        : Object.fromEntries(columns.map((c) => [c, r[c] ?? null])),
+    );
+  let value = valueOf(created.row);
+  let at = created.seq;
+  let prov = created.seq;
+  const chain = history.filter((c) => c.field === field);
+  for (const change of chain) {
+    expect(change.action).toBe("set");
+    expect(change.before, `${label}.${field} before-value at ${String(change.seq)}`).toBe(value);
+    expect(change.before_ver, `${label}.${field} before-version`).toBe(at);
+    expect(change.before_prov, `${label}.${field} before-provenance`).toBe(prov);
+    if (kinds.get(change.seq) === "ops") {
+      expect(change.after_prov, `${label}.${field} an ordinary write's provenance`).toBe(
+        change.seq,
+      );
+    } else {
+      expect(change.after_prov, `${label}.${field} an inversion's provenance`).toBeLessThanOrEqual(
+        change.seq,
+      );
+    }
+    value = change.after;
+    at = change.seq;
+    prov = change.after_prov;
+  }
+  expect(valueOf(row), `${label}.${field} holds its latest change`).toBe(value);
+  expect(maps.fv[field], `fv of ${label}.${field} is its latest change row`).toBe(
+    at === created.seq ? undefined : at,
+  );
+  expect(maps.fp[field] ?? created.seq, `fp of ${label}.${field} is its provenance`).toBe(prov);
+  // A1 3.10's invariant: the value is the after-value its provenance commit wrote.
+  const wrote =
+    prov === created.seq
+      ? valueOf(created.row)
+      : chain.find((c) => c.seq === prov && c.after_prov === prov)?.after;
+  expect(wrote, `${label}.${field} holds its provenance commit's write`).toBe(value);
+  return at;
+}
+
+/** Each commit's kind by seq: `ops`, `undo`, `redo`, `migration`. */
+function commitKinds(conn: Connection): Map<number, string> {
+  return new Map(
+    conn
+      .prepare("SELECT seq, kind FROM commits")
+      .all<{ seq: number; kind: string }>()
+      .map((c) => [c.seq, c.kind]),
+  );
+}
+
+/**
+ * A1's history invariants on every task (A1 3.4, 3.5, 3.7, 3.10):
  * - commits are gapless from 1 to last_seq, and every change belongs to one;
  * - a commit has at most one change row per (row, field), and none whose value did not change;
- * - per (task, field), each change's before-value and before-version are the previous change's
- *   after-value and seq, or the create row's value and seq: the chain has no hole, so no write
- *   was lost between two recorded changes;
- * - every `fv` entry equals the field's latest change row, and a field without one has no entry;
- * - the row's current value is the latest change's after-value, and its version is the latest
- *   change to any field;
+ * - per (task, field), the chain of change rows has no hole (checkChain), so no write was lost
+ *   between two recorded changes, and the field holds its provenance commit's write;
+ * - the row's version is the latest change to any field;
  * - every changed task waits in the outbox for the projection.
  */
 export function checkHistory(conn: Connection): void {
@@ -203,6 +270,7 @@ export function checkHistory(conn: Connection): void {
     ),
   ).toBe(0);
   expect(one(conn, "SELECT count(*) FROM changes WHERE action = 'set' AND before = after")).toBe(0);
+  const kinds = commitKinds(conn);
   const tasks = conn
     .prepare("SELECT * FROM tasks")
     .all<Record<string, unknown> & { id: string; fv: string; fp: string }>();
@@ -215,32 +283,22 @@ export function checkHistory(conn: Connection): void {
     if (create === undefined) continue;
     expect(task["created_seq"]).toBe(create.seq);
     expect(isPosition(task["position"])).toBe(true);
-    const createdRow = JSON.parse(create.after) as Record<string, unknown>;
-    const fv = JSON.parse(task.fv) as Record<string, number>;
-    expect(JSON.parse(task.fp)).toEqual(fv);
+    const created = { seq: create.seq, row: JSON.parse(create.after) as Record<string, unknown> };
+    const maps = {
+      fv: JSON.parse(task.fv) as Record<string, number>,
+      fp: JSON.parse(task.fp) as Record<string, number>,
+    };
     let version = create.seq;
     for (const field of Object.keys(TASK_FIELDS) as TaskField[]) {
-      const columns: readonly string[] = TASK_FIELDS[field];
-      const valueOf = (row: Record<string, unknown>): string =>
-        JSON.stringify(
-          columns.length === 1
-            ? row[columns[0] ?? ""]
-            : Object.fromEntries(columns.map((c) => [c, row[c]])),
-        );
-      let value = valueOf(createdRow);
-      let at = create.seq;
-      for (const change of history.filter((c) => c.field === field)) {
-        expect(change.action).toBe("set");
-        expect(change.before, `${field} before-value at ${String(change.seq)}`).toBe(value);
-        expect(change.before_ver).toBe(at);
-        expect(change.before_prov).toBe(at);
-        expect(change.after_prov).toBe(change.seq);
-        value = change.after;
-        at = change.seq;
-      }
-      expect(valueOf(task), `${field} holds its latest change`).toBe(value);
-      expect(fv[field], `fv.${field} is its latest change row`).toBe(
-        at === create.seq ? undefined : at,
+      const at = checkChain(
+        task.id,
+        history,
+        created,
+        task,
+        TASK_FIELDS[field],
+        maps,
+        field,
+        kinds,
       );
       version = Math.max(version, at);
     }
@@ -259,27 +317,25 @@ export function checkHistory(conn: Connection): void {
 }
 
 /**
- * The same invariants on the child rows a request can change after their create: links and
- * places (A1 3.4). Each starts with its create row, every `fv` entry is its field's latest change,
- * and the row's version is the latest change to any of its fields.
+ * The same invariants on the child rows a request can change after their create: links, places,
+ * launches, and the tombstones of notes, log entries and sources (A1 3.4, 3.10). Each starts with
+ * its create row, every field's chain holds (checkChain), and the row's version is the latest
+ * change to any of its fields.
  */
 function checkChildHistory(conn: Connection): void {
+  const commits = commitKinds(conn);
+  const id = { key: "id" };
   const kinds = [
     {
       table: "task_sources",
       key: "task_id || '|' || source_id",
-      fields: { removed: ["removed_at"] },
+      fields: CHILD_FIELDS.task_sources,
     },
-    {
-      table: "places",
-      key: "id",
-      fields: { folder: ["root_id", "rel_path", "kind", "identity"], deleted: ["deleted_at"] },
-    },
-    {
-      table: "launches",
-      key: "id",
-      fields: { state: ["state", "reason", "detail", "updated_at"] },
-    },
+    { table: "places", ...id, fields: CHILD_FIELDS.places },
+    { table: "launches", ...id, fields: CHILD_FIELDS.launches },
+    { table: "notes", ...id, fields: CHILD_FIELDS.notes },
+    { table: "log_entries", ...id, fields: CHILD_FIELDS.log_entries },
+    { table: "sources", ...id, fields: CHILD_FIELDS.sources },
   ] as const;
   for (const { table, key, fields } of kinds) {
     const rows = conn
@@ -292,29 +348,23 @@ function checkChildHistory(conn: Connection): void {
       const create = history[0];
       expect(create?.action, `${table} ${row.entity_id} starts with its create`).toBe("create");
       if (create === undefined) continue;
-      const createdRow = JSON.parse(create.after) as Record<string, unknown>;
-      const fv = JSON.parse(row.fv) as Record<string, number>;
-      expect(JSON.parse(row.fp)).toEqual(fv);
+      const created = { seq: create.seq, row: JSON.parse(create.after) as Record<string, unknown> };
+      const maps = {
+        fv: JSON.parse(row.fv) as Record<string, number>,
+        fp: JSON.parse(row.fp) as Record<string, number>,
+      };
       let version = create.seq;
       for (const [field, columns] of Object.entries(fields) as [string, readonly string[]][]) {
-        const valueOf = (r: Record<string, unknown>): string =>
-          JSON.stringify(
-            columns.length === 1
-              ? r[columns[0] ?? ""]
-              : Object.fromEntries(columns.map((c) => [c, r[c]])),
-          );
-        let value = valueOf(createdRow);
-        let at = create.seq;
-        for (const change of history.filter((c) => c.field === field)) {
-          expect(change.before, `${table}.${field} before-value at ${String(change.seq)}`).toBe(
-            value,
-          );
-          expect(change.before_ver).toBe(at);
-          value = change.after;
-          at = change.seq;
-        }
-        expect(valueOf(row), `${table}.${field} holds its latest change`).toBe(value);
-        expect(fv[field]).toBe(at === create.seq ? undefined : at);
+        const at = checkChain(
+          `${table} ${row.entity_id}`,
+          history,
+          created,
+          row,
+          columns,
+          maps,
+          field,
+          commits,
+        );
         version = Math.max(version, at);
       }
       expect(row["version"], `${table} ${row.entity_id} version`).toBe(version);
