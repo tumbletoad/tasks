@@ -709,6 +709,8 @@ describe("[A2.3.6.ops.launch-rule] launches stay the user's on the request path 
           "place.set",
           "task.patch",
           "task.complete",
+          // complete_task's outcome is the task's wrap-up (A3 3.4.8).
+          "task.wrap_up",
           "task.reopen",
         ]),
       );
