@@ -3,6 +3,8 @@
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
+import { rebuildSearchIndex } from "../src/search/documents.ts";
+import { SEARCH_TABLE_STATEMENTS } from "../src/search/tables.ts";
 import { openSpace } from "../src/space.ts";
 import { CHILD_FIELDS, TASK_FIELDS, type TaskField } from "../src/write/fields.ts";
 import { isPosition } from "../src/write/positions.ts";
@@ -51,9 +53,14 @@ export function steppingClock(): () => number {
 
 /**
  * Creates the fixture space in `parent`, with the writer open on it. The areas and the project are
- * fixture rows written before the writer opens: their operations arrive in later steps.
+ * fixture rows written before the writer opens: their operations arrive in later steps. With
+ * `search`, the space also gets the search tables, filled by a rebuild, as the schema step that
+ * adds them will do (A1 3.12), so the writer keeps the index.
  */
-export async function writeFixture(parent: string): Promise<Fixture> {
+export async function writeFixture(
+  parent: string,
+  options: { search?: boolean } = {},
+): Promise<Fixture> {
   const created = await createFixtureSpace(parent);
   const checked = await checkedDriver();
   const opened = openSpace(checked, created.folder, { role: "writer" });
@@ -103,6 +110,10 @@ export async function writeFixture(parent: string): Promise<Fixture> {
     alias.run({ namespace: "planning", alias: LEGACY.alias, kind: "task", id: LEGACY.task });
     alias.run({ namespace: "ref_prefix", alias: "MI", kind: "space", id: created.space.spaceId });
     alias.run({ namespace: "slug", alias: "old-portal", kind: "project", id: ids.project });
+    if (options.search === true) {
+      for (const statement of SEARCH_TABLE_STATEMENTS) conn.exec(statement);
+      rebuildSearchIndex(conn);
+    }
   });
   let writer = SpaceWriter.open(opened, { machine: MACHINE, now: steppingClock() });
   const reader = openSpace(checked, created.folder, { role: "reader" }).conn;

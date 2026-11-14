@@ -44,6 +44,8 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
+import { indexChanges } from "../search/documents.ts";
+import { hasSearchTables } from "../search/tables.ts";
 import type { OpenedSpace } from "../space.ts";
 import { Dedupe, type Match } from "./dedupe.ts";
 import {
@@ -688,6 +690,11 @@ export class SpaceWriter {
   readonly #now: () => number;
   readonly #random: RandomSource;
   readonly #seams: WriteSeams;
+  /**
+   * Whether the space holds the search tables (A1 3.12), which a schema step after 0.2 adds: each
+   * commit then writes the documents it changed. A space without them keeps no index.
+   */
+  readonly #search: boolean;
   readonly spaceId: Id<"sp">;
   #registered = false;
   #closed = false;
@@ -699,6 +706,7 @@ export class SpaceWriter {
     this.#random = options.random ?? osRandom;
     this.#seams = seams;
     this.spaceId = opened.space.spaceId;
+    this.#search = hasSearchTables(opened.conn);
   }
 
   /**
@@ -1570,6 +1578,8 @@ export class SpaceWriter {
       changes = coalesce(conn, run);
       if (changes.length > 0) {
         insertChanges(conn, seq, changes);
+        // The search rows, in the same transaction as the state they index (A1 3.7, 3.12).
+        if (this.#search) indexChanges(conn, seq, changes);
         const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
         for (const id of tasks) conn.prepare(SQL.outbox).run({ key: id, seq });
         // The projection renders tasks and their children. Launch records are not among them.
@@ -1701,11 +1711,11 @@ export class SpaceWriter {
         redo_of: undo ? null : target.seq,
       });
       const applied = applyInversions(conn, plan.inversions, { seq, at, principal, op: 0 });
-      insertChanges(
-        conn,
-        seq,
-        applied.changes.map((c) => ({ ...c, action: "set" as const })),
-      );
+      const inverted = applied.changes.map((c) => ({ ...c, action: "set" as const }));
+      insertChanges(conn, seq, inverted);
+      // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
+      // its children's, a restore brings them back, a field set back rewrites its document.
+      if (this.#search) indexChanges(conn, seq, inverted);
       for (const task of applied.tasks) conn.prepare(SQL.outbox).run({ key: task, seq });
       if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
       if (undo) conn.prepare(SQL.markUndone).run({ target: target.seq, seq });

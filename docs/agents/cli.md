@@ -15,6 +15,7 @@ and `cwd`.
 | `tasks add` | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. |
 | `tasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
 | `tasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
+| `tasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
 | `tasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `tasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `tasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
@@ -78,6 +79,19 @@ Usage: `tasks done [<task>] [flags]`
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
 Only through `--input`: `follow_ups`.
+
+## `tasks find`
+
+Find active tasks, finished tasks and learnings: rows only, a page at a time.
+
+Usage: `tasks find [<q>] [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<q>` | `q` | string | Words, "phrases" and filters, such as status:open p<=2 |
+| `--scope` | `scope` | "active" \| "finished" \| "all" \| "learnings" | active by default; finished is completed or archived |
+| `--limit` | `limit` | integer | Rows per page; default 15 |
+| `--cursor` | `cursor` | string | Next page: the last page's cursor, alone |
 
 ## `tasks log`
 

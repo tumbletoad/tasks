@@ -118,6 +118,90 @@ describe("[A1.3.15.places.resolve] resolve(): one folder or a reason, never anot
     });
   });
 
+  test("a link to a file is not_a_directory on every platform, a dangling link path_missing", async () => {
+    // Windows cannot follow a junction to a file (its stat says the path is missing); Linux
+    // follows a link to a file. The reason is the same on both: a file is there, not a folder.
+    const { base, work, roots } = world();
+    folder(work, "c d");
+    writeFileSync(join(work, "c d", "e.f"), "x");
+    linkFolder(join(work, "c d", "e.f"), join(work, "to-file"));
+    linkFolder(join(work, "to-file"), join(work, "to-link"));
+    linkFolder(join(base, "nowhere", "e.f"), join(work, "dangling"));
+    const refused = (reason: string) => ({ status: "failed", reason, root: "work" });
+    for (const [path, reason] of [
+      ["to-file", "not_a_directory"],
+      ["to-link", "not_a_directory"],
+      ["c d/e.f", "not_a_directory"],
+      ["to-file/b", "path_missing"],
+      ["dangling", "path_missing"],
+    ] as const) {
+      expect([path, await resolvePlace({ root: "work", path }, roots)]).toEqual([
+        path,
+        refused(reason),
+      ]);
+    }
+    // The way back gives the same reason.
+    expect(await placeOf(join(work, "to-file"), roots)).toEqual({
+      status: "failed",
+      reason: "not_a_directory",
+    });
+    expect(await placeOf(join(work, "dangling"), roots)).toEqual({
+      status: "failed",
+      reason: "path_missing",
+    });
+  });
+
+  test.skipIf(!WINDOWS && !LINUX)(
+    "a chain of 40 links to a file is not_a_directory, a chain of 41 path_missing, as Linux follows them",
+    async () => {
+      const { work, roots } = world();
+      writeFileSync(join(work, "file"), "x");
+      // link-1 leads to the file, link-n to link-(n-1).
+      linkFolder(join(work, "file"), join(work, "link-1"));
+      for (let n = 2; n <= 41; n += 1) {
+        linkFolder(join(work, `link-${String(n - 1)}`), join(work, `link-${String(n)}`));
+      }
+      for (const [path, reason] of [
+        ["link-40", "not_a_directory"],
+        ["link-41", "path_missing"],
+      ] as const) {
+        expect([path, await resolvePlace({ root: "work", path }, roots)]).toEqual([
+          path,
+          { status: "failed", reason, root: "work" },
+        ]);
+      }
+    },
+  );
+
+  test("a relative link reached through another link leads where the file system takes it", async (context) => {
+    // `alias` leads to `real/sub`. From there `../gone` is `real/gone`, which is missing, while its
+    // spelling through `alias` would be the file `gone`; `../there` is the file `real/there`.
+    const { work, roots } = world();
+    folder(work, "real", "sub");
+    writeFileSync(join(work, "gone"), "x");
+    writeFileSync(join(work, "real", "there"), "x");
+    linkFolder(join(work, "real", "sub"), join(work, "alias"));
+    try {
+      symlinkSync(join("..", "gone"), join(work, "real", "sub", "to-gone"), "dir");
+      symlinkSync(join("..", "there"), join(work, "real", "sub", "to-there"), "dir");
+    } catch (error) {
+      // A relative link on Windows is a symbolic link, which needs a right a normal user may lack.
+      if ((error as NodeJS.ErrnoException).code === "EPERM") context.skip();
+      throw error;
+    }
+    for (const [path, reason] of [
+      ["alias/to-gone", "path_missing"],
+      ["alias/to-there", "not_a_directory"],
+      ["real/sub/to-gone", "path_missing"],
+      ["real/sub/to-there", "not_a_directory"],
+    ] as const) {
+      expect([path, await resolvePlace({ root: "work", path }, roots)]).toEqual([
+        path,
+        { status: "failed", reason, root: "work" },
+      ]);
+    }
+  });
+
   test("a link inside the root that stays inside names the folder it leads to", async () => {
     const { work, roots } = world();
     const target = folder(work, "repos", "portal");

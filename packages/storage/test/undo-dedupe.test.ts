@@ -14,6 +14,11 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
+import {
+  expectedDocuments,
+  storedDocuments,
+  type SearchDocument,
+} from "../src/search/documents.ts";
 import { CHILD_FIELDS, columnsValue, TASK_FIELDS } from "../src/write/fields.ts";
 import { redoTarget, undoTarget } from "../src/write/history.ts";
 import type {
@@ -618,6 +623,14 @@ type Step =
   | { kind: "undo"; who: number; partial: boolean }
   | { kind: "redo"; who: number }
   | { kind: "cycle"; who: number }
+  /** Codex completes every active task that holds the key. */
+  | { kind: "finish"; key: number }
+  /**
+   * Two creates of one key around an undo, then the redo: `who` creates a task with the key
+   * beside its finished holders (sharing their source row), undoes it, `other` creates one too,
+   * and `who` redoes.
+   */
+  | { kind: "rival"; who: number; other: number; key: number }
   | { kind: "retry"; pick: number }
   /** The clock moves past the window: a task finished before then no longer matches. */
   | { kind: "jump" };
@@ -626,7 +639,9 @@ const actor = fc.constantFrom(0, 0, 1, 1, 2);
 const who = fc.constantFrom(0, 1);
 const draftSpec: fc.Arbitrary<DraftSpec> = fc.record({
   keys: fc.uniqueArray(fc.nat({ max: KEYS.length - 1 }), { minLength: 1, maxLength: 2 }),
-  mode: fc.constantFrom<Mode>("return", "return", "link", "new"),
+  // `new` often: a task beside finished ones shares their source row, which only the holder
+  // rule guards against a redo.
+  mode: fc.constantFrom<Mode>("return", "link", "new", "new"),
   log: fc.boolean(),
 });
 const step: fc.Arbitrary<Step> = fc.oneof(
@@ -653,6 +668,15 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("redo" as const), who }), weight: 4 },
   // An undo and a redo of one human at once, as a quick Ctrl+Z, Ctrl+Shift+Z makes them.
   { arbitrary: fc.record({ kind: fc.constant("cycle" as const), who }), weight: 3 },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("rival" as const),
+      who,
+      other: fc.constantFrom(0, 1, 2),
+      key: fc.nat({ max: KEYS.length - 1 }),
+    }),
+    weight: 1,
+  },
   { arbitrary: fc.record({ kind: fc.constant("retry" as const), pick: fc.nat() }), weight: 1 },
   { arbitrary: fc.record({ kind: fc.constant("jump" as const) }), weight: 2 },
 );
@@ -758,17 +782,54 @@ function replayOf(result: WriteResult): WriteResult {
   };
 }
 
+/** Search documents without their numbers and seqs, as a rebuild compares them. */
+const plainDocs = (docs: Iterable<SearchDocument>): SearchDocument[] =>
+  [...docs]
+    .map(({ kind, entityId, taskId, lifecycle, audience, title, body, extra }) => ({
+      kind,
+      entityId,
+      taskId,
+      lifecycle,
+      audience,
+      title,
+      body,
+      extra,
+    }))
+    .sort((a, b) => (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0));
+
 const property = (seen: Record<string, number>) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 40 }), async (generated) => {
-    const steps = generated.flatMap((s): Step[] =>
-      s.kind === "cycle"
-        ? [
-            { kind: "undo", who: s.who, partial: false },
-            { kind: "redo", who: s.who },
-          ]
-        : [s],
-    );
-    const space = await writeFixture(temp.make());
+    const steps = generated.flatMap((s): Step[] => {
+      if (s.kind === "cycle") {
+        return [
+          { kind: "undo", who: s.who, partial: false },
+          { kind: "redo", who: s.who },
+        ];
+      }
+      if (s.kind !== "rival") return [s];
+      const create = (actor: number): Step => ({
+        kind: "add",
+        actor,
+        drafts: [{ keys: [s.key], mode: "new", log: false }],
+      });
+      // Codex makes sure the key has a source row and a finished holder first.
+      const held: Step = {
+        kind: "add",
+        actor: 2,
+        drafts: [{ keys: [s.key], mode: "return", log: false }],
+      };
+      const other = s.other === s.who ? 2 : s.other;
+      return [
+        held,
+        { kind: "finish", key: s.key },
+        create(s.who),
+        { kind: "undo", who: s.who, partial: false },
+        create(other),
+        { kind: "redo", who: s.who },
+      ];
+    });
+    // With the search tables, so every undo and redo keeps the index too (A1 3.12).
+    const space = await writeFixture(temp.make(), { search: true });
     let now = Date.UTC(2026, 10, 13, 8);
     space.reopen({ now: () => (now += 1000) });
     const count = (label: string): void => {
@@ -803,6 +864,17 @@ const property = (seen: Record<string, number>) =>
         if (s.kind === "jump") {
           now += 31 * DAY;
           continue;
+        } else if (s.kind === "finish") {
+          const key = KEYS[s.key] ?? "";
+          for (const [task, lifecycle] of keysBefore.get(key) ?? []) {
+            if (lifecycle !== "active") continue;
+            const done = submit(
+              space.request(space.codex, [{ kind: "task.complete", task }], {
+                base: space.base(),
+              }),
+            );
+            expectStatus(done, "applied");
+          }
         } else if (s.kind === "retry") {
           const earlier = sent[s.pick % Math.max(sent.length, 1)];
           if (earlier === undefined) continue;
@@ -886,6 +958,14 @@ const property = (seen: Record<string, number>) =>
               );
               expect(keyHolders(conn).get(key)?.get(holder), c.id).toBe("active");
             }
+            // A shared source: no source row is taken, so only the holder rule refuses it.
+            if (
+              !undo &&
+              result.conflicts.some((c) => c.entity === "task_sources" && !own.has(c.task)) &&
+              !result.conflicts.some((c) => c.entity === "sources")
+            ) {
+              count("redo held off by an active holder of a shared source");
+            }
           } else {
             expectStatus(result, "applied");
             const inverted = changesAt(conn, undo ? target.seq : (target.undoneBy ?? 0));
@@ -945,6 +1025,10 @@ const property = (seen: Record<string, number>) =>
         }
       }
       checkHistory(conn);
+      // The index equals a fresh rebuild, undone and redone tasks and entries included.
+      const { docs, stray } = storedDocuments(conn);
+      expect(stray).toBe(0);
+      expect(plainDocs(docs.values())).toEqual(plainDocs(expectedDocuments(conn).values()));
     } finally {
       space.close();
     }
@@ -965,6 +1049,7 @@ describe("[A1.5.history.property] undo and redo with dedupe by source key", () =
       "undo kept by a link",
       "redo conflict",
       "redo held off by an active holder",
+      "redo held off by an active holder of a shared source",
       "redo held off by a taken source key",
       "restored beside a finished holder",
       "second active holder by a lifecycle",

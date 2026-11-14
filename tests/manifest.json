@@ -474,6 +474,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.search.index",
+      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, an undo and a redo write the documents their inversions reach, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
+      "source": "A1 3.12, A1 5, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.search.rows-by-ids",
+      "title": "Pages by frozen IDs return one entry per ID, in order: the current row, a tombstoned task or deleted learning as a deleted placeholder with its reference, an ID without a row as a redacted placeholder, neither with content, and a result that lost an entry is refused",
+      "source": "A1 3.12, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.new-folder",
       "title": "Restore into a new folder verifies sizes, SHA-256, integrity_check, revision and the sidecar's facts before the folder appears; a tampered, mismatched, linked or newer backup is refused and leaves nothing",
       "source": "A1 3.18",
@@ -1339,7 +1355,7 @@
     },
     {
       "id": "A1.5.history.property",
-      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks; undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, retries, jumps past the window, and two humans' undo and redo together; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle, a refusal writes nothing, and no request ends in a storage error",
+      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks; undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, retries, jumps past the window, and two humans' undo and redo together; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
       "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -1574,6 +1590,46 @@
       "title": "The five tools through the request path: status's here (exact, inside, below, across nested roots, best first, with a hint), its session and the work guide; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its place resolved now, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
       "source": "A3 3.4.2, A3 3.4.4, A3 3.4.6, A3 3.4.7, A3 3.4.8, A3 3.5, A3 3.9.6, A7 3.9 M2.03",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.parser",
+      "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
+      "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.query",
+      "title": "Random query strings, scopes, audiences and a cwd against a real index never raise an SQLite or FTS5 error: every query gives rows that match the contract or invalid_input, and many find rows; a space without the search tables answers filters and refuses words with space_unavailable not_indexed",
+      "source": "A3 3.9.2, A3 5, A1 3.12, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.ranking",
+      "title": "Ranking and rows: a task appears once, ranked by its best document with A3 3.9.3's boosts and a snippet from that document; scopes, the learnings scope and the default scope; the last word as a prefix of two characters or more; negated words; filters by area with its projects, priority, focus, id and has:; the order without text; an agent never matches or sees an only-me note; titles and snippets cut at 90 and 100 characters",
+      "source": "A3 3.9.1, A3 3.9.2, A3 3.9.3, A3 3.9.4, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.find",
+      "title": "task.search through the request path for the user and a script: the entry's schema and limits, a default page of 15, the next page by its cursor alone, another binding's cursor refused and a restart dropping every cursor; and tasks find printing a page's header, task and learning rows, placeholders, the changed marker and the next page",
+      "source": "A3 3.4.3, A3 3.4.13, A3 3.9.4, A3 3.9.5, A7 3.10 M3.05",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.5.search.cursors",
+      "title": "Cursor pages under random writes, tombstones, entity and text redactions and new matches have no gaps or duplicates and keep the snapshot's order, and a removed entry is a placeholder without its old text; a retried cursor gives the same page with a changed row marked and the page's own as_of; more than 1,000 matches freeze the first 1,000; an epoch, incarnation, binding, idle time, eviction or restart ends a cursor with its reason",
+      "source": "A3 3.9.5, A3 3.5, A3 5, A1 3.12, A7 3.10 M3.05",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -2402,6 +2458,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.24.web.build-paths",
+      "title": "The built page holds no absolute path of the build machine (the repository, the home folder, the output folder, in any spelling) and no development JSX, with NODE_ENV test, development or unset; the build gives the caller's NODE_ENV back, and builds that overlap in one process run one at a time",
+      "source": "A5 3.24",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.stored-token",
       "title": "A value read back from localStorage is used only when it has a token's exact shape; markup, JSON, wrong lengths, other types and blocked storage read as signed out, are removed and never throw",
       "source": "A5 3.26, A2 3.8.4, A2 3.8.6, A7 3.9 M2.13",
@@ -2636,7 +2700,7 @@
     {
       "id": "A2.3.12.6.update.verify",
       "title": "tasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
-      "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.8 M6.12",
+      "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2644,7 +2708,7 @@
     {
       "id": "A2.3.12.6.update.switch",
       "title": "The update self-tests the candidate before current changes, writes the journal before each step that needs it, switches current, swaps changed Windows launchers one at a time, records install.json, restarts the service and waits for the new version; both versions stay; a failed self-test changes nothing; a service that does not come back is rolled back; --rollback goes to the previous version; a person's data is byte-identical through an update and a rollback",
-      "source": "A2 3.12.6, A2 3.2.3, SL-02, SL-08, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.2.3, SL-02, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2652,7 +2716,7 @@
     {
       "id": "A2.3.12.6.update.repair",
       "title": "A repair finishes or rolls back every state a cut-off update leaves (by what current names and whether the new version is intact), brings each Windows launcher to its side from an aside copy or a version folder, removes the named staging folder and the journal, is finished by the next repair when cut off at any of its own steps, keeps current's version for an unreadable journal, and runs before an install's finish switches",
-      "source": "A2 3.12.6, SL-08, A7 3.8 M6.12",
+      "source": "A2 3.12.6, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2660,7 +2724,7 @@
     {
       "id": "A2.3.12.6.update.lock",
       "title": "A second update waits while update.lock is held, changing nothing, goes on once it is released, and gives up after its bound with exit 4",
-      "source": "A2 3.12.6, A2 3.2.3, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.2.3, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2668,7 +2732,7 @@
     {
       "id": "A2.3.12.6.update.kill",
       "title": "With real builds in a temporary TASKS_HOME, an updater child killed at every journal step, or the service killed there while the updater goes on, ends on the complete old or new version after the next start through the stable command; a repair killed at each of its steps is finished by the next start; a running service finishes an update whose updater died; a session's bridge keeps running through an update and answers after it",
-      "source": "A2 3.12.6, A2 3.11, SL-02, SL-08, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.11, SL-02, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2676,7 +2740,7 @@
     {
       "id": "A2.3.12.6.update.installed",
       "title": "tasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
-      "source": "A2 3.12.6, A2 3.13, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.13, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

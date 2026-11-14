@@ -1,4 +1,4 @@
-// `tasks update --from <archive> | --rollback | --repair [--yes]` (A2 3.12.6, A7 3.8 M6.12): the
+// `tasks update --from <archive> | --rollback | --repair [--yes]` (A2 3.12.6, A7 3.13 M6.12): the
 // installed version replaces itself from a local release archive, goes back to the version before
 // the last switch, or finishes an update that was cut off. The updater is the service's
 // (`@tasks/service/version-update`), loaded only for this command; it verifies the archive with
