@@ -80,13 +80,13 @@ function answer(change: SessionChange, done: "ended" | "unbound" | "rebound"): J
 
 export function sessionVerbs(host: SessionVerbsHost): Readonly<Record<string, Verb>> {
   return {
-    "session/end": (params, cls) => {
+    "session/end": async (params, cls) => {
       userOnly(cls);
-      return Promise.resolve(answer(host.bindings.end(sessionIn(params)), "ended"));
+      return answer(await host.bindings.end(sessionIn(params)), "ended");
     },
-    "session/unbind": (params, cls) => {
+    "session/unbind": async (params, cls) => {
       userOnly(cls);
-      return Promise.resolve(answer(host.bindings.unbind(sessionIn(params)), "unbound"));
+      return answer(await host.bindings.unbind(sessionIn(params)), "unbound");
     },
     "session/rebind": async (params, cls) => {
       userOnly(cls);
@@ -104,7 +104,8 @@ export function sessionVerbs(host: SessionVerbsHost): Readonly<Record<string, Ve
         { class: cls, env: {} },
         { op: "task.get", space: session.space, input: { task, sections: ["outcome"] } },
       )) as { task: { id: string; ref: string } };
-      return { ...answer(host.bindings.rebind(id, read.task.id), "rebound"), task: read.task.ref };
+      const change = await host.bindings.rebind(id, read.task.id);
+      return { ...answer(change, "rebound"), task: read.task.ref };
     },
   };
 }

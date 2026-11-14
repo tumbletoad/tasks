@@ -1140,7 +1140,8 @@ export class Bindings implements BindingPort {
    * unbound and say their session ended (`lost`), and its handles answer `lost` at their next
    * bind. Its launch's ticket binds it no more. The agent may go on unbound.
    */
-  end(id: string): SessionChange {
+  async end(id: string): Promise<SessionChange> {
+    await this.#settledBind(id);
     return this.#endWith(id, "user");
   }
 
@@ -1148,8 +1149,22 @@ export class Bindings implements BindingPort {
    * The user unbinds a session (`session.unbind`): it ends, and its open connections and their
    * handles go on unbound, quietly: they keep their space and may bind again.
    */
-  unbind(id: string): SessionChange {
+  async unbind(id: string): Promise<SessionChange> {
+    await this.#settledBind(id);
     return this.#endWith(id, "unbound");
+  }
+
+  /**
+   * A user's change applies to a settled binding, as a call reads one (`use`): while a bind of the
+   * session through its launch reference waits on the launch's answer, the change waits too, so a
+   * bind taken back afterwards never writes back the session as it was before the change.
+   */
+  async #settledBind(id: string): Promise<void> {
+    for (;;) {
+      const pending = this.#provisional.get(id);
+      if (pending === undefined) return;
+      await pending;
+    }
   }
 
   #endWith(id: string, reason: "user" | "unbound"): SessionChange {
@@ -1187,7 +1202,8 @@ export class Bindings implements BindingPort {
    * open connections and their handles are bound to the new one. A session on that task already
    * is no change. `task` must be a task of the session's space (the caller resolved it there).
    */
-  rebind(id: string, task: string): SessionChange {
+  async rebind(id: string, task: string): Promise<SessionChange> {
+    await this.#settledBind(id);
     const session = this.#sessions.get(id);
     if (session === undefined) return { kind: "not_found" };
     if (session.ended_at !== undefined) return { kind: "ended", session: id };

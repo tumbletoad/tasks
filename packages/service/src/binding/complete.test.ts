@@ -363,9 +363,9 @@ describe("[A3.3.7.binding.user-ops] the user's end, unbind and rebind end a sess
     launches.running.add(intent.id);
     const agent = await connect(b, { env: { TASKS_TICKET: "ticket-4" } });
     const id = agent.slot.session?.id ?? "";
-    expect(b.end(id)).toEqual({ kind: "changed", session: id });
-    expect(b.end(id)).toEqual({ kind: "no_change", session: id });
-    expect(b.end(newId("se"))).toEqual({ kind: "not_found" });
+    expect(await b.end(id)).toEqual({ kind: "changed", session: id });
+    expect(await b.end(id)).toEqual({ kind: "no_change", session: id });
+    expect(await b.end(newId("se"))).toEqual({ kind: "not_found" });
     expect(agent.slot.session).toBeUndefined();
     expect(agent.slot.lost).toBe(true);
     expect(events).toContainEqual({ ev: "binding.ended", reason: "user" });
@@ -391,7 +391,7 @@ describe("[A3.3.7.binding.user-ops] the user's end, unbind and rebind end a sess
     const agent = await connect(b);
     await b.bindTask(agent.slot, SPACE, TASK);
     const id = agent.slot.session?.id ?? "";
-    expect(b.unbind(id)).toEqual({ kind: "changed", session: id });
+    expect(await b.unbind(id)).toEqual({ kind: "changed", session: id });
     expect(agent.slot.session).toBeUndefined();
     expect(agent.slot.lost).toBe(false);
     b.closed(agent.slot);
@@ -409,12 +409,12 @@ describe("[A3.3.7.binding.user-ops] the user's end, unbind and rebind end a sess
     launches.running.add(intent.id);
     const agent = await connect(b, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } });
     const id = agent.slot.session?.id ?? "";
-    expect(b.rebind(id, TASK)).toEqual({ kind: "no_change", session: id });
-    const changed = b.rebind(id, OTHER_TASK);
+    expect(await b.rebind(id, TASK)).toEqual({ kind: "no_change", session: id });
+    const changed = await b.rebind(id, OTHER_TASK);
     expect(changed).toMatchObject({ kind: "changed", session: id });
     const next = changed.kind === "changed" ? changed.next : undefined;
     expect(agent.slot.session).toMatchObject({ id: next, task: OTHER_TASK, launches: [intent.id] });
-    expect(b.rebind(id, TASK)).toEqual({ kind: "ended", session: id });
+    expect(await b.rebind(id, TASK)).toEqual({ kind: "ended", session: id });
     expect(b.sessionsOf(SPACE, TASK)[0]).toMatchObject({ state: "ended", end_reason: "rebound" });
     expect(b.sessionsOf(SPACE, OTHER_TASK)[0]).toMatchObject({ id: next, via: "rebind" });
     // The preset ID now binds the new session; the handle restores it after a restart.
@@ -425,6 +425,80 @@ describe("[A3.3.7.binding.user-ops] the user's end, unbind and rebind end a sess
     expect(
       (await connect(restarted, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } })).slot.session?.id,
     ).toBe(next);
+  });
+});
+
+describe("[A3.3.7.binding.user-ops] a user's change waits for a reference bind that waits on its launch", () => {
+  /** A launch side whose answer to a reference bind the test gives. */
+  function heldLaunch(): LaunchPort & { answer(bound: boolean): void } {
+    let answer: (bound: boolean) => void = () => undefined;
+    return {
+      ...launchSide(),
+      confirm: (_space, launch, at) =>
+        new Promise<LaunchIntent | undefined>((resolve, reject) => {
+          answer = (bound) => {
+            if (bound) {
+              resolve({ id: launch, state: "confirmed", evidence: { bound_at: at } } as never);
+            } else reject(new Error("The space's store did not answer"));
+          };
+        }),
+      answer: (bound) => {
+        answer(bound);
+      },
+    };
+  }
+  const found = (launch: string) => ({
+    id: launch,
+    reference: "L00000",
+    space: SPACE,
+    task: TASK,
+    taskRef: "M-1",
+    state: "dispatched",
+    route: "clipboard",
+    boundAt: undefined,
+    exited: false,
+  });
+
+  test("an end during the wait is kept when the launch does not answer", async () => {
+    const launches = heldLaunch();
+    const { bindings: b } = bindings({ launches });
+    const intent = intentOf({ route: "clipboard", instance: "clipboard" });
+    b.launched(SPACE, intent);
+    const made = b.sessionOfLaunch(intent.id)?.id ?? "";
+    const agent = await connect(b);
+    const bind = b.redeem(agent.slot, found(intent.id));
+    await settled();
+    const ending = b.end(made);
+    launches.answer(false);
+    await expect(bind).rejects.toThrow();
+    expect(await ending).toEqual({ kind: "changed", session: made });
+    expect(b.sessionsOf(SPACE, TASK)[0]).toMatchObject({
+      id: made,
+      state: "ended",
+      end_reason: "user",
+    });
+    expect(agent.slot.session).toBeUndefined();
+  });
+
+  test("a rebind during the wait moves the binding the launch took", async () => {
+    const launches = heldLaunch();
+    const { bindings: b } = bindings({ launches });
+    const intent = intentOf({ route: "clipboard", instance: "clipboard" });
+    b.launched(SPACE, intent);
+    const made = b.sessionOfLaunch(intent.id)?.id ?? "";
+    const agent = await connect(b);
+    const bind = b.redeem(agent.slot, found(intent.id));
+    await settled();
+    const moving = b.rebind(made, OTHER_TASK);
+    launches.answer(true);
+    expect(await bind).toEqual({ kind: "bound" });
+    const moved = await moving;
+    expect(moved).toMatchObject({ kind: "changed", session: made });
+    expect(agent.slot.session).toMatchObject({
+      id: moved.kind === "changed" ? moved.next : undefined,
+      task: OTHER_TASK,
+    });
+    expect(b.sessionsOf(SPACE, TASK)[0]).toMatchObject({ state: "ended", end_reason: "rebound" });
   });
 });
 
@@ -485,7 +559,7 @@ describe("[A3.3.7.binding.sessions] the session list, and Resume only with a tru
     b.launched(SPACE, first);
     const agent = await connect(b, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } });
     const id = agent.slot.session?.id ?? "";
-    b.end(id);
+    await b.end(id);
     b.closed(agent.slot);
     const resume = intentOf({ session: id });
     b.launched(SPACE, resume);
