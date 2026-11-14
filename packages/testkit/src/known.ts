@@ -32,5 +32,5 @@ export const FIXED_SAMPLE_0_1 = {
 export const RELEASED_SCHEMAS = {
   "0.1": "7b2e6d9cb39d8656a869e083219109f903fecdcc83bee5c3caa3ead6140afbb0",
   "0.2": "19ee58deae2331a9648ea25c4c8b23b9813f3ca07e16d939105e39655336ac7b",
-  "0.3": "a16ad8f11f9ff3619a6c84e14d707da123c9f4af6732bdf763b2289d00a6a773",
+  "0.3": "62dc8c3f82bc973dab7d9bc2683b3b72e1b191cd4265ec48ef8cae07f15c14c4",
 } as const;

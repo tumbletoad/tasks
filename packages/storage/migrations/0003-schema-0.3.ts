@@ -26,8 +26,11 @@
 //   written once), `reason` (the code of a final state) and `detail` (the evidence and the time of
 //   each state, as a launch's).
 // - `runs.state` has no CHECK, as A1 3.4 gives it: the writer checks A4's states, so a later
-//   adapter's state (A4 3.11.12) needs no table rebuild. `runs` belongs to a task or a routine,
-//   exactly one (a CHECK).
+//   adapter's state (A4 3.11.12) needs no table rebuild.
+// - A run never holds both a task and a routine (a CHECK), and may hold neither: entity redaction
+//   keeps a redacted task's runs with `task_id` set to null (A1 3.11.4), so the table cannot
+//   require a parent. Exactly one parent is the rule for creating a run, which the writer and
+//   every execution store check (`run.create`, A1 3.6).
 // - Indexes A1 leaves out, for the reads the execution store makes: a machine's open sessions and
 //   runs (`openWork`, A4 3.16.1: also the `unknown` runs whose stop timed out, which a later exit
 //   still settles) and a task's.
@@ -65,7 +68,7 @@ export const SCHEMA_0_3_STATEMENTS: readonly string[] = [
   "CREATE INDEX sessions_open ON sessions(machine_id, created_at) WHERE state IN ('opening','live')",
 
   // A4 3.11's run: written in `queued` before anything spawns (R8), moved only by compare-and-set
-  // transitions. A task's run or a routine's, never both.
+  // transitions. A task's run or a routine's, never both; neither once its task is redacted.
   `CREATE TABLE runs (
   id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id), routine_id TEXT, session_id TEXT,
   instance_id TEXT NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id),
@@ -79,7 +82,7 @@ export const SCHEMA_0_3_STATEMENTS: readonly string[] = [
   created_seq INTEGER NOT NULL, version INTEGER NOT NULL,
   fv TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(fv)),
   fp TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(fp)),
-  CHECK ((task_id IS NULL) <> (routine_id IS NULL))
+  CHECK (task_id IS NULL OR routine_id IS NULL)
 ) STRICT`,
   "CREATE INDEX runs_task ON runs(task_id, queued_at)",
   "CREATE INDEX runs_open ON runs(machine_id, queued_at) " +

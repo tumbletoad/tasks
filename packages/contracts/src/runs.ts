@@ -443,6 +443,10 @@ export interface NewRun {
 export interface RunRecord {
   /** `ru_` ID. */
   id: string;
+  /**
+   * The task, or null for a routine's run. Never both with `routine`; neither for a run whose task
+   * was redacted, which keeps no request and no result text (A1 3.11.4, A4 3.11.1).
+   */
   task: string | null;
   routine: string | null;
   session: string | null;

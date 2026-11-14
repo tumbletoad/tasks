@@ -490,6 +490,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.run-parents-0003",
+      "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
+      "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.drill",
       "title": "The installed-build migration failure and restore drill with the real 0.2 and 0.3: a populated 0.1 fixture space, a fault planted in its migration' last step, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",

@@ -521,6 +521,8 @@ interface RunAdapter {
 
 A plan has no shell-command field. `RunEvent`, the outcome's shapes and the caps live in `packages/contracts/src/runs.ts` (`@tasks/contracts/runs`) beside the run record's vocabulary; the stream parsers re-export them. Progress is a label key the UI translates, so no tool name or input reaches it. The `session` event carries Claude's `system/init` working folder and whether the Tasks tools connected; the folder never leaves machine state. There is no `needs-input` event: neither v1 adapter waits for input. Journal events carry a `seq` (`RunJournalEntry`).
 
+A run record's `task` and `routine` name what it belongs to: exactly one when the run is created (`run.create` and every store's `createRun` refuse neither and both). A run whose task was redacted holds neither (A1 3.4, 3.11.4). It keeps its states, reason, times, evidence, usage and counts, has no request and no result text, and still settles as any run does, because the run machine never reads its task.
+
 #### 3.11.2 Run states
 
 ```

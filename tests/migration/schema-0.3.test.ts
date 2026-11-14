@@ -22,8 +22,10 @@ import { nodeSqliteDriver } from "../../packages/storage/src/node-sqlite.ts";
 import { restoreBackup, restoreBackupWith } from "../../packages/storage/src/restore/restore.ts";
 import { openSpace } from "../../packages/storage/src/space.ts";
 import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
+import type { Id } from "../../packages/storage/src/ids.ts";
 import { StorageWorker } from "../../packages/storage/src/worker/client.ts";
-import type { MachineInfo } from "../../packages/storage/src/write/writer.ts";
+import type { Credential, Operation } from "../../packages/storage/src/write/request.ts";
+import { SpaceWriter, type MachineInfo } from "../../packages/storage/src/write/writer.ts";
 import {
   createSpaceAt,
   openSpaceAt,
@@ -384,6 +386,157 @@ describe("[A1.5.migration.statement-faults-0003] a fault at every statement boun
     expect((await migrate(folder)).state).toBe("migrated");
     expect(fault.hit).toBe(false);
   }, 600_000);
+});
+
+describe("[A1.5.migration.run-parents-0003] a run outlives the redaction of its task on a migrated space", () => {
+  test("on the migrated 0.2 fixture a task's run is detached from its task, still reads and settles, and no run holds both parents", async () => {
+    const checked = await checkedDriver();
+    const folder = copyOfFixture();
+    expect((await migrateSpaceWith(checked, folder, {}, { steps: STEPS_0_3 })).state).toBe(
+      "migrated",
+    );
+    let time = Date.UTC(2026, 10, 14, 9, 0, 0);
+    const openWriter = (): SpaceWriter =>
+      SpaceWriter.open(openSpaceAt(checked, folder, { role: "writer" }, STEPS_0_3), {
+        machine: fixture.machine,
+        now: () => (time += 1),
+      });
+    const first = (conn: Connection, sql: string): string =>
+      String(Object.values(conn.prepare(sql).get() ?? {})[0]);
+
+    let task: string;
+    let human: string;
+    {
+      const reader = openSpace(checked, folder, { role: "reader" });
+      try {
+        task = first(
+          reader.conn,
+          "SELECT id FROM tasks WHERE deleted_at IS NULL AND lifecycle = 'active' " +
+            "ORDER BY ref LIMIT 1",
+        );
+        human = first(reader.conn, "SELECT id FROM actors WHERE kind = 'human'");
+      } finally {
+        reader.conn.close();
+      }
+    }
+    const actor: Credential = {
+      scope_id: "ui:fixture",
+      principal_id: human as Credential["principal_id"],
+      actor_kind: "human",
+      machine_id: fixture.machine.id,
+      origin: "ui",
+    };
+    let requests = 0;
+    let writer = openWriter();
+    const submit = (op: Operation) =>
+      writer.submit({
+        space_id: (fixture.facts.rows["space"]?.[0] as { space_id: string }).space_id,
+        request_id: `run-parents-${String((requests += 1)).padStart(8, "0")}`,
+        actor,
+        ops: [op],
+      });
+    // A task's run in the task's own place, written as the execution store writes it: through the
+    // write path.
+    let run: string;
+    let place: string;
+    try {
+      const placed = submit({
+        kind: "place.set",
+        task,
+        root: "work",
+        path: "lumen/portal-redaction",
+      });
+      expect(placed.status).toBe("applied");
+      place = String(placed.results[0]?.id);
+      const created = submit({
+        kind: "run.create",
+        task: task as Id<"t">,
+        instance: "codex-work",
+        adapter: "codex-exec",
+        place: place as Id<"pl">,
+        request: "Check the export and fix the time zone.",
+        brief_hash: "7c2e9a41".repeat(8),
+        permission: "full-access",
+        limits: { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 },
+      });
+      expect(created.status).toBe("applied");
+      run = String(created.results[0]?.id);
+      expect(writer.run(run)).toMatchObject({
+        task_id: task,
+        routine_id: null,
+        place_id: place,
+        state: "queued",
+      });
+    } finally {
+      writer.close();
+    }
+
+    // Entity redaction (A1 3.11.4, M3.14) keeps the task's runs and sessions with no task, and a
+    // run without the task's place, whose row it deletes, and scrubs the run's task text. This is
+    // the part of it these tables must allow (fixture rows without history: M3.14 writes it with
+    // its history and scrubs the change rows too).
+    const session = "se_0000000000000000000000000s";
+    {
+      const { conn } = openSpaceAt(checked, folder, { role: "writer" }, STEPS_0_3);
+      try {
+        conn.transaction("immediate", () => {
+          conn
+            .prepare(
+              "INSERT INTO sessions (id, task_id, kind, instance_id, machine_id, state, " +
+                "created_at, created_seq, version) VALUES ($session, $task, 'run', 'codex-work', " +
+                "$machine, 'ended', $at, 1, 1)",
+            )
+            .run({ session, task, machine: fixture.machine.id, at: time });
+          conn
+            .prepare(
+              "UPDATE runs SET task_id = NULL, place_id = NULL, request = NULL, result = " +
+                "CASE result WHEN '{}' THEN result " +
+                "ELSE json_set(result, '$.text', NULL, '$.error', NULL) END WHERE id = $run",
+            )
+            .run({ run });
+          conn.prepare("UPDATE sessions SET task_id = NULL WHERE id = $session").run({ session });
+        });
+        expect(conn.pragma("integrity_check")).toBe("ok");
+        expect(conn.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+        for (const table of ["runs", "sessions"]) {
+          expect(
+            conn.prepare(`SELECT count(*) AS n FROM ${table} WHERE task_id = $task`).get({ task }),
+            table,
+          ).toEqual({ n: 0 });
+        }
+        // A run never holds both parents: the table refuses it, whatever writes it.
+        expect(() =>
+          conn
+            .prepare("UPDATE runs SET task_id = $task, routine_id = $routine WHERE id = $run")
+            .run({ task, routine: "ro_0000000000000000000000000r", run }),
+        ).toThrow(/SQLITE_CONSTRAINT_CHECK/);
+      } finally {
+        conn.close();
+      }
+    }
+
+    // The detached run still reads, and still settles: its state machine never looks at its task.
+    writer = openWriter();
+    try {
+      const detached = writer.run(run);
+      expect(detached).toMatchObject({ task_id: null, routine_id: null, request: null });
+      const settled = submit({
+        kind: "run.transition",
+        run: run as Id<"ru">,
+        expect: "queued",
+        expect_version: detached?.version ?? 0,
+        next: "cancelled",
+      });
+      expect(settled.status).toBe("applied");
+      expect(writer.run(run)).toMatchObject({
+        task_id: null,
+        routine_id: null,
+        state: "cancelled",
+      });
+    } finally {
+      writer.close();
+    }
+  }, 180_000);
 });
 
 describe("[A1.5.migration.older-build-0003] a 0.2 build refuses to open a 0.3 space writable", () => {
