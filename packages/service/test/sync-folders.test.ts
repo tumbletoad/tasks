@@ -21,13 +21,19 @@ import {
   cloudFilesProvider,
   driveFsPaths,
   folderMessage,
-  linuxNetwork,
-  macNetwork,
-  windowsNetwork,
+  linuxVolume,
+  macVolume,
+  windowsVolume,
   type FolderCheck,
+  type SyncHost,
+  type Volume,
 } from "../src/hub/sync-folders.ts";
 import { parseWindowsFacts } from "../src/hub/sync-host.ts";
-import { fixtureHost, NO_WINDOWS } from "./sync-fixtures.ts";
+import { fixtureHost, NO_WINDOWS, type SyncFacts } from "./sync-fixtures.ts";
+
+/** A volume as the samples write it: `local`, the network file system's word, or `unchecked`. */
+const word = (volume: Volume): string =>
+  volume.kind === "network" ? volume.fs : volume.kind === "local" ? "local" : "unchecked";
 
 const SAMPLES = fileURLToPath(
   new URL("../../../fixtures/sync/statfs-samples.json", import.meta.url),
@@ -398,13 +404,20 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
         await checkFolder(space, fixtureHost(root, { ...linux, statfs: fuse, mounts: null })),
       ),
     ).toEqual(expected);
-    // A FUSE mount the table names as a local one is local (a mount table holds POSIX paths).
+    // A FUSE mount is local only when the table names a local block device (`fuseblk`); any other
+    // FUSE file system may serve files from anywhere (a mount table holds POSIX paths).
     if (!WINDOWS) {
-      const portal = `1 2 0:1 / ${root} rw - fuse.portal x rw\n`;
-      expect(
-        (await checkFolder(space, fixtureHost(root, { ...linux, statfs: fuse, mounts: portal })))
-          .verdict,
-      ).toBe("local");
+      const mounted = (type: string) =>
+        checkFolder(
+          space,
+          fixtureHost(root, {
+            ...linux,
+            statfs: fuse,
+            mounts: `1 2 0:1 / ${root} rw - ${type} x rw\n`,
+          }),
+        );
+      expect((await mounted("fuseblk")).verdict).toBe("local");
+      expect(unchecked(await mounted("fuse.portal"))).toEqual(expected);
     }
     // macOS: no mount table.
     expect(
@@ -419,7 +432,7 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
     expect(marked.signals.some((s) => s.rule === "unchecked")).toBe(true);
     const broken = {
       ...fixtureHost(root),
-      isDirectory: () => Promise.reject(new Error("a fault")),
+      kind: () => Promise.reject(new Error("a fault")),
     };
     expect(unchecked(await checkFolder(space, broken))).toEqual(expected);
   });
@@ -488,12 +501,21 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
       expect(check.signals.some((s) => s.rule === "unchecked")).toBe(true);
       expect(folderMessage(check)).toContain("could not be checked");
     }
-    // A value read whole is no reason: the folder outside its roots is local.
+    // A value read whole is no reason: the folder outside its roots is local. (Off Windows the
+    // tree's real path is no drive path, so the folder stands on a fixture drive Q:.)
+    const space = dir(join(root, "Tasks", "mira"));
     const whole = await checkFolder(
-      dir(join(root, "Tasks", "mira")),
+      space,
       fixtureHost(root, {
         platform: "win32",
-        windows: { ...NO_WINDOWS, driveFsTargets: syncTargets(["D:\\mirror"], true) },
+        ...(WINDOWS
+          ? {}
+          : { realpath: (p: string) => (resolve(p) === space ? "Q:\\Tasks\\mira" : undefined) }),
+        windows: {
+          ...NO_WINDOWS,
+          drives: [{ root: "Q:\\", type: "Fixed", label: "", format: "NTFS" }],
+          driveFsTargets: syncTargets(["D:\\mirror"], true),
+        },
       }),
     );
     expect(whole.verdict).toBe("local");
@@ -551,8 +573,254 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
     const root = tree();
     const host = fixtureHost(root);
     expect(await host.exists(join(root, "..", "anything"))).toBe(false);
-    expect(await host.list(resolve(root, ".."))).toBeUndefined();
+    expect(await host.kind(resolve(root, ".."))).toBe("absent");
+    expect(await host.list(resolve(root, ".."))).toEqual([]);
     expect(await host.realpath(sep)).toBeUndefined();
+  });
+});
+
+/** The platforms the check has a volume step for. */
+const PLATFORMS = ["win32", "linux", "darwin"] as const;
+type Platform = (typeof PLATFORMS)[number];
+
+/** A local fixed drive Q:, where the Windows runs of these tests put the folder's real path. */
+const Q = { root: "Q:\\", type: "Fixed", label: "", format: "NTFS" };
+
+/**
+ * Facts under which the fixture folder `space` is local on `platform`, on any OS: its real path is
+ * one that platform writes (on Q: for Windows, ext4 on Linux, APFS on macOS).
+ */
+function localOn(platform: Platform, space: string): SyncFacts {
+  const real = {
+    win32: "Q:\\Tasks\\mira",
+    linux: "/srv/tasks/mira",
+    darwin: "/Users/fixture/Tasks/mira",
+  }[platform];
+  return {
+    platform,
+    realpath: (p) => (resolve(p) === space ? real : undefined),
+    ...(platform === "win32" ? { windows: { ...NO_WINDOWS, drives: [Q] } } : {}),
+  };
+}
+
+/** The steps a check did not complete, in order. */
+const unseenSteps = (check: FolderCheck): (string | undefined)[] =>
+  check.signals.filter((s) => s.rule === "unchecked").map((s) => s.step);
+
+/** The host's looks (every function it has), so a look added to SyncHost is covered too. */
+const looksOf = (host: SyncHost): string[] =>
+  Object.keys(host).filter((k) => typeof host[k as keyof SyncHost] === "function");
+
+/** `host` with the look `name` replaced by `fake`, and a record of whether the check called it. */
+function withLook(
+  host: SyncHost,
+  name: string,
+  fake: () => Promise<never>,
+): { host: SyncHost; called: () => boolean } {
+  let called = false;
+  const look = (): Promise<never> => {
+    called = true;
+    return fake();
+  };
+  return { host: { ...host, [name]: look }, called: () => called };
+}
+
+describe("[A1.5.sync.fails-closed] local only from positive evidence of every step: a look that fails, answers a default, answers something unexpected or hangs leaves the folder unchecked", () => {
+  test("every platform's check answers local on the fixture's facts, so the cases below are not local only for their own reason", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    for (const platform of PLATFORMS) {
+      const check = await checkFolder(space, fixtureHost(root, localOn(platform, space)));
+      expect(check.verdict, platform).toBe("local");
+      expect(check.signals, platform).toEqual([]);
+    }
+  });
+
+  test("a look of the host that fails, any look on any platform, leaves the folder unchecked, never local", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    const calledSomewhere = new Set<string>();
+    for (const platform of PLATFORMS) {
+      const host = fixtureHost(root, localOn(platform, space));
+      for (const name of looksOf(host)) {
+        const faulty = withLook(host, name, () => Promise.reject(new Error("a failed look")));
+        const check = await checkFolder(space, faulty.host);
+        if (!faulty.called()) continue;
+        calledSomewhere.add(name);
+        expect(check.verdict, `${platform} ${name}`).not.toBe("local");
+        expect(unseenSteps(check).length, `${platform} ${name}`).toBeGreaterThan(0);
+      }
+    }
+    // Every look is made on some platform: none is left out of this test.
+    expect([...calledSomewhere].sort()).toEqual(looksOf(fixtureHost(root)).sort());
+  });
+
+  test("a look that never answers leaves the folder unchecked once the check's bound has passed", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    for (const platform of PLATFORMS) {
+      const host = fixtureHost(root, localOn(platform, space));
+      for (const name of looksOf(host)) {
+        const hanging = withLook(host, name, () => new Promise<never>(() => undefined));
+        // Any bound: a check that waits on a look that never answers cannot end before it.
+        const check = await checkFolder(space, hanging.host, 50);
+        if (!hanging.called()) continue;
+        expect(check.verdict, `${platform} ${name}`).not.toBe("local");
+        expect(unseenSteps(check), `${platform} ${name}`).toContain("check");
+      }
+    }
+  });
+
+  test("a real path that cannot be resolved is never replaced by the path as given (finding: a junction into a share judged by the local drive's facts)", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    for (const platform of PLATFORMS) {
+      const facts = localOn(platform, space);
+      // The folder exists, and its resolution fails or answers nothing.
+      for (const realpath of [
+        () => Promise.reject(new Error("GetFinalPathNameByHandle failed")),
+        () => Promise.resolve(undefined),
+      ]) {
+        const check = await checkFolder(space, { ...fixtureHost(root, facts), realpath });
+        expect(check.verdict, platform).toBe("synced");
+        expect(unseenSteps(check), platform).toContain("real_path");
+        expect(folderMessage(check), platform).toContain("could not be checked");
+      }
+    }
+    if (WINDOWS) {
+      // The path as given is on a network drive: a network signal still holds without the real path.
+      const drive = space.slice(0, 3);
+      const check = await checkFolder(space, {
+        ...fixtureHost(root, {
+          windows: {
+            ...NO_WINDOWS,
+            drives: [{ root: drive, type: "Network", label: "", format: "" }],
+          },
+        }),
+        realpath: () => Promise.reject(new Error("GetFinalPathNameByHandle failed")),
+      });
+      expect(check).toMatchObject({ verdict: "network", fs: "remote_drive" });
+    }
+  });
+
+  test("Windows: the volume that holds the folder must be its drive's own volume, and a real path must be a drive or UNC path", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    const facts = localOn("win32", space);
+    // Another volume mounted in a folder of Q: holds the folder: its type and format were not seen.
+    const mounted = await checkFolder(
+      space,
+      fixtureHost(root, {
+        ...facts,
+        volume: (p) => (p === "Q:\\" ? "q-volume" : "mounted-volume"),
+      }),
+    );
+    expect(mounted.verdict).toBe("synced");
+    expect(unseenSteps(mounted)).toEqual(["volume"]);
+    // A real path that is neither a drive path nor a UNC path: a volume or device path.
+    for (const real of ["\\\\?\\Volume{0-1}\\Tasks\\mira", "Volume{0-1}\\Tasks\\mira"]) {
+      const check = await checkFolder(
+        space,
+        fixtureHost(root, { ...facts, realpath: (p) => (resolve(p) === space ? real : undefined) }),
+      );
+      expect(unseenSteps(check), real).toEqual(["volume"]);
+    }
+  });
+
+  test("Windows: a drive whose type the system could not determine, or whose file system the check does not know, is not local", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    for (const [type, format] of [
+      ["Unknown", "NTFS"],
+      ["NoRootDirectory", ""],
+      ["Fixed", "FUSE-rclone"],
+    ] as const) {
+      const check = await checkFolder(
+        space,
+        fixtureHost(root, {
+          ...localOn("win32", space),
+          windows: { ...NO_WINDOWS, drives: [{ ...Q, type, format }] },
+        }),
+      );
+      expect(check.verdict, type).toBe("synced");
+      expect(unseenSteps(check), type).toEqual(["volume"]);
+    }
+  });
+
+  test("Linux and macOS: a file system the check does not know is not local; no other platform has a volume step", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    // eCryptfs: stacked on a folder that may be anywhere.
+    const ecryptfs = await checkFolder(
+      space,
+      fixtureHost(root, { ...localOn("linux", space), statfs: 0xf15f }),
+    );
+    expect(unseenSteps(ecryptfs)).toEqual(["volume"]);
+    const autofs = await checkFolder(
+      space,
+      fixtureHost(root, {
+        ...localOn("darwin", space),
+        mounts: "map auto_home on / (autofs, automounted)\n",
+      }),
+    );
+    expect(unseenSteps(autofs)).toEqual(["volume"]);
+    const other = await checkFolder(space, fixtureHost(root, { platform: "freebsd" }));
+    expect(unseenSteps(other)).toEqual(["volume"]);
+  });
+
+  test("the folder: a name on its way that is no folder, or no folder at all up to the root, leaves it unchecked", async () => {
+    const root = tree();
+    // A file where a folder above the space would be.
+    writeFileSync(join(dir(join(root, "Tasks")), "file"), "");
+    const below = await checkFolder(join(root, "Tasks", "file", "mira"), fixtureHost(root));
+    expect(unseenSteps(below)).toEqual(expect.arrayContaining(["folder"]));
+    expect(below.verdict).toBe("synced");
+    // A link whose target is gone: it may have led anywhere.
+    const target = dir(join(root, "gone"));
+    symlinkSync(target, join(root, "Tasks", "link"), WINDOWS ? "junction" : "dir");
+    rmSync(target, { recursive: true });
+    const dangling = await checkFolder(join(root, "Tasks", "link", "mira"), fixtureHost(root));
+    expect(unseenSteps(dangling)).toEqual(expect.arrayContaining(["folder"]));
+    // Nothing exists at all, not even the root.
+    const nothing = await checkFolder(join(root, "Tasks", "mira"), {
+      ...fixtureHost(root),
+      kind: () => Promise.resolve("absent"),
+    });
+    expect(unseenSteps(nothing)).toEqual(expect.arrayContaining(["folder"]));
+    expect(nothing.verdict).toBe("synced");
+  });
+
+  test("Dropbox's info.json that is not what Dropbox writes, and a sync client's root whose real path fails, leave the folder unchecked", async () => {
+    const root = tree();
+    const home = dir(join(root, "home"));
+    const space = dir(join(root, "Tasks", "mira"));
+    const info = join(dir(join(home, ".dropbox")), "info.json");
+    const facts = { ...localOn("linux", space), home };
+    for (const bad of [
+      "not json",
+      "[]",
+      JSON.stringify({ personal: { host: 1 } }),
+      JSON.stringify({ personal: "x" }),
+      Buffer.from([0x7b, 0xff, 0x7d]),
+      `{"personal": {"path": "${"x".repeat(70_000)}"}}`,
+    ]) {
+      writeFileSync(info, bad);
+      const check = await checkFolder(space, fixtureHost(root, facts));
+      expect(unseenSteps(check), String(bad).slice(0, 20)).toEqual(["sync_clients"]);
+    }
+    // What Dropbox writes: read, and the folder outside its root is local.
+    writeFileSync(info, JSON.stringify({ personal: { path: join(root, "Dropbox"), host: 1 } }));
+    expect((await checkFolder(space, fixtureHost(root, facts))).verdict).toBe("local");
+    // A root whose real path cannot be read: the folder may be under it by another name.
+    const host = fixtureHost(root, facts);
+    const check = await checkFolder(space, {
+      ...host,
+      realpath: (p) =>
+        resolve(p) === join(root, "Dropbox")
+          ? Promise.reject(new Error("a failed look"))
+          : host.realpath(p),
+    });
+    expect(unseenSteps(check)).toEqual(["sync_clients"]);
   });
 });
 
@@ -583,63 +851,88 @@ interface Samples {
 describe("[A1.5.sync.statfs] network types from captured statfs samples", () => {
   const samples = JSON.parse(readFileSync(SAMPLES, "utf8")) as Samples;
 
-  test("Linux: each sample's statfs type and mount table type", () => {
+  test("Linux: each sample's statfs type, and FUSE's mount table type", () => {
     expect(samples.linux.length).toBeGreaterThan(10);
     for (const sample of samples.linux) {
       const type = Number.parseInt(sample.statfs_type, 16);
       const mounts = `36 25 0:32 / /fixture rw,relatime shared:1 - ${sample.fstype} fixture rw\n`;
-      const found = linuxNetwork(type, mounts, "/fixture/spaces/mira") ?? "local";
+      const found = word(linuxVolume(type, mounts, "/fixture/spaces/mira"));
       expect(found, `${sample.fstype} (${sample.source})`).toBe(sample.expect);
-      // Without statfs, the mount table's type decides the same way: network or not.
-      expect(
-        linuxNetwork(undefined, mounts, "/fixture/spaces/mira") === undefined,
-        sample.fstype,
-      ).toBe(sample.expect === "local");
     }
-    // FUSE: only a network subtype counts.
-    const fuse = (subtype: string) =>
-      linuxNetwork(0x65735546, `1 2 0:1 / /m rw - fuse.${subtype} x rw\n`, "/m/mira");
-    expect(fuse("sshfs")).toBe("fuse.sshfs");
-    expect(fuse("rclone")).toBe("fuse.rclone");
-    expect(fuse("portal")).toBeUndefined();
-    // The longest mount point holds the path.
-    const nested = "1 2 0:1 / / rw - ext4 x rw\n3 4 0:2 / /net rw - nfs4 server:/x rw\n";
-    expect(linuxNetwork(undefined, nested, "/net/spaces/mira")).toBe("nfs");
-    expect(linuxNetwork(undefined, nested, "/home/mira")).toBeUndefined();
-    // A mount point with a space, as the kernel escapes it.
-    expect(
-      linuxNetwork(
-        undefined,
-        "1 2 0:1 / /mnt/my\\040share rw - cifs //s/x rw\n",
-        "/mnt/my share/m",
-      ),
-    ).toBe("cifs");
+    // FUSE: a network subtype is network, fuseblk local, any other subtype unchecked, and so is a
+    // FUSE path the table does not list or a table that is not there.
+    const fuse = (type: string, path = "/m/mira") =>
+      word(
+        linuxVolume(
+          0x65735546,
+          `1 2 0:1 / / rw - ext4 x rw\n3 4 0:2 / /m rw - ${type} x rw\n`,
+          path,
+        ),
+      );
+    expect(fuse("fuse.sshfs")).toBe("fuse.sshfs");
+    expect(fuse("fuse.rclone")).toBe("fuse.rclone");
+    expect(fuse("fuseblk")).toBe("local");
+    expect(fuse("fuse.portal")).toBe("unchecked");
+    expect(fuse("fuse")).toBe("unchecked");
+    expect(fuse("fuse.sshfs", "/elsewhere/mira")).toBe("unchecked");
+    expect(word(linuxVolume(0x65735546, undefined, "/m/mira"))).toBe("unchecked");
+    // The longest mount point holds the path, and a mount point with a space is read as the
+    // kernel escapes it.
+    const nested = "1 2 0:1 / / rw - ext4 x rw\n3 4 0:2 / /my\\040net rw - fuse.sshfs h:/x rw\n";
+    expect(word(linuxVolume(0x65735546, nested, "/my net/spaces/mira"))).toBe("fuse.sshfs");
+    expect(word(linuxVolume(0x65735546, nested, "/home/mira"))).toBe("unchecked");
   });
 
-  test("Windows: a mapped network drive's real path, and the drive's type", () => {
+  test("Windows: a mapped network drive's real path, and the drive's type and format", () => {
     expect(samples.windows.length).toBeGreaterThan(0);
+    const facts = (root: string, type: string, format: string) => ({
+      ...NO_WINDOWS,
+      drives: [{ root, type, label: "", format }],
+    });
     for (const sample of samples.windows) {
-      expect(windowsNetwork(sample.realpath, NO_WINDOWS) ?? "local", sample.source).toBe(
-        sample.expect,
-      );
-      const letter = {
-        ...NO_WINDOWS,
-        drives: [{ root: "Z:\\", type: sample.drive_type, label: "", format: sample.format }],
-      };
-      expect(windowsNetwork("Z:\\spaces\\mira", letter) ?? "local", sample.source).toBe(
-        sample.drive_type === "Network" ? "remote_drive" : "local",
+      const letter = /^([A-Z]):/.exec(sample.realpath)?.[1] ?? "W";
+      const drive = facts(`${letter}:\\`, sample.drive_type, sample.format);
+      expect(word(windowsVolume(sample.realpath, drive)), sample.source).toBe(sample.expect);
+      expect(
+        word(windowsVolume("Z:\\spaces\\mira", facts("Z:\\", sample.drive_type, sample.format))),
+        sample.source,
+      ).toBe(sample.drive_type === "Network" ? "remote_drive" : "local");
+    }
+    // A drive the facts do not list, a type the system could not determine, a file system the
+    // check does not know: unchecked, whatever the drive's readiness said.
+    const at = "C:\\Users\\fixture\\Tasks\\mira";
+    expect(word(windowsVolume(at, NO_WINDOWS))).toBe("unchecked");
+    for (const [type, format] of [
+      ["Unknown", "NTFS"],
+      ["NoRootDirectory", "NTFS"],
+      ["Fixed", "FUSE-rclone"],
+      ["Fixed", ""],
+    ] as const) {
+      expect(word(windowsVolume(at, facts("C:\\", type, format))), `${type} ${format}`).toBe(
+        "unchecked",
       );
     }
-    expect(windowsNetwork("C:\\Users\\fixture\\Tasks\\mira", NO_WINDOWS)).toBeUndefined();
-    // Device and extended paths are no shares.
-    expect(windowsNetwork("\\\\?\\C:\\x", NO_WINDOWS)).toBeUndefined();
-    expect(windowsNetwork("\\\\.\\pipe\\x", NO_WINDOWS)).toBeUndefined();
+    for (const type of ["Fixed", "Removable", "CDRom", "Ram"]) {
+      expect(word(windowsVolume(at, facts("C:\\", type, "NTFS"))), type).toBe("local");
+    }
+    // Device, extended and volume paths are no shares, and no drive path either.
+    const c = facts("C:\\", "Fixed", "NTFS");
+    for (const path of ["\\\\?\\C:\\x", "\\\\.\\pipe\\x", "Volume{0-1}\\x", "C:x", "x"]) {
+      expect(word(windowsVolume(path, c)), path).toBe("unchecked");
+    }
   });
 
   test("macOS: the mount table's type", () => {
     for (const sample of samples.macos) {
-      expect(macNetwork(sample.mount, sample.path) ?? "local", sample.source).toBe(sample.expect);
+      expect(word(macVolume(sample.mount, sample.path)), sample.source).toBe(sample.expect);
     }
+    // A type the check does not know, and a path the table does not hold: unchecked.
+    expect(word(macVolume("map auto_home on /home (autofs, automounted)\n", "/home/x"))).toBe(
+      "unchecked",
+    );
+    expect(word(macVolume("/dev/disk4 on /Volumes/x (apfs, local)\n", "/Users/x"))).toBe(
+      "unchecked",
+    );
   });
 
   test("the Windows facts the PowerShell run writes, read back field by field", () => {

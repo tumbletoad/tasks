@@ -562,6 +562,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.sync.fails-closed",
+      "title": "The folder check is local only from positive evidence of every step of its chain: a look of the host that fails, answers a default, answers something unexpected or hangs leaves the folder unchecked on every platform; a real path that cannot be resolved is never replaced by the path as given; on Windows the folder's volume must be its drive's own and the drive of a local type and format, and a drive whose type the system could not determine is left out of the facts; the real host answers nothing there only for a name that is not there; the facts run's output is checked byte by byte",
+      "source": "A1 3.2, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.sync.read-only",
       "title": "The service serves a space in a synced folder read-only with A1's words until the person confirms the folder is excluded, per machine and per path, and kept across a restart; a network file system refuses a new space, is read-only when found and takes no confirmation; writes are refused with the same words",
       "source": "A1 3.2, A1 5",
@@ -1315,7 +1323,7 @@
     },
     {
       "id": "A4.5.environment.layers",
-      "title": "The environment's layers: only the bytes between the snapshot's fences count, the session names from systemctl show-environment with $'…' decoded exactly, the session beats the snapshot and the snapshot's SSH agent only when its socket exists, and Windows' registry layers expanded and joined as a logon builds them",
+      "title": "The environment's layers: only the bytes between the snapshot's fences count, the session names from systemctl show-environment with $'…' decoded exactly, the session beats the snapshot and the snapshot's SSH agent only when its socket exists, and Windows' registry layers expanded and joined as a logon builds them, from a reader output whose every byte is one the reader writes",
       "source": "A4 3.8, A7 3.9 M2.09",
       "owner": "M2",
       "kind": "ci",

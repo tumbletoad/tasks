@@ -1,24 +1,27 @@
 // The real machine's facts for the synced-folder check (sync-folders.ts, A1 3.2).
 //
+// Every look throws when it fails (sync-folders.ts's SyncHost): "nothing there" is an answer only
+// for ENOENT and ENOTDIR, the codes for a name that is not there. A look that fails in any other
+// way, or answers with something the check does not read, leaves the folder unchecked.
 // - Files: lstat, stat, realpath and readdir through node:fs/promises, so a slow network folder
-//   never blocks the service's thread. A failed look is "not there".
+//   never blocks the service's thread. A volume's identity is `stat`'s `dev`, which libuv fills
+//   with the volume's serial number on Windows.
 // - Windows (A1 3.2): one Windows PowerShell 5.1 run (System32's, found the way identity.ts
 //   finds whoami.exe: never through SystemRoot) reads the drives (type, label, format), OneDrive's
 //   accounts, the Cloud Files sync roots registered for this user's SID, and Drive for desktop's
 //   SyncTargets value through .NET alone, and writes them in base64 of UTF-8, so no console code
 //   page alters a path. The script comes on stdin, not on the command line. About 0.3 s; an answer
 //   is kept for a minute, so the spaces that open together at start share one run, and a failed
-//   run is not kept. Any failure, a read inside the run included, gives no facts, which leaves a
-//   folder unchecked (sync-folders.ts); the environment variables, the markers and UNC paths still
-//   count.
+//   run is not kept. Any failure, a read inside the run included, and any byte of its output that
+//   the script does not write, gives no facts, which leaves a folder unchecked (sync-folders.ts).
 // - Linux: `fs.statfs`'s type and /proc/self/mountinfo (bounded). macOS: /sbin/mount's output.
 import { spawn } from "node:child_process";
 import { lstat, open, readdir, realpath, stat, statfs } from "node:fs/promises";
 import os from "node:os";
 import { win32 } from "node:path";
-import { base64Text, isBase64, REGISTRY_READS } from "@tasks/launch";
+import { base64Text, helperOutput, isBase64, REGISTRY_READS } from "@tasks/launch";
 import { system32 } from "./identity.ts";
-import type { SyncHost, WindowsSyncFacts } from "./sync-folders.ts";
+import type { PathKind, SyncHost, WindowsSyncFacts } from "./sync-folders.ts";
 
 const FACTS_TTL_MS = 60_000;
 const RUN_TIMEOUT_MS = 10_000;
@@ -28,17 +31,30 @@ const OUTPUT_MAX_BYTES = 4 * 1024 * 1024;
 const TEXT = "@('String','ExpandString')";
 
 /**
+ * One drive's line (Windows PowerShell 5.1, `dr $drive`). A network drive is listed with its type
+ * alone: its label and format are not read, since IsReady on a disconnected one waits for the
+ * network's time-out, and the label that counts (Google Drive's) is a local drive's. Another drive
+ * is listed only when its type is a local one and it is ready, with its format and label. Two of
+ * .NET's accessors answer a default instead of failing: `DriveType` gives Unknown (or
+ * NoRootDirectory) when the system cannot tell, and `IsReady` gives false. So readiness never stands
+ * in for a type: a drive of a type the system could not determine is left out, as one that is not
+ * ready is, and a folder on a drive left out is unchecked after a fresh run (sync-folders.ts).
+ * `DriveFormat` and `VolumeLabel` throw when they fail, and so does the section.
+ */
+export const DRIVE_FACTS =
+  "function dr($x){$t=$x.get_DriveType().ToString();$f='';$l='';" +
+  "if($t -ne 'Network'){if(@('Fixed','Removable','CDRom','Ram') -notcontains $t){return};" +
+  "if(-not $x.get_IsReady()){return};$f=$x.get_DriveFormat();$l=$x.get_VolumeLabel()};" +
+  "[void]$o.Append('drive '+(b $x.get_Name())+' '+(b $t)+' '+(b $f)+' '+(b $l)+[char]10)}";
+
+/**
  * The script's sections, one statement each, each reading one kind of fact through the reads of
  * @tasks/launch's windows-reads.ts: a key or a value that is not there is no fact, but a read that
  * fails throws, and so does a value of another kind than the section knows. Each .NET property is
  * read through its accessor method, since PowerShell 5.1 turns a getter's exception into $null.
  */
 const SECTIONS = [
-  // A network drive's label and format are not read: IsReady on a disconnected one waits for the
-  // network's time-out, and the label that counts (Google Drive's) is a local drive's. Another
-  // drive is listed only when it is ready, with its label: IsReady also says false when it fails,
-  // so a folder on a drive left out is unlisted, and unchecked after a fresh run (sync-folders.ts).
-  "foreach($x in [IO.DriveInfo]::GetDrives()){$t=$x.get_DriveType().ToString();$f='';$l='';if($t -ne 'Network'){if(-not $x.get_IsReady()){continue};$f=$x.get_DriveFormat();$l=$x.get_VolumeLabel()};[void]$o.Append('drive '+(b $x.get_Name())+' '+(b $t)+' '+(b $f)+' '+(b $l)+[char]10)}",
+  "foreach($x in [IO.DriveInfo]::GetDrives()){dr $x}",
   `$k=key ([Microsoft.Win32.Registry]::CurrentUser) 'Software\\Microsoft\\OneDrive\\Accounts';if($k){foreach($n in $k.GetSubKeyNames()){$u=val (sk $k $n) 'UserFolder' ${TEXT};if($u){[void]$o.Append('onedrive '+(b $u)+[char]10)}}}`,
   `$sid=[Security.Principal.WindowsIdentity]::GetCurrent().get_User().get_Value();if(-not $sid){throw 'sid'};$k=key ([Microsoft.Win32.Registry]::LocalMachine) 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SyncRootManager';if($k){foreach($n in $k.GetSubKeyNames()){$r=sk (sk $k $n) 'UserSyncRoots';if($r){$u=val $r $sid ${TEXT};if($u){[void]$o.Append('root '+(b $n)+' '+(b $u)+[char]10)}}}}`,
   "$k=key ([Microsoft.Win32.Registry]::CurrentUser) 'Software\\Google\\DriveFS\\Share';if($k){$v=val $k 'SyncTargets' @('Binary');if($null -ne $v -and $v.get_Length() -gt 0){[void]$o.Append('drivefs '+[Convert]::ToBase64String($v)+[char]10)}}",
@@ -65,6 +81,7 @@ export const WINDOWS_SCRIPT = [
   "$e=[Text.Encoding]::UTF8;$o=[Text.StringBuilder]::new();$done=0",
   "function b($s){[Convert]::ToBase64String($e.GetBytes([string]$s))}",
   REGISTRY_READS,
+  DRIVE_FACTS,
   ...SECTIONS.map((section) => `try{${section};$done+=1}catch{}`),
   `if($done -eq ${String(SECTIONS.length)}){[void]$o.Append('end')}`,
   "[Console]::Out.Write($o.ToString())",
@@ -110,17 +127,27 @@ export function parseWindowsFacts(output: string): WindowsSyncFacts | undefined 
   return facts;
 }
 
+/**
+ * The facts in a run's output bytes: every byte one the script writes (printable ASCII and line
+ * ends), then every line checked. Anything else is no facts.
+ */
+export function windowsFactsOf(output: Uint8Array): WindowsSyncFacts | undefined {
+  const text = helperOutput(output);
+  return text === undefined ? undefined : parseWindowsFacts(text);
+}
+
 /** Runs `file` with `args`, `input` on stdin, within the bound; its stdout, or undefined. */
 function run(
   file: string,
   args: readonly string[],
   input: string,
   timeoutMs = RUN_TIMEOUT_MS,
-): Promise<string | undefined> {
+): Promise<Buffer | undefined> {
   return new Promise((resolve) => {
-    let out = "";
+    const chunks: Buffer[] = [];
+    let length = 0;
     let done = false;
-    const finish = (value: string | undefined): void => {
+    const finish = (value: Buffer | undefined): void => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -142,10 +169,10 @@ function run(
       finish(undefined);
     }, timeoutMs);
     timer.unref();
-    child.stdout?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      out += chunk;
-      if (out.length > OUTPUT_MAX_BYTES) {
+    child.stdout?.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+      length += chunk.length;
+      if (length > OUTPUT_MAX_BYTES) {
         child.kill();
         finish(undefined);
       }
@@ -154,18 +181,34 @@ function run(
       finish(undefined);
     });
     child.once("close", (code) => {
-      finish(code === 0 ? out : undefined);
+      finish(code === 0 ? Buffer.concat(chunks) : undefined);
     });
     child.stdin?.on("error", () => undefined);
     child.stdin?.end(input);
   });
 }
 
-/** Reads at most `maxBytes` of a file as UTF-8, or undefined. */
+/** Whether a look failed only because the name is not there. */
+function notThere(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * At most `maxBytes` of a file as UTF-8, or undefined when it is not there. Throws when it cannot
+ * be read, is larger, or is not UTF-8.
+ */
 async function readSmall(path: string, maxBytes: number): Promise<string | undefined> {
   let handle;
   try {
     handle = await open(path, "r");
+  } catch (error) {
+    if (notThere(error)) return undefined;
+    throw error;
+  }
+  try {
     const buffer = Buffer.alloc(maxBytes + 1);
     let length = 0;
     while (length < buffer.length) {
@@ -173,11 +216,10 @@ async function readSmall(path: string, maxBytes: number): Promise<string | undef
       if (bytesRead <= 0) break;
       length += bytesRead;
     }
-    return length > maxBytes ? undefined : buffer.subarray(0, length).toString("utf8");
-  } catch {
-    return undefined;
+    if (length > maxBytes) throw new Error("larger than its bound");
+    return strictUtf8.decode(buffer.subarray(0, length));
   } finally {
-    await handle?.close().catch(() => undefined);
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -192,12 +234,12 @@ export interface RealSyncHostOptions {
 
 /**
  * One run of `script` on stdin by System32's Windows PowerShell 5.1, within `timeoutMs`: its
- * stdout when it exits 0, or undefined.
+ * stdout's bytes when it exits 0, or undefined.
  */
 export function runWindowsScript(
   script: string,
   timeoutMs = RUN_TIMEOUT_MS,
-): Promise<string | undefined> {
+): Promise<Buffer | undefined> {
   const folder = system32();
   if (folder === undefined) return Promise.resolve(undefined);
   return run(
@@ -213,7 +255,7 @@ export function readWindowsFacts(
   timeoutMs = RUN_TIMEOUT_MS,
 ): Promise<WindowsSyncFacts | undefined> {
   return runWindowsScript(WINDOWS_SCRIPT, timeoutMs).then((out) =>
-    out === undefined ? undefined : parseWindowsFacts(out),
+    out === undefined ? undefined : windowsFactsOf(out),
   );
 }
 
@@ -260,49 +302,55 @@ export function realSyncHost(options: RealSyncHostOptions = {}): SyncHost {
     platform,
     home,
     env,
-    isDirectory: async (path) => {
+    kind: async (path): Promise<PathKind> => {
       try {
-        return (await stat(path)).isDirectory();
-      } catch {
-        return false;
+        return (await stat(path)).isDirectory() ? "directory" : "other";
+      } catch (error) {
+        if (!notThere(error)) throw error;
+      }
+      // Nothing to follow: a name that is still there is a link to nothing.
+      try {
+        await lstat(path);
+        return "other";
+      } catch (error) {
+        if (notThere(error)) return "absent";
+        throw error;
       }
     },
     exists: async (path) => {
       try {
         await lstat(path);
         return true;
-      } catch {
-        return false;
+      } catch (error) {
+        if (notThere(error)) return false;
+        throw error;
       }
     },
     realpath: async (path) => {
       try {
         return await realpath(path);
-      } catch {
-        return undefined;
+      } catch (error) {
+        if (notThere(error)) return undefined;
+        throw error;
       }
     },
-    list: async (dir) => {
-      try {
-        return await readdir(dir);
-      } catch {
-        return undefined;
-      }
-    },
+    list: (dir) => readdir(dir),
     readText: readSmall,
+    volumeOf: async (path) => (await stat(path, { bigint: true })).dev.toString(),
     windowsFacts: windows,
-    statfsType: async (path) => {
-      if (platform !== "linux") return undefined;
-      try {
-        return (await statfs(path)).type;
-      } catch {
-        return undefined;
-      }
-    },
+    statfsType: async (path) => (await statfs(path)).type,
     mountTable: async () => {
-      if (platform === "linux") return readSmall("/proc/self/mountinfo", OUTPUT_MAX_BYTES);
-      if (platform === "darwin") return run("/sbin/mount", [], "");
-      return undefined;
+      if (platform === "linux") {
+        const table = await readSmall("/proc/self/mountinfo", OUTPUT_MAX_BYTES);
+        if (table === undefined) throw new Error("no mount table");
+        return table;
+      }
+      if (platform === "darwin") {
+        const out = await run("/sbin/mount", [], "");
+        if (out === undefined) throw new Error("no mount table");
+        return strictUtf8.decode(out);
+      }
+      throw new Error("no mount table on this platform");
     },
   };
 }

@@ -22,6 +22,7 @@ import {
   agentEnvironment,
   captureOutput,
   expandWindows,
+  helperOutput,
   holdFolder,
   mergeLayers,
   parseRegistryOutput,
@@ -370,6 +371,37 @@ describe("[A4.5.environment.layers] the session layer, the snapshot's parse and 
     ]) {
       expect(parseRegistryOutput(bad), bad).toBeUndefined();
     }
+  });
+
+  test("the registry reader's output is checked byte by byte: a byte it never writes is no layers, and the base is the service's own environment", async () => {
+    const b64 = (text: string): string => Buffer.from(text, "utf8").toString("base64");
+    const good = `user String ${b64("TOOL")} ${b64("1")}\nend`;
+    const serviceEnv = { PATH: "C:\\fixture", SystemRoot: "C:\\Windows" };
+    const base = (output: Buffer) =>
+      new UserEnvironment({
+        platform: "win32",
+        serviceEnv,
+        stateDir: temp(),
+        home: temp(),
+        capture: () => Promise.resolve({ kind: "done", code: 0, ms: 1, output }),
+      }).base();
+    const read = await base(Buffer.from(good, "latin1"));
+    expect(read.kind).toBe("user");
+    expect(read.env["TOOL"]).toBe("1");
+    for (const bad of [
+      // "end" with each byte's high bit set: Node's "ascii" decoding clears it.
+      Buffer.from([0xe5, 0xee, 0xe4]),
+      Buffer.concat([
+        Buffer.from(good.replace(/end$/, ""), "latin1"),
+        Buffer.from([0xe5, 0xee, 0xe4]),
+      ]),
+      Buffer.from(`${good}\u0000`, "latin1"),
+      Buffer.from(good.replace("user", "us\u00e9r"), "utf8"),
+    ]) {
+      expect(await base(bad)).toEqual({ kind: "service", env: serviceEnv });
+    }
+    expect(helperOutput(Buffer.from("a b\r\nend", "latin1"))).toBe("a b\r\nend");
+    expect(helperOutput(Buffer.from([0x61, 0x09, 0x62]))).toBeUndefined();
   });
 
   test("the registry reader calls no cmdlet: Windows PowerShell never searches its module path for one", () => {

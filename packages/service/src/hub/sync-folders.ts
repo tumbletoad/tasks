@@ -11,7 +11,7 @@
 // local folder (`tasks space backup`, `tasks space restore --to`, then `tasks space claim`); the
 // old folder stays where it is (A1 3.2).
 //
-// The checks, one per row of A1 3.2's table (A1 3.2 names where Windows keeps them):
+// The signals, one per row of A1 3.2's table (A1 3.2 names where Windows keeps them):
 // - Syncthing: `.stfolder` in an ancestor.
 // - Dropbox: `.dropbox` in an ancestor, or a root listed in `~/.dropbox/info.json`.
 // - OneDrive: under `%OneDrive%`, `%OneDriveConsumer%` or `%OneDriveCommercial%` (a stale one still
@@ -32,12 +32,15 @@
 // (a new space's folder) is judged from its nearest existing ancestor. The path is checked as
 // given and as its real path, so a link into a synced folder counts.
 //
-// A look at one file that finds nothing is "not there" (a marker, a listing). A fact about the
-// whole machine that cannot be read at all (Windows's registry and drives, Linux's statfs and mount
-// table, macOS's mount table), or a fault in the check itself, leaves the folder `unchecked`: it
-// is served as a synced folder is, read-only until the person confirms it is local and excluded
-// from sync. So is a folder on a Windows drive letter the facts do not list, after one fresh run.
-// A check that cannot see never makes a space writable.
+// LOCAL ONLY FROM POSITIVE EVIDENCE (A1 3.2 lists the chain of steps on each platform). The check
+// runs as a fixed list of steps (CHECK_STEPS), each through `Evidence.run`: a step is done only
+// when its body returned. Every look of the host throws when it fails and answers "nothing there"
+// only for a name that is not there, so a look that failed, a step that stopped because it cannot
+// see (`unseen()`), a step that never ran, a time-out and a fault all leave a step not done, and a
+// folder with any step not done is `unchecked`: served as a synced folder is, read-only until the
+// person confirms it is local and excluded from sync. A step never catches a look's failure and
+// never falls back to the path as given or to "none": a new step either completes on what it read
+// or leaves the folder unchecked. Signals found before a step stopped still count.
 import { dirname, join, resolve } from "node:path";
 
 /** The sync clients and folder kinds A1 3.2 names. */
@@ -61,10 +64,27 @@ export const SYNC_RULES = [
   "cloud_folder",
   "conflict_copy",
   "network_volume",
-  /** A fact the check needs could not be read: served as a synced folder. */
+  /** A step of the check did not complete: served as a synced folder. */
   "unchecked",
 ] as const;
 export type SyncRule = (typeof SYNC_RULES)[number];
+
+/**
+ * The steps of the check, in order (A1 3.2 says what each one reads and when it cannot see). A
+ * folder is local only when every one of them completed and no signal was found. `check` is the
+ * run as a whole, within its bound.
+ */
+export const CHECK_STEPS = [
+  "folder",
+  "real_path",
+  "windows_facts",
+  "sync_clients",
+  "markers",
+  "conflicts",
+  "volume",
+  "check",
+] as const;
+export type CheckStep = (typeof CHECK_STEPS)[number];
 
 export interface SyncSignal {
   readonly kind: "synced" | "network";
@@ -73,6 +93,8 @@ export interface SyncSignal {
   readonly provider?: SyncProvider;
   /** The network file system, for a network signal, as a word: `nfs`, `cifs`, `unc` … */
   readonly fs?: string;
+  /** The step that did not complete, for an `unchecked` signal. */
+  readonly step?: CheckStep;
   /** 0 is the folder itself, 1 its parent, and so on. */
   readonly depth: number;
 }
@@ -108,31 +130,44 @@ export interface WindowsSyncFacts {
   }[];
 }
 
-/** Where the check reads its facts. The real one is sync-host.ts; tests pass fixtures. */
+/** What is at a path, a link followed: a folder, something else (a file, a link to nothing), nothing. */
+export type PathKind = "directory" | "other" | "absent";
+
+/**
+ * Where the check reads its facts. The real one is sync-host.ts; tests pass fixtures. Every look
+ * throws when it fails: "nothing there" (`absent`, false, undefined, an empty listing) is an answer
+ * only for a name that is not there, never for a look that could not be made.
+ */
 export interface SyncHost {
   readonly platform: NodeJS.Platform;
   /** The account's home folder (A2 3.2.2 rule 1). */
   readonly home: string;
   /** The environment values the check reads: OneDrive's three variables. */
   readonly env: Readonly<Record<string, string | undefined>>;
-  isDirectory(path: string): Promise<boolean>;
-  /** Whether a name exists at `path`, a link included (not followed). */
+  /** What is at `path`, a link followed; `absent` only when no name is there at all. */
+  kind(path: string): Promise<PathKind>;
+  /** Whether a name exists at `path`, a link included (not followed); false only when none is. */
   exists(path: string): Promise<boolean>;
-  /** The real path of an existing path, or undefined. */
+  /** The real path of `path`, or undefined when nothing is there. */
   realpath(path: string): Promise<string | undefined>;
-  /** The names in a folder, or undefined when it cannot be listed. */
-  list(dir: string): Promise<readonly string[] | undefined>;
-  /** A small text file, or undefined when it is missing, unreadable or larger than `maxBytes`. */
-  readText(path: string, maxBytes: number): Promise<string | undefined>;
+  /** The names in a folder. */
+  list(dir: string): Promise<readonly string[]>;
   /**
-   * Windows: the registry's and the drives' facts. Undefined elsewhere or when unreadable. An
-   * answer may be kept for a while; `fresh` asks for a new one.
+   * A small UTF-8 text file, or undefined when it is not there. Throws when it cannot be read, is
+   * not UTF-8 or is larger than `maxBytes`.
+   */
+  readText(path: string, maxBytes: number): Promise<string | undefined>;
+  /** Windows: the identity of the volume that holds `path` (its serial number). */
+  volumeOf(path: string): Promise<string>;
+  /**
+   * Windows: the registry's and the drives' facts, or undefined when the run gave none (never "no
+   * facts there"). Undefined elsewhere. An answer may be kept for a while; `fresh` asks for a new one.
    */
   windowsFacts(fresh?: boolean): Promise<WindowsSyncFacts | undefined>;
   /** Linux: `fs.statfs`'s type of the file system that holds `path`. */
-  statfsType(path: string): Promise<number | undefined>;
-  /** Linux: /proc/self/mountinfo; macOS: the output of /sbin/mount. Undefined elsewhere. */
-  mountTable(): Promise<string | undefined>;
+  statfsType(path: string): Promise<number>;
+  /** Linux: /proc/self/mountinfo; macOS: the output of /sbin/mount. */
+  mountTable(): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -302,33 +337,40 @@ export function driveFsPaths(base64: string): string[] {
   return readDriveFs(base64).paths;
 }
 
-/** The roots `~/.dropbox/info.json` lists (`{"personal": {"path": …}, "business": …}`). */
-export function dropboxRoots(text: string | undefined): string[] {
-  if (text === undefined) return [];
+/**
+ * The roots `~/.dropbox/info.json` lists (`{"personal": {"path": …}, "business": …}`), or
+ * undefined when the text is not that: not JSON, not an object, or an entry without a path. A file
+ * that cannot be read whole may hide a root, so it leaves the folder unchecked, never "no roots".
+ */
+export function dropboxRoots(text: string): string[] | undefined {
+  let info: unknown;
   try {
-    const info = JSON.parse(text) as unknown;
-    if (typeof info !== "object" || info === null) return [];
-    return Object.values(info as Record<string, unknown>).flatMap((v) => {
-      const path = (v as { path?: unknown } | null)?.path;
-      return typeof path === "string" && path !== "" ? [path] : [];
-    });
+    info = JSON.parse(text);
   } catch {
-    return [];
+    return undefined;
   }
+  if (typeof info !== "object" || info === null || Array.isArray(info)) return undefined;
+  const roots: string[] = [];
+  for (const entry of Object.values(info as Record<string, unknown>)) {
+    const path = (entry as { path?: unknown } | null)?.path;
+    if (typeof entry !== "object" || typeof path !== "string" || path === "") return undefined;
+    roots.push(path);
+  }
+  return roots;
 }
 
 const INFO_MAX_BYTES = 64 * 1024;
 
 /**
- * The sync clients' roots on this machine. `complete` is false when a fact behind them was not read
- * whole (a SyncTargets value the walk cut short): the folder is then unchecked.
+ * The sync clients' roots on this machine. Throws (unseen) when a fact behind them was not read
+ * whole: a SyncTargets value the walk cut short, a Dropbox info.json that is not what Dropbox
+ * writes.
  */
 async function providerRoots(
   host: SyncHost,
   windows: WindowsSyncFacts | undefined,
-): Promise<{ roots: Root[]; complete: boolean }> {
+): Promise<Root[]> {
   const roots: Root[] = [];
-  let complete = true;
   for (const name of ONEDRIVE_VARIABLES) {
     const value = host.env[name];
     if (value !== undefined && value !== "") {
@@ -343,7 +385,8 @@ async function providerRoots(
       roots.push({ provider: cloudFilesProvider(id), root: path, rule: "provider_root" });
     }
     const driveFs = readDriveFs(windows.driveFsTargets);
-    if (!driveFs.complete) complete = false;
+    // A value read only in part may hide a root the folder is under.
+    if (!driveFs.complete) unseen();
     for (const root of driveFs.paths) {
       roots.push({ provider: "google_drive", root, rule: "provider_root" });
     }
@@ -354,9 +397,12 @@ async function providerRoots(
     }
   }
   const info = await host.readText(join(host.home, ".dropbox", "info.json"), INFO_MAX_BYTES);
-  for (const root of dropboxRoots(info))
-    roots.push({ provider: "dropbox", root, rule: "provider_root" });
-  return { roots, complete };
+  if (info !== undefined) {
+    for (const root of dropboxRoots(info) ?? unseen()) {
+      roots.push({ provider: "dropbox", root, rule: "provider_root" });
+    }
+  }
+  return roots;
 }
 
 /** macOS's cloud folders under the home folder (A1 3.2): iCloud Drive, and File Provider roots. */
@@ -422,7 +468,20 @@ const CONFLICT_COPIES = [/^space\.sync-conflict-.*\.db$/i, /^space \(.*conflicte
 export const isConflictCopy = (name: string): boolean => CONFLICT_COPIES.some((p) => p.test(name));
 
 // ---------------------------------------------------------------------------------------------
-// Network file systems
+// Volumes: what holds the folder
+
+/**
+ * What the check knows of the volume that holds a path: a local one (positive evidence of its
+ * kind), a network one, or one it does not know, which leaves the folder unchecked.
+ */
+export type Volume =
+  | { readonly kind: "local" }
+  | { readonly kind: "network"; readonly fs: string }
+  | { readonly kind: "unknown" };
+
+const LOCAL: Volume = { kind: "local" };
+const UNKNOWN: Volume = { kind: "unknown" };
+const network = (fs: string): Volume => ({ kind: "network", fs });
 
 /**
  * Linux `statfs` types of network file systems (include/uapi/linux/magic.h and the file systems'
@@ -441,7 +500,37 @@ export const NETWORK_MAGIC: ReadonlyMap<number, string> = new Map([
   [0x564c, "ncp"],
 ]);
 
-/** FUSE's `statfs` type: the mount table's subtype says what it is. */
+/**
+ * Linux `statfs` types of file systems that keep their files on this machine (magic.h and the file
+ * systems' own sources). Any other type, a stacked one such as eCryptfs included, is not known to
+ * be local. overlayfs counts: every write goes to its upper layer, and it refuses a network or FUSE
+ * file system there (one whose names need revalidation).
+ */
+export const LOCAL_MAGIC: ReadonlyMap<number, string> = new Map([
+  [0xef53, "ext4"], // ext2, ext3 and ext4
+  [0x58465342, "xfs"],
+  [0x9123683e, "btrfs"],
+  [0x2fc12fc1, "zfs"],
+  [0xf2f52010, "f2fs"],
+  [0xca451a4e, "bcachefs"],
+  [0x3153464a, "jfs"],
+  [0x52654973, "reiserfs"],
+  [0x3434, "nilfs2"],
+  [0x4d44, "vfat"], // msdos and vfat
+  [0x2011bab0, "exfat"],
+  [0x5346544e, "ntfs"],
+  [0x7366746e, "ntfs3"],
+  [0x482b, "hfsplus"],
+  [0x01021994, "tmpfs"], // tmpfs, and rootfs and devtmpfs on it
+  [0x858458f6, "ramfs"],
+  [0x794c7630, "overlay"],
+  [0x73717368, "squashfs"],
+  [0xe0f5e1e2, "erofs"],
+  [0x9660, "iso9660"],
+  [0x15013346, "udf"],
+]);
+
+/** FUSE's `statfs` type: the mount table's entry says what it is. */
 export const FUSE_MAGIC = 0x65735546;
 
 /** FUSE file systems that reach another host (the subtype after `fuse.` in the mount table). */
@@ -459,21 +548,6 @@ export const NETWORK_FUSE: ReadonlySet<string> = new Set([
   "curlftpfs",
   "smbnetfs",
   "juicefs",
-]);
-
-/** Linux mount table types of network file systems, for when `statfs` gives no answer. */
-const NETWORK_TYPES: ReadonlyMap<string, string> = new Map([
-  ["nfs", "nfs"],
-  ["nfs4", "nfs"],
-  ["cifs", "cifs"],
-  ["smb3", "cifs"],
-  ["smbfs", "smb"],
-  ["9p", "9p"],
-  ["afs", "afs"],
-  ["ceph", "ceph"],
-  ["coda", "coda"],
-  ["ncpfs", "ncp"],
-  ["davfs", "davfs"],
 ]);
 
 export interface MountEntry {
@@ -521,30 +595,25 @@ export function mountOf(entries: readonly MountEntry[], path: string): MountEntr
   return best;
 }
 
-/** Whether the mount table names the FUSE mount that holds `path` (its subtype says what it is). */
-function isFuseMount(mounts: string, path: string): boolean {
-  return mountOf(parseMountinfo(mounts), path)?.type.startsWith("fuse") === true;
-}
-
-/** The network file system a Linux path is on, from its statfs type and the mount table. */
-export function linuxNetwork(
-  statfsType: number | undefined,
-  mounts: string | undefined,
-  path: string,
-): string | undefined {
-  const entry = mounts === undefined ? undefined : mountOf(parseMountinfo(mounts), path);
-  if (statfsType !== undefined) {
-    const named = NETWORK_MAGIC.get(statfsType);
-    if (named !== undefined) return named;
-    if (statfsType !== FUSE_MAGIC) return undefined;
-    const subtype = entry?.type.startsWith("fuse.") === true ? entry.type.slice(5) : undefined;
-    return subtype !== undefined && NETWORK_FUSE.has(subtype) ? `fuse.${subtype}` : undefined;
+/**
+ * The volume a Linux real path is on, from its statfs type: a network type is network, a known
+ * local type is local. FUSE says nothing about what serves it, so the mount table's entry for the
+ * path decides: a network subtype is network, `fuseblk` (a local block device: ntfs-3g, exfat-fuse)
+ * is local, and anything else, a FUSE mount the table does not list included, is unknown. So is
+ * every other type.
+ */
+export function linuxVolume(statfsType: number, mounts: string | undefined, path: string): Volume {
+  const named = NETWORK_MAGIC.get(statfsType);
+  if (named !== undefined) return network(named);
+  if (statfsType === FUSE_MAGIC) {
+    const type = mounts === undefined ? undefined : mountOf(parseMountinfo(mounts), path)?.type;
+    if (type === "fuseblk") return LOCAL;
+    const subtype = type?.startsWith("fuse.") === true ? type.slice(5) : undefined;
+    return subtype !== undefined && NETWORK_FUSE.has(subtype)
+      ? network(`fuse.${subtype}`)
+      : UNKNOWN;
   }
-  if (entry === undefined) return undefined;
-  const named = NETWORK_TYPES.get(entry.type);
-  if (named !== undefined) return named;
-  const subtype = entry.type.startsWith("fuse.") ? entry.type.slice(5) : undefined;
-  return subtype !== undefined && NETWORK_FUSE.has(subtype) ? entry.type : undefined;
+  return LOCAL_MAGIC.has(statfsType) ? LOCAL : UNKNOWN;
 }
 
 /** macOS mount types that reach another host. */
@@ -557,198 +626,339 @@ const MAC_NETWORK: ReadonlySet<string> = new Set([
   "cifs",
 ]);
 
-/** The network file system a macOS path is on, from the mount table. */
-export function macNetwork(mounts: string | undefined, path: string): string | undefined {
-  if (mounts === undefined) return undefined;
+/** macOS mount types of file systems that keep their files on this machine. */
+const MAC_LOCAL: ReadonlySet<string> = new Set([
+  "apfs",
+  "hfs",
+  "msdos",
+  "exfat",
+  "ntfs",
+  "cd9660",
+  "udf",
+]);
+
+/** The volume a macOS real path is on, from the mount table's entry that holds it. */
+export function macVolume(mounts: string, path: string): Volume {
   const entry = mountOf(parseMacMounts(mounts), path);
-  if (entry === undefined) return undefined;
-  if (MAC_NETWORK.has(entry.type)) return entry.type;
+  if (entry === undefined) return UNKNOWN;
+  if (MAC_NETWORK.has(entry.type)) return network(entry.type);
   // A macFUSE mount reaches another host when its source names one (sshfs: `user@host:/path`).
   const fuse = entry.type.startsWith("macfuse") || entry.type.startsWith("osxfuse");
-  return fuse && /^(?:\/\/|[^/\s]+:)/.test(entry.source ?? "") ? entry.type : undefined;
+  if (fuse && /^(?:\/\/|[^/\s]+:)/.test(entry.source ?? "")) return network(entry.type);
+  return MAC_LOCAL.has(entry.type) ? LOCAL : UNKNOWN;
 }
 
 /** Whether a Windows real path is a UNC path, which reaches another host. */
 export const isUncPath = (path: string): boolean => /^[\\/]{2}[^\\/?.]/.test(path);
 
+/** Windows drive types whose volume is on this machine (.NET's `DriveType`). */
+export const LOCAL_DRIVE_TYPES: ReadonlySet<string> = new Set([
+  "Fixed",
+  "Removable",
+  "CDRom",
+  "Ram",
+]);
+
+/** File systems Windows keeps a local volume in (.NET's `DriveFormat`). */
+export const LOCAL_DRIVE_FORMATS: ReadonlySet<string> = new Set([
+  "NTFS",
+  "ReFS",
+  "exFAT",
+  "FAT32",
+  "FAT",
+  "UDF",
+  "CDFS",
+]);
+
+/** The drive letter of a Windows drive path (`C:\…`), upper case, or undefined. */
+const letterOf = (path: string): string | undefined =>
+  /^([A-Za-z]):\\/.exec(path)?.[1]?.toUpperCase();
+
+/** The facts' drive whose root is `X:\`. */
+const driveOf = (windows: WindowsSyncFacts, letter: string) =>
+  windows.drives.find((d) => /^[A-Za-z]:\\$/.test(d.root) && d.root[0]?.toUpperCase() === letter);
+
 /**
  * Whether a Windows real path is on a drive letter the facts do not list. The facts list every
- * network drive and every other drive that was ready when they were read, so such a drive came
- * later or was not ready: its type and label were not seen (A1 3.2).
+ * network drive and every other drive that was ready and of a local type when they were read, so
+ * such a drive came later, was not ready or could not be classified: its type and label were not
+ * seen (A1 3.2).
  */
 export function unlistedDrive(path: string, windows: WindowsSyncFacts): boolean {
-  const letter = /^([A-Za-z]):/.exec(path)?.[1]?.toUpperCase();
-  return (
-    letter !== undefined && !windows.drives.some((d) => d.root.slice(0, 1).toUpperCase() === letter)
-  );
+  const letter = letterOf(path);
+  return letter !== undefined && driveOf(windows, letter) === undefined;
 }
 
-/** The network file system of a Windows real path: a UNC path, or a drive of type Network. */
-export function windowsNetwork(
-  path: string,
-  windows: WindowsSyncFacts | undefined,
-): string | undefined {
-  if (isUncPath(path)) return "unc";
-  const letter = /^([A-Za-z]):/.exec(path)?.[1]?.toUpperCase();
-  if (letter === undefined || windows === undefined) return undefined;
-  const drive = windows.drives.find((d) => d.root.slice(0, 1).toUpperCase() === letter);
-  return drive?.type === "Network" ? "remote_drive" : undefined;
+/**
+ * The volume a Windows path is on, by the facts: a UNC path or a drive of type Network is network;
+ * a listed drive of a local type and a local format is local. Anything else is unknown: a drive
+ * the facts do not list, a type the system could not determine, a file system the check does not
+ * know, a path that is neither a drive path nor a UNC path (a device or volume path).
+ */
+export function windowsVolume(path: string, windows: WindowsSyncFacts): Volume {
+  if (isUncPath(path)) return network("unc");
+  const letter = letterOf(path);
+  const drive = letter === undefined ? undefined : driveOf(windows, letter);
+  if (drive === undefined) return UNKNOWN;
+  if (drive.type === "Network") return network("remote_drive");
+  return LOCAL_DRIVE_TYPES.has(drive.type) && LOCAL_DRIVE_FORMATS.has(drive.format)
+    ? LOCAL
+    : UNKNOWN;
 }
 
 // ---------------------------------------------------------------------------------------------
 // The check
 
+/** The whole check's bound: a look that hangs (a network folder that does not answer) ends here. */
+export const CHECK_TIMEOUT_MS = 60_000;
+
+/** Thrown by a step that cannot see what it needs. */
+class Unseen extends Error {}
+
+/** Ends a step without its evidence: the folder is unchecked. */
+function unseen(): never {
+  throw new Unseen("unseen");
+}
+
+/**
+ * What the steps found. Every step starts not done, and `run` marks one done only when its body
+ * returned: a look that threw, a step that called `unseen()`, a step that never ran and a step a
+ * time-out cut short all leave it not done. A step that runs more than once (one per folder) is
+ * done only when every run returned.
+ */
+class Evidence {
+  readonly signals: SyncSignal[] = [];
+  conflicts: readonly string[] = [];
+  /** The depth of the folder the check is judged from, once the `folder` step found it. */
+  judgedFrom: number | undefined;
+  readonly #done = new Map<CheckStep, boolean>();
+
+  /** Runs one step: its value when it completed, undefined when it did not. */
+  async run<T>(step: CheckStep, body: () => Promise<T>): Promise<T | undefined> {
+    try {
+      const value = await body();
+      if (!this.#done.has(step)) this.#done.set(step, true);
+      return value;
+    } catch {
+      this.#done.set(step, false);
+      return undefined;
+    }
+  }
+
+  /** The steps that are not done. */
+  missing(): CheckStep[] {
+    return CHECK_STEPS.filter((step) => this.#done.get(step) !== true);
+  }
+
+  /** The answer: local only with no signal at all, so only when every step is done. */
+  result(): FolderCheck {
+    const depth = this.judgedFrom ?? 0;
+    const found = [...this.signals].sort((a, b) => a.depth - b.depth);
+    const unchecked = this.missing().map((step): SyncSignal => ({
+      kind: "synced",
+      rule: "unchecked",
+      step,
+      depth,
+    }));
+    const signals = [...found, ...unchecked];
+    const net = signals.find((s) => s.kind === "network");
+    const synced = signals.filter((s) => s.kind === "synced");
+    const provider = synced.find((s) => s.provider !== undefined)?.provider;
+    return {
+      verdict: net !== undefined ? "network" : synced.length > 0 ? "synced" : "local",
+      ...(provider === undefined ? {} : { provider }),
+      ...(net?.fs === undefined ? {} : { fs: net.fs }),
+      conflicts: [...this.conflicts],
+      signals,
+      exists: this.judgedFrom === 0,
+    };
+  }
+}
+
 /** The check's answer when it could not look at all: unchecked, so served as a synced folder. */
 export const UNCHECKED: FolderCheck = {
   verdict: "synced",
   conflicts: [],
-  signals: [{ kind: "synced", rule: "unchecked", depth: 0 }],
+  signals: [{ kind: "synced", rule: "unchecked", step: "check", depth: 0 }],
   exists: true,
 };
 
+/** `work`, or a rejection once `ms` passed. */
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Unseen("time"));
+    }, ms);
+    timer.unref();
+  });
+  return Promise.race([work, bound]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 /**
- * Checks the folder `target` and every folder above it (see the top of this file). Never throws:
- * a fault anywhere in it gives an unchecked folder, never a local one.
+ * Checks the folder `target` and every folder above it (see the top of this file), within
+ * `timeoutMs`. Never throws: a fault anywhere in it, or a look that hangs past the bound, gives an
+ * unchecked folder, never a local one.
  */
-export async function checkFolder(target: string, host: SyncHost): Promise<FolderCheck> {
+export async function checkFolder(
+  target: string,
+  host: SyncHost,
+  timeoutMs: number = CHECK_TIMEOUT_MS,
+): Promise<FolderCheck> {
   try {
-    return await check(target, host);
+    const evidence = new Evidence();
+    await evidence.run("check", () => within(check(target, host, evidence), timeoutMs));
+    return evidence.result();
   } catch {
     return UNCHECKED;
   }
 }
 
-async function check(target: string, host: SyncHost): Promise<FolderCheck> {
+/**
+ * The Windows facts for a check whose folder's real path is `real`. A kept answer may be a minute
+ * old and not list a drive that came since, so a folder on a drive it does not list gets one fresh
+ * run. Elsewhere only a fixture gives facts.
+ */
+async function windowsFactsFor(
+  host: SyncHost,
+  real: string | undefined,
+): Promise<WindowsSyncFacts | undefined> {
+  const facts = await host.windowsFacts();
+  if (host.platform !== "win32") return facts;
+  if (facts === undefined) return unseen();
+  if (real !== undefined && unlistedDrive(real, facts)) {
+    return (await host.windowsFacts(true)) ?? unseen();
+  }
+  return facts;
+}
+
+async function check(target: string, host: SyncHost, evidence: Evidence): Promise<void> {
   const path = resolve(target);
   const chain = ancestors(path);
-  let judgedFrom = chain.length - 1;
-  for (let i = 0; i < chain.length; i += 1) {
-    if (await host.isDirectory(chain[i] ?? "")) {
-      judgedFrom = i;
-      break;
-    }
-  }
-  const existing = chain[judgedFrom] ?? path;
-  const real = (await host.realpath(existing)) ?? existing;
-  // Every existing folder to look in, with its depth below `path`: as given and as its real path.
-  const looks = new Map<string, number>();
-  chain.slice(judgedFrom).forEach((dir, i) => looks.set(dir, judgedFrom + i));
-  ancestors(real).forEach((dir, i) => {
-    if (!looks.has(dir)) looks.set(dir, judgedFrom + i);
-  });
-  const signals: SyncSignal[] = [];
-  // Each kind of fact on its own: one that fails leaves the folder unchecked, and the others still
-  // count (a marker still names its provider).
-  const seen = { unchecked: false };
-  const guarded = async <T>(look: () => Promise<T>, otherwise: T): Promise<T> => {
-    try {
-      return await look();
-    } catch {
-      seen.unchecked = true;
-      return otherwise;
-    }
+  const signal = (s: SyncSignal): void => {
+    evidence.signals.push(s);
   };
 
-  const windows = await guarded(async () => {
-    let facts = await host.windowsFacts();
-    // An answer may be a minute old: a drive it does not list may have come since, so the folder
-    // gets one fresh run before it is judged.
-    if (host.platform === "win32" && facts !== undefined && unlistedDrive(real, facts)) {
-      facts = await host.windowsFacts(true);
+  // 1. The folder, or the nearest folder above it that exists (a new space's folder is judged from
+  //    it). A name that is there but is no folder (a file, a link to nothing) leads somewhere the
+  //    check cannot see.
+  const found = await evidence.run("folder", async () => {
+    for (let i = 0; i < chain.length; i += 1) {
+      const kind = await host.kind(chain[i] ?? "");
+      if (kind === "directory") return i;
+      if (kind !== "absent") unseen();
     }
-    if (host.platform === "win32" && facts === undefined) seen.unchecked = true;
-    return facts;
-  }, undefined);
-  await guarded(async () => {
-    const { roots, complete } = await providerRoots(host, windows);
-    // A fact read only in part may hide a root the folder is under: unchecked, never local.
-    if (!complete) seen.unchecked = true;
-    for (const r of roots) {
-      const realRoot = (await host.realpath(r.root)) ?? r.root;
-      const hit = [path, real].find(
-        (p) => isInside(host.platform, p, r.root) || isInside(host.platform, p, realRoot),
-      );
-      if (hit === undefined) continue;
-      const root = isInside(host.platform, hit, r.root) ? r.root : realRoot;
-      signals.push({
-        kind: "synced",
-        provider: r.provider,
-        rule: r.rule,
-        depth: depthBelow(host.platform, path, root),
+    return unseen();
+  });
+  evidence.judgedFrom = found;
+  const existing = found === undefined ? undefined : chain[found];
+  const depth = found ?? 0;
+
+  // 2. Its real path. Never replaced by the path as given: a link whose target cannot be resolved
+  //    may lead anywhere, a network share included.
+  const real =
+    existing === undefined
+      ? undefined
+      : await evidence.run("real_path", async () => (await host.realpath(existing)) ?? unseen());
+
+  // 3. Windows: the registry's and the drives' facts, all or none.
+  const windows = await evidence.run("windows_facts", () => windowsFactsFor(host, real));
+
+  // 4. The sync clients' roots: the path as given and its real path, under each root as given and
+  //    as its real path. A root that is not there (a stale %OneDrive%) counts by its text.
+  const paths = real === undefined ? [path] : [path, real];
+  await evidence.run("sync_clients", async () => {
+    if (host.platform === "win32" && windows === undefined) unseen();
+    for (const r of await providerRoots(host, windows)) {
+      const realRoot = await host.realpath(r.root);
+      for (const root of realRoot === undefined ? [r.root] : [r.root, realRoot]) {
+        if (!paths.some((p) => isInside(host.platform, p, root))) continue;
+        signal({
+          kind: "synced",
+          provider: r.provider,
+          rule: r.rule,
+          depth: depthBelow(host.platform, path, root),
+        });
+        break;
+      }
+    }
+    const cloud = paths.map((p) => macCloudFolder(host, p)).find((s) => s !== undefined);
+    if (cloud !== undefined) signal(cloud);
+  });
+
+  // 5. Markers in every existing folder, as given and as its real path: one look per marker, and a
+  //    listing for Nextcloud's journal.
+  if (found !== undefined) {
+    const looks = new Map<string, number>();
+    chain.slice(found).forEach((dir, i) => looks.set(dir, found + i));
+    if (real !== undefined) {
+      ancestors(real).forEach((dir, i) => {
+        if (!looks.has(dir)) looks.set(dir, found + i);
       });
     }
-  }, undefined);
-  for (const p of [path, real]) {
-    const cloud = macCloudFolder(host, p);
-    if (cloud !== undefined) {
-      signals.push(cloud);
-      break;
+    for (const [dir, at] of looks) {
+      await evidence.run("markers", async () => {
+        for (const marker of MARKERS) {
+          const name = join(dir, marker.name);
+          if (!(await host.exists(name))) continue;
+          if (marker.file === true && (await host.kind(name)) === "directory") continue;
+          signal({ kind: "synced", provider: marker.provider, rule: "marker", depth: at });
+        }
+        if ((await host.list(dir)).some((n) => NEXTCLOUD_JOURNAL.test(n))) {
+          signal({ kind: "synced", provider: "nextcloud", rule: "marker", depth: at });
+        }
+      });
+    }
+
+    // 6. Conflict copies beside space.db (a folder not made yet holds none).
+    const conflicts = await evidence.run("conflicts", async () =>
+      found === 0 ? (await host.list(path)).filter(isConflictCopy).sort() : [],
+    );
+    if (conflicts !== undefined && conflicts.length > 0) {
+      evidence.conflicts = conflicts;
+      signal({ kind: "synced", rule: "conflict_copy", depth: 0 });
     }
   }
 
-  for (const [dir, depth] of looks) {
-    for (const marker of MARKERS) {
-      const at = join(dir, marker.name);
-      const found = await guarded(
-        async () =>
-          (await host.exists(at)) && (marker.file !== true || !(await host.isDirectory(at))),
-        false,
-      );
-      if (found) signals.push({ kind: "synced", provider: marker.provider, rule: "marker", depth });
-    }
-    const names = await guarded(() => host.list(dir), undefined);
-    if (names?.some((n) => NEXTCLOUD_JOURNAL.test(n)) === true) {
-      signals.push({ kind: "synced", provider: "nextcloud", rule: "marker", depth });
-    }
-  }
-
-  const conflicts = await guarded(
-    async () =>
-      judgedFrom === 0 ? ((await host.list(path)) ?? []).filter(isConflictCopy).sort() : [],
-    [],
-  );
-  if (conflicts.length > 0) signals.push({ kind: "synced", rule: "conflict_copy", depth: 0 });
-
-  const fs = await guarded(async (): Promise<string | undefined> => {
-    if (host.platform === "win32") {
-      // A drive the facts do not list, even after a fresh run, was not seen: unchecked.
-      if (windows !== undefined && unlistedDrive(real, windows)) seen.unchecked = true;
-      return windowsNetwork(real, windows);
-    }
-    if (host.platform === "linux") {
-      const type = await host.statfsType(real);
-      const mounts = await host.mountTable();
-      // Neither fact, or FUSE without the mount table that names what it is: unknown.
-      if (type === undefined && mounts === undefined) seen.unchecked = true;
-      if (type === FUSE_MAGIC && (mounts === undefined || !isFuseMount(mounts, real))) {
-        seen.unchecked = true;
-      }
-      return linuxNetwork(type, mounts, real);
-    }
-    if (host.platform === "darwin") {
-      const mounts = await host.mountTable();
-      if (mounts === undefined) seen.unchecked = true;
-      return macNetwork(mounts, real);
-    }
-    return undefined;
-  }, undefined);
-  if (fs !== undefined) {
-    signals.push({ kind: "network", fs, rule: "network_volume", depth: judgedFrom });
-  }
-  if (seen.unchecked) signals.push({ kind: "synced", rule: "unchecked", depth: judgedFrom });
-
-  signals.sort((a, b) => a.depth - b.depth);
-  const network = signals.find((s) => s.kind === "network");
-  const synced = signals.filter((s) => s.kind === "synced");
-  const provider = synced.find((s) => s.provider !== undefined)?.provider;
-  return {
-    verdict: network !== undefined ? "network" : synced.length > 0 ? "synced" : "local",
-    ...(provider === undefined ? {} : { provider }),
-    ...(network?.fs === undefined ? {} : { fs: network.fs }),
-    conflicts,
-    signals,
-    exists: judgedFrom === 0,
+  // 7. The volume that holds the folder's real path.
+  const net = (fs: string): void => {
+    signal({ kind: "network", fs, rule: "network_volume", depth });
   };
+  await evidence.run("volume", async () => {
+    let volume: Volume;
+    if (host.platform === "win32") {
+      // The path as given reaches another host when it is a UNC path or on a network drive,
+      // whatever its real path is.
+      if (isUncPath(path)) net("unc");
+      else if (windows !== undefined) {
+        const given = windowsVolume(path, windows);
+        if (given.kind === "network") net(given.fs);
+      }
+      if (real === undefined || windows === undefined) return unseen();
+      volume = windowsVolume(real, windows);
+      if (volume.kind === "local") {
+        // The drive's facts are its own volume's. Another volume mounted in a folder of the drive
+        // has its own type and format, which the facts do not hold.
+        const root = `${letterOf(real) ?? ""}:\\`;
+        const [holder, drive] = await Promise.all([host.volumeOf(real), host.volumeOf(root)]);
+        if (holder !== drive) unseen();
+      }
+    } else if (host.platform === "linux") {
+      if (real === undefined) return unseen();
+      const type = await host.statfsType(real);
+      volume = linuxVolume(type, type === FUSE_MAGIC ? await host.mountTable() : undefined, real);
+    } else if (host.platform === "darwin") {
+      if (real === undefined) return unseen();
+      volume = macVolume(await host.mountTable(), real);
+    } else {
+      // No volume step on this platform: nothing says its folders are local.
+      return unseen();
+    }
+    if (volume.kind === "network") net(volume.fs);
+    else if (volume.kind !== "local") unseen();
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
