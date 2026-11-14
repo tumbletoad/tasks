@@ -1643,7 +1643,7 @@
     },
     {
       "id": "A3.3.7.binding.launch-session",
-      "title": "A launch's session is made with its intent before dispatch, on disk with no agent binding yet and the launch's preset ID; a CLI call with the ticket maps to it before any bridge bound and writes as it; the bridge's ticket or a reference then binds that session for the binding connection's home, and a bind the launch does not take leaves it waiting; a session no agent bound ends stale after 7 quiet days and its ticket binds nothing; a CLI write whose waiting session an agent binds while it runs writes nothing, and its retry is that home's",
+      "title": "A launch's session is made with its intent before dispatch, on disk with no agent binding yet and the launch's preset ID; a CLI call with the ticket maps to it before any bridge bound and writes as it; the bridge's ticket or a reference then binds that session for the binding connection's home, and a bind the launch does not take leaves it waiting; a session no agent bound ends stale after 7 quiet days and its ticket binds nothing; a CLI write whose waiting session an agent binds while it runs writes nothing, and its retry is that home's; a CLI call maps to no session whose write failed",
       "source": "A3 3.7.4, A3 3.7.7, A4 3.10, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",
@@ -1659,7 +1659,7 @@
     },
     {
       "id": "A3.3.7.binding.hosts",
-      "title": "Host detection: Claude Desktop's chat without a session ID and a Codex entry under a Codex app-server are shared from the bind frame, their ticket binds nothing and is not spent, while Claude Desktop's Code tab and the Codex CLI are per session; on a shared connection a call carrying a thread its launch matched acts as that session for that call only; ancestors are read from the process table, at most four; a Codex entry whose table cannot be read is unknown: its ticket binds nothing and is not spent, and it binds at its first call by its own thread; a call's thread proves a session only in the space the connection pinned",
+      "title": "Host detection: Claude Desktop's chat without a session ID and a Codex entry under a Codex app-server are shared from the bind frame, their ticket binds nothing and is not spent, while Claude Desktop's Code tab and the Codex CLI are per session; on a shared connection a call carrying a thread its launch matched acts as that session for that call only; ancestors are read from the process table, at most four; a Codex entry whose table, or an ancestor in it, cannot be read is unknown: its ticket binds nothing and is not spent, and it binds at its first call by its own thread; a call's thread proves a session only in the space the connection pinned; a shared connection's IDs join no session, so a restored binding learns no thread from its calls",
       "source": "A3 3.7.2, A3 3.7.5, A3 5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",
@@ -1667,7 +1667,7 @@
     },
     {
       "id": "A3.3.7.binding.call-only",
-      "title": "On a shared connection get_task by launch reference or with bind true holds for its call only, also when the call's own thread proved its session: the result says durable false with the hint to pass the task, the launch is not used up and its session reads opened by reference, not tracked; on a bound connection a call naming another task says which task the session stays bound to",
+      "title": "On a shared connection get_task by launch reference or with bind true holds for its call only, also when the call's own thread proved its session, whatever task it names: the result says durable false with the hint to pass the task, the launch is not used up and its session reads opened by reference, not tracked; on a bound connection a call naming another task says which task the session stays bound to",
       "source": "A3 3.4.4, A3 3.7.3, A3 3.7.5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",
@@ -1675,7 +1675,7 @@
     },
     {
       "id": "A3.3.7.binding.user-ops",
-      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them; a change is on disk before it is answered and waits for a reference bind that waits on its launch, a write that read its binding before the change writes nothing, and a retry after a rebind replays",
+      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them; a change is on disk before it is answered and waits for a reference bind that waits on its launch, a write that read its binding before the change writes nothing, a retry after a rebind replays, and a rebind at the session limit never removes the session it moves",
       "source": "A3 3.7.3, A3 3.2.3, A3 5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",

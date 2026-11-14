@@ -8,7 +8,14 @@ import { newId } from "@tasks/storage";
 import type { HomeGate, ServedSpace, Slot } from "../ops/index.ts";
 import { Bindings, SESSION_STALE_MS, type BindingEvent, type LaunchPort } from "./bindings.ts";
 import type { Ancestry } from "./hosts.ts";
-import { MemorySessionStore, parseSessions, type SessionStore } from "./sessions.ts";
+import {
+  MAX_SESSIONS,
+  MemorySessionStore,
+  formatSessions,
+  parseSessions,
+  type SessionRecord,
+  type SessionStore,
+} from "./sessions.ts";
 
 const SPACE = newId("sp");
 const TASK = newId("t");
@@ -393,6 +400,40 @@ describe("[A3.3.7.binding.hosts] a shared host binds nothing durably; a call's o
     expect(b.forCall(host.slot, "codex", THREAD)).toBe(host.slot);
   });
 
+  test("a binding restored on a connection found shared learns no thread from its calls: a thread proves nothing it did not hold", async () => {
+    const launches = launchSide();
+    let underAppServer = false;
+    const ancestry: Ancestry = () =>
+      Promise.resolve(
+        underAppServer ? [{ argv: ["codex", "app-server"] }] : [{ argv: ["codex", "--fixture"] }],
+      );
+    const { bindings: b } = bindings({ launches, ancestry });
+    const intent = intentOf();
+    b.launched(SPACE, intent);
+    launches.tickets.set("ticket-6", { launch: intent.id, used: false });
+    const first = await connect(b, {
+      app: "codex",
+      parent: { pid: 4321 },
+      env: { TASKS_TICKET: "ticket-6" },
+    });
+    const id = first.slot.session?.id ?? "";
+    expect(id).not.toBe("");
+    b.closed(first.slot);
+    // The same handle comes back through a host now told shared.
+    underAppServer = true;
+    const again = await connect(b, {
+      app: "codex",
+      parent: { pid: 4321 },
+      resume: { handle: first.handle },
+    });
+    expect(again.slot.shared).toBe(true);
+    expect(again.slot.session?.id).toBe(id);
+    const other = "019a0000-0000-7000-8000-0000000000c4";
+    expect(b.forCall(again.slot, "codex", other)).toBeUndefined();
+    expect(b.forCall(again.slot, "codex", other)).toBeUndefined();
+    expect(b.mapped({ CODEX_THREAD_ID: other })).toBeUndefined();
+  });
+
   test("a call's own thread proves a session only in the space its shared connection pinned", async () => {
     const appServer: Ancestry = () => Promise.resolve([{ argv: ["codex", "app-server"] }]);
     const { bindings: b } = bindings({ ancestry: appServer });
@@ -529,6 +570,59 @@ describe("[A3.3.7.binding.user-ops] a user's change is on disk before it is answ
     const resumed = await connect(restarted, { resume: { handle: agent.handle } });
     expect(resumed.state).toBe("bound");
     expect(resumed.slot.session?.id).toBe(id);
+  });
+
+  test("a rebind at the session limit never makes room by removing the session it moves", async () => {
+    const launches = launchSide();
+    const now = 1_800_000_000_000;
+    // Every other session is live (its launch's agent runs); the one rebound is not.
+    const others: SessionRecord[] = Array.from({ length: MAX_SESSIONS - 1 }, () => {
+      const launch = newId("la");
+      launches.running.add(launch);
+      return {
+        id: newId("se"),
+        space: SPACE,
+        task: OTHER_TASK,
+        instance: "unit-agent",
+        via: "ticket",
+        launches: [launch],
+        native: [],
+        created_at: now,
+        seen_at: now,
+      };
+    });
+    const target: SessionRecord = {
+      id: newId("se"),
+      space: SPACE,
+      task: TASK,
+      instance: "unit-agent",
+      via: "ticket",
+      launches: [],
+      native: [],
+      created_at: now,
+      seen_at: now,
+    };
+    const store = flakyStore();
+    store.inner.text = formatSessions({ sessions: [target, ...others], handles: [] });
+    const { bindings: b } = bindings({ store, launches, now: () => now });
+    for (const failing of [true, false]) {
+      store.failing = failing;
+      await expect(b.rebind(target.id, OTHER_TASK)).rejects.toThrow(/could not record/);
+      expect(b.session(target.id)).toMatchObject({ id: target.id, task: TASK });
+    }
+  });
+});
+
+describe("[A3.3.7.binding.launch-session] a session made with its launch is acted as only once it is on disk", () => {
+  test("a CLI call maps to no session whose write failed, until a write lands", () => {
+    const store = flakyStore();
+    const { bindings: b } = bindings({ store });
+    store.failing = true;
+    b.launched(SPACE, intentOf({ evidence: { preset: CLAUDE } }));
+    expect(b.mapped({ CLAUDE_CODE_SESSION_ID: CLAUDE })).toBeUndefined();
+    store.failing = false;
+    expect(b.mapped({ CLAUDE_CODE_SESSION_ID: CLAUDE })?.session?.waiting).toBe(true);
+    expect(parseSessions(store.inner.text ?? "").state.sessions).toHaveLength(1);
   });
 });
 

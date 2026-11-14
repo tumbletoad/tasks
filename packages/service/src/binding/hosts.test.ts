@@ -14,6 +14,7 @@ import {
   sharedHost,
   windowsAncestors,
   windowsArgv,
+  windowsLines,
   type Ancestry,
 } from "./hosts.ts";
 
@@ -45,6 +46,8 @@ beforeAll(() => {
   // A terminal's Codex CLI, whose name has a space and parentheses in its comm.
   processOf(5000, "bash", 1, ["bash"]);
   processOf(5100, "co (dex) x", 5000, ["codex", "--model", "fixture"]);
+  // A wrapper whose parent (6000) is gone, or cannot be read.
+  processOf(6100, "sh", 6000, ["sh", "-c", "wrapper"]);
 });
 afterAll(() => {
   rmSync(proc, { recursive: true, force: true });
@@ -102,7 +105,35 @@ describe("[A3.3.7.binding.hosts] a shared host is told from the bind frame and t
       ["codex", "--model", "fixture"],
       ["bash"],
     ]);
-    expect(linuxAncestors(9999, 4, proc)).toEqual([]);
+    // A process that is gone or cannot be read ends the walk as an ancestor nobody knows.
+    expect(linuxAncestors(9999, 4, proc)).toEqual([{ argv: [] }]);
+    expect(linuxAncestors(6100, 4, proc).map((a) => a.argv)).toEqual([["sh", "-c", "wrapper"], []]);
+  });
+
+  test("an ancestor that could not be read leaves the host unknown, unless an app-server was read", async () => {
+    const fromProc: Ancestry = (pid, depth) => Promise.resolve(linuxAncestors(pid, depth, proc));
+    // A readable wrapper under an ancestor that cannot be read: it may be an app-server.
+    expect(await sharedHost({ app: "codex", env: {}, parent: { pid: 6100 } }, fromProc)).toBe(
+      "unknown",
+    );
+    const partial: Ancestry = () => Promise.resolve([{ argv: ["cmd", "/c"] }, { argv: [] }]);
+    expect(await sharedHost({ app: "codex", env: {}, parent: { pid: 1 } }, partial)).toBe(
+      "unknown",
+    );
+    const below: Ancestry = () =>
+      Promise.resolve([{ argv: ["codex", "app-server"] }, { argv: [] }]);
+    expect(await sharedHost({ app: "codex", env: {}, parent: { pid: 1 } }, below)).toBe(
+      "app-server",
+    );
+    // Windows: a process whose command line Windows does not give is `-` in the read's output.
+    const line = (text: string) => Buffer.from(text, "utf8").toString("base64");
+    expect(
+      windowsLines(`${line("cmd /c tasks")}\r\n-\r\n${line("codex app-server")}\r\n`, 4),
+    ).toEqual([{ argv: ["cmd", "/c", "tasks"] }, { argv: [] }]);
+    expect(windowsLines(`${line("a")}\n${line("b")}\n${line("c")}\n`, 2)).toEqual([
+      { argv: ["a"] },
+      { argv: ["b"] },
+    ]);
   });
 
   test("an app-server is a Codex program followed by app-server, wherever node puts it", () => {

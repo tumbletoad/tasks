@@ -12,19 +12,27 @@
 // Every input comes from the authenticated bind frame: the entry's `--app`, its environment, and
 // `parent.pid` (the bridge's parent, A3 3.7.2), whose ancestors the service reads only to tell the
 // host. An ancestor's command line is compared in memory and never kept or logged. A Codex host
-// the service cannot read in time is `unknown`: its ticket binds nothing at the bind frame, since
+// the service cannot read in time, or whose walk meets an ancestor it cannot read before an
+// app-server, is `unknown`: its ticket binds nothing at the bind frame, since
 // an app-server's environment would be every thread's, and the connection binds at its first call,
 // which carries its own thread ID; M2.04's guard marks it shared once two conversations show.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { powershellPath } from "@tasks/launch";
 
-/** One ancestor process: its command line as arguments, the program first. */
+/**
+ * One ancestor process: its command line as arguments, the program first. No arguments: a process
+ * whose command line could not be read, which may be any program.
+ */
 export interface Ancestor {
   readonly argv: readonly string[];
 }
 
-/** Reads up to `depth` ancestors from `pid` itself upwards; an empty list when it cannot tell. */
+/**
+ * Reads up to `depth` ancestors from `pid` itself upwards, stopping early only at the top of the
+ * tree; an ancestor it could not read is one with no arguments, and the walk ends there. An empty
+ * list when it cannot tell at all.
+ */
 export type Ancestry = (pid: number, depth: number) => Promise<readonly Ancestor[]>;
 
 /** A3 3.7.2: the service walks up to four ancestors. */
@@ -95,7 +103,9 @@ export async function sharedHost(
   try {
     const found = await Promise.race([ancestry(pid, ANCESTORS).catch(() => undefined), late]);
     if (found === undefined || found.length === 0) return "unknown";
-    return found.some((a) => runsAppServer(a.argv)) ? "app-server" : undefined;
+    if (found.some((a) => runsAppServer(a.argv))) return "app-server";
+    // An ancestor that could not be read may be the app-server: the host is not known.
+    return found.some((a) => a.argv.length === 0) ? "unknown" : undefined;
   } finally {
     clearTimeout(timer);
   }
@@ -115,6 +125,8 @@ export function linuxAncestors(pid: number, depth: number, proc = "/proc"): Ance
       stat = readFileSync(`${proc}/${String(at)}/stat`, "utf8");
       cmdline = readFileSync(`${proc}/${String(at)}/cmdline`, "utf8");
     } catch {
+      // Gone, or not readable: whatever it was is not known.
+      out.push({ argv: [] });
       break;
     }
     out.push({ argv: cmdline.split("\0").filter((arg) => arg !== "") });
@@ -173,7 +185,8 @@ export async function windowsAncestors(
     "$all = @{}; foreach ($x in Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CommandLine) { $all[[int]$x.ProcessId] = $x }; " +
     `$p = ${String(pid)}; for ($i = 0; $i -lt ${String(depth)} -and $all.ContainsKey($p); $i++) { ` +
     "$x = $all[$p]; $c = [string]$x.CommandLine; " +
-    "[Console]::Out.WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($c))); " +
+    "if ($c -eq '') { [Console]::Out.WriteLine('-') } " +
+    "else { [Console]::Out.WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($c))) }; " +
     "$p = [int]$x.ParentProcessId }";
   const text = await new Promise<string>((resolve) => {
     const child = spawn(
@@ -208,11 +221,27 @@ export async function windowsAncestors(
       resolve(code === 0 ? output : "");
     });
   });
-  return text
-    .split(/\r?\n/u)
-    .filter((line) => /^[A-Za-z0-9+/]*={0,2}$/u.test(line.trim()) && line.trim() !== "")
-    .slice(0, depth)
-    .map((line) => ({ argv: windowsArgv(Buffer.from(line.trim(), "base64").toString("utf8")) }));
+  return windowsLines(text, depth);
+}
+
+/**
+ * The ancestors in the read's output: one line per process, its command line in base64, or `-`
+ * for one whose command line Windows did not give (another user's or an elevated process), which
+ * is an ancestor that could not be read. The walk ends there.
+ */
+export function windowsLines(text: string, depth: number): Ancestor[] {
+  const out: Ancestor[] = [];
+  for (const raw of text.split(/\r?\n/u)) {
+    const line = raw.trim();
+    if (out.length >= depth) break;
+    if (line === "-") {
+      out.push({ argv: [] });
+      break;
+    }
+    if (line === "" || !/^[A-Za-z0-9+/]*={0,2}$/u.test(line)) continue;
+    out.push({ argv: windowsArgv(Buffer.from(line, "base64").toString("utf8")) });
+  }
+  return out;
 }
 
 /** This OS's ancestry, or none where the service cannot read one (macOS for now). */

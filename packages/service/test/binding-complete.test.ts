@@ -365,6 +365,11 @@ describe("[A3.3.7.binding.call-only] a shared connection binds for its call only
         );
         expect(loaded.text).not.toContain("bound to this task by this call");
         expect(chat.slot.session).toBeUndefined();
+        // Another task, proven by the same thread: resolved for this call, as any shared call is.
+        const other = await chat.tool("get_task", { task: "M-2", bind: true }, thread);
+        expect(other.error).toBe(false);
+        expect(other.text).toContain('Session: not bound, this call only. Pass task "M-2"');
+        expect(other.text).toContain("This session is bound to M-1.");
       } finally {
         chat.close();
       }

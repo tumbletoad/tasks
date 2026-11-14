@@ -1247,11 +1247,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       // cannot hold a binding resolves the reference for this call only.
       if (input["task"] !== undefined) throw invalid("task", "Pass task or launch, not both");
       const launch = await launchOf(call, input["launch"]);
-      if (slot !== undefined && bindings !== undefined) {
-        bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
-      } else if (callOnly) {
-        // Opened by reference, not tracked: its session says so (A3 3.7.5).
+      if (callOnly) {
+        // A3 3.7.5: on a shared connection the reference resolves for this call only, also when
+        // the call's own native ID proved a session: nothing binds, and its session, while no agent
+        // bound it, reads opened by reference, not tracked.
         bindings?.untracked(launch.id);
+      } else if (slot !== undefined && bindings !== undefined) {
+        bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
       }
       task = launch.task;
     } else {
@@ -1270,16 +1272,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           );
     const read = await readTask(reader, task, { machine, ...ranges });
     // A3 3.7.3: an explicit task choice binds an ad-hoc session, once the task is found.
-    if (input["bind"] === true && input["launch"] === undefined) {
+    if (input["bind"] === true && input["launch"] === undefined && !callOnly) {
       if (slot !== undefined && bindings !== undefined) {
         const id = String(read.row["id"]);
         bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
       }
     }
     const row = taskRow(read.row, read.space.refPrefix);
-    // On a shared connection nothing binds for good, also when the call's own native ID proved its
-    // session for this call (A3 3.7.5): the result says so, never "bound by this call".
-    if (callOnly) bound = false;
     const once = callOnly
       ? { durable: false, hint: `Pass task "${String(row["ref"])}" on later calls.` }
       : {};

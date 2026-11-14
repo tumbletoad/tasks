@@ -310,6 +310,8 @@ export class Bindings implements BindingPort {
   readonly #provisional = new Map<string, Promise<void>>();
   /** Sessions a bind made and took back (its launch did not take it), newest last. */
   readonly #dropped = new Set<string>();
+  /** Sessions made or reopened with their launch whose write failed: none is acted as yet. */
+  readonly #unsaved = new Set<string>();
   /**
    * Reference binds whose launch did not answer, by launch: the instant sent and the handle of the
    * connection that sent it. Its retry sends the same instant, so a late write is its own.
@@ -341,6 +343,8 @@ export class Bindings implements BindingPort {
   launched(space: string, intent: LaunchIntent): void {
     if (intent.task === null || !isId(space, "sp") || !isId(intent.task, "t")) return;
     let changed = false;
+    // The session this record made or reopened: one a CLI call may act as, so it must be on disk.
+    let made: string | undefined;
     if (this.#launchSessions(intent.id).length === 0 && intent.state === "prepared") {
       const continued = intent.session === null ? undefined : this.#sessions.get(intent.session);
       if (continued !== undefined && continued.space === space && continued.task === intent.task) {
@@ -353,6 +357,7 @@ export class Bindings implements BindingPort {
         delete open.ended_at;
         delete open.end_reason;
         this.#sessions.set(continued.id, open);
+        made = continued.id;
         changed = true;
       } else if (this.#room(1)) {
         const now = this.#now();
@@ -371,6 +376,7 @@ export class Bindings implements BindingPort {
           created_at: now,
           seen_at: now,
         });
+        made = id;
         changed = true;
       }
     }
@@ -387,7 +393,10 @@ export class Bindings implements BindingPort {
     }
     if (changed) {
       this.#dirty = true;
-      this.#persist();
+      // The launch goes on when the write fails (binding never breaks a launch), but no call acts
+      // as a session that is not on disk (`mapped`): a write under it would leave a receipt whose
+      // scope a restart forgets.
+      if (!this.#persist() && made !== undefined) this.#unsaved.add(made);
     }
   }
 
@@ -1087,6 +1096,8 @@ export class Bindings implements BindingPort {
       session = ids.length === 0 ? undefined : this.#nativeSession(undefined, ids);
     }
     if (session === undefined) return undefined;
+    // Durable before irreversible: a session a launch made acts once it is on disk.
+    if (this.#unsaved.has(session.id) && !this.#persist()) return undefined;
     const slot = new Slot({
       kind: "mapped",
       instance: session.instance,
@@ -1268,7 +1279,7 @@ export class Bindings implements BindingPort {
     if (session === undefined) return { kind: "not_found" };
     if (session.ended_at !== undefined) return { kind: "ended", session: id };
     if (session.task === task) return { kind: "no_change", session: id };
-    if (!this.#room(1)) throw unrecordedChange();
+    if (!this.#room(1, id)) throw unrecordedChange();
     const now = this.#now();
     const next: SessionRecord = {
       ...session,
@@ -1355,14 +1366,14 @@ export class Bindings implements BindingPort {
 
   /**
    * Room for `count` more sessions within MAX_SESSIONS: ended records go first, oldest first, then
-   * the least recently seen of those nothing keeps alive. A live session is never removed: false
-   * when only live ones are left.
+   * the least recently seen of those nothing keeps alive. A live session is never removed, nor
+   * `keep` (the session a change is about): false when only those are left.
    */
-  #room(count: number): boolean {
+  #room(count: number, keep?: string): boolean {
     const over = this.#sessions.size + count - MAX_SESSIONS;
     if (over <= 0) return true;
     const order = [...this.#sessions.values()]
-      .filter((s) => s.ended_at !== undefined || !this.#live(s))
+      .filter((s) => s.id !== keep && (s.ended_at !== undefined || !this.#live(s)))
       .sort(
         (a, b) =>
           (a.ended_at === undefined ? 1 : 0) - (b.ended_at === undefined ? 1 : 0) ||
@@ -1484,12 +1495,15 @@ export class Bindings implements BindingPort {
    * native ID, or a rebind of such a session) and the connection is not shared, else `presented`.
    */
   #record(session: SessionRecord, slot: Slot, changes: Partial<SessionRecord>): void {
-    const trust: Trust =
-      !slot.shared && session.via !== null && session.via !== "task" ? "bridge" : "presented";
-    const joined = this.#joined(
-      session,
-      [...slot.presented].map(([source, id]) => ({ source, id, trust })),
-    );
+    const trust: Trust = session.via !== null && session.via !== "task" ? "bridge" : "presented";
+    // A shared connection's IDs are any of its conversations': none joins a session, since an ID a
+    // session holds proves a call its own on a shared connection (A3 3.7.5, `forCall`).
+    const joined = slot.shared
+      ? session
+      : this.#joined(
+          session,
+          [...slot.presented].map(([source, id]) => ({ source, id, trust })),
+        );
     const next: SessionRecord = { ...joined, ...changes };
     this.#sessions.set(session.id, next);
     this.#dirty = true;
@@ -1577,6 +1591,7 @@ export class Bindings implements BindingPort {
         handles: [...this.#handles.values()],
       });
       this.#dirty = false;
+      this.#unsaved.clear();
       this.#savedAt = this.#now();
       return true;
     } catch {
