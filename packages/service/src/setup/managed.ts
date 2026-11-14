@@ -6,15 +6,30 @@
 //   3. A git repository other than the home tracks the file.
 //   4. machine.toml lists it, or a folder above it, under `[setup.managed] paths`.
 //
-// Git is read from its files, never started (A1 3.15): the work tree is the nearest
-// folder above the file with a `.git` folder or file, and "tracks" means the work tree's index has
-// an entry for the file. A repository at the home itself, or inside it, is the person's own record
-// of that home, not another tool's. The index is read only when every byte adds up: its trailing
-// checksum (which also tells SHA-1 from SHA-256 names), its entries, its extensions. Whatever
-// cannot be read for certain (a split index, an index over the bound, a damaged one) counts as
-// tracked: the safe side for a write is to make none.
+// Git is read from its files, never started (A1 3.15). Setup finds the repository git itself would
+// find: it walks up from the file's folder as the OS resolves it (links, junctions, short names),
+// and the first folder that holds an entry named `.git`, of any kind, is the work tree. Its `.git`
+// is read through links, as git reads it: a folder is the repository's metadata, and a file names
+// it on a `gitdir:` line (a linked worktree, a submodule, `--separate-git-dir`). Any other `.git`
+// (a link whose target is gone, a file without that line, something that is neither) cannot be
+// read for certain. A repository at the home itself, or inside it, is the person's own record of
+// that home, not another tool's. "Tracks" means the work tree's index has an entry for the file.
+// The index is read only when every byte adds up: its trailing checksum (which also tells SHA-1
+// from SHA-256 names), its entries, its extensions. Whatever cannot be read for certain (such a
+// `.git`, a split index, an index over the bound, a damaged one) counts as tracked: the safe side
+// for a write is to make none. A repository git finds only through GIT_DIR, `--git-dir` or
+// `core.worktree` leaves no `.git` beside the file, so setup cannot see it: rule 4 lists such files.
 import { createHash } from "node:crypto";
-import { closeSync, fstatSync, lstatSync, openSync, readFileSync, readSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { posix, win32 } from "node:path";
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
@@ -44,17 +59,46 @@ const MAX_LEVELS = 64;
 /** An index past this size is not read: it counts as tracking the file. */
 const MAX_INDEX_BYTES = 64 * 1024 * 1024;
 
-const exists = (path: string): "dir" | "file" | undefined => {
+/**
+ * Whether an entry named `.git` is at `path`, whatever its kind (a link, a junction, a file, a
+ * folder). Only "nothing there" lets the search go on: an entry that cannot be looked at is there
+ * as far as the search knows.
+ */
+function boundary(path: string): boolean {
   try {
-    const s = lstatSync(path);
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code !== "ENOENT" && code !== "ENOTDIR";
+  }
+}
+
+/** What `path` is, links followed as git follows them; undefined when it is neither or unreadable. */
+function kindOf(path: string): "dir" | "file" | undefined {
+  try {
+    const s = statSync(path);
     return s.isDirectory() ? "dir" : s.isFile() ? "file" : undefined;
   } catch {
     return undefined;
   }
-};
+}
 
-/** A small text file of git's (`.git` as a file, `commondir`, `config`), or undefined. */
+/** A folder as the OS resolves it (links, junctions, case, short names), or as given. */
+function resolved(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * A small text file of git's (`.git` as a file, `commondir`, `config`), or undefined. Only a
+ * regular file is opened: reading through a link must never wait on a pipe.
+ */
 function smallText(path: string): string | undefined {
+  if (kindOf(path) !== "file") return undefined;
   try {
     const bytes = readFileSync(path);
     return bytes.length > 64 * 1024 ? undefined : bytes.toString("utf8");
@@ -68,6 +112,12 @@ function smallText(path: string): string | undefined {
  * there but cannot be read for certain: past the bound, not a regular file, no access, locked.
  */
 function boundedBytes(path: string, max: number): Buffer | undefined | "unknown" {
+  // Something there that is not a regular file (a pipe would block the open) is not opened.
+  try {
+    if (!statSync(path).isFile()) return "unknown";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : "unknown";
+  }
   let fd: number;
   try {
     fd = openSync(path, "r");
@@ -219,17 +269,22 @@ export function indexPaths(index: Buffer, hashBytes: HashBytes): string[] {
   return paths;
 }
 
-/** Whether the repository whose work tree is `top` tracks `file` (inside `top`). */
+/**
+ * Whether the repository whose work tree is `top` tracks `file` (inside `top`). A `.git` that is
+ * neither a folder nor a file naming one counts as tracking it.
+ */
 function tracks(platform: NodeJS.Platform, top: string, file: string): boolean {
   const p = pathOf(platform);
   const dotGit = p.join(top, ".git");
   let gitDir: string;
-  if (exists(dotGit) === "dir") gitDir = dotGit;
-  else {
+  const kind = kindOf(dotGit);
+  if (kind === "dir") gitDir = dotGit;
+  else if (kind === "file") {
     const pointer = /^gitdir:\s*(.+?)\s*$/mu.exec(smallText(dotGit) ?? "")?.[1];
     if (pointer === undefined) return true;
     gitDir = p.resolve(top, pointer);
-  }
+    if (kindOf(gitDir) !== "dir") return true;
+  } else return true;
   const commonDir = smallText(p.join(gitDir, "commondir"))?.trim();
   const common =
     commonDir === undefined || commonDir === "" ? gitDir : p.resolve(gitDir, commonDir);
@@ -254,8 +309,8 @@ function tracks(platform: NodeJS.Platform, top: string, file: string): boolean {
 }
 
 /**
- * Rule 3: a git repository other than the home tracks `file`. The nearest work tree above the file
- * decides; one at the home or inside it is the home's own.
+ * Rule 3: a git repository other than the home tracks `file`. The work tree git would find from
+ * the file's folder decides (the header); one at the home or inside it is the home's own.
  */
 export function trackedByAnotherRepository(
   platform: NodeJS.Platform,
@@ -263,10 +318,14 @@ export function trackedByAnotherRepository(
   home: string,
 ): boolean {
   const p = pathOf(platform);
-  let dir = p.dirname(p.resolve(file));
+  const absolute = p.resolve(file);
+  const folder = resolved(p.dirname(absolute));
+  const real = p.join(folder, p.basename(absolute));
+  const realHome = resolved(p.resolve(home));
+  let dir = folder;
   for (let level = 0; level < MAX_LEVELS; level += 1) {
-    if (exists(p.join(dir, ".git")) !== undefined) {
-      return within(platform, home, dir) ? false : tracks(platform, dir, file);
+    if (boundary(p.join(dir, ".git"))) {
+      return within(platform, realHome, dir) ? false : tracks(platform, dir, real);
     }
     const up = p.dirname(dir);
     if (up === dir) return false;

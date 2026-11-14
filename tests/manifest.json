@@ -1915,7 +1915,7 @@
     },
     {
       "id": "A3.3.12.setup.managed",
-      "title": "A file another git repository tracks is managed (index versions 2 and 4, SHA-256, a linked worktree; a split or damaged index counts as tracked), a repository at the home itself is not, and a path machine.toml lists under [setup.managed] covers the file and the files below it",
+      "title": "A file another git repository tracks is managed (index versions 2 and 4, SHA-256, a linked worktree; a split or damaged index counts as tracked), found as git finds it: through a .git file, git metadata behind a link or junction, and a linked folder above the file, while a .git that cannot be read for certain counts as tracked; a repository at the home itself is not, and a path machine.toml lists under [setup.managed] covers the file and the files below it",
       "source": "A3 3.12, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
@@ -1923,7 +1923,7 @@
     },
     {
       "id": "A3.3.13.setup.apps",
-      "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone",
+      "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",

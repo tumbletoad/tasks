@@ -8,6 +8,7 @@
 // Linux, T3CODE_HOME), and the apps' commands are testkit's fakes, run as real processes. No test
 // reads or changes a real agent home, a real Claude Desktop, Codex app or T3 folder, or runs a
 // real agent app's command.
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -20,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { MCP_SERVER_KEY } from "@tasks/brand";
 import { detect, nodeDetectHost } from "@tasks/launch";
@@ -563,4 +564,71 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
     },
     SLOW,
   );
+
+  test(
+    "Claude Desktop: a file a repository tracks through linked git metadata is managed, for apply and for remove",
+    async () => {
+      // Not registered yet: apply leaves the tracked file as it is and records nothing.
+      const w = world("linked-git");
+      const place = desktopPlace(w);
+      mkdirSync(place.folder, { recursive: true });
+      const file = join(place.folder, "claude_desktop_config.json");
+      writeFileSync(file, DESKTOP_JSON);
+      const before = readFileSync(file);
+      linkedRepository(w.root, file);
+      const input = await inputOf(w, place.env);
+      const view = only(survey(input), "claude-desktop");
+      expect([view.state, view.refusal]).toEqual(["refused", "managed"]);
+      expect(await applyHome(input, view, SPACE, null)).toMatchObject({
+        result: "left",
+        reason: "managed",
+      });
+      expect(readFileSync(file)).toEqual(before);
+      expect(existsSync(join(w.state, "setup", "agents.json"))).toBe(false);
+
+      // Registered while no repository held the file, then tracked: remove leaves the entry.
+      const r = world("linked-git-remove");
+      const at = desktopPlace(r);
+      mkdirSync(at.folder, { recursive: true });
+      const registered = join(at.folder, "claude_desktop_config.json");
+      writeFileSync(registered, DESKTOP_JSON);
+      const later = await inputOf(r, at.env);
+      expect(
+        await applyHome(later, only(survey(later), "claude-desktop"), SPACE, null),
+      ).toMatchObject({ result: "applied" });
+      const applied = readFileSync(registered);
+      linkedRepository(r.root, registered);
+      const now = only(survey(later), "claude-desktop");
+      expect([now.state, now.refusal]).toEqual(["refused", "managed"]);
+      expect(await removeHome(later, now)).toMatchObject({ result: "left", reason: "managed" });
+      expect(readFileSync(registered)).toEqual(applied);
+      expect(readRecords(r.state)).toHaveLength(1);
+    },
+    SLOW,
+  );
 });
+
+/**
+ * Makes `root` a git work tree whose `.git` is a link (a junction on Windows) to its metadata in a
+ * sibling folder, and has git track `file`. Git runs with no system or global configuration.
+ */
+function linkedRepository(root: string, file: string): void {
+  const global = `${root}-gitconfig`;
+  writeFileSync(global, "");
+  const env = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")),
+    ),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: global,
+  };
+  const git = (args: string[]) => {
+    const run = spawnSync("git", args, { cwd: root, env, encoding: "utf8", windowsHide: true });
+    if (run.status !== 0) throw new Error(`git ${args[0] ?? ""} failed: ${run.stderr}`);
+  };
+  const meta = `${root}-git`;
+  git(["init", "-q", `--separate-git-dir=${meta}`, root]);
+  rmSync(join(root, ".git"));
+  symlinkSync(meta, join(root, ".git"), windows ? "junction" : "dir");
+  git(["add", relative(root, file).split(sep).join("/")]);
+}

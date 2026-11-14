@@ -1,10 +1,20 @@
 // Managed targets, rules 3 and 4 (A3 3.12; M4.05): a file another git repository tracks, or one
 // machine.toml lists, is left to its source. Repositories are made by git itself in a temporary
 // folder, so the reader of git's files is checked against git's own layout: index versions 2 and
-// 4, a SHA-256 repository, a linked worktree, and a split index (which counts as tracked).
+// 4, a SHA-256 repository, a linked worktree, a split index (which counts as tracked), metadata in
+// a folder of its own reached through a `.git` file or a link, and a linked folder above the file.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -176,6 +186,59 @@ describe("[A3.3.12.setup.managed] a file another repository tracks, or machine.t
       expect(tracked(skip.file, skip.codex)).toBe(false);
       git(["-c", "index.skipHash=true", "add", ".codex/config.toml"], skip.home);
       expect(tracked(skip.file, skip.codex)).toBe(true);
+    },
+    SLOW,
+  );
+
+  test(
+    "rule 3: the repository git itself would find, through a .git file, linked metadata or a linked folder above the file; any other .git counts as tracked",
+    () => {
+      const link = (target: string, path: string) => {
+        symlinkSync(target, path, process.platform === "win32" ? "junction" : "dir");
+      };
+
+      // The metadata in a folder of its own: `.git` is a file naming it (gitdir:).
+      const sep = userHome("sep");
+      const meta = join(base, "sep-meta");
+      git(["init", "-q", `--separate-git-dir=${meta}`, sep.home], base);
+      expect(lstatSync(join(sep.home, ".git")).isFile()).toBe(true);
+      git(["add", ".codex/config.toml"], sep.home);
+      expect(tracked(sep.file, sep.codex)).toBe(true);
+
+      // The same metadata through a link (a junction on Windows): git reads it, and so does setup.
+      rmSync(join(sep.home, ".git"));
+      link(meta, join(sep.home, ".git"));
+      expect(tracked(sep.file, sep.codex)).toBe(true);
+      git(["rm", "-q", "--cached", ".codex/config.toml"], sep.home);
+      git(["add", ".codex/a.toml"], sep.home);
+      expect(tracked(sep.file, sep.codex)).toBe(false);
+
+      // A `.git` that cannot be read for certain stops the search and counts as tracking the file:
+      // a link whose target is gone, and a `.git` file without a gitdir line.
+      const dangling = userHome("dangling");
+      const gone = join(base, "dangling-meta");
+      mkdirSync(gone);
+      link(gone, join(dangling.home, ".git"));
+      rmSync(gone, { recursive: true });
+      expect(tracked(dangling.file, dangling.codex)).toBe(true);
+      const pointerless = userHome("pointerless");
+      writeFileSync(join(pointerless.home, ".git"), "not a pointer\n");
+      expect(tracked(pointerless.file, pointerless.codex)).toBe(true);
+
+      // A dotfiles repository reached through a linked folder above the home: git, started in the
+      // home, walks up the folders as the OS resolves them, so it finds the repository; so does setup.
+      const dotfiles = join(base, "dotfiles");
+      mkdirSync(join(dotfiles, "config", "Claude"), { recursive: true });
+      writeFileSync(join(dotfiles, "config", "Claude", "claude_desktop_config.json"), "{}");
+      git(["init", "-q"], dotfiles);
+      git(["add", "config/Claude/claude_desktop_config.json"], dotfiles);
+      const linkedHome = join(base, "linked-home");
+      mkdirSync(linkedHome);
+      link(join(dotfiles, "config"), join(linkedHome, ".config"));
+      const desktop = join(linkedHome, ".config", "Claude");
+      expect(tracked(join(desktop, "claude_desktop_config.json"), desktop)).toBe(true);
+      git(["rm", "-q", "--cached", "config/Claude/claude_desktop_config.json"], dotfiles);
+      expect(tracked(join(desktop, "claude_desktop_config.json"), desktop)).toBe(false);
     },
     SLOW,
   );
