@@ -282,6 +282,13 @@ export {
 } from "./write/request.ts";
 export { canonicalJson, isJsonData } from "./write/canonical.ts";
 export {
+  markProjected,
+  PROJECTION_ALL,
+  PROJECTION_BATCH,
+  queueProjection,
+  type ProjectedBatch,
+} from "./write/outbox.ts";
+export {
   FOCUS_MS,
   isLaunchRef,
   LAUNCH_EDGES,

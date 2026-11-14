@@ -568,6 +568,8 @@ export function serve(
         receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,
         launch: ({ handle, launch }) => writer(handle).launch(launch) ?? null,
         openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),
+        projected: ({ handle, batch }) => writer(handle).projected(batch),
+        queueProjection: ({ handle }) => writer(handle).queueProjection(),
         exec: ({ handle, sql }) => {
           connection(handle).exec(sql);
           return null;

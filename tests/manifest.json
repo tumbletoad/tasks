@@ -2690,6 +2690,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.projection.outbox",
+      "title": "The projection's outbox bookkeeping: a reported key is done only through the snapshot it was rendered at, a row changed after it waits from T + 1, a full rebuild queues every task from commit 1, a batch is checked, and under interleaved commits and reports the watermark never covers a commit a task still waits for and never moves back",
+      "source": "A1 3.7, A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-03.e2e.rows",
       "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
       "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",

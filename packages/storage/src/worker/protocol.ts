@@ -32,6 +32,7 @@ import type { Revision } from "../schema.ts";
 import type { ReadOnlyReason } from "../space.ts";
 import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
+import type { ProjectedBatch } from "../write/outbox.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -193,6 +194,10 @@ export interface Calls {
   launch: { args: { handle: number; launch: string }; result: LaunchRecord | null };
   /** A machine's launches that are not final: the execution store's `openWork`. */
   openLaunches: { args: { handle: number; machine: string }; result: LaunchRecord[] };
+  /** The projection rendered a batch (A1 3.13): its outbox rows, and the watermark back. */
+  projected: { args: { handle: number; batch: ProjectedBatch }; result: number };
+  /** Every task queued for the projection: a full rebuild. The tasks queued. */
+  queueProjection: { args: { handle: number }; result: number };
   exec: { args: { handle: number; sql: string }; result: null };
   query: { args: { handle: number; query: Query }; result: QueryResult };
   /** The queries in one transaction: all apply, or none. */

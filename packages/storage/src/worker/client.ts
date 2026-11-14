@@ -55,6 +55,7 @@ import type { ReadOnlyReason } from "../space.ts";
 import { destinationExists, destinationNotCreated, literalPath } from "../sqlite-uri.ts";
 import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
+import type { ProjectedBatch } from "../write/outbox.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -882,6 +883,19 @@ export class SpaceWriterHandle {
   /** Every launch of `machine` that is not final, oldest first: `openWork` (A4 3.16.1). */
   openLaunches(machine: string): Promise<LaunchRecord[]> {
     return this.#queued(() => this.#worker.call("openLaunches", { handle: this.handle, machine }));
+  }
+
+  /**
+   * The projection rendered a batch (A1 3.13 step 5): marks its outbox rows and returns the
+   * watermark (write/outbox.ts). Waits in the writer's queue like a request.
+   */
+  projected(batch: ProjectedBatch): Promise<number> {
+    return this.#queued(() => this.#worker.call("projected", { handle: this.handle, batch }));
+  }
+
+  /** Queues every task for the projection, a full rebuild. Returns the tasks queued. */
+  queueProjection(): Promise<number> {
+    return this.#queued(() => this.#worker.call("queueProjection", { handle: this.handle }));
   }
 
   /** One call to the writer, within the queue limit and the time limit (A1 3.9). */
