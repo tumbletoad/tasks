@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./execution-store": "./src/store.ts",
     "./places": "./src/places.ts",
     "./process": "./src/process.ts",
     "./shim-wire": "./src/shim/wire.ts",

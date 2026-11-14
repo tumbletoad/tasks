@@ -2,6 +2,35 @@
 // database's through a storage worker as the service runs it, and the rules the writer keeps a
 // copy of, compared with A4's own.
 import {
+  APP_TOOLS_STATES,
+  FINAL_RUN_STATES,
+  OPEN_RUN_STATES,
+  OUTCOME_REASONS,
+  RUN_ADAPTERS,
+  RUN_EDGES,
+  RUN_EVIDENCE_FIELDS,
+  RUN_EVIDENCE_ID,
+  RUN_LIMIT_BOUNDS,
+  RUN_PERMISSIONS,
+  RUN_REASONS,
+  RUN_REQUEST_MAX_BYTES,
+  RUN_STATES,
+  TEXT_CAP_BYTES,
+} from "@tasks/contracts/runs";
+import {
+  STORAGE_FINAL_RUN_STATES,
+  STORAGE_OPEN_RUN_STATES,
+  STORAGE_RUN_APP_TOOLS,
+  STORAGE_RUN_EDGES,
+  STORAGE_RUN_EVIDENCE_FIELDS,
+  STORAGE_RUN_EVIDENCE_ID,
+  STORAGE_RUN_LIMIT_BOUNDS,
+  STORAGE_RUN_OUTCOMES,
+  STORAGE_RUN_PERMISSIONS,
+  STORAGE_RUN_REASONS,
+  STORAGE_RUN_REQUEST_MAX_BYTES,
+  STORAGE_RUN_STATES,
+  STORAGE_RUN_TEXT_MAX_BYTES,
   STORAGE_FOCUS_MS,
   STORAGE_LAUNCH_EDGES,
   STORAGE_LAUNCH_EVIDENCE_FIELDS,
@@ -199,5 +228,24 @@ describe("[A4.5.execution-store.contract] the writer's copy of A4's launch rules
       expect(isLaunchRef(bad)).toBe(false);
       expect(storageIsLaunchRef(bad)).toBe(false);
     }
+  });
+});
+
+describe("[A4.5.execution-store.contract] the writer's copy of A4's run rules", () => {
+  test("the states, open and final states, edges, reasons, evidence, adapters, permissions, limits and caps are contracts'", () => {
+    expect([...STORAGE_RUN_STATES]).toEqual([...RUN_STATES]);
+    expect([...STORAGE_OPEN_RUN_STATES]).toEqual([...OPEN_RUN_STATES]);
+    expect([...STORAGE_FINAL_RUN_STATES]).toEqual([...FINAL_RUN_STATES]);
+    expect(STORAGE_RUN_EDGES).toEqual(RUN_EDGES);
+    expect(STORAGE_RUN_REASONS).toEqual(RUN_REASONS);
+    expect(STORAGE_RUN_EVIDENCE_FIELDS).toEqual(RUN_EVIDENCE_FIELDS);
+    expect(STORAGE_RUN_EVIDENCE_ID.source).toBe(RUN_EVIDENCE_ID.source);
+    expect([...STORAGE_OPEN_SETS["runs.adapter"]]).toEqual([...RUN_ADAPTERS]);
+    expect([...STORAGE_RUN_PERMISSIONS]).toEqual([...RUN_PERMISSIONS]);
+    expect(STORAGE_RUN_LIMIT_BOUNDS).toEqual(RUN_LIMIT_BOUNDS);
+    expect([...STORAGE_RUN_OUTCOMES]).toEqual([...OUTCOME_REASONS]);
+    expect([...STORAGE_RUN_APP_TOOLS]).toEqual([...APP_TOOLS_STATES]);
+    expect(STORAGE_RUN_TEXT_MAX_BYTES).toBe(TEXT_CAP_BYTES);
+    expect(STORAGE_RUN_REQUEST_MAX_BYTES).toBe(RUN_REQUEST_MAX_BYTES);
   });
 });
