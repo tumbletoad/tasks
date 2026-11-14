@@ -633,7 +633,10 @@ describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing
       expect(failed, way).toBe(true);
       // The pair stays for the reader's checks, and it is a complete backup that restores.
       const listing = listBackups(dir);
-      expect(listing.backups.map((b) => b.state), way).toEqual(["ok"]);
+      expect(
+        listing.backups.map((b) => b.state),
+        way,
+      ).toEqual(["ok"]);
       const restored = await restoreBackup(
         checked,
         listing.backups[0]?.file ?? "",

@@ -20,8 +20,10 @@
 // - Removal looks at each file again, since the listing may be stale: only the two regular files
 //   of a listed backup are removed, one at a time, never a folder or a link put in their place,
 //   and only while the sidecar still reads as listed and the data still has its size and SHA-256.
-// - A backup dated after `now` (a clock that once ran ahead) is not the last daily backup: it would
-//   hold back every daily backup until the clock caught up.
+// - A backup dated after `now` (a clock that once ran ahead) is kept, and counts for nothing: it is
+//   not the last daily backup (it would hold back every daily backup until the clock caught up),
+//   nor the newest backup, nor the newest of its day or week, nor the newest verified one (it would
+//   take those places, and every backup made since the clock came back would be removed).
 //
 // Local time is the UTC offset the caller passes for `now`, so the result is the same on every
 // machine for the same inputs. Across a daylight-saving change a day boundary moves by the change.
@@ -112,6 +114,8 @@ export interface RetentionPlan {
   keep: string[];
   /** Names of the complete backups to remove. */
   remove: string[];
+  /** Names of the kept backups dated after `now`: they take no part in the rules or the checks. */
+  ahead: string[];
 }
 
 /** Which complete backups of the space `spaceId` to keep and which to remove. */
@@ -121,8 +125,12 @@ export function planRetention(
   options: { spaceId: Id<"sp">; rules?: RetentionRules },
 ): RetentionPlan {
   const rules = options.rules ?? RETENTION;
-  const backups = complete(listing, options.spaceId);
-  const keep = new Set<string>();
+  const all = complete(listing, options.spaceId);
+  // A backup dated after now is kept and counts for nothing: it would take the newest place and
+  // the newest days and weeks, and every backup made since the clock came back would go.
+  const ahead = all.filter((b) => createdAt(b) > clock.now).map((b) => b.name);
+  const backups = all.filter((b) => createdAt(b) <= clock.now);
+  const keep = new Set<string>(ahead);
   const newest = backups[0];
   if (newest !== undefined) keep.add(newest.name);
   const offset = clock.utcOffsetMinutes;
@@ -150,8 +158,9 @@ export function planRetention(
   }
   return {
     spaceId: options.spaceId,
-    keep: backups.filter((b) => keep.has(b.name)).map((b) => b.name),
-    remove: backups.filter((b) => !keep.has(b.name)).map((b) => b.name),
+    keep: all.filter((b) => keep.has(b.name)).map((b) => b.name),
+    remove: all.filter((b) => !keep.has(b.name)).map((b) => b.name),
+    ahead,
   };
 }
 
@@ -263,9 +272,12 @@ export async function applyRetentionWith(
   seams: RetentionSeams,
 ): Promise<RetentionResult> {
   const backups = complete(listing, plan.spaceId);
+  const ahead = new Set(plan.ahead);
   const unverified: string[] = [];
   let verified: string | undefined;
   for (const b of backups) {
+    // Kept whatever happens: the newest verified backup is one dated at or before now.
+    if (ahead.has(b.name)) continue;
     // The sidecar is read again from disk by the verification, and must still name this space.
     if ((await verifyBackup(checked, b, options))?.space_id === plan.spaceId) {
       verified = b.name;
@@ -275,7 +287,9 @@ export async function applyRetentionWith(
   }
   if (verified === undefined) return { removed: [], verified, unverified };
   const removable = new Set(plan.remove);
-  for (const name of [...plan.keep, verified, ...unverified]) removable.delete(name);
+  for (const name of [...plan.keep, ...plan.ahead, verified, ...unverified]) {
+    removable.delete(name);
+  }
   const removed: string[] = [];
   for (const b of backups) {
     if (!removable.has(b.name)) continue;
