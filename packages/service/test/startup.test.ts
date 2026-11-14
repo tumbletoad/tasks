@@ -31,7 +31,7 @@ import { checkedDriver } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
-import { readSpaceSettings } from "../src/hub/space-settings.ts";
+import { readSpaceSettings, recordSeen } from "../src/hub/space-settings.ts";
 import {
   READY_MS,
   readLog,
@@ -365,6 +365,35 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     renameSync(aside, space.folder);
     const third = await start(home, [{ path: space.folder, id }], { maintenance: false });
     expect(third.spaces()).toEqual([
+      expect.objectContaining({ entry: 0, state: "read_only", reason: "stale_restore", id }),
+    ]);
+  }, 180_000);
+
+  test("[A6.5.stale-restore] the judgement holds without space.json, and right after a claim's record, before its lineage is known", async () => {
+    const machine = newId("m");
+    const { home, spaces } = setUp("stalefloor", machine);
+    const space = await fixtureSpace(join(spaces, "work"), machine);
+    const id = space.space.spaceId;
+    const incarnation = space.space.authority.incarnation;
+
+    // This machine saw the folder's incarnation at seq 10; the folder holds seq 0, and its
+    // space.json (rebuilt by a writer's open) is gone.
+    recordSeen(stateOf(home), id, { epoch: 1, incarnation, lastSeq: 10, lineage: [incarnation] });
+    rmSync(join(space.folder, "space.json"));
+    const first = await start(home, [{ path: space.folder, id }], { maintenance: false });
+    expect(first.spaces()).toEqual([
+      expect.objectContaining({ entry: 0, state: "read_only", reason: "stale_restore", id }),
+    ]);
+    await first.stop();
+    removeRuntimeDir(first);
+    running.splice(running.indexOf(first), 1);
+
+    // A claim elsewhere was recorded as the service records it before the space opens again (its
+    // epoch and incarnation only), and nothing more: the folder's lower epoch is enough.
+    recordSeen(stateOf(home), id, { epoch: 2, incarnation: newId("ai") });
+    expect(readSpaceSettings(stateOf(home), id).seen?.lineage).toBeUndefined();
+    const second = await start(home, [{ path: space.folder, id }], { maintenance: false });
+    expect(second.spaces()).toEqual([
       expect.objectContaining({ entry: 0, state: "read_only", reason: "stale_restore", id }),
     ]);
   }, 180_000);

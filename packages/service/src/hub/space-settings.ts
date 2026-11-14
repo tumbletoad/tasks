@@ -47,20 +47,25 @@ export const MAX_SEEN_LINEAGE = 64;
 
 /** What a folder of the space holds, as its reader opened it. */
 export interface FolderState {
+  readonly epoch: number;
   readonly incarnation: Id<"ai">;
   readonly lastSeq: number;
 }
 
 /**
- * Whether a folder of the space is a stale restore (A6 3.5): the incarnation this machine has
- * seen with a lower last_seq, or one of that incarnation's ancestors. A later incarnation, or one
- * this machine never saw in the lineage (a competing branch, M3.08), is not judged here.
+ * Whether a folder of the space, whose authority is this machine, is a stale restore (A6 3.5): the
+ * incarnation this machine has seen with a lower last_seq, an epoch below the one it has seen, or
+ * one of the seen incarnation's ancestors. The epoch is the floor that never fails: it only rises,
+ * it is recorded before anything else of a claim, and every ancestor's epoch is lower, so it holds
+ * when the lineage is not recorded yet (a claim's record before the space opens again) or has
+ * dropped an ancestor (it keeps the newest 64). Another machine's folder, or a later incarnation,
+ * is not judged here (a competing branch, M3.08).
  */
 export function staleAgainst(seen: Seen, folder: FolderState): boolean {
   if (folder.incarnation === seen.incarnation) {
     return seen.lastSeq !== undefined && folder.lastSeq < seen.lastSeq;
   }
-  return (seen.lineage ?? []).includes(folder.incarnation);
+  return folder.epoch < seen.epoch || (seen.lineage ?? []).includes(folder.incarnation);
 }
 
 /** A product build: its version and its build label (hub/build.ts). */

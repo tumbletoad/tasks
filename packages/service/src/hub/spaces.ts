@@ -213,6 +213,16 @@ export const RETRY_MIGRATION = `${CLI_NAME} space open <folder> --retry-migratio
 /** What a failed migration's message adds: when it is tried again, and how to ask for it now. */
 const TRIED_AGAIN = `It is tried again after an update, or now with: ${RETRY_MIGRATION}`;
 
+/** The space ID a folder's space.json names, best effort: a hint, which the database confirms. */
+function manifestId(folder: string): Id<"sp"> | undefined {
+  try {
+    const read = readManifest(folder);
+    return read.state === "present" ? read.safety.space_id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A folder's canonical form, the key of a confirmation that it is excluded from sync (A1 3.2): its
  * real path, in lower case on Windows and macOS, whose file systems ignore case.
@@ -563,7 +573,7 @@ export class SpaceManager {
    * the database holds this space before anything is claimed (A2 3.2.4).
    */
   async #heldBy(folder: string): Promise<Id<"sp">> {
-    const named = this.#settingsOf(folder).spaceId;
+    const named = manifestId(folder);
     if (named !== undefined) return named;
     const worker = await this.#startWorkerBounded();
     try {
@@ -800,18 +810,6 @@ export class SpaceManager {
     return opening;
   }
 
-  /** The machine-local settings of the space at `folder`, by its space.json's ID, best effort. */
-  #settingsOf(folder: string): SpaceSettings & { spaceId?: Id<"sp"> } {
-    try {
-      const read = readManifest(folder);
-      const spaceId = read.state === "present" ? read.safety.space_id : undefined;
-      if (spaceId === undefined) return {};
-      return { spaceId, ...readSpaceSettings(this.#options.settingsDir, spaceId) };
-    } catch {
-      return {};
-    }
-  }
-
   async #open(space: Hosted, retry: boolean): Promise<void> {
     const { log } = this.#options;
     const t0 = performance.now();
@@ -834,7 +832,10 @@ export class SpaceManager {
       this.#unavailable(space, new StorageError("SPACE_NOT_FOUND", ""));
       return;
     }
-    const settings = this.#settingsOf(space.folder);
+    // By the space's registered ID, which its database confirms before anything is written:
+    // space.json can be missing or another space's, and the stale-restore judgement and the
+    // failed-migration record must not depend on a file the writer's open rebuilds.
+    const settings = this.#settingsFor(space.registered);
     space.backupDir = settings.backupDir;
 
     // A1 3.2: the folder and every folder above it, at every open. A network file system is never
@@ -869,19 +870,22 @@ export class SpaceManager {
    */
   async #staleRestore(space: Hosted, settings: SpaceSettings, t0: number): Promise<boolean> {
     const seen = settings.seen;
-    if (seen?.lastSeq === undefined && (seen?.lineage ?? []).length === 0) return false;
+    if (seen === undefined) return false;
     try {
       const worker = space.worker ?? (await this.#startWorkerBounded());
       space.worker = worker;
       if (await this.#stopped(space)) return true;
       const { conn, info } = await bounded(worker.openSpaceReader(space.folder), this.#openMs);
       const stale =
-        seen !== undefined &&
         info.spaceId === space.registered &&
         info.authority.machineId === this.#options.machine.id &&
         // A read-only copy or a refusal is the writer's open's to judge.
         info.readOnlyReasons.every((reason) => reason === "older_revision") &&
-        staleAgainst(seen, { incarnation: info.authority.incarnation, lastSeq: info.lastSeq });
+        staleAgainst(seen, {
+          epoch: info.authority.epoch,
+          incarnation: info.authority.incarnation,
+          lastSeq: info.lastSeq,
+        });
       if (!stale) {
         await conn.close();
         return false;
@@ -1567,8 +1571,7 @@ export class SpaceManager {
     }
     // Read again: the service may have begun to drain while the space closed.
     if (this.#isDraining()) throw new StorageError("STORAGE_MISUSE", "The service is stopping");
-    const settings =
-      space.id === undefined ? this.#settingsOf(space.folder) : this.#settingsFor(space.id);
+    const settings = this.#settingsFor(space.id ?? space.registered);
     let outcome: { spaceId: Id<"sp">; change?: SpaceChange } | undefined;
     try {
       const worker = await this.#startWorkerBounded();
