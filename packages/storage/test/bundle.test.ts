@@ -27,6 +27,7 @@ import { StorageError } from "../src/errors.ts";
 import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
 import { backupSpace } from "../src/backup/backup.ts";
+import { listBackups, verifyBackup } from "../src/backup/list.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { openSpace } from "../src/space.ts";
@@ -704,6 +705,43 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const writer = openSpace(checked, folder, { role: "writer" });
     expect(writer.space.lastSeq).toBe(live.space.lastSeq + 1);
     writer.conn.close();
+  });
+
+  test("a database whose tables, indexes or views are not its revision's is refused before anything writes to it", async () => {
+    const checked = await checkedDriver();
+    const changes = [
+      // A table, an index and a view the schema does not have.
+      "CREATE TABLE notes_copy (id TEXT PRIMARY KEY, body TEXT) STRICT",
+      "CREATE INDEX tasks_by_title ON tasks (title)",
+      "CREATE VIEW open_tasks AS SELECT id FROM tasks",
+    ];
+    for (const sql of changes) {
+      const { folder } = await createFixtureSpace(folders.make());
+      await writeCommits(folder, 1);
+      const conn = await rawWriter(folder);
+      try {
+        conn.exec(sql);
+      } finally {
+        conn.close();
+      }
+      const backup = await backupSpace(checked, folder, { kind: "manual" });
+      const bundle = await exportBundle(checked, folder, { mode: "backup" });
+      const parent = folders.make();
+      await expectCode(
+        () => restoreBackup(checked, backup.file, join(parent, "a")),
+        "BACKUP_INVALID",
+      );
+      await expectCode(
+        () => restoreBackup(checked, bundle.file, join(parent, "b")),
+        "BUNDLE_INVALID",
+      );
+      expect(readdirSync(parent), sql).toEqual([]);
+      // Retention calls it unverified too: verified means what a restore accepts.
+      const [listed] = listBackups(join(folder, "backups")).backups;
+      expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toBe(
+        undefined,
+      );
+    }
   });
 
   test("a trigger the copied database holds runs on none of the restore's writes: the copy stays read-only, the claim stands", async () => {

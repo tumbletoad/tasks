@@ -1,13 +1,14 @@
 // Checking a copy of a space database: a backup's snapshot before it is compressed, and a restored
 // database before it is used (A1 3.18). The copy opens read-only, passes PRAGMA integrity_check, and
-// gives the facts a sidecar records. Nothing here trusts the copy: every value is decoded.
+// gives the facts a sidecar records. Nothing here trusts the copy: every value is decoded. A
+// restore also requires the copy's own schema (hasOwnSchema) before it writes to it.
 import { lstatSync, statSync } from "node:fs";
-import { SINGLE_STEP, type Connection } from "../driver.ts";
+import { MEMORY, SINGLE_STEP, type Connection } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import { fsCall, removeQuietly } from "../files.ts";
 import { openReader } from "../open.ts";
 import { decodeSpaceRow, inRange, type SpaceRow } from "../rows.ts";
-import { APP_ID } from "../schema.ts";
+import { APP_ID, encodeRevision, type SchemaStep } from "../schema.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { checkDatabaseSize, type BundlePolicy } from "./policy.ts";
 
@@ -43,6 +44,82 @@ export interface SnapshotFacts {
   space: SpaceRow;
   /** Rows per table, by table name. */
   counts: Record<string, number>;
+  /** Its tables, indexes and views as SQLite stores them (schemaObjects). */
+  schema: readonly string[];
+}
+
+/** Every table, index and view of the main schema but SQLite's own, by type and name. */
+const SCHEMA_OBJECTS =
+  "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
+  "WHERE type IN ('table', 'index', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name";
+
+/**
+ * The schema objects of the database on `conn`: each table, index and view with the SQL text
+ * SQLite keeps for it, which holds every column, constraint, key and generated value. Triggers are
+ * not among them: a restore drops them (restore.ts).
+ */
+export function schemaObjects(conn: Connection): string[] {
+  return conn
+    .prepare(SCHEMA_OBJECTS)
+    .all<Record<string, unknown>>()
+    .map((row) => JSON.stringify([row["type"], row["name"], row["tbl_name"], row["sql"]]));
+}
+
+const REFERENCES = new WeakMap<readonly SchemaStep[], Map<number, readonly string[]>>();
+
+/**
+ * The schema objects a space has at `userVersion`: what `steps`, from an empty database up to that
+ * revision, create in a private in-memory database, as creating a space and migrating one run
+ * them. Undefined when the steps never reach it. Kept per chain of steps and revision.
+ */
+export function referenceSchema(
+  checked: CheckedDriver,
+  steps: readonly SchemaStep[],
+  userVersion: number,
+): readonly string[] | undefined {
+  const known = REFERENCES.get(steps)?.get(userVersion);
+  if (known !== undefined) return known;
+  const conn = checked.driver.open(MEMORY, { readOnly: false, busyTimeoutMs: 0, create: true });
+  let objects: string[] | undefined;
+  try {
+    let current = 0;
+    for (const step of steps) {
+      if (step.from !== current) break;
+      step.up(conn);
+      current = encodeRevision(step.revision);
+      if (current === userVersion) {
+        objects = schemaObjects(conn);
+        break;
+      }
+    }
+  } finally {
+    conn.close();
+  }
+  if (objects === undefined) return undefined;
+  const byVersion = REFERENCES.get(steps) ?? new Map<number, readonly string[]>();
+  byVersion.set(userVersion, objects);
+  REFERENCES.set(steps, byVersion);
+  return objects;
+}
+
+/**
+ * Whether a restored database has exactly the tables, indexes and views of its revision (A1 3.18
+ * "Restore and import of a bundle", step 3). A table defined otherwise (a foreign key that
+ * cascades into another table, a generated or checked column, an extra table or index) would run
+ * or refuse on Tasks' own writes, the read-only mark and a claim first: a restore never writes to
+ * a database it has not recognised.
+ */
+export function hasOwnSchema(
+  checked: CheckedDriver,
+  facts: SnapshotFacts,
+  steps: readonly SchemaStep[],
+): boolean {
+  const reference = referenceSchema(checked, steps, facts.userVersion);
+  return (
+    reference !== undefined &&
+    reference.length === facts.schema.length &&
+    reference.every((object, i) => object === facts.schema[i])
+  );
 }
 
 /** A table name Tasks can quote safely: the names its schema steps create. */
@@ -83,7 +160,7 @@ export function readSnapshotFacts(conn: Connection): SnapshotFacts {
       throw new StorageError("SPACE_VERSION_UNKNOWN", "The copy has no schema revision");
     }
     const space = decodeSpaceRow(conn.prepare("SELECT * FROM space WHERE one = 1").get());
-    return { userVersion, space, counts: tableCounts(conn) };
+    return { userVersion, space, counts: tableCounts(conn), schema: schemaObjects(conn) };
   });
 }
 

@@ -15,6 +15,8 @@
 //    space row, and the space ID, epoch, incarnation, last_seq and rows per table, against the
 //    sidecar. A revision newer than this build, or one it never had, is refused, and the row's
 //    format must be its revision's.
+// 6. Its tables, indexes and views are exactly those of its revision (snapshot.ts hasOwnSchema):
+//    a restore writes to it next, and nothing a foreign definition does may run on that write.
 import { lstatSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
@@ -41,7 +43,7 @@ import {
   sidecarMatchesName,
   type BackupSidecar,
 } from "./sidecar.ts";
-import { checkSnapshot, type SnapshotFacts } from "./snapshot.ts";
+import { checkSnapshot, hasOwnSchema, type SnapshotFacts } from "./snapshot.ts";
 
 const invalid = (why: string): StorageError => new StorageError("BACKUP_INVALID", why);
 
@@ -153,6 +155,9 @@ export async function unpackVerified(
   const { step } = position;
   if (space.format.major !== step.format.major || space.format.minor !== step.format.minor) {
     throw new StorageError("SPACE_INVALID", "The space format does not match its schema revision");
+  }
+  if (!hasOwnSchema(checked, facts, options.steps ?? SCHEMA_STEPS)) {
+    throw invalid("The restored database's schema is not its revision's");
   }
   return { space, revision: step.revision, step, sidecar };
 }

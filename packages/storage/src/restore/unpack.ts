@@ -10,7 +10,8 @@
 // every file against export.json while it streams. `space.db` and the attachments are unpacked,
 // everything else only verified. Then the database must pass integrity_check and agree with
 // export.json (space, epoch, incarnation, last commit, revision, rows per table), space.json must
-// name the same space, the revision must be one this build knows and not newer, and every live
+// name the same space, the revision must be one this build knows and not newer, its tables,
+// indexes and views must be exactly its revision's (snapshot.ts hasOwnSchema), and every live
 // attachment row's blob must be in the bundle.
 import { join } from "node:path";
 import { StorageError } from "../errors.ts";
@@ -24,7 +25,7 @@ import { removeQuietly } from "../files.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "../backup/policy.ts";
 import type { BackupSidecar } from "../backup/sidecar.ts";
-import { checkSnapshot, type SnapshotFacts } from "../backup/snapshot.ts";
+import { checkSnapshot, hasOwnSchema, type SnapshotFacts } from "../backup/snapshot.ts";
 import { unpackVerified } from "../backup/verify.ts";
 import type { ExportManifest } from "../bundle/export-file.ts";
 import { bundleInvalid, readBundle } from "../bundle/read.ts";
@@ -161,6 +162,9 @@ export async function unpackBundle(
   const { step } = position;
   if (space.format.major !== step.format.major || space.format.minor !== step.format.minor) {
     throw new StorageError("SPACE_INVALID", "The space format does not match its schema revision");
+  }
+  if (!hasOwnSchema(checked, facts, seams.steps ?? SCHEMA_STEPS)) {
+    throw bundleInvalid("its database's schema is not its revision's");
   }
   checkAttachments(checked, db, manifest, options.busyTimeoutMs);
   writeManifest(staging, manifestFor(space, step, options.appVersion));
