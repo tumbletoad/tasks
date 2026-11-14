@@ -433,6 +433,34 @@ describe("[A1.5.bundle.export-restore] export bundles restore as read-only copie
     expect(lines.find((l) => l.table === "space")?.row["space_id"]).toBe(bundle.manifest.space_id);
   });
 
+  test("the exporter refuses what a restore would refuse, before it writes; a compressible bundle passes", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const conn = await rawWriter(folder);
+    try {
+      conn.prepare("UPDATE tasks SET context = replace(hex(zeroblob(32768)), '00', 'ab')").run();
+    } finally {
+      conn.close();
+    }
+    for (const policy of [
+      policyWith({ maxDatabaseBytes: 16 * 1024 }),
+      policyWith({ maxTotalBytes: 16 * 1024 }),
+      policyWith({ maxEntries: 2 }),
+    ]) {
+      await expectCode(
+        () => exportBundleWith(checked, folder, { mode: "backup" }, { policy }),
+        "BUNDLE_LIMIT_EXCEEDED",
+      );
+      expect(readdirSync(join(folder, "exports"))).toEqual([]);
+    }
+    // Text-heavy data compresses far beyond a "bomb" ratio: no rule refuses it (A1 3.18).
+    const bundle = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
+    const expanded = Object.values(bundle.manifest.files).reduce((sum, f) => sum + f.size, 0);
+    expect(expanded / bundle.size).toBeGreaterThan(20);
+    await restoreBackup(checked, bundle.file, join(folders.make(), "mira"));
+  });
+
   test("a bundle whose database or facts were changed after export is refused", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
