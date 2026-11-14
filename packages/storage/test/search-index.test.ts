@@ -172,6 +172,18 @@ describe("[A1.5.search.index] the search tables are written in the commit", () =
     expectRebuildEqual(fx);
   });
 
+  test("a move reaches the task's learnings, which show its project", async () => {
+    const task = created(
+      submit(fx, [{ kind: "task.create", title: "Move with a learning", project: "portal" }]),
+    );
+    const human = fx.human.principal_id;
+    const learning = await directly(fx, (conn) => addLearning(conn, task, "Moved once.", human));
+    expect(storedDocuments(fx.reader).docs.get(learning)?.extra).toBe("Portal");
+    expect(submit(fx, [{ kind: "task.move", task, area: "lumen" }]).status).toBe("applied");
+    expect(storedDocuments(fx.reader).docs.get(learning)?.extra).toBe("");
+    expectRebuildEqual(fx);
+  });
+
   test("a space without the search tables keeps no index and writes as before", () => {
     expect(hasSearchTables(plain.reader)).toBe(false);
     expect(submit(plain, [{ kind: "task.create", title: "No index here" }]).status).toBe("applied");

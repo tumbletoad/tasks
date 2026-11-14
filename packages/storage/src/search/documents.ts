@@ -392,9 +392,13 @@ function putDocument(
   });
 }
 
-/** The task fields a task's own document shows, and those its children's documents show too. */
-const TASK_DOC_FIELDS = new Set(["summary", "context", "wrap", "grouping"]);
-const TASK_WIDE_FIELDS = new Set(["title", "lifecycle", "deleted"]);
+/**
+ * The task fields only a task's own document shows, and those its children's documents show too:
+ * every child shows the task's title and lifecycle and leaves with its tombstone, and a learning
+ * shows the task's project title (LEARNING_DOC), so a move reaches the learnings.
+ */
+const TASK_DOC_FIELDS = new Set(["summary", "context", "wrap"]);
+const TASK_WIDE_FIELDS = new Set(["title", "lifecycle", "deleted", "grouping"]);
 
 const ENTRY_KINDS: Readonly<Record<string, "note" | "log" | "learning" | undefined>> = {
   notes: "note",
