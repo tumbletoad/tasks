@@ -474,6 +474,12 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2',
   prefix = '2 3'
 );
+
+-- What a change to an existing source, area or project reads to find the tasks that show it
+-- (task_labels_label serves labels since 0.2).
+CREATE INDEX task_sources_source ON task_sources(source_id);
+CREATE INDEX tasks_area ON tasks(area_id);
+CREATE INDEX tasks_project ON tasks(project_id);
 ```
 
 | Document | `title` | `body` | `extra` |
@@ -486,7 +492,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 **What it guarantees.**
 - Once a space holds the tables (`hasSearchTables`, read when the writer attaches), every commit writes the documents its change rows reach, inside its own transaction (`indexChanges`). One function derives a document from the current state for both the commit and the rebuild, and a document whose content did not change keeps its row and its `seq`. So after any history the index equals a fresh rebuild, document numbers and seqs aside, and every FTS row has its `search_docs` row (`expectedDocuments`, `storedDocuments`).
 - A document exists for every live row and only for it: a tombstoned task has none, and neither have its notes, log entries and learnings, nor any deleted row. `lifecycle` is the owning task's (null for areas and projects) and `audience` the note's. A restore re-adds the documents.
-- What a change reaches: a task's title, lifecycle, tombstone or group (area and project) reaches its children's documents as well as its own, since a learning shows the task's project; its summary, context and outcome only its own; a source or a label every task that shows it; an area or a project its own document and its tasks' (a project's learnings too). Places, launches, preferences, proposals and exchanges hold no search text.
+- What a change reaches: a task's title, lifecycle, tombstone or group (area and project) reaches its children's documents as well as its own, since a learning shows the task's project; its summary, context and outcome only its own; a source or a label every task that shows it; an area or a project its own document and its tasks' (a project's learnings too). A new source, label, area or project reaches no other task, because the links and tasks its commit adds have change rows of their own, so a commit that creates one reads no other task; a change to an existing one finds its tasks through the indexes above. Places, launches, preferences, proposals and exchanges hold no search text.
 - The FTS table stores its own copy of the text, so snippets and highlights work and deletes need no old values, unlike external-content tables. A rewritten document keeps its number, so `doc` stays its FTS rowid.
 - Agent queries join `search_docs` with `audience = 'all'`, so "only me" notes (D14) are excluded from agent search, agent reads and the projection with no migration.
 - `rebuildSearchIndex` empties and refills both tables in the caller's write transaction, every document with the space's `last_seq`.

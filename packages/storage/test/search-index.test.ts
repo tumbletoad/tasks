@@ -184,6 +184,43 @@ describe("[A1.5.search.index] the search tables are written in the commit", () =
     expectRebuildEqual(fx);
   });
 
+  test("a new source, label, area or project reads no other task: its links bring their own changes", async () => {
+    const task = created(submit(fx, [{ kind: "task.create", title: "Fan-out probe" }]));
+    const read: string[] = [];
+    await directly(fx, (conn) => {
+      // The connection, recording each statement it prepares.
+      const spy = new Proxy(conn, {
+        get(target, prop) {
+          if (prop === "prepare") {
+            return (sql: string) => {
+              read.push(sql);
+              return target.prepare(sql);
+            };
+          }
+          const value: unknown = Reflect.get(target, prop);
+          return typeof value === "function" ? (value as () => unknown).bind(target) : value;
+        },
+      });
+      const create = (entity: string, entityId: string, taskId: string | null) => ({
+        entity,
+        entityId,
+        taskId,
+        action: "create" as const,
+        field: null,
+      });
+      indexChanges(spy, lastSeq(conn), [
+        create("sources", "s_00000000000000000000000000", task),
+        create("labels", "lb_00000000000000000000000000", null),
+        create("areas", "a_00000000000000000000000000", null),
+        create("projects", "p_00000000000000000000000000", null),
+      ]);
+    });
+    expect(
+      read.filter((sql) => /source_id = |label_id = |area_id = |project_id = /.test(sql)),
+    ).toEqual([]);
+    expectRebuildEqual(fx);
+  });
+
   test("a space without the search tables keeps no index and writes as before", () => {
     expect(hasSearchTables(plain.reader)).toBe(false);
     expect(submit(plain, [{ kind: "task.create", title: "No index here" }]).status).toBe("applied");

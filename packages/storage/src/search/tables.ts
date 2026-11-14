@@ -22,6 +22,11 @@ export const SEARCH_TABLE_STATEMENTS: readonly string[] = [
   "CREATE INDEX search_docs_task ON search_docs(task_id)",
   "CREATE VIRTUAL TABLE search_fts USING fts5(title, body, extra, " +
     "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
+  // A change to an existing source, area or project re-indexes the tasks that show it, inside the
+  // commit: these find them without a scan (labels have `task_labels_label` since 0.2).
+  "CREATE INDEX task_sources_source ON task_sources(source_id)",
+  "CREATE INDEX tasks_area ON tasks(area_id)",
+  "CREATE INDEX tasks_project ON tasks(project_id)",
 ];
 
 /** The document kinds of `search_docs.kind`. */

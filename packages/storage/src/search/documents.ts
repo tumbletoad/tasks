@@ -440,20 +440,23 @@ export function indexChanges(conn: Connection, seq: number, changes: readonly In
       case "task_labels":
         mark(change.taskId, false);
         break;
+      // A new source, label, area or project is shown by no task yet: the links and tasks its commit
+      // adds have change rows of their own, so only a change to an existing one reads its tasks.
       case "sources":
-        markAll(SQL.tasksOfSource, change.entityId, false);
+        if (change.action === "create") mark(change.taskId, false);
+        else markAll(SQL.tasksOfSource, change.entityId, false);
         break;
       case "labels":
-        markAll(SQL.tasksOfLabel, change.entityId, false);
+        if (change.action !== "create") markAll(SQL.tasksOfLabel, change.entityId, false);
         break;
       case "areas":
         others.set(change.entityId, "area");
-        markAll(SQL.tasksOfArea, change.entityId, false);
+        if (change.action !== "create") markAll(SQL.tasksOfArea, change.entityId, false);
         break;
       case "projects":
         // A learning shows its task's project title.
         others.set(change.entityId, "project");
-        markAll(SQL.tasksOfProject, change.entityId, true);
+        if (change.action !== "create") markAll(SQL.tasksOfProject, change.entityId, true);
         break;
       default:
         // Places, launches, machines, preferences, proposals and exchanges hold no search text.
