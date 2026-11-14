@@ -28,6 +28,7 @@ import {
   parseSessionEnvironment,
   parseSnapshot,
   registryEnvironment,
+  REGISTRY_READS,
   REGISTRY_SCRIPT,
   RESOLVING,
   SCRUB_NAMES,
@@ -375,6 +376,19 @@ describe("[A4.5.environment.layers] the session layer, the snapshot's parse and 
     // A cmdlet's name is Verb-Noun; the reader is .NET calls and PowerShell's own statements.
     expect(REGISTRY_SCRIPT).not.toMatch(/\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/);
     expect(REGISTRY_SCRIPT).not.toMatch(/\|/);
+  });
+
+  test("the registry reader reads no .NET property but through its accessor, and a key only through the shared reads", () => {
+    // PowerShell 5.1 turns a getter's exception into $null: type literals aside, every `.Name` is
+    // a call. `OpenSubKey` gives null for a failed open too, so only `sk`/`key` call it.
+    const code = REGISTRY_SCRIPT.replace(/\[[A-Za-z][\w.]*(?:\[\])?\]/g, "");
+    expect(code).not.toMatch(/[\w)\]]\.[A-Za-z_]\w*(?![\w(])/);
+    expect(REGISTRY_SCRIPT.startsWith(`$ErrorActionPreference='Stop';${REGISTRY_READS};`)).toBe(
+      true,
+    );
+    expect(REGISTRY_SCRIPT.split("OpenSubKey").length).toBe(
+      REGISTRY_READS.split("OpenSubKey").length,
+    );
   });
 });
 

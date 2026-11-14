@@ -9,6 +9,7 @@
 import { randomBytes } from "node:crypto";
 import { envVar } from "@tasks/brand";
 import { TERMINAL_ENV } from "../shim/wire.ts";
+import { base64Text, REGISTRY_READS } from "../windows-reads.ts";
 
 type Env = Record<string, string>;
 
@@ -334,39 +335,28 @@ export function registryEnvironment(
  * on its module path, and in the reader's minimal environment that search took 12 s on a machine
  * with a few hundred modules installed (GitHub's Windows runner), against 0.13 s for the start
  * itself. Past the reader's deadline every launch fell back to the service's environment.
+ *
+ * A read that fails ends the script without `end` (`Stop`), so the claim falls back to the service's
+ * environment, never a partial one: a key is absent only when its parent does not list it, and a
+ * listed value that reads as nothing throws (windows-reads.ts). A value of another kind than a
+ * string is no environment variable and is skipped.
  */
 export const REGISTRY_SCRIPT =
   "$ErrorActionPreference='Stop';" +
+  `${REGISTRY_READS};` +
   "$e=[Text.Encoding]::UTF8;$o=[Text.StringBuilder]::new();" +
   "foreach($pair in @(@('system',[Microsoft.Win32.Registry]::LocalMachine," +
   "'SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment')," +
   "@('user',[Microsoft.Win32.Registry]::CurrentUser,'Environment'))){" +
-  "$k=$pair[1].OpenSubKey($pair[2]);" +
-  "if($k -ne $null){foreach($n in $k.GetValueNames()){" +
+  "$k=key $pair[1] $pair[2];" +
+  "if($null -ne $k){foreach($n in $k.GetValueNames()){" +
   "$kind=$k.GetValueKind($n).ToString();" +
   "if($kind -eq 'String' -or $kind -eq 'ExpandString'){" +
-  "$v=[string]$k.GetValue($n,$null,'DoNotExpandEnvironmentNames');" +
+  "$v=$k.GetValue($n,$null,'DoNotExpandEnvironmentNames');if($null -eq $v){throw 'value'};" +
   "[void]$o.Append($pair[0]+' '+$kind+' '+[Convert]::ToBase64String($e.GetBytes($n))+' '+" +
-  "[Convert]::ToBase64String($e.GetBytes($v))+[char]10)}}}};" +
+  "[Convert]::ToBase64String($e.GetBytes([string]$v))+[char]10)}}}};" +
   "[void]$o.Append('end');" +
   "[Console]::Out.Write($o.ToString())";
-
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-
-/**
- * A base64 field of a helper's line: its UTF-8 text, or undefined when it is not exactly that. A
- * leading U+FEFF is the field's own character, not a byte order mark (`ignoreBOM`), so it is kept.
- */
-export function base64Text(field: string): string | undefined {
-  if (!BASE64.test(field)) return undefined;
-  try {
-    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-      Buffer.from(field, "base64"),
-    );
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * The reader's output, checked: both keys' values, or undefined when it is not exactly that (a

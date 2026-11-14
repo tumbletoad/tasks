@@ -499,6 +499,54 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
     expect(whole.verdict).toBe("local");
   });
 
+  test("a folder on a drive the Windows facts do not list gets one fresh run, then is unchecked if it is still not listed", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    // The folder's real path is on Q:, a drive the kept answer may not list yet.
+    const onQ = (p: string): string | undefined =>
+      resolve(p) === space ? "Q:\\Tasks\\mira" : undefined;
+    const q = { root: "Q:\\", type: "Fixed", label: "", format: "NTFS" };
+    const judge = async (answers: (typeof NO_WINDOWS)[]) => {
+      const asked: boolean[] = [];
+      const host = {
+        ...fixtureHost(root, { platform: "win32", realpath: onQ }),
+        windowsFacts: (fresh?: boolean) => {
+          asked.push(fresh === true);
+          return Promise.resolve(answers.shift());
+        },
+      };
+      const check = await checkFolder(space, host);
+      return {
+        verdict: check.verdict,
+        unchecked: check.signals.some((s) => s.rule === "unchecked"),
+        asked,
+      };
+    };
+    // Listed by the kept answer: judged at once.
+    expect(await judge([{ ...NO_WINDOWS, drives: [q] }])).toEqual({
+      verdict: "local",
+      unchecked: false,
+      asked: [false],
+    });
+    // Listed only by the fresh run: judged by it.
+    expect(await judge([NO_WINDOWS, { ...NO_WINDOWS, drives: [q] }])).toEqual({
+      verdict: "local",
+      unchecked: false,
+      asked: [false, true],
+    });
+    // Labelled Google Drive in the fresh run: synced.
+    const labelled = { ...q, format: "FAT32", label: "Google Drive" };
+    expect((await judge([NO_WINDOWS, { ...NO_WINDOWS, drives: [labelled] }])).verdict).toBe(
+      "synced",
+    );
+    // Still not listed: its type and label were not seen, so unchecked, never local.
+    expect(await judge([NO_WINDOWS, NO_WINDOWS])).toEqual({
+      verdict: "synced",
+      unchecked: true,
+      asked: [false, true],
+    });
+  });
+
   test("the fixture host never looks outside its tree", async () => {
     const root = tree();
     const host = fixtureHost(root);

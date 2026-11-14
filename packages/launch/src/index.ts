@@ -25,6 +25,7 @@ export * from "./process.ts";
 export * from "./shim/index.ts";
 export * from "./terminals/index.ts";
 export * from "./environment/index.ts";
+export * from "./windows-reads.ts";
 export * from "./t3-binding.ts";
 export * from "./t3-cli.ts";
 export * from "./t3-client.ts";

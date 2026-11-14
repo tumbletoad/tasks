@@ -16,6 +16,7 @@ import { spawn } from "node:child_process";
 import { lstat, open, readdir, realpath, stat, statfs } from "node:fs/promises";
 import os from "node:os";
 import { win32 } from "node:path";
+import { base64Text, isBase64, REGISTRY_READS } from "@tasks/launch";
 import { system32 } from "./identity.ts";
 import type { SyncHost, WindowsSyncFacts } from "./sync-folders.ts";
 
@@ -23,18 +24,22 @@ const FACTS_TTL_MS = 60_000;
 const RUN_TIMEOUT_MS = 10_000;
 const OUTPUT_MAX_BYTES = 4 * 1024 * 1024;
 
+/** The strings a section accepts for a path: REG_SZ, and REG_EXPAND_SZ expanded. */
+const TEXT = "@('String','ExpandString')";
+
 /**
- * The script's sections, one statement each, each reading one kind of fact. A key or a value that
- * is not there is no fact (`OpenSubKey` and `GetValue` give null), but a read that fails throws,
- * and so does a value of another kind than the section knows.
+ * The script's sections, one statement each, each reading one kind of fact through the reads of
+ * @tasks/launch's windows-reads.ts: a key or a value that is not there is no fact, but a read that
+ * fails throws, and so does a value of another kind than the section knows. Each .NET property is
+ * read through its accessor method, since PowerShell 5.1 turns a getter's exception into $null.
  */
 const SECTIONS = [
   // A network drive's label and format are not read: IsReady on a disconnected one waits for the
   // network's time-out, and the label that counts (Google Drive's) is a local drive's.
-  "foreach($x in [IO.DriveInfo]::GetDrives()){$f='';$l='';if($x.DriveType -ne 'Network' -and $x.IsReady){$f=$x.DriveFormat;$l=$x.VolumeLabel};[void]$o.Append('drive '+(b $x.Name)+' '+(b $x.DriveType.ToString())+' '+(b $f)+' '+(b $l)+[char]10)}",
-  "$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\\Microsoft\\OneDrive\\Accounts');if($k){foreach($n in $k.GetSubKeyNames()){$s=$k.OpenSubKey($n);if($s){$u=[string]$s.GetValue('UserFolder');if($u){[void]$o.Append('onedrive '+(b $u)+[char]10)}}}}",
-  "$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;if(-not $sid){throw 'sid'};$k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SyncRootManager');if($k){foreach($n in $k.GetSubKeyNames()){$s=$k.OpenSubKey($n+'\\UserSyncRoots');if($s){$u=[string]$s.GetValue($sid);if($u){[void]$o.Append('root '+(b $n)+' '+(b $u)+[char]10)}}}}",
-  "$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\\Google\\DriveFS\\Share');if($k){$v=$k.GetValue('SyncTargets');if($v -ne $null){if($v -isnot [byte[]]){throw 'SyncTargets'};if($v.Length -gt 0){[void]$o.Append('drivefs '+[Convert]::ToBase64String($v)+[char]10)}}}",
+  "foreach($x in [IO.DriveInfo]::GetDrives()){$t=$x.get_DriveType().ToString();$f='';$l='';if($t -ne 'Network' -and $x.get_IsReady()){$f=$x.get_DriveFormat();$l=$x.get_VolumeLabel()};[void]$o.Append('drive '+(b $x.get_Name())+' '+(b $t)+' '+(b $f)+' '+(b $l)+[char]10)}",
+  `$k=key ([Microsoft.Win32.Registry]::CurrentUser) 'Software\\Microsoft\\OneDrive\\Accounts';if($k){foreach($n in $k.GetSubKeyNames()){$u=val (sk $k $n) 'UserFolder' ${TEXT};if($u){[void]$o.Append('onedrive '+(b $u)+[char]10)}}}`,
+  `$sid=[Security.Principal.WindowsIdentity]::GetCurrent().get_User().get_Value();if(-not $sid){throw 'sid'};$k=key ([Microsoft.Win32.Registry]::LocalMachine) 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SyncRootManager';if($k){foreach($n in $k.GetSubKeyNames()){$r=sk (sk $k $n) 'UserSyncRoots';if($r){$u=val $r $sid ${TEXT};if($u){[void]$o.Append('root '+(b $n)+' '+(b $u)+[char]10)}}}}`,
+  "$k=key ([Microsoft.Win32.Registry]::CurrentUser) 'Software\\Google\\DriveFS\\Share';if($k){$v=val $k 'SyncTargets' @('Binary');if($null -ne $v -and $v.get_Length() -gt 0){[void]$o.Append('drivefs '+[Convert]::ToBase64String($v)+[char]10)}}",
 ];
 
 /**
@@ -57,6 +62,7 @@ export const WINDOWS_SCRIPT = [
   "$ErrorActionPreference='Stop'",
   "$e=[Text.Encoding]::UTF8;$o=[Text.StringBuilder]::new();$done=0",
   "function b($s){[Convert]::ToBase64String($e.GetBytes([string]$s))}",
+  REGISTRY_READS,
   ...SECTIONS.map((section) => `try{${section};$done+=1}catch{}`),
   `if($done -eq ${String(SECTIONS.length)}){[void]$o.Append('end')}`,
   "[Console]::Out.Write($o.ToString())",
@@ -87,7 +93,7 @@ export function parseWindowsFacts(output: string): WindowsSyncFacts | undefined 
     if (kind === "drivefs") {
       // Kept as base64: readDriveFs decodes the bytes, which are no text.
       const [value = ""] = fields;
-      if (!BASE64.test(value)) return undefined;
+      if (!isBase64(value)) return undefined;
       facts.driveFsTargets = value;
       continue;
     }
@@ -100,23 +106,6 @@ export function parseWindowsFacts(output: string): WindowsSyncFacts | undefined 
     } else if (a !== "" && b !== "") facts.syncRoots.push({ id: a, path: b });
   }
   return facts;
-}
-
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-
-/**
- * A base64 field's UTF-8 text, or undefined when it is not exactly that. A leading U+FEFF is the
- * field's own character, not a byte order mark (`ignoreBOM`), so it is kept.
- */
-function base64Text(field: string): string | undefined {
-  if (!BASE64.test(field)) return undefined;
-  try {
-    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-      Buffer.from(field, "base64"),
-    );
-  } catch {
-    return undefined;
-  }
 }
 
 /** Runs `file` with `args`, `input` on stdin, within the bound; its stdout, or undefined. */
@@ -196,7 +185,7 @@ export interface RealSyncHostOptions {
   /** The account's home; default: the OS account's (A2 3.2.2 rule 1). */
   readonly home?: string;
   /** Windows' facts; default: windowsFactsOnce(). Tests and the test entry pass their own. */
-  readonly windowsFacts?: () => Promise<WindowsSyncFacts | undefined>;
+  readonly windowsFacts?: (fresh?: boolean) => Promise<WindowsSyncFacts | undefined>;
 }
 
 /**
@@ -226,15 +215,18 @@ export function readWindowsFacts(
   );
 }
 
-/** `read` (the PowerShell run), at most once a minute per host while it answers. */
+/**
+ * `read` (the PowerShell run), at most once a minute per host while it answers, unless a check asks
+ * for a `fresh` run (a drive the kept answer does not list).
+ */
 export function windowsFactsOnce(
   read: () => Promise<WindowsSyncFacts | undefined> = readWindowsFacts,
   clock: () => number = Date.now,
-): () => Promise<WindowsSyncFacts | undefined> {
+): (fresh?: boolean) => Promise<WindowsSyncFacts | undefined> {
   let cached: { at: number; facts: Promise<WindowsSyncFacts | undefined> } | undefined;
-  return () => {
+  return (fresh = false) => {
     const now = clock();
-    if (cached !== undefined && now - cached.at < FACTS_TTL_MS) return cached.facts;
+    if (!fresh && cached !== undefined && now - cached.at < FACTS_TTL_MS) return cached.facts;
     const facts = read();
     const entry = { at: now, facts };
     cached = entry;

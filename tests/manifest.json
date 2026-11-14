@@ -539,7 +539,7 @@
     },
     {
       "id": "A1.5.sync.windows-facts",
-      "title": "The Windows facts run calls .NET only, checks that start together share one run, an answer is kept for a minute and a run that gave no facts or rejected is not kept; on Windows the real script answers through the real Windows PowerShell, and a section of it that fails gives no facts",
+      "title": "The Windows facts run calls .NET only and reads properties through their accessors, checks that start together share one run, an answer is kept for a minute unless a check asks for a fresh one, and a run that gave no facts or rejected is not kept; on Windows the real script answers through the real Windows PowerShell, a section of it that fails gives no facts, and the shared registry reads take absence only from a listing",
       "source": "A1 3.2, A1 5",
       "owner": "M3",
       "kind": "ci",
