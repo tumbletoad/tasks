@@ -149,4 +149,46 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
     },
     LONG,
   );
+
+  test(
+    "an agent's log entry keeps the user's new task; receipt.get reads both outcomes",
+    async () => {
+      const task = await add("Fixture task an agent logs on");
+      await call(
+        "entry.add",
+        { task, kind: "progress", text: "Fixture progress.", request_id: rid() },
+        SCRIPT,
+      );
+      const refused = rid();
+      expect(await refusal("history.undo", { request_id: refused })).toMatchObject({
+        code: "conflict",
+        data: {
+          cause: "UNDO_CONFLICT",
+          conflicts: [{ task, entity: "log_entries", field: "deleted", value: null, by: "script" }],
+        },
+      });
+      expect(await call("receipt.get", { request: refused })).toMatchObject({
+        found: true,
+        status: "conflict",
+        conflicts: [{ entity: "log_entries", ref: task, field: "deleted" }],
+        error: { cause: "UNDO_CONFLICT" },
+      });
+      // Keep it: a partial undo changes nothing here, and the change leaves the stack.
+      const kept = rid();
+      const partial = await call("history.undo", { partial: true, request_id: kept });
+      expect(partial).toMatchObject({
+        result: "partial",
+        tasks: [],
+        task_count: 0,
+        unresolved: [{ entity: "log_entries", task, field: "deleted", by: "script" }],
+      });
+      expect(await call("receipt.get", { request: kept })).toMatchObject({
+        found: true,
+        status: "applied",
+        results: [{ i: 0, status: "updated", id: partial["commit"] }],
+      });
+      expect((await show(task))["ref"]).toBe(task);
+    },
+    LONG,
+  );
 });
