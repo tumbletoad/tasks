@@ -2474,6 +2474,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.24.web.build-paths",
+      "title": "The built page holds no absolute path of the build machine (the repository, the home folder, the output folder, in any spelling) and no development JSX, with NODE_ENV test, development or unset; the build gives the caller's NODE_ENV back, and builds that overlap in one process run one at a time",
+      "source": "A5 3.24",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.stored-token",
       "title": "A value read back from localStorage is used only when it has a token's exact shape; markup, JSON, wrong lengths, other types and blocked storage read as signed out, are removed and never throw",
       "source": "A5 3.26, A2 3.8.4, A2 3.8.6, A7 3.9 M2.13",
@@ -2708,7 +2716,7 @@
     {
       "id": "A2.3.12.6.update.verify",
       "title": "tasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
-      "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.8 M6.12",
+      "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2716,7 +2724,7 @@
     {
       "id": "A2.3.12.6.update.switch",
       "title": "The update self-tests the candidate before current changes, writes the journal before each step that needs it, switches current, swaps changed Windows launchers one at a time, records install.json, restarts the service and waits for the new version; both versions stay; a failed self-test changes nothing; a service that does not come back is rolled back; --rollback goes to the previous version; a person's data is byte-identical through an update and a rollback",
-      "source": "A2 3.12.6, A2 3.2.3, SL-02, SL-08, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.2.3, SL-02, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2724,7 +2732,7 @@
     {
       "id": "A2.3.12.6.update.repair",
       "title": "A repair finishes or rolls back every state a cut-off update leaves (by what current names and whether the new version is intact), brings each Windows launcher to its side from an aside copy or a version folder, removes the named staging folder and the journal, is finished by the next repair when cut off at any of its own steps, keeps current's version for an unreadable journal, and runs before an install's finish switches",
-      "source": "A2 3.12.6, SL-08, A7 3.8 M6.12",
+      "source": "A2 3.12.6, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2732,7 +2740,7 @@
     {
       "id": "A2.3.12.6.update.lock",
       "title": "A second update waits while update.lock is held, changing nothing, goes on once it is released, and gives up after its bound with exit 4",
-      "source": "A2 3.12.6, A2 3.2.3, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.2.3, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2740,7 +2748,7 @@
     {
       "id": "A2.3.12.6.update.kill",
       "title": "With real builds in a temporary TASKS_HOME, an updater child killed at every journal step, or the service killed there while the updater goes on, ends on the complete old or new version after the next start through the stable command; a repair killed at each of its steps is finished by the next start; a running service finishes an update whose updater died; a session's bridge keeps running through an update and answers after it",
-      "source": "A2 3.12.6, A2 3.11, SL-02, SL-08, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.11, SL-02, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2748,7 +2756,7 @@
     {
       "id": "A2.3.12.6.update.installed",
       "title": "tasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
-      "source": "A2 3.12.6, A2 3.13, A7 3.8 M6.12",
+      "source": "A2 3.12.6, A2 3.13, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
