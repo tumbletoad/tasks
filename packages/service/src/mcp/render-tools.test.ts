@@ -1,7 +1,7 @@
 // The texts of the tools M4.01 lists (A3 3.4.3, 3.4.5, 3.4.9 to 3.4.12, 3.9.4, 3.10): A3's example
 // results read as A3 shows them, every name a user or an agent can edit stays inside the data
 // block, and the longest results stay within their budgets and say what was cut.
-import { findEntry, resultTokens, type AnyEntry } from "@tasks/contracts";
+import { findEntry, resultTokens, TaskAddResult, type AnyEntry } from "@tasks/contracts";
 import { describe, expect, test } from "vitest";
 import { renderError, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";
@@ -55,15 +55,15 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     expect(gone.outside).toEqual([`16 of 17 · scope active · as_of ${AS_OF}`]);
     expect(gone.inside).toEqual(["Query: status:open p<=2", "M-14 · deleted since this search"]);
 
-    const added = split(renderResult("task.add", example("task.add", 0)));
-    expect(added.outside).toEqual([
-      `1 created · 1 existing · as_of ${NEXT}`,
-      "warning: tasks.0: possible duplicate of M-14 (same project, similar title)",
-    ]);
-    expect(added.inside).toEqual([
-      "- created M-31: Fix appointment time zones in the mobile app",
-      "- exists M-14 · by source key · log added: Fix appointment time zones",
-    ]);
+    // Each draft by its input path; its title is the caller's own and is not echoed.
+    expect(renderResult("task.add", example("task.add", 0))).toBe(
+      [
+        `1 created · 1 existing · as_of ${NEXT}`,
+        "tasks.0: created M-31",
+        "tasks.1: exists M-14 · by source key · log added",
+        "warning: tasks.0: possible duplicate of M-14 (same project, similar title)",
+      ].join("\n"),
+    );
 
     const reopened = split(renderResult("task.reopen", example("task.reopen", 0)));
     expect(reopened.outside).toEqual([`reopened M-3 · as_of ${NEXT}`]);
@@ -155,7 +155,6 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     ];
     for (const [name, result] of [
       ["task.search", searched],
-      ["task.add", added],
       ["group.manage", groups],
       ["prefs.manage", prefs],
     ] as const) {
@@ -164,6 +163,9 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       expect(inside.join("\n"), name).toContain(INJECTION);
       for (const line of outside) expect(line, name).not.toContain("Ignore previous");
     }
+    // A draft's title is the caller's own words: never echoed, so never outside a block either.
+    expect(TaskAddResult.safeParse(added).success).toBe(true);
+    expect(renderResult("task.add", added)).not.toContain("Ignore previous");
   });
 
   test("every field that can hold written text stands only inside the data block, in every example of the six tools", () => {
@@ -225,6 +227,73 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       "error invalid_input: No area has this name, and one is close to it. Use the existing name if it is the same group: see the suggestions.",
     );
     expect(inside).toEqual(["Did you mean", `- ${INJECTION}`]);
+  });
+
+  test("a write names every item it decided, whatever the warnings and titles: 25 drafts and 10 follow-ups at their longest", () => {
+    const ref = (n: number) => `ABCDEF-${String(1_000_000_000 + n)}`;
+    const title = cjk(200);
+    const drafts = Array.from({ length: 25 }, (_, n) =>
+      n % 3 === 0
+        ? {
+            result: "exists",
+            title,
+            ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
+            log_added: false,
+          }
+        : n % 3 === 1
+          ? {
+              result: "exists",
+              id: `t_${"0".repeat(24)}${String(n).padStart(2, "0")}`,
+              ref: ref(n),
+              title,
+              lifecycle: "completed",
+              matched_by: "source_key",
+              log_added: true,
+            }
+          : {
+              result: "created",
+              id: `t_${"1".repeat(24)}${String(n).padStart(2, "0")}`,
+              ref: ref(n),
+              title,
+              lifecycle: "active",
+              log_added: false,
+            },
+    );
+    const added = {
+      as_of: NEXT,
+      tasks: drafts,
+      warnings: Array.from(
+        { length: 60 },
+        (_, n) =>
+          `tasks.${String(n % 25)}: possible duplicate of ${ref(n)}, ${ref(n + 1)}, ${ref(n + 2)} and 9 more (same project, similar title)`,
+      ),
+    };
+    expect(entry("task.add").output.safeParse(added).success).toBe(true);
+    const text = renderResult("task.add", added);
+    expect(resultTokens(text)).toBeLessThanOrEqual(max("task.add"));
+    const lines = text.split("\n");
+    drafts.forEach((draft, n) => {
+      const line = lines.find((l) => l.startsWith(`tasks.${String(n)}: `));
+      expect(line, `tasks.${String(n)}`).toBeDefined();
+      for (const shown of [draft.ref, ...(draft.ambiguous ?? []).slice(0, 3)]) {
+        if (shown !== undefined) expect(line).toContain(shown);
+      }
+    });
+    expect(text).not.toContain(CJK.slice(0, 4));
+    // The warnings went from the end, and the text says so.
+    expect(lines.at(-1)).toMatch(/^\+\d+ more lines? not shown\. Send fewer tasks per call/u);
+
+    const finished = {
+      ...example("task.finish", 0),
+      follow_ups: Array.from({ length: 10 }, (_, n) => ({ result: "created", ref: ref(n), title })),
+    };
+    expect(entry("task.finish").output.safeParse(finished).success).toBe(true);
+    const finishText = renderResult("task.finish", finished);
+    expect(resultTokens(finishText)).toBeLessThanOrEqual(max("task.finish"));
+    for (let n = 0; n < 10; n += 1) {
+      expect(finishText).toContain(`follow_ups.${String(n)}: created ${ref(n)}`);
+    }
+    expect(finishText).not.toContain(CJK.slice(0, 4));
   });
 
   test("a page of 50 search rows and fifty areas at the limits stay within budget and say the cut", () => {

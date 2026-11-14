@@ -529,12 +529,20 @@ function searchRendered(result: Search, search: string): Rendered {
 
 type Added = OutputOf<"task.add">["tasks"][number];
 
-/** What became of one draft: created, or matched by its source key (A3 3.4.5). */
-function draftLine(row: Added): string {
+/** At most this many references of an ambiguous match, then how many more. */
+const AMBIGUOUS_SHOWN = 3;
+
+/**
+ * What became of the draft at `path` (A3 3.2.5, 3.4.5): created, or matched by its source key,
+ * with its reference. Only the product's words and references, so the line is never cut and needs
+ * no data block; the draft's title is the caller's own and is not echoed.
+ */
+function draftLine(row: Added, path: string): string {
+  const refs = row.ambiguous ?? [];
   const what =
     row.result === "exists"
       ? row.ambiguous !== undefined
-        ? `exists, several match: ${row.ambiguous.join(", ")}`
+        ? `exists, several match: ${refs.slice(0, AMBIGUOUS_SHOWN).join(", ")}${refs.length > AMBIGUOUS_SHOWN ? ` and ${String(refs.length - AMBIGUOUS_SHOWN)} more` : ""}`
         : join(
             `exists ${row.ref ?? ""}`,
             row.lifecycle !== undefined && row.lifecycle !== "active" && row.lifecycle,
@@ -542,20 +550,24 @@ function draftLine(row: Added): string {
             row.log_added && "log added",
           )
       : `${row.result} ${row.ref ?? ""}`;
-  return `- ${what.trimEnd()}: ${clip(row.title, 200)}`;
+  return `${path}: ${what.trimEnd()}`;
 }
 
-function addRendered(result: OutputOf<"task.add">, getTask: string): Rendered {
+/**
+ * `add_tasks`' text (A3 3.4.5): the counts, every draft's line, never cut, then the warnings, which
+ * a cut takes from the end, because 25 drafts' lines fit the budget alone (A3 3.2.5).
+ */
+function addRendered(result: OutputOf<"task.add">): Rendered {
   const created = result.tasks.filter((t) => t.result !== "exists").length;
   return {
     parts: [
       fixed(
         `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)} · as_of ${result.as_of}${replayed(result)}`,
-        ...result.warnings.map((w) => `warning: ${w}`),
+        ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
       ),
-      { data: true, units: result.tasks.map((row) => [draftLine(row)]) },
+      { units: result.warnings.map((w) => [`warning: ${w}`]) },
     ],
-    more: `Read them with ${getTask}.`,
+    more: "Send fewer tasks per call to see every warning.",
   };
 }
 
@@ -702,23 +714,22 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
                 `proposed ${result.task}`,
                 result.proposal !== undefined && `proposal ${result.proposal}`,
               );
+    // Every follow-up by its input path, never cut, without the caller's own title (A3 3.2.5).
     return {
       parts: [
-        fixed(`${head} · as_of ${result.as_of}${replayed(result)}`),
-        {
-          data: true,
-          title: (kept, total) =>
-            total === 0 ? undefined : `Follow-ups (${String(kept)} of ${String(total)})`,
-          units: result.follow_ups.map((f) => [
-            `- ${join(`${f.result}${f.ref === undefined ? "" : ` ${f.ref}`}`, clip(f.title, 200))}`,
-          ]),
-        },
+        fixed(
+          `${head} · as_of ${result.as_of}${replayed(result)}`,
+          ...result.follow_ups.map(
+            (f, k) =>
+              `follow_ups.${String(k)}: ${f.result}${f.ref === undefined ? "" : ` ${f.ref}`}`,
+          ),
+        ),
       ],
       more: `Read them with ${getTask}.`,
     };
   },
   "task.search": (result: Search, { tool }) => searchRendered(result, tool),
-  "task.add": (result: OutputOf<"task.add">, { getTask }) => addRendered(result, getTask),
+  "task.add": (result: OutputOf<"task.add">) => addRendered(result),
   "task.reopen": (result: OutputOf<"task.reopen">) => {
     const head =
       result.result === "reopened"

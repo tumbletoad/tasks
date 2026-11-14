@@ -72,7 +72,8 @@ export const taskAdd = defineEntry({
         "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists, not a copy. Without area or project a task goes to the Inbox.",
     },
   },
-  budget: { typical: 80, max: 1500 },
+  // A3 3.2.5: 25 drafts' lines at their longest fit whole, with the counts.
+  budget: { typical: 80, max: 2000 },
   errors: ["invalid_input", "too_large", "forbidden", "request_id_conflict"],
   examples: [
     {

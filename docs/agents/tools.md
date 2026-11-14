@@ -1095,7 +1095,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | Faces | MCP `add_tasks`, CLI `tasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
 | Definition, estimated tokens | 1667, reported |
-| Result budget, estimated tokens | typical 80, max 1500 |
+| Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
 

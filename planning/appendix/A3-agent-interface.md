@@ -124,7 +124,9 @@ The registry check is code, not lint rules, because it needs the live Zod object
 
 Sizes are estimated as `ceil(utf8 bytes / divisor)`, with `BYTES_PER_TOKEN = {definition: 2, result: 1.5}` in contracts. A divisor of 3 fails: it covers only 93.4% of fixture items against `o200k_base`, and Claude's counts run at 1.5 to 2.4 bytes per token, lowest for IDs and JSON (M0 row A08). Neither the token-counting API nor Claude Code's context breakdown is used to check the estimates.
 
-**Results are capped.** No result exceeds 4,000 tokens (`LIMITS.result`), far under Claude Code's 10,000-token warning, and the endpoint fits every result to its entry's `budget.max` by one rule (3.9.6). The entries and `render.ts` carry the limits. `search` gets 60 tokens per row, 1,000 for the default page of 15 and 3,000 at most. Tests: `A3.3.2.5.mcp.result-budget` and `A3.3.2.5.tools.budget-corpus` (`budgets.prop.test.ts`). The agent evals (section 5) are to check the 1.5 bytes per token against real counts.
+**Results are capped.** No result exceeds 4,000 tokens (`LIMITS.result`), far under Claude Code's 10,000-token warning, and the endpoint fits every result to its entry's `budget.max` by one rule (3.9.6). The entries and `render.ts` carry the limits. `search` gets 60 tokens per row, 1,000 for the default page of 15 and 3,000 at most.
+
+**A write names every item it decided.** Its text gives each draft or follow-up by its input path, with what happened and its reference (`tasks.0: created M-31`), on lines that are never cut, and its budget fits them at their longest: 2,000 tokens for `add_tasks`' 25 drafts. It does not echo the caller's own text, such as a draft's title: that tells the caller nothing new and would need a data block and a cut, which could drop a created task's reference. Warnings come after the items and are cut from the end. Tests: `A3.3.2.5.mcp.result-budget` and `A3.3.2.5.tools.budget-corpus` (`budgets.prop.test.ts`). The agent evals (section 5) are to check the 1.5 bytes per token against real counts.
 
 **Definitions are reported, not capped.** `mcp-definitions.json` lists each tool's size (`A3.3.2.5.mcp.definition-report`), so growth shows in a diff and is a reviewed change. Documents do not copy the numbers. A field or description earns its place by preventing a wrong call. The tool definitions carry the guidance, because Codex shows its model only about the first 240 characters of the server instructions (3.6).
 
@@ -213,7 +215,7 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 
 #### 3.4.5 `add_tasks`
 
-Create 1 to 25 tasks in one transaction: follow-ups found during work, items from a refresh, splits of a large task (`entries/task-add.ts`). One invalid draft rejects the call. The handler binds every place before anything is sent (`ops/places.ts`), and a folder under no root creates the task without a place and warns, because only the user adds roots. Its text lists one line per draft inside the data block (`created M-31: <title>`, `exists M-14 · by source key · log added: <title>`), with the counts and the warnings above it.
+Create 1 to 25 tasks in one transaction: follow-ups found during work, items from a refresh, splits of a large task (`entries/task-add.ts`). One invalid draft rejects the call. The handler binds every place before anything is sent (`ops/places.ts`), and a folder under no root creates the task without a place and warns, because only the user adds roots. Its text gives the counts, then one line per draft by its input path (`tasks.0: created M-31`, `tasks.1: exists M-14 · by source key · log added`; an ambiguous match shows three references and how many more), then the warnings (3.2.5).
 
 **Upsert by source key (R4)** through A1's dedupe (A1 3.6; `ops/handlers.ts`: `draftOps`, `draftOutcome`; test `[A3.3.4.add.upsert]`). `on_existing` sets the draft's `task.create`: `return`, the default, is A1's default, `add_sources` sets `link_sources`, and `create_new` sets `dedupe: "new"`. Each row comes from the writer's result, so a replay says the same.
 - An **active** task linked to any key of the draft: `exists` with its `id`, `ref`, `lifecycle` and `matched_by: "source_key"`, and nothing else written for that draft. With `add_sources`, the draft's sources are linked to it. The draft's `log` text is added to it either way (`log_added`), so "create or find, then log" is one call. Autonomy then applies to the matched task's own area, never to the area the draft names (3.8.3).
@@ -249,7 +251,7 @@ Appends to a task's log, or records a note for the user (`entries/entry-add.ts`)
 
 #### 3.4.8 `complete_task`
 
-Finish (`done`) or abandon (`dropped`) a task with an outcome and learnings, and create follow-ups in the same request (`entries/task-finish.ts`, `ops/handlers.ts`; test `[A3.3.4.finish.lifecycle]`). It also wraps up a task the user already checked off.
+Finish (`done`) or abandon (`dropped`) a task with an outcome and learnings, and create follow-ups in the same request (`entries/task-finish.ts`, `ops/handlers.ts`; test `[A3.3.4.finish.lifecycle]`). It also wraps up a task the user already checked off. Its text names each follow-up by its input path (`follow_ups.0: created M-31`, 3.2.5).
 
 The call sends `task.complete` (`done`) or `task.archive` (`dropped`) with `if_active`, then, when it carries an outcome or learnings, `task.wrap_up` with them and `once`, then its follow-ups. The writer decides the row of the table below on the task as it finds it, inside the request's transaction:
 
@@ -312,7 +314,7 @@ Read and change the space's non-policy preferences, so a user can ask any agent 
 
 #### 3.4.12 `run_report` (runs and routines only)
 
-Listed on every connection, like every tool (3.3). A call works only on a connection bound to a run or routine. Anywhere else it returns `not_permitted` with the binding it found (`data.binding`: `none` or `task`) and a hint to log on a task instead, and writes nothing: the request path refuses it after the call's binding settles and before it reads the input or a space, so not even the agent's first act is recorded. It reads the binding without recording the call: a run-only call presents no thread ID, and no last use or unbound write is noted in the binding records. No connection is bound to a run before M6.06, so today every call is refused (`A3.3.4.tools.run-report`). It writes A4's run record, not tasks, and is not undoable.
+Listed on every connection, like every tool (3.3). A call works only on a connection bound to a run or routine. Anywhere else it returns `not_permitted` with the binding it found (`data.binding`: `none` or `task`) and a hint to log on a task instead, and writes nothing: the request path refuses it after the call's binding settles and before it reads the input or a space, so not even the agent's first act is recorded. It reads the binding without recording the call: a run-only call's thread ID chooses its binding as on any call (3.7.5) but is not presented, and no last use or unbound write is noted in the binding records. No connection is bound to a run before M6.06, so today every call is refused (`A3.3.4.tools.run-report`). It writes A4's run record, not tasks, and is not undoable.
 
 ```ts
 { sources?: { name: string, state: "ok" | "partial" | "unreachable", items_seen: number, note?: string }[],  // ≤ 20
