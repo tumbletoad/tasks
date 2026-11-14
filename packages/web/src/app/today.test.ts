@@ -4,7 +4,7 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../live.ts";
-import { dateOf, dayNumber, type Clock } from "../row/dates.ts";
+import { dateOf, dayNumber, localDate, type Clock } from "../row/dates.ts";
 import {
   CHANGES_LIMIT,
   dueDayOf,
@@ -315,16 +315,53 @@ describe("[A5.3.4.web.today] Today's sections and week strip", () => {
 
 // --- The property --------------------------------------------------------------------------------
 
-const DAYS = Array.from({ length: 21 }, (_, i) => dateOf((dayNumber(CLOCK.today) ?? 0) - 10 + i));
+/**
+ * The viewer's clock: a time zone (whole, half-hour and quarter-hour offsets, both hemispheres'
+ * daylight saving, the date line) and an instant near a midnight or a daylight-saving change there.
+ */
+const ZONES = [
+  "Europe/Amsterdam",
+  "America/New_York",
+  "America/St_Johns",
+  "Asia/Kolkata",
+  "Asia/Kathmandu",
+  "Australia/Lord_Howe",
+  "Pacific/Kiritimati",
+  "Pacific/Pago_Pago",
+  "UTC",
+];
+const MOMENTS = [
+  CLOCK.now,
+  Date.UTC(2026, 2, 29, 1, 0), // Europe springs forward
+  Date.UTC(2026, 9, 25, 1, 0), // Europe falls back
+  Date.UTC(2026, 2, 8, 7, 0), // New York springs forward
+  Date.UTC(2026, 10, 1, 6, 0), // New York falls back
+  Date.UTC(2026, 3, 4, 15, 0), // Lord Howe's half hour back
+  Date.UTC(2026, 11, 31, 23, 59), // a year's end
+];
+const arbClock = fc
+  .record({
+    timeZone: fc.constantFrom(...ZONES),
+    moment: fc.constantFrom(...MOMENTS),
+    // Up to a day and a half either side, by the minute: every zone's midnight falls in it.
+    shift: fc.integer({ min: -36 * 60, max: 36 * 60 }),
+  })
+  .map(({ timeZone, moment, shift }): Clock => {
+    const now = moment + shift * 60_000;
+    return { today: localDate(now, timeZone), now, timeZone, locale: "en-GB" };
+  });
 const maybe = <T>(arb: fc.Arbitrary<T>) => fc.option(arb, { nil: undefined });
+/** A day as an offset from the clock's today, so every draft lands around whatever today is. */
+const arbDay = maybe(fc.integer({ min: -10, max: 10 }));
 const arbTask = fc.record({
   status: fc.constantFrom("open", "waiting", "review", "backlog", "someday"),
   inbox: fc.boolean(),
   priority: maybe(fc.integer({ min: 1, max: 4 })),
-  due_date: maybe(fc.constantFrom(...DAYS)),
-  due_at: maybe(fc.integer({ min: CLOCK.now - 5 * 86_400_000, max: CLOCK.now + 9 * 86_400_000 })),
-  planned_for: maybe(fc.constantFrom(...DAYS)),
-  focus_on: maybe(fc.constantFrom(...DAYS)),
+  due_date: arbDay,
+  // Minutes from now: within a day of a midnight, and across the whole window.
+  due_at: maybe(fc.integer({ min: -5 * 24 * 60, max: 9 * 24 * 60 })),
+  planned_for: arbDay,
+  focus_on: arbDay,
   area_id: maybe(fc.constantFrom("ar_a", "ar_b")),
   lifecycle: fc.constantFrom("active", "active", "active", "completed"),
   created_at: fc.integer({ min: 0, max: 1_000 }),
@@ -335,11 +372,12 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
   test("every task is in at most one section, and each selected task meets its section's rule", () => {
     fc.assert(
       fc.property(
+        arbClock,
         fc.array(arbTask, { maxLength: 40 }),
         fc.array(fc.record({ i: fc.nat(60), ago: fc.integer({ min: 0, max: 9 * 86_400_000 }) }), {
           maxLength: 20,
         }),
-        maybe(fc.constantFrom(...DAYS.slice(10, 17))),
+        maybe(fc.integer({ min: 0, max: 6 })),
         fc.integer({ min: 0, max: 6 }),
         maybe(
           fc.record({
@@ -348,7 +386,12 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
             index: fc.nat(10),
           }),
         ),
-        (drafts, changeDrafts, day, nextLimit, holdDraft) => {
+        (CLOCK, drafts, changeDrafts, dayDraft, nextLimit, holdDraft) => {
+          const base = dayNumber(CLOCK.today) ?? 0;
+          const DAYS = Array.from({ length: 21 }, (_, i) => dateOf(base - 10 + i));
+          const dayAt = (offset: number | undefined) =>
+            offset === undefined ? undefined : dateOf(base + offset);
+          const day = dayAt(dayDraft);
           const tasks = drafts.map((d, i) => {
             const row = {
               id: `ts_${String(i).padStart(3, "0")}`,
@@ -356,6 +399,10 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
               title: `Task ${String(i)}`,
               version: 1,
               ...d,
+              due_date: dayAt(d.due_date),
+              due_at: d.due_at === undefined ? undefined : CLOCK.now + d.due_at * 60_000,
+              planned_for: dayAt(d.planned_for),
+              focus_on: dayAt(d.focus_on),
             };
             // A compact row leaves out what is null.
             return Object.fromEntries(
@@ -394,7 +441,11 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
             expect(inWeek(t, CLOCK)).toBe(true);
             if (day !== undefined) expect(onDay(t, day, CLOCK)).toBe(true);
           }
-          expect(sectionOf("next").length).toBeLessThanOrEqual(nextLimit);
+          // Next is full whenever it has candidates: none of them is lost to a section above.
+          const candidates = tasks.filter(
+            (t) => t.lifecycle === "active" && inNext(t) && !inFocus(t, CLOCK) && !inWeek(t, CLOCK),
+          );
+          expect(sectionOf("next").length).toBe(Math.min(nextLimit, candidates.length));
           for (const t of sectionOf("next")) {
             expect(inFocus(t, CLOCK) || inWeek(t, CLOCK)).toBe(false);
             expect(inNext(t)).toBe(true);
@@ -416,6 +467,15 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
           }
           // The strip: seven days from today; each mark is a Focus or This week task's due or plan.
           expect(today.strip.map((d) => d.date)).toEqual(DAYS.slice(10, 17));
+          expect(today.strip.map((d) => d.today)).toEqual([
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+          ]);
           for (const cell of today.strip) {
             for (const mark of cell.marks) {
               const t = tasks.find((x) => x.id === mark.task);
@@ -443,7 +503,7 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
           }
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 500 },
     );
   });
 });
