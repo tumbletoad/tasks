@@ -18,6 +18,7 @@ import {
   parsePrototype,
   placeFor,
   shortUrl,
+  UNTITLED,
   type ImportPlan,
   type MappingOptions,
   type PlannedOp,
@@ -474,6 +475,17 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
       area: "other",
     });
     expect(p.tasks.find((t) => t.legacyId === "o1")?.file).toBe("data/metadata.json");
+    // A metadata key is any text: one that SafeText empties still gives the task a title.
+    const blank = plan({ metadata: metadata({ "​ ": {} }) }, { includeOrphans: true });
+    expect(createOf(blank, "​ ").title).toBe(UNTITLED);
+  });
+
+  test("an empty metadata next falls back to the body's Next: clause", () => {
+    const p = plan({
+      todo: line("A", "x1", "Next: call the clinic. More."),
+      metadata: metadata({ x1: { next: "  " } }),
+    });
+    expect(createOf(p, "x1").summary).toBe("call the clinic");
   });
 
   test("the plan is pure: no clock, no random source, the same plan for the same input", () => {

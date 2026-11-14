@@ -67,6 +67,9 @@ export const MAPPING_LIMITS = {
   extraDepth: 32,
 } as const;
 
+/** The title of a task whose title and legacy ID are both empty after SafeText. */
+export const UNTITLED = "Untitled task from the Planning prototype";
+
 /** Thrown for options the caller should have checked; the message never quotes a value. */
 export class MappingOptionsError extends Error {
   override readonly name = "MappingOptionsError";
@@ -407,12 +410,13 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   const line = e.line;
   if (line !== undefined && !line.marked) report.add("fallback-id", e.at);
 
-  // Title, and the full text at the top of the context when it is over 300 characters.
+  // Title, and the full text at the top of the context when it is over 300 characters. An orphan
+  // is titled by its legacy ID, which as a metadata key can be any text.
   const rawTitle = line?.title ?? e.id;
-  let title = line === undefined ? e.id : report.clean(rawTitle, "line", e.at, "title");
+  let title = report.clean(rawTitle, "line", e.at, "title");
   if (title.trim() === "") {
     report.add("title-empty", e.at, "title");
-    title = e.id;
+    title = normaliseLine(e.id).trim() === "" ? UNTITLED : e.id;
   }
   let head: string | undefined;
   if (codePoints(title) > MAPPING_LIMITS.title) {
@@ -445,11 +449,10 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   const people =
     person === undefined ? {} : mapped === "waiting" ? { waiting_on: person } : { owner: person };
 
-  // Summary: metadata `next`, else the body's `Next:` clause, one line.
-  const next =
-    meta?.next !== undefined
-      ? report.clean(meta.next, "line", e.metaAt, "next").trim()
-      : normaliseLine(line?.next ?? "").trim();
+  // Summary: metadata `next`, else (absent or empty) the body's `Next:` clause, one line.
+  const metaNext =
+    meta?.next === undefined ? "" : report.clean(meta.next, "line", e.metaAt, "next").trim();
+  const next = metaNext !== "" ? metaNext : normaliseLine(line?.next ?? "").trim();
   const summary = report.fit(next, MAPPING_LIMITS.summary, "chars", e.metaAt, "next");
 
   // Days at 09:00 in the import's zone; one outside the space's range is dropped.

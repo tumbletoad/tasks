@@ -67,6 +67,7 @@ export {
   mapPrototype,
   MappingOptionsError,
   MAPPING_LIMITS,
+  UNTITLED,
   type MappingOptions,
 } from "./mapping.ts";
 export {
