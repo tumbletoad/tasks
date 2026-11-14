@@ -216,7 +216,7 @@ Built in the write path (`write/request.ts` parses the base, `write/writer.ts` c
 
 A1's operations are the writer's internal interface, not Zod schemas. Each kind is listed once in `packages/contracts/src/operations.ts` with who may emit it, the scopes it may need and whether it always needs `base`, and a test checks the writer against that table. A registry handler (A3, R5) expands its input into operations, resolving relative dates, names and A3's `focus: true`; the writer takes ISO dates, IDs and slugs only.
 
-**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A1.5.write.dedupe]`, `[A3.3.7.actors.first-act]`): `task.create` (with dedupe by source key), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `machine.register` and `actor.register`. What is not obvious from the code:
+**Built** (`write/request.ts` checks, `write/writer.ts` executes; tests `[A1.5.write.operations]`, `[A1.5.write.children]`, `[A1.5.write.clear-append]`, `[A1.5.write.launches]`, `[A1.5.write.dedupe]`, `[A3.3.7.actors.first-act]`, `[A1.3.16.prefs.set]`): `task.create` (with dedupe by source key), `task.patch`, `task.context_append`, `task.move`, `task.complete`, `task.reopen`, `note.add`, `log.add`, `source.add`, `place.set`, `place.clear`, `launch.create`, `launch.transition`, `pref.set` (3.16), `machine.register` and `actor.register`. What is not obvious from the code:
 - `task.context_append` writes the `context` field without a base, so two appends both land while a stale replace conflicts with it.
 - **Initial children** of a new task are child operations in the same request naming the draft's client ID. There is no nested form of `task.create`, so each row kind has one implementation.
 - `machine.register` runs once, when a space's writer first opens on its authority machine. A writer on another machine registers nothing and refuses every request (`not_authority`). The writer refuses a principal without an `actors` row; the CLI's `script` and `agent:unknown` actors and A4's session actors join a space with `actor.register` on their first act.
@@ -236,7 +236,6 @@ A1's operations are the writer's internal interface, not Zod schemas. Each kind 
 | `task.label` | `add[]`, `remove[{label, link_version}]` | none for new links, link version or base to remove or revive | Per-label link rows. Unknown slugs create labels. |
 | `area.*`, `project.*` | create, patch, move, archive, delete, restore | base for changes | As for tasks. Archiving a project with active tasks returns `HAS_ACTIVE_TASKS`. |
 | `label.patch`, `label.delete` | | base | |
-| `pref.set` | key, value | base on the preference | 3.16. An agent writes only keys whose declaration lists it. A policy key needs a human actor and the `admin` scope, else `forbidden` with rule `policy` (A3 3.4.11, 3.8.3, A6 3.6.3). |
 | `proposal.accept`, `proposal.reject` | proposal, optional fresh `base` | human only | 3.10.5. |
 | `attachment.add` | task, sha256, size, media type, file name | none | The blob is published first (3.18). |
 | `space.patch` | name, ref prefix | human only | The old prefix is kept as an alias. |
@@ -633,28 +632,33 @@ There is no fallback to another clone, a containing project, a parent folder, th
 
 ### 3.16 Preferences and feature flags
 
-Not built yet (M3.11), except that the writer already checks status and effort against `tasks.statuses` and `tasks.effort_scale` or their defaults, and reads `tasks.dedupe_window_days` for dedupe (3.6), taking its default for a value that is not a whole number of days from 0 to 3,650. One registry in code declares every preference:
+Built (M3.11). **The registry** is `packages/contracts/src/preferences.ts` (`PREFERENCES`), which imports nothing so the storage worker can load it (`@tasks/contracts/preferences`). Each declaration has a name, a scope (`space` or `machine`), a value shape, a default, its writers (the human, and the agent only where listed), whether it is a policy key, its shape's `schemaVer` and a one-line summary for `describe`. Tests: `[A1.3.16.prefs.registry]`, `[A1.3.16.prefs.flags]`, `[A1.3.16.prefs.set]`, `[A1.3.16.prefs.read]`, `[A1.3.16.prefs.machine]`.
 
-```ts
-pref("ui.theme",              { scope: "space",   schema: { enum: ["sumi", "washi", "system"] }, default: "sumi", writers: ["human", "agent"], since: "0.1" });
-pref("tasks.statuses",        { scope: "space",   schema: StatusList, default: ["open", "waiting", "review", "backlog"], writers: ["human", "agent"] });
-pref("tasks.effort_scale",    { scope: "space",   schema: EffortScale, default: [{key: "S"}, {key: "M"}, {key: "L"}] });
-pref("tasks.dedupe_window_days", { scope: "space", schema: { type: "integer", minimum: 0, maximum: 3650 }, default: 30 });
-pref("grouping.names",        { scope: "space",   schema: GroupNames, default: {area: "Area", project: "Project"} });
-pref("autonomy.level",        { scope: "space",   policy: true, schema: { enum: ["full", "review", "suggest"] }, default: "review" });  // setup asks (D13)
-pref("targets.default",       { scope: "space",   schema: InstanceRef, default: null });       // A4: references only
-pref("projection.enabled",    { scope: "space",   schema: { type: "boolean" }, default: true });
-pref("projection.dir",        { scope: "machine", schema: PathString, default: null });
-flag("features.search_trigram", { default: false, stability: "preview" });
-```
+| Key | Scope | Default | Writers | Policy |
+|---|---|---|---|---|
+| `ui.theme` (`sumi`, `washi`, `system`) | space | `sumi` | human, agent | |
+| `tasks.statuses` (1 to 20 unique status keys) | space | open, waiting, review, backlog | human, agent | |
+| `tasks.effort_scale` (1 to 10 `{key}`, unique) | space | S, M, L | human | |
+| `tasks.dedupe_window_days` (0 to 3,650) | space | 30 | human | |
+| `grouping.names` (`{area, project}`, 40 each) | space | Area, Project | human | |
+| `autonomy.level` (`full`, `review`, `suggest`; setup asks, D13) | space | `review` | human | yes |
+| `autonomy.agent_tasks_to_inbox` | space | false | human | yes |
+| `autonomy.overrides` (action key to `apply`, `mark`, `propose`, `deny`; 100 at most) | space | none | human | yes |
+| `autonomy.areas` (area or project slug to a level; 200 at most) | space | none | human | yes |
+| `targets.default` (an instance key, never a command; A4) | space | none | human | yes |
+| `projection.enabled` (3.13) | space | true | human | |
+| `projection.dir` (an absolute path on this OS) | machine | none | human | |
+| `features.search_trigram` (flag, preview) | space | false | human | |
 
-- **Space scope** lives in the `preferences` table. `pref.set` is an ordinary operation: in history, undoable, with a base. It travels with backups and exports.
-- **Machine scope** lives in the machine-local config (A2), with the same registry and validation. It never travels.
-- **Writers.** `policy: true` keys (autonomy and its overrides, A3 3.8.2) change only through a human principal with the `admin` scope (R7). An agent writes only keys whose declaration lists it. Run permissions and the burst limit are machine-local (A4 3.11.6, A6 3.16.3). A managed-machine policy file (A6 3.16.5) can lock keys.
-- **Versioning.** Each key has a schema version, and an entry may declare an upgrade function that a migration step runs. A stored value with a newer `schema_ver` than this build knows is kept unchanged and treated as read-only, and the default is used. Unknown keys are kept, so an older build never drops a newer build's settings. A removed key's name is never reused.
-- **Feature flags** are boolean or enum keys under `features.`. They gate behaviour only: schema migrations always run in full. A flag for a graduated feature stays readable and is ignored.
-- Settings never carry CSS, HTML, scripts, SQL or command lines.
-- **The theme until then.** The UI keeps the theme per browser (A5). The settings step decides whether `ui.theme` stays a space key: a theme per space would change the colours when a tab switches space, so a machine or browser scope may fit better.
+- **Values are declared shapes**, never an unrestricted value: an enum, a boolean, a bounded integer, one line of text (NFC, no control or format characters, with a pattern where one applies), an absolute path, a bounded list (unique as a whole or by `key`), an object with exactly its fields, or a bounded map with a key pattern. A stored value is at most 16 KiB of JSON. Settings never carry CSS, HTML, scripts, SQL or command lines.
+- **`null` resets a key to its default.** It is never a value. In the space the row stays with the value `null`, so history, the base and undo work as for any change; a reset of a key that has no row changes nothing. A default may be null, meaning none.
+- **Readers take every stored value through the registry** (`preferenceValue`; storage's `readSpacePreference(s)`, the service's `ops/preferences.ts`): a value that fits its shape is `set`; nothing stored or a reset is `default`; a value that does not fit is `invalid` and a newer build's (a higher `schema_ver`) is `newer`, and both read as the default. The writer's status and effort checks, dedupe's window, status, search and the snapshot all read this way, so none keeps a rule of its own.
+- **Space scope** lives in the `preferences` table, entity ID the key, one logical field `value` (`value` with `schema_ver`). `pref.set` is an ordinary operation: in history, with a base for a key that has a row (a first set needs none), on the projection's outbox. It travels with backups and exports. The writer checks the key and the value's shape before the transaction (`VALIDATION_FAILED`, `TOO_LARGE`, no receipt): an unknown key, a machine key and a value outside its shape are refused, and the value's text is normalised first (3.7). The snapshot carries every space preference and flag with its state (A5 3.15), and a batch names a changed one as an entity of type `preference` without a row.
+- **Machine scope** lives in `machine.toml`'s `[preferences]` (A2 3.2.4), each key by its whole name, quoted: `"projection.dir" = "/srv/tasks-view"`. It is read with the same registry and validation, plus this OS's rule for a path; a bad entry drops itself with a content-free problem, a space key there is `invalid_value`, an unknown name an `unknown_key` warning. `setMachinePreference` (`packages/service/src/config/preferences.ts`) sets a key by one splice, or resets it by removing its line, keeping every other byte. It never travels. Like every edit of `machine.toml` it is the user's; the service reads the file once per start (A2 3.2.4).
+- **Writers.** The writer decides in the transaction whether the actor may write the key, so a refusal has its receipt: a human always, an agent or routine only where the declaration lists the agent, nothing else. Else `PREFERENCE_FORBIDDEN`, which reaches a caller as `forbidden` with rule `policy` (A3 3.8.3 step 4). A policy key lists only the human, and its entry also needs the `admin` scope, which the caller checks (A6 3.6.3, R7). Run permissions and the burst limit are machine-local (A4 3.11.6, A6 3.16.3). A managed-machine policy file (A6 3.16.5) can lock keys (not built).
+- **Versioning.** Each key has a schema version. A stored value with a newer `schema_ver` than this build knows is kept unchanged and read-only: the default is used and `pref.set` refuses it. Unknown keys are kept in the table and never read, so an older build never drops a newer build's settings. A removed key's name moves to `RETIRED_PREFERENCES` and is never reused. Not built: an entry's upgrade function that a migration step runs, needed the first time a shape changes.
+- **Feature flags** are boolean or enum space keys under `features.`, never policy, each with a default and a test. They gate behaviour only: schema migrations always run in full. A flag for a graduated feature stays readable and is ignored.
+- **The theme until then.** The UI keeps the theme per browser (A5). The settings step (M5.11) decides whether `ui.theme` stays a space key: a theme per space would change the colours when a tab switches space, so a machine or browser scope may fit better.
 
 ### 3.17 Schema versions and migrations
 
