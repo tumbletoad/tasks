@@ -312,6 +312,10 @@ describe("[A5.3.4.web.today-page] Today's strip and sections in a DOM", () => {
       "Focus",
       ["Fix appointment time zones", "Investigate checkout crash"],
     ]);
+    // With its latest data: the card says it is checked off, though the live rows no longer hold it.
+    const card = container.querySelector('[role="region"]');
+    expect(card?.textContent).toContain("StatusChecked off");
+    expect(card?.textContent).not.toContain("StatusOpen");
 
     // Collapsed, it leaves.
     press(titleOf("Fix appointment time zones"), "Escape");

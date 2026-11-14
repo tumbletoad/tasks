@@ -232,6 +232,23 @@ export function TaskList({
     [live, loadReceipts],
   );
 
+  // An update that takes the expanded task out of the live rows (completed, archived) carries its
+  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15).
+  useEffect(
+    () =>
+      live.onChanges(({ changes }) => {
+        const id = latest.current.expanded;
+        if (id === undefined) return;
+        let left: TaskRow | undefined;
+        for (const change of changes) {
+          if (change.type !== "task" || change.id !== id || change.after === undefined) continue;
+          left = live.getState().tasks.has(id) ? undefined : (change.after as TaskRow);
+        }
+        if (left !== undefined) setInjected(left);
+      }),
+    [live],
+  );
+
   // Rows an agent adds fade in; agents' changes to the view's tasks are announced once the burst
   // settles, by actor ("3 tasks updated by Codex").
   const inView = useRef(filter);
