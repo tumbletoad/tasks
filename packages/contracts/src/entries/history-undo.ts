@@ -20,6 +20,12 @@ export const Unresolved = z.strictObject({
     .string()
     .max(20)
     .describe("Table of the row: tasks, or a child such as notes or log_entries"),
+  id: z
+    .string()
+    .max(60)
+    .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$/u)
+    .describe("A row other than the task: its ID, or task_id|source_id for a link")
+    .optional(),
   task: TaskRef.optional(),
   field: z.string().max(40).describe("Logical field; deleted or removed for a child row"),
   by: z.string().describe("Who changed it since: user, import or the actor's label"),

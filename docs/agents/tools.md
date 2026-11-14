@@ -235,6 +235,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `replayed` | boolean | no | True when a retry returned the stored result |
 | `unresolved` | object[] | no | Fields left as others set them |
 | `unresolved[].entity` | string, max 20 | yes | Table of the row: tasks, or a child such as notes or log_entries |
+| `unresolved[].id` | string, max 60 | no | A row other than the task: its ID, or task_id\|source_id for a link |
 | `unresolved[].task` | string | no | Task reference |
 | `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |

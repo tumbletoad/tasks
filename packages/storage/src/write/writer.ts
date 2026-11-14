@@ -1576,7 +1576,10 @@ export class SpaceWriter {
         asOf,
         {
           code: "UNDO_CONFLICT",
-          message: "Someone changed a field of it since: undo the rest, or keep theirs",
+          // A redo is all or nothing (A1 3.10.1): it offers no partial form.
+          message: undo
+            ? "Someone changed a field of it since: undo the rest, or keep theirs"
+            : "Someone changed one of its fields since: a redo is all or nothing",
         },
         plan.conflicts,
       );

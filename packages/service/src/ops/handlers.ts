@@ -555,6 +555,8 @@ async function submit(
     readonly warnings?: readonly string[];
     /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
     readonly undoable?: false;
+    /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
+    readonly hints?: Readonly<Record<string, string>>;
   } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
@@ -609,7 +611,9 @@ async function submit(
   } catch (error) {
     throw storageFailure(error);
   }
-  if (result.status === "conflict" || result.status === "rejected") throw resultFailure(result);
+  if (result.status === "conflict" || result.status === "rejected") {
+    throw resultFailure(result, options.hints);
+  }
   return result;
 }
 
@@ -1508,6 +1512,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "history.redo": async (call) => {
     const result = await submit(call, [{ kind: "redo", ...namedCommit(call.input) }], {
       undoable: false,
+      // A redo is all or nothing (A1 3.10.1): the remedy is a new edit, never a partial form.
+      hints: { UNDO_CONFLICT: "Keep their change, or set the value again yourself." },
     });
     return historyResult(call, result, "redone");
   },
@@ -1568,6 +1574,8 @@ async function historyResult(
       ? {
           unresolved: result.conflicts.map((c) => ({
             entity: c.entity,
+            // A row other than the task is named by its ID too, as in a conflict (errors.ts).
+            ...(c.entity === "tasks" ? {} : { id: c.id }),
             ...(c.ref === undefined ? {} : { task: c.ref }),
             field: c.field,
             by: byOf(c.by),

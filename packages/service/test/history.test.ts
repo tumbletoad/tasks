@@ -151,6 +151,39 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
+    "a redo blocked by another's source names that row, with a redo's own words",
+    async () => {
+      const task = await add("Fixture task with a ticket");
+      const source = { key: "fixture:history:redo", kind: "ticket", title: "Fixture ticket" };
+      const update = async (caller: Caller): Promise<Json> =>
+        call(
+          "task.update",
+          { task, add_sources: [source], base: await asOf(), request_id: rid() },
+          caller,
+        );
+      await update(USER);
+      await call("history.undo", { request_id: rid() });
+      // The key is free again, and the script's source takes it.
+      await update(SCRIPT);
+      const conflict = await refusal("history.redo", { request_id: rid() });
+      expect(conflict).toMatchObject({
+        code: "conflict",
+        data: {
+          cause: "UNDO_CONFLICT",
+          conflicts: [{ entity: "sources", field: "deleted", value: null, by: "script" }],
+        },
+      });
+      // A source belongs to no one task: its ID is what names it.
+      const [blocking] = conflict.data?.["conflicts"] as Json[];
+      expect(blocking?.["id"]).toMatch(/^s_[0-9a-hjkmnp-tv-z]{26}$/);
+      // A redo is all or nothing: neither the message nor the hint offers an undo.
+      expect(conflict.message).not.toMatch(/undo/i);
+      expect(conflict.hint).not.toMatch(/undo|partial/i);
+    },
+    LONG,
+  );
+
+  test(
     "an agent's log entry keeps the user's new task; receipt.get reads both outcomes",
     async () => {
       const task = await add("Fixture task an agent logs on");
@@ -182,6 +215,10 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
         task_count: 0,
         unresolved: [{ entity: "log_entries", task, field: "deleted", by: "script" }],
       });
+      // A row other than the task is named by its ID too.
+      expect((partial["unresolved"] as Json[])[0]?.["id"]).toEqual(
+        expect.stringMatching(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$/),
+      );
       expect(await call("receipt.get", { request: kept })).toMatchObject({
         found: true,
         status: "applied",

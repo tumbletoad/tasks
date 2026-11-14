@@ -81,10 +81,16 @@ const HINTS: Readonly<Record<string, string>> = {
 export const byOf = (by: { kind: string; label: string; origin?: string }): string =>
   by.origin === "import" ? "import" : by.kind === "human" ? "user" : by.label;
 
-/** A conflict or a refusal the writer decided, as its body (A3 3.5). */
-export function resultFailure(result: WriteResult): AppError {
+/**
+ * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
+ * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form.
+ */
+export function resultFailure(
+  result: WriteResult,
+  hints: Readonly<Record<string, string>> = {},
+): AppError {
   const problem = result.error;
-  const hint = problem === undefined ? undefined : HINTS[problem.code];
+  const hint = problem === undefined ? undefined : (hints[problem.code] ?? HINTS[problem.code]);
   const base: ErrorBody =
     problem === undefined
       ? { code: "conflict", message: "A field changed after the base: read again." }
@@ -102,9 +108,10 @@ export function resultFailure(result: WriteResult): AppError {
   }
   const conflicts = result.conflicts.map((c) => ({
     ...(c.ref === undefined ? {} : { task: c.ref }),
-    // A row other than the task itself: a link, a place, or a child row that keeps a create from
-    // being undone (A1 3.10).
-    ...(c.entity === "tasks" ? {} : { entity: c.entity }),
+    // A row other than the task itself, by its table and ID: a link, a place, or a child row that
+    // keeps a create from being undone or a redo from taking a key (A1 3.10). A source belongs to
+    // no one task, so its ID is all that names it.
+    ...(c.entity === "tasks" ? {} : { entity: c.entity, id: c.id }),
     field: c.field,
     ...(c.value === undefined ? {} : { value: c.value }),
     // An undo's: what the change wrote, and what undoing it would set back ("Restore mine").
