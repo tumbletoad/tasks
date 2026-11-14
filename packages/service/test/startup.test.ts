@@ -210,7 +210,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const change = await service.spaceManager.claim(0);
     expect(change.epoch).toBe(8);
     expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: original.space.spaceId }]);
-    expect(readSpaceSettings(stateOf(home), original.space.spaceId).seen).toEqual(change);
+    expect(readSpaceSettings(stateOf(home), original.space.spaceId).seen).toMatchObject(change);
     // Only a read-only copy is claimed.
     await expect(service.spaceManager.claim(0)).rejects.toMatchObject({ code: "STORAGE_MISUSE" });
   }, 120_000);
@@ -312,11 +312,62 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const change = await service.spaceManager.restoreInPlace(0, backup.file);
     expect(change.epoch).toBeGreaterThan(seen?.epoch ?? Number.POSITIVE_INFINITY);
     expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: space.space.spaceId }]);
-    expect(readSpaceSettings(stateOf(home), space.space.spaceId).seen).toEqual(change);
+    expect(readSpaceSettings(stateOf(home), space.space.spaceId).seen).toMatchObject(change);
     expect(readdirSync(spaces).filter((n) => n.startsWith("work.replaced-"))).toHaveLength(1);
     expect(events(home, "space.closed")).toHaveLength(1);
     expect(events(home, "space.open")).toHaveLength(2);
   }, 120_000);
+
+  test("[A6.5.stale-restore] a folder older than what this machine saw opens read_only(stale_restore) and is made current by a restore claim", async () => {
+    const machine = newId("m");
+    const { home, spaces } = setUp("stale", machine);
+    const space = await fixtureSpace(join(spaces, "work"), machine);
+    const id = space.space.spaceId;
+    // A copy of the closed folder at seq 0, as a file-level backup tool would keep one.
+    const old = join(spaces, "old");
+    cpSync(space.folder, old, { recursive: true });
+
+    // The service opens the space: the open records what it saw, its machine registers (seq 1),
+    // and the close records the last commit.
+    const first = await start(home, [{ path: space.folder, id }], { maintenance: false });
+    expect(first.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+    expect(readSpaceSettings(stateOf(home), id).seen).toEqual({
+      epoch: 1,
+      incarnation: space.space.authority.incarnation,
+      lastSeq: 0,
+      lineage: [space.space.authority.incarnation],
+    });
+    await first.stop();
+    removeRuntimeDir(first);
+    running.splice(running.indexOf(first), 1);
+    expect(readSpaceSettings(stateOf(home), id).seen?.lastSeq).toBe(1);
+
+    // The old copy is put back in the folder's place: the same incarnation, a lower last_seq.
+    const aside = join(spaces, "aside");
+    renameSync(space.folder, aside);
+    renameSync(old, space.folder);
+    const second = await start(home, [{ path: space.folder, id }], { maintenance: false });
+    const [stale] = second.spaces();
+    expect(stale).toMatchObject({ entry: 0, state: "read_only", reason: "stale_restore", id });
+    expect(stale?.message).toContain("tasks space claim <folder>");
+    // Nothing was written: no machine registration, no migration, no backup.
+    expect(existsSync(backupsFolder(space.folder))).toBe(false);
+    // "Use this restore as current": a restore claim above every epoch this machine has seen.
+    const change = await second.spaceManager.claim(0);
+    expect(change.epoch).toBe(2);
+    expect(second.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+    await second.stop();
+    removeRuntimeDir(second);
+    running.splice(running.indexOf(second), 1);
+
+    // The folder of the incarnation the claim descends from comes back: an ancestor, also stale.
+    renameSync(space.folder, join(spaces, "claimed"));
+    renameSync(aside, space.folder);
+    const third = await start(home, [{ path: space.folder, id }], { maintenance: false });
+    expect(third.spaces()).toEqual([
+      expect.objectContaining({ entry: 0, state: "read_only", reason: "stale_restore", id }),
+    ]);
+  }, 180_000);
 
   test("an open that runs past its bound keeps watching its writer.lock: a loss then still ends the service with 70", async () => {
     const { home, spaces } = setUp("slowopen", newId("m"));

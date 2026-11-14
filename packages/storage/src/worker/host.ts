@@ -144,7 +144,13 @@ function checkPurpose(purpose: unknown): WriterPurpose {
   if (p?.["kind"] === "claim") {
     const epochs = p["knownEpochs"];
     if (!Array.isArray(epochs)) throw misuse("A claim names the epochs this machine knows");
-    return { kind: "claim", knownEpochs: epochs as number[] };
+    const restore = p["restore"];
+    if (restore !== undefined && typeof restore !== "boolean") throw misuse("restore is a flag");
+    return {
+      kind: "claim",
+      knownEpochs: epochs as number[],
+      ...(restore === true ? { restore } : {}),
+    };
   }
   throw misuse("A space's writer opens to write or to claim");
 }
@@ -191,6 +197,7 @@ const spaceInfo = (handle: number, opened: OpenedSpace): OpenedSpaceInfo => ({
     incarnation: opened.space.authority.incarnation,
   },
   lastSeq: opened.space.lastSeq,
+  lineage: opened.space.lineage.incarnations.map((entry) => entry.incarnation),
 });
 
 /**
@@ -378,15 +385,20 @@ export function serve(
         return { ...spaceInfo(handle, ready), ...(migration === undefined ? {} : { migration }) };
       };
 
-      /** Claims a read-only copy on its writer's connection. The caller closes it. */
+      /**
+       * Claims a read-only copy on its writer's connection, or with `restore` makes a stale
+       * restore current with a restore claim. The caller closes it.
+       */
       const claimHeld = (
         handle: number,
         opened: OpenedSpace,
         machine: MachineInfo,
         knownEpochs: number[],
         appVersion: string | undefined,
+        restore: boolean,
       ): OpenedSpaceInfo => {
         const claim = claimCopy(opened, {
+          kind: restore ? "restore_claim" : "claim",
           machineId: machine.id,
           knownEpochs,
           now: Date.now(),
@@ -493,7 +505,14 @@ export function serve(
               const opened = opening.finish();
               if (goal.kind === "claim") {
                 try {
-                  return claimHeld(handle, opened, record, goal.knownEpochs, appVersion);
+                  return claimHeld(
+                    handle,
+                    opened,
+                    record,
+                    goal.knownEpochs,
+                    appVersion,
+                    goal.restore === true,
+                  );
                 } finally {
                   opened.conn.close();
                 }

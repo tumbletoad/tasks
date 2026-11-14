@@ -482,6 +482,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A6.5.stale-restore",
+      "title": "This machine records what it saw of its spaces (epoch, incarnation, lineage, last_seq at open and close); a folder of the same incarnation with a lower last_seq, or of an ancestor incarnation, opens read_only(stale_restore) before anything is written, and a restore claim above every known epoch makes it current",
+      "source": "A6 3.5, A1 3.1, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A6.5.secrets.scanner",
       "title": "The secret patterns of A6 3.16.4 find each kind of token alone and inside text, and across a chunk boundary through the kept overlap, and leave ordinary words, short or digitless look-alikes and public keys unflagged",
       "source": "A6 3.16.4, A6 5, A7 3.10 M3.07",
