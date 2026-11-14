@@ -5,7 +5,7 @@
 // folder and state. The tree must be valid at once: complete files only, no temporary file, and a
 // watermark that covers no unrendered task. Nothing may be rescued, since nobody changed anything,
 // and once it settles the tree equals a fresh render. Fixture text only.
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -30,6 +30,10 @@ beforeAll(() => {
 afterAll(() => {
   rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
+
+/** The watermark `.projection.json` claims. */
+const claimOf = (dir: string): number =>
+  (JSON.parse(readFileSync(join(dir, ".projection.json"), "utf8")) as { seq: number }).seq;
 
 /** Every task file is whole: one the projection wrote, never a part of one. */
 function expectWholeFiles(dir: string): void {
@@ -70,6 +74,7 @@ describe("[A1.5.projection.kill] a kill at any act of a start or a batch, rename
       await settle(first);
       let fresh = 0;
       let kills = 0;
+      let lastClaim = claimOf(w.dir);
       const seen = new Set<Act>();
       for (let kill = 1; ; kill += 1) {
         change(w, kill);
@@ -101,8 +106,21 @@ describe("[A1.5.projection.kill] a kill at any act of a start or a batch, rename
         expectWholeFiles(w.dir);
         checkWatermark(w.dir, w.reader);
         expect(start.rescued, `nothing rescued after a kill at act ${String(kill)}`).toBe(0);
+        // Every open task changes again, so each file the killed batch placed is replaced: one the
+        // projection could not prove its own would be moved aside.
+        for (const row of w.reader
+          .prepare("SELECT id FROM tasks WHERE lifecycle = 'active'")
+          .all<{ id: string }>()) {
+          w.submit([
+            { kind: "task.patch", task: row.id, set: { summary: `After kill ${String(kill)}` } },
+          ]);
+        }
         const reports = await settle(after);
-        expect(reports.reduce((sum, r) => sum + r.rescued + r.failed, 0)).toBe(0);
+        expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(0);
+        // The claim never moves backwards.
+        const claimed = claimOf(w.dir);
+        expect(claimed).toBeGreaterThanOrEqual(lastClaim);
+        lastClaim = claimed;
         expectClean(w.dir);
         checkWatermark(w.dir, w.reader);
         fresh += 1;

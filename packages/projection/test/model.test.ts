@@ -51,6 +51,7 @@ const LINK = process.platform === "win32" ? "junction" : "dir";
 const MARK = "Person ";
 const FOLDERS = ["open", "completed", "completed/2026"] as const;
 
+/** A person swaps a folder for a link while a batch waits on the writer. */
 type During = "none" | "open-link" | "view-link";
 
 type Action =
@@ -360,8 +361,8 @@ class Model {
 
   async run(steps: number, at: number | null, during: During): Promise<void> {
     if (during !== "none") {
-      this.during = () => {
-        const target = during === "open-link" ? join(this.view, "open") : this.view;
+      const swap = (): void => {
+        const target = during === "view-link" ? this.view : join(this.view, "open");
         if (!this.realFolder(target)) return;
         // What the projection did so far is checked; the person's act then changes the baseline.
         if (this.baseline !== undefined) this.checkOutside(this.baseline);
@@ -372,6 +373,7 @@ class Model {
         seen.during += 1;
         this.baseline = this.outsideState();
       };
+      this.during = swap;
     }
     await this.act(async () => {
       for (let i = 0; i < steps && this.current.pending().dirty; i += 1) await this.current.step();
@@ -459,8 +461,10 @@ class Model {
         this.disturb(file.task);
         const away = join(this.outside, `hard-${String((this.n += 1))}.md`);
         if (a.same) {
+          // A read-only copy of the generated file: its mode must stay what it is.
           const bytes = readFileSync(file.abs, "utf8");
           writeFileSync(away, bytes);
+          chmodSync(away, 0o444);
           this.theirs.add(bytes);
           this.theirLinks.add(file.path);
         } else {
@@ -615,9 +619,16 @@ class Model {
     for (const [rel, { text }] of texts(this.exchange)) {
       expect(text.startsWith(MARK) || this.theirs.has(text), `${rel} is the person's`).toBe(true);
     }
-    // 3. The claim, where nobody touched what it covers.
-    if (!this.all) checkWatermark(this.view, this.w.reader, this.disturbed);
+    // 3. The claim, where nobody touched what it covers; and it never moves backwards.
+    if (this.all) return;
+    const claimed = checkWatermark(this.view, this.w.reader, this.disturbed);
+    if (claimed === undefined) return;
+    expect(claimed, "the watermark never moves backwards").toBeGreaterThanOrEqual(this.claimed);
+    this.claimed = claimed;
   }
+
+  /** The highest watermark the tree has claimed. */
+  claimed = 0;
 
   /** 5. At rest: a restart, its reconciliation, nothing left to do. */
   async rest(): Promise<void> {
@@ -665,6 +676,24 @@ class Model {
       case "rest":
         await this.rest();
         return;
+      case "swap-rescue":
+      case "swap-rescued-root": {
+        // A swapped rescue folder matters at the next rescue: the person edits a generated file,
+        // its task changes, and a batch must move the edit aside.
+        this.person(a);
+        const file = this.pickFile(0);
+        if (file === undefined) return;
+        this.person({ kind: "edit", pick: 0 });
+        this.w.submit([
+          {
+            kind: "task.patch",
+            task: file.task,
+            set: { summary: `Swap ${String((this.n += 1))}` },
+          },
+        ]);
+        await this.run(1, null, "none");
+        return;
+      }
       default:
         this.person(a);
     }
