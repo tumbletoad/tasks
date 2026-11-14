@@ -79,6 +79,8 @@ export class Dedupe {
   readonly #at: number;
   /** Every key the request's `source.add` operations name. */
   readonly #keys: ReadonlySet<string>;
+  /** The keys of the `source.add` operations that name each task reference, in request order. */
+  readonly #named = new Map<string, string[]>();
   /** The start-state holders of each key, read on the first match. */
   #start: Map<string, Id<"t">[]> | undefined;
   #windowMs: number | undefined;
@@ -90,23 +92,23 @@ export class Dedupe {
   constructor(conn: Connection, ops: readonly Operation[], at: number) {
     this.#conn = conn;
     this.#at = at;
-    this.#keys = new Set(
-      ops.flatMap((op) =>
-        op.kind === "source.add" && op.source.key !== undefined ? [op.source.key] : [],
-      ),
-    );
+    const keys = new Set<string>();
+    for (const op of ops) {
+      if (op.kind !== "source.add" || op.source.key === undefined) continue;
+      keys.add(op.source.key);
+      const named = this.#named.get(op.task) ?? [];
+      if (!named.includes(op.source.key)) named.push(op.source.key);
+      this.#named.set(op.task, named);
+    }
+    this.#keys = keys;
   }
 
-  /** The keys of the `source.add` operations after `index` that name the draft `id`. */
-  static keysOf(ops: readonly Operation[], index: number, id: Id<"t">): string[] {
-    const keys = ops
-      .slice(index + 1)
-      .flatMap((op) =>
-        op.kind === "source.add" && op.task === id && op.source.key !== undefined
-          ? [op.source.key]
-          : [],
-      );
-    return [...new Set(keys)];
+  /**
+   * A draft's keys: those of the request's `source.add` operations that name its ID. One that
+   * stands before the draft's create cannot resolve the ID, which refuses the request first.
+   */
+  keysOf(id: Id<"t">): readonly string[] {
+    return this.#named.get(id) ?? [];
   }
 
   /** A draft the request creates: active, ranked after every existing task, holding its keys. */

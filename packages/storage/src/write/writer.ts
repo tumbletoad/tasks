@@ -1154,7 +1154,7 @@ export class SpaceWriter {
           const { record, ...placed } = where(op);
           // Dedupe by the keys of the draft's sources (A1 3.6). A draft without a client ID has
           // no source operation that can name it, so it has no keys.
-          const keys = op.id === undefined ? [] : Dedupe.keysOf(request.ops, i, op.id);
+          const keys = op.id === undefined ? [] : dedupe.keysOf(op.id);
           const mode = op.dedupe ?? "source_key";
           if (mode !== "none" && keys.length > 0) {
             const found = dedupe.match(keys, op.link_sources === true);
