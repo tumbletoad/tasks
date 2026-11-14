@@ -30,6 +30,7 @@
 import { CLI_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import { MANUAL_INSTANCE } from "@tasks/launch";
+import type { BoundSession } from "./binding.ts";
 import type { Caller } from "./caller.ts";
 
 /**
@@ -64,14 +65,19 @@ export const grantRefused = (): AppError =>
  * agent home's. An MCP caller that names none is no home's (the empty instance), so it is refused
  * rather than taken as a hand-made entry.
  */
-export function homesOf(caller: Caller): readonly string[] {
+export function homesOf(
+  caller: Caller,
+  /** The session the call acts as, as it read it (default: the slot's now). */
+  read?: { readonly session: BoundSession | undefined },
+): readonly string[] {
   const slot = caller.binding;
   if (slot !== undefined) {
+    const bound = read === undefined ? slot.session : read.session;
     // A CLI call mapped to a session no agent has bound yet (made with its launch, A3 3.7.7) is no
     // home's call, as an agent's CLI without a session is not: it reaches only that session's
     // space, which the person launched the task into. Once a home binds the session, it is gated.
-    if (slot.kind === "mapped" && slot.session?.waiting === true) return [];
-    const session = slot.session?.instance;
+    if (slot.kind === "mapped" && bound?.waiting === true) return [];
+    const session = bound?.instance;
     return session === undefined || session === slot.instance
       ? [slot.instance]
       : [slot.instance, session];

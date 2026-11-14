@@ -463,7 +463,7 @@ A **session** groups the launches of one agent conversation.
 - Until the table exists, a session record lost with the state folder leaves its launch's `bound_at` in the space, so its reference answers `launch_used`.
 - **The session list** is `get_task`'s `sessions` section (A3 3.4.4).
 
-**To build: the `sessions` table** (schema step 0003, with its own migration and test). It brings A1's table, the execution store's `upsertSession` and `session.*` operations through the writer, and takes each record of `sessions.json` (id, space, task, instance, how it bound, launches, native IDs with their sources, the instance and route its launch opened, created, last seen, ended and why) through the `SessionStore` interface. Handles stay in machine state (A2). The crash harness then counts `sessions` among its tables. The table's shape:
+**To build: the `sessions` table** (schema step 0003, with its own migration and test). It brings A1's table, the execution store's `upsertSession` and `session.*` operations through the writer, and takes each record of `sessions.json` (id, space, task, instance, how it bound, launches, native IDs with their sources, the instance and route its launch opened, the session whose writer scope it writes under after a rebind, created, last seen, ended and why) through the `SessionStore` interface. Handles stay in machine state (A2). The crash harness then counts `sessions` among its tables. The table's shape:
 
 ```ts
 type Session = {

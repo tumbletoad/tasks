@@ -125,7 +125,8 @@ export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
     audience: "agent",
     actorKind: "agent",
     label: `agent:${session.instance}:${session.id}`,
-    scope: `session:${session.id}`,
+    // A rebound session writes under the scope of the session it replaced (A3 3.7.9).
+    scope: `session:${session.scope ?? session.id}`,
     ...(slot.wroteUnbound && slot.unboundScope !== undefined
       ? { earlierScope: slot.unboundScope }
       : {}),

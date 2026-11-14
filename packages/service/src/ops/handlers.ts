@@ -50,7 +50,12 @@ import {
   type OpenTaskRequest,
   type OpenTaskResult,
 } from "../launch/open.ts";
-import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
+import {
+  type BindOutcome,
+  type BindingPort,
+  type BoundSession,
+  type FoundLaunch,
+} from "./binding.ts";
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
@@ -143,6 +148,11 @@ interface Call {
   readonly host: OpsHost;
   readonly caller: Caller;
   readonly principal: Principal;
+  /**
+   * The session the principal was made from, as the call read it: a write goes to the writer only
+   * while the session is still so (submit, A3 3.7.3).
+   */
+  readonly bound?: BoundSession;
   readonly entry: AnyEntry;
   readonly space: ServedSpace;
   /** The input after the contract: SafeText, defaults and the audience's limits. */
@@ -257,11 +267,11 @@ async function callAs(
       ? sessionPrincipal(slot, bound)
       : (caller.principal ?? principalOf(caller.class, host.machine.id, caller.grant));
   const request = entry.kind === "write" ? requestIdOf(params) : undefined;
-  if (request === undefined) return callWith(host, caller, entry, params, principal);
+  if (request === undefined) return callWith(host, caller, entry, params, principal, bound);
   return writing(
     (scope) => `${host.machine.id}\n${scope}\n${request}`,
     principal,
-    () => callWith(host, caller, entry, params, principal),
+    () => callWith(host, caller, entry, params, principal, bound),
   );
 }
 
@@ -272,6 +282,7 @@ async function callWith(
   entry: AnyEntry,
   params: OpCallParams,
   principal: Principal,
+  bound: BoundSession | undefined,
 ): Promise<unknown> {
   const given = params.input ?? {};
   if (!isRecord(given)) throw invalid("input", "Expected an object");
@@ -294,6 +305,7 @@ async function callWith(
     host,
     caller,
     principal,
+    ...(principal.session === undefined || bound === undefined ? {} : { bound }),
     entry,
     space,
     input: parsed.data,
@@ -577,19 +589,23 @@ function intentInput(input: Record<string, unknown>): Record<string, unknown> {
  * accepted result, so they come back in `result.warnings`, and a replay returns the first call's.
  */
 /**
- * A3 3.7.3: a write acting as a session goes to the writer only while that session goes on. The
- * user's end, unbind or rebind may land after the call read its binding (`use`); the call then
- * writes nothing, and its retry acts as its connection is bound now.
+ * The checks a write passes before anything of it reaches the space, and again right before the
+ * writer gets it. The session the call acts as is still as the call read it (A3 3.7.3): the
+ * user's end, unbind or rebind, or an agent's first bind of a session a CLI call mapped while it
+ * waited, may land after the call read its binding (`use`); the call then writes nothing, and its
+ * retry acts as its connection is bound now. Then the grant (A3 3.7.8), for the homes of the
+ * session as read: a row revoked while the call read and staged stops it.
  */
-function checkSession(call: Call): void {
-  const session = call.principal.session;
+function checkWriter(call: Call): void {
   const bindings = call.host.bindings;
-  if (session === undefined || bindings === undefined || bindings.goesOn(session)) return;
-  throw new AppError({
-    code: "unbound",
-    message: `Your ${PRODUCT_NAME} session ended while this call ran: nothing was written.`,
-    hint: "Call again: the call then acts as your session is now. Pass task, or ask the user.",
-  });
+  if (call.bound !== undefined && bindings !== undefined && !bindings.holds(call.bound)) {
+    throw new AppError({
+      code: "unbound",
+      message: `Your ${PRODUCT_NAME} session changed while this call ran: nothing was written.`,
+      hint: "Call again: the call then acts as your session is now. Pass task, or ask the user.",
+    });
+  }
+  checkGrant(call.host.homes, homesOf(call.caller, { session: call.bound }), call.space.id);
 }
 
 async function submit(
@@ -611,11 +627,10 @@ async function submit(
   }
   let result: WriteResult;
   try {
-    // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
-    // read and staged stops it before its actor is registered, and once more (below) before the
-    // writer gets the request.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
-    checkSession(call);
+    // The session and the grant again before anything reaches the space (A3 3.7.3, 3.7.8): a
+    // change that landed while this call read and staged stops it before its actor is registered,
+    // and once more (below) before the writer gets the request.
+    checkWriter(call);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
@@ -642,10 +657,9 @@ async function submit(
       ops,
     };
     // The last step before the writer: no write is handed over after the revoke took effect, or
-    // as a session the user ended, unbound or rebound meanwhile (A3 3.7.3). Only a request the
-    // writer holds already can still commit.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
-    checkSession(call);
+    // as a session that changed meanwhile (A3 3.7.3). Only a request the writer holds already can
+    // still commit.
+    checkWriter(call);
     // An unbound connection's write was registered when its call started (`opCall`), so a retry
     // after a lost reply, once bound, still finds this receipt.
     result = await writer.submit(request);

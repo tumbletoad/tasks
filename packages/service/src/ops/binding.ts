@@ -31,6 +31,11 @@ export interface BoundSession {
    * holds its launch's instance until the first connection that binds it makes it its home's.
    */
   readonly waiting?: true;
+  /**
+   * The session whose writer scope it writes under, when it is not its own: a rebound session keeps
+   * the scope of the session it replaced (A3 3.7.9).
+   */
+  readonly scope?: string;
 }
 
 /**
@@ -168,9 +173,10 @@ export interface BindingPort {
    */
   untracked(launch: string): void;
   /**
-   * Whether the session goes on: its record is here and has not ended. A write acting as a session
-   * asks right before the writer gets it, so a user's end, unbind or rebind that landed while the
-   * call ran stops it (A3 3.7.3).
+   * Whether the session is still as a call read it: on record, not ended, and of the same home
+   * (or still waiting for its first). A write acting as a session asks right before the writer
+   * gets it, so a user's end, unbind or rebind, or an agent's first bind of a session a CLI call
+   * mapped while it waited, that landed while the call ran stops it (A3 3.7.3).
    */
-  goesOn(session: string): boolean;
+  holds(session: BoundSession): boolean;
 }

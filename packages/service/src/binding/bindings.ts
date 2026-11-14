@@ -53,6 +53,7 @@
 //   handle: a call acts as a session only when its own native ID proves that session, and no call
 //   binds the connection.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { CLI_NAME } from "@tasks/brand";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import { AppError } from "@tasks/contracts";
 import { INSTANCE_ID, MANUAL_INSTANCE, type BridgeTicket, type LaunchIntent } from "@tasks/launch";
@@ -220,7 +221,15 @@ const unrecorded = (): AppError =>
   new AppError({
     code: "internal",
     message: "The service could not record this session, so the call bound nothing.",
-    hint: "Pass task on each call for now, and ask the user to run tasks doctor.",
+    hint: `Pass task on each call for now, and ask the user to run ${CLI_NAME} doctor.`,
+  });
+
+/** A user's change of a session that could not be put on disk: nothing changed. */
+const unrecordedChange = (): AppError =>
+  new AppError({
+    code: "internal",
+    message: "The service could not record this change, so the session is as it was.",
+    hint: `Run ${CLI_NAME} doctor, then try again.`,
   });
 
 const noop = (): void => undefined;
@@ -242,6 +251,7 @@ const view = (record: SessionRecord): BoundSession => ({
   instance: record.instance,
   launches: record.launches,
   ...(record.via === null ? { waiting: true as const } : {}),
+  ...(record.scope === undefined ? {} : { scope: record.scope }),
 });
 
 /** The instance a bind context names: an A4 instance ID, else `manual` (mcp/principal.ts's rule). */
@@ -1129,9 +1139,14 @@ export class Bindings implements BindingPort {
     return session.native.some((n) => n.source === source && n.trust !== "presented");
   }
 
-  goesOn(session: string): boolean {
-    const record = this.#sessions.get(session);
-    return record !== undefined && record.ended_at === undefined;
+  holds(session: BoundSession): boolean {
+    const record = this.#sessions.get(session.id);
+    return (
+      record !== undefined &&
+      record.ended_at === undefined &&
+      record.instance === session.instance &&
+      (record.via === null) === (session.waiting === true)
+    );
   }
 
   /** A session as the user's commands name it, or undefined. */
@@ -1172,31 +1187,52 @@ export class Bindings implements BindingPort {
     }
   }
 
+  /**
+   * A user's change is on disk before it is answered or reaches a connection: its records are
+   * written first, and a write that fails leaves everything as it was and says so.
+   */
+  #commitChange(sessions: readonly SessionRecord[], handles: readonly HandleRecord[]): void {
+    const before = {
+      sessions: sessions.map((s) => this.#sessions.get(s.id)),
+      handles: handles.map((h) => this.#handles.get(h.hash)),
+    };
+    for (const session of sessions) this.#sessions.set(session.id, session);
+    for (const handle of handles) this.#handles.set(handle.hash, handle);
+    this.#dirty = true;
+    if (this.#persist()) return;
+    sessions.forEach((session, i) => {
+      const was = before.sessions[i];
+      if (was === undefined) this.#sessions.delete(session.id);
+      else this.#sessions.set(session.id, was);
+    });
+    handles.forEach((handle, i) => {
+      const was = before.handles[i];
+      if (was !== undefined) this.#handles.set(handle.hash, was);
+    });
+    throw unrecordedChange();
+  }
+
   #endWith(id: string, reason: "user" | "unbound"): SessionChange {
     const session = this.#sessions.get(id);
     if (session === undefined) return { kind: "not_found" };
     if (session.ended_at !== undefined) return { kind: "no_change", session: id };
-    this.#sessions.set(id, { ...session, ended_at: this.#now(), end_reason: reason });
+    // `end`: its handles still name the ended session, so a reconnect hears `lost`. `unbind`: they
+    // name none, so a reconnect goes on unbound. Either way the connection may have written
+    // unbound since (A3 3.7.9).
+    const handles = [...this.#handles.values()]
+      .filter((h) => h.session === id)
+      .map((h) => ({
+        ...h,
+        ...(reason === "unbound" ? { session: null } : {}),
+        wrote_unbound: true,
+      }));
+    this.#commitChange([{ ...session, ended_at: this.#now(), end_reason: reason }], handles);
     for (const slot of this.#attached) {
       if (slot.session?.id !== id) continue;
-      if (reason === "user") {
-        // Its handle still names the ended session, so a reconnect hears `lost` too.
-        slot.session = undefined;
-        slot.lost = true;
-      } else {
-        this.#unbindSlot(slot);
-      }
-      this.#markUnbound(slot);
+      slot.session = undefined;
+      slot.lost = reason === "user";
+      slot.wroteUnbound = true;
     }
-    if (reason === "unbound") {
-      for (const handle of [...this.#handles.values()]) {
-        if (handle.session === id) {
-          this.#handles.set(handle.hash, { ...handle, session: null, wrote_unbound: true });
-        }
-      }
-    }
-    this.#dirty = true;
-    this.#persist();
     this.#log({ ev: "binding.ended", reason });
     return { kind: "changed", session: id };
   }
@@ -1213,7 +1249,7 @@ export class Bindings implements BindingPort {
     if (session === undefined) return { kind: "not_found" };
     if (session.ended_at !== undefined) return { kind: "ended", session: id };
     if (session.task === task) return { kind: "no_change", session: id };
-    if (!this.#room(1)) throw unrecorded();
+    if (!this.#room(1)) throw unrecordedChange();
     const now = this.#now();
     const next: SessionRecord = {
       ...session,
@@ -1221,19 +1257,19 @@ export class Bindings implements BindingPort {
       task,
       // One no agent bound yet stays waiting for its agent, now on the other task.
       via: session.via === null ? null : "rebind",
+      // A3 3.7.9: binding later never resets anything. It writes under the scope of the session
+      // it replaces, so a retry of a write made before the rebind finds its receipt.
+      scope: session.scope ?? session.id,
       created_at: now,
       seen_at: now,
     };
-    this.#sessions.set(id, { ...session, ended_at: now, end_reason: "rebound" });
-    this.#sessions.set(next.id, next);
+    const handles = [...this.#handles.values()]
+      .filter((h) => h.session === id)
+      .map((h) => ({ ...h, session: next.id }));
+    this.#commitChange([{ ...session, ended_at: now, end_reason: "rebound" }, next], handles);
     for (const slot of this.#attached) {
       if (slot.session?.id === id) slot.session = view(next);
     }
-    for (const handle of [...this.#handles.values()]) {
-      if (handle.session === id) this.#handles.set(handle.hash, { ...handle, session: next.id });
-    }
-    this.#dirty = true;
-    this.#persist();
     this.#log({ ev: "binding.ended", reason: "rebound" });
     return { kind: "changed", session: id, next: next.id };
   }
@@ -1374,13 +1410,16 @@ export class Bindings implements BindingPort {
 
   /**
    * A binding that did not take: a session made for it goes again, and one that waited for its
-   * agent (`before`) is as it was; every open slot bound to it (a reconnect may have resumed the
-   * handle meanwhile) is unbound. A slot not open yet finds it at its next call (`#current`).
+   * agent (`before`) is as it was. When this bind made or claimed the session, every open slot
+   * bound to it (a reconnect may have resumed the handle meanwhile) is unbound, and a slot not
+   * open yet finds it at its next call (`#current`). A session an agent bound before stays as it
+   * is, and so do its other connections: only this slot's binding goes.
    */
   #takeBack(slot: Slot, session: SessionRecord, before: SessionRecord | undefined): void {
     this.#unbindSlot(slot);
     this.#markUnbound(slot);
-    for (const other of this.#attached) {
+    const ours = before === undefined || before.via === null;
+    for (const other of ours ? this.#attached : []) {
       if (other.session?.id !== session.id) continue;
       this.#unbindSlot(other);
       this.#markUnbound(other);

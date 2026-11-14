@@ -6,6 +6,7 @@
 // `tasks session` sends them. Fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { JsonObject } from "@tasks/bridge/protocol";
+import { AppError } from "@tasks/contracts";
 import { newId } from "@tasks/storage";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
 import { opCall, type BindingPort, type Slot } from "../src/ops/index.ts";
@@ -99,6 +100,41 @@ async function waitBound(launch: string): Promise<void> {
     if (Date.now() > deadline) throw new Error("the launch did not record the binding");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+}
+
+/**
+ * The service's binding, with `change` run once right after the next call read its binding
+ * (`use`): a change that lands while that call runs.
+ */
+function racingUse(change: () => Promise<void>): BindingPort {
+  const real = w.service.bindings;
+  let armed = true;
+  return {
+    redeem: (slot, launch) => real.redeem(slot, launch),
+    bindTask: (slot, space, task) => real.bindTask(slot, space, task),
+    pin: (slot, space) => {
+      real.pin(slot, space);
+    },
+    use: async (slot) => {
+      await real.use(slot);
+      if (armed) {
+        armed = false;
+        await change();
+      }
+    },
+    liveSessions: (space) => real.liveSessions(space),
+    sessionsOf: (space, task) => real.sessionsOf(space, task),
+    untracked: (launch) => {
+      real.untracked(launch);
+    },
+    holds: (read) => real.holds(read),
+  };
+}
+
+/** The log of `task`, newest first, as the user reads it. */
+async function logOf(task: string): Promise<Json[]> {
+  const read = await user("task.get", { task, sections: ["log"] });
+  return ((read["sections"] as Json)["log"] as Json[] | undefined) ?? [];
 }
 
 /** A Copy launch of `task`, dispatched at once (A4 3.4.6): its reference binds once. */
@@ -199,6 +235,56 @@ describe("[A3.3.7.binding.launch-session] a CLI call maps to its launch's sessio
         expect(agent.slot.session?.waiting).toBeUndefined();
       } finally {
         agent.close();
+      }
+    },
+  );
+
+  test(
+    "a CLI write on a waiting session writes nothing when an agent binds that session while it runs; its retry is that home's",
+    { timeout: LONG },
+    async () => {
+      const launch = await w.launch("M-2", { instance: "t3-launch" });
+      const env = { TASKS_TICKET: launch.ticket };
+      const real = w.service.bindings;
+      const mapped = real.mapped(env);
+      expect(mapped?.session?.waiting).toBe(true);
+      let agent: Agent | undefined;
+      const racing = racingUse(async () => {
+        agent = await connect({ env });
+      });
+      const args = {
+        kind: "progress",
+        text: "Fixture progress racing the first bind.",
+        request_id: rid(),
+      };
+      try {
+        const refused = await opCall(
+          { ...w.service.ops, bindings: racing },
+          { class: "cli-agent", env, ...(mapped === undefined ? {} : { binding: mapped }) },
+          { op: "entry.add", input: args },
+        ).then(
+          () => undefined,
+          (e: unknown) => (e instanceof AppError ? e : undefined),
+        );
+        expect(refused?.code).toBe("unbound");
+        expect(agent?.slot.session).toMatchObject({
+          id: mapped?.session?.id,
+          instance: "done-agent",
+        });
+        expect((await logOf("M-2")).some((entry) => entry["text"] === args.text)).toBe(false);
+        // The retry maps to the session as it is now: the home's, and gated as its calls are.
+        const again = real.mapped(env);
+        await opCall(
+          w.service.ops,
+          { class: "cli-agent", env, ...(again === undefined ? {} : { binding: again }) },
+          { op: "entry.add", input: args },
+        );
+        const written = (await logOf("M-2")).filter((entry) => entry["text"] === args.text);
+        expect(written.map((entry) => entry["author"])).toEqual([
+          `agent:done-agent:${mapped?.session?.id ?? ""}`,
+        ]);
+      } finally {
+        agent?.close();
       }
     },
   );
@@ -361,27 +447,9 @@ describe("[A3.3.7.binding.user-ops] the user ends, unbinds and rebinds a session
       // The end lands right after the call read its binding: the slot keeps the session it read,
       // as a call does whose principal was computed before the end.
       agent.close();
-      let armed = true;
-      const racing: BindingPort = {
-        redeem: (slot, launch) => real.redeem(slot, launch),
-        bindTask: (slot, space, task) => real.bindTask(slot, space, task),
-        pin: (slot, space) => {
-          real.pin(slot, space);
-        },
-        use: async (slot) => {
-          await real.use(slot);
-          if (armed) {
-            armed = false;
-            await real.end(session);
-          }
-        },
-        liveSessions: (space) => real.liveSessions(space),
-        sessionsOf: (space, task) => real.sessionsOf(space, task),
-        untracked: (launch) => {
-          real.untracked(launch);
-        },
-        goesOn: (id) => real.goesOn(id),
-      };
+      const racing = racingUse(async () => {
+        await real.end(session);
+      });
       const call = toolCaller({
         ops: { ...w.service.ops, bindings: racing },
         context: bridgeContext({ space: w.space, instance: "done-agent" }),
@@ -405,16 +473,44 @@ describe("[A3.3.7.binding.user-ops] the user ends, unbinds and rebinds a session
       const refused = await text(args);
       expect(refused).toMatch(/^error unbound/);
       expect(refused).toContain("nothing was written");
-      const log = async () =>
-        ((await user("task.get", { task: "M-3", sections: ["log"] }))["sections"] as Json)[
-          "log"
-        ] as Json[];
-      expect((await log()).some((entry) => entry["text"] === args.text)).toBe(false);
+      expect((await logOf("M-3")).some((entry) => entry["text"] === args.text)).toBe(false);
       // The retry: the connection's session ended, so the call acts as its unbound agent home.
       const retried = await text(args);
       expect(retried).toContain("on M-3");
-      const written = (await log()).filter((entry) => entry["text"] === args.text);
+      const written = (await logOf("M-3")).filter((entry) => entry["text"] === args.text);
       expect(written.map((entry) => entry["author"])).toEqual(["agent:done-agent"]);
+    },
+  );
+
+  test(
+    "a write made before a rebind, retried after it with the same request ID, replays and writes once",
+    { timeout: LONG },
+    async () => {
+      const agent = await connect();
+      try {
+        await agent.tool("get_task", { task: "M-3", bind: true });
+        const session = agent.slot.session?.id ?? "";
+        const args = {
+          task: "M-3",
+          kind: "progress",
+          text: "Fixture progress before the rebind.",
+          request_id: rid(),
+        };
+        expect(await agent.tool("add_entry", args)).toMatchObject({ error: false });
+        const other = await user("task.get", { task: "M-4", sections: ["outcome"] });
+        const moved = await w.service.bindings.rebind(
+          session,
+          String((other["task"] as Json)["id"]),
+        );
+        expect(moved).toMatchObject({ kind: "changed", session });
+        // The reply was lost, say: the agent retries the same call as the rebound session.
+        const again = await agent.tool("add_entry", args);
+        expect(again).toMatchObject({ error: false });
+        const written = (await logOf("M-3")).filter((entry) => entry["text"] === args.text);
+        expect(written.map((entry) => entry["author"])).toEqual([`agent:done-agent:${session}`]);
+      } finally {
+        agent.close();
+      }
     },
   );
 });

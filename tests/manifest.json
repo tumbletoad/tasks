@@ -1643,7 +1643,7 @@
     },
     {
       "id": "A3.3.7.binding.launch-session",
-      "title": "A launch's session is made with its intent before dispatch, on disk with no agent binding yet and the launch's preset ID; a CLI call with the ticket maps to it before any bridge bound and writes as it; the bridge's ticket or a reference then binds that session for the binding connection's home, and a bind the launch does not take leaves it waiting; a session no agent bound ends stale after 7 quiet days and its ticket binds nothing",
+      "title": "A launch's session is made with its intent before dispatch, on disk with no agent binding yet and the launch's preset ID; a CLI call with the ticket maps to it before any bridge bound and writes as it; the bridge's ticket or a reference then binds that session for the binding connection's home, and a bind the launch does not take leaves it waiting; a session no agent bound ends stale after 7 quiet days and its ticket binds nothing; a CLI write whose waiting session an agent binds while it runs writes nothing, and its retry is that home's",
       "source": "A3 3.7.4, A3 3.7.7, A4 3.10, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",
@@ -1651,7 +1651,7 @@
     },
     {
       "id": "A3.3.7.binding.native",
-      "title": "Rule 3: Claude's preset session ID and T3's returned thread ID bind alone at the bind frame, Codex's reference-matched thread at the first tool call, and the launch records the binding; an ID a connection only presented, another instance's session, two sessions holding one ID and a space the home may not use bind nothing; a CLI call maps by a launch's ID alone",
+      "title": "Rule 3: Claude's preset session ID and T3's returned thread ID bind alone at the bind frame, Codex's reference-matched thread at the first tool call, and the launch records the binding; an ID a connection only presented, another instance's session, two sessions holding one ID and a space the home may not use bind nothing; a bind taken back leaves the session's other connections bound; a CLI call maps by a launch's ID alone",
       "source": "A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",
@@ -1675,7 +1675,7 @@
     },
     {
       "id": "A3.3.7.binding.user-ops",
-      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them; a change waits for a reference bind that waits on its launch, and a write that read its binding before the change writes nothing",
+      "title": "The user's session end, unbind and rebind end the session and its handles: end leaves its connections and handles lost and its ticket binding nothing, unbind leaves them unbound and free to bind again, rebind moves them to a new session on the other task with its launches and native IDs; only a person at a terminal may call them; a change is on disk before it is answered and waits for a reference bind that waits on its launch, a write that read its binding before the change writes nothing, and a retry after a rebind replays",
       "source": "A3 3.7.3, A3 3.2.3, A3 5, A7 3.11 M4.06",
       "owner": "M4",
       "kind": "ci",

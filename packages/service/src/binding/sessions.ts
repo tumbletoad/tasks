@@ -87,6 +87,11 @@ export interface SessionRecord {
   readonly route?: Route;
   /** Its launch reference was resolved on a shared connection: opened, not tracked (A3 3.7.5). */
   readonly untracked?: true;
+  /**
+   * The session whose writer scope it writes under (A3 3.7.9): the first of a chain of rebinds, so
+   * a retry after a rebind finds the receipt of a write made before it. Absent: its own.
+   */
+  readonly scope?: string;
   readonly created_at: number;
   /** The last bind or call (A3 3.7.7 `session.call`), kept at most a minute behind. */
   readonly seen_at: number;
@@ -158,7 +163,7 @@ const isOneOf = <T extends string>(values: readonly T[], value: unknown): value 
 function sessionOf(value: unknown): SessionRecord | undefined {
   if (!isObject(value)) return undefined;
   const { id, space, task, instance, via, launches, native, created_at, seen_at } = value;
-  const { opened_with, route, untracked, ended_at, end_reason } = value;
+  const { opened_with, route, untracked, scope, ended_at, end_reason } = value;
   if (!isId(id, "se") || !isId(space, "sp") || !isInstance(instance)) return undefined;
   if (task !== null && !isId(task, "t")) return undefined;
   if (via !== null && !isOneOf(VIA, via)) return undefined;
@@ -178,6 +183,7 @@ function sessionOf(value: unknown): SessionRecord | undefined {
   if (opened_with !== undefined && !isInstance(opened_with)) return undefined;
   if (route !== undefined && !isRoute(route)) return undefined;
   if (untracked !== undefined && untracked !== true) return undefined;
+  if (scope !== undefined && !isId(scope, "se")) return undefined;
   if (!isInstant(created_at) || !isInstant(seen_at)) return undefined;
   if (ended_at !== undefined && !isInstant(ended_at)) return undefined;
   if (end_reason !== undefined && (ended_at === undefined || !isOneOf(END_REASONS, end_reason))) {
@@ -194,6 +200,7 @@ function sessionOf(value: unknown): SessionRecord | undefined {
     ...(opened_with === undefined ? {} : { opened_with }),
     ...(route === undefined ? {} : { route }),
     ...(untracked === true ? { untracked } : {}),
+    ...(scope === undefined ? {} : { scope }),
     created_at,
     seen_at,
     ...(ended_at === undefined ? {} : { ended_at }),

@@ -428,6 +428,62 @@ describe("[A3.3.7.binding.user-ops] the user's end, unbind and rebind end a sess
   });
 });
 
+/** A store whose writes fail while `failing` is set. */
+function flakyStore(): SessionStore & { failing: boolean; readonly inner: MemorySessionStore } {
+  const inner = new MemorySessionStore();
+  const store = {
+    failing: false,
+    inner,
+    load: () => inner.load(),
+    save: (state: Parameters<SessionStore["save"]>[0]) => {
+      if (store.failing) throw new Error("The disk is full");
+      inner.save(state);
+    },
+  };
+  return store;
+}
+
+describe("[A3.3.7.binding.user-ops] a user's change is on disk before it is answered", () => {
+  test("end, unbind and rebind that cannot be written change nothing and say so", async () => {
+    const store = flakyStore();
+    const { bindings: b } = bindings({ store });
+    const agent = await connect(b);
+    await b.bindTask(agent.slot, SPACE, TASK);
+    const id = agent.slot.session?.id ?? "";
+    store.failing = true;
+    await expect(b.end(id)).rejects.toThrow(/could not record this change/);
+    await expect(b.unbind(id)).rejects.toThrow(/could not record this change/);
+    await expect(b.rebind(id, OTHER_TASK)).rejects.toThrow(/could not record this change/);
+    expect(agent.slot.session?.id).toBe(id);
+    expect(agent.slot.lost).toBe(false);
+    expect(b.sessionsOf(SPACE, TASK)).toMatchObject([{ id, state: "live" }]);
+    expect(b.sessionsOf(SPACE, OTHER_TASK)).toEqual([]);
+    // What is on disk binds as before: the handle restores the session after a restart.
+    store.failing = false;
+    const restarted = bindings({ store: store.inner }).bindings;
+    const resumed = await connect(restarted, { resume: { handle: agent.handle } });
+    expect(resumed.state).toBe("bound");
+    expect(resumed.slot.session?.id).toBe(id);
+  });
+});
+
+describe("[A3.3.7.binding.native] a bind by native ID that cannot be written leaves the session's other connections bound", () => {
+  test("a second connection of a bound session whose bind is taken back unbinds only itself", async () => {
+    const store = flakyStore();
+    const { bindings: b } = bindings({ store });
+    b.launched(SPACE, intentOf({ evidence: { preset: CLAUDE } }));
+    const first = await connect(b, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } });
+    const id = first.slot.session?.id ?? "";
+    expect(id).not.toBe("");
+    store.failing = true;
+    const second = await connect(b, { env: { CLAUDE_CODE_SESSION_ID: CLAUDE } });
+    expect(second.state).toBe("unbound");
+    expect(second.slot.session).toBeUndefined();
+    expect(first.slot.session?.id).toBe(id);
+    expect(b.sessionsOf(SPACE, TASK)).toMatchObject([{ id, state: "live", via: "native_id" }]);
+  });
+});
+
 describe("[A3.3.7.binding.user-ops] a user's change waits for a reference bind that waits on its launch", () => {
   /** A launch side whose answer to a reference bind the test gives. */
   function heldLaunch(): LaunchPort & { answer(bound: boolean): void } {
