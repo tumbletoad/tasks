@@ -137,6 +137,12 @@
     ],
     "approvals": {
       "sha256-bbb50b140ef4052560a197c58ac0d48a02a61125e068cb6d6eed256d6ee340d9": "allow"
+    },
+    "setup": {
+      "managedPaths": [
+        "/home/mira/.claude/CLAUDE.md",
+        "/home/mira/dotfiles/codex"
+      ]
     }
   },
   "problems": []

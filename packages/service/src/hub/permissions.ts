@@ -24,6 +24,7 @@ import { lstatSync, readlinkSync, statSync, type Stats } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, resolve } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
+import { MAX_LINE_BYTES, shellWord } from "@tasks/launch/shell-line";
 
 /**
  * What Tasks needs of a file or folder it trusts. `folder`: the state, log, crash and cache folders
@@ -226,18 +227,27 @@ export function repairOf(facts: PathFacts, problem: Unsafe): Repair {
   return parts.length === 0 ? { chown } : { chown, chmod: parts.join(",") };
 }
 
-const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/u;
-const quote = (text: string) => (SAFE.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`);
-
 /**
- * A path as a person types it in a POSIX shell: `~/` for the home folder, quoted when needed.
- * POSIX paths only (the rule applies on Linux and macOS), so the separator is `/` on every OS.
+ * A path as a person types it in a POSIX shell: `~/` for the home folder, quoted when needed by
+ * launch's shell-line.ts (the rule for every line setup and doctor print to paste, A3 3.13.7).
+ * Undefined when no quoting keeps it literal (a control character other than a newline). POSIX
+ * paths only (the rule
+ * applies on Linux and macOS), so the separator is `/` on every OS.
  */
-export function shellPath(path: string, home: string | undefined = homeOrUndefined()): string {
+export function shellArg(
+  path: string,
+  home: string | undefined = homeOrUndefined(),
+): string | undefined {
   if (home !== undefined && home !== "" && home !== "/" && path.startsWith(`${home}/`)) {
-    return `~/${quote(path.slice(home.length + 1))}`;
+    const rest = shellWord("linux", path.slice(home.length + 1));
+    return rest === undefined ? undefined : `~/${rest}`;
   }
-  return quote(path);
+  return shellWord("linux", path);
+}
+
+/** A path in a sentence: as a person types it, or with its control characters escaped. */
+export function shellPath(path: string, home: string | undefined = homeOrUndefined()): string {
+  return shellArg(path, home) ?? JSON.stringify(path);
 }
 
 function homeOrUndefined(): string | undefined {
@@ -251,7 +261,7 @@ function homeOrUndefined(): string | undefined {
 /** This user's name for a chown line; the shell's own answer when it cannot be read here. */
 function userName(): string {
   try {
-    return quote(userInfo().username);
+    return shellWord("linux", userInfo().username) ?? '"$(id -un)"';
   } catch {
     return '"$(id -un)"';
   }
@@ -310,11 +320,25 @@ function reasons(thing: UnsafeThing): readonly [string, string] {
 /** What is wrong with one file or folder, in words: "belongs to another user". */
 export const unsafeReason = (thing: UnsafeThing): string => reasons(thing)[0];
 
-/** The one line a person pastes to make every thing pass, or undefined when no command can. */
+/**
+ * The one line a person pastes to make every thing pass, or undefined when no command can: also
+ * when a path in it holds a character no line to paste keeps literal, or the line would be longer
+ * than a line to paste can be (launch's MAX_LINE_BYTES, A3 3.13.7).
+ */
 export function fixCommand(
   things: readonly Pick<UnsafeThing, "facts" | "problem">[],
   user: string = userName(),
 ): string | undefined {
+  const line = repairLine(things, user);
+  return line !== undefined && Buffer.byteLength(line, "utf8") <= MAX_LINE_BYTES ? line : undefined;
+}
+
+/** The repair as one line, however long; undefined when no command can. */
+function repairLine(
+  things: readonly Pick<UnsafeThing, "facts" | "problem">[],
+  user: string,
+): string | undefined {
+  if (things.some((t) => shellArg(t.facts.path) === undefined)) return undefined;
   const repairs = things.map((t) => ({
     path: shellPath(t.facts.path),
     repair: repairOf(t.facts, t.problem),
@@ -371,6 +395,15 @@ export function unsafeMessage(things: readonly UnsafeThing[], why: string, user?
       : things.map((t) => `${named(t)} ${unsafeReason(t)}`).join("; ");
   const fix = fixCommand(things, user);
   const notes = things.map(noteOf).filter((note) => note !== undefined);
+  if (things.some((t) => shellArg(t.facts.path) === undefined)) {
+    notes.push(
+      "No command is given, because a path in it holds a control character, which a line to paste cannot show as it is.",
+    );
+  } else if (fix === undefined && repairLine(things, user ?? userName()) !== undefined) {
+    notes.push(
+      `No command is given, because it would be longer than a line to paste can be (${String(MAX_LINE_BYTES)} bytes).`,
+    );
+  }
   const partial = things.some((t) => repairOf(t.facts, t.problem).none !== undefined);
   const run = partial ? "For the others, run" : "To fix it, run";
   return [`${wrong}.`, `${why}.`, ...notes, ...(fix === undefined ? [] : [`${run}: ${fix}`])].join(

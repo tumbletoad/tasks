@@ -113,6 +113,7 @@ import {
 import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
+import { SeenCalls } from "./agent-homes.ts";
 import { within } from "./wait.ts";
 
 /** A2 3.12.6: while it runs, the service looks for an interrupted update every 10 s. */
@@ -696,6 +697,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         platform,
         grants: grantsOf,
         spaces: () => made.spaces?.served() ?? [],
+        seen: new SeenCalls(),
       },
       spaces: {
         machine,
