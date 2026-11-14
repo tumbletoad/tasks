@@ -1,4 +1,4 @@
-// `tasks update --from <archive>`, `--rollback` and `--repair` (A2 3.12.6, the subset of A7 3.8
+// `tasks update --from <archive>`, `--rollback` and `--repair` (A2 3.12.6, the subset of A7 3.13
 // M6.12: a local archive, no hosted channel). The installed version replaces itself, in this order:
 //   1. update.lock for the whole update (A2 3.2.3). A second update waits for it; then any journal
 //      it finds is an interrupted update, which is finished or rolled back first (repair.ts).
@@ -98,7 +98,7 @@ import {
   type LauncherPoint,
 } from "./switch.ts";
 
-/** How long a second update waits for the first (A7 3.8 M6.12: "a second concurrent update waits"). */
+/** How long a second update waits for the first (A7 3.13 M6.12: "a second concurrent update waits"). */
 export const LOCK_WAIT_MS = 10 * 60_000;
 /** How long the update waits for the restarted service to name the new version (A2 3.12.6 step 12). */
 export const RESTART_WAIT_MS = 30_000;
@@ -364,7 +364,7 @@ const say = (options: UpdateOptions, line: string) => {
 };
 
 /**
- * Takes update.lock, waiting while another update holds it (A7 3.8 M6.12): one line says whose it
+ * Takes update.lock, waiting while another update holds it (A7 3.13 M6.12): one line says whose it
  * is, from that update's journal. After `waitMs` it gives up with nothing changed.
  */
 async function lockForUpdate(install: Install, options: UpdateOptions): Promise<HeldLock> {
