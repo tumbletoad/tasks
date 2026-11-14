@@ -352,7 +352,11 @@ describe("[A1.3.15.places.prop] resolve returns exactly the directory a model of
       seen.set(k, (seen.get(k) ?? 0) + 1);
       return r;
     };
-    await fc.assert(property(counting), { numRuns: 100, examples: LINK_TO_FILE });
+    // fast-check counts the examples among the runs: 100 random worlds still run after them.
+    await fc.assert(property(counting), {
+      numRuns: 100 + LINK_TO_FILE.length,
+      examples: LINK_TO_FILE,
+    });
     // The trees reach every outcome, so the property is not met by trees that never escape.
     for (const outcome of [
       "ok",

@@ -280,29 +280,35 @@ export function absoluteFolder(
 
 const bigStat = (path: string): Promise<BigIntStats> => stat(path, { bigint: true });
 
+/** The most links a chain may hold, as Linux follows them (MAXSYMLINKS): one more is a loop. */
+const MAX_LINKS = 40;
+
 /**
- * Why a path whose stat failed names no folder: `not_a_directory` when it is a link that leads,
- * through its own chain of links, to something there that is not a folder, `path_missing`
- * otherwise. Linux and macOS follow a link to a file, so the stat itself says `not_a_directory`;
- * Windows cannot follow a junction or a directory link to a file, and its stat says the path is
- * missing. Read only after the stat failed, so it decides which refusal is given and never that a
- * place resolves: the reason is the same on every platform (A1 3.15).
+ * Why a path whose stat failed names no folder (A1 3.15). Linux and macOS follow a link to a file,
+ * so their stat already says `not_a_directory`, and a failed stat there is `path_missing`. Windows
+ * cannot follow a junction or a directory link to a file, and its stat says the path is missing:
+ * there the link's own chain is read with lstat and readlink, at most 40 links as Linux follows
+ * them. A relative target is taken from the real folder the link lies in, never by spelling, so a
+ * link reached through another link leads where the file system takes it. A chain that ends at
+ * something that is not a folder is `not_a_directory`, anything else `path_missing`. Read only after
+ * the stat failed, so it decides which refusal is given and never that a place resolves.
  */
 async function missingReason(
   path: string,
   P: PlatformPath,
 ): Promise<"path_missing" | "not_a_directory"> {
+  if (process.platform !== "win32") return "path_missing";
   let at = path;
-  for (let hops = 0; hops <= 32; hops += 1) {
+  for (let links = 0; ; links += 1) {
     try {
       const entry = await lstat(at);
       if (!entry.isSymbolicLink()) return entry.isDirectory() ? "path_missing" : "not_a_directory";
-      at = P.resolve(P.dirname(at), await readlink(at));
+      if (links === MAX_LINKS) return "path_missing";
+      at = P.resolve(await realpath(P.dirname(at)), await readlink(at));
     } catch {
       return "path_missing";
     }
   }
-  return "path_missing";
 }
 
 /** The largest file number, which Windows gives when a file's ID does not fit (ReFS). */
