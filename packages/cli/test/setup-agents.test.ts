@@ -392,12 +392,15 @@ describe("[A3.3.13.setup.cli] tasks setup agents through the CLI and the service
 
 describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and names the refusal of a taken one", () => {
   /** A live row of another home, made as setup makes rows; the function revokes it. */
-  async function foreignRow(instance: string): Promise<() => Promise<void>> {
+  async function foreignRow(
+    instance: string,
+    of: string = join(user, ".codex-elsewhere"),
+  ): Promise<() => Promise<void>> {
     const person = await classSession(home, service.endpoint.path, "cli-interactive");
     try {
       const made = (await person.call(
         "setup/home_grant",
-        { app: "codex", home: join(user, ".codex-elsewhere"), instance, account: "", space },
+        { app: "codex", home: of, instance, account: "", space },
         { timeoutMs: 30_000 },
       )) as { grant: { grant: string } };
       return async () => {
@@ -463,6 +466,31 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         });
         const removed = await run(["setup", "agents", "--remove", "--json"]);
         expect(removed.code, removed.stdout).toBe(0);
+        expect(read()).toEqual(before);
+      } finally {
+        await revoke();
+      }
+      expect(await rows()).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a home whose own row outlived setup's record gets that row's instance back, not a new proposal",
+    async () => {
+      const before = read();
+      // The default Codex home's own row, as setup made it once, with setup's record gone since.
+      const revoke = await foreignRow("codex-7", join(user, ".codex"));
+      try {
+        const preview = await run(
+          ["setup", "agents", "--app", "codex", "--space", space, "--json"],
+          false,
+        );
+        expect(preview.code, preview.stderr).toBe(0);
+        const planned = JSON.parse(preview.stdout) as {
+          homes: { app: string; instance: string }[];
+        };
+        expect(planned.homes.map((h) => [h.app, h.instance])).toEqual([["codex", "codex-7"]]);
         expect(read()).toEqual(before);
       } finally {
         await revoke();

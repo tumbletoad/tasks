@@ -886,8 +886,18 @@ function freeInstances(
         proposedHere.has(id) &&
         !(home.app === "claude-desktop" && proposedHere.get(id) === "claude-desktop")
       );
-    let id = home.instance;
-    for (let n = 2; !free(id) && n < 1000; n += 1) {
+    // A home whose own live row outlived setup's record (lost state) gets that row's instance
+    // back while it is free, so the sessions bound to it go on.
+    const own = (input.rows ?? []).find(
+      (row) =>
+        row.app === home.app &&
+        samePath(platform, row.home, home.home) &&
+        INSTANCE_ID.test(row.instance) &&
+        free(row.instance),
+    );
+    let id = own?.instance ?? home.instance;
+    // Ends: each n gives another ID, and only finitely many are held.
+    for (let n = 2; !free(id); n += 1) {
       const suffix = `-${String(n)}`;
       id = `${home.instance.slice(0, 40 - suffix.length).replace(/-+$/u, "")}${suffix}`;
     }
