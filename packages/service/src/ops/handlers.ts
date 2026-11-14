@@ -1108,7 +1108,9 @@ async function resolvedDrafts(
       const project = draft["project"];
       if (typeof project === "string") {
         const within = typeof resolved["area"] === "string" ? resolved["area"] : undefined;
-        resolved["project"] = resolveGroup(names, "project", project, `${at}.project`, within);
+        resolved["project"] = resolveGroup(names, "project", project, `${at}.project`, {
+          area: within,
+        });
       }
       return resolved;
     });
@@ -1767,9 +1769,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     } catch (error) {
       throw storageFailure(error);
     }
-    // `path` narrows the list to one area, named as a draft names one (groups.ts).
+    // `path` narrows the list to one area, named as a draft names one (groups.ts); of "Area/Project"
+    // the area. It only looks the area up, so an unknown one is not_found.
+    const area = String(input["path"]).split("/")[0]?.trim() ?? "";
     const only =
-      names === undefined ? undefined : resolveGroup(names, "area", String(input["path"]), "path");
+      names === undefined ? undefined : resolveGroup(names, "area", area, "path", { lookup: true });
     return groupList(read, only);
   },
 

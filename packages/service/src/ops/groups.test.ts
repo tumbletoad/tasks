@@ -1,0 +1,87 @@
+// Areas and projects by name, and possible duplicates by title (A3 3.4.5): the pure rules.
+import { AppError } from "@tasks/contracts";
+import { describe, expect, test } from "vitest";
+import { editDistance, resolveGroup } from "./groups.ts";
+import type { GroupNames } from "./read.ts";
+import { duplicateWarning, similarTitles } from "./similar.ts";
+
+const names: GroupNames = {
+  areas: [
+    { id: "a_1", slug: "client-work", title: "Client work", area: null },
+    { id: "a_2", slug: "home", title: "Home", area: null },
+    { id: "a_3", slug: "qa", title: "QA", area: null },
+  ],
+  projects: [
+    { id: "p_1", slug: "portal", title: "Portal", area: "a_1" },
+    { id: "p_2", slug: "portal-2", title: "Portal", area: "a_2" },
+  ],
+  aliases: [{ alias: "old-home", kind: "area", id: "a_2" }],
+};
+
+function failure(fn: () => unknown): AppError {
+  try {
+    fn();
+  } catch (error) {
+    if (error instanceof AppError) return error;
+    throw error;
+  }
+  throw new Error("expected a refusal");
+}
+
+describe("[A3.3.4.add.names] names, typos and similar titles", () => {
+  test("a name matches by ID, slug, name ignoring case and spaces, or an old slug", () => {
+    for (const name of ["a_1", "client-work", "CLIENT  WORK", "Client work"]) {
+      expect(resolveGroup(names, "area", name, "p")).toBe("a_1");
+    }
+    expect(resolveGroup(names, "area", "old-home", "p")).toBe("a_2");
+    // Two projects of one name: the area named beside it decides, else it is ambiguous.
+    expect(resolveGroup(names, "project", "Portal", "p", { area: "a_1" })).toBe("p_1");
+    expect(resolveGroup(names, "project", "Portal", "p", { area: "a_2" })).toBe("p_2");
+    expect(resolveGroup(names, "project", "portal-2", "p")).toBe("p_2");
+    expect(failure(() => resolveGroup(names, "project", "Portal", "p")).code).toBe("ambiguous");
+  });
+
+  test("a typo is within 2 edits and under half the name's length; anything else is new", () => {
+    const typo = failure(() => resolveGroup(names, "area", "Client wrok", "tasks.0.area"));
+    expect(typo.code).toBe("invalid_input");
+    expect(typo.data).toMatchObject({ suggestions: ["Client work"] });
+    expect(failure(() => resolveGroup(names, "area", "Hme", "p")).data).toMatchObject({
+      suggestions: ["Home"],
+    });
+    // Two letters from "QA" is a new name, not a typo of it.
+    expect(failure(() => resolveGroup(names, "area", "UX", "p")).hint).toContain("M4.01b");
+    expect(failure(() => resolveGroup(names, "area", "Garden", "p")).hint).toContain("M4.01b");
+    // A lookup of an unknown name is not_found, with any close name.
+    const lookup = failure(() => resolveGroup(names, "area", "Hme", "path", { lookup: true }));
+    expect(lookup).toMatchObject({ code: "not_found", data: { suggestions: ["Home"] } });
+    expect(editDistance("kitten", "sitting", 5)).toBe(3);
+    expect(editDistance("a", "abcdef", 2)).toBe(3);
+  });
+
+  test("similar titles: close trigrams, but other numbers are never close", () => {
+    expect(similarTitles("Fix appointment timezones", "Fix appointment time zones")).toBe(true);
+    expect(similarTitles("Call Jonas about the invoice", "call jonas about invoice")).toBe(true);
+    expect(similarTitles("Fix DST bug in reports", "Fix appointment time zones")).toBe(false);
+    expect(similarTitles("Invoice 12", "Invoice 13")).toBe(false);
+    expect(similarTitles("", "")).toBe(false);
+    const siblings = ["M-2", "M-3", "M-4", "M-5"].map((ref) => ({
+      ref,
+      title: "Fix the export",
+      destination: { project: "p_1", area: null, inbox: false },
+    }));
+    expect(
+      duplicateWarning("tasks.1", "Fix the export", { project: "p_1", area: null, inbox: false }, [
+        ...siblings,
+        { ...siblings[0], ref: "M-9", destination: { project: "p_2", area: null, inbox: false } },
+      ] as never),
+    ).toBe("tasks.1: possible duplicate of M-2, M-3, M-4 and 1 more (same project, similar title)");
+    expect(
+      duplicateWarning(
+        "tasks.0",
+        "Fix the export",
+        { project: null, area: null, inbox: true },
+        siblings,
+      ),
+    ).toBeUndefined();
+  });
+});

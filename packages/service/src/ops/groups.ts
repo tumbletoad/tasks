@@ -1,17 +1,24 @@
 // Areas and projects by name (A3 3.4.5, 3.4.10): a caller names a group as people do, and the
 // writer takes IDs and slugs only (A1 3.6). A name matches an area's or a project's name or slug,
 // ignoring case, else an old slug; a project named beside an area is looked for in that area
-// first. A name that matches nothing but lies within edit distance 2 of a group's name or slug is
-// `invalid_input` with the close names in `data.suggestions` (stored names never reach a message,
-// A3 3.5), which stops "Client Work" from appearing beside "Client work". Any other new name is
-// created under autonomy once A1's `area.create` and `project.create` exist (M4.01b); until then it
-// is refused naming that step.
+// first. A name that matches nothing but lies within edit distance 2 of a group's name or slug, and
+// less than half that name's length from it, is `invalid_input` with the close names in
+// `data.suggestions` (stored names never reach a message, A3 3.5): "Client wrok" is a typo of
+// "Client work", while "UX" is no typo of "QA". Any other new name is created under autonomy once
+// A1's `area.create` and `project.create` exist (M4.01b); until then it is refused naming that
+// step. Where a name only looks a group up (organize's list), an unknown one is `not_found`.
 import { AppError } from "@tasks/contracts";
 import { unsupported } from "./errors.ts";
 import type { GroupName, GroupNames } from "./read.ts";
 
 /** A3 3.4.5: an unknown name this close to an existing one is a typo, not a new group. */
 export const TYPO_DISTANCE = 2;
+
+/** Whether `wanted` is a typo of `name`: within TYPO_DISTANCE, and under half of `name`'s length. */
+function typoOf(name: string, wanted: string): boolean {
+  const distance = editDistance(name, wanted, TYPO_DISTANCE);
+  return distance <= TYPO_DISTANCE && distance * 2 < Array.from(name).length;
+}
 
 /** At most this many close names in a refusal. */
 const SUGGESTIONS = 5;
@@ -55,15 +62,17 @@ const exact = (group: GroupName, wanted: string): boolean =>
 
 /**
  * The ID of the area or project `name` names, at input path `path`. `area` is the area the caller
- * named beside a project: a project there wins over one of the same name elsewhere.
+ * named beside a project: a project there wins over one of the same name elsewhere. `lookup`: the
+ * name only looks a group up, so an unknown one is `not_found` rather than a group to create.
  */
 export function resolveGroup(
   names: GroupNames,
   kind: Kind,
   name: string,
   path: string,
-  area?: string,
+  options: { readonly area?: string | undefined; readonly lookup?: boolean } = {},
 ): string {
+  const { area } = options;
   const groups = kind === "area" ? names.areas : names.projects;
   let found = groups.filter((group) => exact(group, name));
   if (found.length > 1 && area !== undefined) {
@@ -89,19 +98,26 @@ export function resolveGroup(
   }
   const wanted = fold(name);
   const close = groups.filter(
-    (group) =>
-      editDistance(fold(group.title), wanted, TYPO_DISTANCE) <= TYPO_DISTANCE ||
-      editDistance(group.slug, wanted, TYPO_DISTANCE) <= TYPO_DISTANCE,
+    (group) => typoOf(fold(group.title), wanted) || typoOf(group.slug, wanted),
   );
+  const suggestions = close.slice(0, SUGGESTIONS).map((group) => group.title);
+  if (options.lookup === true) {
+    throw new AppError({
+      code: "not_found",
+      message: `No ${kind} has this name.`,
+      hint: "Call organize with action list for the names.",
+      data: {
+        issues: [{ path, message: "No such group" }],
+        ...(suggestions.length === 0 ? {} : { suggestions }),
+      },
+    });
+  }
   if (close.length > 0) {
     throw new AppError({
       code: "invalid_input",
       message: `No ${kind} has this name, and one is close to it.`,
       hint: "Use the existing name if it is the same group: see the suggestions.",
-      data: {
-        issues: [{ path, message: "Close to an existing name" }],
-        suggestions: close.slice(0, SUGGESTIONS).map((group) => group.title),
-      },
+      data: { issues: [{ path, message: "Close to an existing name" }], suggestions },
     });
   }
   throw unsupported(path, "M4.01b (creating an area or project by name)");

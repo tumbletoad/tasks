@@ -288,6 +288,33 @@ export function render(entry: string, result: Result, space: string): string {
     case "task.search":
       lines.push(...searchLines(result));
       break;
+    case "group.manage": {
+      // `tasks area list` (A3 3.4.10): each area with its active tasks, its projects below it.
+      const named = (g: Result) => `${str(g["name"])} (${str(g["active"])})`;
+      for (const area of (result["areas"] as Result[] | undefined) ?? []) {
+        lines.push(named(area));
+        const projects = (area["projects"] as Result[] | undefined) ?? [];
+        if (projects.length > 0) lines.push(`  ${projects.map(named).join(" · ")}`);
+        if (typeof area["more_projects"] === "number") {
+          lines.push(`  and ${String(area["more_projects"])} more projects`);
+        }
+      }
+      const loose = (result["projects"] as Result[] | undefined) ?? [];
+      if (loose.length > 0) lines.push(`No area: ${loose.map(named).join(" · ")}`);
+      lines.push(`as of ${str(result["as_of"])}`);
+      break;
+    }
+    case "prefs.manage":
+      // `tasks prefs` (A3 3.4.11): one key a line, its value or what it takes.
+      for (const pref of (result["prefs"] as Result[] | undefined) ?? []) {
+        const shown =
+          result["action"] === "describe"
+            ? `${str(pref["summary"])} (${str(pref["shape"])})`
+            : `${JSON.stringify(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
+        lines.push(`${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}`);
+      }
+      lines.push(`as of ${str(result["as_of"])}`);
+      break;
     case "launch.open": {
       // `tasks brief`: the pointer brief itself, ready to paste, or how the launch stands.
       const launch = (result["launch"] ?? {}) as Result;

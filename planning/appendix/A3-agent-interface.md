@@ -224,7 +224,8 @@ Create 1 to 25 tasks in one transaction: follow-ups found during work, items fro
 
 **Areas and projects by name** (`ops/groups.ts`). The writer takes IDs and slugs only (A1 3.6), so the handler resolves a draft's `area` and `project` first, and `update_task`'s `set.area` and `set.project` and `complete_task`'s follow-ups the same way:
 - A name matches an area's or a project's ID, slug or name, ignoring case (NFKC, inner spaces collapsed), else an old slug (A1 3.3's aliases). A project named beside an area is looked for in that area first. Two matches are `ambiguous`, with their slugs in `data.suggestions`.
-- An unknown name within edit distance 2 of a group's name or slug is `invalid_input` with those names in `data.suggestions`, which stops "Client Work" from appearing next to "Client work". The names stand there, never in the message (3.5), and the text shows them in a data block.
+- An unknown name within edit distance 2 of a group's name or slug, and less than half that name's length from it, is `invalid_input` with those names in `data.suggestions`, which stops "Client wrok" from appearing next to "Client work" (a different case is the same name already). The length bound keeps a short new name such as "UX" from counting as a typo of "QA". The names stand in `data.suggestions`, never in the message (3.5), and the text shows them in a data block.
+- Where a name only looks a group up (`organize`'s list), an unknown one is `not_found`, with any close names.
 - Any other new name is created under autonomy (3.8) once A1's `area.create` and `project.create` exist (M4.01b). Until then it is refused naming that step, and nothing is written.
 - A request ID with a receipt resolves nothing: the writer replays it, so a group renamed since never refuses a retry of a call that applied (as places do, 3.4.1).
 

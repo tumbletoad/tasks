@@ -276,6 +276,14 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     );
     expect(one.areas.map((a) => a.name)).toEqual(["Home"]);
     expect(one.total_projects).toBe(0);
+    // Of "Area/Project" the area; an unknown area is not_found, not a group to create.
+    const narrowed = GroupManageResult.parse(
+      await call(fx, script, "group.manage", { action: "list", path: "Lumen/Portal" }),
+    );
+    expect(narrowed.areas.map((a) => a.name)).toEqual(["Lumen"]);
+    expect(
+      await refusal(call(fx, script, "group.manage", { action: "list", path: "Garden" })),
+    ).toMatchObject({ code: "not_found", data: { issues: [{ path: "path" }] } });
     // A request ID on a read is ignored: nothing is written, nothing is receipted.
     const before = fx.base();
     await call(fx, script, "group.manage", { action: "list", request_id: rid() });
