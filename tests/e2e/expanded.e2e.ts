@@ -108,8 +108,11 @@ const shownFacts = (page: Page, ref: string) =>
     ];
     // Every other visible text of the header (the row's columns) counts too: none may repeat a fact.
     const line = row.querySelector("[data-row-line]");
-    const slots = line === null ? [] : [...line.querySelectorAll("span, button")].filter(visible);
-    return [...parts, ...slots]
+    const slots = line === null ? [] : [...line.querySelectorAll("span, button")];
+    const chosen = [...new Set([...parts, ...slots])];
+    // Each text once: an element inside another chosen one is that one's text already.
+    return chosen
+      .filter((e) => !chosen.some((other) => other !== e && other.contains(e)))
       .filter(visible)
       .map((e) => e.textContent.trim())
       .filter((text) => text !== "");
