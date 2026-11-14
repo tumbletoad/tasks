@@ -367,6 +367,58 @@
     {
       "actors": "agent",
       "auto": [
+        "cwd"
+      ],
+      "entry": "task.search",
+      "flags": [
+        {
+          "field": "scope",
+          "flag": "--scope",
+          "help": "active by default; finished is completed or archived",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "active",
+            "finished",
+            "all",
+            "learnings"
+          ]
+        },
+        {
+          "field": "limit",
+          "flag": "--limit",
+          "help": "Rows per page; default 15",
+          "repeat": false,
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "field": "cursor",
+          "flag": "--cursor",
+          "help": "Next page: the last page's cursor, alone",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "read",
+      "positionals": [
+        {
+          "field": "q",
+          "help": "Words, \"phrases\" and filters, such as status:open p<=2",
+          "name": "q",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Find active tasks, finished tasks and learnings: rows only, a page at a time.",
+      "verb": "find"
+    },
+    {
+      "actors": "agent",
+      "auto": [
         "request_id"
       ],
       "entry": "entry.add",
