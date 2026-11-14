@@ -313,7 +313,7 @@ describe("[A1.5.sync.read-only] the service serves a synced or network space rea
       // Every look of the check fails, as a fault in the check would.
       const blind: SyncHost = {
         ...fixtureHost(world.root),
-        isDirectory: () => Promise.reject(new Error("a stand-in fault")),
+        kind: () => Promise.reject(new Error("a stand-in fault")),
       };
       const service = await start(world, {}, blind);
       expect(service.spaces()[0]).toMatchObject({
