@@ -224,11 +224,11 @@ Create 1 to 25 tasks in one transaction: follow-ups found during work, items fro
 - The `title` of an `exists` row is the draft's, as sent: the handler reads nothing for it.
 
 **Areas and projects by name** (`ops/groups.ts`). The writer takes IDs and slugs only (A1 3.6), so the handler resolves a draft's `area` and `project` first, and `update_task`'s `set.area` and `set.project` and `complete_task`'s follow-ups the same way:
-- A name matches an area's or a project's ID, slug or name, ignoring case (NFKC, inner spaces collapsed), else an old slug (A1 3.3's aliases). A project named beside an area is looked for in that area first. Two matches are `ambiguous`, with their slugs in `data.suggestions`.
+- A name matches an area's or a project's ID, slug or name, ignoring case (NFKC, inner spaces collapsed), else an old slug (A1 3.3's aliases). A project named beside an area must be one of that area's: one only in other areas is `invalid_input` with their areas in `data.suggestions`, because the writer files a task under its project's own area (A1 3.6), not the one named. Two matches are `ambiguous`, with their slugs in `data.suggestions`.
 - An unknown name within edit distance 2 of a group's name or slug, and less than half that name's length from it, is `invalid_input` with those names in `data.suggestions`, which stops "Client wrok" from appearing next to "Client work" (a different case is the same name already). The length bound keeps a short new name such as "UX" from counting as a typo of "QA". The names stand in `data.suggestions`, never in the message (3.5), and the text shows them in a data block.
 - Where a name only looks a group up (`organize`'s list), an unknown one is `not_found`, with any close names.
 - Any other new name is created under autonomy (3.8) once A1's `area.create` and `project.create` exist (M4.01b). Until then it is refused naming that step, and nothing is written.
-- A request ID with a receipt resolves nothing: the writer replays it, so a group renamed since never refuses a retry of a call that applied (as places do, 3.4.1).
+- A request ID with a receipt resolves nothing: the writer replays it, so a group renamed since never refuses a retry of a call that applied (as places do, 3.4.1). Its names reach the writer as stand-ins, which the writer never resolves, because a name may be longer than the writer's group field (120 UTF-16 units against the input's 120 code points).
 
 **Inbox.** An agent's draft without an area or a project goes to the Inbox (3.8.1), and `inbox: false` keeps it out. `inbox: true` sends any draft there. The user's own faces decide where a capture lands (A5), so the user's draft keeps `inbox` as given.
 
@@ -267,11 +267,11 @@ The call sends `task.complete` (`done`) or `task.archive` (`dropped`) with `if_a
 
 #### 3.4.9 `reopen_task`
 
-Reopens a completed or archived task (`entries/task-reopen.ts`). The previous outcome and learnings stay as its earlier result. Its text is one line: `reopened M-3 · open · as_of …`.
+Reopens a completed or archived task (`entries/task-reopen.ts`). The previous outcome and learnings stay as its earlier result. Its text is `reopened M-3 · as_of …`, with `Status: open` inside a data block, because a status is a key of the space's own list, which a person or an agent wrote.
 
 #### 3.4.10 `organize`
 
-List and shape areas and projects, so agents can sort the user's work (`entries/group-manage.ts`). A mixed entry (3.2.3): `list` reads, the others write. `list` is built; `create`, `rename`, `move` and `archive` need A1's `area.*` and `project.*` operations and arrive with them in M4.01b, refused until then naming that step (after the request ID rule of 3.2.3).
+List and shape areas and projects, so agents can sort the user's work (`entries/group-manage.ts`). A mixed entry (3.2.3): `list` reads, the others write. `list` is built; `create`, `rename`, `move` and `archive` need A1's `area.*` and `project.*` operations and arrive with them in M4.01b, refused until then naming that step, after the input rules: `request_id` (3.2.3), a `path` for every write and `base` for `rename`, `move` and `archive`, so an agent corrects its call once.
 
 ```ts
 { action: "list" | "create" | "rename" | "move" | "archive",
@@ -305,14 +305,14 @@ Read and change the space's non-policy preferences, so a user can ask any agent 
   mode?: "apply" | "propose" }
 ```
 
-- **The keys** are contracts' declarations (`preferences.ts`, A1 3.16): each with its value schema, default, writers and policy flag. `describe` lists them with their values in words and whether the caller may set each; `get` gives the stored value or the default. A stored value its schema refuses reads as the default.
+- **The keys** are contracts' declarations (`preferences.ts`, A1 3.16): each with its value schema, default, writers and policy flag. `describe` lists them with their values in words and whether the caller may set each; `get` gives the stored value or the default. A stored value its schema refuses reads as the default; a list is read in either stored form first (keys, or objects with a `key`). Until M3.11 puts every reader on one rule, A1's writer still checks statuses and efforts against a stored list this refuses.
 - **`set` is a list of pairs**, because the grammar has no records (3.2.1). Its `value` is a union with one option per declared value kind (a string for an enum, an integer, a boolean, a list of keys) and `null`, which resets the key to its default. The grammar allows `null` only as a union option, never as a field of its own. The request path then checks each value against its own key's schema, so no value is an unrestricted `unknown`, and the tool's definition stays the same when keys are added.
 - A key must be declared and named once. A policy key (autonomy, targets, instances, routines, Brief templates, roots, setup) returns `forbidden` with `rule: "policy"` to every actor here: policy changes only in the user's own settings (3.8.2). A key whose writers leave the caller out returns `forbidden` with `rule: "user_only"`.
 - `set` writes through A1's `pref.set`, which arrives with the rest of the registry in M3.11; until then a `set` that passes every input rule is refused naming that step. Its result lines read `tasks.statuses: [...] -> [...]`. Values are data, so the lines sit inside a data block. Sizes: 600, 2,000 at most.
 
 #### 3.4.12 `run_report` (runs and routines only)
 
-Listed on every connection, like every tool (3.3). A call works only on a connection bound to a run or routine. Anywhere else it returns `not_permitted` with the binding it found (`data.binding`: `none` or `task`) and a hint to log on a task instead, and writes nothing: the request path refuses it after the call's binding settles and before it reads the input or a space, so not even the agent's first act is recorded. No connection is bound to a run before M6.06, so today every call is refused (`A3.3.4.tools.run-report`). It writes A4's run record, not tasks, and is not undoable.
+Listed on every connection, like every tool (3.3). A call works only on a connection bound to a run or routine. Anywhere else it returns `not_permitted` with the binding it found (`data.binding`: `none` or `task`) and a hint to log on a task instead, and writes nothing: the request path refuses it after the call's binding settles and before it reads the input or a space, so not even the agent's first act is recorded. It reads the binding without recording the call: a run-only call presents no thread ID, and no last use or unbound write is noted in the binding records. No connection is bound to a run before M6.06, so today every call is refused (`A3.3.4.tools.run-report`). It writes A4's run record, not tasks, and is not undoable.
 
 ```ts
 { sources?: { name: string, state: "ok" | "partial" | "unreachable", items_seen: number, note?: string }[],  // ≤ 20
