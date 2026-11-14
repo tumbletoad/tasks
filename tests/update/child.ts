@@ -1,9 +1,10 @@
-// The process the update crash test kills (A7 3.8 M6.12, the crash harness's pattern of A1 5): it
-// runs the updater (or `tasks update --repair`) from source against a real test install, with seams
-// armed at one named step. It reads its task from stdin as one JSON line, then reports each step
-// it reaches as a JSON line on stdout with a synchronous write. At the armed step it says so and
-// blocks its thread until the parent kills it, or, when the parent killed the service instead,
-// until the parent writes the `go` file. Only this entry arms seams: the product passes none.
+// The process the update crash tests kill (A7 3.13 M6.12 and M6.13, the crash harness's pattern of
+// A1 5): it runs the updater (or `tasks update --repair`) from source against a real test install,
+// with seams armed at one named step. It reads its task from stdin as one JSON line, then reports
+// each step it reaches as a JSON line on stdout with a synchronous write. At the armed step it
+// says so and blocks its thread until the parent kills it, or, when the parent killed the service
+// instead, until the parent writes the `go` file. Only this entry arms seams: the product passes
+// none.
 //
 // The service is reached through the service install's context (M1.12) with stand-in tools: no
 // user manager, no Explorer, and a start that runs the install's stable command `serve` detached,
@@ -36,6 +37,11 @@ export interface ChildTask {
   readonly stable: string;
   /** The environment of the programs it starts: no Tasks variable, no agent marker. */
   readonly env: Record<string, string>;
+  /**
+   * The candidate's self-test: `real` (the default) through its own launcher, or `pass`, a stand-in
+   * for tests of the steps after it (the launchers' swap), so each round costs no self-test.
+   */
+  readonly selfTest?: "real" | "pass";
 }
 
 const line = (value: unknown): void => {
@@ -93,8 +99,18 @@ const options: UpdateOptions = {
   facts: hostFacts(env, process.platform),
   keys: task.keys,
   control: osServiceControl(ctx, env),
-  selfTest: launcherSelfTest(task.env, process.platform),
-  seams: { update: at, at },
+  selfTest:
+    task.selfTest === "pass"
+      ? () => Promise.resolve({ ok: true, failed: [] })
+      : launcherSelfTest(task.env, process.platform),
+  // A launcher's steps are armed by `<point>:<name>`, for example `aside:tasks.exe`.
+  seams: {
+    update: at,
+    at,
+    launcher: (point, name) => {
+      at(`${point}:${name}`);
+    },
+  },
   say: (said) => {
     line({ say: said });
   },
