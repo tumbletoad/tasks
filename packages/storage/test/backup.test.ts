@@ -79,9 +79,12 @@ async function pad(folder: string, tasks: number): Promise<void> {
   }
 }
 
+/** The control slots before the writers' own (concurrent-writer.ts): stop, open, start. */
+const CONTROL_SLOTS = 3;
+
 /** Starts writers in worker threads, each with its own connection and the real write path. */
 function startWriters(folder: string, count: number) {
-  const control = new SharedArrayBuffer(4 * (count + 1));
+  const control = new SharedArrayBuffer(4 * (CONTROL_SLOTS + count));
   const slots = new Int32Array(control);
   const workers = Array.from({ length: count }, (_, writer) => {
     const data: ConcurrentWriterData = { folder, writer, control };
@@ -108,28 +111,39 @@ function startWriters(folder: string, count: number) {
   }
   const committed = (): number => {
     let total = 0;
-    for (let i = 1; i <= count; i += 1) total += Atomics.load(slots, i);
+    for (let w = 0; w < count; w += 1) total += Atomics.load(slots, CONTROL_SLOTS + w);
     return total;
+  };
+  /** Waits until `done`, or until a writer failed. The test's own timeout bounds the wait. */
+  const until = async (done: () => boolean): Promise<void> => {
+    for (;;) {
+      if (failed !== undefined) throw failed;
+      if (done()) return;
+      await new Promise((r) => setTimeout(r, 5));
+    }
   };
   return {
     committed,
     /**
-     * Waits until every writer committed at least once, or one failed. No time limit of its own:
-     * ten threads loading the write path start late on a loaded machine (a 30 s limit once ran
-     * out in a full run), and the test's own timeout bounds the wait.
+     * Waits until every writer is open, starts their loops together, and waits until every writer
+     * committed at least once. No time limit of its own: ten threads loading the write path start
+     * late on a loaded machine (a 30 s limit once ran out in a full run).
      */
     async running(): Promise<void> {
-      for (;;) {
-        if (failed !== undefined) throw failed;
-        let all = true;
-        for (let w = 1; w <= count; w += 1) if (Atomics.load(slots, w) === 0) all = false;
-        if (all) return;
-        await new Promise((r) => setTimeout(r, 5));
-      }
+      await until(() => Atomics.load(slots, 1) === count);
+      Atomics.store(slots, 2, 1);
+      Atomics.notify(slots, 2);
+      await until(() => {
+        for (let w = 0; w < count; w += 1) {
+          if (Atomics.load(slots, CONTROL_SLOTS + w) === 0) return false;
+        }
+        return true;
+      });
     },
     async stop(): Promise<number[]> {
       Atomics.store(slots, 0, 1);
       Atomics.notify(slots, 0);
+      Atomics.notify(slots, 2);
       return Promise.all(exits);
     },
   };
