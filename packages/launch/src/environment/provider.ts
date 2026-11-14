@@ -71,7 +71,23 @@ export interface EnvironmentSource {
   inFolder(folder: string, identity: FolderIdentityText): Promise<AgentBase | undefined>;
   /** The session layer now (Linux and macOS), for a terminal's own environment. Never throws. */
   session(): Promise<Record<string, string>>;
+  /**
+   * Doctor (A4 3.8, A3 3.14 `launch.env`): the person's environment read now, as a launch reads
+   * it, and kept when it could be read. A source without it (a test's fixed one) is not checked.
+   * Never throws.
+   */
+  check?(): Promise<EnvironmentCheck>;
 }
+
+/** What doctor learns of the agent's environment. Words and a time only: never a name or value. */
+export type EnvironmentCheck =
+  /** Windows: whether the registry's layers could be read now. */
+  | { readonly kind: "registry"; readonly read: boolean }
+  /**
+   * Linux and macOS: how a login-shell snapshot taken now ended, and when the snapshot in use was
+   * taken (none: launches get the service's own environment through the allow-list).
+   */
+  | { readonly kind: "snapshot"; readonly outcome: SnapshotOutcome; readonly takenAt?: number };
 
 /** How one snapshot attempt ended, as the log and doctor say it. */
 export const SNAPSHOT_OUTCOMES = [
@@ -321,13 +337,40 @@ export class UserEnvironment implements EnvironmentSource {
   async prepare(): Promise<void> {
     if (!this.#posix) return;
     // One refresh at a time: a second launch meanwhile waits for the same one.
-    this.#refreshing ??= this.#refresh().finally(() => {
-      this.#refreshing = undefined;
-    });
+    this.#refreshing ??= this.#refresh(false)
+      .then(() => undefined)
+      .finally(() => {
+        this.#refreshing = undefined;
+      });
     await this.#refreshing;
   }
 
-  async #refresh(): Promise<void> {
+  /**
+   * Doctor: on Linux and macOS a snapshot taken now, fresh or not, kept when it succeeds as a
+   * launch's refresh keeps it; on Windows the registry read once. Never throws.
+   */
+  async check(): Promise<EnvironmentCheck> {
+    if (!this.#posix) {
+      const base = await this.#registryBase().catch(() => undefined);
+      return { kind: "registry", read: base?.kind === "user" };
+    }
+    // One refresh at a time: a launch's refresh under way finishes first.
+    while (this.#refreshing !== undefined) await this.#refreshing;
+    let outcome: SnapshotOutcome = "failed";
+    this.#refreshing = this.#refresh(true)
+      .then((ended) => {
+        if (ended !== "fresh") outcome = ended;
+      })
+      .finally(() => {
+        this.#refreshing = undefined;
+      });
+    await this.#refreshing;
+    const takenAt = this.#snapshot?.takenAt;
+    return { kind: "snapshot", outcome, ...(takenAt === undefined ? {} : { takenAt }) };
+  }
+
+  /** Brings the snapshot up to date (`force`: whether fresh or not); how its attempt ended. */
+  async #refresh(force: boolean): Promise<SnapshotOutcome | "fresh"> {
     try {
       this.#load();
       const session = await this.session();
@@ -339,7 +382,7 @@ export class UserEnvironment implements EnvironmentSource {
         old.boot === boot &&
         old.session === key &&
         Math.abs(this.#now() - old.takenAt) < SNAPSHOT_MAX_AGE_MS;
-      if (fresh) return;
+      if (fresh && !force) return "fresh";
       const taken = await this.take(session);
       this.#o.log?.("launch.env_snapshot", {
         result: taken.outcome,
@@ -347,7 +390,8 @@ export class UserEnvironment implements EnvironmentSource {
         variables: taken.env === undefined ? 0 : Object.keys(taken.env).length,
         previous: old !== undefined,
       });
-      if (taken.env === undefined) return; // The previous snapshot, if any, stays in use.
+      // The previous snapshot, if any, stays in use.
+      if (taken.env === undefined) return taken.outcome;
       const stored: StoredSnapshot = {
         format: 1,
         takenAt: this.#now(),
@@ -361,8 +405,10 @@ export class UserEnvironment implements EnvironmentSource {
         this.#o.log?.("launch.env_snapshot", { result: "not_stored", ms: 0, variables: 0 });
       }
       this.#snapshot = stored;
+      return taken.outcome;
     } catch {
       // Never a reason to fail a launch: the base falls back below.
+      return "failed";
     }
   }
 

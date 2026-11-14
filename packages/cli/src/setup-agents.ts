@@ -47,6 +47,7 @@ import {
   appLabel,
   applyHome,
   approveToolsHint,
+  handRemoval,
   HOSTS,
   isPrintApp,
   LockBusy,
@@ -254,7 +255,30 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   unexpected_entry: "the app's command did not write the entry setup asked for",
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
   grant_failed: `${PRODUCT_NAME}'s service did not keep its grant row, so nothing was changed there`,
+  instance_taken: `another agent home is registered as this instance, so nothing was changed there: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
 };
+
+/**
+ * Why a home was left, for people. An entry of Tasks's name that setup did not write (one added by
+ * hand) also says how to take it out with the app's own command, so the next setup can register
+ * the home (A3 3.7.8: the grant gate's refusal of such an entry sends the person here).
+ */
+function reasonText(
+  reason: OutcomeReason,
+  home: HomeView["home"],
+  platform: NodeJS.Platform,
+): string {
+  if (reason !== "foreign_entry") return REASON[reason];
+  const removal = handRemoval(home, platform);
+  const line = removal === undefined ? undefined : shellLine(platform, removal.argv, removal.set);
+  const how =
+    home.app === "claude-desktop"
+      ? `take the ${MCP_SERVER_KEY} member out of mcpServers in that file`
+      : line === undefined
+        ? `take it out with the app's own ${removal?.argv.join(" ") ?? "mcp remove"} for this home`
+        : `take it out with: ${line}`;
+  return `${REASON.foreign_entry} (one added by hand). For setup to register this home, ${how}; then run ${CLI_NAME} setup agents again`;
+}
 
 const NOTE: Readonly<Record<string, string>> = {
   empty_parent_kept: `Claude Code keeps an empty ${SERVERS_KEY["claude-code"]} object after its own remove. ${PRODUCT_NAME} never edits that file.`,
@@ -433,7 +457,7 @@ export async function agentsCommand(
       case "status":
         return await status(io, globals, input, selected, call);
       case "preview":
-        return await preview(io, globals, input, selected, parsed, spaceOf);
+        return await preview(io, globals, await withRows(input, call), selected, parsed, spaceOf);
       case "print":
         // A printed entry is a hand-made one, which uses the machine's default space (print.ts).
         if (globals.space !== undefined) {
@@ -454,7 +478,9 @@ export async function agentsCommand(
         const outcomes = await withSetupLock(input.stateDir, async () => {
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
-          const views = parsed.parts.includes("mcp") ? (await survey(input)).filter(selected) : [];
+          const views = parsed.parts.includes("mcp")
+            ? (await survey(await withRows(input, call))).filter(selected)
+            : [];
           const space = needsSpace(views) ? await spaceOf() : "";
           const items = planOf(input, views, space);
           if (planToken(space, items) !== parsed.plan) {
@@ -526,6 +552,28 @@ function setupError(error: unknown): unknown {
 
 type Call = (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
+/**
+ * Setup's input with the service's live agent-home rows, so the preview and its apply propose
+ * each new home an instance no other home's row holds (A3 3.7.8). Without a service it is the
+ * input as it is: apply needs the service anyway, and checks the plan again under its lock.
+ */
+async function withRows(input: SetupInput, call: Call): Promise<SetupInput> {
+  let listed: unknown;
+  try {
+    listed = (await call("setup/homes", {}))["homes"];
+  } catch {
+    return input;
+  }
+  const rows = (Array.isArray(listed) ? (listed as unknown[]) : []).flatMap((row) => {
+    if (typeof row !== "object" || row === null) return [];
+    const { app, home, instance } = row as Record<string, unknown>;
+    return typeof app === "string" && typeof home === "string" && typeof instance === "string"
+      ? [{ app, home, instance }]
+      : [];
+  });
+  return { ...input, rows };
+}
+
 /** Whether `--app`, `--instance` and `--home` select a home. */
 type Selected = (view: {
   readonly home: {
@@ -565,10 +613,11 @@ async function applyOne(
       hosts: home.hosts,
       space: target,
     });
-  } catch {
+  } catch (error) {
     // The service refused the row or is gone: this home is left as it is, the others still run
-    // and every outcome is reported.
-    return { home, result: "failed", reason: "grant_failed" };
+    // and every outcome is reported. A refusal of a taken instance is named as such (A3 3.7.8).
+    const taken = bodyOf(asAppError(error)).data?.["reason"] === "instance_taken";
+    return { home, result: "failed", reason: taken ? "instance_taken" : "grant_failed" };
   }
   const grant = (granted["grant"] as { grant?: unknown } | undefined)?.grant;
   const grantId = typeof grant === "string" ? grant : null;
@@ -662,7 +711,8 @@ async function status(
   if (views.length === 0) io.stdout("No agent home was found.\n");
   for (const view of views) {
     const row = rowOf(view);
-    const reason = view.refusal === undefined ? "" : `: ${REASON[view.refusal]}`;
+    const reason =
+      view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home, input.platform)}`;
     const space = view.record === undefined ? "" : `, space ${view.record.space}`;
     const grant =
       rows === undefined ? "" : row === undefined ? ", no grant row" : `, grant row ${row.grant}`;
@@ -760,10 +810,11 @@ async function preview(
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
     if (change === undefined) {
-      const reason = view.refusal === undefined ? "" : `: ${REASON[view.refusal]}`;
+      const reason =
+        view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home, io.platform)}`;
       io.stdout(`   ${STATE_TEXT[view.state]}${reason}. Nothing to do.\n`);
     } else if (typeof change === "string") {
-      io.stdout(`   left alone: ${REASON[change]}.\n`);
+      io.stdout(`   left alone: ${reasonText(change, view.home, io.platform)}.\n`);
     } else {
       changes += 1;
       if (change.writer === "edit") {
@@ -866,7 +917,7 @@ function report(
       const reason =
         outcome.reason === undefined || outcome.result === "removed"
           ? ""
-          : `: ${REASON[outcome.reason]}`;
+          : `: ${reasonText(outcome.reason, outcome.home, io.platform)}`;
       io.stdout(`${title(outcome)}\n  ${verb[outcome.result]}${reason}\n`);
       for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
     }

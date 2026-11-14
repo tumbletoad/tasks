@@ -22,6 +22,8 @@
 //   accounts   other interactive user accounts on the machine (agent sandbox accounts left out)
 //   http       the UI listener: blocked by a foreign port holder, moved, a Windows excluded range,
 //              and its self-test (a rebinding Host gets 421, index.html has a fresh nonce)
+//   launch.scopes, launch.env, launch.t3, sessions
+//              what the service's launch service and binding say (doctor-launch.ts, A3 3.14)
 //   candidate-space, candidate-endpoint, candidate-bridge
 //              with --self-test from a version folder: the candidate's own checks of A2 3.12.6
 //              (M1.14): a temporary space, a temporary endpoint and handshake, and this version's
@@ -380,6 +382,8 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
 
 /** The checks that talk to the service. */
 async function serviceChecks(io: Io, state: string, connect: ConnectOptions): Promise<Check[]> {
+  // The launch rows and the sessions row (A3 3.14), loaded only here, like the agent side.
+  const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
     return [
@@ -388,6 +392,7 @@ async function serviceChecks(io: Io, state: string, connect: ConnectOptions): Pr
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
       { id: "http", status: "skip", detail: "No service to ask." },
+      ...launch.LAUNCH_ROWS_WITHOUT_SERVICE,
     ];
   }
   let session: Session | undefined;
@@ -422,6 +427,7 @@ async function serviceChecks(io: Io, state: string, connect: ConnectOptions): Pr
     });
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));
+    checks.push(...(await launch.launchChecks(session)));
     return checks;
   } catch (error) {
     const body = bodyOf(asAppError(error));
@@ -440,6 +446,7 @@ async function serviceChecks(io: Io, state: string, connect: ConnectOptions): Pr
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
       { id: "http", status: "skip", detail: "No service to ask." },
+      ...launch.LAUNCH_ROWS_WITHOUT_SERVICE,
     ];
   } finally {
     session?.close();

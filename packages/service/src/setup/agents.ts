@@ -42,10 +42,13 @@ import { lstatSync, rmSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { envVar, MCP_SERVER_KEY } from "@tasks/brand";
+import { parseArgs } from "@tasks/bridge/mcp";
 import {
   HOME_VARIABLES,
+  INSTANCE_ID,
   instanceHome,
   isTable,
+  MANUAL_INSTANCE,
   proposedAccount,
   proposedInstanceId,
   targetDef,
@@ -157,6 +160,11 @@ export interface AgentHome {
   readonly variable: string;
   /** The A4 instance the entry names (`--instance`). */
   readonly instance: string;
+  /**
+   * The instance is setup's proposal (detection's, T3's or Claude Desktop's), not one machine.toml
+   * names: setup may give the home a free one instead (A3 3.7.8, `survey`).
+   */
+  readonly proposed?: boolean;
   readonly account: string;
   /** The other apps that read this home's entry: the Codex app, T3 Code. */
   readonly hosts: readonly Host[];
@@ -242,7 +250,9 @@ export type OutcomeReason =
   | "unexpected_entry"
   | "other_space"
   /** The service did not keep the home's agent-home row: nothing was changed in the home. */
-  | "grant_failed";
+  | "grant_failed"
+  /** The service refused the row: another home's live row holds this instance (A3 3.7.8). */
+  | "instance_taken";
 
 /** What happened to one home. */
 export interface Outcome {
@@ -267,6 +277,15 @@ export interface SetupInput {
   readonly detection: Detection;
   /** machine.toml's instances: a home they name gets their ID (A4 3.2). */
   readonly instances: readonly Instance[];
+  /**
+   * The service's live agent-home rows, when the caller asked for them (`setup/homes`): a home
+   * setup proposes an instance for gets one that no other home's row holds (A3 3.7.8).
+   */
+  readonly rows?: readonly {
+    readonly app: string;
+    readonly home: string;
+    readonly instance: string;
+  }[];
   /** machine.toml's `[setup.managed] paths` (A3 3.12 rule 4). Default: none. */
   readonly managedPaths?: readonly string[];
   /** git's command for A3 3.12 rule 3, as an argv prefix. Default: `git` on `env`'s PATH. */
@@ -429,6 +448,7 @@ export async function agentHomes(
       isDefault,
       variable: rule?.env ?? "",
       instance: owner?.id ?? id,
+      ...(owner === undefined ? { proposed: true } : {}),
       account: owner?.account ?? account,
       hosts: hostsOf(input, found, app, home, isDefault),
       managed: await managedFile(input, file, home),
@@ -818,13 +838,93 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
     }
   }
   const views: HomeView[] = [];
-  for (const home of homes) {
+  for (const home of freeInstances(input, homes, records)) {
     const record = recordOf(records, home, input.platform);
     views.push(
       inspectHome(record === undefined ? home : await homeOfRecord(input, found, record), record),
     );
   }
   return views;
+}
+
+/**
+ * A3 3.7.8 "one home per instance": each home whose instance setup proposes (no record, no
+ * machine.toml instance) keeps its proposal when no one else holds it, else gets the first free
+ * `<proposal>-2`, `-3`, … An ID is held by `manual` (the hand-made entry's), by any instance
+ * machine.toml names, by a home setup registered (its record), by a home a machine.toml instance
+ * names, by another home's live row in the service (`input.rows`), and by a home earlier in the
+ * survey. Claude Desktop's folders do not hold one against each other: the app uses one of them
+ * (A3 3.13.3). The order is the survey's, so the preview and its apply propose the same IDs.
+ */
+function freeInstances(
+  input: SetupInput,
+  homes: readonly AgentHome[],
+  records: readonly HomeRecord[],
+): AgentHome[] {
+  const { platform } = input;
+  const recorded = (home: AgentHome) => recordOf(records, home, platform) !== undefined;
+  const taken = new Set<string>([
+    MANUAL_INSTANCE,
+    ...input.instances.map((i) => i.id),
+    ...records.map((r) => r.instance),
+    ...homes.filter((h) => h.proposed !== true && !recorded(h)).map((h) => h.instance),
+  ]);
+  const heldByRow = (id: string, home: AgentHome) =>
+    (input.rows ?? []).some(
+      (row) =>
+        row.instance === id && !(row.app === home.app && samePath(platform, row.home, home.home)),
+    );
+  const proposedHere = new Map<string, AgentApp>();
+  return homes.map((home) => {
+    // A proposal that is no instance ID at all is left as it is: the service refuses it by name.
+    if (home.proposed !== true || recorded(home) || !INSTANCE_ID.test(home.instance)) return home;
+    const free = (id: string) =>
+      !taken.has(id) &&
+      !heldByRow(id, home) &&
+      !(
+        proposedHere.has(id) &&
+        !(home.app === "claude-desktop" && proposedHere.get(id) === "claude-desktop")
+      );
+    let id = home.instance;
+    for (let n = 2; !free(id) && n < 1000; n += 1) {
+      const suffix = `-${String(n)}`;
+      id = `${home.instance.slice(0, 40 - suffix.length).replace(/-+$/u, "")}${suffix}`;
+    }
+    proposedHere.set(id, home.app);
+    return id === home.instance ? home : { ...home, instance: id };
+  });
+}
+
+/**
+ * The `--instance` an entry's arguments name, read with the bridge's own parser: the ID, null for
+ * an entry without one (a hand-made entry, A3 3.7.4), or undefined for arguments the bridge would
+ * refuse or an entry that is not `<command> mcp …`.
+ */
+export function entryInstance(entry: unknown): string | null | undefined {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+  const args = jsonCopy((entry as { args?: unknown }).args);
+  if (!Array.isArray(args) || args[0] !== "mcp" || !args.every((a) => typeof a === "string")) {
+    return undefined;
+  }
+  const parsed = parseArgs(args.slice(1) as string[]);
+  return "problem" in parsed ? undefined : parsed.instance;
+}
+
+/**
+ * The app's own command that takes an entry of Tasks's name out of a home, as a person runs it: the
+ * app's word on the PATH, its `mcp remove`, and the home's variable for a home that is not the
+ * default (A3 3.7.8: how to take out an entry added by hand). Claude Desktop has no command: its
+ * entry is a member of its file.
+ */
+export function handRemoval(
+  home: AgentHome,
+  platform: NodeJS.Platform,
+): { argv: string[]; set: Record<string, string> } | undefined {
+  if (home.app === "claude-desktop") return undefined;
+  return {
+    argv: [home.app === "codex" ? "codex" : "claude", ...removeArgs(home.app)],
+    set: commandEnv({ env: {}, platform }, home).set,
+  };
 }
 
 /** The homes T3's provider instances use (A3 3.13.6), for doctor's `t3.homes`. */
