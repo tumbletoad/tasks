@@ -8,6 +8,7 @@
     "./mcp": "./src/mcp/index.ts",
     "./mcp/names": "./src/mcp/names.ts",
     "./protocol": "./src/protocol/index.ts",
+    "./safe-exit": "./src/safe-exit.ts",
     "./test/endpoint": "./test/endpoint.ts"
   },
   "devDependencies": {
