@@ -13,6 +13,7 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import { Expanded } from "../task/Expanded.tsx";
+import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import type { RowActions } from "./actions.ts";
 import { tileClick } from "./launch.ts";
@@ -226,6 +227,7 @@ function RowView({
 }: RowProps) {
   const t = useT();
   const intl = useIntl();
+  const place = placeFact(task.place);
   const model = renderRow(
     {
       task,
@@ -233,6 +235,9 @@ function RowView({
       ...(project === undefined ? {} : { project: { title: project.title } }),
       instances,
       receipts,
+      sources: sourceFacts(t, task.sources),
+      ...(task.sources_more === undefined ? {} : { sourcesMore: task.sources_more }),
+      ...(place === undefined ? {} : { place }),
     },
     ctx,
   );

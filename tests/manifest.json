@@ -2010,6 +2010,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.6.http.row-children",
+      "title": "A task's compact row carries its first three sources with their own text, key and URL, how many more it has, and its place's state on this machine (here, missing, none; none when the feed names no machine), never a path; a batch that adds a source or link or clears a place carries the task's row after the child, naming no field",
+      "source": "A5 3.6, A5 3.15, A7 3.12 M5.06",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.9.cli.open",
       "title": "tasks open against a real service: a code minted over the socket, the listener proved by its HMAC probe before the port is trusted, the code only in the URL fragment and redeemable once, --space and --task as the route, --print-url with its warning, an agent shell told to ask the user, A2 message and exit 6 when another user holds the port, the moved line, tasks service port with --reuse for the person only",
       "source": "A2 3.8.2, A2 3.8.4, A2 3.9, A7 3.9 M2.12",
