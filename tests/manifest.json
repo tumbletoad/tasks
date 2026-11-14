@@ -2371,7 +2371,7 @@
     },
     {
       "id": "A5.3.24.web.build-paths",
-      "title": "The built page holds no absolute path of the build machine (the repository, the home folder, the output folder, in any spelling) and no development JSX, with NODE_ENV test, development or unset, and the build gives the caller's NODE_ENV back",
+      "title": "The built page holds no absolute path of the build machine (the repository, the home folder, the output folder, in any spelling) and no development JSX, with NODE_ENV test, development or unset; the build gives the caller's NODE_ENV back, and builds that overlap in one process run one at a time",
       "source": "A5 3.24",
       "owner": "M2",
       "kind": "ci",

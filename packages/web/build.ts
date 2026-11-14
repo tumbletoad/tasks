@@ -174,20 +174,29 @@ export interface BuiltWeb {
   readonly npmInputs: string[];
 }
 
+/** The end of the last `asProduction` call: each waits for the one before it. */
+let productionQueue: Promise<unknown> = Promise.resolve();
+
 /**
  * Runs `work` with NODE_ENV set to `production`, and gives the caller's value back after. Vite
  * reads NODE_ENV itself, whatever `mode` says: any other value makes a development build, whose
- * JSX carries the absolute source path of every component (A5 3.24). Vitest sets `test`.
+ * JSX carries the absolute source path of every component (A5 3.24). Vitest sets `test`. NODE_ENV
+ * belongs to the whole process, so calls run one at a time: two at once would each give the other's
+ * value back, and one would build with the caller's.
  */
-async function asProduction<T>(work: () => Promise<T>): Promise<T> {
-  const before = process.env.NODE_ENV;
-  process.env.NODE_ENV = "production";
-  try {
-    return await work();
-  } finally {
-    if (before === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = before;
-  }
+export function asProduction<T>(work: () => Promise<T>): Promise<T> {
+  const run = productionQueue.then(async () => {
+    const before = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      return await work();
+    } finally {
+      if (before === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = before;
+    }
+  });
+  productionQueue = run.catch(() => undefined);
+  return run;
 }
 
 /** Builds the page into `out`, which is replaced. `root` is the repository, for npmInputs. */

@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { buildWeb, type BuiltWeb } from "../build.ts";
+import { asProduction, buildWeb, type BuiltWeb } from "../build.ts";
 
 const WINDOWS = process.platform === "win32";
 
@@ -34,11 +34,23 @@ async function buildWith(nodeEnv: string | undefined, name: string): Promise<Bui
   }
 }
 
-/** Every spelling of `path` a bundle could hold: either slash, and backslashes escaped. */
+/**
+ * Every spelling of `path` a bundle could hold: either slash, backslashes escaped, and characters
+ * past ASCII as they are or as `\u` escapes.
+ */
 function spellings(path: string): string[] {
   const forward = path.replaceAll("\\", "/");
   const back = path.replaceAll("/", "\\");
-  return [forward, back, back.replaceAll("\\", "\\\\")].map((p) => (WINDOWS ? p.toLowerCase() : p));
+  const escape = (p: string) =>
+    p.replace(/\P{ASCII}/gu, (c) =>
+      Array.from(
+        { length: c.length },
+        (_, i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`,
+      ).join(""),
+    );
+  return [forward, back, back.replaceAll("\\", "\\\\")]
+    .flatMap((p) => [p, escape(p)])
+    .map((p) => (WINDOWS ? p.toLowerCase() : p));
 }
 
 /**
@@ -53,12 +65,47 @@ function machinePaths(out: string): string[] {
 }
 
 describe("[A5.3.24.web.build-paths] the built page holds no absolute path of the build machine", () => {
+  test("builds that overlap run one at a time, each in production, and give NODE_ENV back", async () => {
+    const before = process.env.NODE_ENV;
+    process.env.NODE_ENV = "test";
+    try {
+      const seen: string[] = [];
+      let endFirst = (): void => undefined;
+      const first = asProduction(async () => {
+        seen.push(`first ${String(process.env.NODE_ENV)}`);
+        await new Promise<void>((done) => {
+          endFirst = done;
+        });
+        seen.push("first ends");
+        throw new Error("the first build fails");
+      });
+      const second = asProduction(async () => {
+        seen.push(`second ${String(process.env.NODE_ENV)}`);
+        await Promise.resolve();
+        seen.push("second ends");
+        return "built";
+      });
+      // Let the second have its chance to start before the first ends.
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+      expect(seen).toEqual(["first production"]);
+      endFirst();
+      await expect(first).rejects.toThrow("the first build fails");
+      await expect(second).resolves.toBe("built");
+      expect(seen).toEqual(["first production", "first ends", "second production", "second ends"]);
+      expect(process.env.NODE_ENV).toBe("test");
+    } finally {
+      if (before === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = before;
+    }
+  });
+
   for (const nodeEnv of ["test", "development", undefined]) {
     test(`with NODE_ENV ${nodeEnv ?? "unset"}`, async () => {
       const built = await buildWith(nodeEnv, nodeEnv ?? "unset");
       const paths = machinePaths(built.out);
       for (const file of built.files) {
-        const text = readFileSync(join(built.out, ...file.split("/")), "latin1");
+        // As UTF-8, which the bundle is written in, so a path past ASCII is found too.
+        const text = readFileSync(join(built.out, ...file.split("/")), "utf8");
         const seen = WINDOWS ? text.toLowerCase() : text;
         expect([file, paths.filter((p) => seen.includes(p))]).toEqual([file, []]);
         // React's development JSX, which is what carries the source paths.
