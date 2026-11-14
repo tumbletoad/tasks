@@ -37,10 +37,10 @@ const EMPTY_0_2 = [
 ] as const;
 
 /**
- * The tables of schema 0.3 that no operation writes yet: sessions, whose records still live in
- * machine state until binding writes them (A4 3.10), and runs, until the sample writes runs.
+ * The table of schema 0.3 that no operation writes yet: sessions, whose records still live in
+ * machine state until binding writes them (A4 3.10). The sample writes runs (M6.01).
  */
-const EMPTY_0_3 = ["sessions", "runs"] as const;
+const EMPTY_0_3 = ["sessions"] as const;
 
 const made: string[] = [];
 const temp = (): string => {
@@ -252,8 +252,15 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
     const later = Object.fromEntries(
       Object.entries(b.counts).filter(([table]) => table !== "runs" && table !== "sessions"),
     );
-    expect(later).toEqual({ ...a.counts, ...Object.fromEntries(EMPTY_0_2.map((t) => [t, 0])) });
+    // The sample's eight run requests come last: a commit, a receipt and a change row each.
+    const runs = { commits: 8, receipts: 8, changes: 8 };
+    expect(later).toEqual({
+      ...a.counts,
+      ...Object.fromEntries(EMPTY_0_2.map((t) => [t, 0])),
+      ...Object.fromEntries(Object.entries(runs).map(([t, n]) => [t, (a.counts[t] ?? 0) + n])),
+    });
     for (const table of EMPTY_0_3) expect(b.counts[table], table).toBe(0);
+    expect(b.counts["runs"]).toBe(2);
     expect(b.machine).toBe(a.machine);
   });
 

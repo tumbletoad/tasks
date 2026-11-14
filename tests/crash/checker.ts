@@ -1095,6 +1095,9 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
   { table: "log_entries", key: "id", fields: {} },
   { table: "sources", key: "id", fields: {} },
   { table: "machines", key: "id", fields: {} },
+  // Schema 0.3 (M6.01): there from that revision on. The workload writes none yet.
+  { table: "sessions", key: "id", fields: {} },
+  { table: "runs", key: "id", fields: CHILD_FIELDS.runs },
 ];
 
 const DERIVED = new Set<string>([...DERIVED_COLUMNS, "entity_id"]);
@@ -1211,6 +1214,14 @@ function checkHistory(conn: Connection, history: History, found: Found): void {
   if (same !== 0) found.add("history", `${String(same)} change rows change nothing`);
   const rows = new Set<string>();
   for (const { table, key, fields } of HISTORY_TABLES) {
+    const exists = one(
+      conn,
+      "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = $t",
+      {
+        t: table,
+      },
+    );
+    if (exists !== 1) continue;
     for (const row of checkRows(conn, history, table, key, fields, found)) rows.add(row);
   }
   // And the other way: every row the history names is there. This build deletes no row, so a

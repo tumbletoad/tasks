@@ -27,6 +27,8 @@ import {
   type IdPrefix,
   type LaunchState,
   type Operation,
+  type RunResultRow,
+  type RunState,
   type SchemaStep,
   type SqlValue,
   type WriteResult,
@@ -755,5 +757,85 @@ function generate(
       const legacy = `t-${rng.u32().toString(16).padStart(8, "0")}`;
       alias.run({ namespace: "planning", alias: legacy, kind: "task", id: taskId, at });
     });
+  });
+
+  // Runs (A4 3.11), as the execution store writes them, once the schema has their table (0.3):
+  // last, so a sample built by an older chain draws exactly what it drew before. Mira runs the
+  // opened task in Codex · work in its place, which succeeds, and queues a Refresh that she
+  // removes from the queue.
+  const hasRuns =
+    conn
+      .prepare("SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = 'runs'")
+      .get() !== undefined;
+  if (!hasRuns) return;
+  const limits = { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 };
+  const queued = launch({
+    kind: "run.create",
+    task: opened,
+    instance: "codex-work",
+    adapter: "codex-exec",
+    place: (portalPlace ?? null) as Id<"pl"> | null,
+    request: "Check the appointment export and fix the time zone.",
+    brief_hash: "7c2e9a41".repeat(8),
+    permission: "full-access",
+    limits,
+  });
+  const runStep = (
+    expect: RunState,
+    next: RunState,
+    more: { reason?: string; evidence?: Record<string, string | number | boolean> } = {},
+    result?: RunResultRow,
+  ): void => {
+    launch({
+      kind: "run.transition",
+      run: queued as unknown as Id<"ru">,
+      expect,
+      next,
+      ...more,
+      ...(result === undefined ? {} : { result }),
+    });
+  };
+  runStep("queued", "starting");
+  runStep("starting", "starting", {
+    evidence: { claim: "claim-fixture-2", claimed_at: start + 7_200_000 },
+  });
+  runStep("starting", "running", { evidence: { pid: 51007, pid_started_at: start + 7_200_300 } });
+  runStep("running", "running", {
+    evidence: { native_id: "0199a3f2-7c41-7d20-9b6e-3f1c2a4b5d6e" },
+  });
+  runStep(
+    "running",
+    "succeeded",
+    {},
+    {
+      ok: true,
+      outcome: "success",
+      exit_code: 0,
+      signal: null,
+      native_id: "0199a3f2-7c41-7d20-9b6e-3f1c2a4b5d6e",
+      text: "The export now writes local times with their zone.",
+      error: null,
+      usage: { input_tokens: 18_400, cached_input_tokens: 12_000, output_tokens: 2_100 },
+      app_tools: null,
+      declined: 0,
+      permission_denials: 0,
+      duration_ms: 412_000,
+    },
+  );
+  const refresh = launch({
+    kind: "run.create",
+    routine: id("ro"),
+    instance: "codex-work",
+    adapter: "codex-exec",
+    place: null,
+    brief_hash: "3b8d0f62".repeat(8),
+    permission: "read-only",
+    limits: { ...limits, max_turns: 150, wall_ms: 3_600_000 },
+  });
+  launch({
+    kind: "run.transition",
+    run: refresh as unknown as Id<"ru">,
+    expect: "queued",
+    next: "cancelled",
   });
 }
