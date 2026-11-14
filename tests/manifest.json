@@ -2696,6 +2696,22 @@
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.dedupe",
+      "title": "task.create upserts by the keys of its draft's sources: an active match returns existing with matched_by and takes only the draft's entries, link_sources links its sources, several active matches are ambiguous, a task finished within tasks.dedupe_window_days returns existing with its lifecycle and an older one does not, dedupe new refuses an active match and none never matches, a removed link or a deleted task never matches, the request's own links and lifecycle changes count, a change to a matched draft's fields is left out, and a request that returned existing, retried after the window, replays existing",
+      "source": "A1 3.6, A1 3.8, A1 5, A3 3.4.5, A3 3.11.1, A7 3.10 M3.06",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.dedupe-sessions",
+      "title": "Property test against a reference model: drafts with overlapping source keys from three sessions, interleaved with completions, reopens and retries, leave at most one task per key and return what the model predicts; requests sent at once through the storage worker leave one task per key",
+      "source": "A1 3.6, A1 3.8, A1 5, A7 3.10 M3.06",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }
