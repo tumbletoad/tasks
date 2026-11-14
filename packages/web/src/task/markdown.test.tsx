@@ -80,6 +80,31 @@ describe("[A5.3.26.web.markdown] task Markdown is elements of an allow-list, nev
     }
   });
 
+  test("long runs of spaces, marks and brackets parse in linear time", () => {
+    // Untrusted text must not stall the page: each of these took minutes or more with a pattern
+    // that could split one run of spaces between two quantifiers.
+    const run = " ".repeat(20_000);
+    const inputs = [
+      `# a${run}b`,
+      `# a${run}#${run}b`,
+      `#${run}`,
+      `## ${"#".repeat(20_000)}a`,
+      `> a${run}b`,
+      `- a${run}b`,
+      `1. a${run}b`,
+      `a${run}\n${run}b`,
+      "**".repeat(10_000),
+      "[".repeat(10_000),
+      "[a](".repeat(5_000),
+      `http://${".".repeat(20_000)} `,
+      "_a ".repeat(10_000),
+    ];
+    for (const input of inputs) expect(html(input).length).toBeGreaterThan(0);
+    expect(html("## Plan ##")).toBe('<div dir="auto" data-md=""><p><strong>Plan</strong></p></div>');
+    expect(html("# C#")).toContain("<strong>C#</strong>");
+    expect(html("#  ")).toContain("<p><strong></strong></p>");
+  });
+
   test.each(PAYLOADS)(
     "payload %#: nothing but allowed elements, no handler, no blocked scheme",
     (payload) => {

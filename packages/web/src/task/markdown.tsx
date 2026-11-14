@@ -64,12 +64,29 @@ function lines(list: readonly string[], key: string): ReactNode[] {
   return out;
 }
 
+// Every block pattern has at most one unbounded quantifier that can meet another over the same
+// characters, so a long run of spaces or marks parses in linear time: the text is untrusted.
 const FENCE = /^\s{0,3}(```|~~~)/u;
-const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/u;
+const HEADING_START = /^\s{0,3}#{1,6}(?:\s|$)/u;
 const QUOTE = /^\s{0,3}>\s?(.*)$/u;
 const BULLET = /^\s{0,3}[-*+]\s+(.*)$/u;
 const NUMBERED = /^\s{0,3}\d{1,9}[.)]\s+(.*)$/u;
 const BLANK = /^\s*$/u;
+
+/**
+ * A `#` line's text, without its marks and an optional closing run of `#` (CommonMark: the closing
+ * run follows a space, so "C#" keeps its mark), or undefined when the line is no heading. Plain
+ * scans, not one pattern: a lazy body between two runs of spaces backtracks without bound.
+ */
+function headingOf(line: string): string | undefined {
+  const start = HEADING_START.exec(line);
+  if (start === null) return undefined;
+  const body = line.slice(start[0].length).trim();
+  let end = body.length;
+  while (end > 0 && body[end - 1] === "#") end -= 1;
+  if (end === 0) return "";
+  return end < body.length && /\s/u.test(body[end - 1] ?? "") ? body.slice(0, end).trimEnd() : body;
+}
 
 /** The blocks of a Markdown text, as React elements. */
 export function markdown(text: string): ReactNode[] {
@@ -99,12 +116,12 @@ export function markdown(text: string): ReactNode[] {
       );
       continue;
     }
-    const heading = HEADING.exec(line);
-    if (heading !== null) {
+    const heading = headingOf(line);
+    if (heading !== undefined) {
       const k = key();
       out.push(
         <p key={k}>
-          <strong>{inline(heading[1] ?? "", k)}</strong>
+          <strong>{inline(heading, k)}</strong>
         </p>,
       );
       i += 1;
@@ -150,7 +167,7 @@ export function markdown(text: string): ReactNode[] {
       if (
         BLANK.test(current) ||
         FENCE.test(current) ||
-        HEADING.test(current) ||
+        headingOf(current) !== undefined ||
         QUOTE.test(current) ||
         BULLET.test(current) ||
         NUMBERED.test(current)
