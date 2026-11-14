@@ -8,7 +8,7 @@
 // since keeps its place as a placeholder with its reference and no content (A3 3.9.5). A snippet
 // is always FTS5's `snippet()` over the document's current text, else the current summary, so a
 // page never shows text the space no longer holds.
-import { CURSOR_PATTERN, type SEARCH_SCOPES } from "@tasks/contracts";
+import { AppError, CURSOR_PATTERN, type SEARCH_SCOPES } from "@tasks/contracts";
 import {
   decodeRowsByIds,
   decodeSpaceRow,
@@ -33,7 +33,7 @@ import {
   type FrozenSearch,
   type SearchCursors,
 } from "./cursors.ts";
-import { planSearch, SEARCH_IDS, type Scope, type Vocabulary } from "./plan.ts";
+import { planSearch, SEARCH_IDS, type Scope, type SearchPlan, type Vocabulary } from "./plan.ts";
 import { namesLifecycle, parseQuery, printQuery, termsOf, type Query } from "./query.ts";
 
 /** What a search reads through: a space's reader connection (`WorkerConnection`). */
@@ -146,6 +146,27 @@ function vocabularyOf(results: readonly unknown[]): {
   };
 }
 
+/** How often a search plans again when the space's values change under it. */
+const PLAN_ROUNDS = 3;
+
+/** Whether two reads of the vocabulary would plan the same statement. */
+function sameVocabulary(
+  a: { vocabulary: Vocabulary; indexed: boolean },
+  b: { vocabulary: Vocabulary; indexed: boolean },
+): boolean {
+  return a.indexed === b.indexed && JSON.stringify(a.vocabulary) === JSON.stringify(b.vocabulary);
+}
+
+/** The space's values kept changing between a search's reads: a retry will find them settled. */
+function vocabularyChanging(): AppError {
+  return new AppError({
+    code: "space_unavailable",
+    message: "The space's statuses, areas or projects changed while searching.",
+    hint: "Search again.",
+    data: { reason: "busy", retryable: true },
+  });
+}
+
 /** Whether planning needs the tasks placed at `cwd`: for `on:cwd`, or for the boost of a text query. */
 function needsHere(query: Query, scope: Scope): boolean {
   const terms = termsOf(query);
@@ -171,31 +192,39 @@ export async function runSearch(
   }
   const query = parseQuery(input.q ?? "");
   const scope: Scope = input.scope ?? (namesLifecycle(query) ? "all" : "active");
-  const { vocabulary, indexed } = vocabularyOf(
-    await reader.transaction("deferred", [...VOCABULARY]),
-  );
   const here =
     input.cwd !== undefined && needsHere(query, scope) ? await env.here(input.cwd) : undefined;
-  const plan = planSearch(query, {
-    vocabulary,
-    indexed,
-    scope,
-    audience: env.audience,
-    today: env.today,
-    now: env.now,
-    timeZone: env.timeZone,
-    machine: env.machine,
-    ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
-    ...(here === undefined ? {} : { here }),
-    live: termsOf(query).some((t) => t.type === "filter" && t.key === "is") ? env.live() : [],
-  });
-  // The query, in one read transaction at S.
-  const [spaceRow, ranked] = await reader.transaction("deferred", [
-    SPACE,
-    { sql: plan.sql, params: plan.params, mode: "all" },
-  ]);
-  const space = decodeSpaceRow(spaceRow as Row);
-  const found = rows(ranked);
+  const live = termsOf(query).some((t) => t.type === "filter" && t.key === "is") ? env.live() : [];
+  // The plan names the space's values (a status, an area's ID), so it is made from a vocabulary
+  // read first and checked against the vocabulary of the query's own read transaction at S: a
+  // rename between the two reads plans again, so S never mixes with an earlier state.
+  let known = vocabularyOf(await reader.transaction("deferred", [...VOCABULARY]));
+  let settled: { space: SpaceRow; plan: SearchPlan; ranked: unknown } | undefined;
+  for (let round = 0; round < PLAN_ROUNDS && settled === undefined; round += 1) {
+    const plan = planSearch(query, {
+      vocabulary: known.vocabulary,
+      indexed: known.indexed,
+      scope,
+      audience: env.audience,
+      today: env.today,
+      now: env.now,
+      timeZone: env.timeZone,
+      machine: env.machine,
+      ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
+      ...(here === undefined ? {} : { here }),
+      live,
+    });
+    const results = await reader.transaction("deferred", [
+      ...VOCABULARY,
+      { sql: plan.sql, params: plan.params, mode: "all" },
+    ]);
+    const atS = vocabularyOf(results);
+    if (sameVocabulary(atS, known)) settled = { space: atS.space, plan, ranked: results.at(-1) };
+    else known = atS;
+  }
+  if (settled === undefined) throw vocabularyChanging();
+  const { space, plan } = settled;
+  const found = rows(settled.ranked);
   const items: FrozenItem[] = found.slice(0, SEARCH_IDS).map((row) => ({
     id: str(row["id"]),
     ref: formatTaskRef(space.refPrefix, Number(row["ref"])),

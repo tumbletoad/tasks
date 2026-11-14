@@ -302,6 +302,60 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(unknown.data["suggestions"]).toEqual(["open"]);
   });
 
+  test("filter names resolve in the query's own snapshot, so a rename between the reads never mixes two", async () => {
+    const [moved = ""] = created(
+      submit(fx, [{ kind: "task.create", title: "Vocabword task", area: "lumen" }]),
+    );
+    const rename = async (title: string, slug: string) =>
+      directly(fx, (conn) => {
+        conn
+          .prepare("UPDATE areas SET title = $title, slug = $slug WHERE id = $id")
+          .run({ title, slug, id: fx.areas.home });
+        indexChanges(conn, lastSeq(conn), [
+          { entity: "areas", entityId: fx.areas.home, taskId: null, action: "set", field: "title" },
+        ]);
+      });
+    // Between the search's reads, the area named home is renamed and the task moves into it: it
+    // never was in an area named home.
+    const inner = readerOf(fx);
+    let calls = 0;
+    const racing: SearchReader = {
+      transaction: async (mode, queries) => {
+        calls += 1;
+        if (calls === 2) {
+          await rename("Elsewhere", "elsewhere");
+          submit(fx, [{ kind: "task.move", task: moved, area: "elsewhere" }]);
+        }
+        return inner.transaction(mode, queries);
+      },
+    };
+    try {
+      const outcome = await runSearch(racing, { q: "vocabword area:home" }, envOf(fx)).then(
+        (result) => ids(result),
+        (error: unknown) => (error instanceof AppError ? error.code : error),
+      );
+      expect(outcome === "invalid_input" || (Array.isArray(outcome) && outcome.length === 0)).toBe(
+        true,
+      );
+    } finally {
+      await rename("Home", "home");
+    }
+    // Values that change at every read never settle: a retryable refusal, never a mixed answer.
+    let reads = 0;
+    const restless: SearchReader = {
+      transaction: async (mode, queries) => {
+        const results = await inner.transaction(mode, queries);
+        reads += 1;
+        const areas = results[3];
+        if (Array.isArray(areas)) areas.push({ id: `a_${String(reads)}`, slug: "x", title: "X" });
+        return results;
+      },
+    };
+    const busy = await refusal(runSearch(restless, { q: "vocabword" }, envOf(fx)));
+    expect(busy.code).toBe("space_unavailable");
+    expect(busy.data).toMatchObject({ reason: "busy", retryable: true });
+  });
+
   test("without text: due date (none last), then priority, then the latest change", async () => {
     const [late, soon, none] = created(
       submit(fx, [
