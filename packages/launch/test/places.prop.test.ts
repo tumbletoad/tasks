@@ -418,7 +418,8 @@ const LINK_TO_FILE: [[Spec[], string[]]][] = [
   // Seed 729078548. Where the volume folds case, the link `A` is not made beside the folder `a`
   // (one name), the folder `A/b` is `a/b`, and the link `a/c d` leads to `c d/A`, the file
   // `c d/a`: below the nested root `c d` is a junction to a file. Where the volume keeps case, `A`
-  // is a link of its own beside `a`, and `c d/A` is a folder.
+  // is a link of its own beside `a`, so neither `A/b` nor the link `A/c d` is made (a link is no
+  // parent), and `c d` below the nested root is missing.
   [
     [
       [

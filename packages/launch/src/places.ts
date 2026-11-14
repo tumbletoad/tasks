@@ -171,6 +171,21 @@ export interface PlaceOptions {
 
 const pathOf = (platform: NodeJS.Platform): PlatformPath => (platform === "win32" ? win32 : posix);
 
+/**
+ * A name with each letter lowercased on its own, closer to NTFS's table: one character for one, with
+ * no rule that looks at its neighbours (JavaScript's `toLowerCase` makes a final `Σ` a `ς`, which
+ * NTFS keeps apart from `σ`) and none that turns one character into two (`İ`). Used only to refuse
+ * a name that is not the folder's own (A1 3.15): the file system has already found the folder.
+ */
+function letterFold(name: string): string {
+  let out = "";
+  for (const c of name) {
+    const lower = c.toLowerCase();
+    out += Array.from(lower).length === 1 ? lower : c;
+  }
+  return out;
+}
+
 /** Whether names that differ only in case usually name one file there. */
 const foldsCase = (platform: NodeJS.Platform): boolean =>
   platform === "win32" || platform === "darwin";
@@ -437,7 +452,7 @@ export async function resolvePlace(
       try {
         if ((await lstat(at)).isSymbolicLink()) continue;
         const own = P.basename(await realpath(at));
-        if (own.toLowerCase() !== segment.toLowerCase()) return failed("invalid_path");
+        if (letterFold(own) !== letterFold(segment)) return failed("invalid_path");
       } catch {
         break; // Missing: the stat below says so.
       }
@@ -593,22 +608,37 @@ export async function placeOf(
   const identity = identityOf(found);
   if (identity === undefined) return failed("identity_unavailable");
 
-  const holders: { id: string; depth: number; rel: string }[] = [];
+  const read: { id: string; identity: FolderIdentity }[] = [];
+  const holders: { id: string; identity: FolderIdentity; depth: number; rel: string }[] = [];
   for (const root of roots) {
     const base = await readRoot(root, platform);
     if (typeof base === "string") continue;
+    read.push({ id: root.id, identity: base.identity });
     const rel = await below(base.real, base.identity, real, platform);
     if (rel !== undefined) {
-      holders.push({ id: root.id, depth: partsOf(base.real, P).segments.length, rel });
+      holders.push({
+        id: root.id,
+        identity: base.identity,
+        depth: partsOf(base.real, P).segments.length,
+        rel,
+      });
     }
   }
   if (holders.length === 0) return failed("outside_roots", roots.map((r) => r.id).sort());
   const deepest = Math.max(...holders.map((h) => h.depth));
-  const closest = holders.filter((h) => h.depth === deepest);
-  // Two roots at one depth that both hold the folder are one folder under two spellings.
-  if (closest.length > 1) return failed("ambiguous_root", closest.map((h) => h.id).sort());
-  const [best] = closest;
-  if (best === undefined || !isPlacePath(best.rel, platform)) return failed("invalid_path");
+  const [best, ...others] = holders.filter((h) => h.depth === deepest);
+  if (best === undefined) return failed("invalid_path");
+  // Roots whose folder is the closest root's folder, by identity: one folder under two spellings,
+  // whether or not their real paths say so (a bind mount, or a case-folding folder whose realpath
+  // keeps the spelling it was given). Two holders at one depth are always one folder.
+  const same = read.filter(
+    (r) => r.identity.dev === best.identity.dev && r.identity.ino === best.identity.ino,
+  );
+  if (same.length > 1 || others.length > 0) {
+    const ids = new Set([...same.map((r) => r.id), best.id, ...others.map((h) => h.id)]);
+    return failed("ambiguous_root", [...ids].sort());
+  }
+  if (!isPlacePath(best.rel, platform)) return failed("invalid_path");
   const back = await resolvePlace({ root: best.id, path: best.rel }, roots, { platform });
   if (back.status !== "ok") {
     return failed(back.reason === "identity_unavailable" ? back.reason : "invalid_path");

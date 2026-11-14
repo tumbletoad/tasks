@@ -266,6 +266,24 @@ describe("[A1.3.15.places.resolve] resolve(): one folder or a reason, never anot
       expect(await resolvePlace({ root: "work", path: "lumen/portal" }, shouting)).toEqual(
         resolved(portal, "work"),
       );
+      // Case as the volume folds it, letter by letter, not as JavaScript's context rule for a
+      // final sigma has it: where the file system finds `ΟΣ` through another spelling, so does
+      // resolve, and where it finds nothing, resolve says path_missing.
+      const greek = folder(work, "ΟΣ");
+      const greekId = statSync(greek, { bigint: true });
+      for (const spelling of ["οσ", "Οσ", "ος"]) {
+        let same = false;
+        try {
+          const s = statSync(join(work, spelling), { bigint: true });
+          same = s.dev === greekId.dev && s.ino === greekId.ino;
+        } catch {
+          // Not there: another name on this volume.
+        }
+        expect([spelling, await resolvePlace({ root: "work", path: spelling }, roots)]).toEqual([
+          spelling,
+          same ? resolved(greek, "work") : expect.objectContaining({ reason: "path_missing" }),
+        ]);
+      }
       // Two spellings of one root folder are one folder: `tasks roots add` finds it named, and
       // two such roots written by hand leave the folder no one place.
       const loud = join(base.toUpperCase(), "WORK");
