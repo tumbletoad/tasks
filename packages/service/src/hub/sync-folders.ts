@@ -41,7 +41,13 @@
 // person confirms it is local and excluded from sync. A step never catches a look's failure and
 // never falls back to the path as given or to "none": a new step either completes on what it read
 // or leaves the folder unchecked. Signals found before a step stopped still count.
-import { dirname, join, resolve } from "node:path";
+//
+// The runner proves completion, not that what a step read was whole and current, so three rules
+// hold for that (A1 3.2, "How the code holds it"): a decoder answers only from input it read whole,
+// never from the part before a point it could not read; a kept fact counts only for what it was
+// read from (the Windows facts for the volumes they read at the drives' roots); and a look is made
+// at what the folder is now (its real path, with the names below it not there yet).
+import { basename, dirname, join, resolve } from "node:path";
 
 /** The sync clients and folder kinds A1 3.2 names. */
 export const SYNC_PROVIDERS = [
@@ -127,6 +133,12 @@ export interface WindowsSyncFacts {
     readonly type: string;
     readonly label: string;
     readonly format: string;
+    /**
+     * The identity of the volume at the drive's root when the facts were read (SyncHost.volumeOf),
+     * so the facts count only for that volume. Never for a network drive; absent when it could not
+     * be read, and a folder on such a drive is unchecked.
+     */
+    readonly volume?: string;
   }[];
 }
 
@@ -160,8 +172,9 @@ export interface SyncHost {
   /** Windows: the identity of the volume that holds `path` (its serial number). */
   volumeOf(path: string): Promise<string>;
   /**
-   * Windows: the registry's and the drives' facts, or undefined when the run gave none (never "no
-   * facts there"). Undefined elsewhere. An answer may be kept for a while; `fresh` asks for a new one.
+   * Windows: the registry's and the drives' facts, each local drive with its volume's identity read
+   * right after them, or undefined when the run gave none (never "no facts there"). Undefined
+   * elsewhere. An answer may be kept for a while; `fresh` asks for a new one.
    */
   windowsFacts(fresh?: boolean): Promise<WindowsSyncFacts | undefined>;
   /** Linux: `fs.statfs`'s type of the file system that holds `path`. */
@@ -237,10 +250,14 @@ const PATHS_IN_TEXT = /(?:[A-Za-z]:\\|\\\\)[^"*<>?|\p{Cc}\uFFFD]{1,32767}/gu;
 /** The fields read from a SyncTargets value at most, nested ones included. */
 const MAX_FIELDS = 100_000;
 
-/** A varint at `at`: its value and the next offset, or undefined when it runs past the end. */
+/**
+ * A varint at `at` (up to ten bytes, a uint64's longest): its value and the next offset, or
+ * undefined when it runs past the end or past ten bytes. The value is exact up to 2^53, which is
+ * all a key or a length can be.
+ */
 function varint(bytes: Uint8Array, at: number): [number, number] | undefined {
   let value = 0;
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 10; i += 1) {
     const byte = bytes[at + i];
     if (byte === undefined) return undefined;
     value += (byte & 0x7f) * 2 ** (7 * i);
@@ -250,41 +267,58 @@ function varint(bytes: Uint8Array, at: number): [number, number] | undefined {
 }
 
 /**
- * Every length-delimited field of a protobuf-shaped message and of the messages inside it, down to
- * 8 levels, at most MAX_FIELDS of them (`complete` false when that cut the walk short). Iterative,
- * so no value's shape can exhaust the stack. A malformed message ends its own walk with what was
- * read.
+ * The length-delimited payloads of `message` when it is one protobuf message read whole: every
+ * field has a field number, a known wire type and its full length, and the last one ends exactly
+ * at the message's end. Undefined otherwise: bytes that are not a message (a string), or a message
+ * that cannot be read to its end. Never the fields before a point it could not read.
+ */
+function messageFields(message: Uint8Array): Uint8Array[] | undefined {
+  const payloads: Uint8Array[] = [];
+  let at = 0;
+  while (at < message.length) {
+    const key = varint(message, at);
+    // Field numbers run from 1 to 2^29 - 1.
+    if (key === undefined || key[0] < 8 || key[0] >= 2 ** 32) return undefined;
+    at = key[1];
+    const wire = key[0] % 8;
+    if (wire === 0) {
+      const skipped = varint(message, at);
+      if (skipped === undefined) return undefined;
+      at = skipped[1];
+    } else if (wire === 1) at += 8;
+    else if (wire === 5) at += 4;
+    else if (wire === 2) {
+      const length = varint(message, at);
+      if (length === undefined || length[1] + length[0] > message.length) return undefined;
+      payloads.push(message.subarray(length[1], length[1] + length[0]));
+      at = length[1] + length[0];
+    } else return undefined;
+  }
+  return at === message.length ? payloads : undefined;
+}
+
+/**
+ * Every length-delimited field of a protobuf message and of the messages inside it, down to 8
+ * levels, at most MAX_FIELDS of them. A payload that is itself a message read whole is walked; any
+ * other payload is a leaf (a string, bytes). `complete` is false when the value is not one message
+ * read whole, when a message lies deeper than the walk goes, or when the budget ran out: a field
+ * the walk did not reach may be a root (A1 3.2: a decoder answers only from what it read whole).
+ * Iterative, so no value's shape can exhaust the stack.
  */
 function protoFields(bytes: Uint8Array): { fields: Uint8Array[]; complete: boolean } {
+  const top = messageFields(bytes);
+  if (top === undefined) return { fields: [], complete: false };
   const fields: Uint8Array[] = [];
-  const messages: { bytes: Uint8Array; depth: number }[] = [{ bytes, depth: 0 }];
+  const pending: { bytes: Uint8Array; depth: number }[] = top.map((b) => ({ bytes: b, depth: 1 }));
   let complete = true;
-  for (let next = messages.pop(); next !== undefined; next = messages.pop()) {
-    const { bytes: message, depth } = next;
-    let at = 0;
-    while (at < message.length) {
-      const key = varint(message, at);
-      if (key === undefined) break;
-      at = key[1];
-      const wire = key[0] & 7;
-      if (wire === 0) {
-        const skipped = varint(message, at);
-        if (skipped === undefined) break;
-        at = skipped[1];
-      } else if (wire === 1) at += 8;
-      else if (wire === 5) at += 4;
-      else if (wire === 2) {
-        const length = varint(message, at);
-        if (length === undefined || length[1] + length[0] > message.length) break;
-        const payload = message.subarray(length[1], length[1] + length[0]);
-        if (fields.length >= MAX_FIELDS) return { fields, complete: false };
-        fields.push(payload);
-        // Deeper than 8 levels the payload is read as a field only, not walked: not complete.
-        if (depth < 8) messages.push({ bytes: payload, depth: depth + 1 });
-        else complete = false;
-        at = length[1] + length[0];
-      } else break;
-    }
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    if (fields.length >= MAX_FIELDS) return { fields, complete: false };
+    fields.push(next.bytes);
+    const inner = messageFields(next.bytes);
+    if (inner === undefined || inner.length === 0) continue;
+    // A message deeper than 8 levels is read as a field only, not walked: not complete.
+    if (next.depth >= 8) complete = false;
+    else for (const b of inner) pending.push({ bytes: b, depth: next.depth + 1 });
   }
   return { fields, complete };
 }
@@ -310,10 +344,10 @@ function pathOf(field: Uint8Array): string | undefined {
  * protobuf message: each target holds the account, the virtual drive's letter and the mirror root
  * as length-delimited fields, so each field is read on its own, as UTF-8 or UTF-16, wherever it
  * starts. A value of another shape, or one the walk cut short, is searched as UTF-8 text too. Only
- * drive and UNC paths count. `complete` is false when the walk ran out of depth or of its field
- * budget: a UTF-16 root below that is not found by the text search, so the value was not read
- * whole, and a folder judged by it is unchecked, never local (A1 3.2's rule for a fact the check
- * cannot read).
+ * drive and UNC paths count. `complete` is false when the value is not one message read whole, or
+ * the walk ran out of depth or of its field budget: a UTF-16 root it did not reach is not found by
+ * the text search, so the value was not read whole, and a folder judged by it is unchecked, never
+ * local (A1 3.2's rule for a fact the check cannot read).
  */
 export function readDriveFs(base64: string): { paths: string[]; complete: boolean } {
   if (base64 === "") return { paths: [], complete: true };
@@ -597,11 +631,19 @@ export function parseMacMounts(text: string): MountEntry[] | undefined {
   return entries;
 }
 
-/** The mount that holds `path`: the longest mount point that is the path or an ancestor. */
-export function mountOf(entries: readonly MountEntry[], path: string): MountEntry | undefined {
+/**
+ * The mount that holds `path`: the longest mount point that is the path or an ancestor, its case
+ * folded on macOS, whose volumes ignore case by default, so a path spelled in another case than the
+ * mount table's is still under its mount.
+ */
+export function mountOf(
+  entries: readonly MountEntry[],
+  path: string,
+  platform: "linux" | "darwin" = "linux",
+): MountEntry | undefined {
   let best: MountEntry | undefined;
   for (const e of entries) {
-    if (!isInside("linux", path, e.mountPoint)) continue;
+    if (!isInside(platform, path, e.mountPoint)) continue;
     if (best === undefined || e.mountPoint.length >= best.mountPoint.length) best = e;
   }
   return best;
@@ -614,7 +656,10 @@ export function mountOf(entries: readonly MountEntry[], path: string): MountEntr
  * is local, and anything else, a FUSE mount the table does not list included, is unknown. So is
  * every other type.
  */
-export function linuxVolume(statfsType: number, mounts: string | undefined, path: string): Volume {
+export function linuxVolume(type: number, mounts: string | undefined, path: string): Volume {
+  // The magic numbers are 32-bit: a build whose f_type is a signed 32-bit word gives CIFS's
+  // 0xFF534D42 as a negative number, the same type.
+  const statfsType = Number.isInteger(type) && type < 0 && type >= -(2 ** 31) ? type >>> 0 : type;
   const named = NETWORK_MAGIC.get(statfsType);
   if (named !== undefined) return network(named);
   if (statfsType === FUSE_MAGIC) {
@@ -653,7 +698,7 @@ const MAC_LOCAL: ReadonlySet<string> = new Set([
 /** The volume a macOS real path is on, from the mount table's entry that holds it. */
 export function macVolume(mounts: string, path: string): Volume {
   const entries = parseMacMounts(mounts);
-  const entry = entries === undefined ? undefined : mountOf(entries, path);
+  const entry = entries === undefined ? undefined : mountOf(entries, path, "darwin");
   if (entry === undefined) return UNKNOWN;
   if (MAC_NETWORK.has(entry.type)) return network(entry.type);
   // A macFUSE mount reaches another host when its source names one (sshfs: `user@host:/path`).
@@ -701,6 +746,32 @@ const driveOf = (windows: WindowsSyncFacts, letter: string) =>
 export function unlistedDrive(path: string, windows: WindowsSyncFacts): boolean {
   const letter = letterOf(path);
   return letter !== undefined && driveOf(windows, letter) === undefined;
+}
+
+/**
+ * Whether a volume identity names a volume: libuv answers 0 for a file system that does not report
+ * its serial number, and 0 is then no identity.
+ */
+const isVolumeId = (id: string | undefined): id is string =>
+  id !== undefined && id !== "" && id !== "0";
+
+/**
+ * Whether the facts do not describe the volume that holds the Windows real path `real` now: its
+ * drive is not listed, or is listed for another volume than the one that holds the folder (a
+ * volume that took the letter since the facts were read, or another volume mounted in a folder of
+ * the drive), or without one. A network drive's volume is never read, and its type decides.
+ */
+async function describesOther(
+  host: SyncHost,
+  real: string,
+  windows: WindowsSyncFacts,
+): Promise<boolean> {
+  const letter = letterOf(real);
+  if (letter === undefined) return false;
+  const drive = driveOf(windows, letter);
+  if (drive === undefined) return true;
+  if (drive.type === "Network") return false;
+  return !isVolumeId(drive.volume) || drive.volume !== (await host.volumeOf(real));
 }
 
 /**
@@ -832,8 +903,9 @@ export async function checkFolder(
 
 /**
  * The Windows facts for a check whose folder's real path is `real`. A kept answer may be a minute
- * old and not list a drive that came since, so a folder on a drive it does not list gets one fresh
- * run. Elsewhere only a fixture gives facts.
+ * old: it may not list a drive that came since, or describe a volume that has since given its
+ * letter to another. So a folder on a drive it does not list, or on another volume than the one it
+ * read for that drive, gets one fresh run. Elsewhere only a fixture gives facts.
  */
 async function windowsFactsFor(
   host: SyncHost,
@@ -842,7 +914,7 @@ async function windowsFactsFor(
   const facts = await host.windowsFacts();
   if (host.platform !== "win32") return facts;
   if (facts === undefined) return unseen();
-  if (real !== undefined && unlistedDrive(real, facts)) {
+  if (real !== undefined && (await describesOther(host, real, facts))) {
     return (await host.windowsFacts(true)) ?? unseen();
   }
   return facts;
@@ -881,8 +953,16 @@ async function check(target: string, host: SyncHost, evidence: Evidence): Promis
   const windows = await evidence.run("windows_facts", () => windowsFactsFor(host, real));
 
   // 4. The sync clients' roots: the path as given and its real path, under each root as given and
-  //    as its real path. A root that is not there (a stale %OneDrive%) counts by its text.
-  const paths = real === undefined ? [path] : [path, real];
+  //    as its real path. A root that is not there (a stale %OneDrive%) counts by its text, so the
+  //    real path keeps the names below the existing folder that are not there yet: a new space's
+  //    folder lies where they lead.
+  const below = chain
+    .slice(0, found ?? 0)
+    .reverse()
+    .map((p) => basename(p));
+  const realTarget =
+    real === undefined ? undefined : below.length === 0 ? real : join(real, ...below);
+  const paths = realTarget === undefined ? [path] : [path, realTarget];
   await evidence.run("sync_clients", async () => {
     if (host.platform === "win32" && windows === undefined) unseen();
     for (const r of await providerRoots(host, windows)) {
@@ -953,11 +1033,12 @@ async function check(target: string, host: SyncHost, evidence: Evidence): Promis
       if (real === undefined || windows === undefined) return unseen();
       volume = windowsVolume(real, windows);
       if (volume.kind === "local") {
-        // The drive's facts are its own volume's. Another volume mounted in a folder of the drive
-        // has its own type and format, which the facts do not hold.
-        const root = `${letterOf(real) ?? ""}:\\`;
-        const [holder, drive] = await Promise.all([host.volumeOf(real), host.volumeOf(root)]);
-        if (holder !== drive) unseen();
+        // The drive's facts are those of the volume they read at its root. Another volume mounted
+        // in a folder of the drive, or one that took the drive's letter since, has its own type,
+        // format and label, which the facts do not hold.
+        const read = driveOf(windows, letterOf(real) ?? "")?.volume;
+        const holder = await host.volumeOf(real);
+        if (!isVolumeId(read) || holder !== read) unseen();
       }
     } else if (host.platform === "linux") {
       if (real === undefined) return unseen();

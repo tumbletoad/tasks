@@ -10,9 +10,10 @@
 //   finds whoami.exe: never through SystemRoot) reads the drives (type, label, format), OneDrive's
 //   accounts, the Cloud Files sync roots registered for this user's SID, and Drive for desktop's
 //   SyncTargets value through .NET alone, and writes them in base64 of UTF-8, so no console code
-//   page alters a path. The script comes on stdin, not on the command line. About 0.3 s; an answer
-//   is kept for a minute, so the spaces that open together at start share one run, and a failed
-//   run is not kept. Any failure, a read inside the run included, and any byte of its output that
+//   page alters a path. The script comes on stdin, not on the command line. Right after it, each
+//   local drive's volume identity is read, so a kept answer counts only for the volumes it
+//   describes. About 0.3 s; an answer is kept for a minute, so the spaces that open together at
+//   start share one run, and a failed run is not kept. Any failure, a read inside the run included, and any byte of its output that
 //   the script does not write, gives no facts, which leaves a folder unchecked (sync-folders.ts).
 // - Linux: `fs.statfs`'s type and /proc/self/mountinfo (bounded). macOS: /sbin/mount's output.
 import { spawn } from "node:child_process";
@@ -250,13 +251,49 @@ export function runWindowsScript(
   );
 }
 
-/** One run of the facts script: this machine's facts, or undefined. */
-export function readWindowsFacts(
+/** The identity of the volume that holds `path`: `stat`'s `dev`, its serial number on Windows. */
+const volumeIdOf = async (path: string): Promise<string> =>
+  (await stat(path, { bigint: true })).dev.toString();
+
+/**
+ * The facts with each local drive's volume identity, read right after the run, so a kept answer
+ * counts only for the volumes it describes (A1 3.2): a volume that took a drive's letter since has
+ * another identity. A network drive's root is never read (it may wait for the network's
+ * time-out). A drive whose identity cannot be read within the bound is kept without one, and a
+ * folder on it is unchecked.
+ */
+export async function withVolumes(
+  facts: WindowsSyncFacts,
+  volumeOf: (path: string) => Promise<string> = volumeIdOf,
+  timeoutMs = RUN_TIMEOUT_MS,
+): Promise<WindowsSyncFacts> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<undefined>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs, undefined);
+    timer.unref();
+  });
+  try {
+    const drives = await Promise.all(
+      facts.drives.map(async (drive) => {
+        if (drive.type === "Network") return drive;
+        const read = volumeOf(drive.root).catch(() => undefined);
+        const volume = await Promise.race([read, bound]);
+        return volume === undefined ? drive : { ...drive, volume };
+      }),
+    );
+    return { ...facts, drives };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** One run of the facts script: this machine's facts, with the drives' volumes, or undefined. */
+export async function readWindowsFacts(
   timeoutMs = RUN_TIMEOUT_MS,
 ): Promise<WindowsSyncFacts | undefined> {
-  return runWindowsScript(WINDOWS_SCRIPT, timeoutMs).then((out) =>
-    out === undefined ? undefined : windowsFactsOf(out),
-  );
+  const out = await runWindowsScript(WINDOWS_SCRIPT, timeoutMs);
+  const facts = out === undefined ? undefined : windowsFactsOf(out);
+  return facts === undefined ? undefined : withVolumes(facts, volumeIdOf, timeoutMs);
 }
 
 /**
@@ -336,7 +373,7 @@ export function realSyncHost(options: RealSyncHostOptions = {}): SyncHost {
     },
     list: (dir) => readdir(dir),
     readText: readSmall,
-    volumeOf: async (path) => (await stat(path, { bigint: true })).dev.toString(),
+    volumeOf: volumeIdOf,
     windowsFacts: windows,
     statfsType: async (path) => (await statfs(path)).type,
     mountTable: async () => {

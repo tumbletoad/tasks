@@ -563,7 +563,7 @@
     },
     {
       "id": "A1.5.sync.fails-closed",
-      "title": "The folder check is local only from positive evidence of every step of its chain: a look of the host that fails, answers a default, answers something unexpected or hangs leaves the folder unchecked on every platform; a real path that cannot be resolved is never replaced by the path as given; on Windows the folder's volume must be its drive's own and the drive of a local type and format, and a drive whose type the system could not determine is left out of the facts; the real host answers nothing there only for a name that is not there; the facts run's output is checked byte by byte",
+      "title": "The folder check is local only from positive evidence of every step of its chain: a look of the host that fails, answers a default, answers something unexpected or hangs leaves the folder unchecked on every platform; a real path that cannot be resolved is never replaced by the path as given; on Windows the folder's volume must be its drive's own and the drive of a local type and format, and a drive whose type the system could not determine is left out of the facts; kept Windows facts count only for the volumes they read at the drives' roots; a SyncTargets value counts only when read whole; a new folder below a link is matched where its missing names lead; the real host answers nothing there only for a name that is not there; the facts run's output is checked byte by byte",
       "source": "A1 3.2, A1 5",
       "owner": "M3",
       "kind": "ci",

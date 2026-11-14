@@ -21,7 +21,11 @@ export interface SyncFacts {
   mounts?: string | null;
   /** A real path to report for a path, in place of the file system's. */
   realpath?: (path: string) => string | undefined;
-  /** The identity of the volume that holds a path (default: one volume for every path). */
+  /**
+   * The identity of the volume that holds a path (default: one volume for every path). A listed
+   * local drive without its own `volume` gets this one's for its root, as the real host reads it
+   * right after the facts; `null`: no identity can be read.
+   */
   volume?: null | ((path: string) => string);
 }
 
@@ -58,8 +62,18 @@ const fails = (what: string): Promise<never> => Promise.reject(new Error(`${what
 export function fixtureHost(root: string, facts: SyncFacts = {}): SyncHost {
   const platform = facts.platform ?? process.platform;
   const inside = (path: string): boolean => isInside(process.platform, resolve(path), root);
-  const windows =
+  const volume = facts.volume === undefined ? () => "fixture-volume" : facts.volume;
+  const listed =
     facts.windows === null ? undefined : withTreeDrive(facts.windows ?? NO_WINDOWS, root);
+  const windows =
+    listed === undefined || volume === null
+      ? listed
+      : {
+          ...listed,
+          drives: listed.drives.map((d) =>
+            d.type === "Network" || d.volume !== undefined ? d : { ...d, volume: volume(d.root) },
+          ),
+        };
   const real = realSyncHost({
     platform,
     env: facts.env ?? {},
@@ -69,7 +83,6 @@ export function fixtureHost(root: string, facts: SyncFacts = {}): SyncHost {
   const statfs = facts.statfs === undefined ? EXT4 : facts.statfs;
   const mounts =
     facts.mounts === undefined ? (platform === "darwin" ? MAC_MOUNTS : "") : facts.mounts;
-  const volume = facts.volume === undefined ? () => "fixture-volume" : facts.volume;
   return {
     ...real,
     kind: (path) => (inside(path) ? real.kind(path) : Promise.resolve("absent")),

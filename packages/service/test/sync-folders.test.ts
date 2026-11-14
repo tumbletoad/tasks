@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   checkFolder,
   cloudFilesProvider,
@@ -23,6 +23,7 @@ import {
   folderMessage,
   linuxVolume,
   macVolume,
+  readDriveFs,
   windowsVolume,
   type FolderCheck,
   type SyncHost,
@@ -524,10 +525,11 @@ describe("[A1.5.sync.detect] synced folders and network file systems, a fixture 
   test("a folder on a drive the Windows facts do not list gets one fresh run, then is unchecked if it is still not listed", async () => {
     const root = tree();
     const space = dir(join(root, "Tasks", "mira"));
-    // The folder's real path is on Q:, a drive the kept answer may not list yet.
+    // The folder's real path is on Q:, a drive the kept answer may not list yet. The fixture host
+    // puts every path on the volume "fixture-volume", which the facts read for Q:.
     const onQ = (p: string): string | undefined =>
       resolve(p) === space ? "Q:\\Tasks\\mira" : undefined;
-    const q = { root: "Q:\\", type: "Fixed", label: "", format: "NTFS" };
+    const q = { root: "Q:\\", type: "Fixed", label: "", format: "NTFS", volume: "fixture-volume" };
     const judge = async (answers: (typeof NO_WINDOWS)[]) => {
       const asked: boolean[] = [];
       const host = {
@@ -658,17 +660,43 @@ describe("[A1.5.sync.fails-closed] local only from positive evidence of every st
   test("a look that never answers leaves the folder unchecked once the check's bound has passed", async () => {
     const root = tree();
     const space = dir(join(root, "Tasks", "mira"));
-    for (const platform of PLATFORMS) {
-      const host = fixtureHost(root, localOn(platform, space));
-      for (const name of looksOf(host)) {
-        const hanging = withLook(host, name, () => new Promise<never>(() => undefined));
-        // Any bound: a check that waits on a look that never answers cannot end before it.
-        const check = await checkFolder(space, hanging.host, 50);
-        if (!hanging.called()) continue;
-        expect(check.verdict, `${platform} ${name}`).not.toBe("local");
-        expect(unseenSteps(check), `${platform} ${name}`).toContain("check");
+    const calledSomewhere = new Set<string>();
+    // The bound is a fake timer, moved on only once the look that hangs was made, so the check's
+    // other looks may take any time on a loaded machine and no look is passed over.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      for (const platform of PLATFORMS) {
+        const host = fixtureHost(root, localOn(platform, space));
+        for (const name of looksOf(host)) {
+          let made = (): void => undefined;
+          const reached = new Promise<"made">((resolve) => {
+            made = () => {
+              resolve("made");
+            };
+          });
+          const hanging: SyncHost = {
+            ...host,
+            [name]: () => {
+              made();
+              return new Promise<never>(() => undefined);
+            },
+          };
+          const pending = checkFolder(space, hanging, 50);
+          const first = await Promise.race([reached, pending.then(() => "done" as const)]);
+          // The check ended without this look: it is not made on this platform.
+          if (first === "done") continue;
+          calledSomewhere.add(name);
+          await vi.advanceTimersByTimeAsync(50);
+          const check = await pending;
+          expect(check.verdict, `${platform} ${name}`).not.toBe("local");
+          expect(unseenSteps(check), `${platform} ${name}`).toContain("check");
+        }
       }
+    } finally {
+      vi.useRealTimers();
     }
+    // Every look is made on some platform: none is left out of this test.
+    expect([...calledSomewhere].sort()).toEqual(looksOf(fixtureHost(root)).sort());
   });
 
   test("a real path that cannot be resolved is never replaced by the path as given (finding: a junction into a share judged by the local drive's facts)", async () => {
@@ -854,6 +882,127 @@ describe("[A1.5.sync.fails-closed] local only from positive evidence of every st
           : host.realpath(p),
     });
     expect(unseenSteps(check)).toEqual(["sync_clients"]);
+  });
+
+  test("a SyncTargets value counts as read only when it is one message read whole: a legal long varint is read past, a value that stops early is not read (review finding: an incomplete walk taken for a whole one)", async () => {
+    const before = field(1, Buffer.from("D:\\other-mirror", "utf8"));
+    const mirror = field(3, Buffer.from("D:\\real-mirror", "utf16le"));
+    // A uint64 field of six bytes (a millisecond time stamp is that long) and one of ten.
+    for (const long of [
+      Buffer.from([0x10, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01]),
+      Buffer.from([0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]),
+    ]) {
+      const read = readDriveFs(Buffer.concat([before, long, mirror]).toString("base64"));
+      expect(read.complete, long.toString("hex")).toBe(true);
+      expect(read.paths.sort(), long.toString("hex")).toEqual([
+        "D:\\other-mirror",
+        "D:\\real-mirror",
+      ]);
+    }
+    // Bytes the walk cannot read to the end: a stray byte, field number 0, a group, a length past
+    // the end, and a fixed64 past the end after the mirror root (the fields read before such a
+    // point do not make the value read). The text search may still find the UTF-8 path, never the
+    // UTF-16 one.
+    for (const value of [
+      Buffer.concat([before, Buffer.from([0x07]), mirror]),
+      Buffer.concat([before, Buffer.from([0x00, 0x01]), mirror]),
+      Buffer.concat([before, Buffer.from([0x0b]), mirror]),
+      Buffer.concat([before, Buffer.from([0x0a, 0x40, 0x41]), mirror]),
+      Buffer.concat([before, mirror, Buffer.from([0x09, 0x01, 0x02])]),
+    ]) {
+      const tail = value.subarray(before.length, before.length + 3);
+      expect(readDriveFs(value.toString("base64")).complete, tail.toString("hex")).toBe(false);
+      const root = tree();
+      const space = dir(join(root, "Tasks", "mira"));
+      const check = await checkFolder(
+        space,
+        fixtureHost(root, {
+          ...localOn("win32", space),
+          windows: { ...NO_WINDOWS, drives: [Q], driveFsTargets: value.toString("base64") },
+        }),
+      );
+      expect(check.verdict, tail.toString("hex")).not.toBe("local");
+      expect(unseenSteps(check), tail.toString("hex")).toEqual(["sync_clients"]);
+    }
+    // Drive for desktop's own layout is one message read whole, and its UTF-16 strings are leaves.
+    expect(readDriveFs(syncTargets(["D:\\mirror"], true))).toEqual({
+      paths: ["D:\\mirror"],
+      complete: true,
+    });
+  });
+
+  test("Windows: kept facts count only for the volume they read at the drive's root (review finding: a cached drive taken for the volume that took its letter)", async () => {
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    const facts = localOn("win32", space);
+    const ordinary = { ...Q, volume: "old-volume" };
+    const googleDrive = { ...Q, format: "FAT32", label: "Google Drive", volume: "new-volume" };
+    // The kept answer read an ordinary drive at Q:; Google Drive's volume holds Q: now.
+    const judge = async (fresh: typeof NO_WINDOWS | undefined) => {
+      const asked: boolean[] = [];
+      const host = {
+        ...fixtureHost(root, { ...facts, volume: () => "new-volume" }),
+        windowsFacts: (again?: boolean) => {
+          asked.push(again === true);
+          return Promise.resolve(again === true ? fresh : { ...NO_WINDOWS, drives: [ordinary] });
+        },
+      };
+      return { check: await checkFolder(space, host), asked };
+    };
+    const relabelled = await judge({ ...NO_WINDOWS, drives: [googleDrive] });
+    expect(relabelled.asked).toEqual([false, true]);
+    expect(relabelled.check).toMatchObject({ verdict: "synced", provider: "google_drive" });
+    expect(unseenSteps(relabelled.check)).toEqual([]);
+    // A fresh run that still reads another volume at Q:, or none: unchecked, never local.
+    for (const drive of [ordinary, Q]) {
+      const stale = await judge({ ...NO_WINDOWS, drives: [drive] });
+      expect(stale.asked).toEqual([false, true]);
+      expect(unseenSteps(stale.check), JSON.stringify(drive)).toEqual(["volume"]);
+    }
+    // A fresh run that gives nothing: the facts step did not complete.
+    expect(unseenSteps((await judge(undefined)).check)).toEqual(
+      expect.arrayContaining(["windows_facts"]),
+    );
+    // A volume whose identity reads as 0 (a file system that reports no serial number) has none.
+    const zero = await checkFolder(space, fixtureHost(root, { ...facts, volume: () => "0" }));
+    expect(unseenSteps(zero)).toEqual(["volume"]);
+  });
+
+  test("a new folder below a link: the sync clients' roots are matched against where its missing names lead (review finding: the names below the existing folder were dropped)", async () => {
+    const root = tree();
+    const parent = dir(join(root, "real-parent"));
+    const alias = join(root, "alias");
+    symlinkSync(parent, alias, WINDOWS ? "junction" : "dir");
+    // A stale %OneDrive% under the link's target, not there yet.
+    const host = fixtureHost(root, { env: { OneDrive: join(parent, "missing") } });
+    const viaLink = await checkFolder(join(alias, "missing", "mira"), host);
+    expect(viaLink).toMatchObject({ verdict: "synced", provider: "onedrive" });
+    expect(unseenSteps(viaLink)).toEqual([]);
+    const direct = await checkFolder(join(parent, "missing", "mira"), host);
+    expect(direct).toMatchObject({ verdict: "synced", provider: "onedrive" });
+  });
+
+  test("macOS: a real path in another case than the mount table's is still under its mount (review finding: a case-sensitive match fell through to /)", async () => {
+    const mounts =
+      "/dev/disk3s1 on / (apfs, local, journaled)\n//fixture@nas/share on /Volumes/Share (smbfs, nodev, nosuid)\n";
+    expect(macVolume(mounts, "/volumes/share/mira")).toEqual({ kind: "network", fs: "smbfs" });
+    const root = tree();
+    const space = dir(join(root, "Tasks", "mira"));
+    const check = await checkFolder(
+      space,
+      fixtureHost(root, {
+        ...localOn("darwin", space),
+        mounts,
+        realpath: (p) => (resolve(p) === space ? "/volumes/SHARE/mira" : undefined),
+      }),
+    );
+    expect(check).toMatchObject({ verdict: "network", fs: "smbfs" });
+  });
+
+  test("Linux: a statfs type in signed 32-bit form is the same type (review finding: CIFS read as unknown)", () => {
+    expect(linuxVolume(0xff534d42 | 0, undefined, "/x")).toEqual({ kind: "network", fs: "cifs" });
+    expect(linuxVolume(0xfe534d42 | 0, undefined, "/x")).toEqual({ kind: "network", fs: "smb2" });
+    expect(linuxVolume(0xef53, undefined, "/x")).toEqual({ kind: "local" });
   });
 });
 

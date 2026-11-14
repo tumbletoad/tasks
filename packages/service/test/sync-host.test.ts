@@ -25,6 +25,7 @@ import {
   WINDOWS_SCRIPT,
   windowsFactsOf,
   windowsFactsOnce,
+  withVolumes,
 } from "../src/hub/sync-host.ts";
 import { NO_WINDOWS } from "./sync-fixtures.ts";
 
@@ -99,6 +100,33 @@ describe("[A1.5.sync.windows-facts] the Windows facts run: .NET only, shared whi
     expect(run.calls()).toBe(2);
   });
 
+  test("each local drive's volume identity is read right after the facts; a network drive's root never, and one not read within the bound is left without one", async () => {
+    const drive = (root: string, type: string) => ({ root, type, format: "", label: "" });
+    const facts = {
+      ...NO_WINDOWS,
+      drives: [
+        drive("C:\\", "Fixed"),
+        drive("N:\\", "Network"),
+        drive("E:\\", "Removable"),
+        drive("H:\\", "Fixed"),
+      ],
+    };
+    const read: string[] = [];
+    const out = await withVolumes(
+      facts,
+      (root) => {
+        read.push(root);
+        if (root === "E:\\") return Promise.reject(new Error("a failed look"));
+        // A look that never answers: the bound ends it, whatever the machine's load.
+        if (root === "H:\\") return new Promise<never>(() => undefined);
+        return Promise.resolve(`id-${root[0] ?? ""}`);
+      },
+      20,
+    );
+    expect(read.sort()).toEqual(["C:\\", "E:\\", "H:\\"]);
+    expect(out.drives.map((d) => d.volume)).toEqual(["id-C", undefined, undefined, undefined]);
+  });
+
   test("the script calls no cmdlet: Windows PowerShell never searches its module path for one", () => {
     // Every command word of the script: a cmdlet's is Verb-Noun.
     expect(WINDOWS_SCRIPT).not.toMatch(/\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/);
@@ -162,6 +190,11 @@ describe("[A1.5.sync.windows-facts] the Windows facts run: .NET only, shared whi
       expect(facts?.drives.find((d) => d.root.toUpperCase() === drive)).toMatchObject({
         type: "Fixed",
       });
+      // Its volume identity was read with the facts: the one a folder on the drive has.
+      const host = realSyncHost({ windowsFacts: () => Promise.resolve(undefined) });
+      expect(facts?.drives.find((d) => d.root.toUpperCase() === drive)?.volume).toBe(
+        await host.volumeOf(drive),
+      );
     },
   );
 
