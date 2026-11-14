@@ -6,9 +6,8 @@
 // - a path ending `/browse/<KEY>-<n>`: `ticket`, with `ref` `<KEY>-<n>` (the key upper-cased);
 // - a code host's path `/<owner>/<repo>[/-]/pull|pulls|merge_requests/<n>`: `pr`, and with
 //   `issues`: `issue`;
-// - by the host's first label: `mail`, `outlook`, `webmail`: `email`; `chat`, `teams`, or a
-//   `slack.com` host: `chat`; `calendar`: `calendar`; `docs`, `drive`, `sheets`, `slides`, or a
-//   `sharepoint.com` host: `doc`;
+// - by the host's first label: `mail`, `outlook`, `webmail`: `email`; `chat`, `teams`: `chat`;
+//   `calendar`: `calendar`; `docs`, `drive`, `sheets`, `slides`: `doc`;
 // - anything else: `web`.
 //
 // Key: a ticket's is `jira:<KEY>-<n>`. Every other URL's is `url:<normalised URL>` (A3 3.11.1):
@@ -50,22 +49,22 @@ function codeKind(pathname: string): "pr" | "issue" | undefined {
   return undefined;
 }
 
+/** The kind a host's first label names. */
+const HOST_KINDS: ReadonlyMap<string, PlannedSourceKind> = new Map([
+  ["mail", "email"],
+  ["outlook", "email"],
+  ["webmail", "email"],
+  ["chat", "chat"],
+  ["teams", "chat"],
+  ["calendar", "calendar"],
+  ["docs", "doc"],
+  ["drive", "doc"],
+  ["sheets", "doc"],
+  ["slides", "doc"],
+]);
+
 function hostKind(host: string): PlannedSourceKind {
-  const first = host.split(".")[0] ?? "";
-  if (first === "mail" || first === "outlook" || first === "webmail") return "email";
-  if (
-    first === "chat" ||
-    first === "teams" ||
-    host === "slack.com" ||
-    host.endsWith(".slack.com")
-  ) {
-    return "chat";
-  }
-  if (first === "calendar") return "calendar";
-  if (["docs", "drive", "sheets", "slides"].includes(first) || host.endsWith(".sharepoint.com")) {
-    return "doc";
-  }
-  return "web";
+  return HOST_KINDS.get(host.split(".")[0] ?? "") ?? "web";
 }
 
 /** The query without its `utm_*` parameters, each other parameter kept as written. */

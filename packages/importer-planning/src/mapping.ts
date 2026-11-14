@@ -280,9 +280,14 @@ function sourcesOf(
   jira: ReadonlyMap<string, string>,
   report: Report,
 ): { rows: SourceRow[]; byEntry: Map<Entry, SourceRow[]> } {
-  // Pass 1: every usable source of every entry, one per key per entry.
-  const groups = new Map<string, Link[]>();
-  const order: Link[][] = [];
+  // Pass 1: every usable source of every entry. `links` holds one per key per entry, the links the
+  // plan makes; `named` holds every one, whose labels can title the row.
+  interface Group {
+    readonly links: Link[];
+    readonly named: Link[];
+  }
+  const groups = new Map<string, Group>();
+  const order: Group[] = [];
   for (const e of entries) {
     const keys = new Set<string>();
     for (const [index, s] of (e.meta?.sources ?? []).entries()) {
@@ -298,28 +303,30 @@ function sourcesOf(
       }
       const link: Link = { entry: e, index, url, label, cls };
       if (cls.key === undefined) {
-        order.push([link]);
+        order.push({ links: [link], named: [link] });
         continue;
       }
+      let group = groups.get(cls.key);
+      if (group === undefined) {
+        group = { links: [], named: [] };
+        groups.set(cls.key, group);
+        order.push(group);
+      }
+      group.named.push(link);
       if (keys.has(cls.key)) continue;
       keys.add(cls.key);
-      const group = groups.get(cls.key);
-      if (group === undefined) {
-        const list = [link];
-        groups.set(cls.key, list);
-        order.push(list);
-      } else group.push(link);
+      group.links.push(link);
     }
   }
 
   // Pass 2: one row per key, its title from the first label that names more than the kind, then
   // a ticket's title in data/jira.json, else a short form of the first URL, flagged generic.
   const rows: SourceRow[] = [];
-  const byEntry = new Map<Entry, SourceRow[]>();
-  for (const links of order) {
+  const linked = new Map<Entry, { index: number; row: SourceRow }[]>();
+  for (const { links, named: labelled } of order) {
     const first = links[0];
     if (first === undefined) continue;
-    const named = links.find((l) => !isGenericLabel(l.label));
+    const named = labelled.find((l) => !isGenericLabel(l.label));
     const ticket = first.cls.ref === undefined ? undefined : jira.get(first.cls.ref);
     let title: string;
     let generic = false;
@@ -347,10 +354,18 @@ function sourcesOf(
     for (const link of links) {
       if (links.length > 1)
         report.add("source-key-shared", link.entry.metaAt, "sources", link.index);
-      const list = byEntry.get(link.entry) ?? [];
-      list.push(row);
-      byEntry.set(link.entry, list);
+      const list = linked.get(link.entry) ?? [];
+      list.push({ index: link.index, row });
+      linked.set(link.entry, list);
     }
+  }
+  // Each task links its sources in its own order.
+  const byEntry = new Map<Entry, SourceRow[]>();
+  for (const [entry, list] of linked) {
+    byEntry.set(
+      entry,
+      list.sort((a, b) => a.index - b.index).map((l) => l.row),
+    );
   }
   return { rows, byEntry };
 }
