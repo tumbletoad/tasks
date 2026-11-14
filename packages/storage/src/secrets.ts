@@ -65,8 +65,9 @@ export function findSecret(text: string): SecretKind | undefined {
 }
 
 /**
- * The longest token a pattern matches that still counts when a stream is scanned in chunks: a
- * scan of bytes keeps this many characters of one chunk in front of the next, so a token cut by a
- * chunk boundary is still found. A longer token (a PEM header is 40 at most) is found by its head.
+ * How much of one chunk a scan of a stream keeps in front of the next, so a token cut by a chunk
+ * boundary is still found: any token up to this length, measured from its prefix to the character
+ * that decides the match (a JWT's signature, a random token's digit). Tokens have no length limit
+ * of their own, but a credential travels in an HTTP header, which servers cap at 8 to 16 KiB.
  */
-export const SECRET_OVERLAP = 512;
+export const SECRET_OVERLAP = 64 * 1024;

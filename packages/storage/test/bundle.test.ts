@@ -775,6 +775,29 @@ describe("[A1.5.bundle.secret-scan] the export's secret scan", () => {
     expect(readdirSync(join(folder, "exports"))).toEqual([bundle.name]);
   });
 
+  test("a long token across the boundary of the attachment's read chunks is found", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    // A JWT whose payload is longer than a short overlap, its head in one 1 MiB read and its
+    // signature in the next. Built from parts: the source holds no token.
+    const part = (value: object): string =>
+      Buffer.from(JSON.stringify(value)).toString("base64url");
+    const jwt = [
+      part({ alg: "HS256", typ: "JWT" }),
+      part({ sub: "fixture", pad: "a".repeat(8_000) }),
+      "AbCdEf12".repeat(6),
+    ].join(".");
+    const blob = Buffer.from(`${" ".repeat(1024 * 1024 - 4_000)}${jwt}\n`);
+    await addAttachment(folder, blob, null);
+    const error = await expectCode(
+      () => exportBundle(checked, folder, { mode: "backup" }),
+      "EXPORT_SECRET_FOUND",
+    );
+    expect(error.message).toContain("jwt");
+    expect(readdirSync(join(folder, "exports"))).toEqual([]);
+  });
+
   test("an attachment reached through a link out of the space, into the secrets folder, is refused", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
