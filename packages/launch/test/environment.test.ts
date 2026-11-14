@@ -28,6 +28,8 @@ import {
   parseSessionEnvironment,
   parseSnapshot,
   registryEnvironment,
+  REGISTRY_READS,
+  REGISTRY_SCRIPT,
   RESOLVING,
   SCRUB_NAMES,
   scrubbed,
@@ -334,21 +336,59 @@ describe("[A4.5.environment.layers] the session layer, the snapshot's parse and 
     expect(staged["SYS_ROOT"]).toBe("C:\\Windows\\y");
     expect(staged["APPDATA"]).toBe("C:\\Users\\Mira\\AppData\\Roaming");
     expect(staged["TOOL_HOME"]).toBe("C:\\Users\\Mira\\AppData\\Roaming\\tool");
-    const encoded = Buffer.from(
-      JSON.stringify({
-        system: { Path: { kind: "ExpandString", value: "C:\\é" } },
-        user: {},
-      }),
-    ).toString("base64");
-    expect(parseRegistryOutput(encoded)?.system.get("Path")?.value).toBe("C:\\é");
-    expect(parseRegistryOutput("not base64 json")).toBeUndefined();
-    expect(
-      parseRegistryOutput(
-        Buffer.from(
-          JSON.stringify({ system: {}, user: { X: { kind: "Binary", value: "" } } }),
-        ).toString("base64"),
+    // The reader's lines: names and values in base64 of UTF-8, then `end`.
+    const b64 = (text: string): string => Buffer.from(text, "utf8").toString("base64");
+    const output = (...lines: string[]): string => [...lines, "end"].join("\n");
+    const read = parseRegistryOutput(
+      output(
+        `system ExpandString ${b64("Path")} ${b64("C:\\é")}`,
+        `user String ${b64("TOOL")} ${b64("")}`,
       ),
-    ).toBeUndefined();
+    );
+    expect(read?.system.get("Path")).toEqual({ kind: "ExpandString", value: "C:\\é" });
+    expect(read?.user.get("TOOL")).toEqual({ kind: "String", value: "" });
+    expect(parseRegistryOutput(output())).toEqual({ system: new Map(), user: new Map() });
+    // Each field is its exact text: a leading U+FEFF is part of a name or a value, not a byte
+    // order mark, so two names never fold into one.
+    const marked = parseRegistryOutput(
+      output(`user String ${b64("﻿TOOL")} ${b64("﻿x")}`, `user String ${b64("TOOL")} ${b64("y")}`),
+    );
+    expect(marked?.user.get("﻿TOOL")).toEqual({ kind: "String", value: "﻿x" });
+    expect(marked?.user.get("TOOL")).toEqual({ kind: "String", value: "y" });
+    for (const bad of [
+      "not the reader's output",
+      // Cut off before its end.
+      `system String ${b64("A")} ${b64("1")}`,
+      // A field missing, not empty: an empty one is still written, as an empty field.
+      output(`user String ${b64("X")}`),
+      output(`user Binary ${b64("X")} ${b64("")}`),
+      output(`machine String ${b64("X")} ${b64("1")}`),
+      output(`user String ${b64("X")} ${b64("1")} extra`),
+      output(`user String ${b64("X")} not*base64`),
+      // Base64, but not UTF-8.
+      output(`user String ${b64("X")} ${Buffer.from([0xff, 0xfe]).toString("base64")}`),
+    ]) {
+      expect(parseRegistryOutput(bad), bad).toBeUndefined();
+    }
+  });
+
+  test("the registry reader calls no cmdlet: Windows PowerShell never searches its module path for one", () => {
+    // A cmdlet's name is Verb-Noun; the reader is .NET calls and PowerShell's own statements.
+    expect(REGISTRY_SCRIPT).not.toMatch(/\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/);
+    expect(REGISTRY_SCRIPT).not.toMatch(/\|/);
+  });
+
+  test("the registry reader reads no .NET property but through its accessor, and a key only through the shared reads", () => {
+    // PowerShell 5.1 turns a getter's exception into $null: type literals aside, every `.Name` is
+    // a call. `OpenSubKey` gives null for a failed open too, so only `sk`/`key` call it.
+    const code = REGISTRY_SCRIPT.replace(/\[[A-Za-z][\w.]*(?:\[\])?\]/g, "");
+    expect(code).not.toMatch(/[\w)\]]\.[A-Za-z_]\w*(?![\w(])/);
+    expect(REGISTRY_SCRIPT.startsWith(`$ErrorActionPreference='Stop';${REGISTRY_READS};`)).toBe(
+      true,
+    );
+    expect(REGISTRY_SCRIPT.split("OpenSubKey").length).toBe(
+      REGISTRY_READS.split("OpenSubKey").length,
+    );
   });
 });
 

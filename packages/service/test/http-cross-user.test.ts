@@ -35,7 +35,10 @@ afterAll(() => {
   spawnSync("sudo", ["-n", "userdel", OTHER], { stdio: "ignore" });
 });
 
-/** Runs Python as the other account; resolves with its first line of output. */
+/**
+ * Runs Python as the other account; resolves with its first line of output, or, when it ends
+ * without one, with the last line it wrote to stderr (Python's error), so a failure says why.
+ */
 function asOther(script: string): { child: ChildProcess; line: Promise<string> } {
   const child = spawn("sudo", ["-n", "-u", OTHER, "python3", "-c", script], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -43,13 +46,19 @@ function asOther(script: string): { child: ChildProcess; line: Promise<string> }
   holders.push(child);
   const line = new Promise<string>((resolve, reject) => {
     let out = "";
+    let err = "";
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
       out += chunk;
       if (out.includes("\n")) resolve(out.split("\n")[0] ?? "");
     });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+      err += chunk;
+    });
     child.once("error", reject);
-    child.once("exit", () => {
-      resolve(out.split("\n")[0] ?? "");
+    child.once("close", (code) => {
+      const first = out.split("\n")[0] ?? "";
+      const last = err.trim().split("\n").at(-1) ?? "";
+      resolve(first !== "" ? first : `exit ${String(code)}: ${last}`);
     });
   });
   return { child, line };
@@ -67,9 +76,13 @@ describe("[A2.3.8.http.cross-user] another account on the UI's port (CI runners 
       persistPort(w.home, port);
       await w.stop();
       // The other account binds the port while Tasks is stopped, and keeps it until stdin closes.
+      // SO_REUSEADDR, as Node's own listeners set it on Linux: the service closed the sign-in's
+      // connections itself, so the port still has TIME_WAIT rows, and a bind without it fails
+      // with EADDRINUSE. It never lets a bind share a port that has a listener.
       const holder = asOther(
         "import socket, sys\n" +
           "s = socket.socket()\n" +
+          "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n" +
           `s.bind(("127.0.0.1", ${String(port)}))\n` +
           "s.listen()\n" +
           "print('listening', flush=True)\n" +

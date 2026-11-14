@@ -66,7 +66,16 @@ describe("[A2.3.7.bridge.hygiene] what the forwarder writes, copies and leaves b
         60_000,
         "the bridge binds again",
       );
-      expect(textOf(await bridge.call("echo", { secret: "CONTENTARG3" }))).toContain("CONTENTARG3");
+      // The peer records a bind before it answers it, and the forwarder is online again only once
+      // that answer has arrived: a call in between gets the offline answer. So the call is sent
+      // again while it gets that answer, within the same bound.
+      let echoed = await bridge.call("echo", { secret: "CONTENTARG3" });
+      for (const end = Date.now() + 60_000; Date.now() < end;) {
+        if (!isOfflineText(echoed, "service_down")) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        echoed = await bridge.call("echo", { secret: "CONTENTARG3" });
+      }
+      expect(textOf(echoed)).toContain("CONTENTARG3");
       bridge.end();
       expect(await bridge.proc.exit).toEqual({ code: 0, signal: null });
 
