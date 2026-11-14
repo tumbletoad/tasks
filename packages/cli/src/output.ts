@@ -95,6 +95,16 @@ function taskLine(task: Result): string {
   return `${String(task["ref"])}  ${String(task["title"])}  (${parts.join(", ")})`;
 }
 
+/** A row's due commitment: a date, or a time with its zone (A1 3.4); empty without one. */
+function dueText(due: unknown): string {
+  if (typeof due === "string") return `due ${due}`;
+  if (typeof due === "object" && due !== null) {
+    const { at, tz } = due as Result;
+    if (typeof at === "string") return `due ${at}${typeof tz === "string" ? ` (${tz})` : ""}`;
+  }
+  return "";
+}
+
 /**
  * A search page (A3 3.9.4): a header with the positions, the scope, how the query was read and the
  * page's as_of, then one line per row. A row changed since the search ran ends with `*`; one
@@ -129,13 +139,12 @@ function searchLines(result: Result): string[] {
           row["lifecycle"] === "active"
             ? str(row["status"])
             : `${str(row["lifecycle"])}${typeof row["completed"] === "string" ? ` ${row["completed"]}` : ""}`;
-        const due = row["due"];
         const parts = [
           str(row["ref"]),
           state,
           row["priority"] === 4 ? "" : `P${str(row["priority"])}`,
           str(row["effort"]),
-          typeof due === "string" ? `due ${due}` : "",
+          dueText(row["due"]),
           group,
           str(row["title"]),
         ].filter((part) => part !== "");

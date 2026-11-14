@@ -296,7 +296,9 @@ function rowOf(
   }
   const row = entry.row;
   if (search.kind === "learnings") {
-    const changed = Number(row["learning_version"]) > search.seq;
+    // The row shows its task's title and group as well as its own text.
+    const changed =
+      Number(row["learning_version"]) > search.seq || Number(row["touched"]) > search.seq;
     return {
       kind: "learning",
       id: entry.id,

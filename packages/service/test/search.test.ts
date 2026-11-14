@@ -599,6 +599,29 @@ describe("[A3.5.search.cursors] cursor pages under random writes, deletions and 
     expect(later.total).toBe(6);
   });
 
+  test("a learning row is marked changed when its task changed since the search", async () => {
+    const [one = "", two = ""] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Learn holder one" },
+        { kind: "task.create", title: "Learn holder two" },
+      ]),
+    );
+    const human = fx.human.principal_id;
+    await directly(fx, (conn) => {
+      addLearning(conn, one, "markword one", human);
+      addLearning(conn, two, "markword two", human);
+    });
+    const first = await search({ q: "markword", scope: "learnings", limit: 1 });
+    expect(first.rows[0]).not.toHaveProperty("changed");
+    submit(fx, [
+      { kind: "task.patch", task: one, set: { title: "Learn holder one renamed" } },
+      { kind: "task.patch", task: two, set: { title: "Learn holder two renamed" } },
+    ]);
+    const next = await search({ cursor: first.cursor ?? "" });
+    expect(next.rows[0]).toMatchObject({ kind: "learning", changed: true });
+    expect(String(next.rows[0]?.["title"])).toMatch(/renamed/);
+  });
+
   test("more than 1,000 matches freeze the first 1,000, and total says 1000+", async () => {
     const word = "bulkword";
     for (let n = 0; n < 21; n += 1) {
