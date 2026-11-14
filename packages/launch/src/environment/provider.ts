@@ -27,6 +27,7 @@ import {
 import { userInfo } from "node:os";
 import { join, posix } from "node:path";
 import { powershellPath } from "../process.ts";
+import { scriptOutput } from "../windows-reads.ts";
 import type { AgentBase } from "../shim/environment.ts";
 import { atomicWrite } from "@tasks/files";
 import { captureOutput, type Capture } from "./capture.ts";
@@ -493,10 +494,11 @@ export class UserEnvironment implements EnvironmentSource {
       timeoutMs: REGISTRY_TIMEOUT_MS,
       maxBytes: SNAPSHOT_MAX_BYTES,
     }).catch(() => undefined);
-    const parsed =
-      result?.kind === "done" && result.code === 0
-        ? parseRegistryOutput(result.output.toString("ascii"))
-        : undefined;
+    // Bytes first, then lines: a byte the reader never writes makes the whole capture invalid, so
+    // the base falls back to the service's own environment, never a partial one (windows-reads.ts).
+    const text =
+      result?.kind === "done" && result.code === 0 ? scriptOutput(result.output) : undefined;
+    const parsed = text === undefined ? undefined : parseRegistryOutput(text);
     if (parsed === undefined) {
       this.#o.log?.("launch.env_registry", {
         result: result?.kind ?? "failed",
