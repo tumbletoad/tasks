@@ -283,11 +283,13 @@ export function TaskList({
           if (before.lifecycle !== "active" || after === undefined) continue;
           if (after.lifecycle === "active" || after.deleted_at !== undefined) continue;
           if (!inView.current(before)) continue;
-          edits.hold(
-            before,
-            change.actor.kind === "human" ? "user" : change.actor.label,
-            Date.now(),
-          );
+          // The tab's own write that it holds no row for yet (a redo) holds without an actor.
+          const by = edits.isMine(change.request_id)
+            ? undefined
+            : change.actor.kind === "human"
+              ? "user"
+              : change.actor.label;
+          edits.hold(before, by, Date.now());
         }
       }),
     [live, edits],
