@@ -541,6 +541,31 @@ describe.skipIf(!posix)(
       expect(running.events).toEqual([]);
       expect(running.applied.stopped).toBeUndefined();
       expect(running.applied.started).toMatchObject({ outcome: "already_running" });
+      // The unit's own service, still starting: waited for until it answers, then left as it is.
+      const own = await takeover(
+        "own-starting",
+        (fake) => {
+          fake.service.hiddenProbes = 2;
+          fake.service.start("systemd");
+        },
+        () => undefined,
+      );
+      expect(own.events).toEqual([]);
+      expect(own.applied.stopped).toBeUndefined();
+      // The unit is active a moment, started at sign-in while one by hand holds the lock: its main
+      // process is not the service that answers, so that one is taken over all the same.
+      for (const state of ["activating", "active"]) {
+        const racing = await takeover(
+          `racing-${state}`,
+          () => undefined,
+          (fake) => {
+            fake.service.start("manual");
+            fake.tools.unitState = state;
+          },
+        );
+        expect(racing.events).toEqual(["stop", "start systemd"]);
+        expect(racing.fake.service.manager).toBe("systemd");
+      }
     });
 
     test("[A2.3.3.3.service-install.start-by-hand] a launcher path systemd does not accept has no unit: start runs the service by hand and stop reaches it, while install refuses the path", async () => {

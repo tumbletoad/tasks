@@ -50,7 +50,7 @@ import { unsafeMessage } from "../hub/permissions.ts";
 import { readUmask, umaskRefusal } from "../hub/umask.ts";
 import { liveRecord, type Probe, type ProbeReason, type ServiceContext } from "./context.ts";
 import { ServiceCommandError } from "./errors.ts";
-import { TOOL_TIMEOUT_MS, type Runner } from "./process.ts";
+import { TOOL_TIMEOUT_MS, type Runner, type RunResult } from "./process.ts";
 import {
   missingKeys,
   regBytes,
@@ -1560,11 +1560,15 @@ const SYSTEMD_RUNNING = new Set(["active", "activating", "reloading", "deactivat
  * The process to wait for is taken before anything is asked to stop, with its start time where
  * the OS gives one, so a record that goes away during the stop cannot hide a process that still
  * runs. Every tool and probe gets only the time left. As a plan's step, `guard` reads the entry
- * last before each request to stop: a changed entry is not stopped (exit 4).
+ * last before each request to stop: a changed entry is not stopped (exit 4). `deadline`: a caller's
+ * own, which this stop shares (install's takeover); stop's bound from now by default.
  */
-export async function stopService(ctx: ServiceContext, guard?: EntryGuard): Promise<StopOutcome> {
+export async function stopService(
+  ctx: ServiceContext,
+  guard?: EntryGuard,
+  deadline: number = Date.now() + ctx.stopTimeoutMs,
+): Promise<StopOutcome> {
   refuseIdentity(ctx, "stop", { operator: true });
-  const deadline = Date.now() + ctx.stopTimeoutMs;
   const left = () => Math.max(1, deadline - Date.now());
   const late = () => stillRunning(ctx, "did not stop");
   const call = bounded(ctx, () => deadline, late);
@@ -1633,27 +1637,50 @@ export async function stopService(ctx: ServiceContext, guard?: EntryGuard): Prom
 
 /**
  * Install's takeover on Linux (A2 3.3.3), decided when its step runs: a service of this install
- * that runs while its unit does not (started by hand, or still starting so) is stopped, so that the
- * unit's own start, the next step, never meets its lock. A service the unit runs is left as it is.
- * Undefined when nothing was stopped.
+ * that the unit does not run (started by hand, or still starting so) is stopped, so that the unit's
+ * own start, the next step, never meets its lock. The unit runs it only when systemd reports the
+ * unit running with the service's own PID as its main process: a unit started while a service by
+ * hand holds the lock is active for a moment before it exits 73. A service the unit runs is left as
+ * it is. One deadline, stop's, for the questions and the stop. Undefined when nothing was stopped.
  */
 async function stopStartedByHand(
   ctx: ServiceContext,
   guard: EntryGuard,
 ): Promise<StopOutcome | undefined> {
-  const active = await ctx.run(SYSTEMCTL, ["--user", "is-active", ctx.names.unit]);
-  const state = active.stdout.trim();
-  if (SYSTEMD_RUNNING.has(state)) return undefined;
-  if (state === "") {
+  const deadline = Date.now() + ctx.stopTimeoutMs;
+  const call = bounded(
+    ctx,
+    () => deadline,
+    () => stillRunning(ctx, "did not stop"),
+  );
+  const noAnswer = (what: string, result: RunResult) =>
     // No answer is not "inactive": stopping now could stop the unit's own service.
-    throw new ServiceCommandError(
+    new ServiceCommandError(
       "internal",
       "tool_failed",
-      `systemctl --user is-active ${ctx.names.unit} did not answer (${active.failure ?? `exit ${String(active.code)}`}).`,
+      `systemctl --user ${what} ${ctx.names.unit} did not answer (${result.failure ?? `exit ${String(result.code)}`}).`,
       `${CLI_NAME} service status`,
     );
+  const active = await call(SYSTEMCTL, ["--user", "is-active", ctx.names.unit]);
+  const state = active.stdout.trim();
+  if (state === "") throw noAnswer("is-active", active);
+  if (SYSTEMD_RUNNING.has(state)) {
+    // Whose is the service that answers? One still starting is waited for until it can say.
+    let probe = await ctx.probe(Math.max(1, deadline - Date.now()));
+    if (!probe.answers && probe.reason === "starting") probe = await waitAnswer(ctx, deadline);
+    if (!probe.answers) return undefined;
+    const main = await call(SYSTEMCTL, [
+      "--user",
+      "show",
+      "--property=MainPID",
+      "--value",
+      ctx.names.unit,
+    ]);
+    const pid = main.stdout.trim();
+    if (!/^\d+$/.test(pid)) throw noAnswer("show --property=MainPID", main);
+    if (pid === String(probe.status.pid)) return undefined;
   }
-  const outcome = await stopService(ctx, guard);
+  const outcome = await stopService(ctx, guard, deadline);
   return outcome.outcome === "stopped" ? outcome : undefined;
 }
 

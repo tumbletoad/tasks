@@ -271,11 +271,11 @@ own_read=''
 read_own_group() {
   [ -z "$own_read" ] || return 0
   own_read=1
-  user_name=$(timeout 5 id -un 2> /dev/null) || user_name=''
+  user_name=$(timeout -k 1 5 id -un 2> /dev/null) || user_name=''
   [ -n "$user_name" ] || return 0
-  primary_gid=$(timeout 5 id -g -- "$user_name" 2> /dev/null) || primary_gid=''
+  primary_gid=$(timeout -k 1 5 id -g -- "$user_name" 2> /dev/null) || primary_gid=''
   case $primary_gid in '' | *[!0-9]*) return 0 ;; esac
-  primary_name=$(timeout 5 id -gn -- "$user_name" 2> /dev/null) || primary_name=''
+  primary_name=$(timeout -k 1 5 id -gn -- "$user_name" 2> /dev/null) || primary_name=''
   own_gid=$(own_group "$user_name" "$primary_gid" "$primary_name")
 }
 
@@ -311,7 +311,7 @@ check_folder() {
     other_owner) fail "$1, $3, belongs to another user, so nothing was installed. $fix" ;;
     world_writable) fail "Every user on this computer can change $1, $3, so nothing was installed. $fix" ;;
     *)
-      name=$(timeout 5 find "$1" -prune -printf '%g\n' 2> /dev/null) || name=''
+      name=$(timeout -k 1 5 find "$1" -prune -printf '%g\n' 2> /dev/null) || name=''
       case $name in '' | *[!0-9]*) ;; *) name='' ;; esac
       fail "The members of the group ${name:-with ID $gid} can change $1, $3, not only you, so nothing was installed. $fix"
       ;;
