@@ -71,10 +71,14 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
     [state.tasks, clock, day, changes, slots],
   );
 
+  // The sections of the rows the list hands over: the live rows and the rows in their check-off
+  // hold (A5 3.12), so a checked-off task stays at its place for the hold here too.
   const groups = useCallback<GroupsOf>(
-    (_tasks, held) => {
+    (tasks, held) => {
       const sections = holdExpanded(
-        today.sections,
+        tasks === state.tasks
+          ? today.sections
+          : todayOf(tasks.values(), clock, { day, changes, slots }).sections,
         held === undefined
           ? undefined
           : {
@@ -92,7 +96,7 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
         sections: [{ key: section.key, tasks: section.tasks }],
       }));
     },
-    [today],
+    [today, state.tasks, clock, day, changes, slots],
   );
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
