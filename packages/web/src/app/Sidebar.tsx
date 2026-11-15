@@ -1,9 +1,10 @@
 // The sidebar (A5 3.3), top to bottom and without headings: the space switcher, the views, the
-// areas after a gap, and Settings at the foot. Counts sit at the inline end of Inbox, Open,
-// Waiting, Review and Backlog, and nowhere else (U2); a count is part of its link's name
-// ("Waiting, 2 tasks"). Inbox and Backlog show only when they hold a task, each in a fixed slot,
-// so their appearance never moves another item. An area lists its projects beneath it while its
-// view is open. Areas show no counts.
+// areas after a gap, and Settings at the foot. Every view is always there, each in its fixed
+// place, whatever it holds: navigation a person uses often never moves (A5 3.3). Counts sit at the
+// inline end of Inbox, Open, Waiting, Review and Backlog, and nowhere else (U2); a count is part of
+// its link's name ("Waiting, 2 tasks"). A counted view that holds nothing shows no count and a
+// quieter label, and its name says so ("Inbox, no tasks"). An area lists its projects beneath it
+// while its view is open. Areas show no counts.
 import { Link, useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useIntl } from "react-intl";
@@ -13,15 +14,7 @@ import { SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
 import css from "./Sidebar.module.css";
 import { SpaceSwitcher } from "./SpaceSwitcher.tsx";
-import {
-  COUNTED,
-  SHOWN_WHEN_NOT_EMPTY,
-  VIEW_LABEL,
-  VIEWS,
-  viewCounts,
-  type CountedView,
-  type View,
-} from "./views.ts";
+import { COUNTED, VIEW_LABEL, VIEWS, viewCounts, type CountedView, type View } from "./views.ts";
 import { classes } from "./css.ts";
 
 const styles = classes(css, [
@@ -34,7 +27,6 @@ const styles = classes(css, [
   "list",
   "projects",
   "sidebar",
-  "slot",
 ]);
 
 /** A view stays the current item while it holds an expanded task (`?task=`, A5 3.3). */
@@ -63,9 +55,6 @@ export function Sidebar({ space }: { readonly space: string }) {
         {VIEWS.map((view) => {
           const label = t(VIEW_LABEL[view]);
           const count = isCounted(view) ? counts[view] : undefined;
-          if (SHOWN_WHEN_NOT_EMPTY.includes(view) && count === 0) {
-            return <li key={view} className={styles.slot} aria-hidden="true" />;
-          }
           return (
             <li key={view}>
               <Link
@@ -75,13 +64,14 @@ export function Sidebar({ space }: { readonly space: string }) {
                 activeProps={{ "aria-current": "page" }}
                 activeOptions={IGNORE_TASK}
                 data-view={view}
+                data-empty={count === 0 || undefined}
                 {...(count === undefined
                   ? {}
                   : { "aria-label": t("nav.counted", { view: label, count }) })}
               >
                 <ViewIcon view={view} />
                 <span className={styles.label}>{label}</span>
-                {count === undefined ? null : (
+                {count === undefined || count === 0 ? null : (
                   <span className={styles.count} aria-hidden="true">
                     {intl.formatNumber(count)}
                   </span>

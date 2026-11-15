@@ -2,6 +2,7 @@
 // too without a cycle.
 import type { Instance } from "../api.ts";
 import type { TaskRow } from "../store/rows.ts";
+import type { RowMove } from "./model.ts";
 
 /** The agent-only fields a click asks an agent to change (A5 3.11, U11). */
 export type AskField = "summary" | "context" | "sources" | "outcome" | "learnings";
@@ -15,6 +16,8 @@ export interface RowActions {
   readonly open: (task: TaskRow, instance: Instance) => void;
   readonly copy: (task: TaskRow) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
+  /** The view's visible move out of it (A5 3.5): "Move to Open" or "Back to open". */
+  readonly move: (task: TaskRow, kind: RowMove) => void;
   /** The checkbox (A5 3.12): check-off, or, during its hold, its undo. */
   readonly check: (task: TaskRow) => void;
   /** An agent-only field was clicked (A5 3.11): a request for an agent starts in the composer. */

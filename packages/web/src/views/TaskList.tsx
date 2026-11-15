@@ -1,5 +1,5 @@
-// A view's task list (A5 3.5, 3.6, 3.15): the view's open tasks from the live store, grouped by
-// area and project (each view's own grouping is M5.04's and M5.05's), drawn by the one list
+// A view's task list (A5 3.5, 3.6, 3.15): the view's tasks, grouped as the view groups them (by
+// area and project unless it says otherwise, Today's sections, Completed's months), drawn by the one list
 // (list/List.tsx) and the one row (row/Row.tsx). The rows are read from the store's state and never
 // copied: the list derives its items from the published rows and keeps no rows of its own.
 //
@@ -19,10 +19,10 @@ import { requestId, type Instance, type Receipt } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
-import { starChange } from "../edit/change.ts";
+import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
 import { askFor } from "../task/composer.ts";
-import { areaSlots, groupTasks, type Group } from "../groups.ts";
+import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
@@ -71,12 +71,14 @@ export interface TaskListProps {
    * announced. Without `groups`, also what the list shows, grouped by area and project.
    */
   readonly filter: (task: TaskRow) => boolean;
-  /** The view's own groups (Today's sections). */
+  /** How the view groups the tasks `filter` gives it (A5 3.5). Default: by area and project. */
+  readonly group?: GroupTasks;
+  /** The view's own groups, from every row (Today's sections, Completed's months). */
   readonly groups?: GroupsOf;
   /** The view's clock, when the view reads it too (Today's sections and strip). */
   readonly clock?: Clock;
-  /** The line an empty view shows. */
-  readonly empty: string;
+  /** The line an empty view shows; none while the view does not know yet (a query on its way). */
+  readonly empty: string | undefined;
   /**
    * The task the URL names (a reference or an ID): expanded once it is found. In the live rows,
    * or else read with `task.get` and injected (A5 3.3): a task of another lifecycle, or one the
@@ -94,6 +96,7 @@ export function TaskList({
   view,
   grouping = "area",
   filter,
+  group = groupTasks,
   groups: groupsOf,
   clock: viewClock,
   empty,
@@ -185,10 +188,10 @@ export function TaskList({
       if (expandedRow !== undefined && !shown.some((task) => task.id === expandedRow.id)) {
         shown.push(expandedRow);
       }
-      groups = groupTasks(shown, state.areas.values(), state.projects.values());
+      groups = group(shown, state.areas.values(), state.projects.values());
     }
     return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [tasks, state.areas, state.projects, filter, groupsOf, expandedRow]);
+  }, [tasks, state.areas, state.projects, filter, group, groupsOf, expandedRow]);
 
   // Where the expanded row is now, for the next update (a view's own groups keep it there). Taken
   // after the commit, so a render React throws away (a transition it interrupted, a StrictMode
@@ -210,7 +213,6 @@ export function TaskList({
   );
   const ownClock = useClock(timed && viewClock === undefined);
   const clock = viewClock ?? ownClock;
-  // The other views' rows sit under area headings until M5.05 gives each its grouping.
   const ctx = useMemo(() => contextFor(view, grouping, clock), [view, grouping, clock]);
 
   const loadReceipts = useCallback(
@@ -345,12 +347,15 @@ export function TaskList({
     (task: TaskRow) => {
       setExpanded(task.id);
       setCurrent(task.id);
-      // An injected row belongs to its expansion: another task's expansion ends it.
-      setInjected((known) => (known?.id === task.id ? known : undefined));
+      // An injected row belongs to its expansion: another task's expansion ends it. A row the live
+      // store does not hold (a finished task in Completed) is kept as the expanded one's, so it
+      // stays where it is if the view's next read leaves it out (A5 3.3).
+      const inStore = live.getState().tasks.has(task.id);
+      setInjected((known) => (known?.id === task.id ? known : inStore ? undefined : task));
       watched.current.add(task.id);
       loadReceipts(task.id);
     },
-    [loadReceipts],
+    [loadReceipts, live],
   );
 
   /**
@@ -510,6 +515,10 @@ export function TaskList({
       star: (task, on) => {
         edits.edit(task, starChange(on, latest.current.today));
       },
+      // The view's move out of it (A5 3.5): through the one edit path, with its toast and undo.
+      move: (task, kind) => {
+        edits.edit(task, kind === "triage" ? triageChange() : statusChange("open"));
+      },
       // Check-off, or during this tab's own hold, its undo (A5 3.12).
       check: (task) => {
         const entry = edits.getState().leaving.get(task.id);
@@ -566,7 +575,9 @@ export function TaskList({
         onCollapse={collapse}
         row={row}
         // The empty line shows once the rows are live; the list keeps a row that holds focus.
-        {...(state.phase === "live" ? { empty: <p className={styles.line}>{empty}</p> } : {})}
+        {...(state.phase === "live" && empty !== undefined
+          ? { empty: <p className={styles.line}>{empty}</p> }
+          : {})}
       />
       <div className={styles.announce} role="status" aria-live="polite">
         {announcement}

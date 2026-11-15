@@ -105,14 +105,15 @@ function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
   const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
   const date = localDate(task.created_at, clock.timeZone);
   // Created today: "today" alone, so today's date stays the strip's (A5 U1).
-  if (date === clock.today) return sayMsg(t, model.age.text);
+  const age = model.age === undefined ? "" : sayMsg(t, model.age.text);
+  if (date === clock.today) return age;
   const day = formatDay(date, clock.locale, { day: "numeric" });
   const month = formatDay(date, clock.locale, { month: "short" });
   const shown =
     date.slice(0, 4) === clock.today.slice(0, 4)
       ? t("row.date", { day, month })
       : t("row.dateYear", { day, month, year: date.slice(0, 4) });
-  return t("fact.createdValue", { date: shown, age: sayMsg(t, model.age.text) });
+  return t("fact.createdValue", { date: shown, age });
 }
 
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }) {

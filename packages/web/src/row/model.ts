@@ -23,8 +23,9 @@ export interface Msg {
   readonly values?: MsgValues;
 }
 
-/** The views a row appears in (A5 3.4, 3.5). Completed and search join with their steps. */
-export type RowView = "today" | "inbox" | "open" | "waiting" | "review" | "backlog" | "area";
+/** The views a row appears in (A5 3.4, 3.5). Search joins with its step. */
+export type RowView =
+  "today" | "inbox" | "open" | "waiting" | "review" | "backlog" | "area" | "completed" | "agents";
 
 /** How a list groups its rows: each grouping states some facts in its headings. */
 export type Grouping =
@@ -131,7 +132,13 @@ export interface RowInput {
   readonly waitingSince?: number;
 }
 
-export type DueTone = "late" | "soon" | "later" | "planned" | "follow_up";
+export type DueTone = "late" | "soon" | "later" | "planned" | "follow_up" | "done";
+
+/**
+ * A visible button on the row that moves the task out of the view (A5 3.5): "Move to Open" in the
+ * Inbox clears the flag, "Back to open" in Review sets the status to open.
+ */
+export type RowMove = "triage" | "reopen";
 
 export interface RowModel {
   readonly id: string;
@@ -155,8 +162,11 @@ export interface RowModel {
     readonly tone: DueTone;
     readonly tip: Msg;
   };
-  readonly age: { readonly text: Msg; readonly tip: Msg };
+  /** Absent in Completed, whose row shows the completion date instead (A5 3.5). */
+  readonly age?: { readonly text: Msg; readonly tip: Msg };
   readonly priority?: { readonly level: 1 | 2 | 3; readonly text: Msg };
+  /** The view's own move out of it, as a visible button (A5 3.5). */
+  readonly move?: { readonly kind: RowMove; readonly text: Msg };
   readonly sources: {
     readonly shown: readonly (SourceFact & { readonly href?: string; readonly tip: Msg })[];
     readonly more?: Msg;
@@ -289,7 +299,10 @@ function dueDay(
  * The age column (A5 3.6): "today", "1d"–"6d", "1w"–"8w", then months, then years. In Waiting it is
  * the time spent waiting, when the wait's start is known.
  */
-function ageOf(row: RowInput, ctx: RowContext): { model: RowModel["age"]; describe: Msg } {
+function ageOf(
+  row: RowInput,
+  ctx: RowContext,
+): { model: NonNullable<RowModel["age"]>; describe: Msg } {
   const { clock } = ctx;
   const waiting =
     ctx.view === "waiting" && row.task.status === "waiting" ? row.waitingSince : undefined;
@@ -311,6 +324,42 @@ function ageOf(row: RowInput, ctx: RowContext): { model: RowModel["age"]; descri
         model: { text, tip: msg("row.waitingTip", { date: full }) },
         describe: msg("row.desc.waitingSince", { date: full }),
       };
+}
+
+/** The day a finished task was completed: its instant on the viewer's calendar, or its read's day. */
+export function completedDayOf(task: TaskRow, timeZone: string): string | undefined {
+  if (task.completed_at !== undefined) return localDate(task.completed_at, timeZone);
+  return task.completed_on !== undefined && dayNumber(task.completed_on) !== undefined
+    ? task.completed_on
+    : undefined;
+}
+
+/** Completed's due column: the completion date (A5 3.5), never a due date. */
+function completedOf(
+  task: TaskRow,
+  ctx: RowContext,
+): { model: DueModel; describe: Msg } | undefined {
+  const day = completedDayOf(task, ctx.clock.timeZone);
+  if (day === undefined) return undefined;
+  const full = fullDate(day, ctx.clock);
+  return {
+    model: {
+      text: compactDay(day, ctx.clock).text,
+      tone: "done",
+      tip: msg("row.completedTip", { date: full }),
+    },
+    describe: msg("row.desc.completed", { date: full }),
+  };
+}
+
+/** The view's visible move out of it (A5 3.5): an active task in the Inbox, or one in Review. */
+function moveOf(task: TaskRow, ctx: RowContext): RowModel["move"] {
+  if (task.lifecycle !== "active") return undefined;
+  if (ctx.view === "inbox" && task.inbox) return { kind: "triage", text: msg("fact.moveToOpen") };
+  if (ctx.view === "review" && task.status === "review" && !task.inbox) {
+    return { kind: "reopen", text: msg("row.backToOpen") };
+  }
+  return undefined;
 }
 
 /** Schemes a source link may open (A5 3.26): anything else is shown as text. */
@@ -422,18 +471,26 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     );
   }
 
-  const due = ctx.implied.has("due") ? undefined : dueOf(task, ctx);
+  // Completed shows the completion date in the due column, and neither age nor priority (A5 3.5).
+  const finished = ctx.view === "completed";
+  const due = finished
+    ? completedOf(task, ctx)
+    : ctx.implied.has("due")
+      ? undefined
+      : dueOf(task, ctx);
   if (due !== undefined) description.push(due.describe);
 
   const level = task.priority;
   const priority: RowModel["priority"] =
-    level === 1 || level === 2 || level === 3
+    !finished && (level === 1 || level === 2 || level === 3)
       ? { level, text: msg("row.priority", { level }) }
       : undefined;
   if (priority !== undefined) description.push(msg("row.desc.priority", { level: priority.level }));
 
-  const age = ageOf(row, ctx);
-  description.push(age.describe);
+  const age = finished ? undefined : ageOf(row, ctx);
+  if (age !== undefined) description.push(age.describe);
+
+  const move = moveOf(task, ctx);
 
   const starred = task.focus_on !== undefined && task.focus_on <= ctx.clock.today;
   if (starred) description.push(msg("row.desc.starred"));
@@ -474,8 +531,9 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     ...(prefix === undefined ? {} : { prefix }),
     ...(summary === undefined ? {} : { summary }),
     ...(due === undefined ? {} : { due: due.model }),
-    age: age.model,
+    ...(age === undefined ? {} : { age: age.model }),
     ...(priority === undefined ? {} : { priority }),
+    ...(move === undefined ? {} : { move }),
     sources: sourcesOf(row.sources ?? [], row.sourcesMore),
     folder: folderOf(row.place),
     starred,

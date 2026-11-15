@@ -1,17 +1,18 @@
 // The views of the sidebar (A5 3.3, 3.4, 3.5) as pure functions of the live rows, so membership and
-// the counts are unit tests. Today's sections and week strip are `todayOf` (A5 3.4); the other
-// views' own groupings are M5.05's, and until then each shows the open tasks it holds through the
-// grouped list.
+// the counts are unit tests. Today's sections and week strip are `todayOf` (A5 3.4); each status
+// view's grouping is `VIEW_LIST` (A5 3.5).
 //
 // - Status views are disjoint (U5): Inbox holds the tasks with the inbox flag, and Open, Waiting,
 //   Review and Backlog hold the other active tasks by status. So the counts add up.
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
-// - Inbox and Backlog are shown only when they hold a task, in fixed places (A5 3.3).
+// - Every view is always in the sidebar, in its fixed place, whatever it holds (A5 3.3).
 // - Completed and Agents read data the live store does not hold (A5 3.25: completed tasks are never
-//   in it), so they have no list here yet.
+//   in it): Completed is a paged query (views/Completed.tsx), Agents the tab's change log.
+import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
 import { dateOf, dayNumber, localDate, type Clock } from "../row/dates.ts";
+import type { Grouping } from "../row/model.ts";
 
 export const VIEWS = [
   "today",
@@ -31,9 +32,6 @@ export const LANDING: View = "today";
 export const COUNTED = ["inbox", "open", "waiting", "review", "backlog"] as const;
 export type CountedView = (typeof COUNTED)[number];
 
-/** Shown only when not empty, each at its own fixed place. */
-export const SHOWN_WHEN_NOT_EMPTY: readonly View[] = ["inbox", "backlog"];
-
 export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
   today: "nav.today",
   inbox: "nav.inbox",
@@ -48,7 +46,7 @@ export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
 export const isView = (value: string): value is View =>
   (VIEWS as readonly string[]).includes(value);
 
-const isCounted = (view: View): view is CountedView =>
+export const isCounted = (view: View): view is CountedView =>
   (COUNTED as readonly string[]).includes(view);
 
 /** The counted view a task belongs to: Inbox by its flag, else its status; none for another. */
@@ -85,6 +83,27 @@ export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined
   if (isCounted(view)) return (task) => countedViewOf(task) === view;
   return undefined;
 }
+
+/** How a status view lists what it holds (A5 3.5), and the line it shows when it holds nothing. */
+export interface ViewList {
+  /** What the grouping states, so the rows leave it out (A5 3.6). */
+  readonly grouping: Grouping;
+  readonly group: GroupTasks;
+  /** The empty line (A5 3.16). */
+  readonly empty: MessageId;
+}
+
+export const VIEW_LIST: Readonly<Record<CountedView, ViewList>> = {
+  // Flat, newest first: quick captures wait here for triage.
+  inbox: { grouping: "flat", group: flatGroups, empty: "view.empty.inbox" },
+  // Area headings, then project labels.
+  open: { grouping: "area", group: groupTasks, empty: "view.empty.open" },
+  // By the person waited on, who is the group's heading.
+  waiting: { grouping: "person", group: personGroups, empty: "view.empty.waiting" },
+  // Flat, newest first. Pending proposals join it with M5.09 (A5 3.10).
+  review: { grouping: "flat", group: flatGroups, empty: "view.empty.review" },
+  backlog: { grouping: "area", group: groupTasks, empty: "view.empty.backlog" },
+};
 
 /** An area view: every open task of the area (A5 3.5), or of one of its projects. */
 export function areaFilter(area: string, project?: string): (task: TaskRow) => boolean {
@@ -441,6 +460,35 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
   add("next", next);
   add("changes", changed);
   return { strip, sections };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Agents (A5 3.5, 3.14) until the service has a read of sessions, runs and routines: "Recent", the
+// tasks an agent or a routine changed while this tab followed the space (the change log Today's
+// Changes reads), newest first, one group per day of the change.
+
+export interface RecentDay {
+  /** `YYYY-MM-DD` on the viewer's calendar. */
+  readonly date: string;
+  readonly tasks: readonly TaskRow[];
+}
+
+/** The changed tasks the rows still hold, by the day of their newest change, newest first. */
+export function recentOf(
+  changes: readonly TaskChange[],
+  tasks: ReadonlyMap<string, TaskRow>,
+  timeZone: string,
+): RecentDay[] {
+  const days: { date: string; tasks: TaskRow[] }[] = [];
+  for (const change of changes) {
+    const task = tasks.get(change.task);
+    if (task === undefined) continue;
+    const date = localDate(change.at, timeZone);
+    const last = days.at(-1);
+    if (last?.date === date) last.tasks.push(task);
+    else days.push({ date, tasks: [task] });
+  }
+  return days;
 }
 
 /** The expanded task as the list last showed it: its section and its place there. */

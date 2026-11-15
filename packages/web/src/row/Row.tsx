@@ -65,6 +65,7 @@ const styles = classes(css, [
   "body",
   "edit",
   "remote",
+  "move",
 ]);
 
 export interface RowProps {
@@ -122,8 +123,11 @@ function Slots({
         {model.due?.tone === "late" ? <ClockIcon /> : null}
         {model.due === undefined ? null : say(model.due.text)}
       </span>
-      <span className={styles.age} data-tip={say(model.age.tip)}>
-        {say(model.age.text)}
+      <span
+        className={styles.age}
+        data-tip={model.age === undefined ? undefined : say(model.age.tip)}
+      >
+        {model.age === undefined ? null : say(model.age.text)}
       </span>
       <span className={styles.prio} data-level={model.priority?.level}>
         {model.priority === undefined ? null : say(model.priority.text)}
@@ -177,10 +181,12 @@ function Slots({
           data-on={model.starred}
           aria-label={t("row.star")}
           aria-pressed={model.starred}
+          // A finished task takes no edit (A5 3.11): its star would only be refused.
+          aria-disabled={task.lifecycle !== "active" || undefined}
           data-tip={t("row.star")}
           tabIndex={tab}
           onClick={() => {
-            actions.star(task, !model.starred);
+            if (task.lifecycle === "active") actions.star(task, !model.starred);
           }}
         >
           <StarIcon />
@@ -401,6 +407,7 @@ function RowView({
       sources: sourceFacts(t, task.sources),
       ...(task.sources_more === undefined ? {} : { sourcesMore: task.sources_more }),
       ...(place === undefined ? {} : { place }),
+      ...(task.waiting_since === undefined ? {} : { waitingSince: task.waiting_since }),
     },
     ctx,
   );
@@ -519,6 +526,28 @@ function RowView({
                 {model.chip.person ? <PersonIcon /> : null}
                 <span dir="auto">{sayMsg(t, model.chip.text)}</span>
               </span>
+            )}
+            {model.move === undefined || expanded ? null : (
+              // The view's move out of it, visible on the row (A5 3.5); expanded, the facts own it.
+              <button
+                type="button"
+                className={styles.move}
+                data-part="move"
+                data-move={model.move.kind}
+                tabIndex={tab}
+                onClick={(event) => {
+                  // Focus goes to the title first: the row then stays where it is, with its new
+                  // data, until focus leaves it (A5 3.15 item 6), and the button that goes with
+                  // the move takes no focus with it.
+                  event.currentTarget
+                    .closest("[data-row-line]")
+                    ?.querySelector<HTMLElement>('[data-part="title"]')
+                    ?.focus({ preventScroll: true });
+                  if (model.move !== undefined) actions.move(task, model.move.kind);
+                }}
+              >
+                {sayMsg(t, model.move.text)}
+              </button>
             )}
           </div>
           {model.prefix === undefined && model.summary === undefined ? null : (

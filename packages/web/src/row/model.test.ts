@@ -87,7 +87,7 @@ function read(model: RowModel) {
     summary: model.summary,
     due: say(model.due?.text),
     tone: model.due?.tone,
-    age: say(model.age.text),
+    age: say(model.age?.text),
     priority: say(model.priority?.text),
     starred: model.starred,
     tile: model.launch.state,
@@ -206,18 +206,18 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
       row(photos, { ...BRIGHTSIDE, waitingSince: daysAgo(3) }),
       ctx("waiting", "person"),
     );
-    expect(say(model.age.text)).toBe("3d");
-    expect(say(model.age.tip)).toBe("Waiting since Monday 9 November");
+    expect(say(model.age?.text)).toBe("3d");
+    expect(say(model.age?.tip)).toBe("Waiting since Monday 9 November");
     expect(model.description.map(say)).toContain("waiting since Monday 9 November");
     // Other views keep the task's own age.
     const open = renderRow(
       row(photos, { ...BRIGHTSIDE, waitingSince: daysAgo(3) }),
       ctx("today", "flat"),
     );
-    expect(say(open.age.text)).toBe("3mo");
+    expect(say(open.age?.text)).toBe("3mo");
     // Until the page gets the wait's start, the Waiting row says plainly that it shows the creation.
     const unknown = renderRow(row(photos, BRIGHTSIDE), ctx("waiting", "person"));
-    expect(say(unknown.age.tip)).toBe("Created Tuesday 4 August");
+    expect(say(unknown.age?.tip)).toBe("Created Tuesday 4 August");
   });
 
   test("Waiting under area headings (until M5.05 groups it by person): the person's chip stays", () => {
@@ -315,7 +315,7 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     const age = (days: number) =>
       say(
         renderRow(row(task({ title: "t", created_at: daysAgo(days) })), ctx("open", "area")).age
-          .text,
+          ?.text,
       );
     expect([0, 1, 6, 7, 13, 62, 63, 95, 364, 365, 800].map(age)).toEqual([
       "today",

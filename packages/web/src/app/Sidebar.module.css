@@ -68,9 +68,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* An empty Inbox or Backlog keeps its place, so nothing below it moves. */
-.slot {
-  min-height: 32px;
+/* A counted view that holds nothing keeps its place, quieter and without a count. */
+.item[data-empty="true"]:not([aria-current="page"]):not(:hover) {
+  color: var(--k-muted);
 }
 
 .dot {
