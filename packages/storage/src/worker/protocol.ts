@@ -199,6 +199,8 @@ export interface Calls {
       /** The machine-local `backup.dir`, when set. */
       backupDir?: string;
       appVersion?: string;
+      /** The state the request was decided on (BarrierOptions.expect). */
+      expect?: { seq: number; incarnation: string };
     };
     result: { result: WriteResult; backup?: BackupRecord };
   };

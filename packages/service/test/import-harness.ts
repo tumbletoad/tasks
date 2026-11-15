@@ -43,6 +43,11 @@ export interface WorldOptions {
   readonly seed?: string;
   /** Seams of the import's barrier backup. */
   readonly barrier?: BackupSeams;
+  /**
+   * Runs as the apply hands its request to the barrier, after its read and decision: a write here
+   * is one that comes between them, as another window's or an agent's would.
+   */
+  beforeBarrier?: (() => void) | undefined;
   /** Seams of the writer's transaction. */
   readonly write?: WriteSeams;
   /** This machine's roots. */
@@ -93,6 +98,7 @@ function handleOf(
   checked: CheckedDriver,
   writer: SpaceWriter,
   barrier: BackupSeams,
+  beforeBarrier: (() => void) | undefined,
 ): SpaceWriterHandle {
   return {
     spaceId: writer.spaceId,
@@ -101,17 +107,23 @@ function handleOf(
     actor: (kind: "human" | "agent" | "import", label: string) =>
       Promise.resolve(writer.actor(kind, label)),
     submit: (request: unknown) => Promise.resolve(writer.submit(request)),
-    importSubmit: (request: unknown, options: { backupDir?: string }) =>
-      submitBehindBackup(
+    importSubmit: (
+      request: unknown,
+      options: { backupDir?: string; expect?: { seq: number; incarnation: string } },
+    ) => {
+      beforeBarrier?.();
+      return submitBehindBackup(
         checked,
         writer,
         request,
         {
           folder: writer.folder,
           ...(options.backupDir === undefined ? {} : { backupDir: options.backupDir }),
+          ...(options.expect === undefined ? {} : { expect: options.expect }),
         },
         barrier,
-      ),
+      );
+    },
   } as unknown as SpaceWriterHandle;
 }
 
@@ -141,7 +153,7 @@ export async function attachWorld(
   const read = openSpace(checked, folder, { role: "reader" });
   const conn = read.conn;
   const reader = readerOf(conn);
-  const handle = handleOf(checked, writer, options.barrier ?? {});
+  const handle = handleOf(checked, writer, options.barrier ?? {}, () => options.beforeBarrier?.());
   const user = writer.actor("human", "");
   // This machine's roots as machine.toml gives them.
   const roots = (options.roots ?? []).map((r) => ({ ...r, label: r.id, runs: false }));

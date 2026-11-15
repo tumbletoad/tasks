@@ -859,7 +859,13 @@ export class SpaceWriterHandle {
    */
   importSubmit(
     request: unknown,
-    options: { backupDir?: string; appVersion?: string; timeoutMs: number },
+    options: {
+      backupDir?: string;
+      appVersion?: string;
+      /** The state the request was decided on: else SPACE_CHANGED before any backup. */
+      expect?: { seq: number; incarnation: string };
+      timeoutMs: number;
+    },
   ): Promise<{ result: WriteResult; backup?: BackupRecord }> {
     const { timeoutMs, ...rest } = options;
     return this.#queued(

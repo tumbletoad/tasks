@@ -61,6 +61,7 @@ import {
   formatTaskRef,
   isId,
   newId,
+  StorageError,
   type Id,
   type PreviewGuard,
   type Row,
@@ -337,6 +338,13 @@ export interface PlanningApplyCall {
 
 /** How long an apply may take, its barrier backup and trial restore included. */
 export const APPLY_TIMEOUT_MS = 30 * 60_000;
+
+/**
+ * How often an apply reads and decides again when the space moved on between its read and its
+ * barrier (SPACE_CHANGED, before any backup): the first import's actor registration is one such
+ * move, a person's or an agent's write at that moment another.
+ */
+const APPLY_ATTEMPTS = 5;
 
 /**
  * The writer's request ID of an apply: from the run and the token, so applying twice applies once
@@ -743,88 +751,107 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
   const { plan, inputs, actions } = await planAgain(folder, report, options);
 
   const names = judgedNames(plan, { projects: [] });
-  const { rows, apply } = await readApplyRows(
-    call.reader,
-    { aliases: names.aliases, keys: names.keys, areas: names.areas },
-    call.machine,
-  );
-  const state = spaceState(rows);
-  const previewRun: PreviewRun = {
-    run,
-    folder,
-    source: report.source,
-    options,
-    roots: [],
-    inputs,
-    ...(actions === undefined ? {} : { actions }),
-    problems: [],
-    verified: [],
-    space: state,
-    missing: new Set(),
-  };
-  if (previewToken(plan, previewRun) !== token) throw stale("The space");
-
-  const planned = new Set(plan.tasks.map((t) => t.legacyId));
-  const space: ApplySpace = {
-    state,
-    matched: matchedOf(apply, rows.refPrefix),
-    gone: apply.aliases.map((r) => String(r["alias"])).filter((a) => !planned.has(a)),
-  };
   const ids = new Map<string, string>();
   const now = (call.now ?? Date.now)();
-  const decision = decideApply(plan, space, {
-    exchange: run,
-    dir: [...RUNS_FOLDER, run, "input"].join("/"),
-    idOf: (legacy) => {
-      const id = ids.get(legacy) ?? newId("t");
-      ids.set(legacy, id);
-      return id;
-    },
-    importedAt: now,
-  });
-  if (decision.ops.length === 0) {
-    return { ...applyResult(run, decision, new Map()), status: "unchanged", as_of: rows.asOf };
-  }
+  // The decision is made on one read, and the barrier serves it only while the space still stands
+  // there: a write that came between (an edit in another window, an agent's change) makes it read
+  // and decide again, before any backup. The first import that writes registers the import actor,
+  // which is such a write.
+  let decision: ReturnType<typeof decideApply> | undefined;
+  let submitted: { result: WriteResult; backup?: { name: string } } | undefined;
+  for (let attempt = 1; submitted === undefined; attempt += 1) {
+    const { rows, apply } = await readApplyRows(
+      call.reader,
+      { aliases: names.aliases, keys: names.keys, areas: names.areas },
+      call.machine,
+    );
+    const state = spaceState(rows);
+    const previewRun: PreviewRun = {
+      run,
+      folder,
+      source: report.source,
+      options,
+      roots: [],
+      inputs,
+      ...(actions === undefined ? {} : { actions }),
+      problems: [],
+      verified: [],
+      space: state,
+      missing: new Set(),
+    };
+    if (previewToken(plan, previewRun) !== token) throw stale("The space");
 
-  // The import actor joins the space on the first import that writes (A1 3.6, 3.21).
-  let importer: Id<"ac">;
-  try {
-    importer = await call.importer();
-  } catch (error) {
-    throw storageFailure(error);
-  }
-  const request: WriteRequest = {
-    space_id: call.writer.spaceId,
-    request_id: requestId,
-    actor: {
-      scope_id: call.scope,
-      ...(call.earlierScope === undefined ? {} : { earlier_scope_id: call.earlierScope }),
-      principal_id: call.principal,
-      actor_kind: "human",
-      author_id: importer,
-      machine_id: call.machine,
-      origin: "import",
-    },
-    // The caller's base when it gave one (stricter: a field changed after it conflicts), else the
-    // state this apply read and decided on.
-    base: typeof call.input["base"] === "string" ? call.input["base"] : rows.asOf,
-    preview: {
-      token,
-      pinned: previewPinned(plan, previewRun) as PreviewGuard["pinned"],
-      ...judgedNames(plan, state),
-    },
-    ops: decision.ops as unknown as WriteRequest["ops"],
-  };
-  let submitted: { result: WriteResult; backup?: { name: string } };
-  try {
-    submitted = await call.writer.importSubmit(request, {
-      ...(call.backupDir === undefined ? {} : { backupDir: call.backupDir }),
-      timeoutMs: APPLY_TIMEOUT_MS,
+    const planned = new Set(plan.tasks.map((t) => t.legacyId));
+    const space: ApplySpace = {
+      state,
+      matched: matchedOf(apply, rows.refPrefix),
+      gone: apply.aliases.map((r) => String(r["alias"])).filter((a) => !planned.has(a)),
+    };
+    decision = decideApply(plan, space, {
+      exchange: run,
+      dir: [...RUNS_FOLDER, run, "input"].join("/"),
+      idOf: (legacy) => {
+        const id = ids.get(legacy) ?? newId("t");
+        ids.set(legacy, id);
+        return id;
+      },
+      importedAt: now,
     });
-  } catch (error) {
-    throw storageFailure(error);
+    if (decision.ops.length === 0) {
+      return { ...applyResult(run, decision, new Map()), status: "unchanged", as_of: rows.asOf };
+    }
+
+    // The import actor joins the space on the first import that writes (A1 3.6, 3.21).
+    let importer: Id<"ac">;
+    try {
+      importer = await call.importer();
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    const request: WriteRequest = {
+      space_id: call.writer.spaceId,
+      request_id: requestId,
+      actor: {
+        scope_id: call.scope,
+        ...(call.earlierScope === undefined ? {} : { earlier_scope_id: call.earlierScope }),
+        principal_id: call.principal,
+        actor_kind: "human",
+        author_id: importer,
+        machine_id: call.machine,
+        origin: "import",
+      },
+      // The caller's base when it gave one (stricter: a field changed after it conflicts), else
+      // the state this apply read and decided on.
+      base: typeof call.input["base"] === "string" ? call.input["base"] : rows.asOf,
+      preview: {
+        token,
+        pinned: previewPinned(plan, previewRun) as PreviewGuard["pinned"],
+        ...judgedNames(plan, state),
+      },
+      ops: decision.ops as unknown as WriteRequest["ops"],
+    };
+    try {
+      submitted = await call.writer.importSubmit(request, {
+        ...(call.backupDir === undefined ? {} : { backupDir: call.backupDir }),
+        expect: { seq: rows.seq, incarnation: rows.incarnation },
+        timeoutMs: APPLY_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (!(error instanceof StorageError && error.code === "SPACE_CHANGED")) {
+        throw storageFailure(error);
+      }
+      if (attempt >= APPLY_ATTEMPTS) {
+        throw new AppError({
+          code: "conflict",
+          message: "The space kept changing while the import was decided, so nothing was applied.",
+          hint: "Apply it again when the space is quieter: the same command, the same token.",
+          data: { cause: "SPACE_CHANGED" },
+        });
+      }
+    }
   }
   const { result } = submitted;
+  if (decision === undefined) throw new AppError({ code: "internal", message: "No decision." });
   if (result.status === "conflict" || result.status === "rejected") {
     throw resultFailure(result, HINTS);
   }

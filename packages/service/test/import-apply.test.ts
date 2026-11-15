@@ -3,7 +3,15 @@
 // sample space, in one thread (import-harness.ts). The committed synthetic prototype is the input,
 // copied into a folder of the test's own where a test edits it. Fixture data only; every folder is
 // made in beforeAll and removed by its full name in afterAll.
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -365,6 +373,66 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
         cause: "PREVIEW_STALE",
       });
       expect(world.seq()).toBe(after);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
+
+  test("a write between the apply's read and its barrier makes it decide again, on what the person did", async () => {
+    n += 1;
+    const root = join(scratch, `w${String(n)}`);
+    const places = join(root, "places");
+    mkdirSync(join(places, "old"), { recursive: true });
+    mkdirSync(join(places, "new"), { recursive: true });
+    const options: WorldOptions = { roots: [{ id: "work", path: places }] };
+    const world = await openWorld(root, options);
+    const prototype = join(root, "prototype");
+    try {
+      writePrototype(prototype, {
+        tasks: [{ id: "pa", title: "Task", meta: { paths: [join(places, "old")] } }],
+      });
+      await importedSynthetic(world, prototype);
+      const ta = taskOf(world, "pa");
+      writePrototype(prototype, {
+        tasks: [{ id: "pa", title: "Task", meta: { paths: [join(places, "new")] } }],
+      });
+      const preview = await world.preview({ folder: prototype });
+      // The person clears the task's folder in another window just after the apply read the space.
+      // A place is a row of its own: the token's task versions do not see it.
+      let handed = 0;
+      options.beforeBarrier = () => {
+        handed += 1;
+        if (handed === 1) {
+          expect(world.edit([{ kind: "place.clear", task: ta }]).status).toBe("applied");
+        }
+      };
+      const result = await world.apply(preview.run, preview.token ?? "");
+      const live = world.rows(
+        "SELECT root_id, rel_path FROM places WHERE owner_id = $t AND deleted_at IS NULL",
+        { t: ta },
+      );
+      expect(live).toEqual([]);
+      // Decided again on the cleared place: both sides changed it, a conflict, nothing written.
+      expect(result.status).toBe("unchanged");
+      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["place"]);
+
+      // A space that keeps changing at that moment: refused, nothing of the import written.
+      writePrototype(prototype, {
+        tasks: [{ id: "pa", title: "Task renamed", meta: { paths: [join(places, "new")] } }],
+      });
+      const busy = await world.preview({ folder: prototype });
+      const mira = String(world.rows("SELECT id FROM tasks ORDER BY ref LIMIT 1")[0]?.["id"]);
+      options.beforeBarrier = () => {
+        world.edit([{ kind: "note.add", task: mira, body: `Meanwhile ${String(world.seq())}` }]);
+      };
+      expect(await refusal(world.apply(busy.run, busy.token ?? ""))).toMatchObject({
+        code: "conflict",
+        cause: "SPACE_CHANGED",
+      });
+      expect(task(world, ta)["title"]).toBe("Task");
+      options.beforeBarrier = undefined;
+      expect((await world.apply(busy.run, busy.token ?? "")).status).toBe("applied");
+      expect(task(world, ta)["title"]).toBe("Task renamed");
     } finally {
       world.close();
     }

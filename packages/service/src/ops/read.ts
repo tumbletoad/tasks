@@ -106,6 +106,8 @@ export interface ImportRows {
   readonly nextRef: number;
   /** The space's `as_of` of the snapshot: an apply's base (A1 3.5). */
   readonly asOf: string;
+  /** The snapshot's last seq: the state an apply decides on, and its barrier expects. */
+  readonly seq: number;
   readonly aliases: { alias: string; task: string; version: number }[];
   readonly sources: { key: string; id: string; version: number }[];
   readonly areas: { slug: string; id: string; version: number; title: string }[];
@@ -234,6 +236,7 @@ function importRows(row: unknown, lists: unknown[]): ImportRows {
       incarnation: space.authority.incarnation,
       seq: space.lastSeq,
     }),
+    seq: space.lastSeq,
     aliases: aliases as ImportRows["aliases"],
     sources: sources as ImportRows["sources"],
     areas: areas as ImportRows["areas"],

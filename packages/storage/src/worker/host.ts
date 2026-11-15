@@ -568,7 +568,7 @@ export function serve(
         registerMachine: ({ handle }) => writer(handle).registerMachine(),
         actor: ({ handle, actorKind, label }) => writer(handle).actor(actorKind, label),
         submit: ({ handle, request }) => writer(handle).submit(request),
-        importSubmit: ({ handle, request, backupDir, appVersion }) =>
+        importSubmit: ({ handle, request, backupDir, appVersion, expect }) =>
           submitBehindBackup(
             checked,
             writer(handle),
@@ -578,6 +578,7 @@ export function serve(
               folder: writer(handle).folder,
               ...(backupDir === undefined ? {} : { backupDir }),
               ...(appVersion === undefined ? {} : { appVersion }),
+              ...(expect === undefined ? {} : { expect }),
             },
             { steps, ...(faults.importBarrier === undefined ? {} : { at: faults.importBarrier }) },
           ),
