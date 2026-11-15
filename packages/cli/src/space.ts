@@ -8,8 +8,12 @@
 //   tasks space close [<space>]
 //   tasks space backup [<space>]
 //   tasks space backups [list] [<space>]
+//   tasks space export [<space>] [--mode backup|fork] [--with-jsonl]
 //   tasks space restore <backup> --to <folder>       a read-only copy until it is claimed
 //   tasks space restore <backup> --in-place [<space>]
+//                                                    <backup> is a backup or an export bundle
+//   tasks space restore latest [<space>] --to <folder>
+//   tasks space rescue [<space>]                     the readable rows into exchange/rescued
 //   tasks space claim [<space>]
 //   tasks space recover [<space>]
 //   tasks space use <space>                          the machine's default space
@@ -35,8 +39,15 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   close [<space>]                        Close a space while the service keeps running
   backup [<space>]                         Take a backup now
   backups [list] [<space>]                 The backups of a space
-  restore <backup> --to <folder>           Restore into a new folder: a read-only copy
+  export [<space>] [--mode backup|fork]    Write an export bundle into the space's exports folder,
+         [--with-jsonl]                    the copy to keep off this computer; --with-jsonl adds
+                                           every table as JSON lines
+  restore <backup> --to <folder>           Restore a backup or a bundle into a new folder: a
+                                           read-only copy
+  restore latest [<space>] --to <folder>   Restore the space's newest backup that verifies
   restore <backup> --in-place [<space>]    Replace the space with the backup, keeping the old folder
+  rescue [<space>]                         Write the rows that can still be read into the space's
+                                           exchange/rescued folder
   claim [<space>]                          Make a read-only copy this machine's
   recover [<space>]                        Play back a space's rollback journal
   use <space>                             Make it the default: what a new tab and a command
@@ -116,16 +127,26 @@ function defaultFolder(io: Io, name: string): string {
   return join(resolveLayout(hostFacts(io.env, io.platform)).spaces, slugOf(name));
 }
 
+/** A1 3.2's two actions for a database that failed its check, as the person runs them. */
+const CHECK_FAILED_WAY = [
+  "Restore the newest backup that verifies into a new local folder, or keep the rows that can still be read:",
+  `  ${CLI_NAME} space restore latest <folder> --to <new folder>`,
+  `  ${CLI_NAME} space rescue <folder>`,
+  "<new folder> must not exist yet. The rescue writes a file into <folder>/exchange/rescued. The old folder keeps all its files.",
+];
+
 /**
  * The ways out of a space that is read-only for its folder (A1 3.2), as the person
  * runs them: confirm a synced folder is excluded from sync, or restore a backup into a new local
  * folder and claim the copy, which leaves the old folder where it is. A database that failed its
- * check gets none: its words name the restore of a verified backup, and a new backup of it fails.
- * The backup's file is in the space's own backups folder: machine-local `backup.dir` is written
- * by no command yet.
+ * check gets its two actions instead, and never a new backup of it: restore the newest backup
+ * that verifies into a new folder, or rescue the rows that can still be read. The backup's file is
+ * in the space's own backups folder: machine-local `backup.dir` is written by no command yet.
  */
 export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRow>): string[] {
   if (row.state !== "read_only") return [];
+  // A1 3.2's two actions for a failed check: never a new backup of the damaged database.
+  if (row.reason === "check_failed") return CHECK_FAILED_WAY;
   if (row.reason !== "synced_folder" && row.reason !== "network_filesystem") return [];
   const backup = [
     "To move the space, restore a backup into a new local folder and claim the copy:",
@@ -275,6 +296,27 @@ export async function spaceCommand(
         });
         return 0;
       }
+      case "export": {
+        const o = options(rest, ["--mode", "--to"], ["--with-jsonl"]);
+        if (o.positional.length > 1) throw new UsageError("tasks space export takes one <space>");
+        const result = await call("space/export", {
+          space: await which(o.positional[0]),
+          ...(o.values.has("--mode") ? { mode: o.values.get("--mode") } : {}),
+          ...(o.values.has("--to") ? { to: o.values.get("--to") } : {}),
+          ...(o.set.has("--with-jsonl") ? { with_jsonl: true } : {}),
+        });
+        out(result, () => {
+          const bundle = result["export"] as Record<string, unknown>;
+          io.stdout(
+            `Exported to ${str(bundle["file"])} (seq ${str(bundle["seq"])}, ${str(bundle["size"])} bytes)\n`,
+          );
+          // A6 3.16.6: the export screen says that a bundle is plaintext.
+          io.stdout(
+            "The bundle is a plain, unencrypted copy of the space. Keep it where only you can read it.\n",
+          );
+        });
+        return 0;
+      }
       case "restore": {
         const o = options(rest, ["--to", "--in-place"], ["--in-place"]);
         const backup = o.positional[0];
@@ -288,7 +330,7 @@ export async function spaceCommand(
           isAbsolute(backup) ||
           backup.includes("/") ||
           backup.includes("\\") ||
-          (backup.endsWith(".db.gz") && to !== undefined)
+          (/\.(?:db\.gz|zip)$/i.test(backup) && to !== undefined)
             ? absolute(io, backup)
             : backup;
         const result = await call("space/restore", {
@@ -296,14 +338,33 @@ export async function spaceCommand(
           ...(to === undefined
             ? { space: await which(o.values.get("--in-place") ?? o.positional[1]) }
             : { to: absolute(io, to) }),
+          // `latest` names the space whose newest verified backup it restores (A1 3.2).
+          ...(backup === "latest" && to !== undefined ? { of: await which(o.positional[1]) } : {}),
         });
         out(result, () => {
+          if (typeof result["backup"] === "string") {
+            io.stdout(`The newest backup that verifies: ${result["backup"]}\n`);
+          }
           printSpace(io, result["space"] as SpaceRow, "Restored ");
           if (result["read_only_copy"] === true) {
             io.stdout(
               "This is a read-only copy. Claim it to write to it: tasks space claim <space>\n",
             );
           }
+        });
+        return 0;
+      }
+      case "rescue": {
+        const o = options(rest, [], []);
+        if (o.positional.length > 1) throw new UsageError("tasks space rescue takes one <space>");
+        const result = await call("space/rescue", { space: await which(o.positional[0]) });
+        out(result, () => {
+          const rescue = result["rescue"] as Record<string, unknown>;
+          const failed = rescue["failed"] as string[];
+          io.stdout(
+            `Rescued ${str(rescue["rows"])} rows of ${str(rescue["tables"])} tables into ${str(rescue["file"])}\n`,
+          );
+          if (failed.length > 0) io.stdout(`Not read to the end: ${failed.join(", ")}\n`);
         });
         return 0;
       }
@@ -336,7 +397,7 @@ export async function spaceCommand(
       }
       default:
         throw new UsageError(
-          `${CLI_NAME} space has list, create, open, close, backup, backups, restore, claim, recover and use`,
+          `${CLI_NAME} space has list, create, open, close, backup, backups, export, restore, rescue, claim, recover and use`,
         );
     }
   } catch (error) {

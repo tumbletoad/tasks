@@ -44,12 +44,12 @@ const at = (
  */
 const SLICE: readonly Kill[] = [
   at("migrate", "step-applied", 2),
-  at("barrier", "data-renamed"),
+  at("barrier", "data-published"),
   at("migrate", "committed"),
   at("write", "before-commit", 12),
   at("write", "after-commit", 7),
   at("backup", "compressed"),
-  at("backup", "data-renamed"),
+  at("backup", "data-published"),
   at("restore", "claimed"),
   at("restore", "moved-aside"),
   at("restore", "moved-into-place"),

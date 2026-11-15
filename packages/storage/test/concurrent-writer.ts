@@ -15,9 +15,15 @@ import { createRequest, FIXTURE_MACHINE, ownerCredential } from "./fixture-reque
 export interface ConcurrentWriterData {
   folder: string;
   writer: number;
-  /** Int32 slots: [0] the stop flag, [1 + writer] this writer's commits so far. */
+  /**
+   * Int32 slots: [0] the stop flag, [1] how many writers are open, [2] the start flag, [3 + writer]
+   * this writer's commits so far.
+   */
   control: SharedArrayBuffer;
 }
+
+/** The slots before the writers' own: stop, open, start (backup.test.ts counts the same). */
+const CONTROL_SLOTS = 3;
 
 const { folder, writer: index, control } = workerData as ConcurrentWriterData;
 const slots = new Int32Array(control);
@@ -28,6 +34,13 @@ const writer = SpaceWriter.open(opened, { machine: FIXTURE_MACHINE });
 try {
   if (!isId(owner, "ac")) throw new Error("the fixture space has no owner");
   const actor = ownerCredential(owner, `cli:writer-${String(index)}`);
+  // Open, with the machine registered. The loops start together once every writer is open: an
+  // open's write waiting behind writers already in their loops could starve past its busy
+  // timeout on a loaded machine, since SQLite's busy handler is not fair.
+  Atomics.add(slots, 1, 1);
+  while (Atomics.load(slots, 2) === 0 && Atomics.load(slots, 0) === 0) {
+    Atomics.wait(slots, 2, 0, 50);
+  }
   let commits = 0;
   while (Atomics.load(slots, 0) === 0) {
     const result = writer.submit(
@@ -35,7 +48,7 @@ try {
     );
     if (result.status !== "applied") throw new Error(`a write was ${result.status}`);
     commits += 1;
-    Atomics.store(slots, 1 + index, commits);
+    Atomics.store(slots, CONTROL_SLOTS + index, commits);
     // A short pause between transactions. SQLite's busy handler is not fair: without it, writers
     // in tight loops can keep one waiting writer from ever getting the lock (seen on Linux).
     Atomics.wait(slots, 0, 0, 5);
