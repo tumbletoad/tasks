@@ -23,9 +23,10 @@
 // bisection, because a pack's length falls with every unit a step removes: a context of thousands
 // of short paragraphs costs a few dozen renders, never one per paragraph.
 //
-// The pack's hash is taken with the reference as a slot and the composer text as a marker (A4
-// 3.15.1), and the data blocks' marker is drawn from the text without the composer text, so the
-// person's words never reach the space, not even as a hash.
+// The pack's hash identifies the pack as copied: its text with the reference as a slot and the
+// composer text as a marker (A4 3.15.1). The person's words never reach the space, not even as a
+// hash. Their length does as far as it changed the trim, and holding a drawn marker does as far as
+// it changed the marker, because both change what was copied.
 import { createHash } from "node:crypto";
 import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { isLaunchRef } from "../intents.ts";
@@ -120,7 +121,10 @@ export interface PackLeftOut {
 
 export interface Pack {
   readonly text: string;
-  /** SHA-256 of the pack with its launch reference as a slot, as the click records it. */
+  /**
+   * SHA-256 of the pack as copied, with its launch reference as a slot and the composer text as a
+   * marker, as the click records it.
+   */
   readonly hash: string;
   readonly left: PackLeftOut;
   /** Still over the budget after every cut: the notes from the user, kept whole, are that long. */
@@ -266,8 +270,7 @@ export function renderContextPack(input: PackInput): Pack {
   const folderLine = folderOf(input.folder);
 
   // The marker comes from all the text the pack may hold but the composer text, so it is the same
-  // for every trim and the hash cannot give the person's words away; the composer text only
-  // rules out a marker it holds.
+  // for every trim; the composer text only rules out a marker it holds.
   const payload = [
     taskLine,
     summary ?? "",

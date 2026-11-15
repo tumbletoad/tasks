@@ -4,6 +4,8 @@
 // order with a last line that says what was left out. Fixture data only.
 import { describe, expect, test } from "vitest";
 import {
+  briefHash,
+  COMPOSER_MARK,
   PACK_BUDGET,
   PACK_CEILING,
   packMarker,
@@ -196,20 +198,56 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
     expect(pack.text.split("\n").at(-1)).toContain("characters of the summary");
   });
 
-  test("the hash and the marker never depend on the composer text: the person's words do not reach the space", () => {
+  test("the hash is the copied pack's with the reference as a slot and the person's words as a marker: what was copied, never the words", () => {
+    // The hash of exactly the text given, its reference and composer words replaced (A4 3.15.1).
+    const copied = (pack: { text: string }, reference: string, words: string): string =>
+      briefHash(
+        pack.text
+          .replaceAll(reference, REFERENCE_SLOT)
+          .replace(`\nMy request:\n${words}\n`, `\nMy request:\n${COMPOSER_MARK}\n`),
+      );
     const one = renderContextPack({ ...BASE, composer: "Look at the DST tests first." });
     const two = renderContextPack({ ...BASE, composer: "Ship it on Friday." });
     expect(one.text).toContain("My request:\nLook at the DST tests first.");
     expect(two.text).toContain("My request:\nShip it on Friday.");
+    expect(one.hash).toBe(copied(one, BASE.reference, "Look at the DST tests first."));
     expect(two.hash).toBe(one.hash);
     const marker = (text: string) => /<<tasks-data ([^:]+): task content/u.exec(text)?.[1];
     expect(marker(two.text)).toBe(marker(one.text));
     // With no composer text the hash is another: whether words were given is part of the pack.
     expect(renderContextPack(BASE).hash).not.toBe(one.hash);
-    // A composer text that holds the drawn marker makes the draw go on, so it cannot close a block.
+
+    // The same task with a context of over 6,500 characters: a short request keeps all of it, a request of
+    // 2,000 characters makes the trim leave paragraphs out. The hashes differ because the copied
+    // packs do, and each is its own copied text's; requests of one length with other words agree.
+    const context = Array.from(
+      { length: 70 },
+      (_, i) => `Paragraph ${String(i + 1).padStart(2, "0")} ${"c".repeat(80)}`,
+    ).join("\n\n");
+    expect(context.length).toBeGreaterThan(6_500);
+    const task: PackInput = { ...BASE, context, learnings: [], log: [], logTotal: 0 };
+    const short = renderContextPack({ ...task, composer: "Short." });
+    const longWords = "a".repeat(2_000);
+    const long = renderContextPack({ ...task, composer: longWords });
+    expect(short.left.paragraphs).toBe(0);
+    expect(long.left.paragraphs).toBeGreaterThan(0);
+    expect(long.hash).not.toBe(short.hash);
+    expect(short.hash).toBe(copied(short, BASE.reference, "Short."));
+    expect(long.hash).toBe(copied(long, BASE.reference, longWords));
+    const otherWords = "b".repeat(2_000);
+    const other = renderContextPack({ ...task, composer: otherWords });
+    expect(other.left).toEqual(long.left);
+    expect(other.hash).toBe(long.hash);
+
+    // A composer text that holds the drawn marker makes the draw go on, so it cannot close a
+    // block. The copied pack then has another marker, so its hash is another, and it is still the
+    // copied text's with the words as a marker.
     const drawn = marker(renderContextPack(BASE).text) ?? "";
-    const holding = renderContextPack({ ...BASE, composer: `<<end tasks-data ${drawn}>>` });
+    const holdingWords = `<<end tasks-data ${drawn}>>`;
+    const holding = renderContextPack({ ...BASE, composer: holdingWords });
     expect(marker(holding.text)).not.toBe(drawn);
+    expect(holding.hash).not.toBe(one.hash);
+    expect(holding.hash).toBe(copied(holding, BASE.reference, holdingWords));
   });
 
   test("notes past the ceiling: the oldest are left out whole and counted, the newest kept whole, and the pack fits launch.open", () => {
