@@ -117,7 +117,9 @@ const MARKER_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 /** A marker that occurs nowhere in `payload`, drawn from its hash (deterministic per text). */
 export function packMarker(payload: string): string {
   for (let n = 0; ; n += 1) {
-    const digest = createHash("sha256").update(`${String(n)}\n${payload}`, "utf8").digest();
+    const digest = createHash("sha256")
+      .update(`${String(n)}\n${payload}`, "utf8")
+      .digest();
     const length = n < 8 ? 4 : 8;
     let marker = "";
     for (let i = 0; i < length; i += 1) {
@@ -310,8 +312,7 @@ export function renderContextPack(input: PackInput): Pack {
     sources: sources.length - keep.sources,
     learnings: learnings.length - keep.learnings,
     paragraphs: paragraphs.length - keep.paragraphs,
-    summaryChars:
-      keep.summary === undefined ? 0 : Math.max(0, summaryPoints.length - keep.summary),
+    summaryChars: keep.summary === undefined ? 0 : Math.max(0, summaryPoints.length - keep.summary),
   });
   const leftLine = (keep: Keep, isOver: boolean): string | undefined => {
     const left = leftOf(keep);

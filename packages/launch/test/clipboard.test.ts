@@ -21,7 +21,8 @@ import {
 } from "../src/clipboard.ts";
 import { powershellPath } from "../src/process.ts";
 
-const TEXT = 'TT Tasks task M-14 "Fix appointment time zones" (launch L7KQ2M).\nCafé 😀 — line two\n';
+const TEXT =
+  'TT Tasks task M-14 "Fix appointment time zones" (launch L7KQ2M).\nCafé 😀 — line two\n';
 
 let dir = "";
 /** PIDs of selection holders a fake started: each is stopped by its recorded PID. */

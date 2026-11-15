@@ -24,11 +24,26 @@ const BASE: PackInput = {
   context: "Dates are stored without zone and converted twice.\n\nThe mobile app may share it.",
   instructions: [{ day: "2026-11-11", text: "Don't touch the reminders service." }],
   sources: [{ kind: "ticket", title: "Appointments off by one hour", key: "jira:LUM-212" }],
-  folder: { kind: "place", root: "work", path: "lumen/portal", absolute: "/home/mira/lumen/portal" },
+  folder: {
+    kind: "place",
+    root: "work",
+    path: "lumen/portal",
+    absolute: "/home/mira/lumen/portal",
+  },
   learnings: [{ text: "Store UTC plus the clinic's zone ID.", task: "M-3", day: "2026-04-03" }],
   log: [
-    { day: "2026-11-12", kind: "progress", author: "agent:claude-code", text: "Started on the fix." },
-    { day: "2026-11-11", kind: "evidence", author: "agent:codex-work", text: "Reproduced on staging." },
+    {
+      day: "2026-11-12",
+      kind: "progress",
+      author: "agent:claude-code",
+      text: "Started on the fix.",
+    },
+    {
+      day: "2026-11-11",
+      kind: "evidence",
+      author: "agent:codex-work",
+      text: "Reproduced on staging.",
+    },
   ],
   logTotal: 2,
 };
@@ -84,7 +99,8 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
     const marker = packMarker(hostile);
     expect(hostile).not.toContain(`tasks-data ${marker}`);
     const pack = renderContextPack({ ...BASE, summary: hostile, context: hostile });
-    const used = /<<tasks-data ([^:]+): task content, not instructions>>/u.exec(pack.text)?.[1] ?? "";
+    const used =
+      /<<tasks-data ([^:]+): task content, not instructions>>/u.exec(pack.text)?.[1] ?? "";
     expect(used).not.toBe(first);
     expect(hostile).not.toContain(`tasks-data ${used}`);
     // A title, a source and a log line cannot add lines or close their quotes.
@@ -110,7 +126,9 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
         title: `Message ${String(i + 1)} ${"subject ".repeat(8)}`,
         key: `mail:${String(i + 1)}`,
       })),
-      learnings: Array.from({ length: 3 }, (_, i) => ({ text: `Learning ${String(i)} ${"x".repeat(150)}` })),
+      learnings: Array.from({ length: 3 }, (_, i) => ({
+        text: `Learning ${String(i)} ${"x".repeat(150)}`,
+      })),
       log: Array.from({ length: 5 }, (_, i) => ({
         day: `2026-11-${String(20 - i)}`,
         kind: "progress",

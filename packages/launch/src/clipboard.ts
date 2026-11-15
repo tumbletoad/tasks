@@ -49,7 +49,13 @@ export const CLIPBOARD_ARGS: Readonly<Record<ClipboardTool, readonly string[]>> 
   xclip: ["-selection", "clipboard", "-in"],
   xsel: ["--clipboard", "--input"],
   pbcopy: [],
-  "set-clipboard": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsClipboardScript()],
+  "set-clipboard": [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    windowsClipboardScript(),
+  ],
 };
 
 /** Whether the tool forks a selection holder that outlives it (Linux's three). */
