@@ -2,7 +2,7 @@
 
 Covers the views, the task row, the expanded task, the composer, field editing, themes, keyboard, live updates, first-run setup, the frontend stack and the static mockup (`A5-mockup.html`). Terms follow PLAN.md section Q. Examples use the synthetic fixture (Mira Okafor, Thursday 12 November 2026).
 
-Built so far, in `packages/web`: the app shell with its routes, space per tab and default space (3.3), the task row and the virtualised list (3.6, 3.25), the live store (3.15), themes as data (3.19), the bundled fonts (3.20), the message catalogue and its lint (3.23), the build (3.24), Open and Copy through `launch.open` (3.28), the expanded task without its composer and editing (3.7), and task links with their host views (3.3). The service side the UI depends on (A2's HTTP listener, tokens and change feed) is built too. Today and the other views, the composer, field editing, check-off, search, setup and most of Settings are still to build, so those sections stay the build specification.
+Built so far, in `packages/web`: the app shell with its routes, space per tab and default space (3.3), the task row and the virtualised list (3.6, 3.25), the live store (3.15), themes as data (3.19), the bundled fonts (3.20), the message catalogue and its lint (3.23), the build (3.24), Open and Copy through `launch.open` (3.28), the expanded task without its composer and editing (3.7), task links with their host views (3.3), and Today with its strip and sections (3.4; its digest is 3.14's). The service side the UI depends on (A2's HTTP listener, tokens and change feed) is built too. The other views, the composer, field editing, check-off, search, setup and most of Settings are still to build, so those sections stay the build specification.
 
 ---
 
@@ -78,7 +78,7 @@ Agents can never launch, run, change routines or change policy (R7). Every Open,
 
 ### 3.3 App shell and navigation
 
-Built, in `packages/web/src/app/`: the frame (`Shell.tsx`), the sidebar, the space switcher, the top bar's add field, the routes (`router.tsx`, with `src/route.ts` reading what arrives from outside), the landing (`Landing.tsx`), and view membership and counts (`views.ts`). Tests: `A5.3.3.web.route`, `A5.3.3.web.landing`, `A5.3.3.web.views`, `A7.3.12.m5-01.e2e.space-per-tab`, `A7.3.12.m5-01.e2e.task-links` and `A7.3.12.m5-01.e2e.add-once`. The host view of a task link is built (`app/host.ts`, `app/pages.tsx`; tests `A5.3.3.web.task-host`, `A7.3.12.m5-06.e2e.task-links`). Not built yet: Refresh, New space and Open folder in the switcher, the Agents live dot, the replica machine name and `/setup/:step`. Until the views of 3.4 and 3.5 exist, each view shows the grouped list filtered by its membership, Today lists every open task, and Completed holds only the task a link named.
+Built, in `packages/web/src/app/`: the frame (`Shell.tsx`), the sidebar, the space switcher, the top bar's add field, the routes (`router.tsx`, with `src/route.ts` reading what arrives from outside), the landing (`Landing.tsx`), and view membership and counts (`views.ts`). Tests: `A5.3.3.web.route`, `A5.3.3.web.landing`, `A5.3.3.web.views`, `A7.3.12.m5-01.e2e.space-per-tab`, `A7.3.12.m5-01.e2e.task-links` and `A7.3.12.m5-01.e2e.add-once`. The host view of a task link is built (`app/host.ts`, `app/pages.tsx`; tests `A5.3.3.web.task-host`, `A7.3.12.m5-06.e2e.task-links`). Not built yet: Refresh, New space and Open folder in the switcher, the Agents live dot, the replica machine name and `/setup/:step`. Until the views of 3.5 exist, each of them shows the grouped list filtered by its membership, and Completed holds only the task a link named.
 
 **Frame.** A sidebar and a left-aligned main column, separated by space, not a border. The browser tab's title is "<view> · <space>".
 
@@ -115,9 +115,15 @@ A restorable deleted task cannot be linked yet: `task.get` refuses a tombstoned 
 
 ### 3.4 Today
 
+Built, in `packages/web/src/`: the selection, the strip's marks and the held expanded task as pure functions in `app/views.ts` (`todayOf`, `holdExpanded`), the page in `views/Today.tsx`, which hands its sections to the one list (`TaskList`'s `groups`), and the interim Changes source in `app/changes.ts`. Tests: `A5.3.4.web.today`, `A5.3.4.web.today-disjoint` (the property: no task in two sections), `A5.3.4.web.today-page` and `A7.3.12.m5-04.e2e.today`. Still to build: the digest's lines, cursor and Clear (3.14, M5.09), the strip's feature flag (M5.11), and `today.next_limit` read from the space's preferences once the snapshot carries them (until then Next takes 3).
+
 Today has no heading. From top to bottom:
 
 **1. Week strip.** Seven cells, today first. Each cell shows the weekday and day ("Fri 13"). Today's cell shows "Thu 12 Nov", in text colour, with a 2 px accent underline. This is the only date in the app's chrome. Under each day are up to four 6 px marks, one per task due or planned that day, coloured by area. A hollow indigo ring marks a waiting task's follow-up day (its `planned_for`). More than four marks show four and a small plus. The strip shows no numbers. Each row keeps its own due date, because a mark shows load per day, not the task's date. Hovering or focusing a cell lists the titles in its tooltip. Clicking a cell filters Focus and This week to that day. Clicking it again, or `Esc`, clears the filter. The strip is a feature flag.
+
+- **What a mark stands for.** The strip marks the tasks Focus and This week select, so a day's marks are exactly the tasks its filter shows. A task marks its due day and, on another day, its planned day: a dot, or the ring when the task is waiting. A backlog task without a star and a task off Today mark nothing.
+- **The day filter** narrows what Focus and This week show to the tasks due or planned that day, and leaves Next and Changes as they are. A task the filter hides keeps its section, so it never drops into Next. Rows keep their own due date under the filter (no `due` is implied). The chosen day is in the URL (`?day=YYYY-MM-DD`, a step Back undoes), and a day outside the strip's seven is ignored.
+- **Keyboard and names.** The cells are one tab stop (the chosen day, else today), and the arrows, `Home` and `End` move along them. `Esc` clears the filter once nothing inside Today (an expanded task, an editor) has taken it. Each cell is a toggle (`aria-pressed`) named by its full date ("Thursday 12 November"), today's with `aria-current="date"`, and described by its tasks' titles, which are also its tooltip.
 
 **2. Sections.** Each section is a small heading (12.5 px, muted) and a list of rows. A section with no rows is not rendered. A task appears in the first section that selects it and in no other.
 
@@ -127,6 +133,13 @@ Today has no heading. From top to bottom:
 | **This week** | Not in Focus. Active tasks, except backlog, due or planned in the next six days. A waiting task's planned day is its follow-up day | By date, then priority |
 | **Next** | Not above. Status open, not in Inbox. Up to `today.next_limit` (default 3) | Priority, then due date (undated last), then `position` (the space's order, which agents may set), then age (oldest first) |
 | **Changes** | Agent changes since the digest cursor, on tasks not shown above (3.14) | Newest first, at most 5 lines |
+
+- **Late** is a due day before today, or a due time today that has passed (the row says "late" for both). Focus orders its late tasks by their due, oldest first.
+- **This week's date** is the day that selects the task: the earlier of its due and planned days inside the six days.
+- **Next's "not above"** covers every task Focus and This week select, shown or hidden by the day filter. Its order ends with the task's ID, so equal tasks never swap between renders.
+- **Changes until the digest exists (M5.09).** The page has no digest cursor yet, so Changes lists the tasks an agent or a routine changed while this tab followed the space (the feed names each commit's actor), newest first, at most five, dropping off after seven days. The person's own changes, the system's, an import's and launches do not count. A reload starts it empty, as a cleared digest would, and the rows are ordinary rows until 3.14's lines replace them.
+- **What day it is.** Today is the browser's calendar date in its time zone. The page moves to the next day at midnight, each minute while a shown task has a due time, and whenever the tab is shown again or the window gets focus, so a machine that slept past midnight or changed time zone shows the right day at once.
+- **The expanded task stays where it is** (3.15): while it is expanded, an update that would move it inside its section, to another section, or off Today, leaves it at its place in the section it was in, with its latest data, and its reference stays in `?task=`. It goes where Today puts it once it is collapsed and focus leaves it. An expanded task Today does not select and has not shown (a reload or a link that names it) sits at the top of Focus. Holding it keeps the sections disjoint.
 
 **The star carries over.** Starring sets `focus_on` to today. The task then stays in Focus every day until it is unstarred or completed. Unstarring clears `focus_on`. If starring for a future day ships later, the same rule shows the task from that day.
 
@@ -220,7 +233,7 @@ The row becomes a card on `--k-raised` (radius 12) in place. The mockup shows th
 | Effort | Segmented: the space's effort scale (`tasks.effort_scale`, default S, M, L). Clicking the active one clears it |  |
 | Due | A pill button ("Fri 13 Nov") that opens the date popover (3.11) | Relative words are in the tooltip, so the date is not shown twice |
 | Area | A pill button with the area dot ("Client work › Lumen Health") that opens a type-ahead |  |
-| Created | "9 Nov · 3d" | Read-only. The only place age appears while expanded |
+| Created | "9 Nov · 3d" | Read-only. The only place age appears while expanded. A task created today shows "today" alone, so today's date stays the strip's (U1) |
 
 Editable values sit in outlined controls. Agent-only text has no outline. That outline is the only hint that a value can be changed by hand.
 
@@ -397,7 +410,7 @@ Built. The service side is `packages/service/src/http/ws.ts` and `feed.ts` (A2 3
 3. **Apply.** Snapshots, batches and errors share one queue, drained once per animation frame in arrival order, with a 1 s timer beside it because a hidden tab gets no frames. Each frame publishes one immutable state, so a burst of agent writes costs one render.
 4. **Own writes** are overlays on the confirmed rows, never mixed into them. A write settles only through the feed: an applied event carries its `request_id`, or the applied cursor covers its answer's `as_of`. The HTTP answer alone never confirms. The add field shows no optimistic row, because a row without an ID or reference cannot offer a working tile or Copy.
 5. **Gaps.** A gap, another epoch or incarnation, a withheld row (`row: null`) or a batch the page cannot read in full takes a fresh snapshot and keeps scroll, the expanded task, focus and drafts. Gaps are judged by coverage, never by consecutive `seq` values, because a filtered feed skips operations.
-6. **Focus is sacred: nothing moves under focus.** One rule covers every case (`withHeld` in `src/list/List.tsx`): while a row holds focus it keeps its place, its group and its element, with its latest data, and it keeps the tab order. When focus leaves, it goes where the view puts it. A new case belongs in this rule, because patching cases one by one leaves the next one open. The list, not the view, draws the empty line, so a view's last row can stay while it holds focus. Across every update the focused row, or else the first visible row, keeps its place on screen, with `overflow-anchor: none` so the browser does not anchor a second time.
+6. **Focus is sacred: nothing moves under focus.** One rule covers every case (`withHeld` in `src/list/List.tsx`): while a row holds focus it keeps its place (inside its own list too, when an update re-sorts that list), its group and its element, with its latest data, and it keeps the tab order. When focus leaves, it goes where the view puts it. A new case belongs in this rule, because patching cases one by one leaves the next one open. The list, not the view, draws the empty line, so a view's last row can stay while it holds focus. Across every update the focused row, or else the first visible row, keeps its place on screen, with `overflow-anchor: none` so the browser does not anchor a second time.
 7. **New rows** from agents fade in with `accent-soft` for 1.2 s, a static highlight under reduced motion.
 8. **Expanded task.** Built (`task/useDetail.ts`). Its detail refetches when a frame touches it (`onTouched`), and only the newest read applies. New thread entries append at the end.
 9. **Editing in progress.** If a field the user is editing changes remotely, the editor keeps the typed value and shows "Changed by Codex just now".
@@ -576,7 +589,7 @@ There is no single-key Run, so a stray keystroke cannot start a background run w
 Target: WCAG 2.2 AA from the first UI milestone. A full audit before 1.0.
 
 - **Landmarks.** `nav` (sidebar), `header` (top bar), `main` (view). A skip link to the main list.
-- **Lists.** Each view is a `ul`. Area and project groups are `role="group"` named by their title through `aria-label`, not `aria-labelledby`, because a virtualised list may have unmounted the heading. Each project's rows are a `ul` whose `aria-posinset` and `aria-setsize` count against that list's true size. Today sections are `section` elements with `h2` headings.
+- **Lists.** Each view is a `ul`. Area and project groups are `role="group"` named by their title through `aria-label`, not `aria-labelledby`, because a virtualised list may have unmounted the heading. Each project's rows are a `ul` whose `aria-posinset` and `aria-setsize` count against that list's true size. Today sections are `section` elements with `h2` headings, named by `aria-label` like the groups.
 - **Row pattern.** The title is a `button` with `aria-expanded` and `aria-controls`. The checkbox (`input type="checkbox"`, "Done: <title>"), star, source links, folder and launch tile are siblings of the title, never its children. A roving tabindex puts only the focused row's title in the tab order. `j`/`k` move it, and `Tab` walks the row's other controls.
 - **Row description** (`aria-describedby`), built by the row function in a fixed order: project (when shown), status (when not implied), due ("due Friday 13 November"), priority (P1–P3 only), age ("created 10 November"), starred, marker ("changed by Codex", "needs your input"), launch state.
 - **Expanded task.** `role="region"` labelled by the title. Facts are a `dl`. Segmented controls are `radiogroup`s. The strip is a `toolbar`. The date popover follows React Aria's date-picker pattern, with the text field as the primary input.

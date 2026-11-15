@@ -89,14 +89,15 @@ module.exports = {
       name: "bridge-few-builtins",
       comment:
         "At run time the bridge loads only the built-ins it needs: net, fs, crypto, process, " +
-        "path, os and url. It starts fast, stays small and cannot start a process (A2 3.7.1, " +
-        "A7 A.3). Type-only imports are erased and do not count.",
+        "path, os and url, and v8 for safe-exit.ts's flags (A2 3.12.1). It starts fast, stays " +
+        "small and cannot start a process (A2 3.7.1, A7 A.3). Type-only imports are erased and " +
+        "do not count.",
       severity: "error",
       from: { path: "^packages/bridge/", pathNot: TEST_FILE },
       to: {
         dependencyTypes: ["core"],
         dependencyTypesNot: ["type-only"],
-        pathNot: "^(node:)?(crypto|fs|net|os|path|process|url)$",
+        pathNot: "^(node:)?(crypto|fs|net|os|path|process|url|v8)$",
       },
     },
     {
