@@ -337,4 +337,22 @@ describe("[A5.3.4.web.today-page] Today's strip and sections in a DOM", () => {
     apply(agentUpdate([{ ...TASKS[1], version: 2 } as TaskRow], ["summary"]));
     expect(sections().at(-1)).toEqual(["Changes", ["Docs migration"]]);
   });
+
+  test("a task completed while Today shows it stays at its place, struck through, for the hold", () => {
+    mount(<TodayPage onExpand={() => undefined} onDay={() => undefined} />);
+    apply(snapshot(TASKS));
+    apply(
+      agentUpdate(
+        [{ ...(TASKS[1] as TaskRow), lifecycle: "completed", version: 2 }],
+        ["lifecycle"],
+      ),
+    );
+    expect(sections()[0]).toEqual([
+      "Focus",
+      ["Fix appointment time zones", "Investigate checkout crash"],
+    ]);
+    expect(container.querySelector('li[data-key="t_00002"]')?.getAttribute("data-done")).toBe(
+      "true",
+    );
+  });
 });
