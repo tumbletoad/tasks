@@ -252,8 +252,18 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
       // One home per instance: a connection shows only its instance, so the grant gate could not
       // tell two homes of one instance apart (hub/home-gate.ts). The person frees the instance by
       // removing the other home, or gives this one its own instance in machine.toml.
+      // Named as such (`reason`), so setup can say which refusal it was (A3 3.7.8).
       if (live().some((grant) => !ofHome.includes(grant) && attr(grant, "instance") === instance)) {
-        throw invalid("instance", "Another agent home is registered as this instance");
+        throw new AppError({
+          code: "invalid_input",
+          message: "Another agent home is registered as this instance.",
+          data: {
+            reason: "instance_taken",
+            issues: [
+              { path: "instance", message: "Another agent home is registered as this instance" },
+            ],
+          },
+        });
       }
       const kept = ofHome.find(
         (grant) =>

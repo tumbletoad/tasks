@@ -41,6 +41,7 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
       const report = JSON.parse(ran.stdout) as Report;
       expect(report.ok).toBe(false);
       expect(status(report, "service")).toBe("fail");
+      expect(status(report, "sessions")).toBe("skip");
       const text = await runMain(["doctor"], { home: join(temp.root, "h") });
       expect(text.stdout).toMatch(/^fail {2}paths:/m);
     } finally {
@@ -92,6 +93,15 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
     expect(report.checks.find((c) => c.id === "spaces")?.detail).toContain("Mira: open");
     expect(status(report, "requests")).toBe("ok");
     expect(report.checks.find((c) => c.id === "requests")?.detail).toContain("for 1 space(s)");
+    // The launch rows and the sessions row come from the running service (A3 3.14); none fails
+    // the report, and a service with no agent connection has nothing shared or dropped.
+    for (const id of ["launch.scopes", "launch.env", "launch.t3", "sessions"]) {
+      expect([id, status(report, id)]).not.toEqual([id, undefined]);
+      expect([id, status(report, id)]).not.toEqual([id, "fail"]);
+    }
+    expect(status(report, "sessions")).toBe("ok");
+    expect(status(report, "launch.t3")).toBe("skip");
+    if (process.platform !== "linux") expect(status(report, "launch.scopes")).toBe("skip");
 
     // A service whose status answers while its operations fail does not pass.
     const broken = await runMain(["doctor", "--self-test", "--json"], {

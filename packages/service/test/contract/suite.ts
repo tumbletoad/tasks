@@ -310,6 +310,8 @@ const VERIFIED = new Set([
   "receipt.get 2",
   "launch.open 0",
   "prefs.manage 0",
+  "history.undo 0",
+  "history.redo 0",
 ]);
 
 type Value = Record<string, unknown>;
@@ -411,6 +413,16 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
     }
     case "prefs.manage":
       return { action: value["action"], prefs: value["prefs"], result: value["result"] };
+    case "history.undo":
+    case "history.redo":
+      // The user's newest change differs by face (as the UI, every example is the user's), so
+      // the outcome and how many tasks it changed back, not which.
+      return {
+        result: value["result"],
+        tasks: (value["tasks"] as unknown[]).length,
+        task_count: value["task_count"],
+        unresolved: value["unresolved"],
+      };
     case "receipt.get":
       return {
         found: value["found"],

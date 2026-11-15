@@ -30,6 +30,7 @@ import {
   type PrefPlain,
 } from "@tasks/contracts";
 import {
+  isId,
   newId,
   type Id,
   type Operation,
@@ -66,6 +67,7 @@ import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, placeState, type Match, type PlaceState } from "./here.ts";
 import { bindPlace, outsideWarning, placeRefused, remoteWarning } from "./places.ts";
 import {
+  byOf,
   invalid,
   readOnly,
   resultFailure,
@@ -80,6 +82,7 @@ import { editDistance, resolveGroup } from "./groups.ts";
 import {
   keysOf,
   readCommit,
+  readCommitTasks,
   readGroupNames,
   readGroups,
   readLaunch,
@@ -603,7 +606,14 @@ function intentInput(input: Record<string, unknown>): Record<string, unknown> {
 async function submit(
   call: Call,
   ops: Operation[],
-  options: { readonly active?: boolean; readonly warnings?: readonly string[] } = {},
+  options: {
+    readonly active?: boolean;
+    readonly warnings?: readonly string[];
+    /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
+    readonly undoable?: false;
+    /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
+    readonly hints?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
   const { principal, input } = call;
@@ -640,7 +650,7 @@ async function submit(
       },
       ...(typeof input["base"] === "string" ? { base: input["base"] } : {}),
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
-      ...(principal.actorKind === "human" ? { undoable: true } : {}),
+      ...(principal.actorKind === "human" && options.undoable !== false ? { undoable: true } : {}),
       ...(options.active === true ? { active: true } : {}),
       ...(options.warnings === undefined || options.warnings.length === 0
         ? {}
@@ -657,7 +667,9 @@ async function submit(
   } catch (error) {
     throw storageFailure(error);
   }
-  if (result.status === "conflict" || result.status === "rejected") throw resultFailure(result);
+  if (result.status === "conflict" || result.status === "rejected") {
+    throw resultFailure(result, options.hints);
+  }
   return result;
 }
 
@@ -1741,6 +1753,28 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     };
   },
 
+  // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by
+  // provenance in the writer, so no base; a conflict comes back as `conflict` with A1's cause.
+  "history.undo": async (call) => {
+    const { input } = call;
+    const op: Operation = {
+      kind: "undo",
+      ...namedCommit(input),
+      ...(input["partial"] === true ? { partial: true } : {}),
+    };
+    const result = await submit(call, [op], { undoable: false });
+    return historyResult(call, result, result.conflicts.length > 0 ? "partial" : "undone");
+  },
+
+  "history.redo": async (call) => {
+    const result = await submit(call, [{ kind: "redo", ...namedCommit(call.input) }], {
+      undoable: false,
+      // A redo is all or nothing (A1 3.10.1): the remedy is a new edit, never a partial form.
+      hints: { UNDO_CONFLICT: "Keep their change, or set the value again yourself." },
+    });
+    return historyResult(call, result, "redone");
+  },
+
   "receipt.get": async (call) => {
     // A read: through the reader, so a read-only space answers too (its receipts came with it).
     const reader = readerOf(call.space);
@@ -2035,6 +2069,57 @@ function prefRow(
     default: plain(p.default),
     writable: prefWritable(p, actor),
     ...(p.policy === true ? { policy: true } : {}),
+  };
+}
+
+/**
+ * The commit an undo or redo names, checked here: a malformed one depends on the input alone, so
+ * it is refused before the writer and stores nothing (A3 3.4.1).
+ */
+function namedCommit(input: Record<string, unknown>): { commit?: Id<"op"> } {
+  const commit = input["commit"];
+  if (commit === undefined) return {};
+  if (!isId(commit, "op")) {
+    throw invalid("commit", "Expected a change's commit ID", "Copy it from the change's history.");
+  }
+  return { commit };
+}
+
+/**
+ * An undo's or a redo's result: the change it moved, the tasks its commit changed (read from
+ * history, so a replay answers the same), and what a partial undo left as others set it.
+ */
+async function historyResult(
+  call: Call,
+  result: WriteResult,
+  word: "undone" | "partial" | "redone",
+): Promise<Record<string, unknown>> {
+  let tasks: { refs: string[]; count: number };
+  try {
+    tasks = await readCommitTasks(readerOf(call.space), result.seq);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  return {
+    result: word,
+    commit: opAt(result, 0).id,
+    tasks: tasks.refs,
+    task_count: tasks.count,
+    ...(word === "partial"
+      ? {
+          unresolved: result.conflicts.map((c) => ({
+            entity: c.entity,
+            // A row other than the task is named by its ID too, as in a conflict (errors.ts).
+            ...(c.entity === "tasks" ? {} : { id: c.id }),
+            ...(c.ref === undefined ? {} : { task: c.ref }),
+            field: c.field,
+            by: byOf(c.by),
+            at: new Date(c.at).toISOString(),
+          })),
+        }
+      : {}),
+    as_of: result.as_of,
+    ...replayed(result),
   };
 }
 

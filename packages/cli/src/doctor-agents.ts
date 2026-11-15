@@ -20,8 +20,12 @@
 //   live (--live only)    a headless call through the app (`claude -p`, `codex exec`) in a
 //                         temporary folder asks the model to call `status`, and the service must
 //                         have seen that call from the home's instance. It spends tokens.
-//   sessions, block, approvals   arrive with their steps (binding, the instruction block); setup
-//                         never writes approval rules
+//   manual                an entry of Tasks's name that setup did not write: without --instance it
+//                         is a hand-made entry (print's), which reaches only the default space; with
+//                         one, the grant gate refuses it until setup registers that instance
+//   block, approvals      the instruction block arrives with its step; setup never writes
+//                         approval rules
+//   (The sessions row is doctor-launch.ts's: it reads the service only.)
 //
 // Each row says what is wrong in plain words and the command that fixes it. Rows name a home by
 // its app and instance, never by its path; no entry content, prompt, model answer or token is
@@ -33,12 +37,14 @@ import { join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import generatedTools from "@tasks/contracts/generated/mcp-tools.json" with { type: "json" };
 import { makeDir } from "@tasks/files";
-import { helperOutput, startHelper, type Env } from "@tasks/launch";
+import { helperOutput, INSTANCE_ID, MANUAL_INSTANCE, startHelper, type Env } from "@tasks/launch";
 import {
   appLabel,
   codexEngines,
   commandEnv,
   commandFor,
+  entryInstance,
+  handRemoval,
   readRecords,
   readsHome,
   samePath,
@@ -115,7 +121,6 @@ function envCheck(env: Env): Check {
 }
 
 const SKIPPED_ROWS: readonly Check[] = [
-  { id: "sessions", status: "skip", detail: "Arrives with session binding." },
   { id: "block", status: "skip", detail: "Arrives with the optional instruction block." },
   {
     id: "approvals",
@@ -220,7 +225,9 @@ export async function agentChecks(
       }
     }
     checks.push(grantsCheck(input, views, rows));
-    checks.push(t3Check(input, await survey(input)));
+    const surveyed = await survey(input);
+    checks.push(manualCheck(input.platform, surveyed));
+    checks.push(t3Check(input, surveyed));
     checks.push(...SKIPPED_ROWS);
     if (!live) checks.push(liveSkipped(false, ""));
     else {
@@ -460,6 +467,50 @@ function grantsCheck(
     status: "ok",
     detail: "Every registered home has its grant row, and every row its entry.",
   };
+}
+
+/**
+ * `manual` (A3 3.7.8): an entry of Tasks's name in a home that setup did not write. Without
+ * `--instance` it is a hand-made entry, as `print` writes one: not a mistake, so the row says what
+ * it reaches (the machine's default space only). With one, the grant gate refuses its calls until
+ * setup registers that instance, whose refusal sends the person to setup, which leaves the home
+ * alone while the entry is there: so the row says how to take it out. A home is named by its app
+ * and setup's instance for it, and the command without the home's path.
+ */
+function manualCheck(platform: NodeJS.Platform, views: readonly HomeView[]): Check {
+  const found = views.filter((v) => v.state === "refused" && v.refusal === "foreign_entry");
+  if (found.length === 0) {
+    return {
+      id: "manual",
+      status: "ok",
+      detail: `Every ${PRODUCT_NAME} entry in the agent homes is one setup wrote.`,
+    };
+  }
+  const parts = found.map((view) => {
+    const removal = handRemoval(view.home, platform);
+    const variable = Object.keys(removal?.set ?? {})[0];
+    const how =
+      removal === undefined
+        ? `take the ${MCP_SERVER_KEY} member out of mcpServers in Claude Desktop's configuration file`
+        : `take it out with ${removal.argv.join(" ")}${variable === undefined ? "" : ` with ${variable} set to that home`}`;
+    // The instance the service sees, by its own rule (binding's `instanceIn`): an entry without
+    // --instance, or with one that is `manual` or no instance ID, acts as the hand-made entry.
+    const named = entryInstance(view.entry);
+    const instance =
+      named === undefined
+        ? undefined
+        : named !== null && INSTANCE_ID.test(named) && named !== MANUAL_INSTANCE
+          ? named
+          : null;
+    const what =
+      instance === null
+        ? `an entry added by hand without --instance (or with one the service reads as the hand-made entry's, as ${CLI_NAME} setup agents print gives one without): its agents act as the hand-made entry and reach only the machine's default space. For an instance and a space of its own`
+        : instance === undefined
+          ? `an entry added by hand whose arguments are not ones ${PRODUCT_NAME}'s server takes. For setup to register this home`
+          : `an entry added by hand as instance ${instance}, which setup did not register for this home, so the service refuses its calls unless a registered home holds that instance. For setup to register this home`;
+    return `${name(view)}: ${what}, ${how}, then run: ${CLI_NAME} setup agents`;
+  });
+  return { id: "manual", status: "warn", detail: parts.join(" ") };
 }
 
 /** A T3 provider instance's key that a row may show as it is. */

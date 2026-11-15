@@ -224,6 +224,29 @@ export function render(entry: string, result: Result, space: string): string {
     case "task.reopen":
       lines.push(`Reopened ${String(result["task"])} in ${space}${replay(result)}`);
       break;
+    case "history.undo":
+    case "history.redo": {
+      const tasks = ((result["tasks"] as unknown[] | undefined) ?? []).map(str);
+      const count = typeof result["task_count"] === "number" ? result["task_count"] : tasks.length;
+      const more = count > tasks.length ? ` and ${String(count - tasks.length)} more` : "";
+      const which = tasks.length === 0 ? "" : ` to ${tasks.join(", ")}${more}`;
+      const done =
+        result["result"] === "redone"
+          ? "Redid your change"
+          : result["result"] !== "partial"
+            ? "Undid your change"
+            : tasks.length > 0
+              ? "Undid part of your change"
+              : "Nothing of your change was left to undo";
+      lines.push(`${done}${which} in ${space}${replay(result)}`);
+      const kept = (result["unresolved"] as Result[] | undefined) ?? [];
+      if (kept.length > 0) lines.push("Kept as others set them:");
+      for (const field of kept) {
+        const task = typeof field["task"] === "string" ? `${field["task"]} ` : "";
+        lines.push(`  ${task}${str(field["field"])}: ${str(field["by"])} at ${str(field["at"])}`);
+      }
+      break;
+    }
     case "task.get": {
       const task = (result["task"] ?? {}) as Result;
       lines.push(taskLine(task));

@@ -831,6 +831,38 @@ export async function readCommit(
   };
 }
 
+/** A1 3.4: a task's references come from its row; the first 50 a commit changed, in its order. */
+const COMMIT_TASKS: Statement = {
+  sql:
+    "SELECT t.ref AS ref FROM (SELECT task_id, min(n) AS first FROM changes WHERE seq = $seq " +
+    "AND task_id IS NOT NULL GROUP BY task_id) c JOIN tasks t ON t.id = c.task_id " +
+    "ORDER BY c.first LIMIT 50",
+  mode: "all",
+};
+const COMMIT_TASK_COUNT: Statement = {
+  sql: "SELECT count(DISTINCT task_id) AS n FROM changes WHERE seq = $seq AND task_id IS NOT NULL",
+  mode: "get",
+};
+
+/**
+ * The tasks commit `seq` changed (an undo's or a redo's), from history in one snapshot: the
+ * references of the first 50 in the order it changed them, and how many there are. History never
+ * changes, so a replay of the request answers the same.
+ */
+export async function readCommitTasks(
+  reader: WorkerConnection,
+  seq: number,
+): Promise<{ refs: string[]; count: number }> {
+  const [space, rows, total] = await snapshot(reader, [SPACE, COMMIT_TASKS, COMMIT_TASK_COUNT], {
+    seq,
+  });
+  const { refPrefix } = spaceFacts(space);
+  return {
+    refs: (rows as Row[]).map((row) => formatTaskRef(refPrefix, Number(row["ref"]))),
+    count: Number((total as Row | null)?.["n"] ?? 0),
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // A task to launch (A4 3.3, 3.15; `launch.open`)
 

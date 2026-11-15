@@ -32,6 +32,8 @@ export {
 export { definitionReport, type DefinitionReport } from "./gen/report.ts";
 export { createCaller, type Caller, type ClientTransport } from "./client-runtime.ts";
 export { entryAdd, EntryAddInput, EntryAddResult } from "./entries/entry-add.ts";
+export { historyRedo, HistoryRedoInput, HistoryRedoResult } from "./entries/history-redo.ts";
+export { historyUndo, HistoryUndoInput, HistoryUndoResult } from "./entries/history-undo.ts";
 export {
   GROUP_ACTIONS,
   GROUP_LIMITS,
