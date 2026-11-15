@@ -124,8 +124,11 @@ type Write<T> = Sent<T> & { readonly call: Promise<Pick<Call<T>, "decided"> | un
 /** A toast's write whose commit the page cannot learn: its Undo says so and changes nothing. */
 class UnknownCommit extends Error {}
 
-/** The codes of a refusal that is no decision: the request may still be decided (A1 3.8). */
-const UNDECIDED = new Set(["service_unavailable", "space_unavailable", "internal"]);
+/**
+ * The codes of a refusal that is no decision: the request may still be decided (A1 3.8: busy,
+ * a timeout, a space that is opening). `internal` is a bug, refused the same way every time.
+ */
+const UNDECIDED = new Set(["service_unavailable", "space_unavailable"]);
 
 /** A receipt's conflict as an error's (the service's `resultFailure`): who by a label. */
 const byOf = (by: { kind: string; label: string; origin?: string | undefined }): string =>
