@@ -46,13 +46,13 @@ export function isAbsolutePath(path: string): boolean {
   return ABSOLUTE.test(path);
 }
 
-interface Split {
+export interface Split {
   readonly windows: boolean;
   readonly segments: readonly string[];
 }
 
 /** The segments of an absolute path, or undefined when it is not absolute or climbs with `..`. */
-function split(path: string): Split | undefined {
+export function split(path: string): Split | undefined {
   if (!ABSOLUTE.test(path)) return undefined;
   const windows = WINDOWS.test(path);
   const segments = path.split(windows ? /[\\/]/ : "/").filter((s) => s !== "" && s !== ".");

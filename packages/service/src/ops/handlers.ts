@@ -104,6 +104,7 @@ import {
 } from "./read.ts";
 import { duplicateWarning } from "./similar.ts";
 import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
+import { planningPreview } from "./import-planning.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -117,6 +118,8 @@ export interface ServedSpace {
   readonly writer: SpaceWriterHandle | undefined;
   /** Set while the space is served: open or read-only. */
   readonly reader: WorkerConnection | undefined;
+  /** The space's folder on this machine: where an import's run folder goes (A7 3.15.1). */
+  readonly folder?: string;
 }
 
 /** What the request path needs from its host. */
@@ -1752,6 +1755,27 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
     };
+  },
+
+  "import.planning.preview": async (call) => {
+    // The dry run writes no operation, but it puts its run folder in the space's folder, and the
+    // import it previews can apply only to a space this machine writes: an open space only.
+    writerOf(call.space);
+    const reader = readerOf(call.space);
+    const folder = call.space.folder;
+    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
+    try {
+      return await planningPreview({
+        folder,
+        reader,
+        input: call.input,
+        roots: call.host.roots?.() ?? [],
+        platform: call.host.platform ?? process.platform,
+        timeZone: (call.host.timeZone ?? localTimeZone)(),
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
   },
 
   // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by

@@ -35,11 +35,14 @@ export {
   type MetadataSource,
   type PrototypeStatus,
 } from "./metadata.ts";
+export { ACTIONS_MAX, parseActions, type ActionsParse } from "./actions.ts";
 export {
   ACTIONS,
+  ACTIONS_FILE,
   EVENTS_DIR,
   eventInstant,
   parseEvents,
+  placeOfEvent,
   type EventAction,
   type EventFileInput,
   type EventFileResult,
@@ -57,12 +60,14 @@ export {
   type JiraTicket,
 } from "./optional.ts";
 export {
+  keptLines,
   parsePrototype,
   type PrototypeCounts,
   type PrototypeInput,
   type PrototypeParse,
 } from "./prototype.ts";
 export {
+  checkMappingOptions,
   cutAtWord,
   mapPrototype,
   MappingOptionsError,
@@ -105,10 +110,26 @@ export {
   nineOClock,
 } from "./local-time.ts";
 export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
+export {
+  canonicalJson,
+  placeProjects,
+  planHash,
+  previewOf,
+  previewToken,
+  proposeRoots,
+  type Preview,
+  type PreviewRoot,
+  type PreviewRun,
+  type ProjectPlacement,
+  type SpaceProject,
+  type SpaceState,
+} from "./preview.ts";
+export { renderPreview } from "./report-md.ts";
 export { groupKey, groupSlug, numberedSlug, SLUG_MAX } from "./slug.ts";
 export { exactNumber } from "./json.ts";
 export {
   classifyUrl,
+  fileLinkPath,
   isGenericLabel,
   normaliseUrl,
   REF_MAX,
@@ -119,9 +140,12 @@ export {
 } from "./sources.ts";
 export {
   EXPORT_FILE,
+  copyActions,
   copyInput,
   hashInputs,
+  readCopy,
   readInput,
+  verifyActions,
   verifySource,
   type InputCopy,
   type InputFile,

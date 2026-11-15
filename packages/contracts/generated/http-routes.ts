@@ -7,6 +7,7 @@ export const httpRoutes = [
   { entry: "group.manage", method: "POST", path: "/api/v1/op/group.manage" },
   { entry: "history.redo", method: "POST", path: "/api/v1/op/history.redo" },
   { entry: "history.undo", method: "POST", path: "/api/v1/op/history.undo" },
+  { entry: "import.planning.preview", method: "POST", path: "/api/v1/op/import.planning.preview" },
   { entry: "launch.open", method: "POST", path: "/api/v1/op/launch.open" },
   { entry: "prefs.manage", method: "POST", path: "/api/v1/op/prefs.manage" },
   { entry: "space.status", method: "POST", path: "/api/v1/op/space.status" },
