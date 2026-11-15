@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { CLI_NAME } from "@tasks/brand";
 import { FAKE_T3_CLI, FakeT3, type FakeT3CliRecord } from "@tasks/testkit/fake-t3";
 import { LaunchMachine } from "../src/machine.ts";
 import { identityOf, resolvePlace, type RootFolder } from "../src/places.ts";
@@ -29,6 +30,7 @@ import {
   chooseT3Route,
   parseT3Shim,
   runT3Cli,
+  T3_CLI_ROUTE,
   T3CliRoute,
   t3CliCommand,
   type T3CliInstance,
@@ -536,7 +538,10 @@ describe("[A4.5.t3.cli-route] the T3 CLI route serves exact roots only (fake T3)
     async () => {
       const paired = new T3Route({ home: fake.home, files });
       const cli = cliRoute();
-      const choose = (inst = instance(), pick?: "t3-cli") => chooseT3Route(paired, cli, inst, pick);
+      // The route's own rules, with the route turned on (T3_CLI_ROUTE is off for T3 as it is).
+      const on = { cliRoute: true };
+      const choose = (inst = instance(), pick?: "t3-cli") =>
+        chooseT3Route(paired, cli, inst, pick, on);
 
       expect(await choose()).toEqual({ kind: "route", route: "t3-cli" });
       expect(await choose(instance({ exec: undefined }))).toEqual({
@@ -589,17 +594,60 @@ describe("[A4.5.t3.cli-route] the T3 CLI route serves exact roots only (fake T3)
       });
       expect(T3_TEXT.not_running).toBe("Start T3 Code");
       const unpaired = new T3Route({ home: fake.home, files: new MemoryT3Files() });
-      expect(await chooseT3Route(unpaired, cli, instance())).toEqual({
+      expect(await chooseT3Route(unpaired, cli, instance(), undefined, on)).toEqual({
         kind: "unavailable",
         reason: "not_running",
       });
-      expect(await chooseT3Route(unpaired, cli, instance({ exec: undefined }))).toEqual({
+      expect(
+        await chooseT3Route(unpaired, cli, instance({ exec: undefined }), undefined, on),
+      ).toEqual({
         kind: "unavailable",
         reason: "not_paired",
       });
       // Availability starts no process.
       expect(runs.length).toBe(before);
       expect(fake.threads.size).toBe(0);
+    },
+    SLOW,
+  );
+
+  test(
+    "T3's command line as it is has no project list: only the paired route opens a task, and an unpaired instance says how to pair",
+    async () => {
+      expect(T3_CLI_ROUTE).toBe(false);
+      const unpaired = new T3Route({ home: fake.home, files: new MemoryT3Files() });
+      const cli = cliRoute();
+      const before = runs.length;
+      // Not paired: never the CLI, though it could be run; the person is told to pair.
+      expect(await chooseT3Route(unpaired, cli, instance())).toEqual({
+        kind: "unavailable",
+        reason: "not_paired",
+      });
+      expect(await chooseT3Route(unpaired, cli, instance(), "t3-cli")).toEqual({
+        kind: "unavailable",
+        reason: "not_paired",
+      });
+      expect(T3_TEXT.not_paired).toContain(`${CLI_NAME} setup t3`);
+      // Paired: the paired route.
+      const paired = new T3Route({ home: fake.home, files: new MemoryT3Files() });
+      const attempt = await paired.beginPairing();
+      expect(await fake.approveInBrowser(attempt.url)).toBe(200);
+      await paired.finishPairing(attempt);
+      expect(await chooseT3Route(paired, cli, instance(), "t3-cli")).toEqual({
+        kind: "route",
+        route: "t3-mcp",
+      });
+      // T3 not running: "Start T3 Code" when paired, still "pair" when not.
+      await fake.stop();
+      expect(await chooseT3Route(paired, cli, instance())).toEqual({
+        kind: "unavailable",
+        reason: "not_running",
+      });
+      expect(await chooseT3Route(unpaired, cli, instance())).toEqual({
+        kind: "unavailable",
+        reason: "not_paired",
+      });
+      expect(runs.length).toBe(before);
     },
     SLOW,
   );
