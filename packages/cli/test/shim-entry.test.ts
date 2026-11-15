@@ -20,7 +20,8 @@ const RECORDER = new URL("../../../tests/forwarder/load-recorder.ts", import.met
 
 /**
  * The built-ins the shim may load: the bridge's, a child process for the agent, tty, and
- * fs/promises for the in-folder check (the build's SHIM_BUILTINS hold the same list).
+ * fs/promises for the in-folder check (the build's SHIM_BUILTINS hold the same list), and v8,
+ * which the entry's safe-exit loads before the shim (A2 3.12.1).
  */
 const BUILTINS = [
   "child_process",
@@ -33,11 +34,14 @@ const BUILTINS = [
   "process",
   "tty",
   "url",
+  "v8",
 ].map((name) => `node:${name}`);
 
 /** The files the shim may load, by their path in the repository. */
 const ALLOWED: readonly RegExp[] = [
   /^packages\/cli\/src\/(bin|mcp)\.ts$/,
+  // The entry's first import (A2 3.12.1).
+  /^packages\/bridge\/src\/safe-exit\.ts$/,
   /^packages\/cli\/src\/shim\/[a-z-]+\.ts$/,
   /^packages\/bridge\/src\/protocol\/[a-z-]+\.ts$/,
   /^packages\/bridge\/src\/mcp\/(discovery|names|unavailable)\.ts$/,

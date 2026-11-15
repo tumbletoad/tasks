@@ -81,6 +81,22 @@ export const STORAGE_ERROR_CODES = [
   /** An archive passed a limit of the shared BundlePolicy (A1 3.18). The message names it. */
   "BUNDLE_LIMIT_EXCEEDED",
   /**
+   * An export bundle breaks a rule of the archive or of its layout (an absolute path, `..`, a link,
+   * an unknown file), or its content does not verify against its export.json (A1 3.18).
+   */
+  "BUNDLE_INVALID",
+  /**
+   * An export found a string shaped like a secret (A6 3.16.4), or a file from the secrets folder,
+   * and wrote nothing. The message names the kind and the table and column, never the text.
+   */
+  "EXPORT_SECRET_FOUND",
+  /**
+   * A database has tables, indexes or views that the schema steps up to its revision do not create
+   * (A1 3.18's exact-schema rule): an export refuses it before it writes anything, because a restore
+   * would refuse its bundle. The message names no object.
+   */
+  "SPACE_SCHEMA_FOREIGN",
+  /**
    * The space already has a writer in this process: the same database file by any name (its real
    * path, or its identity on its volume, before the open or as SQLite opened it), or the same
    * space ID in another folder (A1 3.9). Across processes, A2's

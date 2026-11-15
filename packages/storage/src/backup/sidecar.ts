@@ -210,12 +210,15 @@ export function readSidecar(path: string, maxBytes: number, io: FileIo = NODE_IO
   const read = readBounded(path, maxBytes, io);
   if (read.state === "missing") return { state: "missing" };
   if (read.state === "too_large") return { state: "invalid" };
-  let json: unknown;
-  try {
-    json = JSON.parse(UTF8.decode(read.bytes));
-  } catch {
-    return { state: "invalid" };
-  }
-  const sidecar = decodeSidecar(json);
+  const sidecar = parseSidecar(read.bytes);
   return sidecar === undefined ? { state: "invalid" } : { state: "ok", sidecar };
+}
+
+/** A sidecar's bytes decoded, or undefined when they are not UTF-8 JSON of a valid sidecar. */
+export function parseSidecar(bytes: Uint8Array): BackupSidecar | undefined {
+  try {
+    return decodeSidecar(JSON.parse(UTF8.decode(bytes)));
+  } catch {
+    return undefined;
+  }
 }

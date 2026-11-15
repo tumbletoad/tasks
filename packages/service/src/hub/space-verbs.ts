@@ -10,8 +10,14 @@
 //   space/close     close one space while the service keeps running (A1 3.1)
 //   space/backup    a manual backup                           (backupSpace, kind manual)
 //   space/backups   the backups and leftovers of a space      (listBackups)
-//   space/restore   into a new folder, a read-only copy       (restoreBackup, then served)
-//                   or in place, claimed with a new epoch     (SpaceManager.restoreInPlace)
+//   space/export    an export bundle in `<space>/exports`     (exportBundle, backup or fork mode;
+//                   transfer waits for M3.08's machine keys and states)
+//   space/restore   a backup or a bundle into a new folder,   (restoreBackup, then served)
+//                   a read-only copy, or in place, claimed    (SpaceManager.restoreInPlace)
+//                   with a new epoch; `latest` of a space:    (restoreLatest)
+//                   its newest backup that verifies, into a new folder (A1 3.2)
+//   space/rescue    the rows that can still be read, into     (rescueSpace)
+//                   `exchange/rescued/` (A1 3.2)
 //   space/claim     claim a read-only copy                    (SpaceManager.claim)
 //   space/recover   play a rollback journal back              (SpaceManager.recover)
 //
@@ -30,6 +36,7 @@ import { PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import {
   backupsFolder,
+  exportsFolder,
   listBackups,
   StorageError,
   type Id,
@@ -37,6 +44,7 @@ import {
 } from "@tasks/storage";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import type { ConnectionClass } from "../local/index.ts";
+import { unsupported } from "../ops/errors.ts";
 import { isUserClass } from "../ops/index.ts";
 import { storageFailureBody } from "./space-errors.ts";
 import { AdminFailed, runAdmin, type AdminResult } from "./space-admin.ts";
@@ -138,14 +146,27 @@ function userOnly(cls: ConnectionClass): void {
 
 /** The space an admin job made: a create's new space, a restore's read-only copy. */
 function spaceOf(result: AdminResult): Id<"sp"> {
-  if (result.kind === "backup") throw new AppError({ code: "internal", message: "No space." });
+  if (result.kind !== "create" && result.kind !== "restore") {
+    throw new AppError({ code: "internal", message: "No space." });
+  }
   return result.spaceId;
 }
+
+/** The export modes a person can ask for now: transfer comes with M3.08. */
+const EXPORT_MODES = ["backup", "fork", "transfer"] as const;
 
 /** A storage failure, or a worker's code, as A3's error body. */
 function failure(error: unknown): AppError {
   if (error instanceof AppError) return error;
-  if (error instanceof AdminFailed) return new AppError(storageFailureBody(error.code));
+  if (error instanceof AdminFailed) {
+    const body = storageFailureBody(error.code);
+    // An export's secret scan says what kind of secret it found and where: words, never text.
+    return new AppError(
+      error.secret === undefined
+        ? body
+        : { ...body, data: { ...body.data, secret: { ...error.secret } } },
+    );
+  }
   if (error instanceof StorageError) return new AppError(storageFailureBody(error.code));
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
 }
@@ -153,8 +174,10 @@ function failure(error: unknown): AppError {
 /**
  * What a crash can leave beside a space or in it, by name (A1 3.1, 3.18): a create's
  * `.<slug>.creating-*` folder, a restore's `.<slug>.restoring-*` staging folder, the
- * `<slug>.replaced-*` folder a restore in place keeps, and `.space.json.tmp-*` files. Listed for the
- * person, never removed here: a staging folder may belong to a create or restore still running.
+ * `<slug>.replaced-*` folder a restore in place keeps, `.space.json.tmp-*` files, an export's
+ * `exports/.export.tmp-*` work folder and a rescue's `exchange/rescued/.rescue.tmp-*` scratch
+ * folder. Listed for the person, never removed here: a staging, work or scratch folder may belong
+ * to a create, restore, export or rescue still running.
  */
 export function leftoversOf(folder: string): string[] {
   const slug = basename(folder);
@@ -177,6 +200,14 @@ export function leftoversOf(folder: string): string[] {
   }
   for (const name of names(folder)) {
     if (name.startsWith(".space.json.tmp-")) found.push(join(folder, name));
+  }
+  const exports = join(folder, "exports");
+  for (const name of names(exports)) {
+    if (name.startsWith(".export.tmp-")) found.push(join(exports, name));
+  }
+  const rescued = join(folder, "exchange", "rescued");
+  for (const name of names(rescued)) {
+    if (name.startsWith(".rescue.tmp-")) found.push(join(rescued, name));
   }
   return found.sort();
 }
@@ -391,6 +422,41 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       }
     },
 
+    "space/export": async (params, cls) => {
+      userOnly(cls);
+      const view = find(required(params, "space"));
+      const mode = text(params, "mode", 16) ?? "backup";
+      if (!(EXPORT_MODES as readonly string[]).includes(mode)) {
+        throw invalid("mode", "Expected backup, fork or transfer");
+      }
+      // A transfer moves authority: it needs the machine key that signs its statement and the
+      // durable transfer states, which come with M3.08.
+      if (mode === "transfer") throw unsupported("mode", "M3.08");
+      if (text(params, "to", 64) !== undefined) {
+        throw invalid("to", "Only a transfer names the machine it is for");
+      }
+      if (view.state !== "open" && view.state !== "read_only") {
+        throw new AppError({
+          code: "space_unavailable",
+          message: "The space is not served now.",
+          data: { reason: "not_served", retryable: false, state: view.state },
+        });
+      }
+      try {
+        const done = await runAdmin({
+          kind: "export",
+          folder: manager.folderOf(view.entry),
+          mode: mode as "backup" | "fork",
+          withJsonl: flag(params, "with_jsonl"),
+          // A6 3.16.4: no file of an export comes from the secrets folder.
+          secretFolders: [join(host.settingsDir, "secrets")],
+        });
+        return done.kind === "export" ? { export: done.export } : {};
+      } catch (error) {
+        throw failure(error);
+      }
+    },
+
     "space/restore": async (params, cls) => {
       userOnly(cls);
       const backup = required(params, "backup");
@@ -399,12 +465,47 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       if ((to === undefined) === (inPlace === undefined)) {
         throw invalid("to", "Give either a new folder or the space to restore in place");
       }
-      // A backup's file, or its name in the backups folder of the space it restores.
+      // `latest`: the newest backup of the space `of` that verifies, into a new folder. The way
+      // out of a database that fails its check (A1 3.2), whose restore in place is refused.
+      if (backup === "latest") {
+        if (to === undefined || !isAbsolute(to)) {
+          throw invalid("to", "The latest backup is restored into a new folder");
+        }
+        const of = find(required(params, "of"));
+        if (of.id === undefined) throw invalid("of", "The space's ID is not known yet");
+        const target = resolve(to);
+        const spaceId = of.id;
+        try {
+          return await oneAtATime(async () => {
+            refuseNetwork(await manager.checkFolder(target), "to");
+            const restored = await runAdmin({
+              kind: "restore-latest",
+              backupDir: backupDirOf(of),
+              spaceId,
+              target,
+            });
+            const entry = await manager.open(target, spaceOf(restored));
+            return {
+              space: describe(viewOf(entry)),
+              read_only_copy: true,
+              ...(restored.kind === "restore" && restored.backup !== undefined
+                ? { backup: restored.backup }
+                : {}),
+            };
+          });
+        } catch (error) {
+          throw failure(error);
+        }
+      }
+      // A backup's or a bundle's file, or its name: a backup's in the backups folder of the space
+      // it restores, a bundle's (`.zip`) in its exports folder.
       let file: string;
       if (isAbsolute(backup)) file = resolve(backup);
       else if (inPlace !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
-        const name = backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`;
-        file = join(backupDirOf(find(inPlace)), name);
+        const space = find(inPlace);
+        file = /\.zip$/i.test(backup)
+          ? join(exportsFolder(manager.folderOf(space.entry)), backup)
+          : join(backupDirOf(space), backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`);
       } else throw invalid("backup", "Expected the backup's file as an absolute path");
       try {
         if (to !== undefined) {
@@ -424,6 +525,26 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           epoch: change.epoch,
           incarnation: change.incarnation,
         };
+      } catch (error) {
+        throw failure(error);
+      }
+    },
+
+    "space/rescue": async (params, cls) => {
+      userOnly(cls);
+      const view = find(required(params, "space"));
+      try {
+        const done = await runAdmin({ kind: "rescue", folder: manager.folderOf(view.entry) });
+        return done.kind === "rescue"
+          ? {
+              rescue: {
+                file: done.file,
+                tables: done.tables,
+                rows: done.rows,
+                failed: done.failed,
+              },
+            }
+          : {};
       } catch (error) {
         throw failure(error);
       }

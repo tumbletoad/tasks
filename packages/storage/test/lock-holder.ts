@@ -5,6 +5,8 @@
 //
 // It prints one JSON line when it is ready, `{"ready": true}` or `{"ready": false, "code": …}`,
 // then waits: the line `close` on stdin closes what it holds, prints `{"closed": true}` and exits 0.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "../../bridge/src/safe-exit.ts";
 import { createInterface } from "node:readline";
 import { DEFAULT_DRIVER, loadDriver } from "../src/drivers.ts";
 import { StorageError } from "../src/errors.ts";

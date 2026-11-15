@@ -426,6 +426,110 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.no-replace",
+      "title": "A backup publishes its data and its sidecar by a hard link or an exclusive create, never a rename: a pair or a part of one planted under its names while it runs is never replaced, its own files go, and without hard links the copies restore",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.trial-restore",
+      "title": "Verified means a trial restore: a backup whose every check passes but whose restore fails at its first write (the read-only mark) is not verified, retention keeps the older backup that restores instead of removing it, a restore refuses the backup with BACKUP_INVALID and restore latest goes past it; the trials leave no file beside the backups",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.held-files",
+      "title": "A reader opens both files of a backup before it reads either and reads only through them: retention removing a backup while its verification holds both files leaves the verification passing, and a restore whose files are removed after they are open restores the backup whole",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.free-reserve",
+      "title": "The backup writer and the exporter check the shared free-space reserve against their estimated peak before they write anything: one byte short is BUNDLE_LIMIT_EXCEEDED with no backups or exports folder made, exactly enough runs",
+      "source": "A1 3.18, A7 3.10 M3.07, DA-17",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.rotation",
+      "title": "Rotation removes only what A1's retention allows: a property test over random backup sets, clocks and offsets never removes a manual backup, the newest complete one, a pre-migration one under 30 days, another space's or a damaged one; on real files manual backups, the newest verified one and a damaged newer one stay",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.zip-hardening",
+      "title": "A restore refuses an archive with `..`, an absolute or drive path, a backslash, empty or dot parts, device names or NFD, a link, device or FIFO by its attributes, a Windows reparse point, too many entries, too many expanded bytes declared or produced, an oversized file, duplicate names by case, a file where a folder is, overlapping entries, encryption, another method, an unknown or unlisted file, a wrong checksum or no archive at all, and leaves no folder",
+      "source": "A1 3.18, A6 5, A7 3.10 M3.07, DA-17",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.export-restore",
+      "title": "Export bundles in backup, fork and transfer mode hold the vacuumed snapshot, space.json, export.json, the live attachments' blobs and data.jsonl when asked, owner-only under A1's name; they restore as read-only copies; a changed bundle is refused; a fault before publication leaves nothing, after it the bundle stays; publication never replaces a file at its name, with or without hard links",
+      "source": "A1 3.18, A6 3.5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.secret-scan",
+      "title": "The export's secret scan: an export that finds nothing writes its bundle; a secret-shaped string in any table, with or without data.jsonl, or in an attachment refuses it and writes nothing, naming the kind and place but never the text; the vacuumed snapshot holds no byte of text edited away; an attachment reached through a link into the secrets folder is refused",
+      "source": "A1 3.18, A6 3.16.4, A6 5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.stress",
+      "title": "The largest stress-corpus bundle passes the shared BundlePolicy: 10,000 open and 100,000 completed tasks export with data.jsonl and restore with the same counts, and a projection-sized archive of 110,001 files reads under the policy through ZIP64's end records",
+      "source": "A1 3.18, A1 3.20, A1 6 item 5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.restore-drill",
+      "title": "The restore drill: a backup and an export bundle each restore into a new folder with a passing integrity_check and the live space's last_seq and counts, open read-only, and so does a copy of the restored folder; restored in place from the bundle the space is claimed with a new epoch and its old folder kept",
+      "source": "A1 3.18, A6 3.5, A7 3.10 M3.07, A7 3.10 definition of done 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.check-failed-ways",
+      "title": "The two actions for a failed check through the CLI: restore latest restores the space's newest backup that verifies into a new folder as a read-only copy, skipping and keeping a newer one that does not; rescue writes every readable row into exchange/rescued; the read-only words name both and never a new backup",
+      "source": "A1 3.2, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.rescue.damaged",
+      "title": "Rescue of a damaged database keeps the rows that can still be read from a private copy of its files: a table that fails partway is named by its product name, the others are written whole, every file of the space folder stays byte for byte (a write-ahead log beside an empty database, one with rows not checkpointed, a hot journal), a table the product does not have is neither written nor named, and each rescue writes a new file of its own",
+      "source": "A1 3.2, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A6.5.secrets.scanner",
+      "title": "The secret patterns of A6 3.16.4 find each kind of token alone and inside text, and across a chunk boundary through the kept overlap, and leave ordinary words, short or digitless look-alikes and public keys unflagged",
+      "source": "A6 3.16.4, A6 5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.barrier",
       "title": "A migration whose barrier backup fails, at any point, never starts; a write between the backup and the migration stops it too; the space then opens read-only with the reason",
       "source": "A1 3.17, A1 3.18, A7 3.8 M1.06, MIL-02",
@@ -1922,6 +2026,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.cli.space-export",
+      "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title refuses the export with its kind and place and never the text",
+      "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.13.cli.doctor",
       "title": "tasks doctor --self-test with the service checks: not running, untrusted endpoint, a running service's handshake, versions and spaces, recent crash files; works without a service; --json",
       "source": "A2 3.13, A7 3.8 M1.10",
@@ -2301,6 +2413,14 @@
       "id": "A2.3.12.1.build.runtime-gate",
       "title": "The runtime gate passes on the pinned Node 26.13.1 with SQLite 3.54.1 (FTS5, JSON, STRICT, backup API) started with --report-exclude-env, and fails on another Node or SQLite, without the launcher flag, or with a SQLite that lacks FTS5",
       "source": "A2 3.12.1, A7 3.7 R01, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.1.runtime.safe-exit",
+      "title": "The pinned runtime hands Sparkplug batches to a V8 worker thread and compiles hot functions with Maglev, and with safe-exit.ts loaded first it does neither; every flag it sets is known to the runtime; every script that loads the product's code and ends through process.exit, found through the import graph of packages/, tests/ and scripts/, imports safe-exit.ts before any other module",
+      "source": "A2 3.12.1",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3206,6 +3326,78 @@
       "title": "complete_task through the request path: dropped archives and wraps up, learnings are recorded and read back in get_task's outcome section, a task the user checked off is wrapped up, an already wrapped task is no_change with the same outcome and a conflict naming the stored outcome otherwise, follow-ups after a wrap-up are new work, and a replay answers what the first answer said",
       "source": "A3 3.4.4, A3 3.4.8, A1 3.11, A7 3.10 M3.04",
       "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.registry.mixed-actions",
+      "title": "The registry check takes a write entry whose required action enum names its read actions, with request_id and base as the optional shared schemas, and refuses a read entry with actions, an action field that is no required enum, reads that are empty, unknown, repeated or every action, and a required request_id or base; readsOnly tells the actions apart",
+      "source": "A3 3.2.3, A3 3.4.10, A3 3.4.11, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.tools.eleven",
+      "title": "The texts of search, add_tasks, reopen_task, organize, preferences and run_report: A3's example results read as A3 shows them, editable names, titles, snippets, queries, preference values and close names only inside the data block, and a page of 50 rows and fifty full areas within their budgets with the cut said",
+      "source": "A3 3.3, A3 3.4.3, A3 3.4.5, A3 3.4.9 to 3.4.12, A3 3.5, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.tools.run-report",
+      "title": "run_report on an unbound and on a task-bound MCP connection in both eras, and from a person's terminal and an agent's shell, returns not_permitted with the binding it found, and writes nothing: no commit, no actor, no receipt",
+      "source": "A3 3.2.3, A3 3.3, A3 3.4.12, A3 3.5, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.add.names",
+      "title": "add_tasks, update_task and complete_task's follow-ups take areas and projects by name or slug ignoring case and by an old slug; a name within edit distance 2 of one is invalid_input with it in data.suggestions only, a new name waits for its step and writes nothing; an agent's task without a group goes to the Inbox; a similar title in the group it lands in is a warning that never blocks, replays the same and is dropped for a draft that matched by key",
+      "source": "A3 3.4.5, A3 3.4.6, A3 3.4.8, A3 3.5, A3 3.8.1, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.organize.list",
+      "title": "organize lists the active areas in order with their projects and active task counts, narrows to one area by name, ignores a request ID on a read and writes nothing, and refuses a write action without a request_id before the action's own step refusal",
+      "source": "A3 3.2.3, A3 3.4.10, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.prefs.tool",
+      "title": "preferences describes and reads every declared key with its default and who may set it, suggests a known key for a typo, and on set refuses a policy key to every actor (rule policy), the user's keys to agents (rule user_only), a value outside its key's schema, a missing request_id or base and a set on a read, before pref.set's own step",
+      "source": "A1 3.16, A3 3.4.11, A3 3.8.2, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.search.text",
+      "title": "search through the request path renders its rows inside the data block, and a space without the search index refuses words with not_indexed in words an agent can act on while filters still answer",
+      "source": "A3 3.4.3, A3 3.9.2, A3 3.9.4, A3 3.10, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.exposure.user-only",
+      "title": "Every user-only and UI-only entry is forbidden to the bridge, cli-script and cli-agent classes with its rule and is no tool, a user-only field is forbidden to them too, and no agent-allowed entry declares a user-only or R7 operation",
+      "source": "A3 3.2.3, A3 3.10, R7, A7 3.11 M4.01",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A6.3.3.remote-envelope",
+      "title": "The remote command envelope types live in the registry's type package and no transport: no entry or generated face names them, and every action's validity is within the receivers' limit",
+      "source": "A6 3.3, A6 3.8.1, A7 3.11 M4.01",
+      "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
     }

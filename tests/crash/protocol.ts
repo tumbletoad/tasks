@@ -17,8 +17,8 @@ export type Where = (typeof WHERES)[number];
 /** Every named point, by where it is (the storage seams of A1 5 and M1.07). */
 export const POINTS: { readonly [W in Where]: readonly string[] } = {
   write: ["before-commit", "after-commit"],
-  backup: ["copied", "checked", "compressed", "data-renamed", "sidecar-renamed"],
-  barrier: ["copied", "checked", "compressed", "data-renamed", "sidecar-renamed"],
+  backup: ["copied", "checked", "compressed", "data-published", "sidecar-published"],
+  barrier: ["copied", "checked", "compressed", "data-published", "sidecar-published"],
   migrate: ["backed-up", "step-applied", "checked", "committed"],
   restore: ["unpacked", "claimed", "moved-aside", "moved-into-place", "backups-carried"],
 };

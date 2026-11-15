@@ -60,7 +60,7 @@ const row = (n: number, title: string) => ({
 
 describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget", () => {
   test("every listed tool has a compact rendering", () => {
-    expect(TOOLS.length).toBe(5);
+    expect(TOOLS.length).toBe(11);
     for (const tool of tools) expect(hasRenderer(tool.name), tool.name).toBe(true);
   });
 
@@ -85,14 +85,13 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     expect(renderResult("task.update", example("task.update", 0))).toBe(
       "updated M-14: summary, context · as_of 1.1047.5n0w8k3q",
     );
-    const finish = renderResult("task.finish", example("task.finish", 0));
-    expect(finish.split("\n")[0]).toBe(
-      "completed M-14 · wrapped · 1 learning · as_of 1.1047.5n0w8k3q",
+    // A follow-up by its input path: its title is the caller's own and is not echoed (A3 3.2.5).
+    expect(renderResult("task.finish", example("task.finish", 0))).toBe(
+      [
+        "completed M-14 · wrapped · 1 learning · as_of 1.1047.5n0w8k3q",
+        "follow_ups.0: created M-31",
+      ].join("\n"),
     );
-    expect(split(finish).inside).toEqual([
-      "Follow-ups (1 of 1)",
-      "- created M-31 · Check the mobile app for the same time zone bug",
-    ]);
     expect(renderResult("entry.add", { ...example("entry.add", 0), replayed: true })).toMatch(
       / \(replayed\)$/,
     );
@@ -240,7 +239,14 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       expect(parsed.success, `${name}: the worst case is a valid result`).toBe(true);
       const text = renderResult(name, result);
       expect(resultTokens(text), name).toBeLessThanOrEqual(cap);
-      if (name !== "task.update") expect(text, name).toMatch(/\+\d+ more lines? not shown\. \S/);
+      // A write names every item it decided, whole (A3 3.2.5): only the others cut.
+      if (name === "task.finish") {
+        for (let n = 0; n < 10; n += 1) {
+          expect(text).toContain(`follow_ups.${String(n)}: created M-${String(100 + n)}`);
+        }
+      } else if (name !== "task.update") {
+        expect(text, name).toMatch(/\+\d+ more lines? not shown\. \S/);
+      }
       // The framing holds at the limits too: every block closes, every character is whole.
       split(text);
       expect(text.isWellFormed(), name).toBe(true);
@@ -532,8 +538,10 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
       ["space.status", status],
       ["task.get", digest],
       ["task.get", sections],
-      ["task.finish", finish],
     ];
+    // A follow-up's title is the caller's own words: never echoed (A3 3.2.5).
+    expect(entry("task.finish").output.safeParse(finish).success).toBe(true);
+    expect(renderResult("task.finish", finish)).not.toContain(INJECTION);
     for (const [name, result] of results) {
       expect(entry(name).output.safeParse(result).success, name).toBe(true);
       const { inside, outside } = split(renderResult(name, result));
