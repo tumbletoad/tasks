@@ -240,7 +240,7 @@ The origin device signs the **request** (what the user asked). The authority sig
     "target_machine": "m_3q7k…",
     "action": "open",
     "task_id": "t_7h2m…",
-    "seen_folder_version": 38,
+    "seen_folder": { "kind": "project", "folder_id": "fo_…", "version": 38 },
     "instance_id": "claude-code",
     "user_text": "Check whether the mobile app has the same bug.",
     "issued_at": "2026-11-12T10:00:00Z",
@@ -261,7 +261,7 @@ The origin device signs the **request** (what the user asked). The authority sig
 
 - `action`: `open` and `open_folder` expire after 60 s, `run` and `routine_run` after 120 s. Receivers reject any envelope valid for more than 300 s.
 - **Never** an executable, argv, environment or permission flag (R10). The target resolves `instance_id` from its own configuration and launches in its own folder: it expands the path's `~` with its own home. The instance must be one the target advertises in `machine.instances`, with A4's `remote_allowed` (default false).
-- `seen_folder_version` is the folder row's version the device showed.
+- `seen_folder` is the whole selection the device showed: `kind` (`task`, `project` or `work_folder`), and for a folder row its `folder_id` and `version`. A version alone is not enough, because clearing a task's own folder makes its project's older row the selection.
 - `authorization.folder` comes from the authority's state, never from the request: the folder row `resolve` gives for `target_machine`, its path and its version (A1 3.15). A task that uses the work folder gets `{"kind": "work_folder", "machine_id": …}`, the target's work folder for the space (A4).
 - `user_text` (at most 4,000 characters) goes to the brief as data, never through a shell (A4).
 - Signatures are Ed25519 over the RFC 8785 canonical JSON of the signed part. The authority checks the device grant and signs `authorization` with `request_hash`, the SHA-256 of the request's RFC 8785 canonical JSON. The target checks `authority_sig` against its pin and `request_hash` against the request, so the command stays verifiable along any path.
@@ -269,7 +269,7 @@ The origin device signs the **request** (what the user asked). The authority sig
 #### 3.8.2 Flow
 
 1. The phone signs the request and sends it to the authority.
-2. The authority checks `origin_sig`, a `launch:open` or `launch:run` grant for the space, that the target belongs to the same principal, and that the task exists and is not deleted. It derives the folder. A folder on another machine than `target_machine`, or a folder version newer than `seen_folder_version`, gives `folder_changed`, and the phone shows the new folder for a new command. Other task fields do not matter. It records `remote_launch.requested` with the authorization in history and countersigns.
+2. The authority checks `origin_sig`, a `launch:open` or `launch:run` grant for the space, that the target belongs to the same principal, and that the task exists and is not deleted. It derives the folder. A folder on another machine than `target_machine`, or a selection whose kind, row or version differs from `seen_folder`, gives `folder_changed`, and the phone shows the new folder for a new command. Other task fields do not matter. It records `remote_launch.requested` with the authorization in history and countersigns.
 3. It continues locally if it is the target, else forwards over its session with the target.
 4. The target validates (3.8.3), then in **one transaction** on its execution store inserts the replay row and A4's launch intent. The folder's file identity at that moment (device and inode, or the Windows file ID) goes to machine state, for the check before dispatch.
 5. **Immediately before dispatch** it runs A4's launch check again and requires the same file identity, the instance still allowed and presence still sufficient. A mismatch fails the intent (`folder_changed`, `denied_by_policy`, `desktop_locked`, `executor_unavailable`) and nothing starts. Otherwise it commits Dispatching and dispatches (A4 3.9.1).
@@ -723,7 +723,7 @@ secret_scan = "warn"           # warn | block
 **Unit tests:**
 - Envelope validation: every 3.8.3 row, with boundary times at ±30 s and a validity of 301 s.
 - Signatures over RFC 8785 JSON with reordered fields and changed whitespace. A request whose hash does not match the authorization is rejected.
-- Folder binding: a folder changed after `seen_folder_version` gives `folder_changed`. A client's own folder or path is ignored. A folder replaced between the target's check and dispatch gives `folder_changed`, and nothing starts.
+- Folder binding: a selection that differs from `seen_folder` in kind, row or version gives `folder_changed`, the clear of a task's own folder that leaves its project's included. A client's own folder or path is ignored. A folder replaced between the target's check and dispatch gives `folder_changed`, and nothing starts.
 - Lineage classification: same, ancestor, descendant and competing pairs, including two claims at the same and at different epochs.
 - Transfer binding: a bundle imported on another machine, or twice on its destination, opens as `read_only_copy`.
 - Feed coverage: duplicate, overlapping, empty and gapped batches.
