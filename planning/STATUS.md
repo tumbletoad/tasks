@@ -134,6 +134,7 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
 | M4.01 | Remaining tools | M3.05, M3.06 | M | done |
+| M4.01b | What M4.01 left: area and project operations in the writer, and organize's create, rename, move and archive | M4.01 | M | ready |
 | M4.02 | Autonomy and proposals | M3.01 | M | ready |
 | M4.03 | Digest v1 and framing | M3.01, M3.05 | M | ready |
 | M4.04 | Final server instructions | M4.01 | S | ready |
@@ -142,8 +143,6 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | M4.06 | Binding complete | M2.04, M2.04b | M | doing |
 | M4.07 | Source ingestion | M4.01 | S | ready |
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
-
-| M4.01b | What M4.01 left: area and project operations in the writer, and organize's create, rename, move and archive | M4.01 | M | ready |
 
 M4.05b and M4.01b are not in the base count.
 
