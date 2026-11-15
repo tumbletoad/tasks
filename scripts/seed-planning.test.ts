@@ -52,10 +52,11 @@ function tree(folder: string): [string, Buffer][] {
     .sort(([a], [b]) => (a < b ? -1 : 1));
 }
 
-/** The fixture folder and its index under `root`, as one comparable list. */
+/** The fixture folder, its index and the actions export under `root`, as one comparable list. */
 const output = (root: string): [string, Buffer][] => [
   ...tree(join(root, PLANNING.folder)),
   [PLANNING.index, readFileSync(join(root, PLANNING.index))],
+  [PLANNING.actions, readFileSync(join(root, PLANNING.actions))],
 ];
 
 const digestOf = (stdout: string): string | undefined =>
@@ -66,7 +67,9 @@ describe("[A7.3.14.planning-fixture.deterministic] pnpm seed --planning", () => 
     const runs = [temp(), temp()].map((out) => {
       const result = seed(["--planning", "--out", out]);
       expect(result.status, result.stderr).toBe(0);
-      expect(readdirSync(out).sort()).toEqual([PLANNING.folder, PLANNING.index].sort());
+      expect(readdirSync(out).sort()).toEqual(
+        [PLANNING.folder, PLANNING.index, PLANNING.actions].sort(),
+      );
       return { files: output(out), digest: digestOf(result.stdout) };
     });
     const [a, b] = runs;
@@ -101,7 +104,7 @@ describe("[A7.3.14.planning-fixture.deterministic] pnpm seed --planning", () => 
     const root = temp();
     expect(seedPlanning(["--planning"], root)).toBe(0);
     const fixtures = join(root, "fixtures");
-    const linked = [PLANNING.index, `${PLANNING.folder}/TODO.md`];
+    const linked = [PLANNING.index, PLANNING.actions, `${PLANNING.folder}/TODO.md`];
     const sentinels = linked.map((path, i) => {
       const sentinel = join(root, `sentinel-${String(i)}.txt`);
       writeFileSync(sentinel, "outside the target\n");
@@ -115,6 +118,7 @@ describe("[A7.3.14.planning-fixture.deterministic] pnpm seed --planning", () => 
     }
     const fresh = buildPlanningFixture();
     expect(readFileSync(join(fixtures, PLANNING.index), "utf8")).toBe(serializeIndex(fresh.index));
+    expect(readFileSync(join(fixtures, PLANNING.actions), "utf8")).toBe(fresh.actions);
     expect(readFileSync(join(fixtures, PLANNING.folder, "TODO.md"), "utf8")).toBe(
       fresh.files.get("TODO.md"),
     );

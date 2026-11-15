@@ -23,6 +23,7 @@ import {
 } from "./args.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
+import { IMPORT_HELP, importCommand } from "./import.ts";
 import type { Io } from "./io.ts";
 import { MCP_VERB, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
@@ -74,6 +75,7 @@ const LOCAL: readonly [string, string][] = [
   ["space", "List, create, open, close, back up, restore, claim and recover spaces"],
   ["roots", "List and add this machine's roots, the folders places live under"],
   ["view", "Check a space's generated view/ and render it again (view rebuild)"],
+  ["import", "Preview the import of the Planning prototype (import planning <folder> --dry-run)"],
   [
     "setup",
     "Connect this machine's agent apps: their MCP entries (setup agents), T3 Code (setup t3)",
@@ -175,9 +177,11 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
               ? VIEW_HELP
               : topic === "setup"
                 ? SETUP_HELP
-                : verb === undefined
-                  ? shortHelp()
-                  : verbHelp(verb),
+                : topic === "import"
+                  ? IMPORT_HELP
+                  : verb === undefined
+                    ? shortHelp()
+                    : verbHelp(verb),
       );
       return 0;
     }
@@ -197,6 +201,8 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         return await rootsCommand(io, globals, args, options);
       case "view":
         return await viewCommand(io, globals, args, options);
+      case "import":
+        return await importCommand(io, globals, args, options);
       case "setup":
         return await setupCommand(io, globals, args, options);
       case "doctor":

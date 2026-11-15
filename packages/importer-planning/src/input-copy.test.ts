@@ -123,6 +123,40 @@ describe("[A7.3.15.importer.input-copy] the input copy", () => {
     expect(parse.problems).toEqual([]);
   });
 
+  test("[A7.3.15.importer.bounds] the event files together are bounded: the copy, the check and the read stop at one file", async () => {
+    // Every event file here has one size; the bound lets two of them through.
+    const at = (i: number) =>
+      `{"id":"cli-${String(i)}","task":"one","action":"focus","at":"2026-01-01T10:00Z"}`;
+    for (const i of [2, 3, 4])
+      writeFileSync(join(source, "events", `cli-${String(i)}.json`), at(i));
+    const size = Buffer.byteLength(at(2));
+    const limits = { eventsBytes: 2 * size + 3 };
+    const dest = join(runs, "input");
+    const copy = await copyInput(source, dest, limits);
+    expect(copy.problems).toEqual([
+      { code: "events-too-large", severity: "error", file: "events" },
+    ]);
+    expect(copy.ok).toBe(false);
+    expect(copy.files.map((f) => f.path)).toEqual([
+      "TODO.md",
+      "DONE.md",
+      "data/metadata.json",
+      "events/cli-1.json",
+      "events/cli-2.json",
+    ]);
+    expect(readdirSync(join(dest, "events")).sort()).toEqual(["cli-1.json", "cli-2.json"]);
+    // The check stops at the same file, so the copy's own problem is no change; without it, the
+    // check fails closed.
+    expect(await verifySource(source, copy.files, limits, copy.problems)).toEqual([]);
+    expect((await verifySource(source, copy.files, limits)).map((p) => p.code)).toEqual([
+      "source-changed",
+    ]);
+    // The read of the source holds no more than the bound either.
+    const read = await readInput(source, limits);
+    expect(read.input.events.map((e) => e.name)).toEqual(["cli-1.json", "cli-2.json"]);
+    expect(read.problems.map((p) => p.code)).toEqual(["events-too-large"]);
+  });
+
   test("refuses a destination that exists, lies inside the source or has no parent", async () => {
     mkdirSync(join(runs, "taken"));
     const taken = await copyInput(source, join(runs, "taken"));

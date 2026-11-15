@@ -489,6 +489,7 @@ export class SpaceManager {
       ...(space.message === undefined ? {} : { message: space.message }),
       writer: space.state === "open" ? space.writer : undefined,
       reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
+      folder: space.folder,
     }));
   }
 
