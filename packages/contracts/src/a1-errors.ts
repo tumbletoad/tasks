@@ -111,6 +111,13 @@ export const A1_ERRORS = {
   MIGRATION_FAILED: readOnly("migration_failed"),
   BACKUP_INVALID: { code: "invalid_input" },
   BUNDLE_LIMIT_EXCEEDED: { code: "too_large" },
+  // Export bundles (M3.07).
+  /** A bundle that breaks the archive or layout rules, or does not verify (A1 3.18). */
+  BUNDLE_INVALID: { code: "invalid_input" },
+  /** An export that would carry a secret-shaped string; nothing was written (A6 3.16.4). */
+  EXPORT_SECRET_FOUND: { code: "invalid_input" },
+  /** A database with objects its revision does not create: an export of it is refused (A1 3.18). */
+  SPACE_SCHEMA_FOREIGN: { code: "invalid_input" },
 } as const satisfies Record<string, A1ErrorMapping>;
 
 export type A1ErrorCode = keyof typeof A1_ERRORS;

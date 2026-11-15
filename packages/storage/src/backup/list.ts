@@ -1,8 +1,7 @@
 // Listing a space's backups (A1 3.18, `tasks space backups list` in M1.10). The listing reads each
 // sidecar and checks that its `.db.gz` is there with the size the sidecar records. It does not
-// decompress anything: a restore verifies the backup in full before it uses it, and so does
-// retention for the backup it keeps as the newest verified one (verifyBackup, with the restore's
-// own checks, verify.ts).
+// decompress anything, and it verifies nothing: a restore checks the backup in full before it uses
+// it, and retention keeps the newest backup that a trial restore verified (verifyBackup).
 //
 // Files the listing does not recognise are never touched. A crash leaves two kinds of LEFTOVERS,
 // which the listing names and removeBackupLeftovers deletes: a backup's own temporary files, by
@@ -30,7 +29,9 @@ import {
   sidecarMatchesName,
   type BackupSidecar,
 } from "./sidecar.ts";
-import { verifyBackupFile, type VerifyOptions } from "./verify.ts";
+import { verifyBackupFile, type VerifyOptions } from "../restore/restore.ts";
+
+export type { VerifyOptions };
 
 export type ListedState =
   /** The sidecar is valid and its `.db.gz` is there with the recorded size. */
@@ -158,11 +159,10 @@ export function removeBackupLeftovers(
 }
 
 /**
- * Verifies a listed backup in full, exactly as a restore would before using it (verify.ts): the
- * files, the sidecar read again from disk, both digests, integrity_check of the unpacked database
- * and every fact of the sidecar against it, the revision and the format. Returns the sidecar it
- * verified, or undefined when any check fails. It unpacks into a temporary file beside the backup
- * and removes it again, so it needs the database's size in free disk space.
+ * Verifies a listed backup by a trial restore (restore/restore.ts verifyBackupFile): the restore's
+ * own steps, its first write included, on a scratch copy beside the backup, which is removed again.
+ * The files are read again from disk, both held open while they are read. Returns the sidecar it
+ * verified, or undefined when any step fails. It needs the database's size in free disk space.
  */
 export async function verifyBackup(
   checked: CheckedDriver,
