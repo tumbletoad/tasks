@@ -976,7 +976,7 @@ export class LaunchService {
     const confirmed: Observation = { kind: "confirmed", evidence: { bound_at: at } };
     if (intent.route !== "link") return { observation: confirmed };
     const recorded = intent.evidence.folder_id;
-    const instance = (this.#options.instances ?? []).find((i) => i.id === intent.instance);
+    const instance = this.#instances().find((i) => i.id === intent.instance);
     const checks =
       recorded !== undefined ||
       instance === undefined ||
