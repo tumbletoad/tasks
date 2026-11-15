@@ -7,9 +7,19 @@ import type { ImportPlanningPreviewResult } from "@tasks/contracts";
 
 type Report = ImportPlanningPreviewResult;
 
-/** A table cell: no line break, no pipe, no character Markdown would read as markup. */
+/**
+ * A value as text, in a table cell or a list item: no line break, every character that marks up
+ * inline text escaped with a backslash (CommonMark allows one before any ASCII punctuation), and a
+ * start that would open a block inside a list item escaped too. So a pipe, an emphasis, a link, an
+ * HTML tag or entity (`&copy;`), a list marker (`- x`, `+ x`, `1. x`), a rule or a heading stays
+ * text wherever the value stands.
+ */
 function cell(text: string): string {
-  return text.replace(/[\r\n\u2028\u2029]+/gu, " ").replace(/([\\|*_`[\]<>#])/g, "\\$1");
+  return text
+    .replace(/[\r\n\u2028\u2029]+/gu, " ")
+    .replace(/([\\|*_`[\]<>#&!~])/g, "\\$1")
+    .replace(/^(\s*)([-+=])/u, "$1\\$2")
+    .replace(/^(\s*\d{1,9})([.)])/u, "$1\\$2");
 }
 
 const NOT_IMPORTED: Readonly<Record<Report["not_imported"][number]["what"], string>> = {
@@ -27,6 +37,8 @@ const NOT_IMPORTED: Readonly<Record<Report["not_imported"][number]["what"], stri
   raw_events: "The events themselves: folded into each task's check-off and star, copied",
   orphans:
     "Metadata entries without a task line: not created (--include-orphans creates those whose ID a task line could carry)",
+  browser_actions:
+    "Check-offs and stars the page holds only in its browser storage: save the page's actions export and run the dry run again with --actions <file>",
 };
 
 /** report.md's text. */

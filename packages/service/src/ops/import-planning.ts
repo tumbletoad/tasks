@@ -9,12 +9,14 @@
 //   this machine → the source checked again (verifySource, verifyActions) → report and token →
 //   report.json and report.md written
 //
-// Every error blocks: the report then has no token. A folder that is not there, or options that
-// are not usable, are refused before anything is written.
-import { closeSync, statSync, writeSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+// Every error blocks: the report then has no token. A folder that is not there, options that are
+// not usable, a prototype folder that holds the space's run folders, and a run folder parent that
+// is a link are refused before anything is written.
+import { closeSync, lstatSync, realpathSync, statSync, writeSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { AppError, type ImportPlanningPreviewResult } from "@tasks/contracts";
 import {
+  checkMappingOptions,
   copyActions,
   copyInput,
   mapPrototype,
@@ -91,6 +93,33 @@ function rootsOf(call: PlanningPreviewCall): PreviewRoot[] {
   return out;
 }
 
+/** Whether `to` is `from` or lies under it, by whole path parts. */
+function isInside(from: string, to: string): boolean {
+  const rel = relative(from, to);
+  return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
+}
+
+/**
+ * `<space>/exchange/planning` through the space folder's real path. Each part that is there must
+ * be a plain folder, never a link or a junction, so a run folder can only be inside the space.
+ */
+function runsFolder(space: string): string {
+  let path = realpathSync(space);
+  for (const part of RUNS_FOLDER) {
+    path = join(path, part);
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    if (stat !== undefined && (stat.isSymbolicLink() || !stat.isDirectory())) {
+      throw new AppError({
+        code: "space_unavailable",
+        message: "A folder of the space's run folders is a link or no folder.",
+        hint: "Make exchange and exchange/planning in the space's folder plain folders, then run the dry run again.",
+        data: { reason: "not_served", retryable: false },
+      });
+    }
+  }
+  return path;
+}
+
 /** A new file with exactly 0600 holding `text`. */
 function writeNew(path: string, body: string): void {
   const fd = createFile(path, 0o600);
@@ -127,9 +156,24 @@ export async function planningPreview(
     ...(input["include_orphans"] === true ? { includeOrphans: true } : {}),
     timeZone: call.timeZone,
   };
+  try {
+    checkMappingOptions(options);
+  } catch (error) {
+    if (error instanceof MappingOptionsError) throw invalid("input", "An option is not usable");
+    throw error;
+  }
 
-  // The run folder, user-only like the space (A6 3.16.6). A new run never meets an old one.
-  const runs = join(call.folder, ...RUNS_FOLDER);
+  // The run folder, user-only like the space (A6 3.16.6). A new run never meets an old one. Before
+  // anything is written: its parents in the space are plain folders, so the run stays inside the
+  // space, and it lies outside the prototype folder, which the run only reads.
+  const runs = runsFolder(call.folder);
+  if (isInside(realpathSync(source), runs)) {
+    throw invalid(
+      "folder",
+      "The space's run folders would be inside this folder",
+      "Name the prototype folder itself: the folder that holds TODO.md and DONE.md.",
+    );
+  }
   makeDir(runs, 0o700, { platform: call.platform });
   const run = newId("ex");
   const folder = join(runs, run);
@@ -151,19 +195,12 @@ export async function planningPreview(
     ...read.input,
     ...(actionBytes === undefined ? {} : { actions: actionBytes }),
   });
-  let plan: ImportPlan;
-  try {
-    plan = mapPrototype(parse, options);
-  } catch (error) {
-    if (error instanceof MappingOptionsError) throw invalid("input", "An option is not usable");
-    throw error;
-  }
+  const plan: ImportPlan = mapPrototype(parse, options);
 
   const rows = await readImportRows(call.reader, {
     aliases: plan.tasks.map((t) => t.legacyId),
     keys: plan.sources.flatMap((s) => (s.key === undefined ? [] : [s.key])),
     areas: plan.areas.map((a) => a.slug),
-    projects: plan.projects.map((p) => p.slug),
   });
 
   // Which places resolve here: through the launch package's own resolution, as Open would.
@@ -175,9 +212,12 @@ export async function planningPreview(
     if (found.status !== "ok") missing.add(t.legacyId);
   }
 
-  // The source again, after everything was read from the copy: it fails closed.
+  // The source again, after everything was read from the copy: it fails closed. What the copy
+  // already reported (a file over its bound) is the same state, not a change.
   const verified = [
-    ...(copied.files.length === 0 && !copied.ok ? [] : await verifySource(source, copied.files)),
+    ...(copied.files.length === 0 && !copied.ok
+      ? []
+      : await verifySource(source, copied.files, undefined, copied.problems)),
     ...(actionsSource === undefined || actions === undefined
       ? []
       : await verifyActions(actionsSource, actions)),

@@ -5,7 +5,7 @@
     "source": "Every rule here is the prototype's own, read from its code (A7 3.15.2)",
     "lines": "Each ledger is split as Python's str.splitlines() splits: at LF, CRLF, CR, U+000B, U+000C, U+001C, U+001D, U+001E, U+0085, U+2028 and U+2029. Each piece is matched on its own. Line numbers are 1-based in that split. A line never holds its line end",
     "grammar": "Task line ^- \\[([ xX])\\] \\*\\*(.+?)\\*\\*\\s*(.*)$. The title is the bold text with every trailing dot stripped. A line starting '## ' sets the group to the rest of the line, trimmed; before any heading the group is Other. After the split no line holds a line terminator, so JavaScript's `.` matches what Python's does without the s flag",
-    "done": "Every task line in DONE.md is done whatever its checkbox. In TODO.md x or X is done",
+    "done": "Every task line in DONE.md is done whatever its checkbox. In TODO.md an x or X box is a ticked box, which does not check the task on the page (checkOff)",
     "markers": "<!-- task:ID --> with ID [a-z0-9_-]+. The first marker anywhere in the line, title included, gives the ID. The body is the text after the title with every marker removed, then trimmed",
     "fallbackId": "t- and eight lower-case hex digits of 32-bit FNV-1a (offset basis 2166136261, prime 16777619, modulo 2^32) over the Unicode code points of <group>|<title>, the title without its trailing dots. Each whole code point is XORed in, then multiplied. Not UTF-8 bytes, not UTF-16 units",
     "events": "Every events/*.json is read, in sorted file-name order. A file whose name starts with web- counts only when events/<same stem>.ready (an empty file) exists. Any other file counts as soon as it exists. Neither the page nor planning.py checks that a file's name is its event's id. An event is an object {id, task, action, at}: action check, uncheck, focus or unfocus; id and task [a-zA-Z0-9_-]{1,100}; at \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,9})?)?(Z|[+-]\\d{2}:\\d{2}). An invalid file makes planning.py's read fail as a whole, and the page drops it: every event file here is valid. An event's task may hold upper-case letters; a ledger ID never does",
@@ -691,7 +691,7 @@
       ]
     },
     "checked-in-todo": {
-      "description": "A checked task line ([x] or [X]) still in TODO.md: done",
+      "description": "A ticked task line ([x] or [X]) in TODO.md: a ticked box, not a check-off on the page (checkOff)",
       "where": [
         {
           "file": "TODO.md",

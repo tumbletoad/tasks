@@ -46,6 +46,9 @@ export interface PrototypeEvent {
   readonly action: EventAction;
   /** As written. */
   readonly at: string;
+  /** Where it was read: a file of events/, or the actions export. A file name never decides it,
+   * since events/ may hold a file of any name. */
+  readonly origin: "events" | "actions";
   /** The file name in events/, or ACTIONS_FILE for an event of the actions export. */
   readonly file: string;
   /** An export event's position in its `events` list. */
@@ -107,7 +110,7 @@ export function placeOfEvent(
   e: PrototypeEvent,
   position: ReadonlyMap<string, number>,
 ): { file: string; index?: number } {
-  if (e.file === ACTIONS_FILE) return { file: ACTIONS_FILE, index: e.index ?? 0 };
+  if (e.origin === "actions") return { file: ACTIONS_FILE, index: e.index ?? 0 };
   return eventPlace(e.file, position.get(e.file) ?? 0);
 }
 
@@ -158,7 +161,7 @@ function eventFrom(value: unknown, file: string): PrototypeEvent | undefined {
     return undefined;
   }
   if (typeof at !== "string" || eventInstant(at) === undefined) return undefined;
-  return { id, task, action: action as EventAction, at, file };
+  return { id, task, action: action as EventAction, at, origin: "events", file };
 }
 
 export function parseEvents(

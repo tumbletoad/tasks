@@ -163,7 +163,8 @@ const CASES: Record<string, string> = {
   "unmarked-task-line": "A task line without an ID marker: the ID is the fallback ID",
   "non-task-line":
     "A line that is neither a heading nor a task line: prose, a plain bullet, a bullet without bold",
-  "checked-in-todo": "A checked task line ([x] or [X]) still in TODO.md: done",
+  "checked-in-todo":
+    "A ticked task line ([x] or [X]) in TODO.md: a ticked box, not a check-off on the page (checkOff)",
   "ticked-in-file":
     "A [x] box in TODO.md that no event checks or unchecks. The page does not show it checked " +
     "(only events check a task there); the import completes it as the person's own statement",
@@ -1620,7 +1621,9 @@ export function buildPlanningFixture(): PlanningFixture {
           "trailing dot stripped. A line starting '## ' sets the group to the rest of the line, " +
           "trimmed; before any heading the group is Other. After the split no line holds a line " +
           "terminator, so JavaScript's `.` matches what Python's does without the s flag",
-        done: "Every task line in DONE.md is done whatever its checkbox. In TODO.md x or X is done",
+        done:
+          "Every task line in DONE.md is done whatever its checkbox. In TODO.md an x or X box is " +
+          "a ticked box, which does not check the task on the page (checkOff)",
         markers:
           "<!-- task:ID --> with ID [a-z0-9_-]+. The first marker anywhere in the line, title " +
           "included, gives the ID. The body is the text after the title with every marker " +

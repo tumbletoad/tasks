@@ -81,7 +81,9 @@ export class MappingOptionsError extends Error {
   override readonly name = "MappingOptionsError";
 }
 
-function checkOptions(options: MappingOptions): void {
+/** Throws MappingOptionsError for options mapPrototype cannot use: a caller checks them first,
+ * before it does anything a refusal would leave half done. */
+export function checkMappingOptions(options: MappingOptions): void {
   if (!isTimeZone(options.timeZone)) {
     throw new MappingOptionsError("timeZone is not an IANA time zone this runtime knows");
   }
@@ -769,7 +771,7 @@ function cleanJson(
 
 /** Maps a parsed prototype folder to an import plan (A7 3.15.3). */
 export function mapPrototype(parse: PrototypeParse, options: MappingOptions): ImportPlan {
-  checkOptions(options);
+  checkMappingOptions(options);
   const report = new Report();
   const { entries, duplicates } = entriesOf(parse, options.includeOrphans === true, report);
   const groups = groupsOf(entries, report);

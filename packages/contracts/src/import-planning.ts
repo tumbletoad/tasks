@@ -24,6 +24,8 @@ export const IMPORT_PROBLEM_CODES = {
   "too-many-entries": "error",
   "too-many-items": "warning",
   "too-many-event-files": "error",
+  /** The event files together over their bound: the later ones are not copied or read. */
+  "events-too-large": "error",
   // Ledgers.
   /** Two lines of one ledger with one ID: the later one is left out. */
   "duplicate-id": "error",
@@ -123,6 +125,9 @@ export const IMPORT_PROBLEM_CODES = {
   "place-missing": "warning",
   /** A legacy ID the space already holds as an alias: an earlier import created it. */
   "legacy-id-imported": "warning",
+  /** No actions export (`--actions`): check-offs and stars held only in the page's browser storage
+   * are not imported. */
+  "actions-not-given": "warning",
 } as const satisfies Record<string, "error" | "warning">;
 
 export type ImportProblemCode = keyof typeof IMPORT_PROBLEM_CODES;

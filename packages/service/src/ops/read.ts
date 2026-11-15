@@ -89,7 +89,6 @@ export interface ImportNames {
   readonly aliases: readonly string[];
   readonly keys: readonly string[];
   readonly areas: readonly string[];
-  readonly projects: readonly string[];
 }
 
 export interface ImportRows {
@@ -101,7 +100,7 @@ export interface ImportRows {
   readonly aliases: { alias: string; task: string; version: number }[];
   readonly sources: { key: string; id: string; version: number }[];
   readonly areas: { slug: string; id: string; version: number }[];
-  readonly projects: { slug: string; id: string; version: number }[];
+  readonly projects: { slug: string; id: string; version: number; area: string | null }[];
 }
 
 const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
@@ -122,15 +121,19 @@ const IMPORT_READS: readonly Statement[] = [
     mode: "all",
   },
   {
-    sql: `SELECT slug, id, version FROM projects WHERE deleted_at IS NULL AND slug ${IN("$projects")}`,
+    // Every live project with its live area's slug: a project slug is unique in the space, so a
+    // planned project's slug depends on the slugs of other areas' projects too (placeProjects).
+    sql:
+      "SELECT p.slug, p.id, p.version, a.slug AS area FROM projects p " +
+      "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
     mode: "all",
   },
 ];
 
 /**
  * The rows an import plan meets, in one snapshot: the space's authority and next reference, the
- * tasks that hold its legacy IDs as planning aliases, and the live sources, areas and projects
- * with its keys and slugs, each with its version.
+ * tasks that hold its legacy IDs as planning aliases, the live sources and areas with its keys and
+ * slugs, and every live project, each with its version.
  */
 export async function readImportRows(
   reader: WorkerConnection,
@@ -140,7 +143,6 @@ export async function readImportRows(
     aliases: JSON.stringify(names.aliases),
     keys: JSON.stringify(names.keys),
     areas: JSON.stringify(names.areas),
-    projects: JSON.stringify(names.projects),
   });
   const space = decodeSpaceRow(row as Row);
   return {

@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import {
   mapPrototype,
   parsePrototype,
+  placeProjects,
   previewOf,
   previewToken,
   proposeRoots,
@@ -18,6 +19,7 @@ import {
   type PreviewRun,
   type PrototypeInput,
   type PrototypeParse,
+  type SpaceProject,
 } from "./index.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -298,12 +300,81 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
 
   test("report.md writes the person's own text as text, never as markup", () => {
     const { parse, plan } = small({
-      todo: "- [ ] **A** <!-- task:a -->\n",
-      metadata: JSON.stringify({ a: { category: "Work | *bold* <b>", owner: "Tomas `x`" } }),
+      todo:
+        "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->\n" +
+        "- [ ] **C** <!-- task:c -->\n- [ ] **D** <!-- task:d -->\n",
+      metadata: JSON.stringify({
+        a: { category: "Work | *bold* <b>", owner: "Tomas `x`" },
+        b: { category: "R&amp;D &copy;", owner: "- injected" },
+        c: { category: "Home", owner: "1. ordered" },
+        d: { category: "Home", owner: " + plus" },
+      }),
     });
     const md = renderPreview(previewOf(parse, plan, runOf()).report);
     expect(md).toContain("Work \\| \\*bold\\* \\<b\\>");
     expect(md).toContain("Tomas \\`x\\`");
     expect(md).not.toContain("<b>");
+    // An entity stays its own text; a value that starts like a list item stays one item's text.
+    expect(md).toContain("R\\&amp;D \\&copy;");
+    expect(md).toContain("- \\- injected: 1 tasks");
+    expect(md).toContain("- 1\\. ordered: 1 tasks");
+    expect(md).toContain("- \\+ plus: 1 tasks");
+  });
+
+  test("without the actions export, the browser's own check-offs are listed as not imported", () => {
+    const { parse, plan } = small({ todo: TODO, metadata: META });
+    const without = previewOf(parse, plan, runOf()).report;
+    expect(without.attention).toContainEqual({
+      code: "actions-not-given",
+      severity: "warning",
+      count: 1,
+    });
+    expect(without.not_imported.map((n) => n.what)).toContain("browser_actions");
+    expect(renderPreview(without)).toContain("--actions");
+    const given = previewOf(
+      parse,
+      plan,
+      runOf({
+        source: { folder: "/home/mira/planning", actions: "/home/mira/actions.json" },
+        actions: { path: "actions.json", size: 2, sha256: "d".repeat(64) },
+      }),
+    ).report;
+    expect(given.attention.map((a) => a.code)).not.toContain("actions-not-given");
+    expect(given.not_imported.map((n) => n.what)).not.toContain("browser_actions");
+  });
+
+  test("a project slug of another area is not reused: the next free number, pinned by the token", () => {
+    const { parse, plan } = small({ todo: TODO, metadata: META });
+    expect(plan.projects.map((p) => [p.slug, p.area])).toEqual([["portal", "lumen"]]);
+    const lumen = { slug: "lumen", id: "ar_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 1 };
+    const portal = (area: string | null, slug = "portal") => ({
+      slug,
+      id: `pr_${slug}`,
+      version: 1,
+      area,
+    });
+    const at = (projects: SpaceProject[]) =>
+      runOf({ space: { ...space, areas: [lumen], projects } });
+
+    // In the same area: reused. In another area: numbered, not reused.
+    expect(placeProjects(plan, [portal("lumen")]).placements.get("portal")).toEqual({
+      slug: "portal",
+      reuses: "pr_portal",
+    });
+    expect(previewOf(parse, plan, at([portal("lumen")])).report.counts.projects_existing).toBe(1);
+    expect(placeProjects(plan, [portal("home")]).placements.get("portal")).toEqual({
+      slug: "portal-2",
+    });
+    expect(previewOf(parse, plan, at([portal("home")])).report.counts.projects_existing).toBe(0);
+    expect(
+      placeProjects(plan, [portal("home"), portal(null, "portal-2")]).placements.get("portal"),
+    ).toEqual({ slug: "portal-3" });
+
+    // The slugs the placement looked at are pinned: a project that later takes portal-2 changes
+    // the token, and a project elsewhere does not.
+    const token = previewToken(plan, at([portal("home")]));
+    expect(previewToken(plan, at([portal("home"), portal("home", "portal-2")]))).not.toBe(token);
+    expect(previewToken(plan, at([portal("home"), portal("home", "garden")]))).toBe(token);
+    expect(previewToken(plan, at([portal("lumen")]))).not.toBe(token);
   });
 });

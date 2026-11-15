@@ -8,7 +8,7 @@
 // its open line stayed, and the page shows the DONE.md line and hides the open one, so the DONE.md
 // line wins (`open-copy-hidden`, a warning). Two lines of one ledger with one ID are two tasks the
 // prototype's build refuses: the first is kept and each later one is left out (`duplicate-id`, an
-// error, which blocks the preview).
+// error, which blocks the preview), also when DONE.md holds the ID too.
 
 import { parseActions } from "./actions.ts";
 import { placeOfEvent, parseEvents, type EventFileInput, type EventsParse } from "./events.ts";
@@ -91,9 +91,16 @@ export function parsePrototype(input: PrototypeInput, limits?: Partial<Limits>):
   const keptSet = new Set(kept);
   const inDone = new Set(done.tasks.map((t) => t.id));
   const cross: Problem[] = [];
+  // A line whose ID an earlier line of its own ledger has is a duplicate, whatever the other ledger
+  // holds; only the first open line of an ID that DONE.md has is the hidden open copy.
+  const before = { "TODO.md": new Set<string>(), "DONE.md": new Set<string>() };
   for (const t of tasks) {
+    const own = before[t.file];
+    const repeated = own.has(t.id);
+    own.add(t.id);
     if (keptSet.has(t)) continue;
-    const code = t.file === "TODO.md" && inDone.has(t.id) ? "open-copy-hidden" : "duplicate-id";
+    const code =
+      !repeated && t.file === "TODO.md" && inDone.has(t.id) ? "open-copy-hidden" : "duplicate-id";
     cross.push(problem(code, { file: t.file, line: t.line, task: t.id }));
   }
   const ids = new Set(tasks.map((t) => t.id));

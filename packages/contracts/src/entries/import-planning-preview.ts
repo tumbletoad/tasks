@@ -194,6 +194,7 @@ export const ImportPlanningPreviewResult = z.strictObject({
             "unready_events",
             "raw_events",
             "orphans",
+            "browser_actions",
           ])
           .describe("What is not imported (A7 3.15.7)"),
         count: Count.describe("How many, where counted").optional(),

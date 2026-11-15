@@ -67,6 +67,7 @@ export function parseActions(source: Source, overrides?: Partial<Limits>): Actio
       task,
       action: action as PrototypeEvent["action"],
       at,
+      origin: "actions",
       file: ACTIONS_FILE,
       index,
     });

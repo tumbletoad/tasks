@@ -67,6 +67,7 @@ export {
   type PrototypeParse,
 } from "./prototype.ts";
 export {
+  checkMappingOptions,
   cutAtWord,
   mapPrototype,
   MappingOptionsError,
@@ -111,6 +112,7 @@ export {
 export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
 export {
   canonicalJson,
+  placeProjects,
   planHash,
   previewOf,
   previewToken,
@@ -118,6 +120,8 @@ export {
   type Preview,
   type PreviewRoot,
   type PreviewRun,
+  type ProjectPlacement,
+  type SpaceProject,
   type SpaceState,
 } from "./preview.ts";
 export { renderPreview } from "./report-md.ts";

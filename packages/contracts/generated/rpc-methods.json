@@ -248,6 +248,7 @@
                     "too-many-entries",
                     "too-many-items",
                     "too-many-event-files",
+                    "events-too-large",
                     "duplicate-id",
                     "open-copy-hidden",
                     "date-invalid",
@@ -299,7 +300,8 @@
                     "orphan-id-invalid",
                     "source-key-exists",
                     "place-missing",
-                    "legacy-id-imported"
+                    "legacy-id-imported",
+                    "actions-not-given"
                   ],
                   "type": "string"
                 },
@@ -576,7 +578,8 @@
                     "audit",
                     "unready_events",
                     "raw_events",
-                    "orphans"
+                    "orphans",
+                    "browser_actions"
                   ],
                   "type": "string"
                 }
@@ -661,6 +664,7 @@
                     "too-many-entries",
                     "too-many-items",
                     "too-many-event-files",
+                    "events-too-large",
                     "duplicate-id",
                     "open-copy-hidden",
                     "date-invalid",
@@ -712,7 +716,8 @@
                     "orphan-id-invalid",
                     "source-key-exists",
                     "place-missing",
-                    "legacy-id-imported"
+                    "legacy-id-imported",
+                    "actions-not-given"
                   ],
                   "type": "string"
                 },

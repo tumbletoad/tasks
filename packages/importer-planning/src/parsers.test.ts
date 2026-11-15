@@ -221,6 +221,19 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
       "DONE.md:1",
       "DONE.md:3",
     ]);
+
+    // A DONE.md line with the ID does not hide a duplicate within TODO.md: the open copy is a
+    // warning, the second open line still the error.
+    const both = parsePrototype({
+      todo: "- [ ] **A** <!-- task:x -->\n- [ ] **B** <!-- task:x -->",
+      done: "- [x] **C** <!-- task:x -->",
+      events: [],
+    });
+    expect(both.problems.filter((p) => /duplicate-id|open-copy-hidden/.test(p.code))).toEqual([
+      { code: "open-copy-hidden", severity: "warning", file: "TODO.md", line: 1, task: "x" },
+      { code: "duplicate-id", severity: "error", file: "TODO.md", line: 2, task: "x" },
+    ]);
+    expect(both.kept.map((t) => `${t.file}:${String(t.line)}`)).toEqual(["DONE.md:1"]);
   });
 
   test("decoding: a byte-order mark stays, as Python's utf-8 codec keeps it; bad bytes are an error", () => {
@@ -599,6 +612,29 @@ describe("[A7.3.15.importer.grammar] the prototype's rules on small inputs", () 
     expect(parse.problems.map((p) => `${p.code} ${p.file} ${String(p.index ?? "")}`)).toEqual([
       "event-not-ready events/web-w.json ",
       "actions-conflict actions.json 1",
+    ]);
+
+    // An events/ file that happens to be named like the export's copy is an events/ file: its
+    // origin, not its name, says where an event came from.
+    const named = parsePrototype({
+      todo: "- [ ] **A** <!-- task:a -->",
+      done: "",
+      events: [{ name: "actions.json", bytes: ev("e1", "nope", "check", "2026-11-01T09:00:00Z") }],
+    });
+    expect(named.events.applied.map((x) => x.origin)).toEqual(["events"]);
+    expect(named.problems).toEqual([
+      {
+        code: "event-unknown-task",
+        severity: "warning",
+        file: "events/actions.json",
+        task: "nope",
+      },
+    ]);
+    expect(parse.events.applied.map((x) => x.origin)).toEqual([
+      "events",
+      "events",
+      "actions",
+      "actions",
     ]);
   });
 

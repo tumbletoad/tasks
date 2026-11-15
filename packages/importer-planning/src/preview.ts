@@ -27,6 +27,7 @@ import type { ImportPlan, PlannedTask, PlannedTaskCreate } from "./plan.ts";
 import { isAbsolutePath, ROOT_ID, split } from "./places.ts";
 import { problem, type Problem } from "./problems.ts";
 import type { PrototypeParse } from "./prototype.ts";
+import { numberedSlug } from "./slug.ts";
 
 /** The rows of the space the plan meets, as the dry run read them in one snapshot. */
 export interface SpaceState {
@@ -48,17 +49,67 @@ export interface SpaceState {
     readonly id: string;
     readonly version: number;
   }[];
-  /** Live areas and projects with one of the plan's slugs: the apply reuses them. */
+  /** Live areas with one of the plan's slugs: the apply reuses them. */
   readonly areas: readonly {
     readonly slug: string;
     readonly id: string;
     readonly version: number;
   }[];
-  readonly projects: readonly {
-    readonly slug: string;
-    readonly id: string;
-    readonly version: number;
-  }[];
+  /** Every live project with its area's slug (none without a live area): a slug is unique in the
+   * space, so whether a planned project is reused or numbered depends on the space's other slugs
+   * too (placeProjects). */
+  readonly projects: readonly SpaceProject[];
+}
+
+export interface SpaceProject {
+  readonly slug: string;
+  readonly id: string;
+  readonly version: number;
+  readonly area: string | null;
+}
+
+/** Where a planned project goes in the space: the slug it gets, and the live project it reuses. */
+export interface ProjectPlacement {
+  readonly slug: string;
+  readonly reuses?: string;
+}
+
+/**
+ * Where each planned project goes in the space (A7 3.15.3, Areas and projects), the rule the apply
+ * follows too: a live project with its slug in the same area (by the area's slug, which the apply
+ * reuses) is reused; a slug a project of another area holds takes the next free number, free both
+ * in the space and in the plan. `met` holds every slug this looked at with the space's row there,
+ * or null where it found none, which is what the decision depends on: the token pins it.
+ */
+export function placeProjects(
+  plan: ImportPlan,
+  projects: readonly SpaceProject[],
+): {
+  placements: Map<string, ProjectPlacement>;
+  met: Map<string, SpaceProject | null>;
+} {
+  const live = new Map(projects.map((p) => [p.slug, p]));
+  const met = new Map<string, SpaceProject | null>();
+  const look = (slug: string): SpaceProject | undefined => {
+    const row = live.get(slug);
+    met.set(slug, row ?? null);
+    return row;
+  };
+  const taken = new Set(plan.projects.map((p) => p.slug));
+  const free = { has: (slug: string) => look(slug) !== undefined || taken.has(slug) };
+  const next = new Map<string, number>();
+  const placements = new Map<string, ProjectPlacement>();
+  for (const p of plan.projects) {
+    const row = look(p.slug);
+    if (row === undefined) placements.set(p.slug, { slug: p.slug });
+    else if (row.area === p.area) placements.set(p.slug, { slug: p.slug, reuses: row.id });
+    else {
+      const slug = numberedSlug(p.slug, free, next);
+      taken.add(slug);
+      placements.set(p.slug, { slug });
+    }
+  }
+  return { placements, met };
 }
 
 /** A root the mapping used: this machine's (machine.toml) or one `--roots` gave. */
@@ -125,14 +176,18 @@ export function planHash(plan: ImportPlan): string {
   return sha256(canonicalJson(plan)).toString("hex");
 }
 
-/** What the token pins of the space: the rows the plan meets, each with its version, sorted. */
+/**
+ * What the token pins of the space: the rows the plan meets, each with its version, sorted. For
+ * projects, every slug the placement looked at, with the row there or null: a project of another
+ * area that later takes a slug the placement chose changes the token too.
+ */
 function judged(plan: ImportPlan, space: SpaceState) {
   const ids = new Set(plan.tasks.map((t) => t.legacyId));
   const keys = new Set(plan.sources.flatMap((s) => (s.key === undefined ? [] : [s.key])));
   const areas = new Set(plan.areas.map((a) => a.slug));
-  const projects = new Set(plan.projects.map((p) => p.slug));
   const sorted = <T>(rows: T[], key: (row: T) => string) =>
     rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  const { met } = placeProjects(plan, space.projects);
   return {
     aliases: sorted(
       space.aliases.filter((a) => ids.has(a.alias)).map((a) => [a.alias, a.task, a.version]),
@@ -147,7 +202,7 @@ function judged(plan: ImportPlan, space: SpaceState) {
       (r) => String(r[0]),
     ),
     projects: sorted(
-      space.projects.filter((p) => projects.has(p.slug)).map((p) => [p.slug, p.id, p.version]),
+      [...met].map(([slug, p]) => (p === null ? [slug, null] : [slug, p.id, p.version, p.area])),
       (r) => String(r[0]),
     ),
   };
@@ -237,9 +292,12 @@ const CODE_ORDER = Object.keys(IMPORT_PROBLEM_CODES) as ImportProblemCode[];
 
 const createOf = (t: PlannedTask): PlannedTaskCreate => t.ops[0] as PlannedTaskCreate;
 
-/** The dry run's own problems: what only the space and this machine can tell. */
+/** The dry run's own problems: what only the space, this machine and the run's options tell. */
 function spaceProblems(plan: ImportPlan, run: PreviewRun): Problem[] {
   const out: Problem[] = [];
+  // Without the page's actions export, what the page holds only in its browser storage is lost.
+  if (run.source.actions === undefined)
+    out.push(problem("actions-not-given", { file: ACTIONS_FILE }));
   const aliased = new Set(run.space.aliases.map((a) => a.alias));
   const held = new Set(run.space.sources.map((s) => s.key));
   for (const t of plan.tasks) {
@@ -275,7 +333,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
   const count = (code: ImportProblemCode) => problems.filter((p) => p.code === code).length;
 
   const areaSlugs = new Set(run.space.areas.map((a) => a.slug));
-  const projectSlugs = new Set(run.space.projects.map((p) => p.slug));
+  const { placements } = placeProjects(plan, run.space.projects);
   const keys = new Set(run.space.sources.map((s) => s.key));
   const aliased = new Set(run.space.aliases.map((a) => a.alias));
   const c = plan.counts;
@@ -340,15 +398,16 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
     .filter((a) => a.count > 0)
     .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "error" ? -1 : 1));
 
-  const titleOf = (list: readonly { slug: string; title: string }[], slug: string | undefined) =>
-    list.find((g) => g.slug === slug)?.title ?? slug ?? "";
+  // Titles by slug, so a large import costs linear time.
+  const areaTitles = new Map(plan.areas.map((a) => [a.slug, a.title]));
+  const projectTitles = new Map(plan.projects.map((p) => [p.slug, p.title]));
   const tasks = plan.tasks.map((t, i) => {
     const create = createOf(t);
     return {
       legacy_id: t.legacyId,
       ref: `${run.space.refPrefix}-${String(run.space.nextRef + i)}`,
-      area: titleOf(plan.areas, t.area),
-      ...(t.project === undefined ? {} : { project: titleOf(plan.projects, t.project) }),
+      area: areaTitles.get(t.area) ?? t.area,
+      ...(t.project === undefined ? {} : { project: projectTitles.get(t.project) ?? t.project }),
       status: t.status,
       lifecycle: t.lifecycle,
       ...(t.wrap === undefined ? {} : { wrap: t.wrap }),
@@ -362,7 +421,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
 
   // What is not imported (A7 3.15.7). A web- event the actions export added is imported.
   const added = new Set(
-    parse.events.applied.filter((e) => e.file === ACTIONS_FILE).map((e) => e.id),
+    parse.events.applied.filter((e) => e.origin === "actions").map((e) => e.id),
   );
   const unready = parse.events.files.filter(
     (f) =>
@@ -402,7 +461,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
       areas: c.areas,
       areas_existing: plan.areas.filter((a) => areaSlugs.has(a.slug)).length,
       projects: c.projects,
-      projects_existing: plan.projects.filter((p) => projectSlugs.has(p.slug)).length,
+      projects_existing: [...placements.values()].filter((p) => p.reuses !== undefined).length,
       sources: c.sources,
       sources_existing: plan.sources.filter((s) => s.key !== undefined && keys.has(s.key)).length,
       links: c.links,
@@ -437,6 +496,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
       { what: "unready_events", count: unready },
       { what: "raw_events", count: parse.events.applied.length },
       { what: "orphans", count: parse.orphans.length - c.orphansIncluded },
+      ...(run.source.actions === undefined ? [{ what: "browser_actions" as const }] : []),
     ],
   };
   const result: ImportPlanningPreviewResult = {
