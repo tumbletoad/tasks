@@ -526,7 +526,7 @@ type Where = Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">;
  * Names conflicts for operation `op`: a conflict on `where`, with the commit at `version` (who
  * wrote the field, and when) and its task's reference.
  */
-function namer(
+export function namer(
   conn: Connection,
   options: { refPrefix: string; op: number },
 ): (where: Where, version: number) => FieldConflict {

@@ -23,8 +23,30 @@ import type { Connection } from "../driver.ts";
 import { isId, type Id } from "../ids.ts";
 import { RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
-import { planInversions, readChanges, type InversionPlan } from "./history.ts";
-import type { PreviewGuard } from "./request.ts";
+import {
+  namer as conflictNamer,
+  planInversions,
+  readChanges,
+  type InversionPlan,
+} from "./history.ts";
+import type { ConflictEntity, PreviewGuard } from "./request.ts";
+
+/** The tables a conflict can name (request.ts ConflictEntity). */
+const CONFLICT_ENTITIES: ReadonlySet<string> = new Set<ConflictEntity>([
+  "tasks",
+  "task_sources",
+  "places",
+  "notes",
+  "log_entries",
+  "sources",
+  "learnings",
+  "attachments",
+  "task_labels",
+  "preferences",
+  "runs",
+  "areas",
+  "projects",
+]);
 
 const IN = (param: string): string => `IN (SELECT value FROM json_each(${param}))`;
 
@@ -40,6 +62,22 @@ const SQL = {
     "SELECT p.slug AS slug, p.id AS id, p.version AS version, a.slug AS area FROM projects p " +
     "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL " +
     `WHERE p.deleted_at IS NULL AND p.slug ${IN("$names")}`,
+  /**
+   * What happened to the import's tasks after it, per row and field, with the newest commit that
+   * did it: a person's or an agent's change, another import, an undo. Launches and the import
+   * records are no change of a task. An import that was undone since, and the undo of an import,
+   * are left out: together they leave a task as the import left it, so undoing two imports in turn
+   * takes both back.
+   */
+  changedSince:
+    "SELECT c.task_id AS task, c.entity AS entity, c.entity_id AS id, c.field AS field, " +
+    "max(c.seq) AS seq FROM changes c JOIN commits k ON k.seq = c.seq " +
+    `WHERE c.task_id ${IN("$tasks")} AND c.seq > $seq ` +
+    "AND c.entity NOT IN ('launches', 'aliases', 'exchanges', 'exchange_items') " +
+    "AND NOT (k.origin = 'import' AND k.reverted_by IS NOT NULL) " +
+    "AND NOT (k.kind = 'revert' AND k.revert_of IN " +
+    "(SELECT i.id FROM commits i WHERE i.origin = 'import')) " +
+    "GROUP BY c.task_id, c.entity, c.entity_id, c.field ORDER BY c.task_id, min(c.seq)",
   linksOf: "SELECT task_id FROM task_sources WHERE source_id = $id AND removed_at IS NULL",
   tasksIn: "SELECT id FROM tasks WHERE deleted_at IS NULL AND (area_id = $id OR project_id = $id)",
   projectsIn: "SELECT id FROM projects WHERE deleted_at IS NULL AND area_id = $id",
@@ -118,10 +156,21 @@ export function planImportRevert(
   const tombstoned = new Set(
     plan.inversions.filter((i) => i.kind === "tombstone").map((i) => `${i.entity}|${i.id}`),
   );
-  // A task of the import stays as it is when a field or a row of it conflicts, and when the import
-  // created it and its tombstone is not planned (someone changed it, or deleted it already).
+  // A task of the import stays as it is when anything of it changed since the import (a field, a
+  // note, an entry, a link, a place, a deletion), whether or not that change meets a row the import
+  // wrote, when a field or a row of it conflicts, and when the import created it and its tombstone
+  // is not planned. A re-import's change to a task the person has worked on since is theirs to
+  // keep: setting part of it back would split what they built on.
   const touched = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
   const kept = new Set<Id<"t">>();
+  const later = conn
+    .prepare(SQL.changedSince)
+    .all({ tasks: JSON.stringify([...touched]), seq })
+    .map((row) => new RowReader("changes", row));
+  for (const r of later) {
+    const task = r.text("task");
+    if (isId(task, "t")) kept.add(task);
+  }
   for (const c of plan.conflicts) {
     if (c.task !== undefined && touched.has(c.task)) kept.add(c.task);
   }
@@ -129,6 +178,27 @@ export function planImportRevert(
     if (c.action === "create" && c.entity === "tasks" && !tombstoned.has(`tasks|${c.entityId}`)) {
       if (isId(c.entityId, "t")) kept.add(c.entityId);
     }
+  }
+  // Each later change of a kept task is named once, as a guard's conflict is, unless a guard named
+  // that row and field already: the answer lists what keeps the task.
+  const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
+  const conflict = conflictNamer(conn, options);
+  for (const r of later) {
+    const entity = r.text("entity");
+    if (!CONFLICT_ENTITIES.has(entity)) continue;
+    const field =
+      r.optText("field") ??
+      (entity === "task_sources" ? "removed" : entity === "runs" ? "state" : "deleted");
+    const id = r.text("id");
+    const key = `${entity}|${id}|${field}`;
+    if (named.has(key)) continue;
+    named.add(key);
+    plan.conflicts.push(
+      conflict(
+        { entity: entity as ConflictEntity, id, task: r.text("task") as Id<"t">, field },
+        r.int("seq", "seq"),
+      ),
+    );
   }
   plan.inversions = plan.inversions.filter((i) => i.task === null || !kept.has(i.task));
   // The answer lists the import's tasks that stay. Another commit's task in an imported area keeps

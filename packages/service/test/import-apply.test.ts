@@ -32,7 +32,13 @@ import {
   type Id,
   type PreviewGuard,
 } from "@tasks/storage";
-import { openWorld, ZONE, type ImportWorld, type WorldOptions } from "./import-harness.ts";
+import {
+  openWorld,
+  writePrototype,
+  ZONE,
+  type ImportWorld,
+  type WorldOptions,
+} from "./import-harness.ts";
 
 const REPO = join(import.meta.dirname, "..", "..", "..");
 const FIXTURE = join(REPO, "fixtures", "planning-prototype");
@@ -665,4 +671,102 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
       world.close();
     }
   }, 120_000);
+
+  test("the undo of a re-import keeps whole a task the person worked on since, in any field or note", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      const version = (title: string, evidence: string): void => {
+        writePrototype(prototype, {
+          tasks: ["pa", "pb", "pc"].map((id) => ({
+            id,
+            title: `${title} ${id}`,
+            meta: { evidence: `${evidence} ${id}` },
+          })),
+        });
+      };
+      version("First", "Seen");
+      await importedSynthetic(world, prototype);
+      version("Second", "Updated");
+      const second = await importedSynthetic(world, prototype);
+      expect(second.result.counts.updated).toBe(3);
+      const [ta, tb, tc] = [taskOf(world, "pa"), taskOf(world, "pb"), taskOf(world, "pc")];
+      // The person changes a field the re-import did not write on pa, and adds a note to pb.
+      expect(world.edit([{ kind: "task.patch", task: ta, set: { priority: 1 } }]).status).toBe(
+        "applied",
+      );
+      expect(world.edit([{ kind: "note.add", task: tb, body: "Follow the update" }]).status).toBe(
+        "applied",
+      );
+      const undone = await world.undo(second.preview.run);
+      const evidence = (id: string) =>
+        world
+          .rows(
+            "SELECT body FROM log_entries WHERE task_id = $t AND kind = 'evidence' AND deleted_at IS NULL ORDER BY body",
+            { t: id },
+          )
+          .map((r) => r["body"]);
+      // pa and pb stay as the re-import and the person left them, and are listed.
+      expect(task(world, ta)).toMatchObject({ title: "Second pa", priority: 1 });
+      expect(evidence(ta)).toEqual(["Seen pa", "Updated pa"]);
+      expect(task(world, tb)).toMatchObject({ title: "Second pb" });
+      expect(evidence(tb)).toEqual(["Seen pb", "Updated pb"]);
+      const refOf = (id: string) => `M-${String(task(world, id)["ref"])}`;
+      expect(Object.fromEntries(undone.kept.map((k) => [k.task, k.fields]))).toEqual({
+        [refOf(ta)]: ["priority"],
+        [refOf(tb)]: ["notes"],
+      });
+      // pc, which no one touched since, is set back whole.
+      expect(task(world, tc)).toMatchObject({ title: "First pc" });
+      expect(evidence(tc)).toEqual(["Seen pc"]);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
+
+  test("undoing a re-import and then the first import takes both back", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      writePrototype(prototype, {
+        tasks: [
+          { id: "pa", title: "First pa" },
+          { id: "pb", title: "First pb" },
+        ],
+      });
+      const first = await importedSynthetic(world, prototype);
+      writePrototype(prototype, {
+        tasks: [
+          { id: "pa", title: "Second pa" },
+          { id: "pb", title: "First pb", meta: { evidence: "New for pb" } },
+          { id: "pc", title: "First pc" },
+        ],
+      });
+      const second = await importedSynthetic(world, prototype);
+      expect(second.result.counts).toMatchObject({ created: 1, updated: 2 });
+      const [ta, tb, tc] = [taskOf(world, "pa"), taskOf(world, "pb"), taskOf(world, "pc")];
+      expect((await world.undo(second.preview.run)).kept).toEqual([]);
+      expect(task(world, ta)["title"]).toBe("First pa");
+      expect(task(world, tc)["deleted_at"]).not.toBeNull();
+      const undone = await world.undo(first.preview.run);
+      expect(undone.kept).toEqual([]);
+      for (const id of [ta, tb]) expect(task(world, id)["deleted_at"]).not.toBeNull();
+    } finally {
+      world.close();
+    }
+  }, 120_000);
 });
+
+/** A world and an empty prototype folder of the test's own, for writePrototype. */
+async function synthetic(options: WorldOptions = {}) {
+  n += 1;
+  const root = join(scratch, `w${String(n)}`);
+  const world = await openWorld(root, options);
+  return { world, prototype: join(root, "prototype"), root };
+}
+
+/** A dry run of a synthetic prototype and its apply. */
+async function importedSynthetic(world: ImportWorld, prototype: string) {
+  const preview = await world.preview({ folder: prototype });
+  expect(preview.blocked).toBe(false);
+  const result = await world.apply(preview.run, preview.token ?? "");
+  return { preview, result };
+}
