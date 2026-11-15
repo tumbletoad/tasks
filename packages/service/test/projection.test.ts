@@ -219,7 +219,10 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
   test("a folder a person left at the projection's journal path (a mistaken restore of the machine state) is moved aside beside it, whole, and logged; the space's view renders", async () => {
     const { home, folder, spaceId } = await setUp("projaside");
     const state = projectionStateOf(stateOf(home), spaceId, folder);
-    mkdirSync(state.journal, { recursive: true });
+    // The folder of space settings as the service makes it (0700, which it checks at start, A2
+    // 3.2.2 rule 5), and in it the person's folder with whatever mode the umask gives it.
+    mkdirSync(join(stateOf(home), "spaces"), { mode: 0o700 });
+    mkdirSync(state.journal);
     writeFileSync(join(state.journal, "notes.txt"), "A person's notes.\n");
     await start(home, folder);
     const view = join(folder, "view");
