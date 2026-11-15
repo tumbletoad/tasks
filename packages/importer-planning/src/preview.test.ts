@@ -396,6 +396,27 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     expect(
       placeProjects(plan, [portal("home"), portal(null, "portal-2")]).placements.get("portal"),
     ).toEqual({ slug: "portal-3" });
+    // A numbered slug a project of the same area holds is that project: a re-import finds the
+    // project its first import numbered (M7.05).
+    expect(
+      placeProjects(plan, [portal("home"), portal("lumen", "portal-2")]).placements.get("portal"),
+    ).toEqual({ slug: "portal-2", reuses: "pr_portal-2" });
+    // A reused area and project keep their own titles in the report.
+    const titled = previewOf(
+      parse,
+      plan,
+      runOf({
+        space: {
+          ...space,
+          areas: [{ ...lumen, title: "Lumen Clinic" }],
+          projects: [{ ...portal("lumen"), title: "Patient portal" }],
+        },
+      }),
+    ).report;
+    expect(titled.tasks.find((t) => t.legacy_id === "a")).toMatchObject({
+      area: "Lumen Clinic",
+      project: "Patient portal",
+    });
 
     // The slugs the placement looked at are pinned: a project that later takes portal-2 changes
     // the token, and a project elsewhere does not.
