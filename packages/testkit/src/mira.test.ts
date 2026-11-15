@@ -293,7 +293,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
   });
 
   // The reviewer's case: seed "fixed" with 2,000 tasks failed on a UNIQUE source key, because
-  // keys were drawn from 900 numbers per kind. About 2 s on the Windows reference machine. The
+  // keys were drawn from 900 numbers per kind. About 2 s on Windows 11 on a desktop-class machine. The
   // sample flushes once, at its close (mira.ts), so the time is the generator's work and not the
   // disk's; the timeout allows a slow CI runner.
   test("the largest size the script accepts builds, with a valid history", async () => {

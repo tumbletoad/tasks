@@ -17,7 +17,7 @@ Lab code for lab run S and E (A7 3.7, step M0.07): service lifecycle, process pl
 
 ## Running it
 
-On the Windows lab machine, from the repository:
+On Windows, from the repository:
 
 ```
 pnpm exec node spikes/m0/packaging/scripts/build.ts --platform win-x64 --work <s>\build-win --dist <s>\dist-base
@@ -27,7 +27,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <s>\dist\install-0.0.7-lab.a
 <s>\inst\versions\0.0.7-lab.a\runtime\node.exe <s>\lab-work\lab-js\lifecycle\lab.mjs <row> ... --out <file>
 ```
 
-`<s>` is a scratch folder (the lab used `%USERPROFILE%\tasks-test\m0-07\`). On the Linux lab machine the same `lab-js` folder and the linux archives go to `~/tasks-test/m0-07/` and install with `sh install-0.0.7-lab.a.sh --source dist --root <root>`; the harness runs on `<root>/versions/0.0.7-lab.a/runtime/node`.
+`<s>` is a new scratch folder. On Linux the same `lab-js` folder and the linux archives go to a scratch folder there and install with `sh install-0.0.7-lab.a.sh --source dist --root <root>`; the harness runs on `<root>/versions/0.0.7-lab.a/runtime/node`.
 
 ## What the lab code does not cover
 

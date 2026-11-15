@@ -728,7 +728,7 @@ Every built part has its tests in the repository, each with an `A2.3.*` ID in `t
 
 **M10 gate test** (CI only, with the authenticated origin in place). A signs in, uses the UI, installs the web app and stops the service. B binds A's port and serves a page that tries to read `localStorage`, register a worker, plant cached assets and stay open. A reloads, opens the bookmark and the app, and starts the service again. Pass: B gets no usable credential or draft, never runs as A's authenticated origin, and reaches A's service as A in no request. v1 is expected to fail it, which is why v1 is limited to single-user machines.
 
-**Real-machine checks**, on a Windows machine and a Linux machine (Ubuntu 24.04 without sudo), same-user only:
+**Real-machine checks**, on Windows 11 and on Ubuntu 24.04 without sudo, same-user only:
 
 | ID | System | Check | Pass |
 |---|---|---|---|

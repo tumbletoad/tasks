@@ -651,7 +651,7 @@ No server-rendering framework (the UI is a local client of the service), no Redu
 
 ### 3.25 Performance
 
-Targets hold on the Linux reference machine (Ubuntu 24.04, Firefox snap) with a seeded space at A1's **design scale**: **5,000 open tasks** and 50,000 completed, 30 areas and 200 projects, with 10 agent sessions writing and the service already running. A1 owns these numbers. Its larger stress corpus is for A1 and A3's query budgets, not for these targets.
+Targets hold on Ubuntu 24.04 in the Firefox snap with a seeded space at A1's **design scale**: **5,000 open tasks** and 50,000 completed, 30 areas and 200 projects, with 10 agent sessions writing and the service already running. A1 owns these numbers. Its larger stress corpus is for A1 and A3's query budgets, not for these targets.
 
 | Measure | Target |
 |---|---|
@@ -674,7 +674,7 @@ Targets hold on the Linux reference machine (Ubuntu 24.04, Firefox snap) with a 
 
 **The list** (`src/list/List.tsx`, `items.ts`) is one sequence of items, group headings and project labels included. Over 200 rows it is virtualised with TanStack Virtual against the window, with 10 items of overscan each way. Both modes render the same structure with the same keys, so a list that crosses 200 keeps its rows and focus. The current, focused and expanded rows always stay mounted. Offsets are custom properties written through the CSSOM, never a style attribute, so the CSP holds. TanStack's `directDomUpdates` stays off, because the scroll anchoring of 3.15 item 6 must know every offset. Size estimates are never taller than the real heights. Tests: `A5.3.25.web.items`, `A5.3.25.web.render-count`, `A7.3.12.m5-03.e2e.scroll-5000` (5,000 rows, every frame of a full sweep covered with focus kept) and `A7.3.12.m5-03.e2e.rows`.
 
-**Still to build:** the Playwright performance test over this table, in CI (Chromium and Firefox on Linux) and on the Linux reference machine at each UI milestone.
+**Still to build:** the Playwright performance test over this table, in CI (Chromium and Firefox on Linux) and on a real Ubuntu 24.04 machine at each UI milestone.
 
 **Measured so far** (M0 lab row U07, 5,000 rows, headless Firefox 159): 60 fps scrolling, view switch p95 23 to 24 ms, burst script work 12 to 15 ms with no late frame. The stack needs none of M0-4's fallbacks. The burst has little margin, and the spike re-derived all 5,000 tasks per burst where the product derives per event. The visible run in the Firefox snap is still open (M0-4); a miss there reopens the stack choice before M5.13. Headless Firefox keeps a 1366 × 768 window and reports `performance.now()` in whole milliseconds, so headless numbers are coarse.
 

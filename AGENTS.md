@@ -10,7 +10,8 @@ and workflow.
 - `planning/PLAN.md`: the decisions, an architecture overview and the milestone order. The owner's
   decisions (A.1) carry the most weight.
 - `planning/appendix/`: the specifications A1 to A7, which win on specifics. A7 lists every step.
-- `planning/STATUS.md`: one row per step, and the open real-machine sessions with the owner.
+- `planning/STATUS.md`: one row per step, and the open checks that need a real machine with a
+  person present.
 - `VISION.md`: the intended experience. Where the plan is silent, or two options both fit it,
   choose by the vision. It adds no features. Only the owner changes it.
 - This file wins over conflicting process rules in a specification.
@@ -64,14 +65,14 @@ and workflow.
   never the assertion.
 - When a second review round finds more of one class of defect, change the design.
 - A step behind an open lab gate (A7 3.7) is built to the lab's findings, and its pull request
-  lists what waits for a real-machine session.
+  lists what waits for a check on a real machine.
 - Browser automation uses a scratch profile and leaves others' tabs alone.
 
 ## Verify and merge
 - `pnpm verify` passes. On Windows, run it from PowerShell 7 (`pwsh -NoProfile`).
 - UI steps: `pnpm e2e` passes and you looked at the screenshots.
 - CI runs the checks on Ubuntu and Windows for every pull request. Platform code (paths,
-  processes, sockets, terminals, install, launch) is also checked by the owner on a real Linux machine.
+  processes, sockets, terminals, install, launch) is also checked on a real Ubuntu 24.04 machine.
 - Paste the Verify output into the pull request, with the OS, and say what you did not test.
 - Substantial changes get an independent review before merging: storage, protocol, security,
   migrations, launch, and anything over a few hundred lines. Fix or answer every finding.
@@ -102,6 +103,10 @@ and workflow.
   a temporary `TASKS_HOME`;
 - put machine or personal facts in the repository: addresses, logins, machine names, paths under
   a user's profile;
+- describe a particular test setup in the repository: its machines, who tests where, or how to
+  reach or prepare a machine. Say on which platform something was tested ("on Windows 11", "on
+  Ubuntu 24.04"). A checkout's own setup, and agent instructions for it, live in the git-ignored
+  `local/`;
 - open, copy, move or print an agent app's sign-in file or token, or look for an API key. A copy
   that refreshes its token can sign out live sessions;
 - change another app's trust or approval settings, or a managed instruction file. Tasks registers

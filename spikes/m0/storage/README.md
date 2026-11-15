@@ -21,22 +21,22 @@ pnpm exec node spikes/m0/storage/run.ts --scale <n> --out <folder> [--work <fold
 | `--keep` | Keep the temporary folder for inspection |
 | `--inject-fault generate` | Test hook: fail inside the primary's generation, to check the cleanup |
 
-The CI test (`storage-bench.test.ts`) runs the whole bench at 1 % with `--layout` in a temporary folder in about 6 seconds on the Windows lab machine, and kills it if it passes its 90-second budget.
+The CI test (`storage-bench.test.ts`) runs the whole bench at 1 % with `--layout` in a temporary folder in about 6 seconds on Windows 11, and kills it if it passes its 90-second budget.
 
 **Failures.** Every database connection and worker is closed on every path, so a failed run never keeps a file open. The run folder is removed after a failure too. If removing it also fails, both errors are printed, the original first, with the folder to remove by hand.
 
 ## How M0.05 runs it
 
-Run from a checkout of the merged commit after `pnpm install --frozen-lockfile`. Only fixture data is involved, so the bench is safe on a managed machine. A default full-scale run needs about 2.5 GB free in `--work` and takes about 4 minutes plus the 5 minutes of R04 on the Windows lab machine. The heavy profile needs about 4 GB.
+Run from a checkout of the merged commit after `pnpm install --frozen-lockfile`. Only fixture data is involved, so the bench is safe on a managed machine. A default full-scale run needs about 2.5 GB free in `--work` and takes about 4 minutes plus the 5 minutes of R04 on Windows 11. The heavy profile needs about 4 GB.
 
-- **Windows lab machine (Windows 11, PowerShell):** confirm Defender real-time protection is on (`(Get-MpComputerStatus).RealTimeProtectionEnabled`), then
+- **Windows 11 (PowerShell):** confirm Defender real-time protection is on (`(Get-MpComputerStatus).RealTimeProtectionEnabled`), then
   `pnpm exec node spikes/m0/storage/run.ts --scale 1 --machine desktop --layout --work $HOME\Tasks --out <results>\desktop`
   and the heavy profile into its own folder:
   `pnpm exec node spikes/m0/storage/run.ts --scale 1 --machine desktop --text heavy --layout --work $HOME\Tasks --out <results>\desktop-heavy`
-- **Linux lab machine (Ubuntu 24.04):** the same two commands with `--machine laptop --work ~/Tasks --out <results>/laptop` and `<results>/laptop-heavy`.
+- **Ubuntu 24.04:** the same two commands with `--machine laptop --work ~/Tasks --out <results>/laptop` and `<results>/laptop-heavy`.
 - **Repeating a run:** give it a new `--out` folder (for example `<results>\desktop-2`). The bench refuses a folder that already holds files.
 
-The row records come from the default profile, so they stay comparable with the first runs. The heavy profile's R03 to R05 are recorded beside them. R03 is defined in `~/Tasks` (A1 M0 item 2), so `--work` points there. The bench refuses a missing `--work` folder and never creates `~/Tasks`. Whether `~/Tasks` may exist yet on the Linux lab machine is M0.05's call (it has only `TASKS_HOME` test installs until the real-use point). If it does not exist, use another folder in the home directory on the same disk and record that in the row. Copy `--out` back as the row's evidence. The result files hold numbers and machine facts only: no paths, host names or task text.
+The row records come from the default profile, so they stay comparable with the first runs. The heavy profile's R03 to R05 are recorded beside them. R03 is defined in `~/Tasks` (A1 M0 item 2), so `--work` points there. The bench refuses a missing `--work` folder and never creates `~/Tasks`. Where `~/Tasks` does not exist, use another folder in the home directory on the same disk and record that in the row. Copy `--out` back as the row's evidence. The result files hold numbers and machine facts only: no paths, host names or task text.
 
 ## What each number decides
 
@@ -86,7 +86,7 @@ The bench's schema does not change: A1 owns it, and the layout decision goes to 
 
 ## Indicative Windows runs (not the lab rows)
 
-All on the Windows lab machine (Windows 11, Defender on), default text profile. M0.05 records the real rows. R03, R04 and R06 now time more work than in the first run and the review run below (random A1 IDs, session metadata, projection bookkeeping), so those two runs' numbers are historical and not comparable with later runs.
+All on Windows 11 with Defender on, default text profile. M0.05 records the real rows. R03, R04 and R06 now time more work than in the first run and the review run below (random A1 IDs, session metadata, projection bookkeeping), so those two runs' numbers are historical and not comparable with later runs.
 
 **First run, 2026-11-12, by the bench's author,** with R04 shortened to 20 s, to check the bench works at full scale:
 

@@ -13,10 +13,10 @@ The row writes a folder-trust entry into a scratch Claude Code home (`projects["
 
 **How trust is seen without a session.** Claude Code applies a project's own `.mcp.json` approval (`enableAllProjectMcpServers` in the project's `.claude/settings.json`) only in a trusted folder, so `claude mcp list` in the folder shows the marker server as "Pending approval" until the folder is trusted. Codex loads a project's `.codex/config.toml` only for a trusted project, so `codex mcp list --json` lists its marker server only then. The lab records the class (trusted, untrusted, marker absent, failed), never the output.
 
-Run with the repository's Node on the Windows lab machine:
+Run with the repository's Node on Windows:
 
 ```
-pnpm exec node spikes/m0/launch/lab.ts l10 --scratch %USERPROFILE%\tasks-test\m0-10 --results <results folder>
+pnpm exec node spikes/m0/launch/lab.ts l10 --scratch <new scratch folder> --results <results folder>
 ```
 
-On the Linux lab machine, copy `launch/{lab,trust-patch,fixtures}.ts`, `agents/{clis,config-record,facts,scratch,spawn}.ts` and `kit/wire.ts` to the same paths under `~/tasks-test/m0-10/lab/spikes/m0/`, with a `package.json` of `{"type":"module"}` in `~/tasks-test/m0-10/lab/`, install the signed `linux-x64` spike archive into `~/tasks-test/m0-10/install`, and run `lab.ts` with its `runtime/node`. Then remove the scratch folder by its full name, never its parent.
+On Linux, in a new scratch folder `<s>`, copy `launch/{lab,trust-patch,fixtures}.ts`, `agents/{clis,config-record,facts,scratch,spawn}.ts` and `kit/wire.ts` to the same paths under `<s>/lab/spikes/m0/`, with a `package.json` of `{"type":"module"}` in `<s>/lab/`, install the signed `linux-x64` spike archive into `<s>/install`, and run `lab.ts` with its `runtime/node`. Then remove the scratch folder by its full name, never its parent.

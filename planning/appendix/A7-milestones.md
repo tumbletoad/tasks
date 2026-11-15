@@ -10,14 +10,14 @@ Examples use the fixture world: Mira Okafor, space "Mira", reference prefix `M`.
 
 ## 1. Summary
 
-1. **M0 is a real-machine lab** on a real Windows machine and a real Linux machine (Ubuntu 24.04, no sudo rights). Gate G1 (runtime, storage, bridge) has passed. Gate G2 (lifecycle, browser, agent apps, launch routes, runs, connectors) stays open until three lab sessions with the owner have run. Steps behind a G2 predicate are built meanwhile, and the gate decides whether they may be called done on real machines (3.7).
+1. **M0 is a real-machine lab** on Windows 11 and on Ubuntu 24.04 without sudo rights. Gate G1 (runtime, storage, bridge) has passed. Gate G2 (lifecycle, browser, agent apps, launch routes, runs, connectors) stays open until three lab sessions with the owner have run. Steps behind a G2 predicate are built meanwhile, and the gate decides whether they may be called done on real machines (3.7).
 2. **Seven milestones lead to v1.** M1 core slice, with a verified backup and restore before any real data. M2 walking skeleton: Open a task in T3 Code, Claude Code CLI and Codex CLI on Windows and Linux. M3 durable space. M4 agent interface. M5 planner UI. M6 runs and routines. M7 imports the prototype and runs the retirement trial. Milestones group steps. Their order is not a dependency: a step starts when the code it needs exists (3.6).
 3. **Open reaches the first user at the end of M2,** as the first usable result after the core. An early demo opens Claude Code on Windows once M2.08 to M2.10, M2.12 and M2.13 are merged.
 4. **v1 retires the earlier prototype for the first user** after a trial of 10 working days with the prototype frozen. v1 includes runs on tasks through the Claude Code and Codex CLI adapters, the Refresh and Wrap-up routines on request (D6, D8), and Open and Run for tasks without a folder through the Tasks work folder. Release archives are Ed25519-signed. Recurrence, reminders, scheduled routines, explicit file import, the T3 run adapter, pre-trust, the hosted public update channel, an authenticated UI origin and any desktop shell come after v1.
 5. **104 base steps to v1, each sized for one agent session.** No calendar estimates: order, dependencies and lanes only. Conditional work (a native forwarder, the fallback driver as primary) applies only when a measurement calls for it. The Windows cancel helper M6.04h applies.
-6. **The importer** is a pure TypeScript parser of a frozen copy. It never runs prototype code. It maps every field to A1's model, keeps distinct legacy tasks distinct even when they share a source, previews a report, writes one import commit and re-imports idempotently through A1's exchange bases. It is ready by the real-use point (3.6), so the first user has a real work space on the Linux reference machine that stays current with the prototype until the M7 switch-over.
+6. **The importer** is a pure TypeScript parser of a frozen copy. It never runs prototype code. It maps every field to A1's model, keeps distinct legacy tasks distinct even when they share a source, previews a report, writes one import commit and re-imports idempotently through A1's exchange bases. It is ready by the real-use point (3.6), so the first user has a real work space that stays current with the prototype until the M7 switch-over.
 7. **Rollback** exports the space's current state into a new folder in the prototype's format, with check-offs and stars as fresh prototype events and without the frozen ones. The export is recorded as an exchange, so the return re-imports without duplicates. New work in Tasks is never thrown away.
-8. **Agents verify their own steps** with `pnpm verify`, the step's Verify line, CI on Ubuntu and Windows and, for platform code, a `TASKS_HOME` test install on the Linux reference machine. A v1 acceptance manifest names the tests each milestone owns. A pull request merges when its checks and its review pass. From the real-use point, every verified build also goes to the first user's daily install and is checked against the real work space.
+8. **Agents verify their own steps** with `pnpm verify`, the step's Verify line, CI on Ubuntu and Windows and, for platform code, a `TASKS_HOME` test install on a real Ubuntu 24.04 machine. A v1 acceptance manifest names the tests each milestone owns. A pull request merges when its checks and its review pass. From the real-use point, every verified build also goes to the first user's daily install and is checked against the real work space.
 
 ---
 
@@ -41,9 +41,9 @@ Examples use the fixture world: Mira Okafor, space "Mira", reference prefix `M`.
 | P14 | Checked-off prototype items | Completed at once with wrap-up pending | D12. In the prototype a check-off is the user's completion signal |
 | P15 | Trial | 10 working days, prototype frozen, one writer. After a blocking fix, 5 clean consecutive days | Two weeks cover a weekly rhythm |
 | P16 | Rollback | Export to the prototype format into a new folder, as an exchange, with the space held read-only while the prototype is the writer (3.15.8, 3.16.4) | Never discard the trial's work. Frozen events must not override the export, and the return must not duplicate tasks |
-| P17 | Real data | Never in the repo, fixtures, PRs, screenshots or reports. The importer, Refresh and the deploy check touch real data only on the Linux reference machine (3.4) | AGENTS.md |
-| P18 | Test installs | `TASKS_HOME` installs on the Linux reference machine. From the real-use point it also has a daily install on the latest verified build (3.4, 3.6) | The install ID isolates runtime folder, socket, launch folders, unit and port (A2 S28) |
-| P19 | Real-agent tests | By hand on the real machines, never in CI | They cost tokens and need signed-in agent apps |
+| P17 | Real data | Never in the repo, fixtures, PRs, screenshots or reports. The importer, Refresh and the deploy check touch real data only on the machine that holds it (3.4) | AGENTS.md |
+| P18 | Test installs | `TASKS_HOME` installs on a real Ubuntu 24.04 machine. From the real-use point the first user also runs a daily install on the latest verified build (3.4, 3.6) | The install ID isolates runtime folder, socket, launch folders, unit and port (A2 S28) |
+| P19 | Real-agent tests | By hand on real Windows and Linux machines, never in CI | They cost tokens and need signed-in agent apps |
 | P20 | Backups before real data | The migration runner and A1's minimal backup set ship together (M1.06). An installed-build migration failure and restore drill passes in M1.15, before real tasks go into M2. Bundles, transfer and fork come in M3 | A1 requires a verified backup before every migration |
 | P21 | Acceptance manifest | One manifest names every test, the milestone that owns it and its kind (CI, installed build, manual). Cuts are named scope profiles | Milestones must not depend on later scope |
 | P22 | Scope and order | Base steps sized for one agent session each, conditional steps kept apart, a step started when its code dependencies exist, as many lanes as the dependencies allow. No calendar estimates | AI agents implement the product, so only order and dependencies matter |
@@ -58,7 +58,7 @@ Examples use the fixture world: Mira Okafor, space "Mira", reference prefix `M`.
 ### 3.1 Assumptions
 
 - AI agents implement the steps in parallel lanes, one agent session per step. Lab sessions and the trial, which need the owner at a machine, are the likely limit (D5).
-- Development happens on Windows. The second test machine runs Linux (Ubuntu 24.04, no sudo rights) (D18). Machine facts are kept outside the repository.
+- Development happens on Windows. The product is tested on Windows 11 and on Ubuntu 24.04 without sudo rights (D18). Facts about particular test machines are kept outside the repository (3.5).
 - Agent app versions are recorded with each lab result and each qualification receipt, not here.
 
 ### 3.2 Repository layout
@@ -133,22 +133,22 @@ The repository's `AGENTS.md` (3.5) owns how implementing agents work. This secti
 - [ ] Contracts and generated files: unchanged | regenerated
 - [ ] Migration: none | <number>, with a fixture-database test
 - [ ] UI: none | Sumi and Washi screenshots at 1,440 px, axe clean, keyboard path tested
-- [ ] RM step: TASKS_HOME test install on <machine>, result below
+- [ ] RM step: TASKS_HOME test install on <OS>, result below
 - [ ] Gate: none | what waits for a lab session (3.7)
 - [ ] Review: rounds and depth (3.18.5), every finding fixed or answered
 - [ ] Not tested, and why:
 - [ ] New dependencies: none | name, version, licence
 ```
 
-**Real data.** Real work data is touched only on the Linux reference machine: the deploy check, the real-use import and its re-imports (3.6), and Refresh. Their reports stay in that space. Problems from real use are reported with `tasks doctor --bundle --redact-paths`, which holds no task text (A2 3.13).
+**Real data.** Real work data is touched only on the machine that holds it: the deploy check, the real-use import and its re-imports (3.6), and Refresh. Their reports stay in that space. Problems from real use are reported with `tasks doctor --bundle --redact-paths`, which holds no task text (A2 3.13).
 
-**Real-machine steps.** Build the archive on Windows, copy it to the Linux reference machine, and install it with the build's install script as a `TASKS_HOME` test install into a root that does not exist yet. Its install ID gives it its own runtime folder, socket, launch folders, unit and port (A2 S28), and it keeps program, command and data under its one root. Run the Verify line there. Afterwards remove the root only when its `install.json` says the installer made it. No sudo, nothing outside the home folder.
+**Real-machine steps.** Build the archive, copy it to a real Ubuntu 24.04 machine, and install it with the build's install script as a `TASKS_HOME` test install into a root that does not exist yet. Its install ID gives it its own runtime folder, socket, launch folders, unit and port (A2 S28), and it keeps program, command and data under its one root. Run the Verify line there. Afterwards remove the root only when its `install.json` says the installer made it. No sudo, nothing outside the home folder.
 
-**The daily install.** From the real-use point (3.6) the Linux reference machine also has a daily install (M1.15), kept on the latest verified build. After every merged batch that passes verification it is deployed: back up, upgrade (migrations run only after a verified backup), then check that the space opens, the main views load, search works and Open works. Before the first build with a new migration step is deployed, the installed-build migration drill (3.10) runs on the Linux reference machine against that build, because its first writer migrates the real spaces. A break is fixed before any other work.
+**The daily install.** From the real-use point (3.6) the first user also runs a daily install (M1.15), kept on the latest verified build. Each deploy backs up, upgrades (migrations run only after a verified backup), then checks that the space opens, the main views load, search works and Open works. Before the first build with a new migration step is deployed, the installed-build migration drill (3.10) runs against that build on the same OS, because its first writer migrates the real spaces. A break is fixed before any other work.
 
 ### 3.5 The repository's `AGENTS.md` and `CLAUDE.md`
 
-The repo-root `AGENTS.md` is the single source for how people and coding agents work on the repository. It wins over conflicting process rules in this plan, and this appendix does not copy it. `CLAUDE.md` imports it, and also the git-ignored `local/AGENTS.md` when that exists, so every agent app reads the same rules. A checkout's machine setup, workflow and real-machine notes live in `local/`, never in the repository.
+The repo-root `AGENTS.md` is the single source for how people and coding agents work on the repository. It wins over conflicting process rules in this plan, and this appendix does not copy it. `CLAUDE.md` imports it, and also the git-ignored `local/AGENTS.md` when that exists, so every agent app reads the same rules. A checkout's machine setup, workflow and real-machine notes live in `local/`, never in the repository. The repository states on which platforms something was tested (Windows 11, Ubuntu 24.04), never a particular test setup: its machines, who tests where, or how to reach or prepare a machine.
 
 ### 3.6 Milestone map and order
 
@@ -156,11 +156,11 @@ The repo-root `AGENTS.md` is the single source for how people and coding agents 
 |---|---|---|---|
 | **M0** Lab | Observe and qualify every load-bearing fact | 12 | Three lab sessions, report review |
 | **M1** Core slice | One space, one writer, one CLI, a verified backup and restore, installed on Windows and Linux | 15 | Acceptance transcript |
-| **M2** Walking skeleton | Open a task in T3, Claude Code and Codex on Windows and Linux | 15 | Acceptance on each machine, then 3–5 days of use |
+| **M2** Walking skeleton | Open a task in T3, Claude Code and Codex on Windows and Linux | 15 | Acceptance on Windows and Linux, then 3–5 days of use |
 | **M3** Durable space | A1 complete for v1 | 16 | Restore drill, projection, scale note |
 | **M4** Agent interface | A3 complete | 8 | Setup previews, eval report |
 | **M5** Planner UI | A5's v1 scope | 13 | Every screen, five days of use |
-| **M6** Runs and routines | A4 runs, Refresh, Wrap-up, the Tasks work folder, every v1 target | 15 | Refresh on the Linux reference machine |
+| **M6** Runs and routines | A4 runs, Refresh, Wrap-up, the Tasks work folder, every v1 target | 15 | Refresh on Linux |
 | **M7** Switch-over | Import, rollback tooling, trial, retirement = **v1** | 10 | Rehearsal, cutover, a daily check during the trial, gate review |
 | **Total to v1** | | **104** | |
 
@@ -177,7 +177,7 @@ The repo-root `AGENTS.md` is the single source for how people and coding agents 
 | Windows cancel helper M6.04h | 1 | Applies: N03 showed it is needed |
 | Fallback driver as primary | 1 | Not now: `node:sqlite` stays the primary (3.7, R08) |
 
-**Real-use point.** The agents decide when the product is mature enough for the first user's real work tasks, and mark it in `STATUS.md`. It need not be stable, but the core must be there. Guideline: a durable space with verified backups, the prototype importer (M7.03–M7.05), Today and the task lists with the expanded task, editing and check-off with undo, agents updating tasks through MCP, and Open in T3 Code and Codex on the Linux reference machine. From that point that machine has a daily install with a work space imported from the prototype (3.4). Until the M7 switch-over the prototype stays the source of truth and TT Tasks only reads it. Re-imports are idempotent and never lose an edit the first user made in TT Tasks (3.15.6). The M7 rehearsal, trial and retirement gate stay the formal switch-over.
+**Real-use point.** The agents decide when the product is mature enough for the first user's real work tasks, and mark it in `STATUS.md`. It need not be stable, but the core must be there. Guideline: a durable space with verified backups, the prototype importer (M7.03–M7.05), Today and the task lists with the expanded task, editing and check-off with undo, agents updating tasks through MCP, and Open in T3 Code and Codex on Linux. From that point the first user runs a daily install with a work space imported from the prototype (3.4). Until the M7 switch-over the prototype stays the source of truth and TT Tasks only reads it. Re-imports are idempotent and never lose an edit the first user made in TT Tasks (3.15.6). The M7 rehearsal, trial and retirement gate stay the formal switch-over.
 
 **If the owner wants a smaller v1**, cut in this order, and ship the cut parts in M8:
 1. Claude Desktop and Codex app links (Copy covers them).
@@ -199,12 +199,12 @@ Not on the cut list, and changed only by a deviation written into the specificat
 
 **Lab rules.** They hold for every remaining run.
 - Lab code lives in `spikes/m0/` and is removed after its last user: the last lab session and M3.16's re-run of R05 with the storage bench. Only `fixtures/streams/` survives.
-- **Windows lab machine:** a key-level before and after record of every configuration file a check touches, restored the same day.
-- **Linux lab machine:** no sudo, nothing outside the home folder, scratch folders only. Configuration changes go into scratch homes (a new `CLAUDE_CONFIG_DIR` or `CODEX_HOME`) with a key-level record, removed the same day. Native Codex launches use the default home with per-launch flags and no configuration writes. Any other Codex home is detected only, never launched. Managed instruction files and skill folders are never written. Claude Code runs there only in an attended session.
+- **On Windows:** a key-level before and after record of every configuration file a check touches, restored the same day.
+- **On Linux:** no sudo, nothing outside the home folder, scratch folders only. Configuration changes go into scratch homes (a new `CLAUDE_CONFIG_DIR` or `CODEX_HOME`) with a key-level record, removed the same day. Native Codex launches use the default home with per-launch flags and no configuration writes. Any other Codex home is detected only, never launched. Managed instruction files and skill folders are never written. Claude Code runs there only in an attended session.
 - **Agent homes:** no sign-in file or token is copied, read, printed, hashed or moved, and no API key is looked for. No trust or approval setting is written in a real home. A registration in a real home happens only in an attended session: preview, entry backup, apply, exact removal.
-- A check that cannot run is recorded "not run" with its reason, and its fail branch applies until it is re-run. A result that changes a design choice is written into the section it belongs to. Screenshots from the Linux lab machine are not committed. Run dates, OS builds and app versions stay outside the repository.
+- A check that cannot run is recorded "not run" with its reason, and its fail branch applies until it is re-run. A result that changes a design choice is written into the section it belongs to. Screenshots from a Linux lab run are not committed. Run dates, OS builds and app versions stay outside the repository.
 
-**Lab code.** `spikes/m0/README.md` and the folder READMEs describe each tool. The code enforces the lab's safety rules: closed, structured logs (`kit/probe-log.ts`), fixed classifications in place of any program's own words, allow-listed child environments with process-group shutdown (`agents/spawn.ts`), removal only inside the run's marked scratch folder (`agents/scratch.ts`), run-only settings in signed-in homes (`agents/lab.ts`, `runs/lab.ts`) and the Linux lab machine guard (`runs/guard.ts`). Two reasons bind any change to it: logs are closed by construction because redaction heuristics leaked short values and paths, and nothing a CLI, a model or the OS says in its own words is kept, because account names, paths and credentials hide in it. The storage bench (`storage/run.ts`) judges a row only when the run meets the scale and durations that `spikes/m0/storage/README.md` lists. Any other run is indicative.
+**Lab code.** `spikes/m0/README.md` and the folder READMEs describe each tool. The code enforces the lab's safety rules: closed, structured logs (`kit/probe-log.ts`), fixed classifications in place of any program's own words, allow-listed child environments with process-group shutdown (`agents/spawn.ts`), removal only inside the run's marked scratch folder (`agents/scratch.ts`), run-only settings in signed-in homes (`agents/lab.ts`, `runs/lab.ts`) and the guard for Linux runs (`runs/guard.ts`). Two reasons bind any change to it: logs are closed by construction because redaction heuristics leaked short values and paths, and nothing a CLI, a model or the OS says in its own words is kept, because account names, paths and credentials hide in it. The storage bench (`storage/run.ts`) judges a row only when the run meets the scale and durations that `spikes/m0/storage/README.md` lists. Any other run is indicative.
 
 **Sessions with the owner present** (●): watching a window, clicking a trust or approval prompt, signing in, rebooting.
 1. Windows launch and apps: L01–L09, L12, A03–A06, U02–U06, S05, N02's interactive resume, the tool-choice check.
@@ -247,7 +247,7 @@ Session 3 registers the service with the product's own `tasks service install` (
 | S02 ● | Linux: the service started at boot reads its secrets folder before login | A6 L4 |
 | S03 ● | Windows: the Run value from `tasks service install` [M0-S7] | A2 S4 |
 | S05 ● | Windows: packaged parents P-1 to P-6 [M0-S8] | Packaged-context rules. P-2 fail: A3 marks the app "needs check" |
-| S09 | Linux: a test install beside a daily install [M0-S14]. Passes at spike level and in CI | M1.15 on the real machines |
+| S09 | Linux: a test install beside a daily install [M0-S14]. Passes at spike level and in CI | M1.15 on real machines |
 | S11 ● | Linux: the peer UID check with the Firefox snap [M0-S6] | A2 S17 |
 | E01 ● | The login-shell snapshot of a boot- or sign-in-started service finds the same tools as a hand-opened terminal, within 2 s or cached [A4 M0-L11]. The unattended halves pass (736 ms on Linux, 36–47 ms on Windows) | A4 L12's layers and the `via_login_shell` default |
 | E02 ● | Linux: the socket from inside Claude Code's sandbox [M0-S12] | The sandbox hint for Claude Code |
@@ -292,7 +292,7 @@ Session 3 registers the service with the product's own `tasks service install` (
 |---|---|---|---|
 | The service starts at boot on Linux and at sign-in on Windows, through `tasks service install` | S01, S03 | Pre-tests only | M1.15's reboot part and M1's definition of done item 4 |
 | A terminal and a run survive a service restart | S04, S01 | Windows yes. Linux provisionally, from the S01 pre-test | M2.09 and M6.01 rely on it until session 3 re-runs S01 through the product's unit |
-| Two installs on one machine never share an endpoint, and a stale lock recovers | S06, S09 | Yes at spike level and in CI | M1.15 on the real machines |
+| Two installs on one machine never share an endpoint, and a stale lock recovers | S06, S09 | Yes at spike level and in CI | M1.15 on real machines |
 | The service's login-shell snapshot finds the agent CLIs | E01 | Partly run | M2.09, M6.06 |
 | For each required native target (T3 Code, Claude Code CLI, Codex CLI through the default Codex home) on each machine, a route opens the exact folder with the brief, and the session binds | L02, L04, L05 or L06, A01–A03 | No route row has run. Binding holds for Claude Code (A01, Windows) and Codex CLI (A02, both) | That target's route step (M2.10, or M2.11 with M2.10t) and M2's definition of done |
 | Firefox on Windows and Linux: fragment-code bootstrap, token, WebSocket, strict CSP, clipboard | U01, U02 | Page parts pass headless | M2.12, M2.13 |
@@ -316,7 +316,7 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
-| M1.15 | The daily install and real machines. The install scripts' default roots: the program in `~/.local/share/tasks/` (`versions/`, `current`) and the command in `~/.local/bin/` on every OS (on Windows both stable launchers, which find the root at `<their folder>\..\share\tasks` with `share` and `share\tasks` checked as plain folders, A2 3.12.3; elsewhere the link `tasks` → `../share/tasks/current/bin/tasks`), with A2 3.12.4's PATH warning on Linux and the user `Path` entry on Windows. Data and configuration stay in `~/.tasks`, with `install.json` and `update.lock` in `<state>`. `tasks uninstall` plans the service entry's removal first (A2 3.3.5), then removes only what `install.json`'s `created` lists, and never anything in the data folder. Then the real machines: the Windows install with the Run value, a Linux test install with the unit and linger, A2 3.14's budgets with two generated spaces at the design scale (5,000 open and 50,000 completed tasks each), commit latency included, a backup and restore drill, and M3.01's installed-build migration drill (3.10) on Windows and Linux before any real space is upgraded to 0.2 (A1 5). The budgets and both drills run before the lab sessions. The reboot and sign-in part runs as lab session 3 and shares its reboots | M1.12, M1.14 | With the home folder set to a temporary folder: a default install puts the program, the command and the data in their places, and install then uninstall leaves the data folder as it was. The budgets and both drills pass on Windows and Linux and their numbers are recorded with the session. `pnpm accept m1 --installed` passes on Windows and Linux | M RM |
+| M1.15 | The daily install and real machines. The install scripts' default roots: the program in `~/.local/share/tasks/` (`versions/`, `current`) and the command in `~/.local/bin/` on every OS (on Windows both stable launchers, which find the root at `<their folder>\..\share\tasks` with `share` and `share\tasks` checked as plain folders, A2 3.12.3; elsewhere the link `tasks` → `../share/tasks/current/bin/tasks`), with A2 3.12.4's PATH warning on Linux and the user `Path` entry on Windows. Data and configuration stay in `~/.tasks`, with `install.json` and `update.lock` in `<state>`. `tasks uninstall` plans the service entry's removal first (A2 3.3.5), then removes only what `install.json`'s `created` lists, and never anything in the data folder. Then on real machines: the Windows install with the Run value, a Linux test install with the unit and linger, A2 3.14's budgets with two generated spaces at the design scale (5,000 open and 50,000 completed tasks each), commit latency included, a backup and restore drill, and M3.01's installed-build migration drill (3.10) on Windows and Linux before any real space is upgraded to 0.2 (A1 5). The budgets and both drills run before the lab sessions. The reboot and sign-in part runs as lab session 3 and shares its reboots | M1.12, M1.14 | With the home folder set to a temporary folder: a default install puts the program, the command and the data in their places, and install then uninstall leaves the data folder as it was. The budgets and both drills pass on Windows and Linux and their numbers are recorded with the session. `pnpm accept m1 --installed` passes on Windows and Linux | M RM |
 
 **Definition of done.**
 1. The manifest entries owned by M1 (3.18.6) pass on CI (Ubuntu, Windows) and against the installed build on Windows and Linux: create a space, then add, patch, note, complete and reopen through the CLI, then back up and restore it. The migration drill passes on the installed build.
@@ -344,7 +344,7 @@ Go or no-go per required native target and machine is no-go until its route rows
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
 | M2.10t | T3 Open from the page and the questions before dispatch, the part of M2.10 not built (A4 3.4.1; A5 3.8). `LaunchService` takes the hub's `T3Route`, and a click on a T3 instance runs availability, prepare, the Register question for a nested folder, plan, dispatch with the grant, and `confirm` after Dispatched and after recovery. Recovery's grant and replay call the route. The thread opens through A4 3.6.5's opener with the prefilled brief within T3's 8,000 characters and the title `<reference> <title>` through the sanitiser. The account check reads the instance's `spaces` and the area's accounts. The opener also replaces the minimal openers of `tasks open` and `tasks setup t3`. The click takes `chooseT3Route` and also connects M6.10's CLI route when T3 is not paired (A4 3.9.1). Until this lands, a T3 instance answers `no_route` | M2.10, M2.11 | From the page with a fake T3 server: Open on a task in an exact root reaches Confirmed. A nested folder asks Register, and Not now makes T3 unavailable for that task. A service restart after dispatch confirms or leaves Unknown and never dispatches again | M |
-| M2.15 | Real-machine acceptance with the owner on each machine: the definition of done below, then 3–5 days of use. Before real tasks, a backup of each space is verified (M1.06). The work space comes only at the real-use point (3.6). With the owner, `tasks setup agents`, then `--apply`, then `--remove` in the real homes the owner names (on Linux only the default Codex home): the real `claude mcp add` and `codex mcp add` write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` | M2.01–M2.14, M2.04b, M2.10t, M1.15, lab sessions 1 and 2 | One pass or fail per target and machine, recorded with the session | S RM |
+| M2.15 | Real-machine acceptance with the owner on Windows and Linux: the definition of done below, then 3–5 days of use. Before real tasks, a backup of each space is verified (M1.06). The work space comes only at the real-use point (3.6). With the owner, `tasks setup agents`, then `--apply`, then `--remove` in the real homes the owner names (on Linux only the default Codex home): the real `claude mcp add` and `codex mcp add` write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` | M2.01–M2.14, M2.04b, M2.10t, M1.15, lab sessions 1 and 2 | One pass or fail per target and machine, recorded with the session | S RM |
 
 **Carried into the remaining route steps (M2.10t, M6.11 and custom targets).** Routes build on the target catalogue and `Instance`, and check the reserved `[[custom_target]]` and `[override.*]` sections. A space-carried target definition is checked against the approvals in `machine.toml`. A space opened from an import starts with every space-defined target disabled, and the approved content is kept so the approval card can show a diff (A4 3.2). The `machine.toml` reader marks `{cwd}` and `{title}` in a custom terminal line as problems, which today only the launch refuses.
 
@@ -524,7 +524,7 @@ Go or no-go per required native target and machine is no-go until its route rows
 | M7.06 | Export to the prototype format: ledgers, metadata, the canonical event set and the export exchange with its marker map and base values (3.15.8). For an export folder outside the space, it decides what the exchange's `dir` holds instead of the absolute path | M7.03 | Round trip: import, export, import into a fresh space gives equal titles, statuses, areas, projects, aliases, places, sources, due dates, check-offs and stars. An independent parser of the export gives the space's state at the export for every task | M |
 | M7.07 | Rollback tooling: `tasks space hold\|release` with the operations on 0.2's `space.hold` column, the `held` refusal and its decoding, `tasks export planning --hold --rollback-from`, and the return import through the export exchange (3.15.6, 3.16.4) | M7.05, M7.06 | Overlay test with the independent parser (3.15.8). Same-space return: create a task in the space, export, edit the copy in the prototype format, re-import: same task IDs, no duplicates, conflicts only for fields the space changed after the export | M |
 | M7.08 | Trial tooling: `tasks trial check` (doctor, verified backup, integrity, counts, the daily export, the active scope profile) and `docs/switch-over.md` with the checklist in 3.16.2 | M7.07 | Runs green on the fixture space and prints one line per criterion of the active profile | S |
-| M7.09 | Rehearsal on the Linux reference machine with the owner, including a rollback and return on the trial space (3.16.2) | M5.13, M6.15, M7.08 | Rehearsal clean, findings fixed | S RM |
+| M7.09 | Rehearsal on Linux with the owner, including a rollback and return on the trial space (3.16.2) | M5.13, M6.15, M7.08 | Rehearsal clean, findings fixed | S RM |
 | M7.10 | Cutover and the 10-day trial, run by the first user (3.16) | M7.09 | The gate in 3.16.3 passes | S RM |
 
 M7.03 to M7.05 come before the real-use point (3.6), so the importer is ready when the first user starts real work.
@@ -740,7 +740,7 @@ The export reads one snapshot at `seq` S and writes into a new folder, never int
 
 #### 3.16.1 Parity
 
-Parity means the first user can do every daily thing done with the prototype, in TT Tasks, on the Linux reference machine.
+Parity means the first user can do every daily thing done with the prototype, in TT Tasks, on Linux.
 
 | Prototype | TT Tasks v1 | Checked by |
 |---|---|---|
@@ -763,7 +763,7 @@ Beyond parity, TT Tasks adds what the prototype lacks: Open in agent apps, notes
 #### 3.16.2 Rehearsal and cutover
 
 **Rehearsal, before day 0 (M7.09).**
-1. Update the daily install on the Linux reference machine, in use since the real-use point (3.6), to the release candidate. `tasks doctor` and `tasks doctor --live` are green.
+1. Update the first user's daily install, in use since the real-use point (3.6), to the release candidate. `tasks doctor` and `tasks doctor --live` are green.
 2. Make a dated archive of the prototype folder inside the user's home folder.
 3. Dry run against a frozen copy. The first user resolves the needs-attention list and names the roots.
 4. Apply into a trial space. Open five tasks with places in each native target, and one task without a place. Run Refresh twice and count duplicates of imported tasks. Run Wrap-up on two completed tasks.
@@ -801,7 +801,7 @@ All must hold at the end of the trial. A criterion that the active scope profile
 8. **Wrap-up** ran at least once and left every original text intact.
 9. **Operations.** The service survived at least one reboot and one `tasks update` with sessions open.
 10. **Speed.** Today becomes interactive within 800 ms on Linux. The service stays within A2 3.14 at idle.
-11. **Boundaries.** No sudo, no managed policy changed, no work data left the Linux reference machine.
+11. **Boundaries.** No sudo, no managed policy changed, no work data left the machine that holds it.
 
 **Trial length.** Ten working days. A blocking failure pauses the trial. After its fix, at least five consecutive clean working days must follow before the gate review. Other defects are filed and fixed without pausing.
 
@@ -861,10 +861,10 @@ Smaller items after v1, in no fixed order: pre-trust offers (A4 3.14), a UI for 
 | Screenshots | Every screen in Sumi and Washi at 1,440, 1,280 and 390 px | `tests/e2e/screens/` | Diffs attached to PRs |
 | Accessibility | axe on every screen, keyboard-only flows, NVDA and Orca by hand | `tests/e2e/` | axe per PR, manual at M5 and before releases |
 | Security | HTTP checks, DNS rebinding, the XSS suite, injection fixtures, zip hardening, the export secret scan, root refusal, the burst brake, pre-authentication bytes, token expiry (7 days unused, 30 days old), no service worker, a port held by another account giving no UI and revoked tokens while the socket keeps working, the doctor's other-accounts warning (A6 5). The two-user port-squatting test joins at M10 | integration and e2e | Every PR |
-| Performance | The budgets in 3.18.3 | `tests/perf/`, `pnpm bench` | Relative nightly, absolute at milestone close on the real machines |
+| Performance | The budgets in 3.18.3 | `tests/perf/`, `pnpm bench` | Relative nightly, absolute at milestone close on real Windows 11 and Ubuntu 24.04 machines |
 
 **Conventions** that `pnpm verify` does not check:
-- A test that makes a state or config folder or a `machine.toml` gives it the product's mode (0700, 0600) explicitly: under umask 002 a default-mode folder is group-writable, and the service refuses it. A new product path that creates files joins `[A2.3.2.2.permissions.umask]`. The Linux reference machine runs the suite under its own umask, never one set for the run, because that is where a mode the product does not set shows.
+- A test that makes a state or config folder or a `machine.toml` gives it the product's mode (0700, 0600) explicitly: under umask 002 a default-mode folder is group-writable, and the service refuses it. A new product path that creates files joins `[A2.3.2.2.permissions.umask]`. A real Ubuntu 24.04 machine runs the suite under its own umask (002 with user private groups), never one set for the run, because that is where a mode the product does not set shows.
 - A test starts storage workers only through the hub, as the service does. A plain `StorageWorker` handed to the hub crashed the Windows test process (heap corruption) in about one run in five, cause unknown.
 - The end-to-end tests of one Playwright worker share one world. A test that changes a task's launch state uses its own task.
 - Tests own their processes. Every child, detached agent and extra service a test starts is terminated and awaited in `finally` and in `afterAll`, before any files are deleted. Tests of environment handling or redaction run children with an explicit minimal environment.
@@ -914,7 +914,7 @@ The first baselines come from the Mira sample space. In M5.13 they are compared 
 
 **These targets are guidelines until real use (PLAN D26).** A missed target is measured, reported and judged, and is by itself no reason to cut or rework a feature. They are set again when the product is close to maturity. The regression rule below stays: it guards against an accident, not against a design.
 
-CI runners are noisy. CI fails a build when a budget regresses by more than 50 % against the stored baseline of the same runner type (A1 5). Absolute targets are measured on the two real machines at each milestone close. Headless Firefox keeps a 1366x768 window whatever `--window-size` says and reports `performance.now()` in whole milliseconds, so performance tests that run headless in Firefox must account for both.
+CI runners are noisy. CI fails a build when a budget regresses by more than 50 % against the stored baseline of the same runner type (A1 5). Absolute targets are measured on real Windows 11 and Ubuntu 24.04 machines at each milestone close. Headless Firefox keeps a 1366x768 window whatever `--window-size` says and reports `performance.now()` in whole milliseconds, so performance tests that run headless in Firefox must account for both.
 
 #### 3.18.4 CI matrix
 
@@ -930,7 +930,7 @@ Built: `check` (`pnpm verify` on Ubuntu, under umask 002, and Windows, then a 5-
 The workflows in `.github/workflows/` carry the details and their reasons. Rules that bind every job:
 - `check` has no path filters: a filter would skip the whole job, so verify's own lab rule could not report what it skipped.
 - **Cross-user tests** run only on GitHub-hosted runners, where the test creates and removes its second account itself (`packages/service/test/http-cross-user.test.ts`, Linux, skipped everywhere else). Not written yet: the Windows runner's cases (B's pipe, B's listener seen without admin rights) and B redeeming a code read from A's process list.
-- **Elevated Windows runners.** GitHub's Windows runners run every step elevated, and the service refuses an elevated token (A2 3.3.1). Tests that run the service from source give it a non-elevated identity (`packages/service/test/serve-entry.ts`). A test that runs a real installed service cannot (`tests/update/installed.test.ts`, `tests/update/launchers.test.ts`, `scripts/install/side-by-side.test.ts`): it is skipped only when the service's own check (`windowsElevated()`) finds this process elevated, and it runs on the Windows reference machine, which is not elevated. An elevation the check cannot read is not skipped.
+- **Elevated Windows runners.** GitHub's Windows runners run every step elevated, and the service refuses an elevated token (A2 3.3.1). Tests that run the service from source give it a non-elevated identity (`packages/service/test/serve-entry.ts`). A test that runs a real installed service cannot (`tests/update/installed.test.ts`, `tests/update/launchers.test.ts`, `scripts/install/side-by-side.test.ts`): it is skipped only when the service's own check (`windowsElevated()`) finds this process elevated, and it runs on a real Windows 11 machine with a non-elevated session. An elevation the check cannot read is not skipped.
 - **When GitHub Actions cannot start jobs,** the same checks run locally on the branch merged into main, on Windows and on Linux, with the pinned pnpm and nothing else changed. A local run cannot replace the tests that need a throwaway runner (a second user, the M10 port test) or the CI-only jobs, so a change to `spikes/m0/packaging` waits for CI. When Actions works again, the check runs on main once.
 - Two full test runs never share one machine at the same time. After a batch of merges, the suite runs on main on Windows and Linux. Time limits stay generous for tests that open several spaces, because the Windows runner is slower than a development machine.
 
@@ -1006,7 +1006,7 @@ A required capability of D6, D7 or D8 has no profile. Changing that scope deviat
 | D7 | Contract and migration churn with parallel agents | Medium | Medium | One open migration at a time, additive contract changes (3.4). Schema freeze at M3.01 |
 | D8 | Managed-machine changes: Firefox snap refreshes, the user-namespace restriction, app versions set by the machine's managers | Medium | Medium | Isolated test installs, doctor checks, M0 rows re-run on change |
 | D9 | Connector approvals block Refresh under `codex exec` | Medium | High | N04 early, through the real Refresh path and every read operation. Fallback: read overrides set by the user (agents never change approval settings), re-tested through the same path. A visible-session Refresh needs a recorded change of D8's scope |
-| D10 | The importer meets surprises in real data, which exists only on the Linux reference machine | Medium | Medium | A synthetic fixture with every edge case, the dry run, the real-use import and its re-imports long before M7, the rehearsal, the needs-attention list |
+| D10 | The importer meets surprises in real data, which exists only on the first user's own machine | Medium | Medium | A synthetic fixture with every edge case, the dry run, the real-use import and its re-imports long before M7, the rehearsal, the needs-attention list |
 | D11 | Imported source keys differ from the connectors' keys, so the first Refresh duplicates | Medium | Medium | `url:` keys plus A3 3.11.2's possible-duplicate attach. The rehearsal counts duplicates. Connector-style keys only when proven |
 | D12 | Real work data leaks into the repo, fixtures, screenshots or logs | Low | High | `AGENTS.md` rules, the content-free log test, a CI check that fixtures use only fixture names, reports kept in the space |
 | D13 | Windows-only or Linux-only bugs found late | Medium | Medium | Both OSes in CI from the first commit, RM steps on a real Linux machine |

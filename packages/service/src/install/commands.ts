@@ -1464,7 +1464,7 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
         // Explorer is the parent the Run value has at sign-in: outside any package and any job of
         // this process. explorer.exe hands the start to the running shell and exits at once.
         // Always quoted: explorer.exe splits an unquoted path at its commas and opens a folder
-        // window instead (seen on the Windows reference machine). A Windows path holds no quote, so this is exact.
+        // window instead (seen on Windows 11). A Windows path holds no quote, so this is exact.
         await launch(ctx.windows?.explorer ?? "explorer.exe", [`"${ctx.program}"`], {
           verbatim: true,
         });

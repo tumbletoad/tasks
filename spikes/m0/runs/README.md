@@ -13,14 +13,14 @@ Lab code for rows N01, N02, N03 and N05 of A7 3.7. Never shipped, never imported
 | `lab.ts` | The commands: `build-helper`, `n01`, `n02`, `n03`, `n03-detached` (the lab restarts itself detached, then Ctrl+C to each CLI started plainly and through `run`), `repeats` (Windows), `n02-laptop`, `n05`, `resanitise`, `keys`, `cleanup`. The console and the result files get fixed classes, counts, exit codes, timings, schema names and yes or no facts only; stderr, error events and MCP errors stay in the raw folder. Errors print a fixed class (`errorLabel`) |
 | `fake-cli.ts`, `runs.test.ts` | Self-test with fake CLIs (`[A7.3.7.m0-runs.self-test]`); no test starts a real claude or codex. One case runs the lab itself against fake CLIs whose stderr, errors and events carry private-looking values, and checks that none reaches the console, the result files or the fixtures |
 
-Run with the repository's Node on the Windows lab machine:
+Run with the repository's Node on Windows, with one scratch folder `<s>` for the run:
 
 ```
-pnpm exec node spikes/m0/runs/lab.ts build-helper --scratch %USERPROFILE%\tasks-test\m0-11
-pnpm exec node spikes/m0/runs/lab.ts n01 --scratch %USERPROFILE%\tasks-test\m0-11
-pnpm exec node spikes/m0/runs/lab.ts n05 --scratch %USERPROFILE%\tasks-test\m0-11 --fixtures fixtures/streams
+pnpm exec node spikes/m0/runs/lab.ts build-helper --scratch <s>
+pnpm exec node spikes/m0/runs/lab.ts n01 --scratch <s>
+pnpm exec node spikes/m0/runs/lab.ts n05 --scratch <s> --fixtures fixtures/streams
 ```
 
-On the Linux lab machine, copy `kit/wire.ts`, `kit/mcp-stub.ts`, `kit/probe-log.ts`, `agents/{probe,spawn,clis,config-record,facts,scratch}.ts`, `runs/*.ts` (without the tests) and `tests/stream-content.ts` and `tests/stream-schema.ts` in the same layout, with a `package.json` of `{"type":"module"}`, and run `lab.ts n02-laptop` and `n05` with the packaged Node of the signed spike archive. The raw streams stay in that machine's scratch folder; only the sanitised fixtures, the inventory and the result file are copied back, after the checks on that machine.
+On Linux, copy `kit/wire.ts`, `kit/mcp-stub.ts`, `kit/probe-log.ts`, `agents/{probe,spawn,clis,config-record,facts,scratch}.ts`, `runs/*.ts` (without the tests) and `tests/stream-content.ts` and `tests/stream-schema.ts` in the same layout, with a `package.json` of `{"type":"module"}`, and run `lab.ts n02-laptop` and `n05` with the packaged Node of the signed spike archive. The raw streams stay in that machine's scratch folder; only the sanitised fixtures, the inventory and the result file are copied back, after the checks on that machine.
 
 Caps (`<scratch>/runs-ledger.json`): Windows 30 Claude Code and 25 Codex sessions, Linux no Claude Code, 8 Codex sessions of which at most 2 resumable. Claude Code runs on haiku with `--setting-sources project --strict-mcp-config`, Codex with `--ignore-user-config`, `model_reasoning_effort="low"` and `--ephemeral` unless the run must be resumable. `cleanup --remove 1` removes the one Claude Code transcript folder of the working folder (only when it holds only this run's session IDs) and the rollout files of this run's persisted Codex threads, found by file name.

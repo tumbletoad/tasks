@@ -62,7 +62,7 @@ export function chooseKill(rng: Rng, ledger: Ledger): Kill {
   if (roll < 60) {
     return { kind: "point", arm: { where: "restore", point: rng.pick(POINTS.restore), nth: 1 } };
   }
-  // A round's plan takes a few hundred milliseconds on the Windows reference machine, so a timer counts from a request
+  // A round's plan takes a few hundred milliseconds on a desktop-class Windows 11 machine, so a timer counts from a request
   // the child reports as sent, which lands it inside the plan on a fast machine and a slow one alike.
   if (roll < 80) return { kind: "timer", sends: rng.range(1, 100), afterMs: rng.range(0, 8) };
   if (roll < 87) return { kind: "timer", sends: 0, afterMs: rng.range(0, 40) };

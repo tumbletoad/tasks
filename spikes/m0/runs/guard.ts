@@ -1,9 +1,9 @@
 // The machine rules of lab run N (M0.11), enforced by the code before anything is spawned: full
-// access and Claude Code sessions run on the Windows lab machine only, and so does every command that
-// exists for it. On the Linux lab machine the lab runs only the reduced route.
+// access and Claude Code sessions run on Windows only, and so does every command that exists for
+// them. On Linux the lab runs only the reduced route.
 import { LabError } from "../agents/facts.ts";
 
-/** Commands that exist for the Windows lab machine only (n02-laptop, n05, resanitise and keys run anywhere). */
+/** Commands that exist for Windows only (n02-laptop, n05, resanitise and keys run anywhere). */
 export const DESKTOP_ONLY = [
   "build-helper",
   "n01",

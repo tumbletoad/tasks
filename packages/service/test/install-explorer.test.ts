@@ -267,7 +267,7 @@ describe.skipIf(!windows)(
         inJob: boolean;
         flags: number | null;
       };
-      // On the Windows reference machine (Windows 11 build 26300) Explorer's job has BREAKAWAY_OK (0x800) only.
+      // On Windows 11 Explorer's job has BREAKAWAY_OK (0x800) only.
       if (job.inJob) {
         expect(job.flags).not.toBeNull();
         expect((job.flags ?? KILL_ON_JOB_CLOSE) & KILL_ON_JOB_CLOSE).toBe(0);
