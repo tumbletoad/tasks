@@ -29,8 +29,7 @@ import type { PreviewGuard } from "./request.ts";
 const IN = (param: string): string => `IN (SELECT value FROM json_each(${param}))`;
 
 const SQL = {
-  space:
-    "SELECT space_id, authority_epoch, authority_incarnation FROM space WHERE one = 1",
+  space: "SELECT space_id, authority_epoch, authority_incarnation FROM space WHERE one = 1",
   aliases:
     "SELECT a.alias AS alias, t.id AS task, t.version AS version FROM aliases a " +
     "JOIN tasks t ON t.id = a.entity_id WHERE a.namespace = 'planning' " +
@@ -42,8 +41,7 @@ const SQL = {
     "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL " +
     `WHERE p.deleted_at IS NULL AND p.slug ${IN("$names")}`,
   linksOf: "SELECT task_id FROM task_sources WHERE source_id = $id AND removed_at IS NULL",
-  tasksIn:
-    "SELECT id FROM tasks WHERE deleted_at IS NULL AND (area_id = $id OR project_id = $id)",
+  tasksIn: "SELECT id FROM tasks WHERE deleted_at IS NULL AND (area_id = $id OR project_id = $id)",
   projectsIn: "SELECT id FROM projects WHERE deleted_at IS NULL AND area_id = $id",
 } as const;
 

@@ -170,7 +170,12 @@ function compared(planning: Readonly<Record<string, unknown>> | null): Record<st
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(planning ?? {})) {
     if (!FIRST_IMPORT_KEYS.has(key)) {
-      Object.defineProperty(out, key, { value, enumerable: true, writable: true, configurable: true });
+      Object.defineProperty(out, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
   }
   return out;
@@ -218,7 +223,7 @@ export function expectedOf(task: PlannedTask, project: string | undefined): Expe
       grouping: { area: create.area, project: project ?? null },
       lifecycle: completed ? "completed" : "active",
       wrap: completed ? outcome : null,
-      "ext.planning": compared(create.ext.planning as Record<string, unknown>),
+      "ext.planning": compared(create.ext.planning),
       place,
       evidence,
     },
@@ -245,10 +250,7 @@ function spell(value: unknown): string {
 }
 
 /** B for one field: the newest recorded value that is not voided, with its import's seq. */
-function baseOf(
-  task: MatchedTask,
-  field: BaseField,
-): { value: unknown; seq: number } | undefined {
+function baseOf(task: MatchedTask, field: BaseField): { value: unknown; seq: number } | undefined {
   for (const recorded of task.bases) {
     if (recorded.voided.has(field)) continue;
     if (Object.hasOwn(recorded.base.fields, field)) {
@@ -325,13 +327,12 @@ export function decideApply(
         if (draft.draft !== task.legacyId) throw new Error("An operation names another task");
         if (op.kind === "task.create") {
           const create = rest as Record<string, unknown>;
-          const planning = (op.ext.planning ?? {}) as Record<string, unknown>;
           taskOps.push({
             ...create,
             kind: "task.create",
             id,
             ...(project === undefined ? {} : { project }),
-            ext: { planning: { ...planning, imported_at: options.importedAt } },
+            ext: { planning: { ...op.ext.planning, imported_at: options.importedAt } },
           });
         } else if (op.kind === "source.add") {
           taskOps.push({ ...rest, kind: op.kind, task: id, source: sourceFields(op.source) });

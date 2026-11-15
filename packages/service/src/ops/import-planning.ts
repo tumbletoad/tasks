@@ -453,7 +453,9 @@ async function planAgain(
   const input = join(folder, "input");
   const hashed = await hashInputs(input);
   const problems: Problem[] = [...hashed.problems];
-  problems.push(...(await verifySource(report.source.folder, hashed.files, undefined, hashed.problems)));
+  problems.push(
+    ...(await verifySource(report.source.folder, hashed.files, undefined, hashed.problems)),
+  );
   let actions: InputFile | undefined;
   let actionBytes: Buffer | undefined;
   if (report.source.actions !== undefined) {
@@ -478,7 +480,7 @@ const textOf = (value: unknown): string | null => (typeof value === "string" ? v
 /** A row's version map, `fv`. */
 function versions(row: Row): Record<string, number> {
   try {
-    const map: unknown = JSON.parse(String(row["fv"] ?? "{}"));
+    const map: unknown = JSON.parse(textOf(row["fv"]) ?? "{}");
     return typeof map === "object" && map !== null ? (map as Record<string, number>) : {};
   } catch {
     return {};
@@ -547,7 +549,7 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
   const links = byTask(apply.links, (r) =>
     sourceIdentity({
       ...(typeof r["key"] === "string" ? { key: r["key"] } : {}),
-      url: String(r["url"] ?? ""),
+      url: textOf(r["url"]) ?? "",
     }),
   );
   const undone = new Map<string, Set<string>>();
@@ -572,7 +574,7 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
       row["deleted_of"] === row["created_commit"];
     let planning: Record<string, unknown> | null = null;
     try {
-      const ext = JSON.parse(String(row["ext"] ?? "{}")) as Record<string, unknown>;
+      const ext = JSON.parse(textOf(row["ext"]) ?? "{}") as Record<string, unknown>;
       const value = ext["planning"];
       if (typeof value === "object" && value !== null && !Array.isArray(value)) {
         planning = value as Record<string, unknown>;
@@ -617,10 +619,11 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
     for (const b of bases.get(id) ?? []) {
       const base = itemBase(b["base"]);
       if (base === undefined) continue;
+      const by = b["undone"];
       const voided =
-        b["undone"] === null
-          ? new Set<string>()
-          : (undone.get(`${String(b["undone"])}|${id}`) ?? new Set<string>());
+        typeof by === "number"
+          ? (undone.get(`${String(by)}|${id}`) ?? new Set<string>())
+          : new Set<string>();
       recorded.push({ seq: num(b["seq"]), base, voided });
     }
     matched.set(String(row["alias"]), {
@@ -674,7 +677,9 @@ function applyResult(
 function replayOf(folder: string, result: WriteResult): ImportPlanningApplyResult | undefined {
   if (result.status !== "applied") return undefined;
   try {
-    const stored = JSON.parse(readFileSync(join(folder, "apply.json"), "utf8")) as ImportPlanningApplyResult;
+    const stored = JSON.parse(
+      readFileSync(join(folder, "apply.json"), "utf8"),
+    ) as ImportPlanningApplyResult;
     return { ...stored, replayed: true };
   } catch {
     return undefined;
@@ -710,7 +715,11 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
   }
   const report = readReport(folder);
   if (report.blocked || report.token === undefined) {
-    throw invalid("run", "The dry run was blocked", "Fix what it lists, then run the dry run again.");
+    throw invalid(
+      "run",
+      "The dry run was blocked",
+      "Fix what it lists, then run the dry run again.",
+    );
   }
   if (report.token !== token) {
     throw invalid("token", "The token is not this run's", "Use the token its dry run printed.");
@@ -781,7 +790,9 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
       machine_id: call.machine,
       origin: "import",
     },
-    base: rows.asOf,
+    // The caller's base when it gave one (stricter: a field changed after it conflicts), else the
+    // state this apply read and decided on.
+    base: typeof call.input["base"] === "string" ? call.input["base"] : rows.asOf,
     preview: {
       token,
       pinned: previewPinned(plan, previewRun) as PreviewGuard["pinned"],

@@ -70,7 +70,10 @@ export interface ImportWorld {
 /** A reader over one connection, as the storage worker's (only `transaction` is used). */
 function readerOf(conn: Connection): WorkerConnection {
   return {
-    transaction: (mode: "deferred" | "immediate", queries: { sql: string; mode: string; params?: Record<string, unknown> }[]) =>
+    transaction: (
+      mode: "deferred" | "immediate",
+      queries: { sql: string; mode: string; params?: Record<string, unknown> }[],
+    ) =>
       Promise.resolve(
         conn.transaction(mode, () =>
           queries.map((q) => {
@@ -93,7 +96,8 @@ function handleOf(
 ): SpaceWriterHandle {
   return {
     spaceId: writer.spaceId,
-    receipt: (lookup: Parameters<SpaceWriter["receipt"]>[0]) => Promise.resolve(writer.receipt(lookup)),
+    receipt: (lookup: Parameters<SpaceWriter["receipt"]>[0]) =>
+      Promise.resolve(writer.receipt(lookup)),
     actor: (kind: "human" | "agent" | "import", label: string) =>
       Promise.resolve(writer.actor(kind, label)),
     submit: (request: unknown) => Promise.resolve(writer.submit(request)),
@@ -139,7 +143,8 @@ export async function attachWorld(
   const reader = readerOf(conn);
   const handle = handleOf(checked, writer, options.barrier ?? {});
   const user = writer.actor("human", "");
-  const roots = options.roots ?? [];
+  // This machine's roots as machine.toml gives them.
+  const roots = (options.roots ?? []).map((r) => ({ ...r, label: r.id, runs: false }));
   const principal = { scope: SCOPE, machine };
   return {
     folder,

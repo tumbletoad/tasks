@@ -205,6 +205,34 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
     expect(readdirSync(join(world.spaceFolder, "exchange", "planning")).sort()).toEqual(before);
   }, 120_000);
 
+  test("[A7.3.15.importer.apply] the apply and the undo, for a person and only the user", async () => {
+    const copy = join(scratch, "apply");
+    cpSync(FIXTURE, copy, { recursive: true });
+    const dry = report((await run(["import", "planning", copy, "--dry-run", "--json"])).stdout);
+    const token = dry.token ?? "";
+    // An agent's shell and a script cannot apply it.
+    for (const options of [{ tty: false }, { tty: true, env: { CLAUDECODE: "1" } }]) {
+      const ran = await run(
+        ["import", "planning", "--apply", dry.run, "--token", token, "--json"],
+        options,
+      );
+      expect(JSON.parse(ran.stdout)).toMatchObject({
+        error: { code: "forbidden", data: { rule: "user_only" } },
+      });
+    }
+    const applied = await run(["import", "planning", "--apply", dry.run, "--token", token]);
+    expect(applied.code, applied.stdout).toBe(0);
+    expect(applied.stdout).toContain(`Applied run ${dry.run}`);
+    expect(applied.stdout).toMatch(/Backup before it: pre-import-/);
+    expect(applied.stdout).toContain(`tasks import planning --undo ${dry.run}`);
+    // The same command again applies it once.
+    const again = await run(["import", "planning", "--apply", dry.run, "--token", token, "--json"]);
+    expect(JSON.parse(again.stdout)).toMatchObject({ status: "applied", replayed: true });
+    const undone = await run(["import", "planning", "--undo", dry.run]);
+    expect(undone.code, undone.stdout).toBe(0);
+    expect(undone.stdout).toContain(`Undid run ${dry.run}`);
+  }, 120_000);
+
   test("usage: a folder that is not there, a missing --dry-run, an option of a later build", async () => {
     const missing = await run([
       "import",
@@ -214,9 +242,13 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
       "--json",
     ]);
     expect(JSON.parse(missing.stdout)).toMatchObject({ error: { code: "not_found" } });
+    const run0 = "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t";
     for (const argv of [
       ["import", "planning", FIXTURE, "--json"],
       ["import", "planning", "--apply", "ex_x", "--json"],
+      ["import", "planning", "--apply", run0, "--json"],
+      ["import", "planning", "--undo", run0, "--token", `pv1_${"A".repeat(43)}`, "--json"],
+      ["import", "planning", FIXTURE, "--dry-run", "--undo", run0, "--json"],
       ["import", "elsewhere", FIXTURE, "--dry-run", "--json"],
       ["import", "planning", FIXTURE, "--dry-run", "--checked-as", "maybe", "--json"],
       ["import", "planning", FIXTURE, "--dry-run", "--roots", "Work=/x", "--json"],

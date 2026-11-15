@@ -673,6 +673,278 @@
         "human"
       ],
       "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "space_unavailable",
+        "read_only",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "run": {
+            "description": "The dry run's run ID",
+            "maxLength": 29,
+            "pattern": "^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "type": "string"
+          },
+          "token": {
+            "description": "The dry run's preview token",
+            "maxLength": 47,
+            "pattern": "^pv1_[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run",
+          "token",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "import.planning.apply",
+      "ops": [
+        "task.create",
+        "task.patch",
+        "task.move",
+        "task.complete",
+        "task.reopen",
+        "task.wrap_up",
+        "log.add",
+        "source.add",
+        "place.set",
+        "alias.add",
+        "area.upsert",
+        "project.upsert",
+        "exchange.create"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "backup": {
+            "description": "The verified backup taken just before it",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "commit": {
+            "description": "The import's commit",
+            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": false,
+            "description": "What it did",
+            "properties": {
+              "conflicts": {
+                "description": "Tasks with fields both the prototype and the space changed",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "created": {
+                "description": "Tasks created",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deleted": {
+                "description": "Tasks a person deleted since: not brought back",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "gone": {
+                "description": "Legacy IDs no longer in the prototype: nothing is deleted",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "unchanged": {
+                "description": "Tasks it left as they are",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "updated": {
+                "description": "Tasks it changed",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created",
+              "updated",
+              "unchanged",
+              "deleted",
+              "conflicts",
+              "gone"
+            ],
+            "type": "object"
+          },
+          "gone": {
+            "description": "Legacy IDs gone from the prototype",
+            "items": {
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9_-]+$",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "run": {
+            "description": "The run applied: --undo names it",
+            "pattern": "^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "type": "string"
+          },
+          "status": {
+            "description": "applied: one commit; unchanged: the space holds the prototype as it is already",
+            "enum": [
+              "applied",
+              "unchanged"
+            ],
+            "type": "string"
+          },
+          "tasks": {
+            "description": "Each task created, changed, deleted or in conflict, up to 2,000",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "changed": {
+                  "description": "Fields it changed",
+                  "items": {
+                    "enum": [
+                      "title",
+                      "summary",
+                      "context",
+                      "status",
+                      "priority",
+                      "owner",
+                      "waiting_on",
+                      "source_at",
+                      "reviewed_at",
+                      "due",
+                      "focus",
+                      "grouping",
+                      "lifecycle",
+                      "wrap",
+                      "ext.planning",
+                      "place",
+                      "evidence",
+                      "sources"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "conflicts": {
+                  "description": "Fields both sides changed: kept as the space has them",
+                  "items": {
+                    "enum": [
+                      "title",
+                      "summary",
+                      "context",
+                      "status",
+                      "priority",
+                      "owner",
+                      "waiting_on",
+                      "source_at",
+                      "reviewed_at",
+                      "due",
+                      "focus",
+                      "grouping",
+                      "lifecycle",
+                      "wrap",
+                      "ext.planning",
+                      "place",
+                      "evidence",
+                      "sources"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "legacy_id": {
+                  "description": "The prototype's ID",
+                  "maxLength": 1024,
+                  "pattern": "^[a-z0-9_-]+$",
+                  "type": "string"
+                },
+                "outcome": {
+                  "description": "What happened",
+                  "enum": [
+                    "created",
+                    "updated",
+                    "unchanged",
+                    "deleted"
+                  ],
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Its task",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "legacy_id",
+                "outcome"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "tasks_more": {
+            "description": "Tasks beyond those, in the run's apply.json",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run",
+          "status",
+          "counts",
+          "tasks",
+          "tasks_more",
+          "gone"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "space:write",
+      "summary": "Apply a dry run of the Planning prototype import, behind a verified backup."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
       "audience": "caller",
       "errors": [
         "invalid_input",
@@ -1593,6 +1865,137 @@
       "remote": "never",
       "scope": "space:read",
       "summary": "Dry run of the Planning prototype import: a report and a preview token."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "space_unavailable",
+        "read_only",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "run": {
+            "description": "The applied run to undo",
+            "maxLength": 29,
+            "pattern": "^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "import.planning.undo",
+      "ops": [
+        "import.undo"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "commit": {
+            "description": "The undo's commit",
+            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "kept": {
+            "description": "Tasks that stay as they are, up to 2,000",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "description": "What was changed since",
+                  "items": {
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "task": {
+                  "description": "A task someone changed since: it stays as it is",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task",
+                "fields"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "kept_more": {
+            "description": "Tasks beyond those",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "description": "Tasks the import made that are gone again",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "restored": {
+            "description": "Tasks the import changed that are set back",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run": {
+            "description": "The run undone",
+            "pattern": "^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+            "type": "string"
+          },
+          "undone": {
+            "description": "The import's commit it reverted",
+            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run",
+          "commit",
+          "undone",
+          "removed",
+          "restored",
+          "kept",
+          "kept_more",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "space:write",
+      "summary": "Undo an applied import; tasks changed since stay as they are and are listed."
     },
     {
       "actorKinds": [

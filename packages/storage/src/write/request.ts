@@ -329,12 +329,7 @@ export interface TaskValues {
 
 /** Plain JSON data, as `ext` values and an exchange item's base hold it. */
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+  string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 /** Where a task goes: a group and, optionally, a sibling to stand next to. */
 export interface Placement {
@@ -1341,18 +1336,15 @@ export const EXT_KEY = /^[a-z][a-z0-9_]{0,39}$/;
  * An `ext` map: each key one logical field, each value plain JSON data normalised as stored text
  * (A1 3.7), or null to remove the key when `nullable`. The problem names the map, never a key.
  */
-function extMap(
-  f: Fields,
-  key: string,
-  nullable: boolean,
-): Record<string, JsonValue | null> {
+function extMap(f: Fields, key: string, nullable: boolean): Record<string, JsonValue | null> {
   const value = f.raw(key);
   if (!isRecord(value) || Object.keys(value).length === 0) {
     return f.fail("VALIDATION_FAILED", "Expected a map of ext keys", key);
   }
   const out: Record<string, JsonValue | null> = {};
   for (const [name, item] of Object.entries(value)) {
-    if (!EXT_KEY.test(name)) f.fail("VALIDATION_FAILED", "Expected ext keys of a-z, 0-9 and _", key);
+    if (!EXT_KEY.test(name))
+      f.fail("VALIDATION_FAILED", "Expected ext keys of a-z, 0-9 and _", key);
     if (item === null) {
       if (!nullable) f.fail("VALIDATION_FAILED", "A new row's ext holds no null", key);
       out[name] = null;
@@ -2046,7 +2038,7 @@ function sourceFields(f: Fields): SourceFields {
     if (!inRange(at, "instant")) f.fail("VALIDATION_FAILED", "Expected an instant", "at");
     source.at = at;
   }
-  if (f.has("ext")) source.ext = extMap(f, "ext", false) as Record<string, JsonValue>;
+  if (f.has("ext")) source.ext = extMap(f, "ext", false);
   f.done();
   return source;
 }
@@ -2128,7 +2120,11 @@ export function checkRequest(value: unknown): CheckedRequest {
     isRecord(value) && isRecord(value["actor"]) && value["actor"]["origin"] === "import";
   const maxBytes = importing ? WRITE_LIMITS.importBytes : WRITE_LIMITS.requestBytes;
   if (utf8Bytes(json ?? "") > maxBytes) {
-    fail("TOO_LARGE", importing ? "The import is larger than 512 MiB" : "The request is larger than 512 KiB", "");
+    fail(
+      "TOO_LARGE",
+      importing ? "The import is larger than 512 MiB" : "The request is larger than 512 KiB",
+      "",
+    );
   }
   const f = fields(value, "");
   const requestId = f.raw("request_id");
@@ -2266,7 +2262,7 @@ function checkPreview(f: Fields): PreviewGuard {
     return [...(list as string[])];
   };
   const guard: PreviewGuard = {
-    token: token as string,
+    token,
     pinned: pinned as PreviewGuard["pinned"],
     aliases: names("aliases"),
     keys: names("keys"),

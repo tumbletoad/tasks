@@ -82,7 +82,7 @@ async function refusal(work: Promise<unknown>): Promise<{ code: string; cause?: 
   try {
     await work;
   } catch (error) {
-    if (error instanceof AppError) return { code: error.code, cause: error.data?.["cause"] };
+    if (error instanceof AppError) return { code: error.code, cause: error.data["cause"] };
     if (error instanceof StorageError) return { code: error.code };
     throw error;
   }
@@ -195,7 +195,9 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
         expect(typeof ext.planning["imported_at"]).toBe("number");
       }
       // The exchange is applied in that commit, with one item per task, its folder the input copy.
-      expect(world.rows("SELECT * FROM exchanges WHERE id = $id", { id: preview.run })[0]).toMatchObject({
+      expect(
+        world.rows("SELECT * FROM exchanges WHERE id = $id", { id: preview.run })[0],
+      ).toMatchObject({
         state: "applied",
         applied_seq: applied,
         dir: `exchange/planning/${preview.run}/input`,
@@ -207,9 +209,9 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       ).toBe(preview.counts.tasks);
       // Areas the space holds by slug are reused; the others are new.
       expect(
-        world.rows("SELECT count(*) AS n FROM areas WHERE created_seq = $seq", { seq: applied })[0]?.[
-          "n"
-        ],
+        world.rows("SELECT count(*) AS n FROM areas WHERE created_seq = $seq", {
+          seq: applied,
+        })[0]?.["n"],
       ).toBe(preview.counts.areas - preview.counts.areas_existing);
       // The prototype's own instants: a check-off's time, an evidence entry's day.
       const done = world.rows(
@@ -299,7 +301,12 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
         {
           kind: "source.add",
           task: mira,
-          source: { kind: "web", title: "Taken meanwhile", key: keyed?.key ?? "", url: keyed?.url ?? "" },
+          source: {
+            kind: "web",
+            title: "Taken meanwhile",
+            key: keyed?.key ?? "",
+            url: keyed?.url ?? "",
+          },
         },
       ]);
       expect(edit.status).toBe("applied");
@@ -402,8 +409,8 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       const [a, b] = await Promise.all([dryRun(world, prototype), dryRun(world, other)]);
       const before = Number(world.rows("SELECT count(*) AS n FROM tasks")[0]?.["n"]);
       const outcomes = await Promise.allSettled([
-        world.apply(a?.run ?? "", a?.token ?? ""),
-        world.apply(b?.run ?? "", b?.token ?? ""),
+        world.apply(a.run, a.token ?? ""),
+        world.apply(b.run, b.token ?? ""),
       ]);
       expect(outcomes.filter((o) => o.status === "fulfilled")).toHaveLength(1);
       const refused = outcomes.find((o) => o.status === "rejected");
@@ -411,7 +418,7 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
         refused?.status === "rejected" ? (refused.reason as AppError).code : "",
       );
       expect(Number(world.rows("SELECT count(*) AS n FROM tasks")[0]?.["n"])).toBe(
-        before + (a?.counts.tasks ?? 0),
+        before + a.counts.tasks,
       );
       const counts = world.rows(
         "SELECT alias, count(*) AS n FROM aliases WHERE namespace = 'planning' GROUP BY alias HAVING n > 1",
@@ -448,7 +455,11 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       const { result } = await imported(world, prototype);
       expect(result.status).toBe("applied");
       const row = (id: string) => result.tasks.find((t) => t.legacy_id === id);
-      expect(row(a)).toMatchObject({ outcome: "updated", changed: ["priority"], conflicts: ["title"] });
+      expect(row(a)).toMatchObject({
+        outcome: "updated",
+        changed: ["priority"],
+        conflicts: ["title"],
+      });
       expect(row(b)).toMatchObject({ outcome: "updated", changed: ["summary"] });
       expect(result.counts).toMatchObject({ created: 0, conflicts: 1 });
       const after = { a: task(world, ta), b: task(world, tb) };
@@ -503,7 +514,9 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       const seq = world.seq();
       const same = await imported(world, prototype);
       expect(same.result.status).toBe("unchanged");
-      expect(same.result.tasks.find((t) => t.legacy_id === d)).toMatchObject({ outcome: "deleted" });
+      expect(same.result.tasks.find((t) => t.legacy_id === d)).toMatchObject({
+        outcome: "deleted",
+      });
       expect(world.seq()).toBe(seq);
       // The prototype changes them too: a completed task takes a field the person did not touch,
       // the deleted one stays deleted, and the moved one keeps its new area, as a conflict.
@@ -515,7 +528,10 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
         outcome: "updated",
         changed: ["summary"],
       });
-      expect(task(world, tc)).toMatchObject({ lifecycle: "completed", summary: "Changed in the prototype" });
+      expect(task(world, tc)).toMatchObject({
+        lifecycle: "completed",
+        summary: "Changed in the prototype",
+      });
       expect(task(world, td)["deleted_at"]).not.toBeNull();
       expect(task(world, td)["summary"]).not.toBe("Changed in the prototype");
       expect(result.tasks.find((t) => t.legacy_id === e)?.conflicts).toEqual(["grouping"]);
@@ -532,7 +548,9 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
     try {
       const { preview, result } = await imported(world, prototype);
       const applied = Number(
-        world.rows("SELECT seq FROM commits WHERE id = $id", { id: result.commit ?? "" })[0]?.["seq"],
+        world.rows("SELECT seq FROM commits WHERE id = $id", { id: result.commit ?? "" })[0]?.[
+          "seq"
+        ],
       );
       const [a = "", b = ""] = picks(prototype, preview);
       const [ta, tb] = [taskOf(world, a), taskOf(world, b)];
@@ -565,12 +583,19 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
         { seq: applied },
       );
       expect(live.map((r) => r["id"])).toEqual([ta]);
-      expect(world.rows("SELECT * FROM exchanges WHERE id = $id", { id: preview.run })).toHaveLength(1);
+      expect(
+        world.rows("SELECT * FROM exchanges WHERE id = $id", { id: preview.run }),
+      ).toHaveLength(1);
       // Not on the undo stack, and a second undo of the run answers as the first.
-      expect(world.rows("SELECT undo_status FROM commits WHERE id = $id", { id: undone.commit })[0]).toEqual({
+      expect(
+        world.rows("SELECT undo_status FROM commits WHERE id = $id", { id: undone.commit })[0],
+      ).toEqual({
         undo_status: null,
       });
-      expect(await world.undo(preview.run)).toMatchObject({ commit: undone.commit, replayed: true });
+      expect(await world.undo(preview.run)).toMatchObject({
+        commit: undone.commit,
+        replayed: true,
+      });
 
       // A re-import after the undo makes the undone tasks again and leaves the two as they are.
       const again = await imported(world, prototype);

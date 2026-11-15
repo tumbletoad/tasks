@@ -14,13 +14,16 @@
 // task someone changed since stays as it is and is listed.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { AsOf, Replayed, RequestId, TaskRef } from "../schemas.ts";
+import { AsOf, Base, Replayed, RequestId, TaskRef } from "../schemas.ts";
 import { requestId } from "./fixture.ts";
 import { CommitId } from "./history-undo.ts";
 import { IMPORT_RUN, PREVIEW_ROWS, PREVIEW_TOKEN } from "./import-planning-preview.ts";
 
 const Count = z.int().min(0).max(1_000_000_000);
-const LegacyId = z.string().max(1024).regex(/^[a-z0-9_-]+$/u);
+const LegacyId = z
+  .string()
+  .max(1024)
+  .regex(/^[a-z0-9_-]+$/u);
 
 /** The fields a re-import compares, and `sources` for the links it adds (A7 3.15.6). */
 export const IMPORT_FIELDS = [
@@ -46,8 +49,11 @@ export const IMPORT_FIELDS = [
 const Field = z.enum(IMPORT_FIELDS);
 
 export const ImportPlanningApplyInput = z.strictObject({
-  run: z.string().regex(IMPORT_RUN).describe("The dry run's run ID"),
-  token: z.string().regex(PREVIEW_TOKEN).describe("The dry run's preview token"),
+  run: z.string().max(29).regex(IMPORT_RUN).describe("The dry run's run ID"),
+  token: z.string().max(47).regex(PREVIEW_TOKEN).describe("The dry run's preview token"),
+  // The apply reads the space itself and its token pins every row the plan meets, so a base is
+  // optional: given, a field the import would change that changed after it is a conflict too.
+  base: Base.optional(),
   request_id: RequestId,
 });
 
@@ -90,7 +96,7 @@ export const ImportPlanningApplyResult = z.strictObject({
 export type ImportPlanningApplyResult = z.infer<typeof ImportPlanningApplyResult>;
 
 export const ImportPlanningUndoInput = z.strictObject({
-  run: z.string().regex(IMPORT_RUN).describe("The applied run to undo"),
+  run: z.string().max(29).regex(IMPORT_RUN).describe("The applied run to undo"),
   request_id: RequestId,
 });
 

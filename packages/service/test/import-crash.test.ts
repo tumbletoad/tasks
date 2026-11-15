@@ -68,8 +68,7 @@ function killAt(env: Record<string, string>, point: string): Promise<{ reached: 
   });
 }
 
-const count = (world: ImportWorld, sql: string): number =>
-  Number(world.rows(sql)[0]?.["n"] ?? 0);
+const count = (world: ImportWorld, sql: string): number => Number(world.rows(sql)[0]?.["n"] ?? 0);
 
 describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points", () => {
   for (const { point, committed } of POINTS) {
@@ -116,9 +115,7 @@ describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points",
             "SELECT alias FROM aliases WHERE namespace = 'planning' GROUP BY alias HAVING count(*) > 1",
           ),
         ).toEqual([]);
-        expect(
-          count(again, "SELECT count(*) AS n FROM exchange_items"),
-        ).toBe(preview.counts.tasks);
+        expect(count(again, "SELECT count(*) AS n FROM exchange_items")).toBe(preview.counts.tasks);
         expect(again.rows("PRAGMA integrity_check")[0]?.["integrity_check"]).toBe("ok");
       } finally {
         again.close();

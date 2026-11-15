@@ -27,9 +27,18 @@ function verbOf(entry: string, input: Record<string, unknown>): string {
 
 /**
  * The CLI's arguments for an entry: its verb with the input on stdin, or for the Planning
- * import's dry run, which has a command of its own (`tasks import planning`), its options.
+ * import, which has a command of its own (`tasks import planning`), its options: the dry run's,
+ * `--apply <run> --token <token>` and `--undo <run>`.
  */
 function argvOf(entry: string, input: Record<string, unknown>): string[] {
+  if (entry === "import.planning.apply") {
+    const run = String(input["run"]);
+    const token = String(input["token"]);
+    return ["import", "planning", "--apply", run, "--token", token, "--json"];
+  }
+  if (entry === "import.planning.undo") {
+    return ["import", "planning", "--undo", String(input["run"]), "--json"];
+  }
   if (entry !== "import.planning.preview") return [verbOf(entry, input), "--input", "-", "--json"];
   const roots = (input["roots"] ?? []) as { id: string; folder: string }[];
   return [

@@ -714,7 +714,9 @@ export function planInversions(
         ? [child.field]
         : [
             ...Object.keys(child.fields),
-            ...Object.keys(state.fp).filter((f) => isExtField(f) && !Object.hasOwn(child.fields, f)),
+            ...Object.keys(state.fp).filter(
+              (f) => isExtField(f) && !Object.hasOwn(child.fields, f),
+            ),
           ].filter((f) => !options.creating.has(provenanceOf(state, f)));
       for (const field of fields) {
         passes = false;
@@ -1220,7 +1222,11 @@ function writeInversions(
       const columns = table.fields[field];
       if (columns === undefined) {
         // `ext.<key>`: the key set back in the row's map, null removing it (A1 3.4).
-        const map = (ext ??= JSON.parse(String(row.raw["ext"] ?? "{}")) as Record<string, unknown>);
+        const raw = row.raw["ext"];
+        const map = (ext ??= JSON.parse(typeof raw === "string" ? raw : "{}") as Record<
+          string,
+          unknown
+        >);
         const key = field.slice("ext.".length);
         const value = parsed(after);
         if (value === null) Reflect.deleteProperty(map, key);

@@ -240,7 +240,8 @@ function applied(r: ImportPlanningApplyResult): string {
     `Tasks: ${String(c.created)} created, ${String(c.updated)} changed, ${String(c.unchanged)} ` +
       `unchanged, ${String(c.deleted)} deleted in the space (not brought back).`,
   );
-  if (c.gone > 0) add(`Legacy IDs no longer in the prototype: ${String(c.gone)} (nothing deleted).`);
+  if (c.gone > 0)
+    add(`Legacy IDs no longer in the prototype: ${String(c.gone)} (nothing deleted).`);
   const conflicts = r.tasks.filter((t) => t.conflicts !== undefined);
   if (conflicts.length > 0) {
     add();

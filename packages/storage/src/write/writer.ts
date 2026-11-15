@@ -636,8 +636,7 @@ const SQL = {
     "UPDATE aliases SET entity_kind = 'task', entity_id = $task " +
     "WHERE namespace = $namespace AND alias = $alias",
   // An alias has no versions: its last change row is its version and provenance (fields.ts).
-  aliasVersion:
-    "SELECT max(seq) AS seq FROM changes WHERE entity_id = $id AND entity = 'aliases'",
+  aliasVersion: "SELECT max(seq) AS seq FROM changes WHERE entity_id = $id AND entity = 'aliases'",
   exchangeRow: "SELECT * FROM exchanges WHERE id = $id",
   insertExchange:
     "INSERT INTO exchanges (id, dir, base_seq, created_by, created_at, state, applied_seq, " +
@@ -1193,10 +1192,14 @@ export class SpaceWriter {
       if (first !== undefined && isHistoryOperation(first)) {
         return this.#history(conn, request, first, space, asOf, at);
       }
-      if (first?.kind === "import.undo") return this.#importUndo(conn, request, first, space, asOf, at);
+      if (first?.kind === "import.undo")
+        return this.#importUndo(conn, request, first, space, asOf, at);
       // An import applies only to the space its preview judged (A7 3.15.5): the token again, from
       // the rows the plan meets as this transaction reads them.
-      if (request.preview !== undefined && recomputeToken(conn, request.preview) !== request.preview.token) {
+      if (
+        request.preview !== undefined &&
+        recomputeToken(conn, request.preview) !== request.preview.token
+      ) {
         problem(
           "PREVIEW_STALE",
           "The space changed since the dry run: run the dry run again",
@@ -1956,13 +1959,29 @@ export class SpaceWriter {
           // The live area with the slug, else a new one (A7 3.15.3). A found area keeps its title.
           const known = draftAreas.get(op.slug);
           if (known !== undefined) {
-            return { i, op, target: known, task: null, touches: [], record: inputOf(op), upsert: "found" };
+            return {
+              i,
+              op,
+              target: known,
+              task: null,
+              touches: [],
+              record: inputOf(op),
+              upsert: "found",
+            };
           }
           const row = conn.prepare(SQL.areaBySlug).get({ slug: op.slug });
           if (row !== undefined) {
             const id = new RowReader("areas", row).id("id", "a");
             draftAreas.set(op.slug, id);
-            return { i, op, target: id, task: null, touches: [], record: inputOf(op), upsert: "found" };
+            return {
+              i,
+              op,
+              target: id,
+              task: null,
+              touches: [],
+              record: inputOf(op),
+              upsert: "found",
+            };
           }
           const id = op.id ?? newId("a", random);
           if (draftAreas.has(id) || conn.prepare(SQL.areaById).get({ id }) !== undefined) {
@@ -2053,7 +2072,10 @@ export class SpaceWriter {
           return { i, op, target: key, task: target, touches: [], record, upsert: "move" };
         }
         case "exchange.create": {
-          if (draftExchanges.has(op.id) || conn.prepare(SQL.exchangeRow).get({ id: op.id }) !== undefined) {
+          if (
+            draftExchanges.has(op.id) ||
+            conn.prepare(SQL.exchangeRow).get({ id: op.id }) !== undefined
+          ) {
             problem("VALIDATION_FAILED", "An exchange with this ID exists", i, "id");
           }
           draftExchanges.add(op.id);
@@ -2061,7 +2083,12 @@ export class SpaceWriter {
           const resolved = op.items.map((item, k) => {
             const id = task(item.task, `items[${String(k)}].task`);
             if (items.has(id)) {
-              problem("VALIDATION_FAILED", "An exchange has one item per task", i, `items[${String(k)}].task`);
+              problem(
+                "VALIDATION_FAILED",
+                "An exchange has one item per task",
+                i,
+                `items[${String(k)}].task`,
+              );
             }
             items.add(id);
             return { ...item, task: id };
@@ -2581,9 +2608,18 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
       case "project.upsert":
       case "exchange.create": {
         const entity =
-          op.kind === "area.upsert" ? "areas" : op.kind === "project.upsert" ? "projects" : "exchanges";
+          op.kind === "area.upsert"
+            ? "areas"
+            : op.kind === "project.upsert"
+              ? "projects"
+              : "exchanges";
         const row = readRow(conn, entity, staged.target);
-        return { i, status, id: staged.target, version: new RowReader(entity, row).int("version", "seq") };
+        return {
+          i,
+          status,
+          id: staged.target,
+          version: new RowReader(entity, row).int("version", "seq"),
+        };
       }
       case "alias.add": {
         // An alias has no version: its task's is the result's.
@@ -3151,7 +3187,13 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         const map = JSON.parse(typeof raw === "string" ? raw : "{}") as Record<string, unknown>;
         for (const [key, value] of Object.entries(ext)) {
           if (value === null) Reflect.deleteProperty(map, key);
-          else Object.defineProperty(map, key, { value, enumerable: true, writable: true, configurable: true });
+          else
+            Object.defineProperty(map, key, {
+              value,
+              enumerable: true,
+              writable: true,
+              configurable: true,
+            });
           written.push(`ext.${key}`);
         }
         conn.prepare(SQL.taskExt).run({ id: target, ext: canonicalJson(map) });

@@ -131,7 +131,8 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
               at: new Date(clock).toISOString(),
             });
           };
-          for (const id of IDS) if (proto.get(id)?.lifecycle === "completed") checkEvent(id, "completed");
+          for (const id of IDS)
+            if (proto.get(id)?.lifecycle === "completed") checkEvent(id, "completed");
           const write = () => {
             const tasks: ProtoTask[] = IDS.map((id) => {
               const v = proto.get(id) as Values;
@@ -182,7 +183,9 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
           };
           for (const id of IDS) {
             for (const f of FIELDS) {
-              expect(spaceValue(world, ids.get(id) ?? "", f), `${id}.${f}`).toEqual(cell(id, f).base);
+              expect(spaceValue(world, ids.get(id) ?? "", f), `${id}.${f}`).toEqual(
+                cell(id, f).base,
+              );
             }
           }
 
@@ -209,7 +212,9 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                     : {
                         kind: "task.patch",
                         task: id,
-                        set: { [e.field]: e.field === "due" && value !== null ? { date: value } : value },
+                        set: {
+                          [e.field]: e.field === "due" && value !== null ? { date: value } : value,
+                        },
                       };
               expect(world.edit([op]).status, `${e.task}.${e.field}`).toBe("applied");
               cell(e.task, e.field).dirty = true;
@@ -218,8 +223,10 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
             for (const e of prototypeEdits) {
               const v = proto.get(e.task) as Values;
               const before = v[e.field];
-              (v as Record<Field, unknown>)[e.field] = POOLS[e.field][e.pick % POOLS[e.field].length];
-              if (e.field === "lifecycle" && v.lifecycle !== before) checkEvent(e.task, v.lifecycle);
+              (v as Record<Field, unknown>)[e.field] =
+                POOLS[e.field][e.pick % POOLS[e.field].length];
+              if (e.field === "lifecycle" && v.lifecycle !== before)
+                checkEvent(e.task, v.lifecycle);
             }
             write();
 
@@ -257,9 +264,9 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
             for (const id of IDS) {
               const row = result.tasks.find((t) => t.legacy_id === id);
               const conflicts = FIELDS.filter((f) => verdicts.get(`${id}|${f}`) === "conflict");
-              expect((row?.conflicts ?? []).filter((f) => FIELDS.includes(f as Field)).sort()).toEqual(
-                conflicts.sort(),
-              );
+              expect(
+                (row?.conflicts ?? []).filter((f) => FIELDS.includes(f as Field)).sort(),
+              ).toEqual(conflicts.sort());
               for (const f of FIELDS) {
                 const c = cell(id, f);
                 const v = verdicts.get(`${id}|${f}`);
