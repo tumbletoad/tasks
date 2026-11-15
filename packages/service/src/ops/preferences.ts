@@ -5,26 +5,18 @@
 // only through `pref.set` (A1 3.16), a machine one through config/preferences.ts.
 import {
   PREFERENCES,
-  preferenceValue,
   type PreferenceRead,
   type PreferenceSpec,
   type PrefValue,
 } from "@tasks/contracts";
-import { storedPreference, type Row, type WorkerConnection } from "@tasks/storage";
+import type { Row, WorkerConnection } from "@tasks/storage";
 import { readMachinePreferences } from "../config/preferences.ts";
 import type { MachineConfig } from "../config/machine-toml.ts";
+import { PREFERENCE_ROWS, spacePreferencesOf } from "./read.ts";
 
-/** Every preferences row: unknown keys are skipped by the readers, never dropped from the table. */
-export const PREFERENCE_ROWS = "SELECT key, value, schema_ver FROM preferences";
-
-/** Every space preference and flag the registry declares, in its order, from the stored rows. */
-export function spacePreferencesOf(rows: readonly Row[]): PreferenceRead[] {
-  const byKey = new Map<string, Row>();
-  for (const row of rows) if (typeof row["key"] === "string") byKey.set(row["key"], row);
-  return PREFERENCES.filter((spec) => spec.scope === "space").map((spec) =>
-    preferenceValue(spec, storedPreference(byKey.get(spec.key))),
-  );
-}
+// The space's rows are read where every other read lives (read.ts), which imports nothing of the
+// configuration; these names stay here for the snapshot's reader (http/feed.ts).
+export { PREFERENCE_ROWS, spacePreferencesOf };
 
 /** A preference as `describe` and `get` show it: its value and state with its declaration. */
 export interface PreferenceView extends PreferenceRead {

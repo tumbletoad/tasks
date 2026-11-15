@@ -19,8 +19,13 @@ import {
   type Row,
   type WorkerConnection,
 } from "@tasks/storage";
-import { AppError, readPreference, type PreferenceRead } from "@tasks/contracts";
-import { PREFERENCE_ROWS, spacePreferencesOf } from "./preferences.ts";
+import {
+  AppError,
+  PREFERENCES,
+  preferenceValue,
+  readPreference,
+  type PreferenceRead,
+} from "@tasks/contracts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
 interface Statement {
@@ -1096,6 +1101,18 @@ export async function readSiblings(
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (A1 3.16, A3 3.4.11)
+
+/** Every preferences row: unknown keys are skipped by the readers, never dropped from the table. */
+export const PREFERENCE_ROWS = "SELECT key, value, schema_ver FROM preferences";
+
+/** Every space preference and flag the registry declares, in its order, from the stored rows. */
+export function spacePreferencesOf(rows: readonly Row[]): PreferenceRead[] {
+  const byKey = new Map<string, Row>();
+  for (const row of rows) if (typeof row["key"] === "string") byKey.set(row["key"], row);
+  return PREFERENCES.filter((spec) => spec.scope === "space").map((spec) =>
+    preferenceValue(spec, storedPreference(byKey.get(spec.key))),
+  );
+}
 
 /**
  * Every space preference as the registry reads it (`spacePreferencesOf`: the value when it fits
