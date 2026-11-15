@@ -19,16 +19,19 @@
 // while it is byte for byte what was written (`remove` of the editor). An element the person
 // changed is left, and so is every [[instance]] setup did not write.
 //
-// After a write the service's instances are the ones the file holds as written (reloading the rest
-// of machine.toml is not built, A2 3.2.4): Open offers them at the page's next snapshot. Nothing in
-// any agent app changes here: registering Tasks's tools in an agent home is `tasks setup agents`.
+// Every call ends, whether it succeeded or failed, by setting the service's instances to those
+// machine.toml holds then, read as at start (`follow`; reloading the rest of machine.toml is not
+// built, A2 3.2.4): what Open offers is always what the file holds, also after a write whose
+// bookkeeping failed, and a retry ends consistent. Open offers them at the page's next snapshot.
+// Nothing in any agent app changes here: registering Tasks's tools in an agent home is `tasks setup
+// agents`.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import { AppError } from "@tasks/contracts";
 import { INSTANCE_ID, isTable, MANUAL_INSTANCE, type Instance } from "@tasks/launch";
 import { commitEdit, prepareEdit, type EditRefusal, type EditValue } from "../config/edit.ts";
-import { parseMachineConfig } from "../config/machine-toml.ts";
+import { loadMachineConfig, parseMachineConfig } from "../config/machine-toml.ts";
 import { BOM, parseToml } from "../config/toml.ts";
 import type { ConnectionClass } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
@@ -304,13 +307,38 @@ export function instanceVerbs(host: InstancesHost): Readonly<Record<string, Verb
   return {
     "instances/add": async (params, cls) => {
       userOnly(cls);
-      return await Promise.resolve(addInstances(host, params));
+      return await Promise.resolve(following(host, () => addInstances(host, params)));
     },
     "instances/remove": async (params, cls) => {
       userOnly(cls);
-      return await Promise.resolve(removeInstances(host, params));
+      return await Promise.resolve(following(host, () => removeInstances(host, params)));
     },
   };
+}
+
+/** Runs a verb, then sets the service's instances to the file's, whatever happened in between. */
+function following<T>(host: InstancesHost, run: () => T): T {
+  try {
+    return run();
+  } finally {
+    follow(host);
+  }
+}
+
+/**
+ * The service's instances become those machine.toml holds now, read as the service reads it at
+ * start. A file that cannot be read (unsafe, not TOML, unreadable) keeps them: the start would
+ * refuse it, and dropping every instance for it would be worse.
+ */
+function follow(host: InstancesHost): void {
+  try {
+    const loaded = loadMachineConfig(host.configDir, host.platform);
+    if (loaded.unsafe !== undefined) return;
+    if (loaded.problems.some((p) => p.severity === "error" && p.key === "")) return;
+    host.set(loaded.config.instances);
+  } catch {
+    // Keep them: the verb's own result or error is what the person needs to see.
+  }
 }
 
 /** Each edit is prepared and committed with nothing awaited in between, so edits never interleave. */
@@ -351,7 +379,9 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
     });
   }
   // Recorded before the write, so an entry in the file always has its record: a write that does
-  // not happen takes its record back.
+  // not happen takes its record back (commitEdit changes the file only by its last step, the
+  // rename). Should that take-back fail too, the record names an entry the file lacks, which is
+  // harmless: a retry of the add records it again, and remove reports it `missing` and drops it.
   const before = readInstancesRecord(host.stateDir);
   const at = new Date().toISOString();
   const added = entries.map((e) => ({ id: idOf(e), entries: [...e], at }));
@@ -367,7 +397,6 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
     writeRecord(host.stateDir, before);
     throw editRefused(edited.reason);
   }
-  host.set(read.config.instances);
   host.log.log("config.instances_changed", { added: ids.length, removed: 0 });
   return { added: ids };
 }
@@ -389,7 +418,6 @@ function removeInstances(host: InstancesHost, params: JsonObject): unknown {
   let record = readInstancesRecord(host.stateDir);
   const chosen = record.filter((r) => wanted === undefined || (wanted as string[]).includes(r.id));
   const outcomes: { id: string; result: "removed" | "edited" | "missing" }[] = [];
-  let text: string | undefined;
   for (const entry of chosen) {
     const prepared = prepareEdit(host.configDir, [
       { op: "remove", array: "instance", entries: new Map(entry.entries) },
@@ -407,18 +435,14 @@ function removeInstances(host: InstancesHost, params: JsonObject): unknown {
     }
     const edited = commitEdit(prepared.edit);
     if (!edited.ok) throw editRefused(edited.reason);
-    text = edited.text;
+    // The file is written: should the record's update fail now, the instance is still gone from
+    // what Open offers (`following`), and a retry finds it `missing` and drops its record.
     outcomes.push({ id: entry.id, result: "removed" });
     record = record.filter((r) => r.id !== entry.id);
     writeRecord(host.stateDir, record);
   }
-  if (text !== undefined) {
-    host.set(parseMachineConfig(withoutBom(text), host.platform).config.instances);
-    host.log.log("config.instances_changed", {
-      added: 0,
-      removed: outcomes.filter((o) => o.result === "removed").length,
-    });
-  }
+  const removed = outcomes.filter((o) => o.result === "removed").length;
+  if (removed > 0) host.log.log("config.instances_changed", { added: 0, removed });
   return { outcomes };
 }
 

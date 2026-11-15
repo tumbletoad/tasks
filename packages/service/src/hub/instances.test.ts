@@ -1,13 +1,36 @@
 // The service's side of `tasks setup instances` (A4 3.2, A2 3.2.4): only the user's class writes,
 // an entry machine.toml's reader would drop is refused before anything is written, an ID the
-// machine has is refused, the record comes first and goes with the entry, and the live instances
-// are the file's as written. Against a temporary config and state folder, without a service.
+// machine has is refused, the record comes first and goes with the entry, and after every call,
+// one that failed on a full disk included, the live instances are the file's. Against a temporary
+// config and state folder, without a service.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { Instance } from "@tasks/launch";
 import { makeDir } from "./files.ts";
+
+/**
+ * A full disk, injected: the writes, in order, each named by its file's name with whether it
+ * fails (ENOSPC, before anything reaches the disk). Writes past the list pass.
+ */
+const faults = vi.hoisted(() => ({ writes: [] as [string, "pass" | "fail"][] }));
+vi.mock("./files.ts", async (importOriginal) => {
+  const files = await importOriginal<typeof import("./files.ts")>();
+  return {
+    ...files,
+    atomicWrite: (path: string, ...rest: unknown[]) => {
+      const next = faults.writes.shift();
+      if (next !== undefined) {
+        if (!path.endsWith(next[0])) throw new Error(`expected a write of ${next[0]}`);
+        if (next[1] === "fail") {
+          throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+        }
+      }
+      (files.atomicWrite as (path: string, ...rest: unknown[]) => void)(path, ...rest);
+    },
+  };
+});
 import { INSTANCES_RECORD, instanceVerbs, type InstancesHost } from "./instances.ts";
 
 let root: string;
@@ -122,5 +145,108 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
       code: "invalid_input",
     });
     expect(readFileSync(toml, "utf8")).toBe("");
+  });
+});
+
+describe("[A4.3.2.setup.instances-follow] after any failure, Open offers what machine.toml holds", () => {
+  const MINE = "# mine\n[http]\nport = 7713\n";
+  const record = (h: InstancesHost) =>
+    (
+      JSON.parse(readFileSync(join(h.stateDir, INSTANCES_RECORD), "utf8")) as {
+        instances: { id: string }[];
+      }
+    ).instances.map((r) => r.id);
+
+  test("remove: the file is written, then the record's update fails; a retry ends consistent", async () => {
+    const h = host("f1");
+    const { "instances/add": add, "instances/remove": remove } = instanceVerbs(h);
+    if (add === undefined || remove === undefined) throw new Error("no verbs");
+    const toml = join(h.configDir, "machine.toml");
+    writeFileSync(toml, MINE, { mode: 0o600 });
+    await add({ entries: [codex()] }, "cli-interactive");
+    expect(h.live.map((i) => i.id)).toEqual(["codex"]);
+
+    faults.writes = [
+      ["machine.toml", "pass"],
+      [INSTANCES_RECORD, "fail"],
+    ];
+    await expect(remove({}, "cli-interactive")).rejects.toMatchObject({ code: "ENOSPC" });
+    expect(faults.writes).toEqual([]);
+    // The block is out of the file, so Open no longer offers it, although the record still has it.
+    expect(readFileSync(toml, "utf8")).toBe(MINE);
+    expect(h.live).toEqual([]);
+    expect(record(h)).toEqual(["codex"]);
+
+    expect(await remove({}, "cli-interactive")).toEqual({
+      outcomes: [{ id: "codex", result: "missing" }],
+    });
+    expect(record(h)).toEqual([]);
+    expect(h.live).toEqual([]);
+    expect(readFileSync(toml, "utf8")).toBe(MINE);
+  });
+
+  test("remove: an entry already gone from the file is dropped from what Open offers too", async () => {
+    const h = host("f2");
+    const { "instances/add": add, "instances/remove": remove } = instanceVerbs(h);
+    if (add === undefined || remove === undefined) throw new Error("no verbs");
+    const toml = join(h.configDir, "machine.toml");
+    writeFileSync(toml, MINE, { mode: 0o600 });
+    await add({ entries: [codex()] }, "cli-interactive");
+    // The person takes the block out by hand while the service runs.
+    writeFileSync(toml, MINE);
+    expect(h.live.map((i) => i.id)).toEqual(["codex"]);
+    expect(await remove({}, "cli-interactive")).toEqual({
+      outcomes: [{ id: "codex", result: "missing" }],
+    });
+    expect(h.live).toEqual([]);
+  });
+
+  test("add: the record's write fails before the file is touched; nothing changes", async () => {
+    const h = host("f3");
+    const { "instances/add": add } = instanceVerbs(h);
+    if (add === undefined) throw new Error("no verb");
+    const toml = join(h.configDir, "machine.toml");
+    writeFileSync(toml, MINE, { mode: 0o600 });
+    faults.writes = [[INSTANCES_RECORD, "fail"]];
+    await expect(add({ entries: [codex()] }, "cli-interactive")).rejects.toMatchObject({
+      code: "ENOSPC",
+    });
+    expect(faults.writes).toEqual([]);
+    expect(readFileSync(toml, "utf8")).toBe(MINE);
+    expect(h.live).toEqual([]);
+    expect(existsSync(join(h.stateDir, INSTANCES_RECORD))).toBe(false);
+    expect(await add({ entries: [codex()] }, "cli-interactive")).toEqual({ added: ["codex"] });
+    expect(h.live.map((i) => i.id)).toEqual(["codex"]);
+    expect(record(h)).toEqual(["codex"]);
+  });
+
+  test("add: the file's write fails and so does the record's take-back; a retry ends consistent", async () => {
+    const h = host("f4");
+    const { "instances/add": add, "instances/remove": remove } = instanceVerbs(h);
+    if (add === undefined || remove === undefined) throw new Error("no verbs");
+    const toml = join(h.configDir, "machine.toml");
+    writeFileSync(toml, MINE, { mode: 0o600 });
+    // The record is written, machine.toml's write fails, and the record's take-back fails too.
+    faults.writes = [
+      [INSTANCES_RECORD, "pass"],
+      ["machine.toml", "fail"],
+      [INSTANCES_RECORD, "fail"],
+    ];
+    await expect(add({ entries: [codex()] }, "cli-interactive")).rejects.toMatchObject({
+      code: "ENOSPC",
+    });
+    expect(faults.writes).toEqual([]);
+    expect(readFileSync(toml, "utf8")).toBe(MINE);
+    expect(h.live).toEqual([]);
+    // The record names an entry the file lacks: harmless, a retry records it again.
+    expect(record(h)).toEqual(["codex"]);
+    expect(await add({ entries: [codex()] }, "cli-interactive")).toEqual({ added: ["codex"] });
+    expect(h.live.map((i) => i.id)).toEqual(["codex"]);
+    expect(record(h)).toEqual(["codex"]);
+    expect(await remove({}, "cli-interactive")).toEqual({
+      outcomes: [{ id: "codex", result: "removed" }],
+    });
+    expect(readFileSync(toml, "utf8")).toBe(MINE);
+    expect(h.live).toEqual([]);
   });
 });

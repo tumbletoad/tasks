@@ -2138,6 +2138,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.2.setup.instances-follow",
+      "title": "After every instances/add and instances/remove, succeeded or failed, the service's instances are those machine.toml holds: with an injected full disk, a removal whose record update fails is no longer offered and its retry ends missing and consistent; an add whose record write fails changes nothing; an add whose file write and record take-back both fail offers nothing, and its retry and removal end consistent; an entry the person took out by hand is dropped at the next removal",
+      "source": "A4 3.2, A2 3.2.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.2.root-rev",
       "title": "Each root's root_rev in machine state starts at 1 and rises whenever its mapping changes, also across a removal and re-adding, and never otherwise",
       "source": "A4 3.2, A6 3.8.3, A7 3.9 M2.06",
