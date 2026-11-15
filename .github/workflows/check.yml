@@ -22,9 +22,10 @@ jobs:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # The lab tests run one file at a time when they run (scripts/lab-tests.ts), which is slower
-    # than the old parallel run on a quiet runner but cannot time out under load. The crash run
-    # adds its 5 minutes (A7 3.18.1).
-    timeout-minutes: 35
+    # than the old parallel run on a quiet runner but cannot time out under load. On windows-2025
+    # a verify that runs them takes about 31 minutes; install and the crash run's 5 minutes come
+    # on top (A7 3.18.1), so a pull request that changes a lab file (the lockfile is one) needs 45.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
