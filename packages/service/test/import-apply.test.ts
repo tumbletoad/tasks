@@ -570,13 +570,33 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
       const [ta, tb] = [taskOf(world, a), taskOf(world, b)];
       world.edit([{ kind: "task.patch", task: ta, set: { title: "Mine" } }]);
       world.edit([{ kind: "task.delete", task: tb }]);
+      // The person moves a task of their own into an area the import made, away from a and b.
+      const keepers = new Set([task(world, ta)["area_id"], task(world, tb)["area_id"]]);
+      const madeArea = world
+        .rows("SELECT id, slug FROM areas WHERE created_seq = $seq ORDER BY slug", { seq: applied })
+        .find((r) => !keepers.has(r["id"]));
+      const mine = String(
+        world.rows("SELECT id FROM tasks WHERE created_seq < $seq ORDER BY ref LIMIT 1", {
+          seq: applied,
+        })[0]?.["id"],
+      );
+      expect(
+        world.edit([{ kind: "task.move", task: mine, area: String(madeArea?.["slug"]) }]).status,
+      ).toBe("applied");
       const created = world.rows("SELECT id FROM tasks WHERE created_seq = $seq", { seq: applied });
       const undone = await world.undo(preview.run);
       expect(ImportPlanningUndoResult.safeParse(undone).success).toBe(true);
       expect(undone.undone).toBe(result.commit);
       const refOf = (id: string) => `M-${String(task(world, id)["ref"])}`;
+      // Only the import's own tasks are listed; the person's task keeps its area without a mention.
       expect(undone.kept.map((k) => k.task).sort()).toEqual([refOf(ta), refOf(tb)].sort());
       expect(undone.removed).toBe(created.length - 2);
+      expect(
+        world.rows("SELECT deleted_at FROM areas WHERE id = $id", {
+          id: String(madeArea?.["id"]),
+        })[0],
+      ).toEqual({ deleted_at: null });
+      expect(task(world, mine)).toMatchObject({ deleted_at: null, area_id: madeArea?.["id"] });
       // a stays as the person left it, with every entry and link the import gave it.
       expect(task(world, ta)).toMatchObject({ title: "Mine", deleted_at: null });
       expect(

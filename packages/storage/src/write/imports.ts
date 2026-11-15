@@ -118,16 +118,22 @@ export function planImportRevert(
   const tombstoned = new Set(
     plan.inversions.filter((i) => i.kind === "tombstone").map((i) => `${i.entity}|${i.id}`),
   );
-  // A task stays as it is when a field or a row of it conflicts, and when the import created it
-  // and its tombstone is not planned (someone changed it, or deleted it already).
+  // A task of the import stays as it is when a field or a row of it conflicts, and when the import
+  // created it and its tombstone is not planned (someone changed it, or deleted it already).
+  const touched = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
   const kept = new Set<Id<"t">>();
-  for (const c of plan.conflicts) if (c.task !== undefined) kept.add(c.task);
+  for (const c of plan.conflicts) {
+    if (c.task !== undefined && touched.has(c.task)) kept.add(c.task);
+  }
   for (const c of changes) {
     if (c.action === "create" && c.entity === "tasks" && !tombstoned.has(`tasks|${c.entityId}`)) {
       if (isId(c.entityId, "t")) kept.add(c.entityId);
     }
   }
   plan.inversions = plan.inversions.filter((i) => i.task === null || !kept.has(i.task));
+  // The answer lists the import's tasks that stay. Another commit's task in an imported area keeps
+  // that area too, and is no task of the import's to list.
+  plan.conflicts = plan.conflicts.filter((c) => c.task !== undefined && kept.has(c.task));
   // A source stays while a link to it stays; a project while a task in it stays; an area while a
   // task or a project in it stays. Projects first: a project that stays keeps its area.
   const keep = (entity: string, stays: (id: string, going: ReadonlySet<string>) => boolean) => {
