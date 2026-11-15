@@ -1618,6 +1618,10 @@
             "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
             "type": "string"
           },
+          "pack": {
+            "description": "Copy the context pack: the task's text, for an app without the tools",
+            "type": "boolean"
+          },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",
             "maxLength": 64,

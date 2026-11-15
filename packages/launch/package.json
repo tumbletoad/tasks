@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./clipboard": "./src/clipboard.ts",
     "./helpers": "./src/helpers.ts",
     "./places": "./src/places.ts",
     "./process": "./src/process.ts",

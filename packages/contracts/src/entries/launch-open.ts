@@ -29,6 +29,10 @@ export const LaunchOpenInput = z.strictObject({
   text: safeText(USER_LIMITS.note)
     .describe("Your words for the agent: they replace the brief's last line")
     .optional(),
+  pack: z
+    .boolean()
+    .describe("Copy the context pack: the task's text, for an app without the tools")
+    .optional(),
   request_id: RequestId,
 });
 

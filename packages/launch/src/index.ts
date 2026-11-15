@@ -12,6 +12,7 @@
 // (A7 3.2).
 export * from "./approval.ts";
 export * from "./catalogue.ts";
+export * from "./clipboard.ts";
 export * from "./detect.ts";
 export * from "./git-remote.ts";
 export * from "./intents.ts";
