@@ -72,6 +72,8 @@ const WINDOWS: FakeHostSpec = {
     "C:\\Users\\mira\\.Codex\\auth.json": { kind: "file" },
     "C:\\Users\\mira\\.codex-personal\\auth.json": { kind: "file" },
     "C:\\Users\\mira\\.claude\\.credentials.json": { kind: "file" },
+    // A second home named as T3 Code's documentation suggests, with `_`.
+    "C:\\Users\\mira\\.claude_personal\\.credentials.json": { kind: "file" },
   },
   outputs: {
     "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.322 (Claude Code)\r\n",
@@ -122,6 +124,7 @@ const HOMES: Record<string, string[]> = {
     "C:\\Users\\mira\\.Codex",
     "C:\\Users\\mira\\.codex-personal",
     "C:\\Users\\mira\\.claude",
+    "C:\\Users\\mira\\.claude_personal",
     "C:\\Users\\mira\\.t3\\userdata",
   ],
   darwin: ["/Users/mira/.claude-work", "/Users/mira/.codex", "/Users/mira/codex-homes/lab"],
@@ -197,6 +200,33 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     const detection: Detection = await detect(fakeHost(LINUX), existing);
     expect(detection.proposals.map((p) => p.id)).toEqual(["claude", "codex-personal", "t3"]);
     expect(detection.configured).toEqual(["codex-work", "codex"]);
+  });
+
+  test("a second home named with `_` (T3 Code's documented form) is found like one with `-`", async () => {
+    const entries = {
+      ...LINUX.entries,
+      "/home/mira/.claude_personal/settings.json": { kind: "file" as const },
+      "/home/mira/.codex_lab/config.toml": { kind: "file" as const },
+      // Not a home: no suffix after the separator, or one Tasks cannot turn into an ID.
+      "/home/mira/.codex_/x": { kind: "file" as const },
+      "/home/mira/.codex_Old_Copy/x": { kind: "file" as const },
+    };
+    const detection = await detect(fakeHost({ ...LINUX, entries }));
+    expect(detection.homes.map((h) => [h.path, h.suffix])).toEqual([
+      ["/home/mira/.claude", ""],
+      ["/home/mira/.claude_personal", "personal"],
+      ["/home/mira/.codex", ""],
+      ["/home/mira/.codex-personal", "personal"],
+      ["/home/mira/.codex_lab", "lab"],
+    ]);
+    expect(detection.proposals.find((p) => p.id === "claude-personal")).toMatchObject({
+      configHome: "/home/mira/.claude_personal",
+      env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude_personal" },
+      needs: [],
+    });
+    expect(detection.proposals.find((p) => p.id === "codex-lab")?.configHome).toBe(
+      "/home/mira/.codex_lab",
+    );
   });
 
   test("a home is selected by the instance alone: the inherited home variables are scrubbed, every other home names its variable, and a chosen home moves the variable with it", async () => {

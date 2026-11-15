@@ -78,7 +78,7 @@ export interface FoundCommand {
 export interface FoundHome {
   readonly target: Extract<DetectableTarget, "claude-cli" | "codex-cli">;
   readonly path: string;
-  /** The folder name's suffix after `.codex-` or `.claude-`; empty for the default home. */
+  /** The folder name's suffix after `.codex-`, `.codex_`, `.claude-` or `.claude_`; empty for the default home. */
   readonly suffix: string;
   /** `home`: found in the home folder. `env`: named by CODEX_HOME or CLAUDE_CONFIG_DIR. */
   readonly source: "home" | "env";
@@ -299,9 +299,13 @@ function findHomes(host: DetectHost, def: TargetDef): FoundHome[] {
     const folded = fold(name);
     let suffix: string;
     if (folded === rule.folder) suffix = "";
-    else if (folded.startsWith(`${rule.folder}-`)) suffix = folded.slice(rule.folder.length + 1);
-    else continue;
-    if (suffix !== "" && !SUFFIX.test(suffix)) continue;
+    // `.codex-work` and `.codex_work` (the form T3 Code's documentation suggests) are both a
+    // second home with the suffix `work`.
+    else if (folded.startsWith(`${rule.folder}-`) || folded.startsWith(`${rule.folder}_`)) {
+      suffix = folded.slice(rule.folder.length + 1);
+      // `.codex-` alone is no second home, and never the default one.
+      if (!SUFFIX.test(suffix)) continue;
+    } else continue;
     const path = p.join(host.home, name);
     if (host.stat(path)?.kind !== "dir") continue;
     homes.push({ target, path, suffix, source: "home" });

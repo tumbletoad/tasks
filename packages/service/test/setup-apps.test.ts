@@ -363,25 +363,42 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
     "T3 Code: its provider instances' homes are offered and marked as read by T3; its settings are only read",
     async () => {
       const w = world("t3");
-      for (const folder of [".codex", ".codex-personal", "work-claude"]) {
+      for (const folder of [".codex", ".codex_personal", "work-claude", "off-claude"]) {
         mkdirSync(join(w.home, folder));
       }
       const t3 = join(w.home, ".t3", "userdata");
       mkdirSync(t3, { recursive: true, mode: 0o700 });
       const settings = join(t3, "settings.json");
+      // T3's own shape (A3 3.13.6): a renamed default, added instances with config.homePath, one
+      // turned off, and an agent that is not Tasks's.
       writeFileSync(
         settings,
         JSON.stringify(
           {
             providerInstances: {
-              codex: { provider: "codex", homePath: "" },
-              "codex-personal": {
-                provider: "codex",
-                homePath: join(w.home, ".codex-personal"),
-                shadowHomePath: join(w.home, ".t3", "shadow", "codex-personal"),
+              codex: { driver: "codex", displayName: "Codex", enabled: true },
+              codex_personal: {
+                driver: "codex",
+                displayName: "Codex Personal",
+                enabled: true,
+                config: {
+                  homePath: "~/.codex_personal",
+                  shadowHomePath: join(w.home, ".t3", "shadow", "codex-personal"),
+                },
               },
-              "claude-work": { provider: "claudeAgent", homePath: join(w.home, "work-claude") },
-              opencode: { provider: "acp", command: "opencode" },
+              claude_work: {
+                driver: "claudeAgent",
+                displayName: "Claude Work",
+                enabled: true,
+                environment: [{ name: "ANTHROPIC_API_KEY", value: SENTINEL, sensitive: true }],
+                config: { homePath: join(w.home, "work-claude") },
+              },
+              claude_off: {
+                driver: "claudeAgent",
+                enabled: false,
+                config: { homePath: join(w.home, "off-claude") },
+              },
+              opencode: { driver: "opencode", enabled: true, config: {} },
             },
             apiKey: SENTINEL,
           },
@@ -419,7 +436,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         [
           ["claude", join(w.home, "work-claude"), null],
           ["codex", null, join(w.home, ".codex")],
-          ["codex", null, join(w.home, ".codex-personal")],
+          ["codex", null, join(w.home, ".codex_personal")],
         ].sort(),
       );
       for (const view of await survey(input)) {
@@ -437,17 +454,22 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         join(elsewhere, "settings.json"),
         JSON.stringify({
           providerInstances: {
-            "codex-personal": { provider: "codex", homePath: join(w.home, ".codex-personal") },
+            codex_personal: {
+              driver: "codex",
+              config: { homePath: join(w.home, ".codex_personal") },
+            },
           },
         }),
         { mode: 0o600 },
       );
       const named = await inputOf(w, { T3CODE_HOME: join(w.root, "t3-elsewhere") });
+      // Its instance, and T3's default Codex instance, which the file does not list.
       expect(
         (await survey(named))
           .filter((v) => v.home.hosts.includes("t3"))
-          .map((v) => v.home.instance),
-      ).toEqual(["codex-personal"]);
+          .map((v) => v.home.instance)
+          .sort(),
+      ).toEqual(["codex", "codex-personal"]);
       if (!windows) {
         // A settings file anyone can change, or a link, is not believed: what it says about its
         // instances is not used, and only T3's default homes are taken as its (here `.codex`).
@@ -472,7 +494,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         join(explicitT3, "settings.json"),
         JSON.stringify({
           providerInstances: {
-            claude: { provider: "claudeAgent", homePath: join(w.home, ".claude") },
+            claudeAgent: { driver: "claudeAgent", config: { homePath: join(w.home, ".claude") } },
           },
         }),
         { mode: 0o600 },
@@ -484,8 +506,34 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         hosts: [],
       });
       expect(t3HomesOf(explicit)).toEqual([
-        { app: "claude-code", provider: "claude", home: join(w.home, ".claude"), isDefault: false },
+        {
+          app: "claude-code",
+          provider: "claudeAgent",
+          home: join(w.home, ".claude"),
+          isDefault: false,
+        },
+        // T3's default Codex instance, which the file does not list.
+        { app: "codex", provider: "codex", home: join(w.home, ".codex"), isDefault: true },
       ]);
+
+      if (!windows) {
+        // A Codex shadow home (its config.toml a link into another home) is no home of its own:
+        // the home it links to is offered in its place and names it. (Windows links a file only
+        // with an elevated right or developer mode.)
+        writeFileSync(join(w.home, ".codex", "config.toml"), "");
+        mkdirSync(join(w.home, ".codex-linked"));
+        symlinkSync(
+          join(w.home, ".codex", "config.toml"),
+          join(w.home, ".codex-linked", "config.toml"),
+        );
+        const linked = await survey(await inputOf(w));
+        expect(linked.some((v) => v.home.home.endsWith(".codex-linked"))).toBe(false);
+        expect(byFolder(linked, "codex", `${sep}.codex`).home.shadows).toEqual([
+          join(w.home, ".codex-linked"),
+        ]);
+        rmSync(join(w.home, ".codex-linked"), { recursive: true });
+        rmSync(join(w.home, ".codex", "config.toml"));
+      }
     },
     SLOW,
   );
