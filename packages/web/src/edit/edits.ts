@@ -118,8 +118,14 @@ export interface EditDeps {
 /** An undo's commit: named, or the commit of the tab's own write, resolved in the undo's turn. */
 export type Named = string | Pick<Sent<unknown>, "commit" | "request">;
 
-/** A write of the tab's, with the call that carries it once it is sent (none when it was not). */
-type Write<T> = Sent<T> & { readonly call: Promise<Pick<Call<T>, "decided"> | undefined> };
+/** The call that carries a request once it is sent (none when it was not). */
+type Carried<T> = Promise<Pick<Call<T>, "decided"> | undefined>;
+
+/** A write of the tab's, with its call. */
+type Write<T> = Sent<T> & { readonly call: Carried<T> };
+
+/** Where an outcome's toast goes (`#outcome`); undefined takes away the toast it showed. */
+type Say = (toast: Omit<Toast, "key"> | undefined) => void;
 
 /** A toast's write whose commit the page cannot learn: its Undo says so and changes nothing. */
 class UnknownCommit extends Error {}
@@ -394,7 +400,7 @@ export class Edits {
     for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
     // What the person saw: the editor's base, or the screen's now.
     const sent = this.#send(task.id, change, options.base ?? this.#deps.asOf());
-    const toast = this.#toast({
+    const saved: Omit<Toast, "key"> = {
       kind: "undo",
       text: change.said,
       action: {
@@ -403,32 +409,43 @@ export class Edits {
           void this.undo(sent);
         },
       },
-    });
+    };
+    const toast = this.#toast(saved);
     void sent.commit.then((commit) => {
       if (commit !== undefined) this.#fieldsOf.set(commit, change.fields);
     });
-    sent.answer.then(
-      (result) => {
-        // Nothing changed (the value was already so): there is nothing to undo.
-        if ((result as { result?: unknown }).result === "no_change") this.#untoast(toast);
-      },
-      (error: unknown) => {
+    // The parts kept for want of an answer, each with its line: a later decision settles only the
+    // ones still showing it, so a part the person edited, applied or discarded since stays theirs.
+    let interim: ReadonlyMap<Change, Unsaved> = new Map();
+    const stillShown = () =>
+      [...interim]
+        .filter(([part, line]) => this.unsaved(task.id, part.fields[0] ?? "title") === line)
+        .map(([part]) => part);
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say, late) => {
+        if (decision.ok) {
+          // Saved after all (a late answer, or the feed named it): the parts still waiting go.
+          if (late) {
+            for (const part of stillShown()) this.#forget(task.id, part.fields[0] ?? "title");
+          }
+          // Nothing changed (the value was already so): there is nothing to undo.
+          if ((decision.value as { result?: unknown }).result === "no_change") say(undefined);
+          else if (late) say(saved);
+          return;
+        }
         // Kept part by part: a part whose field the person edited again since gives way to that
         // newer choice, and the others still wait for the person.
-        const kept = (change.parts ?? [change]).filter((part) =>
-          part.fields.every((field) => this.#latest.get(keyOf(task.id, field)) === number),
-        );
-        if (kept.length > 0) this.#refused(task, kept, error);
-        if (!(error instanceof Unanswered)) return;
-        // Saved after all (a late answer, or the feed named it): the parts still waiting go.
-        void sent.call.then(async (call) => {
-          if ((await call?.decided)?.ok !== true) return;
-          for (const part of kept) {
-            const field = part.fields[0] ?? "title";
-            if (this.unsaved(task.id, field)?.change === part) this.#forget(task.id, field);
-          }
-        });
+        const kept = late
+          ? stillShown()
+          : (change.parts ?? [change]).filter((part) =>
+              part.fields.every((field) => this.#latest.get(keyOf(task.id, field)) === number),
+            );
+        if (kept.length > 0) interim = this.#refused(task, kept, decision.error, say);
+        else if (late) say(undefined);
       },
+      toast,
     );
   }
 
@@ -459,7 +476,7 @@ export class Edits {
       this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
     );
     this.#checks.set(task.id, sent);
-    this.#toast({
+    const done: Omit<Toast, "key"> = {
       kind: "undo",
       text: { id: "toast.done" },
       action: {
@@ -468,23 +485,34 @@ export class Edits {
           void this.undo(sent);
         },
       },
-    });
+    };
+    const toast = this.#toast(done);
     void sent.commit.then((commit) => {
       if (commit !== undefined) this.#fieldsOf.set(commit, ["lifecycle", "wrap"]);
     });
-    sent.answer.catch((error: unknown) => {
-      this.#drop(task.id);
-      if (this.#deps.failed(error)) return;
-      const problem = problemOf(error);
-      const conflict = problem?.conflicts[0];
-      this.#toast({
-        kind: "error",
-        text:
-          conflict === undefined
-            ? { id: "toast.checkFailed" }
-            : { id: "toast.checkConflict", values: whoOf(conflict.by) },
-      });
-    });
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say, late) => {
+        // Done after all: the feed takes the row away, and the toast offers its Undo again.
+        if (decision.ok) {
+          if (late) say(done);
+          return;
+        }
+        // The row came back when no answer came; a hold since is the person's new check-off.
+        if (!late) this.#drop(task.id);
+        if (this.#deps.failed(decision.error)) return;
+        const conflict = problemOf(decision.error)?.conflicts[0];
+        say({
+          kind: "error",
+          text:
+            conflict === undefined
+              ? { id: "toast.checkFailed" }
+              : { id: "toast.checkConflict", values: whoOf(conflict.by) },
+        });
+      },
+      toast,
+    );
   }
 
   /** The check-offs of this tab still in their hold, with their writes. */
@@ -528,51 +556,53 @@ export class Edits {
    * the queue at once, when the person acts, and a toast's write's commit is resolved there. A
    * commit the page cannot learn (the write was refused) is not guessed: the person uses Ctrl+Z.
    */
-  async undo(commit?: Named, partial = false): Promise<void> {
+  undo(commit?: Named, partial = false): Promise<void> {
     const asked: { commit?: string } = {};
-    let result;
-    try {
-      result = await this.#history("undo", commit, partial, asked);
-    } catch (error) {
-      if (error instanceof UnknownCommit) {
-        this.#toast({ kind: "info", text: { id: "toast.undoUnknown" } });
+    const { answer, call } = this.#history("undo", commit, partial, asked);
+    return this.#outcome(answer, call, (decision, say) => {
+      if (!decision.ok) {
+        if (decision.error instanceof UnknownCommit) {
+          say({ kind: "info", text: { id: "toast.undoUnknown" } });
+        } else {
+          this.#historyFailed("undo", decision.error, asked.commit, say);
+        }
         return;
       }
-      this.#historyFailed("undo", error, asked.commit);
-      return;
-    }
-    this.#undone(result.tasks, true);
-    this.#toast({
-      kind: "undo",
-      text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
-      action: {
-        label: { id: "toast.redo" },
-        run: () => {
-          void this.redo(result.commit);
+      const result = decision.value;
+      this.#undone(result.tasks, true);
+      say({
+        kind: "undo",
+        text: { id: result.result === "partial" ? "toast.undoneRest" : "toast.undone" },
+        action: {
+          label: { id: "toast.redo" },
+          run: () => {
+            void this.redo(result.commit);
+          },
         },
-      },
+      });
     });
   }
 
-  async redo(commit?: string): Promise<void> {
-    let result;
-    try {
-      result = await this.#history("redo", commit, false);
-    } catch (error) {
-      this.#historyFailed("redo", error, commit);
-      return;
-    }
-    for (const ref of result.tasks) this.#redone.set(ref, result.commit);
-    this.#undone(result.tasks, false);
-    this.#toast({
-      kind: "undo",
-      text: { id: "toast.redone" },
-      action: {
-        label: { id: "toast.undo" },
-        run: () => {
-          void this.undo(result.commit);
+  redo(commit?: string): Promise<void> {
+    const { answer, call } = this.#history("redo", commit, false);
+    return this.#outcome(answer, call, (decision, say) => {
+      if (!decision.ok) {
+        this.#historyFailed("redo", decision.error, commit, say);
+        return;
+      }
+      const result = decision.value;
+      for (const ref of result.tasks) this.#redone.set(ref, result.commit);
+      this.#undone(result.tasks, false);
+      say({
+        kind: "undo",
+        text: { id: "toast.redone" },
+        action: {
+          label: { id: "toast.undo" },
+          run: () => {
+            void this.undo(result.commit);
+          },
         },
-      },
+      });
     });
   }
 
@@ -589,9 +619,9 @@ export class Edits {
     commit: Named | undefined,
     partial: boolean,
     asked: { commit?: string } = {},
-  ): Promise<HistoryResult> {
+  ): { answer: Promise<HistoryResult>; call: Carried<HistoryResult> } {
     const ahead = allOf(this.#ahead());
-    const { turn, made } = this.#turn<HistoryResult>(ahead);
+    const { turn, made, call: carried } = this.#turn<HistoryResult>(ahead);
     const run = (async (): Promise<HistoryResult> => {
       try {
         // Behind a request whose outcome is unknown, an unnamed undo could take back the wrong
@@ -628,7 +658,7 @@ export class Edits {
     this.#release(run, () => {
       if (this.#gate === turn) this.#gate = undefined;
     });
-    return run;
+    return { answer: run, call: carried };
   }
 
   /** What an undo or redo waits for: every task's newest write, and the undo or redo before it. */
@@ -663,6 +693,49 @@ export class Edits {
     answer.then(free, (error: unknown) => {
       if (!(error instanceof Unanswered) && !(error instanceof NotSent)) free();
     });
+  }
+
+  /**
+   * A request's outcome, the one place that acts on it (A5 3.11 "No request holds the queue").
+   * `settle` runs once for `answer`: the decision, or, when no answer came (`Unanswered`), the
+   * interim outcome the person sees as not saved. A decision that comes after that interim runs
+   * `settle` once more (`late`), and only then: `Call` decides once, so a second answer or receipt
+   * of the same request changes nothing. The late run reconciles against what the page showed:
+   * its toast replaces the interim one only while that is still the one shown (the person has moved
+   * on otherwise), and `settle` keeps what the person did since. `shown` is a toast shown before
+   * the answer (an edit's Undo). Resolves once the first run is done.
+   */
+  #outcome<T>(
+    answer: Promise<T>,
+    call: Carried<T>,
+    settle: (decision: Decision<T>, say: Say, late: boolean) => void,
+    shown?: Toast,
+  ): Promise<void> {
+    let current = shown;
+    const sayer =
+      (late: boolean): Say =>
+      (toast) => {
+        const showing = current !== undefined && current.key === this.#toasts;
+        if (toast === undefined) {
+          if (showing && current !== undefined) this.#untoast(current);
+          return;
+        }
+        if (late && !showing) return;
+        current = this.#toast(toast);
+      };
+    return answer.then(
+      (value) => {
+        settle({ ok: true, value }, sayer(false), false);
+      },
+      (error: unknown) => {
+        settle({ ok: false, error }, sayer(false), false);
+        if (!(error instanceof Unanswered)) return;
+        void call.then(async (sent) => {
+          const decision = await sent?.decided;
+          if (decision !== undefined) settle(decision, sayer(true), true);
+        });
+      },
+    );
   }
 
   /**
@@ -740,11 +813,18 @@ export class Edits {
    * action that fits: "Restore mine" when every field of the change conflicts, "Undo the rest"
    * when only some do (A5 3.12). A redo has no partial form.
    */
-  #historyFailed(kind: "undo" | "redo", error: unknown, asked: string | undefined): void {
+  #historyFailed(
+    kind: "undo" | "redo",
+    error: unknown,
+    asked: string | undefined,
+    say: Say = (toast) => {
+      if (toast !== undefined) say(toast);
+    },
+  ): void {
     if (this.#deps.failed(error)) return;
     const problem = problemOf(error);
     if (problem === undefined) {
-      this.#toast({ kind: "error", text: { id: "toast.undoFailed" } });
+      say({ kind: "error", text: { id: "toast.undoFailed" } });
       return;
     }
     // The commit it met, named: Restore mine and Undo the rest act on that one only, never on
@@ -752,24 +832,24 @@ export class Edits {
     const commit = asked ?? problem.commit;
     switch (problem.cause) {
       case "NOTHING_TO_UNDO":
-        this.#toast({ kind: "info", text: { id: "toast.nothingToUndo" } });
+        say({ kind: "info", text: { id: "toast.nothingToUndo" } });
         return;
       case "NOTHING_TO_REDO":
-        this.#toast({ kind: "info", text: { id: "toast.nothingToRedo" } });
+        say({ kind: "info", text: { id: "toast.nothingToRedo" } });
         return;
       case "INVALID_TRANSITION":
-        this.#toast({ kind: "info", text: { id: "toast.newerFirst" } });
+        say({ kind: "info", text: { id: "toast.newerFirst" } });
         return;
       case "UNDO_CONFLICT":
         break;
       default:
-        this.#toast({ kind: "error", text: { id: "toast.undoFailed" } });
+        say({ kind: "error", text: { id: "toast.undoFailed" } });
         return;
     }
     const conflicts = problem.conflicts;
     const first = conflicts[0];
     if (first === undefined) {
-      this.#toast({ kind: "error", text: { id: "toast.undoFailed" } });
+      say({ kind: "error", text: { id: "toast.undoFailed" } });
       return;
     }
     const fields = new Set(conflicts.map((c) => c.field));
@@ -793,10 +873,10 @@ export class Edits {
         : {};
     if (some || restore === undefined) {
       // Or nothing a hand edit can put back (a lifecycle, a due time): the person decides.
-      this.#toast({ kind: "error", text, ...undoRest });
+      say({ kind: "error", text, ...undoRest });
       return;
     }
-    this.#toast({
+    say({
       kind: "error",
       text,
       action: {
@@ -836,30 +916,33 @@ export class Edits {
    * past it and the next Ctrl+Z reaches the change below, not this conflict again. Only for a
    * commit it can name: unnamed, a partial undo could take a newer change instead.
    */
-  async #restore(
+  #restore(
     kind: "undo" | "redo",
     restore: ReadonlyMap<string, Change>,
     commit: string | undefined,
   ): Promise<void> {
-    let base: string | undefined;
-    if (kind === "undo" && commit !== undefined) {
-      try {
-        const partial = await this.#history("undo", commit, true);
-        base = partial.as_of;
-      } catch (error) {
-        this.#historyFailed("undo", error, commit);
-        return;
+    const put = (base: string | undefined) => {
+      for (const [ref, change] of restore) {
+        const row = this.#deps.rowOf(ref);
+        const fresh = newer(this.#deps.asOf(), base);
+        this.edit(
+          row ?? ({ id: ref, ref } as TaskRow),
+          change,
+          fresh === undefined ? {} : { base: fresh },
+        );
       }
+    };
+    if (kind !== "undo" || commit === undefined) {
+      put(undefined);
+      return Promise.resolve();
     }
-    for (const [ref, change] of restore) {
-      const row = this.#deps.rowOf(ref);
-      const fresh = newer(this.#deps.asOf(), base);
-      this.edit(
-        row ?? ({ id: ref, ref } as TaskRow),
-        change,
-        fresh === undefined ? {} : { base: fresh },
-      );
-    }
+    // A partial undo decided late still puts the values back: the person chose it, and each edit
+    // carries its base, so nothing changed since is overwritten.
+    const { answer, call } = this.#history("undo", commit, true);
+    return this.#outcome(answer, call, (decision, say) => {
+      if (decision.ok) put(decision.value.as_of);
+      else this.#historyFailed("undo", decision.error, commit, say);
+    });
   }
 
   /** Sends one `task.update` after the task's earlier writes have answered. */
@@ -961,7 +1044,13 @@ export class Edits {
     return { ...sent, call: mine };
   }
 
-  #refused(task: TaskRow, parts: readonly Change[], error: unknown): void {
+  /** Keeps refused parts as not saved and says so; returns each part's line. */
+  #refused(
+    task: TaskRow,
+    parts: readonly Change[],
+    error: unknown,
+    say: Say,
+  ): ReadonlyMap<Change, Unsaved> {
     const signedOut = this.#deps.failed(error);
     const problem = problemOf(error);
     const conflictOf = (change: Change) =>
@@ -972,6 +1061,7 @@ export class Edits {
     // Each part under each field it writes: the control of any of them shows it, and a newer edit
     // of one field drops only its own part.
     const next = new Map(this.#state.unsaved);
+    const lines = new Map<Change, Unsaved>();
     for (const change of parts) {
       const conflict = conflictOf(change);
       const unsaved: Unsaved = {
@@ -982,12 +1072,13 @@ export class Edits {
         reason: conflict === undefined ? "failed" : "conflict",
         ...(conflict === undefined ? {} : { by: conflict.by, at: Date.parse(conflict.at) }),
       };
+      lines.set(change, unsaved);
       for (const each of change.fields) next.set(keyOf(task.id, each), unsaved);
     }
     this.#set({ ...this.#state, unsaved: next });
-    if (signedOut) return;
+    if (signedOut) return lines;
     const first = parts[0];
-    if (first === undefined) return;
+    if (first === undefined) return lines;
     const conflict = conflictOf(first);
     const field = first.fields[0] ?? "title";
     const words = FIELD_WORDS[field];
@@ -1002,10 +1093,10 @@ export class Edits {
     // no action that would only fail again. The value waits under its fact or the title, with
     // Copy (Facts.tsx, Row.tsx).
     if (problem?.cause === "TASK_NOT_ACTIVE" || problem?.cause === "DELETED") {
-      this.#toast({ kind: "error", text });
-      return;
+      say({ kind: "error", text });
+      return lines;
     }
-    this.#toast({
+    say({
       kind: "error",
       text,
       action: {
@@ -1022,6 +1113,7 @@ export class Edits {
         },
       },
     });
+    return lines;
   }
 
   /** Drops the unsaved edit of a field, under every field it was kept for. */

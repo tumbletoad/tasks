@@ -1151,3 +1151,208 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     ]);
   });
 });
+
+describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives later is reconciled against it", () => {
+  const updated = (w: World, seq: number) => ({
+    result: "updated",
+    task: "M-1",
+    fields: [],
+    as_of: w.asOf(seq),
+    warnings: [],
+  });
+  const down = () => {
+    throw new Error("network");
+  };
+  const conflict = appError("conflict", {
+    cause: "VERSION_CONFLICT",
+    conflicts: [
+      {
+        task: "M-1",
+        field: "priority",
+        value: 3,
+        version: 11,
+        by: "Codex",
+        at: "2026-11-12T09:40:00.000Z",
+      },
+    ],
+  });
+  /**
+   * The first send of the next request of `name` hangs until the test settles it, and the page
+   * cannot learn its outcome (the replay and the receipt fail on the way): it shows as not saved.
+   */
+  const hanging = (w: World, name: string) => {
+    const first: { resolve?: (value: unknown) => void; reject?: (error: Error) => void } = {};
+    w.answer(
+      name,
+      () =>
+        new Promise((resolve, reject: (error: Error) => void) => {
+          first.resolve = resolve;
+          first.reject = reject;
+        }),
+    );
+    w.answer(name, down);
+    w.answer("receipt.get", down);
+    return first;
+  };
+  const updates = (w: World) => w.calls.filter((c) => c.name === "task.update").map((c) => c.input);
+
+  test("the original answer of a request its replay decided moves no base back past the tab's own later write", async () => {
+    const w = new World([task(1)]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
+    // The replay with the same request ID answers: the edit landed at 11.
+    w.answer("task.update", () => updated(w, 11));
+    w.answer("receipt.get", () => ({ found: false }));
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    // The feed is stalled at 10. Another window changes another field at 12; this tab's next
+    // priority edit commits at 13.
+    w.answer("task.update", () => updated(w, 13));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    expect(updates(w)[2]).toMatchObject({ set: { priority: 2 }, base: w.asOf(11) });
+    // The first send's own answer comes at last, with the same as_of as its replay.
+    answerFirst(updated(w, 11));
+    await flush();
+    w.answer("task.update", () => updated(w, 14));
+    w.edits.edit(task(1), priorityChange(3));
+    await flush();
+    expect(updates(w)[3]).toMatchObject({ set: { priority: 3 }, base: w.asOf(13) });
+  });
+
+  test("a conflict decided after the edit showed as not saved replaces Try again with who changed it and Apply mine", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({ reason: "failed" });
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.tryAgain" });
+    first.reject?.(conflict);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({
+      reason: "conflict",
+      by: "Codex",
+    });
+    expect(w.lastToast()).toMatchObject({
+      kind: "error",
+      text: { id: "toast.changedBy" },
+      action: { label: { id: "toast.applyMine" } },
+    });
+  });
+
+  test("a finished task's refusal decided late leaves no Try again that would only fail again", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    first.reject?.(appError("wrong_tool", { cause: "TASK_NOT_ACTIVE" }));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({ reason: "failed" });
+    expect(w.lastToast()).toMatchObject({ kind: "error" });
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a late refusal keeps the person's newer choices: a discarded value stays gone, a newer edit stands, and a newer toast stays", async () => {
+    const w = new World([task(1), task(2)]);
+    const one = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    // Discarded: the late conflict brings nothing back, and takes the stale Try again away.
+    w.edits.dismiss("t_00001", "priority");
+    one.reject?.(conflict);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.lastToast()).toBeUndefined();
+
+    // Another edit's toast took the place of the edit's Try again: the late refusal updates the
+    // line under the field and leaves the newer toast alone.
+    const two = hanging(w, "task.update");
+    w.edits.edit(task(2), effortChange("M"));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    w.answer("task.update", () => updated(w, 12));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    const newer = w.lastToast();
+    expect(newer?.text.id).toBe("toast.priority");
+    two.reject?.(conflict);
+    await flush();
+    expect(w.lastToast()).toBe(newer);
+    expect(w.edits.unsaved("t_00002", "effort")).toMatchObject({ reason: "conflict" });
+
+    // Try again, clicked before the late decision, is the person's newer edit: it stands.
+    const three = hanging(w, "task.update");
+    w.edits.edit(task(2), effortChange("S"), { base: w.asOf(12) });
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    w.answer("task.update", () => new Promise(() => undefined));
+    w.answer("receipt.get", () => ({ found: false }));
+    w.lastToast()?.action?.run();
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    const retried = w.edits.unsaved("t_00002", "effort");
+    expect(retried).toMatchObject({ reason: "failed", change: { set: { effort: "S" } } });
+    const shown = w.lastToast();
+    three.reject?.(conflict);
+    await flush();
+    expect(w.edits.unsaved("t_00002", "effort")).toBe(retried);
+    expect(w.lastToast()).toBe(shown);
+  });
+
+  test("a success decided late takes the not-saved line and its Try again away, and the toast offers Undo again", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.tryAgain" });
+    first.resolve?.(updated(w, 11));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.lastToast()).toMatchObject({
+      kind: "undo",
+      text: { id: "toast.priority" },
+      action: { label: { id: "toast.undo" } },
+    });
+  });
+
+  test("an undo that said it failed for want of an answer, and then turns out done, says so with Redo", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "history.undo");
+    const done = w.edits.undo();
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await done;
+    expect(w.lastToast()?.text).toEqual({ id: "toast.undoFailed" });
+    first.resolve?.({
+      result: "undone",
+      commit: "op_c",
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(11),
+    });
+    await flush();
+    expect(w.lastToast()).toMatchObject({
+      text: { id: "toast.undone" },
+      action: { label: { id: "toast.redo" } },
+    });
+  });
+
+  test("a check-off that said it failed for want of an answer, and then turns out done, offers its Undo again", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.finish");
+    w.edits.checkOff(task(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.lastToast()?.text).toEqual({ id: "toast.checkFailed" });
+    first.resolve?.({ result: "completed", task: "M-1", as_of: w.asOf(11), warnings: [] });
+    await flush();
+    expect(w.lastToast()).toMatchObject({
+      text: { id: "toast.done" },
+      action: { label: { id: "toast.undo" } },
+    });
+  });
+});
