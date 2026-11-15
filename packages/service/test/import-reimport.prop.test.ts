@@ -27,6 +27,8 @@ const POOLS = {
   due: [null, "2026-12-01", "2026-12-02"],
   grouping: ["Work", "Home", "Errands"],
   lifecycle: ["active", "completed"],
+  // The task's folder under the root `work`: a place is a row of its own, with its own version.
+  place: [null, "a", "b"],
 } as const;
 type Field = keyof typeof POOLS;
 const FIELDS = Object.keys(POOLS) as Field[];
@@ -78,6 +80,13 @@ afterAll(() => {
 
 /** A field's value in the space, in the pool's form. */
 function spaceValue(world: ImportWorld, id: string, field: Field): unknown {
+  if (field === "place") {
+    const place = world.rows(
+      "SELECT rel_path FROM places WHERE owner_kind = 'task' AND owner_id = $id AND deleted_at IS NULL",
+      { id },
+    )[0];
+    return place?.["rel_path"] ?? null;
+  }
   const row =
     world.rows(
       "SELECT t.*, a.slug AS area_slug FROM tasks t LEFT JOIN areas a ON a.id = t.area_id " +
@@ -107,8 +116,15 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
         runs += 1;
         const root = join(scratch, `r${String(runs)}`);
         const prototype = join(root, "prototype");
-        mkdirSync(root, { recursive: true });
-        const world = await openWorld(root, { tasks: 3, seed: `prop-${String(runs)}` });
+        const places = join(root, "places");
+        for (const folder of POOLS.place) {
+          if (folder !== null) mkdirSync(join(places, folder), { recursive: true });
+        }
+        const world = await openWorld(root, {
+          tasks: 3,
+          seed: `prop-${String(runs)}`,
+          roots: [{ id: "work", path: places }],
+        });
         try {
           const proto = new Map<Legacy, Values>();
           IDS.forEach((id, k) => {
@@ -146,6 +162,7 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                   priority: `P${String(v.priority)}`,
                   ...(v.summary === "" ? {} : { next: v.summary }),
                   ...(v.due === null ? {} : { due: v.due }),
+                  ...(v.place === null ? {} : { paths: [join(places, v.place)] }),
                 },
               };
             });
@@ -203,19 +220,24 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
               const now = spaceValue(world, id, e.field);
               if (spaceForm(e.field, value) === now) continue;
               const op: Operation =
-                e.field === "grouping"
-                  ? { kind: "task.move", task: id, area: slug(String(value)) }
-                  : e.field === "lifecycle"
-                    ? value === "completed"
-                      ? { kind: "task.complete", task: id }
-                      : { kind: "task.reopen", task: id }
-                    : {
-                        kind: "task.patch",
-                        task: id,
-                        set: {
-                          [e.field]: e.field === "due" && value !== null ? { date: value } : value,
-                        },
-                      };
+                e.field === "place"
+                  ? value === null
+                    ? { kind: "place.clear", task: id }
+                    : { kind: "place.set", task: id, root: "work", path: String(value) }
+                  : e.field === "grouping"
+                    ? { kind: "task.move", task: id, area: slug(String(value)) }
+                    : e.field === "lifecycle"
+                      ? value === "completed"
+                        ? { kind: "task.complete", task: id }
+                        : { kind: "task.reopen", task: id }
+                      : {
+                          kind: "task.patch",
+                          task: id,
+                          set: {
+                            [e.field]:
+                              e.field === "due" && value !== null ? { date: value } : value,
+                          },
+                        };
               expect(world.edit([op]).status, `${e.task}.${e.field}`).toBe("applied");
               cell(e.task, e.field).dirty = true;
             }
@@ -240,7 +262,7 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                 const e = spaceForm(f, proto.get(id)?.[f]);
                 const s = spaceValue(world, ids.get(id) ?? "", f);
                 before.set(`${id}|${f}`, s);
-                const v =
+                let v: "apply" | "settle" | "keep" | "conflict" =
                   e === c.base
                     ? s === e
                       ? "settle"
@@ -250,6 +272,9 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                       : s === e
                         ? "settle"
                         : "conflict";
+                // An import never clears a place: one the prototype no longer names stays (A7
+                // 3.15.6), and the base stays the place it last settled.
+                if (f === "place" && v === "apply" && e === null) v = "keep";
                 verdicts.set(`${id}|${f}`, v);
                 seen[v] += 1;
                 if (v === "apply" || (v === "settle" && e !== c.base)) writes = true;
