@@ -2622,13 +2622,13 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
         };
       }
       case "alias.add": {
-        // An alias has no version: its task's is the result's.
+        // An alias has no ID and no version: the result names its task, as a receipt names rows.
         const task = must(staged.task, "An alias names its task");
         const t = readTask(conn, task);
         return {
           i,
           status,
-          id: staged.target,
+          id: task,
           task,
           ref: formatTaskRef(run.plan.refPrefix, t.ref),
           version: t.version,

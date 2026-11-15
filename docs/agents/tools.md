@@ -1203,8 +1203,8 @@ When `found` is `true`:
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `incarnation` | string | yes | The authority incarnation it was decided under |
 | `commit` | string | no | The commit it wrote |
-| `results` | object[], max 50 items | yes | One result per operation |
-| `results[].i` | integer, 0 to 49 | yes | Index of the operation in the request |
+| `results` | object[], max 1000000 items | yes | One result per operation: at most 50, and up to a million for an import |
+| `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `results[].status` | "created" \| "updated" \| "unchanged" \| "existing" \| "proposed" | yes | What the operation did |
 | `results[].id` | string \| string, max 64 | yes | The row it acted on, or a preference's key |
 | `results[].task` | string | no | Task ID |
@@ -1216,7 +1216,7 @@ When `found` is `true`:
 | `results[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
-| `conflicts[].op` | integer, 0 to 49 | yes | Index of the operation in the request |
+| `conflicts[].op` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" \| "runs" \| "areas" \| "projects" | yes | Table of the row |
 | `conflicts[].id` | string, max 60 \| string, max 64 | yes | The row, task_id\|source_id (task_id\|label_id) for a link, or a preference's key |
 | `conflicts[].task` | string | no | Task ID |
@@ -1232,7 +1232,7 @@ When `found` is `true`:
 | `error` | object | no | Why it was refused |
 | `error.cause` | string, max 40 | yes | A1's error code |
 | `error.message` | string | yes | What was refused, in one sentence |
-| `error.op` | integer, 0 to 49 | no | Index of the operation in the request |
+| `error.op` | integer, 0 to 999999 | no | Index of the operation in the request |
 | `error.field` | string, max 80 | no | The input path or field |
 | `warnings` | string[] | yes | Warnings, one sentence each |
 

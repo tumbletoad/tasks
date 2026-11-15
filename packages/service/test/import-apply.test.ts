@@ -7,7 +7,14 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, ImportPlanningApplyResult, ImportPlanningUndoResult } from "@tasks/contracts";
+import {
+  AppError,
+  ImportPlanningApplyResult,
+  ImportPlanningUndoResult,
+  ReceiptGetResult,
+  receiptResult,
+} from "@tasks/contracts";
+import { applyRequestId } from "../src/ops/import-planning.ts";
 import {
   hashInputs,
   judgedNames,
@@ -244,6 +251,13 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       const again = await world.apply(preview.run, preview.token ?? "");
       expect(again).toMatchObject({ status: "applied", commit: result.commit, replayed: true });
       expect(world.seq()).toBe(seq);
+      // Its receipt reads back through receipt.get as any write's does.
+      const receipt = world.writer.receipt({
+        scope_id: "cli:import-test",
+        request_id: applyRequestId(preview.run, preview.token ?? ""),
+      });
+      expect(receipt?.result.results.length).toBeGreaterThan(50);
+      expect(ReceiptGetResult.safeParse(receiptResult(receipt)).success).toBe(true);
       // A new dry run of the same prototype: zero operations, no commit, no backup.
       const second = await imported(world, prototype);
       expect(second.result.status).toBe("unchanged");

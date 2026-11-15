@@ -10,7 +10,8 @@ import { AS_OF, M14, requestId } from "./fixture.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
-const OpIndex = z.int().min(0).max(49).describe("Index of the operation in the request");
+/** At most 50 operations a request, and up to a million in an import's (A1 3.7, A7 3.15.5). */
+const OpIndex = z.int().min(0).max(999_999).describe("Index of the operation in the request");
 /** Any A1 ID: a task, note, log entry, source, place, area or project. */
 const RowId = z.string().regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$/u);
 /**
@@ -120,7 +121,10 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("ai"))
       .describe("The authority incarnation it was decided under"),
     commit: z.string().regex(idPattern("op")).describe("The commit it wrote").optional(),
-    results: z.array(ReceiptOpResult).max(50).describe("One result per operation"),
+    results: z
+      .array(ReceiptOpResult)
+      .max(1_000_000)
+      .describe("One result per operation: at most 50, and up to a million for an import"),
     conflicts: z
       .array(ReceiptConflict)
       .describe("Every conflicting field, without its value: read again")
