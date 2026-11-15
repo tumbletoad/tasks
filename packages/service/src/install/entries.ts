@@ -161,7 +161,7 @@ function stepText(ctx: ServiceContext, step: Step): string {
       return startText(ctx);
     case "stop":
       return step.startedByHand === true
-        ? "Stop the service that runs now, started by hand, and wait until it has stopped, so that the unit starts it in the next step."
+        ? "If the service runs without its unit (started by hand), stop it and wait until it has stopped, so that the unit starts it in the next step."
         : "Stop the service if it runs, and wait until it has stopped.";
   }
 }

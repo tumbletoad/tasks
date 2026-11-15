@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { renderPlist, renderUnit } from "../src/install/render.ts";
+import { applyPlan, planInstall } from "../src/install/commands.ts";
 import { serviceEntry } from "../src/install/entries.ts";
 import {
   captureIO,
@@ -82,7 +83,8 @@ describe.skipIf(!posix)(
           "  3. Run: systemctl --user daemon-reload",
           `  4. Run: systemctl --user enable ${UNIT}`,
           `       It creates the folder ${join(fake.ctx.roots.unitDir, "default.target.wants")}.`,
-          `  5. Start the service: systemctl --user start ${UNIT}, and wait until it is ready.`,
+          "  5. If the service runs without its unit (started by hand), stop it and wait until it has stopped, so that the unit starts it in the next step.",
+          `  6. Start the service: systemctl --user start ${UNIT}, and wait until it is ready.`,
           "Linger is off: the service starts when you sign in and stops when you sign out. TT Tasks does not change that. To start it at boot, you can run: loginctl enable-linger",
           `The folders and keys this creates are noted in ${note}, so tasks service uninstall removes them again when they are empty.`,
           "Nothing else changes. To undo it: tasks service uninstall",
@@ -467,7 +469,7 @@ describe.skipIf(!posix)(
       // start, and at no moment do two services run.
       const preview = await run(fake, "install", { dryRun: true });
       expect(preview.io.text()).toContain(
-        "  5. Stop the service that runs now, started by hand, and wait until it has stopped, so that the unit starts it in the next step.\n" +
+        "  5. If the service runs without its unit (started by hand), stop it and wait until it has stopped, so that the unit starts it in the next step.\n" +
           `  6. Start the service: systemctl --user start ${UNIT}, and wait until it is ready.\n`,
       );
       const events = fake.service.events.length;
@@ -490,6 +492,75 @@ describe.skipIf(!posix)(
       const calls = fake.service.events.length;
       expect((await run(fake, "install")).code).toBe(0);
       expect(fake.service.events.slice(calls)).toEqual([]);
+    });
+
+    test("[A2.3.3.3.service-install.start-by-hand] install's takeover is decided when its step runs: a service started by hand after the preview, or still starting at it, is taken over; one the unit runs is not, whatever its manager says", async () => {
+      const takeover = async (
+        label: string,
+        before: (fake: FakeContext) => void,
+        between: (fake: FakeContext) => void,
+      ) => {
+        const fake = fakeContext({ platform: "linux", dir: join(dir, label) });
+        before(fake);
+        const plan = await planInstall(fake.ctx);
+        between(fake);
+        const events = fake.service.events.length;
+        const applied = await applyPlan(fake.ctx, plan);
+        return { fake, applied, events: fake.service.events.slice(events) };
+      };
+      // Started by hand once the preview was shown.
+      const after = await takeover(
+        "after",
+        () => undefined,
+        (fake) => {
+          fake.service.start("manual");
+        },
+      );
+      expect(after.events).toEqual(["stop", "start systemd"]);
+      expect(after.applied.started).toMatchObject({ outcome: "started", via: "systemd" });
+      expect(after.fake.service.manager).toBe("systemd");
+      // Still starting by hand at the preview: no endpoint yet, so no probe could tell.
+      const starting = await takeover(
+        "starting",
+        (fake) => {
+          fake.service.hiddenProbes = 2;
+          fake.service.start("manual");
+        },
+        () => undefined,
+      );
+      expect(starting.events).toEqual(["stop", "start systemd"]);
+      expect(starting.fake.service.manager).toBe("systemd");
+      // The unit runs it already (systemd says it is active): left as it is.
+      const running = await takeover(
+        "running",
+        (fake) => {
+          fake.service.start("systemd");
+        },
+        () => undefined,
+      );
+      expect(running.events).toEqual([]);
+      expect(running.applied.stopped).toBeUndefined();
+      expect(running.applied.started).toMatchObject({ outcome: "already_running" });
+    });
+
+    test("[A2.3.3.3.service-install.start-by-hand] a launcher path systemd does not accept has no unit: start runs the service by hand and stop reaches it, while install refuses the path", async () => {
+      const base = fakeContext({ platform: "linux", dir });
+      const program = join(dir, "Ada's tasks", "tasks");
+      mkdirSync(join(dir, "Ada's tasks"));
+      writeFileSync(program, "stand-in launcher\n");
+      const fake = { ...base, ctx: { ...base.ctx, program } };
+      const started = await run(fake, "start", { json: true });
+      expect(started.code).toBe(0);
+      expect(JSON.parse(started.io.text())).toMatchObject({
+        outcome: "started",
+        via: "manual",
+        unit: "not_installed",
+      });
+      const stopped = await run(fake, "stop", { json: true });
+      expect(JSON.parse(stopped.io.text())).toEqual({ outcome: "stopped", via: "shutdown" });
+      const install = await run(fake, "install", { dryRun: true });
+      expect(install.code).toBe(2);
+      expect(install.io.errors()).toContain("systemd does not accept");
     });
 
     test("macOS: install writes exactly its plist and bootstraps it; install then uninstall leaves no trace", async () => {
