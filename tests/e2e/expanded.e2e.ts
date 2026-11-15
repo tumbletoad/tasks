@@ -189,15 +189,17 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(body.locator('[data-entry="note"]')).toContainText("to agents");
     await expect(body.locator('[data-entry="log"]').first()).toContainText("evidence");
 
-    // The facts, with short labels; nothing outlined yet (editing is M5.08's).
+    // The facts, with short labels, each in its control (M5.08 edits them).
     const facts = body.getByRole("definition");
     const fact = (label: string) =>
       body
         .locator("dt", { hasText: new RegExp(`^${label}$`) })
         .locator("xpath=following-sibling::dd[1]");
-    await expect(fact("Status")).toHaveText("Open");
-    await expect(fact("Priority")).toHaveText("P1");
-    await expect(fact("Effort")).toHaveText("M");
+    const chosen = (label: string) =>
+      body.getByRole("radiogroup", { name: label }).getByRole("radio", { checked: true });
+    await expect(chosen("Status")).toHaveText("Open");
+    await expect(chosen("Priority")).toHaveText("P1");
+    await expect(chosen("Effort")).toHaveText("M");
     await expect(fact("Area")).toHaveText("Lumen › Lumen portal");
     // Created today: "today" alone, so today's date stays the strip's (A5 U1).
     await expect(fact("Created")).toHaveText("today");
@@ -324,9 +326,10 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await expect(title).toHaveAttribute("aria-expanded", "true");
     await expect(page).toHaveURL(`${world.origin}${view}?task=${ref}`);
 
-    // Tab walks the header's controls, then the card: its source link, then the strip.
+    // Tab walks the header's controls, then the card: its facts, its source link, the composer,
+    // then the strip.
     const reached: string[] = [];
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       await page.keyboard.press("Tab");
       reached.push(
         await page.evaluate(() => {

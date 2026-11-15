@@ -58,11 +58,15 @@ export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable";
 export type Outcome =
   /** A snapshot replaced the working set. */
   | { readonly kind: "snapshot" }
-  /** A batch moved the cursor; `changes` and `requests` are those of its new events. */
+  /**
+   * A batch moved the cursor; `changes` and `requests` are those of its new events, and
+   * `commits` each request's commit ID where the event named one.
+   */
   | {
       readonly kind: "applied";
       readonly changes: readonly Change[];
       readonly requests: readonly string[];
+      readonly commits: ReadonlyMap<string, string>;
     }
   /** A repeat, another space's message, or a batch while a snapshot is awaited: nothing changed. */
   | { readonly kind: "ignored" }
@@ -197,9 +201,13 @@ export class LiveCore {
 
     const changes: Change[] = [];
     const requests: string[] = [];
+    const commits = new Map<string, string>();
     for (const event of batch.events) {
       if (event.seq <= cursor.seq) continue;
-      if (event.request_id !== "") requests.push(event.request_id);
+      if (event.request_id !== "") {
+        requests.push(event.request_id);
+        if (event.op_id !== undefined) commits.set(event.request_id, event.op_id);
+      }
       for (const entity of event.entities) {
         const base = {
           type: entity.type,
@@ -243,7 +251,7 @@ export class LiveCore {
       }
     }
     this.#cursor = { epoch: cursor.epoch, incarnation: cursor.incarnation, seq: batch.through };
-    return { kind: "applied", changes, requests };
+    return { kind: "applied", changes, requests, commits };
   }
 
   /** The working set as immutable maps: new maps only for the kinds that changed since last time. */
