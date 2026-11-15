@@ -135,6 +135,12 @@ export interface BindingPort {
    * last use (A3 3.7.7 `session.call`). The call reads the slot's binding after this.
    */
   use(slot: Slot): Promise<void>;
+  /**
+   * Whether the slot holds a live session once a bind in progress on it has settled, read without
+   * recording anything: for a call refused before it may act (`run_report` outside a run, A3
+   * 3.4.12), which leaves no trace, not even a last use.
+   */
+  holds(slot: Slot): Promise<boolean>;
   /** How many live sessions each task of the space has (A3 3.4.2 `live_sessions`). */
   liveSessions(space: string): ReadonlyMap<string, number>;
 }

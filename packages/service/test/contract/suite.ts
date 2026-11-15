@@ -254,14 +254,34 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "launch_unknown" },
   },
   "task.add 0": {
-    owner: "M4.01 (areas and projects by name, possible-duplicate warnings)",
-    why: "an area and project by name, and a similar title's warning",
-    now: { error: "not_found" },
+    owner: "M4.01b (creating an area and a project by name)",
+    why: "the world has no area or project, and a new name is not created yet",
+    now: { error: "invalid_input" },
   },
   "task.finish 0": {
-    owner: "M4.01 (a follow-up's project by name)",
-    why: "a follow-up in a project by name",
-    now: { error: "not_found" },
+    owner: "M4.01b (creating a follow-up's new project by name)",
+    why: "a follow-up in a project the world does not have",
+    now: { error: "invalid_input" },
+  },
+  "group.manage 0": {
+    owner: "M4.01b (A1's area and project operations)",
+    why: "the world has no areas or projects until organize creates them",
+    now: { result: "schema" },
+  },
+  "group.manage 1": {
+    owner: "M4.01b (A1's area and project operations)",
+    why: "organize's create",
+    now: { error: "invalid_input" },
+  },
+  "prefs.manage 1": {
+    owner: "M3.11 (the preferences registry and pref.set)",
+    why: "preferences' set",
+    now: { error: "invalid_input" },
+  },
+  "run.report 0": {
+    owner: "M6.06 (run and routine bindings)",
+    why: "no connection is bound to a run before M6",
+    now: { error: "not_permitted" },
   },
   "task.search 0": {
     owner: "the schema step that adds the search tables (A1 3.12)",
@@ -290,6 +310,7 @@ const VERIFIED = new Set([
   "receipt.get 1",
   "receipt.get 2",
   "launch.open 0",
+  "prefs.manage 0",
   "history.undo 0",
   "history.redo 0",
   "import.planning.preview 0",
@@ -439,6 +460,8 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         counts: Object.fromEntries(FOLDER_COUNTS.map((k) => [k, counts[k]])),
       };
     }
+    case "prefs.manage":
+      return { action: value["action"], prefs: value["prefs"], result: value["result"] };
     case "history.undo":
     case "history.redo":
       // The user's newest change differs by face (as the UI, every example is the user's), so
@@ -499,10 +522,24 @@ export interface GrantTransport {
 /** A base the gate refuses before it is ever compared: the call reads nothing. */
 const ANY_BASE = "1.1.00000000";
 
-/** Every agent tool's entry, with an input its agent audience accepts. */
+/**
+ * Every agent tool's entry, with an input its agent audience accepts. `run_report` is refused as
+ * `not_permitted` before any space is chosen, on every connection that is not a run's (A3 3.4.12),
+ * so it tells a home of another space nothing either.
+ */
 const GRANT_CALLS: readonly [string, (n: number) => Record<string, unknown>][] = [
   ["space.status", () => ({})],
+  ["task.search", () => ({ q: "status:open" })],
   ["task.get", () => ({ task: "M-1" })],
+  [
+    "task.add",
+    (n) => ({
+      tasks: [{ title: "Fixture task, refused." }],
+      request_id: `contract-grant-${String(n).padStart(8, "0")}`,
+    }),
+  ],
+  ["group.manage", () => ({ action: "list" })],
+  ["prefs.manage", () => ({ action: "get" })],
   [
     "task.update",
     (n) => ({
@@ -552,6 +589,12 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
       "[A3.3.7.grant.faces] every agent tool's call from a home that is not granted the space: forbidden, rule grant, A3's body",
       { timeout: 180_000 },
       async () => {
+        // Every agent tool is called, but run_report, refused before any space is chosen.
+        const tools = registry
+          .filter((e) => e.actors === "agent" && e.faces.mcp !== undefined)
+          .map((e) => e.name)
+          .sort();
+        expect(GRANT_CALLS.map(([entry]) => entry).sort()).toEqual(tools);
         const transport = await open();
         try {
           let n = 0;

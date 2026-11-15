@@ -4,7 +4,7 @@
 // earlier scope of a connection that wrote unbound; a run's (M6) will do the same.
 import { PRODUCT_NAME } from "@tasks/brand";
 import type { AnyEntry } from "@tasks/contracts";
-import { AppError } from "@tasks/contracts";
+import { AppError, findEntry } from "@tasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
 import type { BoundSession, Slot } from "./binding.ts";
 
@@ -141,11 +141,25 @@ const USER_ONLY = (): AppError =>
   });
 
 /**
+ * The binding a call's connection holds, as `not_permitted` names it (A3 3.5): none, or a task's
+ * session. A run's and a routine's arrive with M6.
+ */
+export type BindingKind = "none" | "task";
+
+/** The tool that logs on a task, from the registry, for the run-only refusal's hint. */
+const ADD_ENTRY = findEntry("entry.add")?.faces.mcp?.tool ?? "entry.add";
+
+/**
  * Whether `cls` may call `entry` at all (A3 3.2.3): user-only entries refuse every class but `ui`
  * and `cli-interactive`, UI-only ones every class but `ui`, run-only ones every connection that is
- * not bound to a run (none in M1).
+ * not bound to a run or routine, which no connection is before M6 (A3 3.4.12). Each refusal comes
+ * before the call reads its input or a space, so it writes nothing.
  */
-export function checkExposure(entry: AnyEntry, cls: ConnectionClass): void {
+export function checkExposure(
+  entry: AnyEntry,
+  cls: ConnectionClass,
+  binding: BindingKind = "none",
+): void {
   switch (entry.actors) {
     case "user":
       if (!isUserClass(cls)) throw USER_ONLY();
@@ -163,7 +177,11 @@ export function checkExposure(entry: AnyEntry, cls: ConnectionClass): void {
       throw new AppError({
         code: "not_permitted",
         message: "This works only in a run or routine.",
-        data: { binding: "none" },
+        hint:
+          binding === "task"
+            ? `This session is bound to a task, not a run. Log on the task with ${ADD_ENTRY} instead.`
+            : `Nothing to report outside a run. Log on a task with ${ADD_ENTRY} instead.`,
+        data: { binding },
       });
     case "agent":
       return;

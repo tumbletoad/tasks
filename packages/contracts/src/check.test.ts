@@ -80,7 +80,7 @@ const base = defineEntry({
   examples: [example],
 });
 
-const check = (...entries: AnyEntry[]) => checkRegistry(entries, { productId: "acme" });
+const check = (...entries: AnyEntry[]) => checkRegistry(entries, { serverKey: "acme" });
 
 /** Asserts that the variant fails with exactly the problems matching `pattern`. */
 function rejects(variant: AnyEntry, pattern: RegExp): void {
@@ -275,15 +275,38 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           "output array of unbounded strings",
           withOutput(z.array(z.string()).describe("P").optional()),
         ],
+        [
+          "null as an input union option, a preference value's reset (A3 3.4.11)",
+          withInput(
+            z
+              .union([z.string().max(5), z.array(z.string().max(5)).max(3), z.null()])
+              .describe("P")
+              .optional(),
+          ),
+        ],
       ];
       for (const [label, entry] of accepted) expect(check(entry), label).toEqual([]);
+    });
+
+    test("null stands only as a union option, never as a field, element or nested value", () => {
+      const n = (s: z.ZodType) => withInput(s.describe("P").optional());
+      const nested = n(z.union([z.strictObject({ v: z.null().describe("V") }), z.string().max(3)]));
+      expect(check(nested)).toEqual([
+        "fixture.note: input.probe|0.v: null stands only as a union option, such as a preference value (A3 3.4.11)",
+      ]);
+      const element = n(z.union([z.array(z.null()).max(2), z.string().max(3)]));
+      expect(check(element)).toEqual([
+        "fixture.note: input.probe|0[]: null stands only as a union option, such as a preference value (A3 3.4.11)",
+      ]);
+      const twice = n(z.union([z.null(), z.literal(null)]));
+      expect(check(twice).length).toBeGreaterThan(0);
     });
 
     test("rejects every other type, option and check, naming the node", () => {
       const n = (s: z.ZodType) => withInput(s.describe("P").optional());
       const cases: [string, AnyEntry, string, RegExp | string][] = [
         ["date", n(z.date()), "input.probe", 'type "date" is not in the schema grammar'],
-        ["null", n(z.null()), "input.probe", 'type "null" is not in the schema grammar'],
+        ["null", n(z.null()), "input.probe", "null stands only as a union option"],
         ["unknown", n(z.unknown()), "input.probe", 'type "unknown" is not in the schema grammar'],
         ["nullable", n(z.string().max(5).nullable()), "input.probe", 'type "nullable"'],
         ["tuple", n(z.tuple([z.string().max(5)])), "input.probe", 'type "tuple"'],
@@ -1530,6 +1553,111 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       }
     });
 
+    describe("[A3.3.2.3.registry.mixed-actions] an entry with read and write actions (A3 3.2.3)", () => {
+      const mixedInput = z.strictObject({
+        action: z.enum(["list", "add"]).describe("list reads; add writes"),
+        task: TaskRef.max(40).optional(),
+        text: safeText(200).describe("Note text").optional(),
+        base: Base.optional(),
+        request_id: RequestId.optional(),
+      });
+      const mixed = defineEntry({
+        ...base,
+        ops: ["note.add"],
+        actions: { field: "action", reads: ["list"] },
+        input: mixedInput,
+        examples: [{ ...example, input: { action: "list" } }],
+      });
+
+      test("a write entry whose action field names its read actions passes", () => {
+        expect(check(mixed)).toEqual([]);
+      });
+
+      test("its request_id and base are optional, the shared schemas, and nothing else", () => {
+        const full = { action: "add", request_id: "fixture-request-0001", base: AS_OF } as const;
+        const required = defineEntry({
+          ...mixed,
+          input: mixedInput.extend({ request_id: RequestId }),
+          examples: [{ ...example, input: full }],
+        });
+        expect(check(required)).toEqual([
+          "fixture.note: request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)",
+        ]);
+        expect(
+          check(
+            defineEntry({
+              ...mixed,
+              input: mixedInput.extend({ request_id: RequestId.describe("ID").optional() }),
+            }),
+          ),
+        ).toEqual([
+          "fixture.note: request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)",
+        ]);
+        const base_ = defineEntry({
+          ...mixed,
+          input: mixedInput.extend({ base: Base }),
+          examples: [{ ...example, input: full }],
+        });
+        expect(check(base_)).toEqual([
+          "fixture.note: base of an entry with read actions is Base.optional() (A3 3.2.3)",
+        ]);
+      });
+
+      test("the action field is a required enum, and reads name some of its values", () => {
+        const optional = defineEntry({
+          ...mixed,
+          input: mixedInput.extend({ action: z.enum(["list", "add"]).describe("A").optional() }),
+        });
+        expect(check(optional)).toContainEqual(
+          'fixture.note: actions.field "action" is a required enum field of the input',
+        );
+        const missing = defineEntry({ ...mixed, actions: { field: "verb", reads: ["list"] } });
+        expect(check(missing)).toContainEqual(
+          'fixture.note: actions.field "verb" is a required enum field of the input',
+        );
+        expect(check(defineEntry({ ...mixed, actions: { field: "action", reads: [] } }))).toEqual([
+          "fixture.note: actions.reads names at least one read action",
+        ]);
+        expect(
+          check(defineEntry({ ...mixed, actions: { field: "action", reads: ["list", "show"] } })),
+        ).toEqual(['fixture.note: actions.reads "show" is not a value of "action"']);
+        expect(
+          check(defineEntry({ ...mixed, actions: { field: "action", reads: ["list", "list"] } })),
+        ).toEqual(['fixture.note: actions.reads "list" is listed twice']);
+        expect(
+          check(defineEntry({ ...mixed, actions: { field: "action", reads: ["list", "add"] } })),
+        ).toEqual(["fixture.note: every action only reads: make it a read entry"]);
+      });
+
+      test("a read entry declares no actions, and an entry without them keeps request_id required", () => {
+        const read = defineEntry({
+          ...mixed,
+          kind: "read",
+          ops: [],
+          remote: "read",
+          scope: "space:read",
+          errors: ["not_found"],
+          input: mixedInput.omit({ request_id: true, base: true }),
+        });
+        expect(check(read)).toEqual([
+          "fixture.note: only a write entry declares read actions: a read entry reads in every action",
+        ]);
+        const plain: AnyEntry = { ...mixed };
+        delete (plain as { actions?: unknown }).actions;
+        expect(check(defineEntry(plain))).toContainEqual(
+          "fixture.note: request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)",
+        );
+      });
+
+      test("readsOnly tells a read action from a write action", () => {
+        expect(define.readsOnly(mixed, { action: "list" })).toBe(true);
+        expect(define.readsOnly(mixed, { action: "add" })).toBe(false);
+        expect(define.readsOnly(mixed, {})).toBe(false);
+        expect(define.readsOnly(base, { action: "list" })).toBe(false);
+        expect(define.readsOnly({ ...base, kind: "read" }, {})).toBe(true);
+      });
+    });
+
     test("a read entry filters its result by audience", () => {
       const variant = defineEntry({
         ...base,
@@ -1704,11 +1832,15 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
     const withTool = (tool: string) =>
       defineEntry({ ...base, faces: { ...base.faces, mcp: { ...mcp, tool } } });
 
-    test("tool names are snake_case, at most 24 characters, not tasks, without the product name", () => {
+    test("tool names are snake_case, at most 24 characters, not tasks, not led by the server key", () => {
       rejects(withTool("fixtureNote"), /tool name "fixtureNote" must be snake_case/);
       rejects(withTool("record_a_fixture_note_now"), /at most 24 characters/);
       rejects(withTool("tasks"), /no tool is called "tasks"/);
-      rejects(withTool("acme_note"), /tool names carry no product name/);
+      rejects(withTool("acme"), /a tool name does not start with the MCP server key \("acme"\)/);
+      rejects(withTool("acme_note"), /a tool name does not start with the MCP server key/);
+      // A later word may be the key's own word (A3 3.2.4): add_tasks under the key tasks.
+      expect(check(withTool("add_acme"))).toEqual([]);
+      expect(check(withTool("acmenote"))).toEqual([]);
     });
 
     test("tool names are unique", () => {

@@ -13,6 +13,10 @@ export function createClient(transport: ClientTransport) {
       /** Append to a task's log, or record a note for the user. */
       add: (input: InputOf<"entry.add">): Promise<OutputOf<"entry.add">> => call("entry.add", input),
     },
+    group: {
+      /** List the areas and projects, or create, rename, move or archive one. */
+      manage: (input: InputOf<"group.manage">): Promise<OutputOf<"group.manage">> => call("group.manage", input),
+    },
     history: {
       /** Redo the change you undid last, as long as nobody changed its fields since. */
       redo: (input: InputOf<"history.redo">): Promise<OutputOf<"history.redo">> => call("history.redo", input),
@@ -28,6 +32,10 @@ export function createClient(transport: ClientTransport) {
     launch: {
       /** Open a task in an agent app on this machine, or Copy its pointer brief. */
       open: (input: InputOf<"launch.open">): Promise<OutputOf<"launch.open">> => call("launch.open", input),
+    },
+    prefs: {
+      /** Read and change the space's preferences that are not policy. */
+      manage: (input: InputOf<"prefs.manage">): Promise<OutputOf<"prefs.manage">> => call("prefs.manage", input),
     },
     space: {
       /** Orientation: date, autonomy, this session's binding, tasks for a folder and counts. */

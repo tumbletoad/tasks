@@ -700,7 +700,7 @@ There is no fallback to another clone, a containing project, a parent folder, th
 
 ### 3.16 Preferences and feature flags
 
-Not built yet (M3.11), except that the writer already checks status and effort against `tasks.statuses` and `tasks.effort_scale` or their defaults, and reads `tasks.dedupe_window_days` for dedupe (3.6), taking its default for a value that is not a whole number of days from 0 to 3,650. One registry in code declares every preference:
+Not built yet (M3.11), except that the writer already checks status and effort against `tasks.statuses` and `tasks.effort_scale` or their defaults, and reads `tasks.dedupe_window_days` for dedupe (3.6), taking its default for a value that is not a whole number of days from 0 to 3,650, and that contracts' `preferences.ts` declares the space keys the product reads today (`autonomy.level`, `tasks.dedupe_window_days`, `tasks.effort_scale`, `tasks.statuses`) with their value schemas, defaults, writers and policy flag, which A3's `preferences` tool reads (A3 3.4.11). Their value schemas come from four kinds (an enum, a list of keys, a bounded integer, a boolean), so the tool's value union covers every declared key; a new kind adds an option there. M3.11 builds the rest on that list: machine keys, flags, versions and `pref.set`. One registry in code declares every preference:
 
 ```ts
 pref("ui.theme",              { scope: "space",   schema: { enum: ["sumi", "washi", "system"] }, default: "sumi", writers: ["human", "agent"], since: "0.1" });

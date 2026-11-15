@@ -148,6 +148,293 @@
     },
     {
       "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "ambiguous",
+        "conflict",
+        "forbidden",
+        "space_unavailable",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "list reads; create, rename, move and archive change a group",
+            "enum": [
+              "list",
+              "create",
+              "rename",
+              "move",
+              "archive"
+            ],
+            "type": "string"
+          },
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "mode": {
+            "default": "apply",
+            "description": "propose: ask the user to decide",
+            "enum": [
+              "apply",
+              "propose"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "\"Area\" or \"Area/Project\", by name or slug; list: one area",
+            "maxLength": 250,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "to": {
+            "description": "rename: the new name; move: the new area",
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "group.manage",
+      "ops": [
+        "area.create",
+        "area.patch",
+        "area.move",
+        "area.archive",
+        "project.create",
+        "project.patch",
+        "project.move",
+        "project.archive"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "The action",
+            "enum": [
+              "list",
+              "create",
+              "rename",
+              "move",
+              "archive"
+            ],
+            "type": "string"
+          },
+          "areas": {
+            "description": "Active areas in the space's order",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "active": {
+                  "description": "Active tasks, its projects' included",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "Area ID",
+                  "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "more_projects": {
+                  "description": "Projects left out of the list",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "name": {
+                  "description": "Name",
+                  "type": "string"
+                },
+                "projects": {
+                  "description": "Its active projects, at most 15",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "active": {
+                        "description": "Active tasks",
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "id": {
+                        "description": "Project ID",
+                        "pattern": "^p_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "description": "Name",
+                        "type": "string"
+                      },
+                      "slug": {
+                        "description": "Slug",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "name",
+                      "active"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "slug": {
+                  "description": "Slug",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name",
+                "active",
+                "projects"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "group": {
+            "additionalProperties": false,
+            "description": "A write: the group it changed",
+            "properties": {
+              "id": {
+                "description": "Its ID",
+                "pattern": "^[ap]_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "kind": {
+                "description": "Area or project",
+                "enum": [
+                  "area",
+                  "project"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Its name now",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "projects": {
+            "description": "Active projects without an area",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "active": {
+                  "description": "Active tasks",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "Project ID",
+                  "pattern": "^p_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Name",
+                  "type": "string"
+                },
+                "slug": {
+                  "description": "Slug",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name",
+                "active"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "proposal": {
+            "description": "Proposal ID",
+            "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "A write: what happened",
+            "enum": [
+              "created",
+              "renamed",
+              "moved",
+              "archived",
+              "no_change",
+              "proposed"
+            ],
+            "type": "string"
+          },
+          "total_areas": {
+            "description": "Active areas",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total_projects": {
+            "description": "Active projects",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "as_of",
+          "areas",
+          "projects",
+          "total_areas",
+          "total_projects"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "List the areas and projects, or create, rename, move or archive one."
+    },
+    {
+      "actorKinds": [
         "human"
       ],
       "actors": "user",
@@ -1499,6 +1786,316 @@
       "audience": "caller",
       "errors": [
         "invalid_input",
+        "forbidden",
+        "conflict",
+        "space_unavailable",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "describe: the keys; get: their values; set: change them",
+            "enum": [
+              "describe",
+              "get",
+              "set"
+            ],
+            "type": "string"
+          },
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "keys": {
+            "description": "Keys, or prefixes ending in \".*\"; default every key",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "mode": {
+            "default": "apply",
+            "description": "propose: ask the user to decide",
+            "enum": [
+              "apply",
+              "propose"
+            ],
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "set": {
+            "description": "set: the keys and their new values",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "description": "A key describe lists",
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "maxLength": 40,
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "maxItems": 20,
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The new value; null resets it to its default"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "prefs.manage",
+      "ops": [
+        "pref.set"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "The action",
+            "enum": [
+              "describe",
+              "get",
+              "set"
+            ],
+            "type": "string"
+          },
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "changed": {
+            "description": "set: the keys it changed",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "description": "Its value before"
+                },
+                "key": {
+                  "description": "The key",
+                  "type": "string"
+                },
+                "to": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "description": "Its value now"
+                }
+              },
+              "required": [
+                "key",
+                "from",
+                "to"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "prefs": {
+            "description": "The keys asked for, sorted",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "default": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "description": "Its default"
+                },
+                "is_default": {
+                  "description": "The value is the default (get)",
+                  "type": "boolean"
+                },
+                "key": {
+                  "description": "The key",
+                  "type": "string"
+                },
+                "policy": {
+                  "const": true,
+                  "description": "Policy: the user's own (A3 3.8)",
+                  "type": "boolean"
+                },
+                "shape": {
+                  "description": "Its values, in words (describe)",
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "What it sets (describe)",
+                  "type": "string"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "description": "Its value now (get)"
+                },
+                "writable": {
+                  "description": "Whether this caller may set it",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "default",
+                "writable"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "proposal": {
+            "description": "Proposal ID",
+            "pattern": "^pr_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "set: what happened",
+            "enum": [
+              "updated",
+              "no_change",
+              "proposed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "as_of",
+          "prefs"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Read and change the space's preferences that are not policy."
+    },
+    {
+      "actorKinds": [
+        "human",
+        "agent",
+        "routine"
+      ],
+      "actors": "agent",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
         "space_unavailable"
       ],
       "input": {
@@ -1855,6 +2452,125 @@
       "remote": "never",
       "scope": "space:read",
       "summary": "The stored result of a write, by its request_id, in the caller's own writer scope."
+    },
+    {
+      "actorKinds": [
+        "agent",
+        "routine"
+      ],
+      "actors": "run",
+      "audience": "none",
+      "errors": [
+        "not_permitted",
+        "invalid_input",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "sources": {
+            "description": "One row per source the routine names",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "items_seen": {
+                  "description": "Items you read there",
+                  "maximum": 1000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "name": {
+                  "description": "The source, as the routine names it",
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "note": {
+                  "description": "What went wrong, in one line",
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "state": {
+                  "description": "How far you could read it",
+                  "enum": [
+                    "ok",
+                    "partial",
+                    "unreachable"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "state",
+                "items_seen"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "summary": {
+            "description": "Counts created, updated, unchanged; what was unsure",
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "run.report",
+      "ops": [
+        "run.report"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "const": "reported",
+            "description": "The run record holds the report",
+            "type": "string"
+          },
+          "run": {
+            "description": "The run",
+            "pattern": "^ru_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "sources": {
+            "description": "Source rows recorded",
+            "maximum": 20,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result",
+          "run",
+          "sources",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "space:write",
+      "summary": "Report a run's coverage, one row per source: works only in a run or routine."
     },
     {
       "actorKinds": [

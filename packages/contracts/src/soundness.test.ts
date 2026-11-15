@@ -179,6 +179,13 @@ class Generator {
           near: fc.constantFrom<Json>("true", 0, null),
           smallest: false,
         };
+      // Only as a union option: a preference value's reset (A3 3.4.11).
+      case "null":
+        return {
+          valid: fc.constant(null),
+          near: fc.constantFrom<Json>("null", 0, false, ""),
+          smallest: null,
+        };
       case "array":
         return this.array(s, path);
       case "object":
@@ -725,7 +732,7 @@ describe("[A3.5.registry.soundness] every agent rule and default the registry li
       required: count((e) => e.agent?.required?.length ?? 0),
       max: count((e) => e.agent?.max?.length ?? 0),
       defaults: count((e) => e.defaults?.length ?? 0),
-    }).toEqual({ hidden: 1, required: 1, max: 18, defaults: 6 });
+    }).toEqual({ hidden: 1, required: 1, max: 18, defaults: 8 });
   });
 
   test("a projection that skips a rule or is off by one fails the intent check", () => {
@@ -739,8 +746,8 @@ describe("[A3.5.registry.soundness] every agent rule and default the registry li
       }
     }
     expect(missed).toEqual([]);
-    // 1 hidden, 1 required, 18 limits three ways and 6 defaults.
-    expect(caught).toBe(1 + 1 + 18 * 3 + 6);
+    // 1 hidden, 1 required, 18 limits three ways and 8 defaults.
+    expect(caught).toBe(1 + 1 + 18 * 3 + 8);
   });
 
   test("task.finish: outcome is required for agents in Zod and JSON Schema", () => {
