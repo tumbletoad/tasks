@@ -2114,6 +2114,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.2.4.config.edit-remove",
+      "title": "The editor's remove takes out an [[instance]] element only while it is byte for byte as append wrote it, with the blank line before it, so append then remove gives the file back, also a file without a final line break (LF and CRLF); a changed value, an added key, a comment inside or on the line right above or below, a sub-table or two identical elements are refused and nothing changes; a comment a blank line away stays when the element goes",
+      "source": "A2 3.2.4, A4 3.2",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.setup.instances",
+      "title": "tasks setup instances against fake agent commands and a real service: the preview shows each command with its version and each home, the exact entries and the plan, and writes nothing; only the person applies the preview's plan; the service writes machine.toml and Open offers the instances at once; the same apply again says the entries are there and exits 0 without a change; doctor's instances row names setup instances, then setup agents, then passes; remove takes back only an entry still exactly as written and the file comes back",
+      "source": "A4 3.2, A2 3.2.4, A3 3.13.1, A5 3.17",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.setup.instances-service",
+      "title": "The service's instances/add and instances/remove: only the user's class writes; an entry the reader would drop, a key or target the command never writes, the manual ID and an ID the file has are refused with nothing written; the record comes first and goes with the entry; a removed entry gives the file back, one gone from the file loses its record, and a damaged record changes nothing",
+      "source": "A4 3.2, A2 3.2.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.setup.instances-follow",
+      "title": "After every instances/add and instances/remove, succeeded or failed, the service's instances are those machine.toml holds: with an injected full disk, a removal whose record update fails is no longer offered and its retry ends missing and consistent; an add whose record write fails changes nothing; an add whose file write and record take-back both fail offers nothing, and its retry and removal end consistent; an entry the person took out by hand is dropped at the next removal",
+      "source": "A4 3.2, A2 3.2.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.2.root-rev",
       "title": "Each root's root_rev in machine state starts at 1 and rises whenever its mapping changes, also across a removal and re-adding, and never otherwise",
       "source": "A4 3.2, A6 3.8.3, A7 3.9 M2.06",
@@ -2402,9 +2434,33 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.9.cli.open-start",
+      "title": "tasks open with the service not running: it is started as tasks service start starts it, one line on stderr says so, then the page opens; a running service is not started again; a failed start says why and names the command, exit 6; an agent's shell never starts it and is told to ask the user",
+      "source": "A2 S6, A2 3.3.6, A2 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.13.cli.doctor-http",
       "title": "tasks doctor: other interactive user accounts warn per OS from injected facts, an agent app sandbox accounts are not counted; the http row passes the live self-test (Host evil.example gets 421, a fresh nonce repeated in the meta tag, worker-src none), fails with A2 message when blocked, warns when moved, and parses Windows excluded port ranges",
       "source": "A2 3.13, A2 3.8.2, A6 3.3, R18, A7 3.9 M2.12",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.13.cli.doctor-page",
+      "title": "Doctor's self-test against the page a real web build produces, served by the service: the meta tag repeats the response's nonce as a browser reads it, so the build's spelling of the tag and doctor's reading cannot drift apart",
+      "source": "A2 3.13, A2 3.8.3, A5 3.26",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.tags",
+      "title": "The page's start tags read as a browser reads them, by the one reader of the service's check of a built page and doctor's self-test: a meta tag's content self-closed or not, attributes in any order, case and quoting, character references decoded, the first tag and attribute of a name kept, values compared exactly, comments not read",
+      "source": "A2 3.8.3, A2 3.13",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

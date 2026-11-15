@@ -10,7 +10,8 @@
 // the service on Windows (A2 3.3.5). M1.10 registers `op/call` and `op/list` (the request path for
 // operations, ops/) and the `space/*` verbs (space-verbs.ts), M2.07 the `roots/*` verbs (roots.ts),
 // M2.11 the `t3/*` verbs of `tasks setup t3` (t3.ts), M2.14 the `setup/*` verbs of `tasks setup
-// agents` (agent-homes.ts); later steps add theirs the same way.
+// agents` (agent-homes.ts), `tasks setup instances` its `instances/*` (instances.ts); later steps
+// add theirs the same way.
 //
 // The library's events go into the hub's log catalogue (`local.*` in log.ts), every word of them
 // from a closed list, so the log stays content-free by construction.
@@ -35,6 +36,7 @@ import { rootVerbs, type RootsHost } from "./roots.ts";
 import { spaceVerbs, type SpaceVerbsHost } from "./space-verbs.ts";
 import { t3Verbs, type T3Host } from "./t3.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
+import { instanceVerbs, type InstancesHost } from "./instances.ts";
 
 /** The protocols this build speaks (A2 3.6.6): the library's, listed in service.json too. */
 export const PROTOCOLS = { min: PROTOCOL, max: PROTOCOL } as const;
@@ -99,6 +101,8 @@ export interface EndpointHub {
   readonly bindings?: Bindings;
   /** `tasks setup agents` (`setup/*`): the agent-home rows of the grants table. */
   readonly agentHomes?: AgentHomesHost;
+  /** `tasks setup instances` (`instances/*`): machine.toml's [[instance]] entries. */
+  readonly instances?: InstancesHost;
 }
 
 export interface EndpointOptions {
@@ -147,6 +151,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     ...(hub.defaults === undefined ? {} : defaultSpaceVerbs(hub.defaults)),
     ...(hub.t3 === undefined ? {} : t3Verbs(hub.t3)),
     ...(hub.agentHomes === undefined ? {} : agentHomeVerbs(hub.agentHomes)),
+    ...(hub.instances === undefined ? {} : instanceVerbs(hub.instances)),
   };
   const verb = (name: string): RpcHandler | undefined => {
     const found = verbs[name];
@@ -255,6 +260,8 @@ const VERB_METHODS = [
   "space/use",
   "roots/list",
   "roots/add",
+  "instances/add",
+  "instances/remove",
   "t3/status",
   "t3/pair",
   "t3/pair_wait",
