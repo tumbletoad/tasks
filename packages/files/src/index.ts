@@ -94,13 +94,7 @@ function openForAppend(path: string, mode: number): number {
 export function appendPrivate(path: string, text: string, mode = 0o600): void {
   const fd = openForAppend(path, mode);
   try {
-    const data = Buffer.from(text, "utf8");
-    let offset = 0;
-    while (offset < data.length) {
-      const n = writeSync(fd, data, offset, data.length - offset);
-      if (n <= 0) throw new Error("A log write made no progress");
-      offset += n;
-    }
+    writeAll(fd, text);
   } finally {
     closeSync(fd);
   }
@@ -188,8 +182,26 @@ function pause(ms: number): void {
 }
 
 /**
+ * Writes every byte of `data` at `fd`'s position. A write may take fewer bytes than it was given
+ * (a nearly full disk, a signal), so it is continued until all are written; a write that takes
+ * none fails instead of looping.
+ */
+export function writeAll(fd: number, data: string | Uint8Array): void {
+  const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : data;
+  let offset = 0;
+  while (offset < bytes.length) {
+    const written = writeSync(fd, bytes, offset, bytes.length - offset);
+    if (written <= 0) {
+      throw Object.assign(new Error("a write made no progress"), { code: "EIO" });
+    }
+    offset += written;
+  }
+}
+
+/**
  * Replaces `path` with `text` atomically: a new temporary file beside it
- * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written and flushed, then renamed over it.
+ * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written in full (`writeAll`) and flushed, then
+ * renamed over it.
  * Readers see the old file or the new one, never a part. On Windows a rename over a file that
  * another process has open without delete sharing fails for a moment, so it is tried a few times.
  * A failed write leaves no temporary file. `beforeRename` runs once the new file is written and
@@ -209,7 +221,7 @@ export function atomicWrite(
   const fd = createFile(temp, mode);
   try {
     try {
-      writeSync(fd, text);
+      writeAll(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);

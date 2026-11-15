@@ -3,6 +3,7 @@
 // registry itself.
 import { registry, type AnyEntry } from "@tasks/contracts";
 import { describe, expect, test } from "vitest";
+import { GUIDE_STEPS, GUIDES } from "../ops/guides.ts";
 import {
   INSTRUCTIONS,
   MAX_INSTRUCTION_BYTES,
@@ -94,10 +95,6 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
       ["get_task", "launch"],
       ["get_task", "sections"],
       ["search", "scope", "learnings"],
-      ["status", "guide", "work"],
-      ["status", "guide", "refresh"],
-      ["status", "guide", "triage"],
-      ["status", "guide", "organize"],
       ["complete_task", "follow_ups"],
       ["update_task", "base"],
       ["update_task", "request_id"],
@@ -118,9 +115,18 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
     expect(INSTRUCTIONS).toContain(
       "Keep calls small: search rows first, then get_task with only the sections you need.",
     );
-    // The guides behind status hold the longer workflows (A3 3.6).
-    expect(INSTRUCTIONS).toContain(
-      "Longer workflows (work, refresh, triage, organize): status with guide.",
-    );
+  });
+
+  test("the guides line names only the guides this build serves, and every one of them", () => {
+    // The guides behind status hold the longer workflows (A3 3.6). A guide a later step brings is
+    // refused by status now (GUIDE_STEPS), so the line must not name it yet.
+    const line = /Longer workflows \(([a-z, ]+)\): status with guide\./u.exec(INSTRUCTIONS);
+    const named = (line?.[1] ?? "").split(", ");
+    expect(named.sort()).toEqual(Object.keys(GUIDES).sort());
+    expect(named).toContain("work");
+    for (const guide of named) {
+      expect(valuesOf("status", "guide"), guide).toContain(guide);
+      expect(Object.hasOwn(GUIDE_STEPS, guide), guide).toBe(false);
+    }
   });
 });

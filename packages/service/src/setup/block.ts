@@ -324,7 +324,12 @@ function withoutBlock(
   let before = text.slice(0, found.start);
   let after = text.slice(found.end);
   if (record.lead !== "" && before.endsWith(record.lead)) {
-    before = before.slice(0, before.length - record.lead.length);
+    const rest = before.slice(0, before.length - record.lead.length);
+    // A lead of one line ending made the blank line after a last line that ended in its own. When
+    // what is left no longer ends a line, the person took that blank line out, and the line ending
+    // right before the block is theirs: it stays.
+    const single = record.lead === "\n" || record.lead === "\r\n";
+    if (!single || rest === "" || rest.endsWith("\n")) before = rest;
   }
   if (record.trail !== "" && after.startsWith(record.trail))
     after = after.slice(record.trail.length);
@@ -375,10 +380,16 @@ export interface BlockView {
   readonly record?: BlockRecord;
   /** Codex reads another file now (an override file appeared): the recorded block is not read. */
   readonly shadowed?: boolean;
+  /** Codex's file, whose block ends past the 32 KiB Codex reads (text was added before it). */
+  readonly pastCodexCap?: boolean;
   /** The file's text without a byte order mark, and whether it had one: for the plan only. */
   readonly text?: string;
   readonly bom?: boolean;
 }
+
+/** The byte at which `head`, the text up to the block's end, ends in the file (A3 3.12's cap). */
+const endByte = (bom: boolean, head: string): number =>
+  Buffer.byteLength(`${bom ? BOM : ""}${head}`, "utf8");
 
 /** Reads one instruction file and judges it against setup's record of it. Never writes. */
 function judge(
@@ -415,15 +426,18 @@ function judge(
     return { ...base, state: record === undefined ? "absent" : "missing", sha256: null, text: "" };
   }
   const known = { sha256: read.sha256, text: read.text, bom: read.bom };
-  if (markedAsGenerated(read.text)) return { ...refused("managed", read.sha256) };
+  if (markedAsGenerated(read.text, "markdown")) return { ...refused("managed", read.sha256) };
   const found = findBlock(read.text);
   if (found.kind === "broken") return { ...refused("markers", read.sha256), lines: found.lines };
   if (found.kind === "none") {
     return { ...base, ...known, state: record === undefined ? "absent" : "missing" };
   }
+  const past =
+    home.app === "codex" && endByte(read.bom, read.text.slice(0, found.end)) > CODEX_DOC_BYTES;
   const block = {
     found: found.region,
     ...(found.version === undefined ? {} : { version: found.version }),
+    ...(past ? { pastCodexCap: true } : {}),
   };
   if (record === undefined) return { ...base, ...known, ...block, state: "foreign" };
   const owned =
@@ -526,16 +540,22 @@ export interface BlockItem {
 /** What applying a home's block would write, or why it cannot. Reads nothing. */
 export function planBlock(view: BlockView): BlockChange | BlockRefusal | undefined {
   const text = view.text ?? "";
+  const bom = view.bom === true;
   let change: Omit<BlockChange, "diff">;
+  /** The text up to the new block's end: Codex must read that far (its cap). */
+  let head: string;
   if (view.state === "absent" || view.state === "missing") {
-    change = { kind: "add", ...withBlock(text) };
+    const added = withBlock(text);
+    change = { kind: "add", ...added };
+    head = `${text}${added.lead}${added.region}`;
   } else if (view.state === "outdated" && view.record !== undefined) {
     const found = findBlock(text);
     if (found.kind !== "block") return undefined;
     const region = blockText(eolOf(found.region));
+    head = `${text.slice(0, found.start)}${region}`;
     change = {
       kind: "replace",
-      after: `${text.slice(0, found.start)}${region}${text.slice(found.end)}`,
+      after: `${head}${text.slice(found.end)}`,
       region,
       lead: view.record.lead,
       trail: view.record.trail,
@@ -543,9 +563,8 @@ export function planBlock(view: BlockView): BlockChange | BlockRefusal | undefin
   } else {
     return undefined;
   }
-  const bytes = Buffer.byteLength(`${view.bom === true ? BOM : ""}${change.after}`, "utf8");
-  if (view.home.app === "codex" && bytes > CODEX_DOC_BYTES) return "codex_cap";
-  if (bytes > MAX_BLOCK_FILE_BYTES) return "too_large";
+  if (view.home.app === "codex" && endByte(bom, head) > CODEX_DOC_BYTES) return "codex_cap";
+  if (endByte(bom, change.after) > MAX_BLOCK_FILE_BYTES) return "too_large";
   return { ...change, diff: unifiedDiff(view.file, text, change.after) };
 }
 
@@ -648,10 +667,26 @@ export function applyBlock(input: SetupInput, item: BlockItem): BlockOutcome {
   };
   putBlockRecord(input, record);
   const bom = now.kind === "text" && now.bom;
-  if (!writeBlockFile(view, now.kind === "text" ? now.bytes : undefined, bom, change.after)) {
-    // Nothing was written: the record goes back to what it was.
+  // Nothing was written: the record goes back to what it was.
+  const restore = () => {
     if (previous === undefined) dropBlockRecord(input, view.home);
     else putBlockRecord(input, previous);
+  };
+  let written: boolean;
+  try {
+    written = writeBlockFile(view, now.kind === "text" ? now.bytes : undefined, bom, change.after);
+  } catch (error) {
+    // A write that failed (a full disk) left the file as it was. When the record cannot go back
+    // either, its `applying` state is still read correctly next time.
+    try {
+      restore();
+    } catch {
+      // Keep the write's own error.
+    }
+    throw error;
+  }
+  if (!written) {
+    restore();
     return { view, result: "failed", reason: "changed_meanwhile" };
   }
   putBlockRecord(input, { ...record, state: "applied", prior: null });

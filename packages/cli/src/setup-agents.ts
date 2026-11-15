@@ -1028,6 +1028,11 @@ function showBlock(io: Io, n: number, { view, change }: BlockItem): void {
       "   Codex now reads another instruction file here (an AGENTS.override.md), so it does not see this block.\n",
     );
   }
+  if (view.pastCodexCap === true) {
+    io.stdout(
+      "   The block ends past the first 32 KiB of the file, which is all Codex reads, so Codex does not see it: move it nearer the top.\n",
+    );
+  }
   if (change === undefined) {
     const reason =
       view.state === "refused"
@@ -1066,6 +1071,7 @@ const blockItemJson = ({ view, change }: BlockItem) => ({
   ...(view.refusal === "managed" ? { delegated: true } : {}),
   ...(view.lines === undefined ? {} : { lines: view.lines }),
   ...(view.shadowed === true ? { shadowed: true } : {}),
+  ...(view.pastCodexCap === true ? { past_codex_cap: true } : {}),
   sha256: view.sha256,
   ...(view.state === "edited" ? { edit: editedDiff(view) } : {}),
   ...(change === undefined

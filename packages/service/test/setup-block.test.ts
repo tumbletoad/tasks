@@ -13,10 +13,28 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+
+/** Writes that take at most a few bytes each, as a nearly full disk can make them. */
+const shortWrites = vi.hoisted(() => ({ on: false, calls: 0 }));
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  const writeSync = ((fd: number, data: string | NodeJS.ArrayBufferView, ...rest: unknown[]) => {
+    if (!shortWrites.on) return (fs.writeSync as (...a: unknown[]) => number)(fd, data, ...rest);
+    shortWrites.calls += 1;
+    const bytes =
+      typeof data === "string"
+        ? Buffer.from(data, "utf8")
+        : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+    const offset = typeof rest[0] === "number" ? rest[0] : 0;
+    const length = typeof rest[1] === "number" ? rest[1] : bytes.length - offset;
+    return fs.writeSync(fd, bytes, offset, Math.min(length, 7));
+  }) as typeof fs.writeSync;
+  return { ...fs, writeSync };
+});
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { registry } from "@tasks/contracts";
 import { makeDir } from "@tasks/files";
 import {
@@ -513,6 +531,106 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
       }),
       { numRuns: 300 },
     );
+  });
+
+  test("a write the disk takes a few bytes at a time still writes the whole file", async () => {
+    const w = world();
+    const input = w.input();
+    const home = w.home("claude-code", ".claude");
+    const file = join(home.home, "CLAUDE.md");
+    const mine = `# Mine\n\n${"- a rule of my own, with a few words. Ålborg ✓\n".repeat(150)}`;
+    writeFileSync(file, mine);
+    const [item] = await plan(input, [home]);
+    if (item === undefined) throw new Error("no item");
+    shortWrites.on = true;
+    shortWrites.calls = 0;
+    try {
+      expect(applyBlock(input, item).result).toBe("added");
+    } finally {
+      shortWrites.on = false;
+    }
+    expect(shortWrites.calls).toBeGreaterThan(100);
+    expect(readFileSync(file, "utf8")).toBe(`${mine}\n${blockText("\n")}\n`);
+  });
+
+  test("removal keeps the person's line ending when they took out the blank line before the block", async () => {
+    for (const eol of ["\n", "\r\n"]) {
+      const w = world();
+      const input = w.input();
+      const home = w.home("claude-code", ".claude");
+      const file = join(home.home, "CLAUDE.md");
+      const mine = `mine${eol}`;
+      writeFileSync(file, mine);
+      const [item] = await plan(input, [home]);
+      if (item === undefined) throw new Error("no item");
+      applyBlock(input, item);
+      const written = readFileSync(file, "utf8");
+      expect(written).toBe(`mine${eol}${eol}${blockText(eol)}${eol}`);
+      // The person deletes the blank line setup put before the block.
+      writeFileSync(file, `mine${eol}${blockText(eol)}${eol}`);
+      const [view] = await surveyBlocks(input, [home]);
+      if (view === undefined) throw new Error("no view");
+      expect(removeBlock(input, view).result).toBe("removed");
+      expect(readFileSync(file, "utf8")).toBe(mine);
+    }
+    // A last line without a newline: setup put two line endings before the block, and removal takes
+    // both, or, when the person took out the blank line, the one left (it was setup's too).
+    const w = world();
+    const input = w.input();
+    const home = w.home("codex", ".codex");
+    const file = join(home.home, "AGENTS.md");
+    writeFileSync(file, "mine");
+    const [item] = await plan(input, [home]);
+    if (item === undefined) throw new Error("no item");
+    applyBlock(input, item);
+    const [view] = await surveyBlocks(input, [home]);
+    if (view === undefined) throw new Error("no view");
+    expect(removeBlock(input, view).result).toBe("removed");
+    expect(readFileSync(file, "utf8")).toBe("mine");
+  });
+
+  test("Codex: a block pushed past the 32 KiB Codex reads is flagged; text after it does not count", async () => {
+    const w = world();
+    const input = w.input();
+    const home = w.home("codex", ".codex");
+    const file = join(home.home, "AGENTS.md");
+    writeFileSync(file, "mine\n");
+    const [item] = await plan(input, [home]);
+    if (item === undefined) throw new Error("no item");
+    applyBlock(input, item);
+    const withBlock = readFileSync(file, "utf8");
+    // Text after the block: Codex still reads the block.
+    writeFileSync(file, `${withBlock}${"y".repeat(CODEX_DOC_BYTES)}\n`);
+    const [after] = await surveyBlocks(input, [home]);
+    expect(after?.state).toBe("current");
+    expect(after?.pastCodexCap).toBeUndefined();
+    // Text before it: the block now ends past what Codex reads.
+    writeFileSync(file, `${"x".repeat(CODEX_DOC_BYTES)}\n${withBlock}`);
+    const [before] = await surveyBlocks(input, [home]);
+    expect(before?.state).toBe("current");
+    expect(before?.pastCodexCap).toBe(true);
+    expect((await recordedBlocks(input))[0]?.pastCodexCap).toBe(true);
+  });
+
+  test("rule 2 in Markdown: a generator's comment or title marks the file, the person's own rule does not", async () => {
+    const w = world();
+    const input = w.input();
+    const cases: readonly (readonly [string, boolean])[] = [
+      ["# My rules\n\n- Never edit generated files.\n- Do not edit the lock file.\n", false],
+      ["# My rules\n\n- Ask before you edit generated code. Do not edit vendored files.\n", false],
+      ["# Rules\n\nThis file is generated by a rules tool.\n", true],
+      ["<!-- Generated by a rules tool. Do not edit. -->\n# Rules\n", true],
+      ["# Rules\n\n<!--\n  This file is generated by a rules tool.\n-->\n", true],
+      ["\n# Generated by a rules tool\n\n- a rule\n", true],
+      ["<!-- a note -->\n# Rules\n- regenerate the docs after editing\n", false],
+    ];
+    const homes = cases.map(([text], i) => {
+      const home = w.home("claude-code", `.claude-${String(i)}`);
+      writeFileSync(join(home.home, "CLAUDE.md"), text);
+      return home;
+    });
+    const views = await surveyBlocks(input, homes);
+    expect(views.map((v) => v.refusal === "managed")).toEqual(cases.map(([, managed]) => managed));
   });
 
   test("the preview's diff is a unified diff of the one change", () => {

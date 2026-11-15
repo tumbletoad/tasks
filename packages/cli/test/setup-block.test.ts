@@ -154,6 +154,15 @@ describe("[A3.3.12.setup.block-cli] the instruction block through the CLI", () =
       expect(again.plan).toBeUndefined();
       expect(again.blocks.map((b) => b.state)).toEqual(["current", "current"]);
 
+      // Text added before the block pushes it past the 32 KiB Codex reads: doctor warns.
+      const codexBlock = readFileSync(agentsMd(), "utf8");
+      writeFileSync(agentsMd(), `${"x".repeat(33 * 1024)}\n${codexBlock}`);
+      const past = await blockRow();
+      expect(past?.status).toBe("warn");
+      expect(past?.detail).toContain(
+        "Codex (codex): the block now ends past the first 32 KiB of its file",
+      );
+
       // The block taken out of AGENTS.md by hand: doctor warns, with the fix.
       writeFileSync(agentsMd(), "mine now\n");
       const missing = await blockRow();

@@ -164,6 +164,10 @@ async function blockCheck(
       warn.push(
         `${who}: Codex now reads another instruction file (an AGENTS.override.md), so it no longer sees the block`,
       );
+    } else if (view.pastCodexCap === true) {
+      warn.push(
+        `${who}: the block now ends past the first 32 KiB of its file, which is all Codex reads, so Codex no longer sees it; move it nearer the top`,
+      );
     } else if (view.state === "outdated") warn.push(`${who}: an older version of the block`);
     else if (view.state === "missing") warn.push(`${who}: the block setup wrote is gone`);
     else if (view.refusal === "markers") {
