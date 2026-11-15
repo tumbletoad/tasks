@@ -1,8 +1,9 @@
 // receipt.get: a write's stored result by its request ID, in the caller's own writer scope (A3
 // 3.2.3, 3.7.9; A1 3.8; A7 3.8 M1.05). The CLI calls it first when it is given --request-id, so a
 // command repeated after a lost reply prints the stored result instead of reading a fresh base
-// (A3 3.4.1, DA-18). Another scope's receipts are never found. Not an MCP tool. From L1 it also
-// looks up a remote command's receipt by command ID (A6 3.8.4), which adds an optional input.
+// (A3 3.4.1, DA-18), and the page asks it for a request that got no answer (A5 3.11). Another
+// scope's receipts are never found. Not an MCP tool. From L1 it also looks up a remote command's
+// receipt by command ID (A6 3.8.4), which adds an optional input.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from "../schemas.ts";
@@ -212,7 +213,7 @@ export const receiptGet = defineEntry({
   ops: [],
   input: ReceiptGetInput,
   output: ReceiptGetResult,
-  faces: { cli: { verb: "receipt", positional: ["request"] } },
+  faces: { ui: true, cli: { verb: "receipt", positional: ["request"] } },
   budget: { typical: 120, max: 4000 },
   errors: ["invalid_input", "space_unavailable"],
   examples: [
