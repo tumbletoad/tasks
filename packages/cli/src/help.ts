@@ -13,6 +13,7 @@ import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
 import { SPACE_HELP } from "./space.ts";
+import { VIEW_HELP } from "./view.ts";
 
 export interface LocalCommand {
   readonly name: string;
@@ -126,6 +127,12 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     summary: "List and add this machine's roots, the folders places live under",
     help: ROOTS_HELP,
     subcommands: ["list", "add"],
+  },
+  {
+    name: "view",
+    summary: "Check a space's generated view/ and render it again (view rebuild)",
+    help: VIEW_HELP,
+    subcommands: ["rebuild"],
   },
   {
     name: "import",

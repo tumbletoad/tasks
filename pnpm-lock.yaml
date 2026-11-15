@@ -317,6 +317,28 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
 
+  packages/projection:
+    dependencies:
+      '@tasks/brand':
+        specifier: workspace:*
+        version: link:../brand
+      '@tasks/files':
+        specifier: workspace:*
+        version: link:../files
+      '@tasks/storage':
+        specifier: workspace:*
+        version: link:../storage
+    devDependencies:
+      '@tasks/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
+
   packages/runs:
     dependencies:
       '@tasks/brand':
@@ -362,6 +384,9 @@ importers:
       '@tasks/launch':
         specifier: workspace:*
         version: link:../launch
+      '@tasks/projection':
+        specifier: workspace:*
+        version: link:../projection
       '@tasks/storage':
         specifier: workspace:*
         version: link:../storage
