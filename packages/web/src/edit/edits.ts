@@ -324,21 +324,29 @@ export class Edits {
   /** The check-offs of this tab still in their hold, with their commits. */
   readonly #checks = new Map<string, Promise<string | undefined>>();
 
-  /** The box clicked again during the hold: the check-off is undone. */
+  /**
+   * The box clicked again during the hold: the check-off is undone, by its commit. A hold the tab
+   * did not start with a check-off of its own (a redo) undoes the person's newest change, which
+   * the redo made it again.
+   */
   uncheck(task: string): void {
-    const commit = this.#checks.get(task);
     const leaving = this.#state.leaving.get(task);
-    if (commit === undefined || leaving === undefined || !leaving.done) return;
-    void this.undo(commit);
+    if (leaving === undefined || !leaving.done || leaving.by !== undefined) return;
+    void this.undo(this.#checks.get(task));
+  }
+
+  /** Whether a feed event is one of this tab's own writes. */
+  isMine(request: string): boolean {
+    return this.#mine.has(request);
   }
 
   /**
-   * Another actor completed a task this tab shows (A5 3.12): it strikes through, says who, and
-   * leaves after the hold.
+   * A task the view shows was completed by a write the tab did not hold yet (A5 3.12): another
+   * actor's (it strikes through, says who, and leaves after the hold), or the tab's own redo.
    */
-  hold(row: TaskRow, by: string, at: number): void {
+  hold(row: TaskRow, by: string | undefined, at: number): void {
     if (this.#state.leaving.has(row.id)) return;
-    this.#leave(row, { by, at });
+    this.#leave(row, by === undefined ? {} : { by, at });
   }
 
   /**
