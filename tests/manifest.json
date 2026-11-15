@@ -2114,6 +2114,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.2.setup.instances-service",
+      "title": "The service's instances/add and instances/remove: only the user's class writes; an entry the reader would drop, a key or target the command never writes, the manual ID and an ID the file has are refused with nothing written; the record comes first and goes with the entry; a removed entry gives the file back, one gone from the file loses its record, and a damaged record changes nothing",
+      "source": "A4 3.2, A2 3.2.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.2.root-rev",
       "title": "Each root's root_rev in machine state starts at 1 and rises whenever its mapping changes, also across a removal and re-adding, and never otherwise",
       "source": "A4 3.2, A6 3.8.3, A7 3.9 M2.06",
