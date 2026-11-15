@@ -113,12 +113,33 @@ function isRecord(value: unknown): value is HomeRecord {
 
 /** The records of every home setup changed. A missing file is none; a damaged one throws. */
 export function readRecords(stateDir: string): HomeRecord[] {
-  const path = join(setupDir(stateDir), SETUP_FILE);
+  const doc = readStateFile(join(setupDir(stateDir), SETUP_FILE));
+  if (doc === undefined) return [];
+  const homes = stateField(doc, "homes");
+  if (stateField(doc, "format") !== SETUP_FORMAT || !Array.isArray(homes)) {
+    throw new SetupStateInvalid();
+  }
+  if (!homes.every(isRecord)) throw new SetupStateInvalid();
+  return homes;
+}
+
+/** A top-level field of a record file's document, or undefined. */
+export function stateField(doc: unknown, key: string): unknown {
+  return typeof doc === "object" && doc !== null && !Array.isArray(doc)
+    ? (doc as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/**
+ * One of setup's record files, parsed: undefined when it is not there. One that cannot be read,
+ * is too large or is not JSON throws SetupStateInvalid: setup then changes nothing.
+ */
+export function readStateFile(path: string): unknown {
   let fd: number;
   try {
     fd = openSync(path, "r");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw new SetupStateInvalid();
   }
   let raw: string;
@@ -136,27 +157,21 @@ export function readRecords(stateDir: string): HomeRecord[] {
   } finally {
     closeSync(fd);
   }
-  let doc: unknown;
   try {
-    doc = JSON.parse(raw);
+    return JSON.parse(raw) as unknown;
   } catch {
     throw new SetupStateInvalid();
   }
-  const homes = (doc as { format?: unknown; homes?: unknown } | null)?.homes;
-  if ((doc as { format?: unknown } | null)?.format !== SETUP_FORMAT || !Array.isArray(homes)) {
-    throw new SetupStateInvalid();
-  }
-  if (!homes.every(isRecord)) throw new SetupStateInvalid();
-  return homes;
 }
 
 /** Replaces setup's record. The folder is made user-only, and one others can change is refused. */
 export function writeRecords(stateDir: string, records: readonly HomeRecord[]): void {
+  writeStateFile(stateDir, SETUP_FILE, { format: SETUP_FORMAT, homes: records });
+}
+
+/** Replaces one of setup's record files, 0600 in its user-only folder. */
+export function writeStateFile(stateDir: string, file: string, doc: unknown): void {
   const dir = setupDir(stateDir);
   if (ensurePrivateDir(dir) !== undefined) throw new SetupStateUnsafe();
-  atomicWrite(
-    join(dir, SETUP_FILE),
-    `${JSON.stringify({ format: SETUP_FORMAT, homes: records }, null, 2)}\n`,
-    0o600,
-  );
+  atomicWrite(join(dir, file), `${JSON.stringify(doc, null, 2)}\n`, 0o600);
 }

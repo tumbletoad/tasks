@@ -30,8 +30,7 @@ const fieldsOf = (tool: string): readonly string[] => {
 /** The values a tool's enum field takes, from its registry entry. */
 const valuesOf = (tool: string, field: string): readonly string[] => {
   const schema = REGISTRY_TOOLS.get(tool)?.input.shape[field] as
-    | { unwrap?: () => unknown; options?: unknown }
-    | undefined;
+    { unwrap?: () => unknown; options?: unknown } | undefined;
   const inner = (schema?.unwrap?.() ?? schema) as { options?: unknown } | undefined;
   return Array.isArray(inner?.options) ? (inner.options as string[]) : [];
 };

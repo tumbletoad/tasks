@@ -23,8 +23,10 @@
 //   manual                an entry of Tasks's name that setup did not write: without --instance it
 //                         is a hand-made entry (print's), which reaches only the default space; with
 //                         one, the grant gate refuses it until setup registers that instance
-//   block, approvals      the instruction block arrives with its step; setup never writes
-//                         approval rules
+//   block                 each instruction block setup wrote is there and current (A3 3.12):
+//                         an older or a missing one warns; none chosen, or a file managed
+//                         elsewhere now, is information only. Reads only the recorded files
+//   approvals             setup never writes approval rules
 //   (The sessions row is doctor-launch.ts's: it reads the service only.)
 //
 // Each row says what is wrong in plain words and the command that fixes it. Rows name a home by
@@ -45,8 +47,10 @@ import {
   commandFor,
   entryInstance,
   handRemoval,
+  readBlockRecords,
   readRecords,
   readsHome,
+  recordedBlocks,
   samePath,
   SetupStateInvalid,
   survey,
@@ -120,8 +124,77 @@ function envCheck(env: Env): Check {
       };
 }
 
+/**
+ * `block` (A3 3.12): each instruction block setup wrote is still there and the current version.
+ * Only the files of setup's block record are read, so with none it reads nothing. No block at all
+ * is information only, because the server instructions carry the workflow on their own, and so is
+ * a file that is managed elsewhere now. A block the person changed is theirs, and passes.
+ */
+async function blockCheck(
+  io: Io,
+  state: string,
+  options: AgentDoctorOptions,
+  given?: SetupInput,
+): Promise<Check> {
+  let records;
+  try {
+    records = readBlockRecords(state);
+  } catch (error) {
+    if (!(error instanceof SetupStateInvalid)) throw error;
+    return {
+      id: "block",
+      status: "fail",
+      detail: `Setup's record of the instruction blocks (setup/blocks.json in the state folder) cannot be read, so setup changes no block. Move it aside, take the blocks out of the instruction files by hand if they are not wanted, then run: ${CLI_NAME} setup agents --parts block`,
+    };
+  }
+  if (records.length === 0) {
+    return {
+      id: "block",
+      status: "skip",
+      detail: `No instruction block is chosen. It is optional: the server instructions carry the workflow on their own. ${CLI_NAME} setup agents --parts block shows the one to add.`,
+    };
+  }
+  const input = given ?? (await setupInputOf(io, options)).input;
+  const warn: string[] = [];
+  const info: string[] = [];
+  const fine: string[] = [];
+  for (const view of await recordedBlocks(input)) {
+    const who = `${appLabel(view.home.app)} (${view.home.instance})`;
+    if (view.shadowed === true) {
+      warn.push(
+        `${who}: Codex now reads another instruction file (an AGENTS.override.md), so it no longer sees the block`,
+      );
+    } else if (view.state === "outdated") warn.push(`${who}: an older version of the block`);
+    else if (view.state === "missing") warn.push(`${who}: the block setup wrote is gone`);
+    else if (view.state === "refused") {
+      info.push(
+        view.refusal === "managed"
+          ? `${who}: its file is managed elsewhere now, so the block belongs at its source (${CLI_NAME} setup agents print-block --for ${view.for})`
+          : `${who}: its file cannot be checked (${view.refusal ?? "unreadable"})`,
+      );
+    } else if (view.state === "edited") fine.push(`${who} (changed by hand)`);
+    else fine.push(who);
+  }
+  if (warn.length > 0) {
+    return {
+      id: "block",
+      status: "warn",
+      detail: `${[...warn, ...info].join("; ")}. Run ${CLI_NAME} setup agents --parts block to bring it up to date, or ${CLI_NAME} setup agents --remove --parts block to take it out.`,
+    };
+  }
+  return {
+    id: "block",
+    status: fine.length > 0 ? "ok" : "skip",
+    detail: [
+      ...(fine.length > 0 ? [`The instruction block is current in ${fine.join(", ")}`] : []),
+      ...info,
+    ]
+      .join("; ")
+      .concat("."),
+  };
+}
+
 const SKIPPED_ROWS: readonly Check[] = [
-  { id: "block", status: "skip", detail: "Arrives with the optional instruction block." },
   {
     id: "approvals",
     status: "skip",
@@ -150,6 +223,7 @@ export async function agentChecks(
         status: "fail",
         detail: `Setup's record of the agent homes (setup/agents.json in the state folder) cannot be read, so setup changes nothing. Move it aside, take ${PRODUCT_NAME}'s entries out of the apps by hand, then run: ${CLI_NAME} setup agents`,
       },
+      await blockCheck(io, state, options),
       ...SKIPPED_ROWS,
     ];
   }
@@ -161,6 +235,7 @@ export async function agentChecks(
         status: "warn",
         detail: `No agent app has ${PRODUCT_NAME}'s MCP entry yet, so agents cannot reach it. Run: ${CLI_NAME} setup agents`,
       },
+      await blockCheck(io, state, options),
       ...SKIPPED_ROWS,
       liveSkipped(live, "No agent home is registered."),
     ];
@@ -228,6 +303,7 @@ export async function agentChecks(
     const surveyed = await survey(input);
     checks.push(manualCheck(input.platform, surveyed));
     checks.push(t3Check(input, surveyed));
+    checks.push(await blockCheck(io, state, options, input));
     checks.push(...SKIPPED_ROWS);
     if (!live) checks.push(liveSkipped(false, ""));
     else {

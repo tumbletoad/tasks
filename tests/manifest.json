@@ -2218,6 +2218,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.12.setup.block",
+      "title": "The instruction block on scratch homes: it names only registry tools; the preview's unified diff writes nothing; apply then remove gives back the file byte for byte (CRLF, byte order mark, no final newline, a file setup made, an empty one it found), also by property over random files, with text the person wrote after the block kept on its own line; Codex's override file wins and is never made, and a block past the 32 KiB Codex reads is refused; a link, a linked home, a generated mark and machine.toml's paths are delegated and never written; an edited or hand-added block is left by apply and remove; duplicate or unbalanced markers name their lines; an older version is replaced in place; a file changed since the preview, a home folder that is gone and an apply cut before its write change nothing",
+      "source": "A3 3.12, A7 3.11 M4.04",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.12.setup.block-cli",
+      "title": "tasks setup agents --parts block and print-block through the CLI, with no service: print-block prints the block and its file and writes nothing; the preview shows the unified diff and writes nothing; only the user applies, with the preview's plan and parts; remove takes the block out byte for byte; a remove of the entries says the blocks stay; doctor's block row passes for a current block, warns for an older or missing one, and is information only for none and for a managed file",
+      "source": "A3 3.12, A3 3.13.1, A3 3.14, A7 3.11 M4.04",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.apps",
       "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
