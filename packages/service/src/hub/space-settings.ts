@@ -10,6 +10,10 @@
 // - `synced_folder_confirmed`: the folder the person confirmed is excluded from sync (A1 3.2, "It
 //   is excluded, open anyway"), by its canonical real path, and when. Per machine and per path: a
 //   space in another folder (renamed, or restored there) asks again.
+// - `writer_folder`: the folder of the copy that last opened as this machine's writer, by its
+//   canonical real path, and when (A2 3.1). Copies of one space (a restored copy, claimed) share
+//   this file, and at a start the copy in this folder opens first, so the copy the person last
+//   wrote to keeps the writer when another copy could take it.
 // - `failed_migrations`: the migrations that failed on this machine (A1 3.17), each with the
 //   product build that tried, the revision it was to reach, the state of the database it was tried
 //   on (its revision, epoch, incarnation and last_seq), its code, its barrier backup's name and
@@ -74,6 +78,8 @@ export interface SpaceSettings {
   readonly seen?: Seen;
   /** The canonical folder the person confirmed is excluded from sync (A1 3.2). */
   readonly syncedFolderConfirmed?: string;
+  /** The canonical folder of the copy that last opened as this machine's writer (A2 3.1). */
+  readonly writerFolder?: string;
   /** The migrations that failed here and read back whole, oldest first. */
   readonly failedMigrations?: readonly FailedMigration[];
 }
@@ -177,6 +183,8 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
   const incarnation = isRecord(seen) ? seen["incarnation"] : undefined;
   const confirmed = record["synced_folder_confirmed"];
   const confirmedPath = isRecord(confirmed) ? confirmed["path"] : undefined;
+  const writer = record["writer_folder"];
+  const writerPath = isRecord(writer) ? writer["path"] : undefined;
   const failed = failedMigrationsOf(record["failed_migrations"]);
   return {
     ...(typeof dir === "string" && dir.length <= MAX_PATH && isAbsolute(dir)
@@ -193,8 +201,35 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
     isAbsolute(confirmedPath)
       ? { syncedFolderConfirmed: confirmedPath }
       : {}),
+    ...(typeof writerPath === "string" && writerPath.length <= MAX_PATH && isAbsolute(writerPath)
+      ? { writerFolder: writerPath }
+      : {}),
     ...(failed.length === 0 ? {} : { failedMigrations: failed }),
   };
+}
+
+/**
+ * Records that the copy in the folder `canonicalPath` (canonicalFolder in spaces.ts) opened as this
+ * machine's writer. Writes only when another folder was recorded; other fields are kept. Returns
+ * whether the file changed.
+ */
+export function recordWriterFolder(
+  state: string,
+  spaceId: Id<"sp">,
+  canonicalPath: string,
+  now: Date = new Date(),
+): boolean {
+  if (readSpaceSettings(state, spaceId).writerFolder === canonicalPath) return false;
+  const path = fileOf(state, spaceId);
+  const record = readRecord(path);
+  makeDir(join(state, SPACES_FOLDER), 0o700);
+  const next = {
+    format: 1,
+    ...record,
+    writer_folder: { path: canonicalPath, at: now.toISOString() },
+  };
+  atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
+  return true;
 }
 
 /**

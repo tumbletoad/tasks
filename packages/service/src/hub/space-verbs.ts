@@ -345,15 +345,19 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
   ): JsonObject => {
     const id = view.id ?? view.registered;
     if (host.records === undefined || id === undefined) return {};
-    const done = recordSpace(host.records, {
-      folder: manager.folderOf(view.entry),
-      id,
-      enabled,
-      ...extra,
-    });
-    return done.remembered
-      ? { remembered: true }
-      : { remembered: false, not_remembered: notRememberedLine(done.why, enabled) };
+    const folder = manager.folderOf(view.entry);
+    const done = recordSpace(host.records, { folder, id, enabled, ...extra });
+    if (done.remembered) return { remembered: true };
+    // Once the file is fixed, `space open` or `space close` of the folder records the state the verb
+    // left: they do nothing more to a space already open or closed, while a create, a restore, a
+    // claim or a recovery cannot simply be run again.
+    const again = enabled
+      ? command(["space", "open", folder], "space open <folder>")
+      : command(["space", "close", folder], "space close <folder>");
+    return {
+      remembered: false,
+      not_remembered: notRememberedLine(done.why, enabled, again, id),
+    };
   };
 
   const viewOf = (entry: number): SpaceView => {
@@ -665,9 +669,10 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
         throw failure(error);
       }
       // The claimed copy is the space from now on, also after a restart: every other entry of the
-      // space that serves nothing now (a closed or unavailable original) is recorded closed, so it
-      // never takes the writer from this copy at a start. Copies served read-only now stay as they
-      // are, as the person left them.
+      // space that serves nothing now (a closed or unavailable original) is recorded closed, so the
+      // list shows this copy as the space. Copies served read-only now stay as they are, as the
+      // person left them. That this copy keeps the writer at a start is the space settings'
+      // `writer_folder` (spaces.ts openAll), which its open after the claim recorded.
       const claimed = viewOf(view.entry);
       const keep = manager
         .list()

@@ -604,12 +604,21 @@ describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names
       const made = await user(["space", "create", "Unrecorded", "--path", join("s", "unrecorded")]);
       expect(made.code, made.stdout + made.stderr).toBe(0);
       expect(made.stdout).toMatch(/^Created Unrecorded .* open /mu);
-      expect(made.stderr).toBe(
-        `The space is open for now, but will not reopen after a restart: machine.toml cannot be read as it is. Run ${CLI_NAME} doctor: it names the problem. Then run this command again.\n`,
+      expect(made.stderr).toMatch(
+        new RegExp(
+          `^The space is open for now, but will not reopen after a restart: machine\\.toml cannot be read as it is\\. Run ${CLI_NAME} doctor: it names the problem\\. Then run: ${CLI_NAME} space open .+\\n$`,
+          "u",
+        ),
       );
+      expect(made.stderr).toContain(join(world.root, "s", "unrecorded"));
     } finally {
       writeFileSync(file, before);
     }
+    // The command the line names records it, once the file is fixed.
+    const recorded = await user(["space", "open", join(world.root, "s", "unrecorded")]);
+    expect(recorded.code, recorded.stdout + recorded.stderr).toBe(0);
+    expect(recorded.stderr).toBe("");
+    expect(readFileSync(file, "utf8")).toContain("unrecorded");
     expect((await user(["space", "close", join(world.root, "s", "unrecorded")])).code).toBe(0);
   }, 240_000);
 });

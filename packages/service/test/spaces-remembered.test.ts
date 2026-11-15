@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -214,25 +215,49 @@ describe("[A2.3.1.hub.spaces-not-remembered] a record machine.toml cannot take i
         not_remembered: string;
       };
       expect(made).toMatchObject({ space: { state: "open" }, remembered: false });
-      expect(made.not_remembered).toBe(
-        "The space is open for now, but will not reopen after a restart: machine.toml cannot be read as it is. Run tasks doctor: it names the problem. Then run this command again.",
+      // The way to record it names `space open` of the folder, never the create again, which
+      // would find a space in that folder.
+      expect(made.not_remembered).toMatch(
+        /^The space is open for now, but will not reopen after a restart: machine\.toml cannot be read as it is\. Run tasks doctor: it names the problem\. Then run: tasks space open /,
       );
+      expect(made.not_remembered).toContain(studioFolder);
       const closed = (await user.call("space/close", { space: studioFolder }, CALL)) as {
         remembered: boolean;
         not_remembered: string;
       };
       expect(closed.remembered).toBe(false);
       expect(closed.not_remembered).toMatch(
-        /^The space is closed for now, but a restart may open it again: machine\.toml cannot be read as it is\./,
+        /^The space is closed for now, but a restart may open it again: machine\.toml cannot be read as it is\..* Then run: tasks space close /,
       );
       // Nothing was written into the person's file.
       expect(tomlOf(w)).toBe(`${good}\n[log\n`);
 
-      // Fixed, the same verb records it.
+      // Fixed, the command the line names records it.
       writeFileSync(fileOf(w), good);
-      const opened = await user.call("space/open", { path: studioFolder }, CALL);
+      const opened = (await user.call("space/open", { path: studioFolder }, CALL)) as {
+        space: Row;
+      };
       expect(opened).toMatchObject({ space: { state: "open" }, remembered: true });
       expect(recorded(w).map((s) => s.path)).toEqual([expect.any(String), studioFolder]);
+
+      // The person changes the folder's entry to name another space while the service runs: the
+      // hand edit stays, and serving the space there is not pretended to be remembered.
+      const studioId = opened.space.id;
+      if (studioId === undefined) throw new Error("no Studio ID");
+      const otherId = "sp_3z8sm956jp8dajmtsar5kx026c";
+      const edited = tomlOf(w).replace(`id = "${studioId}"`, `id = "${otherId}"`);
+      writeFileSync(fileOf(w), edited);
+      const mismatch = (await user.call("space/open", { path: studioFolder }, CALL)) as {
+        remembered: boolean;
+        not_remembered: string;
+      };
+      expect(mismatch.remembered).toBe(false);
+      expect(mismatch.not_remembered).toContain(
+        "machine.toml's entry for this folder names another space.",
+      );
+      expect(mismatch.not_remembered).toContain(`Change that entry's id to ${studioId} by hand`);
+      expect(tomlOf(w)).toBe(edited);
+      writeFileSync(fileOf(w), tomlOf(w).replace(`id = "${otherId}"`, `id = "${studioId}"`));
 
       // A file another user could change is refused, on the systems that have modes.
       if (process.platform !== "win32") {
@@ -300,7 +325,7 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
         data: { reason: "read_only_copy" },
       });
 
-      // After a restart both are served again; the original, first in machine.toml, writes.
+      // After a restart both are served again; the original, the copy that last wrote, writes.
       const again = await restart(w);
       expect((await list(again)).map((r) => [r.folder, r.state, r.reason])).toEqual([
         [mira.folder, "open", undefined],
@@ -371,6 +396,77 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
         [copyFolder, "open"],
       ]);
       await follows(again, "claimed-add-0003");
+    },
+  );
+
+  test(
+    "the copy that last wrote keeps the writer at a start, also when an original listed before it is enabled again",
+    SLOW,
+    async () => {
+      const w = await world("writer-first");
+      const user = await w.user();
+      const [mira] = await list(user);
+      if (mira?.id === undefined) throw new Error("no Mira");
+      await add(user, "Exported task", "writer-first-add-0001");
+      const exported = (await user.call("space/export", { space: mira.folder }, CALL)) as {
+        export: { file: string };
+      };
+      await user.call("space/close", { space: mira.folder }, CALL);
+      const copyFolder = join(w.root, "s", "mira-copy");
+      await user.call("space/restore", { backup: exported.export.file, to: copyFolder }, CALL);
+      await user.call("space/claim", { space: copyFolder }, CALL);
+      const written = (await add(user, "Only in the copy", "writer-first-add-0002")).tasks[0]?.ref;
+      if (written === undefined) throw new Error("not written");
+
+      // The person opens the original again while the copy writes: it cannot take the writer
+      // now, and its entry is enabled, listed before the copy's.
+      const opened = (await user.call("space/open", { path: mira.folder }, CALL)) as {
+        space: Row;
+      };
+      expect(opened.space.state).not.toBe("open");
+      expect(recorded(w).map((s) => [s.path, s.enabled])).toEqual([
+        [mira.folder, true],
+        [copyFolder, true],
+      ]);
+
+      // After a restart the copy the person wrote to still writes, and the task is there by the
+      // space's ID and without one.
+      const again = await restart(w);
+      const rows = await list(again);
+      expect(rows.find((r) => r.folder === copyFolder)?.state).toBe("open");
+      expect(rows.find((r) => r.folder === mira.folder)?.state).not.toBe("open");
+      expect(await get(again, written, mira.id)).toMatchObject({ task: { ref: written } });
+      expect(await get(again, written)).toMatchObject({ task: { ref: written } });
+    },
+  );
+
+  test(
+    "a restored copy whose folder the person deleted stays listed, and never makes a call without a space ask for one",
+    SLOW,
+    async () => {
+      const w = await world("gone-copy");
+      const user = await w.user();
+      const [mira] = await list(user);
+      if (mira?.id === undefined) throw new Error("no Mira");
+      const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "look");
+      await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: mira.folder },
+        CALL,
+      );
+      await w.stop();
+      rmSync(copyFolder, { recursive: true, force: true });
+      const again = await restart(w);
+      expect((await list(again)).map((r) => [r.folder, r.state, r.reason])).toEqual([
+        [mira.folder, "open", undefined],
+        [copyFolder, "unavailable", "missing"],
+      ]);
+      expect((await add(again, "Without a space", "gone-copy-add-0001")).tasks[0]?.ref).toMatch(
+        /^M-\d+$/,
+      );
     },
   );
 });

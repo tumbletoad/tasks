@@ -41,6 +41,17 @@ describe("[A2.3.10.5.copies.rule] the copy an ID or a name means", () => {
       // A folder names its own copy.
       expect(findSpace(spaces, at("mira-copy"))).toBe(copy);
     }
+    // A copy not served yet (its folder gone) has no ID read from its folder, but its entry's ID
+    // makes it a copy of the space: still one space served.
+    const gone: Copy = {
+      id: undefined,
+      registered: MIRA,
+      state: "unavailable",
+      reason: "missing",
+      folder: at("look"),
+    };
+    expect(onlySpace([gone, original])).toBe(original);
+    expect(onlySpace([gone, space(LIFE, "life", "open")])).toBe("several");
   });
 
   test("a closed original never stands in for the claimed copy, and with no writable copy the space itself comes before a restored copy", () => {

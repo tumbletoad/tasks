@@ -21,7 +21,13 @@ import { AppError } from "@tasks/contracts";
 
 /** What the rule reads of a space. */
 export interface Copy {
+  /** The ID read from its folder, once served: what an ID names. */
   readonly id: string | undefined;
+  /**
+   * The ID its entry names, also before it is served: an unavailable copy is still a copy of that
+   * space, so it never makes "the one space served" two.
+   */
+  readonly registered?: string | undefined;
   readonly name?: string | undefined;
   readonly state: string;
   readonly reason?: string | undefined;
@@ -78,11 +84,14 @@ export function sameFolder(
   return fold(resolve(a)) === fold(resolve(b));
 }
 
-/** The copies of each space among `spaces`, by ID; a space without one is a group of its own. */
+/**
+ * The copies of each space among `spaces`, by ID, the entry's ID for a copy not served yet; a space
+ * without either is a group of its own.
+ */
 function bySpace<S extends Copy>(spaces: readonly S[]): S[][] {
   const groups = new Map<unknown, S[]>();
   for (const space of spaces) {
-    const key = space.id ?? space;
+    const key = space.id ?? space.registered ?? space;
     const group = groups.get(key);
     if (group === undefined) groups.set(key, [space]);
     else group.push(space);

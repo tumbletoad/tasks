@@ -8,26 +8,35 @@
 //                                                  `tasks space open <folder>` opens it again
 //   claim                                          the copy's entry enabled, and every other entry
 //                                                  of the same space that serves nothing now
-//                                                  (closed or unavailable) disabled, so an original
-//                                                  that comes back never takes the writer from the
-//                                                  copy the person made this machine's
+//                                                  (closed or unavailable) disabled, so the list
+//                                                  after a restart shows the copy the person made
+//                                                  this machine's as the space
+//
+// Which copy of a space takes the writer at a start is not these records' to keep: the copy that
+// last opened as this machine's writer opens first (spaces.ts openAll, from the space's machine-local
+// settings), so a record that failed, or an original enabled again, never moves the writer.
 //
 // An entry is found by its folder, compared as the OS compares names. A create or a restore made a
 // new space in a folder that was not there, so it re-points that folder's entry to the new space's
-// ID; nothing else changes an entry's ID, so a hand edit of one is never undone.
+// ID; nothing else changes an entry's ID, so a hand edit of one is never undone: a verb that serves
+// a space whose folder's entry names another space records nothing and says so (`other_space`).
 //
 // The edit is machine.toml's one editor (config/edit.ts), as `[service] default_space`, `tasks roots
 // add` and `tasks setup instances` use it: the file is read, the edits are worked out on the very
 // bytes read, spliced in with every other byte kept (comments, order, line breaks, a byte order
 // mark), and written atomically with the file's own mode, only if the file is still what was read
 // just before the rename. A file saved meanwhile is read again and the edit made on it, up to three
-// times, so a hand edit is never lost. No write when the file already says it.
+// times. What is not covered is the instant between that last check and the rename: an editor's
+// save landing exactly then is replaced (A2 3.1). No write when the file already says it.
 //
 // A record that cannot be written (a syntax error from a hand edit, a layout the editor cannot
 // place, a file or folder that fails the permission rule, a write the OS refuses) does not undo or
 // refuse the verb: the space is served or closed as the person asked, for this run, and the verb's
-// answer says in a plain line that a restart will not keep it, and why (A2 3.10.1). The service's
-// own view is its space manager, which the verb changed; the next start reads the file.
+// answer says in a plain line that a restart will not keep it, why, and the command that records it
+// once the file is fixed: `tasks space open <folder>` or `tasks space close <folder>`, which do
+// nothing more to a space already open or closed, so the verb itself (a create, a claim) is never
+// repeated (A2 3.10.1). The service's own view is its space manager, which the verb changed; the
+// next start reads the file.
 import { resolve } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import { isTable } from "@tasks/launch";
@@ -58,8 +67,11 @@ export interface SpaceChange {
   readonly others?: { readonly keep: readonly string[] };
 }
 
-/** Why a record was not written: the editor's refusal, or the OS's error code. */
-export type NotRecorded = EditRefusal | { readonly code: string };
+/**
+ * Why a record was not written: the editor's refusal; `other_space`, the folder's entry names
+ * another space than the one served there (a hand edit, kept); or the OS's error code.
+ */
+export type NotRecorded = EditRefusal | "other_space" | { readonly code: string };
 
 export type Recorded =
   { readonly remembered: true } | { readonly remembered: false; readonly why: NotRecorded };
@@ -75,7 +87,7 @@ function editsFor(
   doc: TomlDocument,
   change: SpaceChange,
   platform: NodeJS.Platform,
-): Edit[] | EditRefusal {
+): Edit[] | EditRefusal | "other_space" {
   const key = fold(platform);
   const current = doc[ARRAY];
   if (current !== undefined && !Array.isArray(current)) return "unsupported_layout";
@@ -104,6 +116,11 @@ function editsFor(
       });
     }
   } else {
+    // An entry the person changed by hand to name another space is theirs: kept as it is, and the
+    // space it would open at a start is not this one, so serving it is not remembered.
+    if (change.repoint !== true && change.enabled && entry["id"] !== change.id) {
+      return "other_space";
+    }
     if (change.repoint === true && entry["id"] !== change.id) {
       edits.push({
         op: "set_in_element",
@@ -146,14 +163,20 @@ export function recordSpace(host: SpaceRecordsHost, change: SpaceChange): Record
   let why: NotRecorded = "changed_meanwhile";
   for (let attempt = 1; attempt <= TRIES; attempt += 1) {
     let count = 0;
+    // Set by the plan: the editor knows only its own refusals.
+    const planned: { refusal?: "other_space" } = {};
     try {
       const prepared = prepareEditOf(host.configDir, (doc) => {
         const edits = editsFor(doc, change, host.platform);
+        if (edits === "other_space") {
+          planned.refusal = edits;
+          return "absent";
+        }
         if (typeof edits !== "string") count = edits.length;
         return edits;
       });
       if (!prepared.ok) {
-        why = prepared.reason;
+        why = planned.refusal ?? prepared.reason;
         break;
       }
       if (count === 0) return { remembered: true };
@@ -191,27 +214,39 @@ function because(why: NotRecorded): string {
       return "machine.toml kept changing while it was being written";
     case "too_large":
       return "machine.toml would be larger than a configuration file may be";
+    case "other_space":
+      return "machine.toml's entry for this folder names another space";
     default:
       return "machine.toml could not be changed";
   }
 }
 
-/** What fixes it, so the record can be made by running the verb again. */
-function fix(why: NotRecorded): string {
+/**
+ * What fixes it. `again` is the command that records the space's state once the file is fixed
+ * (`tasks space open <folder>` or `close`), never the verb itself, which may not be repeatable.
+ */
+function fix(why: NotRecorded, again: string, id: string): string {
   if (why === "unsupported_layout") return "Change the space's [[spaces]] entry by hand.";
+  if (why === "other_space") return `Change that entry's id to ${id} by hand, then run: ${again}`;
   if (why === "unsafe" || why === "invalid_file") {
-    return `Run ${CLI_NAME} doctor: it names the problem. Then run this command again.`;
+    return `Run ${CLI_NAME} doctor: it names the problem. Then run: ${again}`;
   }
-  return "Run this command again.";
+  return `To record it, run: ${again}`;
 }
 
 /**
  * The plain line a verb's answer carries when its record was not written: what a restart does
- * instead, why, and the fix. `served`: the verb left the space served (else closed).
+ * instead, why, and the fix. `served`: the verb left the space served (else closed). `again`: the
+ * command that records it, quoted for the person's shell; `id`: the space's ID.
  */
-export function notRememberedLine(why: NotRecorded, served: boolean): string {
+export function notRememberedLine(
+  why: NotRecorded,
+  served: boolean,
+  again: string,
+  id: string,
+): string {
   const after = served
     ? "The space is open for now, but will not reopen after a restart"
     : "The space is closed for now, but a restart may open it again";
-  return `${after}: ${because(why)}. ${fix(why)}`;
+  return `${after}: ${because(why)}. ${fix(why, again, id)}`;
 }

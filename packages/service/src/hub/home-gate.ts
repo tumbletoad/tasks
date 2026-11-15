@@ -24,7 +24,11 @@ export interface HomeGateHost {
   /** The grants table, as it is now. */
   grants(): Pick<GrantStore, "list">;
   /** The spaces this service serves. */
-  spaces(): readonly { readonly id: string | undefined; readonly state: string }[];
+  spaces(): readonly {
+    readonly id: string | undefined;
+    readonly registered?: string | undefined;
+    readonly state: string;
+  }[];
   /** machine.toml's `[service] default_space` as it is now. */
   defaultSpace(): string | undefined;
 }
@@ -33,8 +37,11 @@ export interface HomeGateHost {
 function machineDefault(host: HomeGateHost): string | undefined {
   const configured = host.defaultSpace();
   if (configured !== undefined) return configured;
-  // Copies of one space share its ID (A2 3.10.5): they are one space here.
-  const live = new Set(host.spaces().flatMap((s) => (s.state === "closed" ? [] : [s.id])));
+  // Copies of one space share its ID (A2 3.10.5): they are one space here, a copy not served yet
+  // (unavailable) by the ID its entry names.
+  const live = new Set(
+    host.spaces().flatMap((s) => (s.state === "closed" ? [] : [s.id ?? s.registered])),
+  );
   return live.size === 1 ? [...live][0] : undefined;
 }
 

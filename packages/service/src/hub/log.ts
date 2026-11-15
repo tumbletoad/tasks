@@ -256,6 +256,7 @@ export const EVENTS = {
         "changed_meanwhile",
         "too_large",
         "unsafe",
+        "other_space",
         "write_failed",
       ],
       code: "error_code",

@@ -118,7 +118,13 @@ import { planningPreview } from "./import-planning.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
+  /** The space's ID as read from its folder, once it is served. */
   readonly id: string | undefined;
+  /**
+   * The ID its machine.toml entry names, also before it is served (unavailable, opening): it tells
+   * which space an unserved copy is of, so copies of one space count as one (ops/copies.ts).
+   */
+  readonly registered?: string;
   readonly name: string | undefined;
   readonly state: "opening" | "open" | "read_only" | "unavailable" | "closing" | "closed";
   readonly reason?: string;
