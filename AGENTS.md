@@ -1,110 +1,81 @@
 # TT Tasks
 
 Agent-first task app by TumbleToad, called Tasks inside the app: Node 26 and TypeScript in a pnpm
-monorepo. The rules below are for people and coding agents alike.
+monorepo. These notes are for people and coding agents alike.
 
-If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checkout's machine setup
-and workflow.
+If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checkout's own setup.
 
-## Start here
-- `planning/PLAN.md`: the decisions, an architecture overview and the milestone order. The owner's
-  decisions (A.1) carry the most weight.
-- `planning/appendix/`: the specifications A1 to A7, which win on specifics. A7 lists every step.
-- `planning/STATUS.md`: one row per step, and the open real-machine sessions with the owner.
-- `VISION.md`: the intended experience. Where the plan is silent, or two options both fit it,
-  choose by the vision. It adds no features. Only the owner changes it.
-- This file wins over conflicting process rules in a specification.
+## What to read
+- `VISION.md`: how the product should feel and behave. Where two solutions both work, choose by
+  it. Only the owner changes it.
+- The code and its tests. They are the source of truth for how things work.
+- `planning/STATUS.md`: what is built and what is left.
+- `planning/PLAN.md` and `planning/appendix/` were written before the code. For a part that is not
+  built yet they are background. They are never a reason to build or keep something you would not
+  defend.
 
-## Principles
-- The plan is a guide, not a contract. When something blocks, find another solution faithful to
-  the vision and write it into the specification.
-- Keep the core lean: a feature outside the plan needs a clear reason in its pull request and
-  specification.
-- Limits on performance, latency, memory and token counts are guidelines until real use (PLAN
-  D26). Aim for them and report a breach, but keep a feature that is better or more complete over
-  a limit. Functionality, usability, stability, flexibility and maintainability come first.
-- Rewrite when you find a better solution. Do not keep a weaker design for history.
-- Clean up what is finished (merged branches, worktrees, scratch folders, test installs, files
-  that only served a finished step), after looking at it, and only what this project made.
-- Work in your own folder. Delete it only by its full name, never its parent, and stop only
-  processes whose PID you recorded.
+## How we work
+- Build the best solution you can defend. When a plan, a rule, a comment, a test or existing code
+  stands in the way of a better product, say so. Change it when it is yours to change. Propose it
+  in your pull request when it is outside your task, also for code that was written earlier.
+- Protect a person's work first. What ordinary or plausible use can turn into loss, damage or
+  frustration is always fixed. For a case that needs a program on the same machine working against
+  the product on purpose, take the cheap protection or none: no machinery, and no refusal, warning
+  or extra step that every other person then meets.
+- Fewer concepts, fewer steps, fewer refusals. Before you add a rule, a check, a setting or a
+  warning that a person meets, ask who it helps in plausible use and what it costs everyone else.
+- Fix the cause. A workaround with a comment that explains it is still a defect.
+- When a mistake keeps coming back, make it impossible, or make a type, a lint rule or a test catch
+  it. A written rule is the last resort.
+- When a second review finds more of the same kind of defect, change the design. After a second
+  failed fix, ask whether the feature or the cleverness is needed at all.
+- Limits on performance, memory and size are guidelines until real use. Functionality, usability,
+  stability and maintainability come first.
+- Rewrite when you find a better solution. Clean up what is finished, after looking at it, and
+  only what this project made.
 
-## Decisions
-- A decision changes the specification section it belongs to, in the same pull request as the
-  code (a new choice gets a section in the closest one). The documents state current rules only,
-  with no history. A reason that prevents a likely mistake stays as one sentence beside its rule.
-- Section numbers and IDs (D, R, step and test IDs) are cited by code and tests: never renumber or
-  reuse one. A section that code, tests or `tests/manifest.json` cite stays, if only short.
-- Put a question for the owner in the pull request with the default you chose, and continue on it.
+## Writing things down
+- No new specification text. Behaviour lives in code and tests.
+- Write prose only for what code cannot say: a promise to the person about their data, a limit
+  (what is not protected), or how something should feel. One or two sentences, where a reader
+  will look for it.
+- A comment says why, when the code cannot: an invariant, a constraint that is not obvious. No
+  history, no review stories, no restating the code, no citing plan sections. Remove comments that
+  fail this in the files you touch.
+- A test checks behaviour a person or a caller depends on, and survives a refactor that keeps that
+  behaviour. A test that pins a detail of the implementation, a wording, or a rule that no longer
+  makes sense holds the product back: change or remove it and say so in the pull request. Never
+  weaken a test to hide a real defect.
 
-## Do a step
-1. Pick a `ready` step in `planning/STATUS.md` (or one whose code exists on a branch) and set it
-   to `doing`. Read the step in A7, then only the sections it cites.
-2. One step per branch (`m<N>/<nn>-<slug>`), one worktree and one pull request.
-3. Write the failing test from the step's Verify line first.
-
-- Run everything through pnpm, never a bare `node`: a system Node may be another version.
-- Shapes live only in `packages/contracts`. After changing an entry, run `pnpm gen` and commit the
-  output. Keep contract changes additive: other open pull requests may touch contracts too.
-- Only one open pull request may touch `packages/storage/migrations` at a time. Released schemas
-  (0.1, 0.2, and 0.3 once a build with it opens a real space) are frozen: a schema change is a new
-  migration step.
-- Create files and folders through `packages/files` (in storage, its own helpers): each new object
-  gets its exact mode whatever the umask. Never call `process.umask()`.
-- Every change to a space goes through an operation (A1 3.7). There is no other write path.
-- Every new test carries its ID from `tests/manifest.json`. One without fails `pnpm verify`.
-- A test file creates nothing at module level: Vitest's collection runs the top level without its
-  hooks. Make temporary folders in `beforeAll` and remove them in `afterAll`.
-- No task text, prompts, briefs or tokens in logs, argv, URLs or snapshots.
-- Name every new dependency with its version and licence in the pull request.
-- Real-machine results and committed recordings hold facts only (an exit code, a yes or no, a
-  count, a class), never a CLI's, model's or OS's own output: account names,
-  paths and credentials hide in it.
-- A test that fails only under load assumes something about time or the machine: remove that,
-  never the assertion.
-- When a second review round finds more of one class of defect, change the design.
-- A step behind an open lab gate (A7 3.7) is built to the lab's findings, and its pull request
-  lists what waits for a real-machine session.
-- Browser automation uses a scratch profile and leaves others' tabs alone.
+## Doing the work
+- Run everything through pnpm, never a bare `node`.
+- Shapes live in `packages/contracts`. After changing one, run `pnpm gen` and commit the output.
+- Every change to a space goes through an operation. There is no other write path.
+- A schema change is a new migration step. One open pull request touches
+  `packages/storage/migrations` at a time.
+- Create files and folders through `packages/files`, so each gets its exact mode whatever the umask.
+- No task text, prompts or tokens in logs, command lines or URLs.
+- A test that fails only under load assumes something about time or the machine: remove the
+  assumption, not the assertion.
+- Name a new dependency with its version and licence in the pull request.
+- Work in your own folder. Delete it by its full name, and stop only processes you started.
 
 ## Verify and merge
-- `pnpm verify` passes. On Windows, run it from PowerShell 7 (`pwsh -NoProfile`).
-- UI steps: `pnpm e2e` passes and you looked at the screenshots.
-- CI runs the checks on Ubuntu and Windows for every pull request. Platform code (paths,
-  processes, sockets, terminals, install, launch) is also checked by the owner on a real Linux machine.
-- Paste the Verify output into the pull request, with the OS, and say what you did not test.
-- Substantial changes get an independent review before merging: storage, protocol, security,
-  migrations, launch, and anything over a few hundred lines. Fix or answer every finding.
-- A review ranks its findings by how likely a person is to run into them and what it would cost
-  them (PLAN D27). Loss, damage or frustration from plausible use comes first and is always fixed.
-  A case that needs a program on the same machine working against the product on purpose is
-  noted, closed when that is cheap, and otherwise stated as a limit in the specification. A small
-  visual flaw or a minor bug comes last.
-- Before merging, merge main into the branch: merge `tests/manifest.json` by entry ID, keeping both
-  sides, and run `pnpm install` after a lockfile merge.
-
-## Git
-- Work on branches and merge through pull requests. Commit messages are short and imperative.
-- Name the files in every commit and look at `git status` first. Never `git add -A`.
-- Every name comes from `packages/brand`: visible ones from its display names, the rest (HTTP
-  headers too) from the identifier `tasks`.
+- `pnpm verify` passes. On Windows run it from PowerShell 7. For UI work `pnpm e2e` passes too.
+- The pull request says what changed for a person and shows the evidence: the check's output with
+  the OS, and for UI work screenshots of the states that changed. Say what you did not test.
+- A question for the owner goes in the pull request with the default you chose. Carry on with it.
+- Substantial changes get an independent review. It ranks findings by how likely a person is to
+  run into them and what it costs them.
+- Work on branches and merge through pull requests. Merge main into the branch first. Name the
+  files in every commit: never `git add -A`.
+- Names come from `packages/brand`.
 
 ## Never
-- push directly to main, rewrite published history or skip hooks;
-- weaken or delete a test to make it pass;
-- delete a person's data or a backup as a side effect of another operation. Reuse what exists,
-  retire and keep what is replaced, and report where it is. Removal outside the stated retention
-  policy is the person's explicit act;
-- accept a configuration file or folder that is a symbolic link: a suggested repair would change
-  the link's target;
-- put real task data, or real names of people, employers or customers, in the repository, logs,
-  fixtures, screenshots, prompts to outside services or web searches. Tests use fixture data and
-  a temporary `TASKS_HOME`;
-- put machine or personal facts in the repository: addresses, logins, machine names, paths under
-  a user's profile;
-- open, copy, move or print an agent app's sign-in file or token, or look for an API key. A copy
-  that refreshes its token can sign out live sessions;
-- change another app's trust or approval settings, or a managed instruction file. Tasks registers
-  its MCP server only through `tasks setup agents`, with a preview and exact removal;
-- create a user account on a real machine. Second-user tests run only in CI;
-- plan in calendar time: plans give order, dependencies and parallel lanes.
+- push to main, rewrite published history or skip hooks;
+- delete a person's data or a backup as a side effect of something else;
+- put real task data, real names of people or organisations, or facts about a person's machines,
+  accounts or paths in the repository, its logs, fixtures, screenshots or pull requests;
+- open, copy, move or print an agent app's sign-in file or token, or look for an API key;
+- change another app's trust or approval settings;
+- create a user account on a real machine.
