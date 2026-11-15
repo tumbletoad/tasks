@@ -7,6 +7,8 @@
 // Lines on stdin drive it: `stop` raises SIGTERM's handler (a graceful stop on every OS, where
 // Windows has no signal), `crash <text>` throws an uncaught error with that message, `reject
 // <text>` leaves a rejected promise unhandled. Tests only.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "@tasks/bridge/safe-exit";
 import { createInterface } from "node:readline";
 import { packageIdentity } from "../src/hub/identity.ts";
 import { runServe } from "../src/hub/serve.ts";

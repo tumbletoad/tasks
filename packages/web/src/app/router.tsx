@@ -6,7 +6,7 @@
 //   /                                       the default space's landing view (`?task=` a task)
 //   /s/:space                               the space's landing view (Today)
 //   /s/:space/:view                         today, inbox, open, waiting, review, backlog,
-//                                           completed, agents
+//                                           completed, agents (`?day=` Today's chosen day)
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
 //   /s/:space/search?q=                     search results (M5.10)
@@ -78,17 +78,25 @@ const spaceIndexRoute = createRoute({
   },
 });
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A view's search: its expanded task, and Today's chosen day in the strip (`YYYY-MM-DD`). */
+export function viewSearch(search: Record<string, unknown>): { task?: string; day?: string } {
+  const day = search["day"];
+  return { ...taskSearch(search), ...(typeof day === "string" && DAY.test(day) ? { day } : {}) };
+}
+
 const viewRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: "$view",
-  validateSearch: taskSearch,
+  validateSearch: viewSearch,
   component: function ViewRoute() {
     const { space, view } = viewRoute.useParams();
-    const { task } = viewRoute.useSearch();
+    const { task, day } = viewRoute.useSearch();
     if (!isView(view)) {
       return <Navigate to="/s/$space/$view" params={{ space, view: LANDING }} replace />;
     }
-    return <ViewPage view={view} task={task} />;
+    return <ViewPage view={view} task={task} day={day} />;
   },
 });
 

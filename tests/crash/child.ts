@@ -11,6 +11,8 @@
 // At the armed point the seam reports the point and waits to be killed (protocol.ts).
 //
 // Run by harness.ts only: node tests/crash/child.ts, with the plan on stdin.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "../../packages/bridge/src/safe-exit.ts";
 import { join } from "node:path";
 import { backupSpaceWith, backupsFolder } from "../../packages/storage/src/backup/backup.ts";
 import { DATA_SUFFIX } from "../../packages/storage/src/backup/sidecar.ts";

@@ -1,5 +1,7 @@
 // A child process for the lock race test: on `{go, path}` it waits for the start time, takes the
 // lock with acquireLock() and reports whether it won. On `release` it gives the lock up. Tests only.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "@tasks/bridge/safe-exit";
 import { acquireLock, LockBusy, type HeldLock } from "../src/hub/lock.ts";
 
 let held: HeldLock | undefined;

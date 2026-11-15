@@ -9,6 +9,8 @@
 // `slow` (echo after `ms`), `big` (a text of `bytes` characters), `flood` (`count` notifications
 // of `bytes` each before its result). Mode `echo` sends every line back unchanged instead.
 // stdin: `stop` closes the server, removes service.json and exits 0. Tests only.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "../../packages/bridge/src/safe-exit.ts";
 import { appendFileSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";

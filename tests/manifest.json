@@ -2370,6 +2370,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.12.1.runtime.safe-exit",
+      "title": "The pinned runtime hands Sparkplug batches to a V8 worker thread and compiles hot functions with Maglev, and with safe-exit.ts loaded first it does neither; every flag it sets is known to the runtime; every script that loads the product's code and ends through process.exit, found through the import graph of packages/, tests/ and scripts/, imports safe-exit.ts before any other module",
+      "source": "A2 3.12.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.1.build.node-download",
       "title": "The build's Node pin names .node-version and four platforms whose digests equal SHASUMS256.txt and pnpm-lock.yaml; a wrong digest, a missing entry and a malformed file are refused; gpgv accepts Node's real signature and refuses a changed file or an unknown key",
       "source": "A2 3.12.1, A7 3.8 M1.13",
@@ -3059,7 +3067,7 @@
     },
     {
       "id": "A5.3.22.web.list-keys",
-      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, or is the view's last row, and a held row stays the current row for the tab order and the keys",
+      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, is re-sorted inside its list, or is the view's last row, and a held row stays the current row for the tab order and the keys",
       "source": "A5 3.22, A5 3.21, A5 3.15, A7 3.12 M5.03",
       "owner": "M5",
       "kind": "ci",
@@ -3117,6 +3125,38 @@
       "id": "A7.3.12.m5-03.e2e.rows",
       "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
       "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today",
+      "title": "Today's sections and strip as data: A5 3.4's fixture example, Focus's order (late by oldest due, due today, then priority, due date and age), This week by the day that selects it with a waiting task's follow-up day, Next's rule, order and limit, the strip's day narrowing Focus and This week only, Changes (agents' changes off the sections above, newest first, five at most, seven days), and the expanded task held at its place in its section",
+      "source": "A5 3.4, A5 3.14, A5 3.15, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today-disjoint",
+      "title": "Property test over generated clocks (time zones, instants around midnights and daylight-saving changes), tasks of every lifecycle, changes, days, Next limits and held tasks: no task is in two sections, each task is where an oracle written from the specification puts it (narrowed by the chosen day), Next is full whenever it has candidates, the strip's marks are exactly the Focus and This week tasks' due and planned days, and holding the expanded task keeps the sections disjoint and the task at its place",
+      "source": "A5 3.4, A5 5, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today-page",
+      "title": "Today in a DOM with the real live store: the strip shows today's date once with one cell in the tab order, a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, the chosen day narrows Focus and This week and Escape clears it, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-04.e2e.today",
+      "title": "In Chromium and Firefox against the real service on a fixed Thursday: the strip and Focus, This week and Next with no task twice, today's date once on the screen, a day chosen in the strip by keyboard narrows Focus and This week and Escape clears it, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report",
+      "source": "A5 3.4, A5 3.3, A5 3.15, A5 3.19, A5 3.22, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
