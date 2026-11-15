@@ -29,6 +29,11 @@
 // publish; a retired file that is gone or no longer ours is forgotten, never touched again. A file
 // on disk the record does not hold is left alone.
 //
+// **Evidence goes last** (A1 3.13): the journal is dropped, and a record that no longer says why
+// something must still happen is written, only once what depends on it is durable elsewhere: the
+// writer's outbox for tasks to render again, the service's answer for a batch's rescues. A kill in
+// between finds the evidence and does the work again; each is safe to repeat.
+//
 // **A kill** leaves temporary files and the journal. The next start plays the journal forward: a
 // file that reached its place with the journal's bytes goes into the record; a task whose file is
 // not there as the journal meant it, or that the batch found gone, is queued again, since the writer
