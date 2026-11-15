@@ -313,6 +313,7 @@ export {
   type PlaceKind,
   type PlaceSet,
   type Placement,
+  type PrefSet,
   type SourceAdd,
   type SourceFields,
   type SourceKind,
@@ -331,6 +332,7 @@ export {
   type WriteStatus,
 } from "./write/request.ts";
 export { canonicalJson, isJsonData } from "./write/canonical.ts";
+export { readSpacePreference, readSpacePreferences, storedPreference } from "./preferences.ts";
 export {
   FOCUS_MS,
   isLaunchRef,
@@ -352,8 +354,6 @@ export {
   type ReceiptLookup,
 } from "./write/receipts.ts";
 export {
-  DEFAULT_EFFORTS,
-  DEFAULT_STATUSES,
   MACHINE_OS,
   readAsOf,
   SpaceWriter,

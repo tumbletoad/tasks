@@ -13,12 +13,19 @@ import {
   formatTaskRef,
   isId,
   RECEIPT_SQL,
+  storedPreference,
   type Receipt,
   type ReceiptLookup,
   type Row,
   type WorkerConnection,
 } from "@tasks/storage";
-import { AppError } from "@tasks/contracts";
+import {
+  AppError,
+  PREFERENCES,
+  preferenceValue,
+  readPreference,
+  type PreferenceRead,
+} from "@tasks/contracts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
 interface Statement {
@@ -592,11 +599,11 @@ export async function readTaskRef(
 // Status
 
 const STATUS_ORDER: Statement = {
-  sql: "SELECT value FROM preferences WHERE key = 'tasks.statuses'",
+  sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.statuses'",
   mode: "get",
 };
 const AUTONOMY: Statement = {
-  sql: "SELECT value FROM preferences WHERE key = 'autonomy.level'",
+  sql: "SELECT value, schema_ver FROM preferences WHERE key = 'autonomy.level'",
   mode: "get",
 };
 const COUNTS: Statement = {
@@ -716,34 +723,25 @@ export async function readPlacedAny(
   return placed as Row[];
 }
 
-export const DEFAULT_STATUS_ORDER = ["open", "waiting", "review", "backlog"] as const;
+/** A preference's row as a read returned it, for the registry (A1 3.16). */
+const storedOf = (row: unknown) => storedPreference(isPlain(row) ? row : undefined);
 
-/** The keys of a list preference's stored value (A1 3.16), or `fallback`. */
-export function keysOf(value: unknown, fallback: readonly string[]): string[] {
-  if (typeof value !== "string") return [...fallback];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [...fallback];
-    const keys = parsed.map((item: unknown) =>
-      typeof item === "string"
-        ? item
-        : typeof item === "object" && item !== null && "key" in item
-          ? String(item.key)
-          : "",
-    );
-    return keys.every((k) => k !== "") && keys.length > 0 ? keys : [...fallback];
-  } catch {
-    return [...fallback];
-  }
+/**
+ * The keys of `tasks.statuses` or `tasks.effort_scale` from its row (`value`, `schema_ver`): the
+ * stored list when it fits its declared shape, else the default (A1 3.16).
+ */
+export function keysOf(key: "tasks.statuses" | "tasks.effort_scale", row: unknown): string[] {
+  const { value } = readPreference(key, storedOf(row));
+  return Array.isArray(value)
+    ? value.map((item: unknown) =>
+        typeof item === "string" ? item : String((item as { key?: unknown }).key),
+      )
+    : [];
 }
 
-function levelOf(value: unknown): "full" | "review" | "suggest" {
-  try {
-    const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : undefined;
-    return parsed === "full" || parsed === "suggest" ? parsed : "review";
-  } catch {
-    return "review";
-  }
+function levelOf(row: unknown): "full" | "review" | "suggest" {
+  const { value } = readPreference("autonomy.level", storedOf(row));
+  return value === "full" || value === "suggest" ? value : "review";
 }
 
 /** space.status for a connection that is not bound (A3 3.4.2). */
@@ -800,7 +798,7 @@ export async function readStatus(
   const byStatus = new Map(
     (counts as Row[]).map((row) => [String(row["status"]), Number(row["n"])] as const),
   );
-  const keys = keysOf((order as Row | null)?.["value"], DEFAULT_STATUS_ORDER);
+  const keys = keysOf("tasks.statuses", order);
   for (const key of byStatus.keys()) if (!keys.includes(key)) keys.push(key);
   // A task appears once, in its first section (A3 3.4.2).
   const shown = new Set<unknown>();
@@ -812,7 +810,7 @@ export async function readStatus(
   });
   return {
     space: facts,
-    autonomy: levelOf((autonomy as Row | null)?.["value"]),
+    autonomy: levelOf(autonomy),
     statuses: keys.map((status) => ({ status, count: byStatus.get(status) ?? 0 })),
     inbox: Number((inbox as Row | null)?.["n"] ?? 0),
     sections,
@@ -1181,22 +1179,29 @@ export async function readSiblings(
 // ---------------------------------------------------------------------------------------------
 // Preferences (A1 3.16, A3 3.4.11)
 
-const PREFERENCE_VALUES: Statement = {
-  sql: "SELECT key, value FROM preferences WHERE key IN (SELECT value FROM json_each($keys))",
-  mode: "all",
-};
+/** Every preferences row: unknown keys are skipped by the readers, never dropped from the table. */
+export const PREFERENCE_ROWS = "SELECT key, value, schema_ver FROM preferences";
 
-/** The stored values of `keys`, as JSON text by key, with the space's facts, in one snapshot. */
-export async function readPreferences(
+/** Every space preference and flag the registry declares, in its order, from the stored rows. */
+export function spacePreferencesOf(rows: readonly Row[]): PreferenceRead[] {
+  const byKey = new Map<string, Row>();
+  for (const row of rows) if (typeof row["key"] === "string") byKey.set(row["key"], row);
+  return PREFERENCES.filter((spec) => spec.scope === "space").map((spec) =>
+    preferenceValue(spec, storedPreference(byKey.get(spec.key))),
+  );
+}
+
+/**
+ * Every space preference as the registry reads it (`spacePreferencesOf`: the value when it fits
+ * its shape, else the default), with the space's facts, in one snapshot: the `preferences` tool.
+ */
+export async function readSpacePreferences(
   reader: WorkerConnection,
-  keys: readonly string[],
-): Promise<{ space: SpaceFacts; values: Map<string, string> }> {
-  const [space, rows] = await snapshot(reader, [SPACE, PREFERENCE_VALUES], {
-    keys: JSON.stringify(keys),
-  });
+): Promise<{ space: SpaceFacts; reads: Map<string, PreferenceRead> }> {
+  const [space, rows] = await snapshot(reader, [SPACE, { sql: PREFERENCE_ROWS, mode: "all" }]);
   return {
     space: spaceFacts(space),
-    values: new Map((rows as Row[]).map((row) => [text(row["key"]), text(row["value"])])),
+    reads: new Map(spacePreferencesOf(rows as Row[]).map((read) => [read.key, read])),
   };
 }
 
