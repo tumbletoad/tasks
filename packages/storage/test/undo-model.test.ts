@@ -4,7 +4,9 @@
 // undoes (now and then partially) and redoes. Values come from small sets, so an agent often sets a
 // field back to the very value a human wrote: an undo must still refuse it (R2, provenance never
 // equality). A human's create is undone by a tombstone, which every later write of another keeps
-// away, and a write to a tombstoned task is refused.
+// away, and a write to a tombstoned task is refused. The person also runs tasks (A4 3.11): a run's
+// commits never join a stack and never end a redo, a run keeps its task's create from being undone
+// (A1 3.10), and a tombstoned task takes no run.
 //
 // A small reference model predicts every outcome from A1 3.10 and 3.10.1's rules alone: which
 // commit an undo or redo takes from whose stack, which of its rows pass their provenance guard,
@@ -89,6 +91,11 @@ type Step =
     }
   | { kind: "undo"; who: number; partial: boolean }
   | { kind: "redo"; who: number }
+  /**
+   * The first human runs one of the two newest tasks (`newest` back from the last), which those
+   * humans most often created, and the run then moves `moves` times: never on a stack.
+   */
+  | { kind: "run"; newest: number; moves: number }
   /** An undo and a redo of the same human, `times` in a row. */
   | { kind: "cycle"; who: number; partial: boolean; times: number };
 
@@ -145,6 +152,14 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("redo" as const), who: human }), weight: 3 },
   {
     arbitrary: fc.record({
+      kind: fc.constant("run" as const),
+      newest: fc.nat({ max: 1 }),
+      moves: fc.nat({ max: 2 }),
+    }),
+    weight: 1,
+  },
+  {
+    arbitrary: fc.record({
       kind: fc.constant("cycle" as const),
       who: human,
       partial: fc.boolean(),
@@ -171,7 +186,8 @@ function expand(s: Step): Step[] {
   return [s];
 }
 
-const key = (task: number, field: Field): string => `${String(task)}|${field}`;
+/** A cell, or with `runs` what keeps a create from being undone: one of the task's runs. */
+const key = (task: number, field: Field | "runs"): string => `${String(task)}|${field}`;
 
 const START: Readonly<Record<Field, string>> = {
   summary: "",
@@ -186,6 +202,8 @@ const START: Readonly<Record<Field, string>> = {
 class Model {
   cells = new Map<string, Cell>();
   commits = new Map<number, ModelCommit>();
+  /** How many runs each task has: a run is never removed. */
+  runs = new Map<number, number>();
   tasks = 0;
   lastSeq: number;
 
@@ -220,6 +238,12 @@ class Model {
     this.commits.set(seq, commit);
     this.lastSeq = seq;
     return commit;
+  }
+
+  /** A run's commit (its create when `task` is given, else a move): on no stack, no cell. */
+  run(task?: number): ModelCommit {
+    if (task !== undefined) this.runs.set(task, (this.runs.get(task) ?? 0) + 1);
+    return this.#stack(this.lastSeq + 1, null, []);
   }
 
   /** Tasks made by one commit, `owner`'s when a human made it. */
@@ -304,11 +328,15 @@ class Model {
 
   /**
    * The fields that keep a row from being inverted: a set row's own field unless it holds the
-   * row's write; for a create row, each field of its task that holds another's write.
+   * row's write; for a create row, each field of its task that holds another's write, and each of
+   * the task's runs (`runs`), which are always another commit's.
    */
-  blocking(row: ModelChange): Field[] {
+  blocking(row: ModelChange): (Field | "runs")[] {
     if (row.create === true) {
-      return FIELDS.filter((f) => this.cell(row.task, f).fp !== row.afterProv);
+      return [
+        ...FIELDS.filter((f) => this.cell(row.task, f).fp !== row.afterProv),
+        ...Array.from({ length: this.runs.get(row.task) ?? 0 }, () => "runs" as const),
+      ];
     }
     return this.cell(row.task, row.field).fp === row.afterProv ? [] : [row.field];
   }
@@ -459,9 +487,18 @@ async function secondHuman(fx: Fixture): Promise<Credential> {
   return { ...fx.human, principal_id: id, scope_id: "cli:partner" };
 }
 
-/** The keys of the conflicts a result names, by task index. */
-const named = (ids: readonly Id<"t">[], conflicts: readonly { id: string; field: string }[]) =>
-  conflicts.map((c) => `${String(ids.indexOf(c.id as Id<"t">))}|${c.field}`).sort();
+/** The keys of the conflicts a result names, by task index: a run by its task's, as `runs`. */
+const named = (
+  ids: readonly Id<"t">[],
+  conflicts: readonly { entity: string; id: string; task?: string; field: string }[],
+) =>
+  conflicts
+    .map((c) =>
+      c.entity === "runs"
+        ? `${String(ids.indexOf(c.task as Id<"t">))}|runs`
+        : `${String(ids.indexOf(c.id as Id<"t">))}|${c.field}`,
+    )
+    .sort();
 
 const property = (seen: Seen) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 50 }), async (generated) => {
@@ -499,6 +536,55 @@ const property = (seen: Seen) =>
           expect(result.status, JSON.stringify(result.error)).toBe("applied");
           ids.push(id);
           model.create(1, isHuman(s.actor) ? s.actor : null);
+        } else if (s.kind === "run") {
+          // The execution store's requests: the person's, never undoable (A1 3.6).
+          const task = Math.max(0, ids.length - 1 - s.newest);
+          const id = ids[task] as Id<"t">;
+          const created = fx.writer.submit(
+            fx.request(fx.human, [
+              {
+                kind: "run.create",
+                task: id,
+                instance: "codex-work",
+                adapter: "codex-exec",
+                place: null,
+                request: "Fixture instruction.",
+                brief_hash: "a1b2c3d4".repeat(8),
+                permission: "full-access",
+                limits: { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 },
+              },
+            ]),
+          );
+          if (model.deleted(task)) {
+            expect(created.error?.code).toBe("DELETED");
+            count(seen, "run refused on a tombstone");
+          } else {
+            expect(created.status, JSON.stringify(created.error)).toBe("applied");
+            model.run(task);
+            count(seen, "run");
+            const run = created.results[0]?.id as Id<"ru">;
+            const states = ["queued", "starting", "running"] as const;
+            for (let m = 0; m < s.moves; m += 1) {
+              const version = Number(
+                fx.reader.prepare("SELECT version FROM runs WHERE id = $run").get({ run })?.[
+                  "version"
+                ],
+              );
+              const moved = fx.writer.submit(
+                fx.request(fx.human, [
+                  {
+                    kind: "run.transition",
+                    run,
+                    expect: states[m] ?? "queued",
+                    expect_version: version,
+                    next: states[m + 1] ?? "starting",
+                  },
+                ]),
+              );
+              expect(moved.status, JSON.stringify(moved.error)).toBe("applied");
+              model.run();
+            }
+          }
         } else if (s.kind === "aba") {
           // A task the commit wrote or created, and the field it wrote when that is patchable.
           const rows =
@@ -572,6 +658,7 @@ const property = (seen: Seen) =>
           } else {
             const guard = model.failing(target.rows, false);
             const creates = target.rows.some((r) => r.create === true);
+            if (guard.named.some((k) => k.endsWith("|runs"))) count(seen, "create kept by a run");
             if (guard.failed.size > 0 && !s.partial) {
               expect(result.status).toBe("conflict");
               expect(result.error?.code).toBe("UNDO_CONFLICT");
@@ -679,6 +766,8 @@ describe("[A1.5.history.property] undo and redo against a reference model", () =
       "create redone",
       "create kept",
       "write refused on a tombstone",
+      "run",
+      "create kept by a run",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }

@@ -39,7 +39,8 @@ import { openReader } from "../src/open.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
 import { SPACE_ROW_MAX_BYTES, unpackBackup } from "../src/restore/unpack.ts";
-import { openSpace } from "../src/space.ts";
+import { encodeRevision } from "../src/schema.ts";
+import { LATEST_REVISION, openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { STEPS_0_1 } from "./revisions.ts";
@@ -450,7 +451,8 @@ describe("[A1.5.bundle.export-restore] export bundles restore as read-only copie
       epoch: 1,
       incarnation: space.authority.incarnation,
       seq: 5,
-      user_version: 2,
+      // This build's revision: the fixture space is created at it.
+      user_version: encodeRevision(LATEST_REVISION),
       created_at: at,
     });
     expect(bundle.sha256).toBe(sha(readFileSync(bundle.file)));
@@ -1200,7 +1202,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     );
   });
 
-  test("a space at a revision with the search tables (a stand-in for schema 0.3) backs up, exports, verifies and restores; a table under the FTS table's prefix is refused", async () => {
+  test("a space at a revision with the search tables (a stand-in for the step that adds them) backs up, exports, verifies and restores; a table under the FTS table's prefix is refused", async () => {
     const checked = await checkedDriver();
     const steps = STEPS_SEARCH;
     const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
@@ -1216,7 +1218,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
         {},
         { steps },
       );
-      expect(restored.revision, file).toEqual({ major: 0, minor: 3 });
+      expect(restored.revision, file).toEqual({ major: 0, minor: 4 });
       expect(restored.space.lastSeq, file).toBe(3);
     }
     const listed = listBackups(join(folder, "backups")).backups[0];

@@ -51,16 +51,18 @@ export type PatchableField = (typeof PATCHABLE_FIELDS)[number];
  * The logical fields of the rows other than tasks that an operation of this build changes after
  * their create (A1 3.4): a link's one field `removed` (a revival clears it), a place's folder,
  * which `place.set` binds as a unit, a launch's `state`, which `launch.transition` writes as a
- * unit with its reason, its evidence and the time (A4 3.9), a learning's tombstone, which a
- * wrap-up sets when it removes the learning (A1 3.11.2), the tombstone `deleted` of notes,
- * log entries and sources, which undo writes when it inverts their create (A1 3.10), and a
- * preference's `value` (A1 3.16, `pref.set`). Later steps add the fields their operations change
- * (`note.patch`, `source.patch`, the deletes).
+ * unit with its reason, its evidence and the time (A4 3.9), a run's `state`, which
+ * `run.transition` writes as a unit with its reason, evidence, times and result (A4 3.11.2), a
+ * learning's tombstone, which a wrap-up sets when it removes the learning (A1 3.11.2), the
+ * tombstone `deleted` of notes, log entries and sources, which undo writes when it inverts their
+ * create (A1 3.10), and a preference's `value` (A1 3.16, `pref.set`). Later steps add the fields
+ * their operations change (`note.patch`, `source.patch`, the deletes).
  */
 export const CHILD_FIELDS = {
   task_sources: { removed: ["removed_at"] },
   places: { folder: ["root_id", "rel_path", "kind", "identity"], deleted: ["deleted_at"] },
   launches: { state: ["state", "reason", "detail", "updated_at"] },
+  runs: { state: ["state", "reason", "detail", "result", "started_at", "ended_at"] },
   learnings: { deleted: ["deleted_at"] },
   notes: { deleted: ["deleted_at"] },
   log_entries: { deleted: ["deleted_at"] },

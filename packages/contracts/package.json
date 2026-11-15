@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./preferences": "./src/preferences.ts",
+    "./runs": "./src/runs.ts",
     "./generated/client.ts": "./generated/client.ts",
     "./generated/http-routes.ts": "./generated/http-routes.ts",
     "./generated/*.json": "./generated/*.json"

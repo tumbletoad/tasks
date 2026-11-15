@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import { APP_NAME, CLI_NAME, httpHeader, PRODUCT_ID } from "@tasks/brand";
+import { metaContent, startTags } from "./tags.ts";
 
 /** Where a built `index.html` takes the per-response style nonce. */
 export const NONCE_PLACEHOLDER = "__TASKS_NONCE__";
@@ -157,16 +158,12 @@ export class UiFolderInvalid extends Error {}
 /** Where a built `index.html` takes the build of the service that serves it (`Tasks-Build`). */
 export const BUILD_PLACEHOLDER = "__TASKS_BUILD__";
 
-const attributesOf = (tag: string): Map<string, string> =>
-  new Map(
-    [...tag.matchAll(/\s([a-z][a-z-]*)(?:="([^"]*)")?/g)].map((m) => [m[1] ?? "", m[2] ?? ""]),
-  );
-
 /**
  * What is wrong with a built `index.html` against its files (A2 3.8.3 "Asset integrity", A5
  * 3.26): every script is a file of the bundle with the integrity hash of its bytes, and so is every
- * stylesheet and module preload; no inline script, and no inline style without the nonce. One
- * line per problem; none means the page loads nothing the CSP and SRI do not cover.
+ * stylesheet and module preload; no inline script, and no inline style without the nonce; the
+ * nonce's meta tag, as a browser reads it. One line per problem; none means the page loads nothing
+ * the CSP and SRI do not cover. The tags are read by tags.ts, as doctor's self-test reads them.
  */
 export function indexProblems(index: string, files: ReadonlyMap<string, UiFile>): string[] {
   const problems: string[] = [];
@@ -176,24 +173,21 @@ export function indexProblems(index: string, files: ReadonlyMap<string, UiFile>)
     else if (sri !== integrity(file.body))
       problems.push(`${what} ${url ?? ""} has no valid integrity`);
   };
-  for (const [tag] of index.matchAll(/<script\b[^>]*>/gi)) {
-    const attrs = attributesOf(tag);
-    if (!attrs.has("src")) problems.push("an inline script");
-    else hashed("a script", attrs.get("src"), attrs.get("integrity"));
-  }
-  for (const [tag] of index.matchAll(/<link\b[^>]*>/gi)) {
-    const attrs = attributesOf(tag);
-    const rel = (attrs.get("rel") ?? "").toLowerCase().split(/\s+/);
-    if (rel.includes("stylesheet") || rel.includes("modulepreload") || rel.includes("preload")) {
-      hashed(`a ${rel.join(" ")} link`, attrs.get("href"), attrs.get("integrity"));
+  const tags = startTags(index);
+  for (const { name, attributes: attrs } of tags) {
+    if (name === "script") {
+      if (!attrs.has("src")) problems.push("an inline script");
+      else hashed("a script", attrs.get("src"), attrs.get("integrity"));
+    } else if (name === "link") {
+      const rel = (attrs.get("rel") ?? "").toLowerCase().split(/\s+/);
+      if (rel.includes("stylesheet") || rel.includes("modulepreload") || rel.includes("preload")) {
+        hashed(`a ${rel.join(" ")} link`, attrs.get("href"), attrs.get("integrity"));
+      }
+    } else if (name === "style" && attrs.get("nonce") !== NONCE_PLACEHOLDER) {
+      problems.push("a style without nonce");
     }
   }
-  for (const [tag] of index.matchAll(/<style\b[^>]*>/gi)) {
-    if (attributesOf(tag).get("nonce") !== NONCE_PLACEHOLDER)
-      problems.push("a style without nonce");
-  }
-  const meta = [...index.matchAll(/<meta\b[^>]*>/gi)].map(([tag]) => attributesOf(tag));
-  if (!meta.some((m) => m.get("name") === "csp-nonce" && m.get("content") === NONCE_PLACEHOLDER)) {
+  if (metaContent(index, "csp-nonce") !== NONCE_PLACEHOLDER) {
     problems.push("no csp-nonce meta tag");
   }
   return problems;

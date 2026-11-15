@@ -81,6 +81,19 @@ import {
 import { canonicalJson } from "./canonical.ts";
 import { isPosition, positionBetween } from "./positions.ts";
 import {
+  decodeRun,
+  FINAL_RUN_STATES,
+  readOpenRuns,
+  readRun,
+  RUN_EDGES,
+  RUN_REASONS,
+  RUN_SQL,
+  runDetailText,
+  sortedJson,
+  type RunRow,
+  type RunState,
+} from "./runs.ts";
+import {
   readReceipt,
   readReceipts,
   requestFingerprint,
@@ -229,6 +242,7 @@ type Entity =
   | "task_sources"
   | "places"
   | "launches"
+  | "runs"
   | "learnings"
   | "preferences";
 
@@ -265,6 +279,7 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
       : entity === "task_sources" ||
           entity === "places" ||
           entity === "launches" ||
+          entity === "runs" ||
           entity === "learnings" ||
           entity === "preferences"
         ? CHILD_FIELDS[entity]
@@ -332,6 +347,8 @@ interface StagedOp {
    * on the same task and instance is in flight, which the operation returns instead (A4 3.9.1).
    */
   launch?: { task: Id<"t">; reference: string; existing: boolean };
+  /** `run.create`: the resolved task, or null for a routine's run. */
+  runTask?: Id<"t"> | null;
   /**
    * A draft that matched a task by source key (with its match), or a later operation of such a
    * draft that the rebinding rules leave out (A1 3.6): it writes nothing, its target is the
@@ -657,6 +674,7 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
       sources: SQL.source,
       places: SQL.place,
       launches: LAUNCH_SQL.launch,
+      runs: RUN_SQL.run,
       learnings: SQL.learning,
       preferences: SQL.preferenceRow,
     }[entity];
@@ -679,6 +697,8 @@ function setVersions(
   else if (row.entity === "places") conn.prepare(SQL.placeVersions).run({ ...maps, id: row.id });
   else if (row.entity === "launches") {
     conn.prepare(LAUNCH_SQL.versions).run({ ...maps, id: row.id });
+  } else if (row.entity === "runs") {
+    conn.prepare(RUN_SQL.versions).run({ ...maps, id: row.id });
   } else if (row.entity === "learnings") {
     conn.prepare(SQL.learningVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "preferences") {
@@ -909,6 +929,18 @@ export class SpaceWriter {
     return conn.transaction("deferred", () => readOpenLaunches(conn, machine));
   }
 
+  /** A run record as it is now (A4 3.16.1), or undefined: the execution store's read. */
+  run(id: string): RunRow | undefined {
+    const conn = this.#usable();
+    return conn.transaction("deferred", () => readRun(conn, id));
+  }
+
+  /** Every run of `machine` that is not final, oldest first: `openWork` (A4 3.11.9, 3.16.1). */
+  openRuns(machine: string): RunRow[] {
+    const conn = this.#usable();
+    return conn.transaction("deferred", () => readOpenRuns(conn, machine));
+  }
+
   /**
    * Decides one request. Every outcome the write path decides comes back as a result: applied,
    * unchanged, conflict or rejected, or the stored result of an earlier decision, marked
@@ -1058,6 +1090,8 @@ export class SpaceWriter {
     const clearedPlaces = new Set<string>();
     /** Launches that earlier operations create, by task and instance, and their references. */
     const draftLaunches = new Map<string, Id<"la">>();
+    /** Runs that earlier operations create. */
+    const draftRuns = new Set<Id<"ru">>();
     const draftRefs = new Set<string>();
     const statuses = listPreference(conn, "tasks.statuses");
     const efforts = listPreference(conn, "tasks.effort_scale");
@@ -1644,6 +1678,73 @@ export class SpaceWriter {
           }
           return { i, op, target: op.launch, task: null, touches: [], record: inputOf(op) };
         }
+        case "run.create": {
+          // A run is not a child of its task, as a launch is not (runs.ts): its rows carry no task.
+          const parent = op.task === undefined ? null : task(op.task, "task");
+          const machine = request.actor.machine_id;
+          if (conn.prepare(SQL.machine).get({ id: machine }) === undefined) {
+            problem(
+              "VALIDATION_FAILED",
+              "The request's machine has no record in this space",
+              i,
+              "actor.machine_id",
+            );
+          }
+          if (op.place !== null) {
+            const place = conn.prepare(RUN_SQL.place).get({ id: op.place });
+            if (place === undefined) problem("NOT_FOUND", "No place has this ID", i, "place");
+            if (place["deleted_at"] !== null) {
+              problem("DELETED", "The place is removed", i, "place");
+            }
+            if (place["machine_id"] !== machine) {
+              problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
+            }
+          }
+          const id = newId("ru", random);
+          draftRuns.add(id);
+          const record = { ...(parent === null ? {} : { task: parent }), ...inputOf(op, "task") };
+          return { i, op, target: id, task: null, touches: [], record, runTask: parent };
+        }
+        case "run.transition": {
+          // As a launch's: the compare-and-set and the evidence rule run on the live row.
+          if (!draftRuns.has(op.run)) {
+            const row = conn.prepare(RUN_SQL.run).get({ id: op.run });
+            if (row === undefined) return problem("NOT_FOUND", "No run has this ID", i, "run");
+            if (row["machine_id"] !== request.actor.machine_id) {
+              problem(
+                "VALIDATION_FAILED",
+                "A run moves only on the machine that runs it",
+                i,
+                "run",
+              );
+            }
+            starts.set(rowKey("runs", op.run), rowState("runs", row, CHILD_FIELDS.runs));
+          }
+          if (!RUN_EDGES[op.expect].includes(op.next)) {
+            problem("VALIDATION_FAILED", "Not a transition of the run state machine", i, "next");
+          }
+          const entering = op.next !== op.expect;
+          const reasons = RUN_REASONS[op.next];
+          const needsReason = entering && reasons !== undefined;
+          if (needsReason !== (op.reason !== undefined)) {
+            problem(
+              "VALIDATION_FAILED",
+              needsReason
+                ? "Entering this state takes a reason code"
+                : "Only entering failed, timed_out or unknown takes a reason code",
+              i,
+              "reason",
+            );
+          }
+          if (needsReason && !reasons.includes(op.reason ?? "")) {
+            problem("VALIDATION_FAILED", "Not a reason code of that state", i, "reason");
+          }
+          const final = (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
+          if (op.result !== undefined && !(entering && final)) {
+            problem("VALIDATION_FAILED", "A result goes in entering a final state", i, "result");
+          }
+          return { i, op, target: op.run, task: null, touches: [], record: inputOf(op) };
+        }
         case "pref.set": {
           // Who may write the key is decided here, so the refusal has its receipt (A3 3.8.3
           // step 4). The admin scope a policy key also needs is the caller's check (A6 3.6.3).
@@ -1745,8 +1846,8 @@ export class SpaceWriter {
         if (this.#search) indexChanges(conn, seq, changes);
         const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
         for (const id of tasks) conn.prepare(SQL.outbox).run({ key: id, seq });
-        // The projection renders tasks and their children. Launch records are not among them.
-        if (changes.some((c) => c.entity !== "launches")) {
+        // The projection renders tasks and their children. Launch and run records are not.
+        if (changes.some((c) => c.entity !== "launches" && c.entity !== "runs")) {
           conn.prepare(SQL.outbox).run({ key: "*", seq });
         }
         if (request.undoable === true) {
@@ -2061,6 +2162,16 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           status,
           id: staged.target,
           version: new RowReader("launches", launch).int("version", "seq"),
+        };
+      }
+      case "run.create":
+      case "run.transition": {
+        const row = readRow(conn, "runs", staged.target);
+        return {
+          i,
+          status,
+          id: staged.target,
+          version: new RowReader("runs", row).int("version", "seq"),
         };
       }
       case "pref.set": {
@@ -2915,6 +3026,77 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         at: run.at,
       });
       wrote(run, i, "launches", staged.target, null, ["state"]);
+      return;
+    }
+    case "run.create": {
+      conn.prepare(RUN_SQL.insert).run({
+        id: staged.target,
+        task: staged.runTask ?? null,
+        routine: op.routine ?? null,
+        session: op.session ?? null,
+        instance: op.instance,
+        machine: actor.machine_id,
+        adapter: op.adapter,
+        place: op.place,
+        request: op.request ?? null,
+        spec: sortedJson({
+          brief_hash: op.brief_hash,
+          permission: op.permission,
+          limits: op.limits,
+        }),
+        // The time of each state is the wall clock's (Plan.wall), as a launch's.
+        detail: runDetailText({ evidence: {}, at: { queued: run.plan.wall } }),
+        at: run.plan.wall,
+        seq: run.seq,
+      });
+      wrote(run, i, "runs", staged.target, null, null);
+      return;
+    }
+    case "run.transition": {
+      // One compare-and-set (A4 3.11.2, 3.16.1): the run moves only from the record the caller saw.
+      const current = decodeRun(readRow(conn, "runs", staged.target));
+      if (current.state !== op.expect) {
+        problem("INVALID_TRANSITION", "The run moved on: read it again", i, "expect");
+      }
+      if (current.version !== op.expect_version) {
+        problem("INVALID_TRANSITION", "The run changed: read it again", i, "expect_version");
+      }
+      // Evidence only grows: a key the record holds keeps its value, so a claim is recorded once.
+      const held = current.evidence;
+      const incoming = op.evidence ?? {};
+      for (const [key, value] of Object.entries(incoming)) {
+        if (Object.hasOwn(held, key) && held[key] !== value) {
+          problem("INVALID_TRANSITION", "The run holds other evidence", i, `evidence.${key}`);
+        }
+      }
+      // A result goes in once: a run settled from unknown keeps the result it already has.
+      if (op.result !== undefined && current.result !== null) {
+        problem("INVALID_TRANSITION", "The run holds its result", i, "result");
+      }
+      const entering = op.next !== current.state;
+      const grows = Object.keys(incoming).some((key) => !Object.hasOwn(held, key));
+      if (!entering && !grows) return;
+      const wall = run.plan.wall;
+      const final = (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
+      conn.prepare(RUN_SQL.update).run({
+        id: staged.target,
+        state: op.next,
+        reason: entering ? (op.reason ?? null) : current.reason,
+        detail: runDetailText({
+          evidence: { ...held, ...incoming },
+          at: entering ? { ...current.at, [op.next]: wall } : current.at,
+        }),
+        result:
+          op.result === undefined
+            ? current.result === null
+              ? "{}"
+              : sortedJson(current.result)
+            : sortedJson(op.result),
+        started_at:
+          entering && op.next === "running" ? (current.started_at ?? wall) : current.started_at,
+        ended_at: entering && final ? wall : current.ended_at,
+      });
+      wrote(run, i, "runs", staged.target, null, ["state"]);
       return;
     }
     case "pref.set": {
