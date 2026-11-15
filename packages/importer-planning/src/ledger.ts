@@ -50,7 +50,8 @@ export interface LedgerTask {
   readonly added?: AddedClause;
   /** DONE.md only. */
   readonly completion?: DoneClause;
-  /** The body's `Next:` clause up to the end of its sentence, when there is one. */
+  /** The body's `Next:` clause as the page reads it, when there is one: up to ` Refs:`,
+   * ` (added` or the end of the line, trimmed. */
   readonly next?: string;
 }
 
@@ -66,12 +67,10 @@ const MARKER = /<!-- task:([a-z0-9_-]+) -->/;
 const MARKERS = /<!-- task:[a-z0-9_-]+ -->/g;
 const ADDED = /\(added (\d{4}-\d{2}-\d{2}), ([^()]*)\)/;
 const DONE_OPEN = /\(done (\d{4}-\d{2}-\d{2}); /g;
-// The clause ends at the first dot before whitespace or the end, or before an `(added` or `(done`
-// clause. Each lookahead reads a fixed number of characters, so the match stays linear.
-const NEXT = new RegExp(
-  `(?:^|[${PY_SPACE}])Next:[${PY_SPACE}]?(.*?)` +
-    `(?:\\.(?=[${PY_SPACE}]|$)|(?=[${PY_SPACE}]\\((?:added|done) \\d{4}-)|$)`,
-);
+// The page's own rule: the clause runs from the first `Next:` up to ` Refs:`, ` (added` or the end
+// of the line, dots included. Each lookahead reads a fixed number of characters, so the match from
+// the first `Next:` stays linear.
+const NEXT = /Next:\s*(.*?)(?=\sRefs:|\s\(added|$)/;
 
 /** Parses one ledger. A missing file gives no tasks and `file-missing`. */
 export function parseLedger(

@@ -82,6 +82,83 @@ export async function readSpace(reader: WorkerConnection): Promise<SpaceFacts> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// What an import plan meets in the space (A7 3.15.4)
+
+/** The values an import plan names, each list sent as one JSON array. */
+export interface ImportNames {
+  readonly aliases: readonly string[];
+  readonly keys: readonly string[];
+  readonly areas: readonly string[];
+}
+
+export interface ImportRows {
+  readonly spaceId: string;
+  readonly epoch: number;
+  readonly incarnation: string;
+  readonly refPrefix: string;
+  readonly nextRef: number;
+  readonly aliases: { alias: string; task: string; version: number }[];
+  readonly sources: { key: string; id: string; version: number }[];
+  readonly areas: { slug: string; id: string; version: number }[];
+  readonly projects: { slug: string; id: string; version: number; area: string | null }[];
+}
+
+const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
+const IMPORT_READS: readonly Statement[] = [
+  SPACE,
+  {
+    sql:
+      "SELECT a.alias, t.id AS task, t.version FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
+      `WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND a.alias ${IN("$aliases")}`,
+    mode: "all",
+  },
+  {
+    sql: `SELECT source_key AS key, id, version FROM sources WHERE deleted_at IS NULL AND source_key ${IN("$keys")}`,
+    mode: "all",
+  },
+  {
+    sql: `SELECT slug, id, version FROM areas WHERE deleted_at IS NULL AND slug ${IN("$areas")}`,
+    mode: "all",
+  },
+  {
+    // Every live project with its live area's slug: a project slug is unique in the space, so a
+    // planned project's slug depends on the slugs of other areas' projects too (placeProjects).
+    sql:
+      "SELECT p.slug, p.id, p.version, a.slug AS area FROM projects p " +
+      "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
+    mode: "all",
+  },
+];
+
+/**
+ * The rows an import plan meets, in one snapshot: the space's authority and next reference, the
+ * tasks that hold its legacy IDs as planning aliases, the live sources and areas with its keys and
+ * slugs, and every live project, each with its version.
+ */
+export async function readImportRows(
+  reader: WorkerConnection,
+  names: ImportNames,
+): Promise<ImportRows> {
+  const [row, aliases, sources, areas, projects] = await snapshot(reader, IMPORT_READS, {
+    aliases: JSON.stringify(names.aliases),
+    keys: JSON.stringify(names.keys),
+    areas: JSON.stringify(names.areas),
+  });
+  const space = decodeSpaceRow(row as Row);
+  return {
+    spaceId: space.spaceId,
+    epoch: space.authority.epoch,
+    incarnation: space.authority.incarnation,
+    refPrefix: space.refPrefix,
+    nextRef: space.nextRef,
+    aliases: aliases as ImportRows["aliases"],
+    sources: sources as ImportRows["sources"],
+    areas: areas as ImportRows["areas"],
+    projects: projects as ImportRows["projects"],
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Tasks
 
 /** A task reference as A1 3.3 resolves it for a read: an ID, a reference, or a legacy alias. */

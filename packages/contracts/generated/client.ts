@@ -23,6 +23,12 @@ export function createClient(transport: ClientTransport) {
       /** Undo your newest change in the space, field by field as long as nobody changed it. */
       undo: (input: InputOf<"history.undo">): Promise<OutputOf<"history.undo">> => call("history.undo", input),
     },
+    import: {
+      planning: {
+        /** Dry run of the Planning prototype import: a report and a preview token. */
+        preview: (input: InputOf<"import.planning.preview">): Promise<OutputOf<"import.planning.preview">> => call("import.planning.preview", input),
+      },
+    },
     launch: {
       /** Open a task in an agent app on this machine, or Copy its pointer brief. */
       open: (input: InputOf<"launch.open">): Promise<OutputOf<"launch.open">> => call("launch.open", input),

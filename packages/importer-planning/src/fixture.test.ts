@@ -48,6 +48,7 @@ interface IndexedTask {
 }
 interface Index {
   counts: Record<string, number>;
+  actions: { file: string; events: number; added: string[] };
   tasks: IndexedTask[];
   cases: Record<string, { description: string; where: Where[] }>;
 }
@@ -307,7 +308,8 @@ describe("[A7.3.15.importer.fixture] the synthetic prototype parses as its index
       const t = taskById(w.task);
       expect(parse.metadata.get(w.task ?? "")?.next).toBeUndefined();
       expect(t?.next).toBeTruthy();
-      expect(t?.body).toContain(`Next: ${t?.next ?? ""}.`);
+      // The page's rule keeps the clause's own dot.
+      expect(t?.body).toContain(`Next: ${t?.next ?? ""} (added`);
     }
     for (const w of where("next-empty")) {
       expect(parse.metadata.get(w.task ?? "")?.next).toBeUndefined();
@@ -382,6 +384,12 @@ describe("[A7.3.15.importer.fixture] the synthetic prototype parses as its index
       for (const t of parse.jira.tickets) expect(t.url).toMatch(new RegExp(`/browse/${t.key}$`));
     }
     for (const w of where("optional-audit")) expect(parse.audit.reviewed).toBe(want(w, "reviewed"));
+    // One ID in both ledgers: the DONE.md line is the task, the TODO.md line is hidden.
+    for (const w of where("in-both-ledgers")) {
+      const hidden = !parse.kept.includes(task(w) as LedgerTask);
+      expect(hidden, w.file).toBe(want(w, "hidden"));
+      expect(hidden).toBe(w.file === "TODO.md");
+    }
     const copied = new Set(copy.files.map((f) => f.path));
     for (const w of where("not-imported")) {
       expect(statSync(join(FIXTURE, ...w.file.split("/"))).isFile()).toBe(true);
@@ -406,6 +414,9 @@ describe("[A7.3.15.importer.fixture] the synthetic prototype parses as its index
       ...where("event-unknown-task").map((w) => `event-unknown-task ${w.file} ${w.task ?? ""}`),
       ...where("metadata-orphan").map((w) => `metadata-orphan ${w.file} ${w.task ?? ""}`),
       ...where("jira-row-without-key").map((w) => `jira-row-without-key ${w.file} `),
+      ...where("in-both-ledgers")
+        .filter((w) => w.file === "TODO.md")
+        .map((w) => `open-copy-hidden ${w.file} ${w.task ?? ""}`),
     ].sort();
     const got = parse.problems.map((p) => `${p.code} ${p.file} ${p.task ?? ""}`).sort();
     expect(got).toEqual(wanted);
@@ -414,6 +425,24 @@ describe("[A7.3.15.importer.fixture] the synthetic prototype parses as its index
     for (const t of parse.tasks) {
       expect(serialised).not.toContain(t.title);
       if (t.body.length > 3) expect(serialised).not.toContain(t.body);
+    }
+  });
+
+  test("the page's actions export adds the browser's own events and the web- event without .ready", async () => {
+    const actions = readFileSync(join(ROOT, ...index.actions.file.split("/")));
+    const read = await readInput(join(work, "input"));
+    const merged = parsePrototype({ ...read.input, actions });
+    expect(merged.events.actions).toEqual({
+      events: index.actions.events,
+      added: index.actions.added.length,
+    });
+    const added = merged.events.applied.filter((e) => e.file === "actions.json");
+    expect(added.map((e) => e.id).sort()).toEqual(index.actions.added);
+    // Every other event of the export is one of events/: nothing new is reported.
+    expect(merged.problems).toEqual(parse.problems);
+    for (const w of index.cases["actions-export"]?.where ?? []) {
+      expect(parse.events.state.get(w.task ?? "")?.check).toBeUndefined();
+      expect(merged.events.state.get(w.task ?? "")?.check?.event).toBe(w.event);
     }
   });
 });
