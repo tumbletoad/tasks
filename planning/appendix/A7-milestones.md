@@ -41,7 +41,7 @@ Examples use the fixture world: Mira Okafor, space "Mira", reference prefix `M`.
 | P14 | Checked-off prototype items | Completed at once with wrap-up pending | D12. In the prototype a check-off is the user's completion signal |
 | P15 | Trial | 10 working days, prototype frozen, one writer. After a blocking fix, 5 clean consecutive days | Two weeks cover a weekly rhythm |
 | P16 | Rollback | Export to the prototype format into a new folder, as an exchange, with the space held read-only while the prototype is the writer (3.15.8, 3.16.4) | Never discard the trial's work. Frozen events must not override the export, and the return must not duplicate tasks |
-| P17 | Real data | Never in the repo, fixtures, PRs, screenshots or reports. The importer, Refresh and the deploy check touch real data only on the machine that holds it (3.4) | AGENTS.md |
+| P17 | Real data | Never in the repo, fixtures, PRs, screenshots or reports. The importer, Refresh and the deploy check touch real data only on its original machine (3.4) | AGENTS.md |
 | P18 | Test installs | `TASKS_HOME` installs on a real Ubuntu 24.04 machine. From the real-use point the first user also runs a daily install on the latest verified build (3.4, 3.6) | The install ID isolates runtime folder, socket, launch folders, unit and port (A2 S28) |
 | P19 | Real-agent tests | By hand on real Windows and Linux machines, never in CI | They cost tokens and need signed-in agent apps |
 | P20 | Backups before real data | The migration runner and A1's minimal backup set ship together (M1.06). An installed-build migration failure and restore drill passes in M1.15, before real tasks go into M2. Bundles, transfer and fork come in M3 | A1 requires a verified backup before every migration |
@@ -140,11 +140,11 @@ The repository's `AGENTS.md` (3.5) owns how implementing agents work. This secti
 - [ ] New dependencies: none | name, version, licence
 ```
 
-**Real data.** Real work data is touched only on the machine that holds it: the deploy check, the real-use import and its re-imports (3.6), and Refresh. Their reports stay in that space. Problems from real use are reported with `tasks doctor --bundle --redact-paths`, which holds no task text (A2 3.13).
+**Real data.** Real work data stays on its original machine and is touched only there: the deploy check, the real-use import and its re-imports (3.6), and Refresh. Their reports stay in that space. Problems from real use are reported with `tasks doctor --bundle --redact-paths`, which holds no task text (A2 3.13).
 
 **Real-machine steps.** Build the archive, copy it to a real Ubuntu 24.04 machine, and install it with the build's install script as a `TASKS_HOME` test install into a root that does not exist yet. Its install ID gives it its own runtime folder, socket, launch folders, unit and port (A2 S28), and it keeps program, command and data under its one root. Run the Verify line there. Afterwards remove the root only when its `install.json` says the installer made it. No sudo, nothing outside the home folder.
 
-**The daily install.** From the real-use point (3.6) the first user also runs a daily install (M1.15), kept on the latest verified build. Each deploy backs up, upgrades (migrations run only after a verified backup), then checks that the space opens, the main views load, search works and Open works. Before the first build with a new migration step is deployed, the installed-build migration drill (3.10) runs against that build on the same OS, because its first writer migrates the real spaces. A break is fixed before any other work.
+**The daily install.** From the real-use point (3.6) the first user also runs a daily install (M1.15), kept on the latest verified build. Each deploy backs up, upgrades (migrations run only after a verified backup), then checks that the space opens, the main views load, search works and Open works. Before the first build with a new migration step is deployed, the installed-build migration drill (3.10) passes against that build on a real machine running the same OS as the daily install, because its first writer migrates the real spaces. A break is fixed before any other work.
 
 ### 3.5 The repository's `AGENTS.md` and `CLAUDE.md`
 
@@ -221,7 +221,7 @@ Session 3 registers the service with the product's own `tasks service install` (
 - R03: one-task patch p95 is 1.02 ms on Windows and 20.1 ms on Linux against 25 ms. The margin is small, so M1.15 measures again on the installed build.
 - R08: `better-sqlite3` 13.0.3 installs for the pinned ABI without a compiler and passes the driver smoke test. The fallback is installable, not the primary: becoming the primary first needs R02's qualification in the packaged build.
 - R09: the per-user install passes only since the Windows installer stopped depending on the console code page (A2 3.12.4).
-- R12: Smart App Control does not block the unsigned launchers on Windows. Authenticode signing stays before the first public Windows build.
+- R12: with Smart App Control Off, the unsigned launchers run on Windows. Authenticode signing stays before the first public Windows build.
 - B02: 53.4 MiB RSS per bridge on Linux against 60 MiB, the closest bridge margin. B06: the slowest warm start is 68.3 ms, so A3's 20 s `startup_timeout_sec` stays.
 - S08: one rename over a running launcher is refused on Windows (A2 3.12.6, M6.12, M6.13).
 - S12: the v1 doctor warning about other accounts (`packages/cli/src/accounts.ts`) has no acknowledgement of a known account yet.
@@ -420,7 +420,7 @@ Go or no-go per required native target and machine is no-go until its route rows
 **Definition of done.**
 1. Every manifest entry owned by M4 passes: A3 section 5 unit, property, crash and binding tests, without the real-run and routine cases that M6 owns.
 2. Evals: scenarios 1, 3, 4 and 5 and the ingestion form of scenario 2 pass in Claude Code and Codex at Full, and scenario 1 also passes at Suggest.
-3. `tasks setup agents --apply` and then `--remove` on the owner's real homes on Windows change only the product's keys, shown by a key-level record. Each preview is shown and saved, with an entry backup, before it applies.
+3. `tasks setup agents --apply` and then `--remove` on real agent homes on Windows, in an attended session (3.7), change only the product's keys, shown by a key-level record. Each preview is shown and saved, with an entry backup, before it applies.
 4. `tasks doctor` is green on Windows and Linux for every registered home.
 5. Definition sizes are reported from the generated definitions, not capped (A3 3.2.5).
 
@@ -801,7 +801,7 @@ All must hold at the end of the trial. A criterion that the active scope profile
 8. **Wrap-up** ran at least once and left every original text intact.
 9. **Operations.** The service survived at least one reboot and one `tasks update` with sessions open.
 10. **Speed.** Today becomes interactive within 800 ms on Linux. The service stays within A2 3.14 at idle.
-11. **Boundaries.** No sudo, no managed policy changed, no work data left the machine that holds it.
+11. **Boundaries.** No sudo, no managed policy changed, no work data left its original machine.
 
 **Trial length.** Ten working days. A blocking failure pauses the trial. After its fix, at least five consecutive clean working days must follow before the gate review. Other defects are filed and fixed without pausing.
 
@@ -1006,7 +1006,7 @@ A required capability of D6, D7 or D8 has no profile. Changing that scope deviat
 | D7 | Contract and migration churn with parallel agents | Medium | Medium | One open migration at a time, additive contract changes (3.4). Schema freeze at M3.01 |
 | D8 | Managed-machine changes: Firefox snap refreshes, the user-namespace restriction, app versions set by the machine's managers | Medium | Medium | Isolated test installs, doctor checks, M0 rows re-run on change |
 | D9 | Connector approvals block Refresh under `codex exec` | Medium | High | N04 early, through the real Refresh path and every read operation. Fallback: read overrides set by the user (agents never change approval settings), re-tested through the same path. A visible-session Refresh needs a recorded change of D8's scope |
-| D10 | The importer meets surprises in real data, which exists only on the first user's own machine | Medium | Medium | A synthetic fixture with every edge case, the dry run, the real-use import and its re-imports long before M7, the rehearsal, the needs-attention list |
+| D10 | The importer meets surprises in real data, which exists only on its original machine | Medium | Medium | A synthetic fixture with every edge case, the dry run, the real-use import and its re-imports long before M7, the rehearsal, the needs-attention list |
 | D11 | Imported source keys differ from the connectors' keys, so the first Refresh duplicates | Medium | Medium | `url:` keys plus A3 3.11.2's possible-duplicate attach. The rehearsal counts duplicates. Connector-style keys only when proven |
 | D12 | Real work data leaks into the repo, fixtures, screenshots or logs | Low | High | `AGENTS.md` rules, the content-free log test, a CI check that fixtures use only fixture names, reports kept in the space |
 | D13 | Windows-only or Linux-only bugs found late | Medium | Medium | Both OSes in CI from the first commit, RM steps on a real Linux machine |

@@ -395,8 +395,8 @@ function pathStarts(bytes: Uint8Array): number[] {
 }
 
 /**
- * The folders inside Drive for desktop's SyncTargets value (A1 3.2). On the Windows reference
- * machine it is a protobuf message: each target holds the account, the virtual drive's letter and
+ * The folders inside Drive for desktop's SyncTargets value (A1 3.2). In the Windows 11 capture
+ * it is a protobuf message: each target holds the account, the virtual drive's letter and
  * the mirror root as length-delimited fields, so each field is read on its own, as UTF-8 or
  * UTF-16. Only drive and UNC paths count.
  *

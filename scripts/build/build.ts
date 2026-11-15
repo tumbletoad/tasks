@@ -315,7 +315,7 @@ export async function buildVersion(options: BuildOptions): Promise<BuildResult> 
       `SHA256SUMS signed with a throwaway test key, ${signed.fingerprint}: SHA256SUMS.sig, SHA256SUMS.sshsig`,
     );
     // M1.14: the install scripts of a test build, pinned to its throwaway key, one per kind of
-    // archive in dist/, so the folder installs as it is (test installs on the maintainer's machines, A7 3.4).
+    // archive in dist/, so the folder installs as it is (real-machine test installs, A7 3.4).
     for (const kind of installerKinds(listed)) {
       const name = installerName(kind, identity.version, "test");
       writeFileSync(
