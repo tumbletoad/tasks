@@ -1800,8 +1800,8 @@ export class SpaceWriter {
       partial,
       op: 0,
     });
-    const conflict = (): WriteResult =>
-      refused(
+    const conflict = (): WriteResult => ({
+      ...refused(
         "conflict",
         asOf,
         {
@@ -1812,7 +1812,9 @@ export class SpaceWriter {
             : "Someone changed one of its fields since: a redo is all or nothing",
         },
         plan.conflicts,
-      );
+      ),
+      target: target.id,
+    });
     if (plan.conflicts.length > 0 && !partial) return conflict();
     const seq = nextSeq(space);
     const commitId = newId("op", this.#random);

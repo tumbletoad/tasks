@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LiveStore } from "../store/store.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { FakeFrames } from "../../test/fake-frames.ts";
-import { dueChange, priorityChange, restoreChange, titleChange } from "./change.ts";
+import { dueChange, effortChange, priorityChange, restoreChange, titleChange } from "./change.ts";
 import { Edits, HOLD_MS, COLLAPSE_MS, type Toast } from "./edits.ts";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
@@ -223,6 +223,71 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(w.calls[1]?.input).toMatchObject({ set: { priority: 2 }, base: w.asOf(11) });
   });
 
+  test("an agent's change to the second field between two quick edits is a conflict, never overwritten by a base the first edit's answer moved", async () => {
+    const w = new World([task(1)]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["effort"],
+      as_of: w.asOf(13),
+      warnings: [],
+    }));
+    // The person sets the priority, then the effort, seeing the screen at seq 10.
+    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), effortChange("M"));
+    await flush();
+    // An agent's effort change (seq 11) lands before the priority commit (seq 12); the feed has
+    // not brought either yet.
+    answerFirst({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(12),
+      warnings: [],
+    });
+    await flush();
+    // The effort edit keeps what the person saw: the service refuses it over the agent's change.
+    expect(w.calls[1]?.input).toMatchObject({ set: { effort: "M" }, base: w.asOf(10) });
+    // A second priority edit may move past the person's own first one.
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(14),
+      warnings: [],
+    }));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    expect(w.calls[2]?.input).toMatchObject({ set: { priority: 2 }, base: w.asOf(12) });
+  });
+
+  test("a refusal of an edit the person has since replaced is not offered again", async () => {
+    const w = new World([task(1)]);
+    let failFirst!: (error: Error) => void;
+    w.answer(
+      "task.update",
+      () => new Promise((_resolve, reject: (error: Error) => void) => (failFirst = reject)),
+    );
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    }));
+    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    const toasts = w.toasts.length;
+    failFirst(new Error("network"));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.toasts.slice(toasts).some((t) => t?.kind === "error")).toBe(false);
+    expect(w.calls[1]?.input).toMatchObject({ set: { priority: 2 } });
+  });
+
   test("an editor's base is the one it opened with: a conflict keeps the person's value with who changed it, and Apply mine sends it again with a fresh base", async () => {
     const w = new World([task(1)]);
     const opened = w.store.asOf ?? "";
@@ -397,9 +462,12 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
       ["due"],
     );
     w.feed([task(1, { due_date: "2026-11-22", version: 3 })], "agent-1", ["due"], "agent");
+    const mine = `op_${"11".padStart(26, "0")}`;
     w.answer("history.undo", () => {
       throw appError("conflict", {
         cause: "UNDO_CONFLICT",
+        // The service names the commit the undo met, so Restore mine acts on that one.
+        commit: mine,
         conflicts: [
           {
             task: "M-1",
@@ -416,9 +484,17 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     });
     await w.edits.undo();
     const shown = w.lastToast();
+    // What the change wrote, what is there now, and what Restore mine puts back.
     expect(shown?.text).toMatchObject({
-      id: "toast.conflict",
-      values: { who: "other", by: "Codex", field: { id: "field.due" } },
+      id: "toast.conflictValues",
+      values: {
+        who: "other",
+        by: "Codex",
+        field: { id: "field.due" },
+        wrote: "2026-11-13",
+        now: "2026-11-22",
+        restore: "2026-11-17",
+      },
     });
     expect(shown?.action?.label).toEqual({ id: "toast.restoreMine" });
     w.answer("history.undo", () => ({
@@ -438,11 +514,124 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     }));
     shown?.action?.run();
     await flush();
-    expect(w.calls.at(-2)).toMatchObject({ name: "history.undo", input: { partial: true } });
+    expect(w.calls.at(-2)).toMatchObject({
+      name: "history.undo",
+      input: { partial: true, commit: mine },
+    });
     expect(w.calls.at(-1)).toMatchObject({
       name: "task.update",
       input: { task: "t_00001", set: { due: "2026-11-17" }, base: w.asOf(13) },
     });
+  });
+
+  test("a conflict whose commit is not named never acts on whatever is newest: Restore mine only sets the value, and no Undo the rest", async () => {
+    const w = new World([task(1, { priority: 2 })]);
+    const conflict = {
+      task: "M-1",
+      field: "priority",
+      value: 2,
+      wrote: 1,
+      restore: 3,
+      version: 12,
+      by: "Codex",
+      at: "2026-11-12T10:42:00.000Z",
+    };
+    w.answer("history.undo", () => {
+      throw appError("conflict", { cause: "UNDO_CONFLICT", conflicts: [conflict] });
+    });
+    await w.edits.undo();
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.restoreMine" });
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    }));
+    const before = w.calls.length;
+    w.lastToast()?.action?.run();
+    await flush();
+    expect(w.calls.slice(before).map((c) => c.name)).toEqual(["task.update"]);
+    expect(w.calls.at(-1)?.input).toMatchObject({ set: { priority: 3 } });
+    // A value no hand edit can set, unnamed: the toast says so and offers nothing to run.
+    w.answer("history.undo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        conflicts: [{ ...conflict, field: "lifecycle", restore: { lifecycle: "active" } }],
+      });
+    });
+    await w.edits.undo();
+    expect(w.lastToast()).toMatchObject({ kind: "error" });
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a redone check-off's box undoes the redo's commit, never the person's newest change elsewhere", async () => {
+    const w = new World([task(1), task(2)]);
+    w.answer("task.finish", () => ({
+      result: "completed",
+      task: "M-1",
+      lifecycle: "completed",
+      learnings: 0,
+      follow_ups: [],
+      as_of: w.asOf(11),
+    }));
+    w.edits.checkOff(task(1));
+    await flush();
+    w.feed(
+      [task(1, { lifecycle: "completed", version: 2 })],
+      String(w.calls[0]?.input["request_id"]),
+      ["lifecycle"],
+    );
+    const checked = `op_${"11".padStart(26, "0")}`;
+    // Undo: the feed brings the row back before the answer comes.
+    w.answer("history.undo", (input) => {
+      w.feed([task(1, { version: 3 })], String(input["request_id"]), ["lifecycle"]);
+      return {
+        result: "undone",
+        commit: checked,
+        tasks: ["M-1"],
+        task_count: 1,
+        as_of: w.asOf(12),
+      };
+    });
+    await w.edits.undo(checked);
+    await flush();
+    // Nothing waits for a row the live rows already show.
+    expect(w.edits.getState().leaving.has("t_00001")).toBe(false);
+    // Redo: the row is completed again and holds, checked.
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: checked,
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(14),
+    }));
+    await w.edits.redo(checked);
+    const redoRequest = String(w.calls.at(-1)?.input["request_id"]);
+    w.feed([task(1, { lifecycle: "completed", version: 4 })], redoRequest, ["lifecycle"]);
+    w.edits.hold(task(1), undefined, 0);
+    expect(w.edits.getState().leaving.get("t_00001")).toMatchObject({ done: true });
+    // Meanwhile the person edits another task.
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["priority"],
+      as_of: w.asOf(15),
+      warnings: [],
+    }));
+    w.edits.edit(task(2), priorityChange(1));
+    await flush();
+    // The box of the redone row undoes the redo's commit by name.
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: checked,
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(16),
+    }));
+    w.edits.uncheck("t_00001");
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({ name: "history.undo", input: { commit: checked } });
   });
 
   test("an undo where only some fields conflict offers Undo the rest; a value no hand edit can set offers no Restore mine", async () => {

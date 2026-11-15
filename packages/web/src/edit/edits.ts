@@ -14,12 +14,14 @@
 // - Two windows, or a person and an agent, on one task: every edit carries a base (A1 3.5), so the
 //   service refuses a write over a change the person did not see, and the conflict names who made it.
 //
-// Bases. A control's edit takes the applied cursor when it is sent; an editor that stays open while
-// the person types (the title, a date) takes it when it opens. Edits of one task go out one after
-// another: the next waits for the answer to the one before, and its base is that answer's `as_of`
-// when the feed has not caught up yet, so two quick edits of one field never conflict with each
-// other. Writes go through the live store, so each shows at once as an overlay and settles only
-// through the feed (A5 3.15 item 4).
+// Bases. A control's edit takes the applied cursor when the person acts; an editor that stays open
+// while the person types (the title, a date) takes it when it opens. That is what the person saw.
+// Edits of one task go out one after another: the next waits for the answer to the one before. A
+// base moves past what the screen showed only to the tab's own newest write of every field the
+// edit writes (one commit that wrote them all), so two quick edits of one field never conflict
+// with each other, and a change someone else made to any of those fields meanwhile still does.
+// Writes go through the live store, so each shows at once as an overlay and settles only through
+// the feed (A5 3.15 item 4).
 import type { Client } from "@tasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
 import type { Change as FeedChange } from "../store/core.ts";
@@ -103,6 +105,9 @@ interface Conflict {
   readonly task?: string;
   readonly entity?: string;
   readonly field: string;
+  /** What is there now, what the change wrote, and what undoing it would set back. */
+  readonly value?: unknown;
+  readonly wrote?: unknown;
   readonly restore?: unknown;
   readonly by: string;
   readonly at: string;
@@ -112,6 +117,8 @@ interface Problem {
   readonly code: string;
   readonly cause: string;
   readonly conflicts: readonly Conflict[];
+  /** The commit an undo or redo meant, which its UNDO_CONFLICT names (A1 3.10.1). */
+  readonly commit?: string;
 }
 
 /** An error the service sent (the generated client's AppError), read by its shape. */
@@ -129,10 +136,12 @@ function problemOf(error: unknown): Problem | undefined {
       typeof (c as Conflict).by === "string" &&
       typeof (c as Conflict).at === "string",
   );
+  const commit = record["commit"];
   return {
     code,
     cause: typeof record["cause"] === "string" ? record["cause"] : "",
     conflicts,
+    ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
   };
 }
 
@@ -176,6 +185,44 @@ export const whoOf = (by: string): { who: string; by: string } => ({
   by,
 });
 
+/**
+ * What an undo or redo conflict says (A5 3.12): who changed which field and when, and for one field
+ * whose values read as words and that Restore mine can put back, what the person's change wrote,
+ * what is there now and what Restore mine would put back. A title's values stay out: a long title
+ * does not fit a toast.
+ */
+function conflictText(
+  conflicts: readonly Conflict[],
+  fields: ReadonlySet<string>,
+  restorable: boolean,
+): Msg {
+  const first = conflicts[0];
+  if (first === undefined) return { id: "toast.undoFailed" };
+  const words = FIELD_WORDS[first.field];
+  const values = {
+    ...whoOf(first.by),
+    field: { id: words ?? "field.other" } as Msg,
+    count: fields.size,
+    at: Date.parse(first.at),
+  };
+  if (fields.size !== 1 || words === undefined) return { id: "toast.conflictMany", values };
+  const shown = (key: "value" | "wrote" | "restore") =>
+    Object.hasOwn(first, key) ? restoreChange(first.field, first[key])?.shown : undefined;
+  const now = shown("value");
+  const wrote = shown("wrote");
+  const back = shown("restore");
+  if (
+    !restorable ||
+    first.field === "title" ||
+    now === undefined ||
+    wrote === undefined ||
+    back === undefined
+  ) {
+    return { id: "toast.conflict", values };
+  }
+  return { id: "toast.conflictValues", values: { ...values, now, wrote, restore: back } };
+}
+
 export class Edits {
   readonly #deps: EditDeps;
   readonly #listeners = new Set<() => void>();
@@ -183,8 +230,16 @@ export class Edits {
   #state: EditState = { unsaved: new Map(), leaving: new Map() };
   /** The newest write's answer per task, while it is on its way: the next edit waits for it. */
   readonly #chains = new Map<string, Promise<unknown>>();
-  /** The `as_of` of the newest answer per task: the next base when the feed is behind it. */
-  readonly #answers = new Map<string, string>();
+  /**
+   * Per task and field, the `as_of` of the tab's own newest write of it that changed something:
+   * how far a later edit's base may move past what the screen showed (`#baseFor`).
+   */
+  readonly #own = new Map<string, string>();
+  /** Per task and field, the number of the person's newest edit of it: an older one's refusal is moot. */
+  readonly #latest = new Map<string, number>();
+  #edits = 0;
+  /** The commit each redo made, by task reference: a click on a redone row's box undoes it. */
+  readonly #redone = new Map<string, string>();
   /** This tab's own request IDs: their feed events are not someone else's change. */
   readonly #mine = new Set<string>();
   /** The fields each own commit wrote, for the undo conflict's choice (A5 3.12). */
@@ -241,7 +296,11 @@ export class Edits {
    */
   edit(task: TaskRow, change: Change, options: { readonly base?: string } = {}): void {
     for (const field of change.fields) this.#forget(task.id, field);
-    const sent = this.#send(task.id, change, options.base);
+    this.#edits += 1;
+    const number = this.#edits;
+    for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
+    // What the person saw: the editor's base, or the screen's now.
+    const sent = this.#send(task.id, change, options.base ?? this.#deps.asOf());
     const toast = this.#toast({
       kind: "undo",
       text: change.said,
@@ -261,7 +320,12 @@ export class Edits {
         if ((result as { result?: unknown }).result === "no_change") this.#untoast(toast);
       },
       (error: unknown) => {
-        this.#refused(task, change, error);
+        // The person edited a field of it again since: that newer choice stands, and this one is
+        // not offered again over it.
+        const superseded = change.fields.some(
+          (field) => this.#latest.get(keyOf(task.id, field)) !== number,
+        );
+        if (!superseded) this.#refused(task, change, error);
       },
     );
   }
@@ -289,7 +353,7 @@ export class Edits {
     // Checked again after its undo: the row that waited to come back holds again.
     if (entry !== undefined) this.#drop(task.id);
     this.#leave(task, {});
-    const sent = this.#sendWith(task.id, (base, request) =>
+    const sent = this.#sendWith(task.id, ["lifecycle"], this.#deps.asOf(), (base, request) =>
       this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
     );
     this.#checks.set(task.id, sent.commit);
@@ -325,14 +389,14 @@ export class Edits {
   readonly #checks = new Map<string, Promise<string | undefined>>();
 
   /**
-   * The box clicked again during the hold: the check-off is undone, by its commit. A hold the tab
-   * did not start with a check-off of its own (a redo) undoes the person's newest change, which
-   * the redo made it again.
+   * The box clicked again during the hold: the check-off is undone, by its commit, or for a redone
+   * check-off by the redo's commit. Never the person's newest change unnamed: that may be another
+   * task's edit. A hold whose commit the tab does not know says so and changes nothing.
    */
   uncheck(task: string): void {
     const leaving = this.#state.leaving.get(task);
     if (leaving === undefined || !leaving.done || leaving.by !== undefined) return;
-    void this.undo(this.#checks.get(task));
+    void this.undo(this.#checks.get(task) ?? Promise.resolve(this.#redone.get(leaving.row.ref)));
   }
 
   /** Whether a feed event is one of this tab's own writes. */
@@ -345,7 +409,10 @@ export class Edits {
    * actor's (it strikes through, says who, and leaves after the hold), or the tab's own redo.
    */
   hold(row: TaskRow, by: string | undefined, at: number): void {
-    if (this.#state.leaving.has(row.id)) return;
+    const entry = this.#state.leaving.get(row.id);
+    if (entry?.done === true) return;
+    // A row back from an undo that is completed again (a redo) holds again, checked.
+    if (entry !== undefined) this.#drop(row.id);
     this.#leave(row, by === undefined ? {} : { by, at });
   }
 
@@ -387,6 +454,7 @@ export class Edits {
       this.#historyFailed("redo", error, commit);
       return;
     }
+    for (const ref of result.tasks) this.#redone.set(ref, result.commit);
     this.#undone(result.tasks, false);
     this.#toast({
       kind: "undo",
@@ -419,13 +487,16 @@ export class Edits {
    * action that fits: "Restore mine" when every field of the change conflicts, "Undo the rest"
    * when only some do (A5 3.12). A redo has no partial form.
    */
-  #historyFailed(kind: "undo" | "redo", error: unknown, commit: string | undefined): void {
+  #historyFailed(kind: "undo" | "redo", error: unknown, asked: string | undefined): void {
     if (this.#deps.failed(error)) return;
     const problem = problemOf(error);
     if (problem === undefined) {
       this.#toast({ kind: "error", text: { id: "toast.undoFailed" } });
       return;
     }
+    // The commit it met, named: Restore mine and Undo the rest act on that one only, never on
+    // whatever is newest by the time the person chooses (a change made since in another window).
+    const commit = asked ?? problem.commit;
     switch (problem.cause) {
       case "NOTHING_TO_UNDO":
         this.#toast({ kind: "info", text: { id: "toast.nothingToUndo" } });
@@ -449,49 +520,27 @@ export class Edits {
       return;
     }
     const fields = new Set(conflicts.map((c) => c.field));
-    const words = FIELD_WORDS[first.field];
-    const text: Msg = {
-      id: fields.size === 1 && words !== undefined ? "toast.conflict" : "toast.conflictMany",
-      values: {
-        ...whoOf(first.by),
-        field: words === undefined ? { id: "field.other" } : { id: words },
-        count: fields.size,
-        at: Date.parse(first.at),
-      },
-    };
     const restore = this.#restoreOf(conflicts);
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
     // Only some of the change's fields conflict: the rest can be undone and the others kept.
     const some = kind === "undo" && known !== undefined && known.some((f) => !fields.has(f));
-    if (some) {
-      this.#toast({
-        kind: "error",
-        text,
-        action: {
-          label: { id: "toast.undoRest" },
-          run: () => {
-            void this.undo(commit, true);
-          },
-        },
-      });
-      return;
-    }
-    if (restore === undefined) {
-      // Nothing a hand edit can put back (a lifecycle, a due time): the person decides in the task.
-      this.#toast({
-        kind: "error",
-        text,
-        ...(kind === "undo"
-          ? {
-              action: {
-                label: { id: "toast.undoRest" },
-                run: () => {
-                  void this.undo(commit, true);
-                },
+    const text = conflictText(conflicts, fields, !some && restore !== undefined);
+    // Undo the rest, for a commit the page can name: the fields that pass are undone, the others
+    // stay as the other actor set them.
+    const undoRest =
+      kind === "undo" && commit !== undefined
+        ? {
+            action: {
+              label: { id: "toast.undoRest" } as Msg,
+              run: () => {
+                void this.undo(commit, true);
               },
-            }
-          : {}),
-      });
+            },
+          }
+        : {};
+    if (some || restore === undefined) {
+      // Or nothing a hand edit can put back (a lifecycle, a due time): the person decides.
+      this.#toast({ kind: "error", text, ...undoRest });
       return;
     }
     this.#toast({
@@ -531,7 +580,8 @@ export class Edits {
   /**
    * "Restore mine" (A5 3.12): the person's values as a new edit of theirs, with a fresh base. After
    * an undo, the change is first undone as far as it can be (a partial undo), so the stack moves on
-   * past it and the next Ctrl+Z reaches the change below, not this conflict again.
+   * past it and the next Ctrl+Z reaches the change below, not this conflict again. Only for a
+   * commit it can name: unnamed, a partial undo could take a newer change instead.
    */
   async #restore(
     kind: "undo" | "redo",
@@ -539,7 +589,7 @@ export class Edits {
     commit: string | undefined,
   ): Promise<void> {
     let base: string | undefined;
-    if (kind === "undo") {
+    if (kind === "undo" && commit !== undefined) {
       try {
         const partial = await this.#history("undo", commit, true);
         base = partial.as_of;
@@ -560,45 +610,64 @@ export class Edits {
   }
 
   /** Sends one `task.update` after the task's earlier writes have answered. */
-  #send(task: string, change: Change, base: string | undefined): Sent<unknown> {
+  #send(task: string, change: Change, seen: string | undefined): Sent<unknown> {
     const { set, clear } = change.overlay;
     return this.#sendWith(
       task,
-      (fresh, request) => {
-        const chosen = base ?? fresh;
-        return this.#deps.client.task.update({
+      change.fields,
+      seen,
+      (base, request) =>
+        this.#deps.client.task.update({
           task,
           ...(change.set === undefined ? {} : { set: change.set }),
           ...(change.clear === undefined ? {} : { clear: [...change.clear] }),
-          ...(chosen === undefined ? {} : { base: chosen }),
+          ...(base === undefined ? {} : { base }),
           request_id: request,
-        });
-      },
+        }),
       { tasks: [{ id: task, set, ...(clear === undefined ? {} : { clear }) }] },
     );
   }
 
   /**
-   * A write of one task through the store, in turn after the task's earlier writes. `call` gets the
-   * base to use (the store's cursor, or the newest answer when the feed is behind it) and the
-   * store's request ID.
+   * The base of an edit of `fields` the person made seeing `seen`. It moves on only to the tab's
+   * own newest write of those fields, and only when one commit wrote them all: that write passed
+   * its own base check, so nobody else wrote them between what the person saw and it. A field
+   * last written by someone else, or by two different own commits, keeps `seen`, so a change the
+   * person did not see is a conflict rather than overwritten.
    */
-  #sendWith<T extends { as_of?: string }>(
+  #baseFor(task: string, fields: readonly string[], seen: string | undefined): string | undefined {
+    let own: string | undefined;
+    for (const field of fields) {
+      const at = this.#own.get(keyOf(task, field));
+      if (at === undefined || (own !== undefined && at !== own)) return seen;
+      own = at;
+    }
+    return newer(seen, own);
+  }
+
+  /**
+   * A write of one task through the store, in turn after the task's earlier writes. `call` gets the
+   * base (`#baseFor`, decided when it is sent) and the store's request ID.
+   */
+  #sendWith<T extends { as_of?: string; result?: unknown }>(
     task: string,
+    fields: readonly string[],
+    seen: string | undefined,
     call: (base: string | undefined, request: string) => Promise<T>,
     overlay?: Overlay,
   ): Sent<T> {
     const before = this.#chains.get(task);
     // Sent at once when nothing of the task's is on its way, else after the answer before it.
     const sent = this.#deps.write((request) => {
-      const send = () => call(newer(this.#deps.asOf(), this.#answers.get(task)), request);
+      const send = () => call(this.#baseFor(task, fields, seen), request);
       return before === undefined ? send() : before.then(send);
     }, overlay);
     this.#mine.add(sent.request);
     const answered = sent.answer.then((result) => {
-      if (typeof result.as_of === "string") {
-        this.#answers.set(task, newer(this.#answers.get(task), result.as_of) ?? result.as_of);
-      }
+      // A write that changed nothing wrote no field: its `as_of` is only the head.
+      if (typeof result.as_of !== "string" || result.result === "no_change") return;
+      // The task's writes answer in turn, so this is its newest.
+      for (const field of fields) this.#own.set(keyOf(task, field), result.as_of);
     });
     const chain = answered.catch(() => undefined);
     this.#chains.set(task, chain);
@@ -709,6 +778,11 @@ export class Edits {
     for (const [id, entry] of this.#state.leaving) {
       if (!wanted.has(entry.row.ref)) continue;
       if (!undone) continue;
+      // The feed brought the row back before the answer came: the live row shows it.
+      if (this.#deps.rowOf(entry.row.ref)?.lifecycle === "active") {
+        this.#drop(id);
+        continue;
+      }
       const next = new Map(this.#state.leaving);
       next.set(id, { ...entry, done: false, out: false });
       this.#set({ ...this.#state, leaving: next });
