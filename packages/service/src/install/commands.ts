@@ -14,9 +14,10 @@
 // What that prevents and what it only detects is the decision's "guarantee".
 //
 // start goes through the OS (A2 3.3.5, 3.5 rule 5) and never runs `tasks serve` in this process's
-// tree, except where nothing else can start it: Linux without a user manager (setsid), and Windows
-// without Explorer in this session (detached). Both wait for a ready service that completes a
-// handshake.
+// tree, except where nothing else can start it: Linux without this install's unit (no user manager,
+// or no unit installed: setsid), and Windows without Explorer in this session (detached). Both wait
+// for a ready service that completes a handshake. A Linux install takes over a service started by
+// hand: it stops it right before the unit starts, so two services never run.
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -570,7 +571,8 @@ export type Step =
       readonly creates?: string;
     }
   | { readonly do: "start" }
-  | { readonly do: "stop" };
+  /** `startedByHand`: install takes over a service that runs without the unit (A2 3.3.3). */
+  | { readonly do: "stop"; readonly startedByHand?: true };
 
 export interface Plan {
   readonly verb: "install" | "uninstall";
@@ -758,10 +760,16 @@ export async function planInstall(ctx: ServiceContext): Promise<Plan> {
       const wants = join(ctx.roots.unitDir, WANTS);
       const enable = systemctl("enable", ctx.names.unit);
       const wantsMissing = !existsSync(wants);
+      // A service of this install that runs without the unit, started by hand (A2 3.3.3), is
+      // stopped right before the unit starts: the unit takes it over, and its own start would
+      // otherwise meet the running one's lock and exit 73.
+      const probe = await ctx.probe();
+      const byHand = probe.answers && probe.status.manager !== "systemd";
       steps.push(
         { do: "write-file", path: wanted.info.where, text: wanted.content, existing },
         systemctl("daemon-reload"),
         wantsMissing ? { ...enable, creates: wants } : enable,
+        ...(byHand ? [{ do: "stop", startedByHand: true } as const] : []),
         { do: "start" },
       );
       creates ||= wantsMissing;
@@ -1166,8 +1174,16 @@ export interface StartOutcome {
   readonly outcome: "started" | "already_running";
   /** How it was started: the manager, Explorer, or a direct start. */
   readonly via: "systemd" | "launchd" | "explorer" | "direct" | "manual" | "none";
+  /**
+   * Linux, started by hand where a user manager runs: this install's unit is not installed, so
+   * nothing starts the service at sign-in (NO_UNIT_LINE says so).
+   */
+  readonly unit?: "not_installed";
   readonly status: ServiceStatus;
 }
+
+/** What `tasks service start` and `tasks open` say after a start by hand where a unit could do it. */
+export const NO_UNIT_LINE = `It does not start by itself when you sign in. To have it start by itself, run: ${CLI_NAME} service install`;
 
 export interface StopOutcome {
   readonly outcome: "stopped" | "not_running";
@@ -1433,10 +1449,11 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
     throw unreachable(before);
   }
   let via: StartOutcome["via"];
+  let unit: StartOutcome["unit"];
   switch (ctx.platform) {
     case "linux": {
-      if (await userManager(ctx, call)) {
-        if ((await readEntry(ctx)).info.state !== "ours") throw notInstalled();
+      const manager = await userManager(ctx, call);
+      if (manager && (await readEntry(ctx)).info.state === "ours") {
         await ready();
         const result = await launch(SYSTEMCTL, ["--user", "start", ctx.names.unit]);
         if (result.code !== 0) {
@@ -1449,11 +1466,14 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
         }
         via = "systemd";
       } else {
-        // No user manager (A2 3.3.3): a detached service in its own session; nothing restarts it.
+        // No user manager, or no unit of this install (A2 3.3.3): a detached service in a session
+        // of its own, which the end of this terminal or SSH session does not reach. Nothing
+        // restarts it, and nothing starts it at sign-in.
         needProgram(ctx);
         await ready();
         ctx.startDetached(ctx.program, ["serve"]);
         via = "manual";
+        if (manager) unit = "not_installed";
       }
       break;
     }
@@ -1504,7 +1524,7 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
   }
   const status = await waitReady(ctx, deadline);
   if (status === undefined) throw notReady(seconds);
-  return { outcome: "started", via, status };
+  return { outcome: "started", via, ...(unit === undefined ? {} : { unit }), status };
 }
 
 const SYSTEMD_RUNNING = new Set(["active", "activating", "reloading", "deactivating"]);

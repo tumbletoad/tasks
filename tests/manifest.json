@@ -1194,6 +1194,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.3.3.service-install.start-by-hand",
+      "title": "Linux with a user manager and no unit of this install: tasks service start runs the real service detached, in no process group or session of the terminal that started it, says in one line that it does not start by itself and how to install the unit, survives that terminal's hang-up, and stop and status reach it; status says that nothing starts it at sign-in or boot whatever linger says; tasks service install takes it over, stopping it right before the unit's start, so two services never run",
+      "source": "A2 3.3.3, A2 3.3.5, A2 3.3.6",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.3.4.service-install.launchd-wrapper",
       "title": "The tasks-launchd wrapper with a stub service under /bin/sh: exits 0, 64 and 73 map to 0, 70 and other crashes pass through, 75 restarts at once and more than 5 in a row exit 75, SIGTERM is forwarded, and a stop during a 75 restart ends in 0",
       "source": "A2 3.3.1, A2 3.3.4, A2 5, A7 3.8 M1.12",

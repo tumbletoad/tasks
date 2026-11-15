@@ -417,13 +417,79 @@ describe.skipIf(!posix)(
 
       const started = await run(fake, "start", { json: true });
       expect(started.code).toBe(0);
-      expect(JSON.parse(started.io.text())).toMatchObject({ outcome: "started", via: "manual" });
+      const outcome = JSON.parse(started.io.text()) as Record<string, unknown>;
+      expect(outcome).toMatchObject({ outcome: "started", via: "manual" });
+      // No user manager: no unit could start it either, so nothing to say about one.
+      expect(outcome).not.toHaveProperty("unit");
       expect(fake.detached).toEqual([{ tool: fake.ctx.program, args: ["serve"] }]);
-      // With a user manager but no unit, start says to install instead of starting by hand.
-      const managed = fakeContext({ platform: "linux", dir: join(dir, "m") });
-      const notInstalled = await run(managed, "start", {});
-      expect(notInstalled.code).toBe(3);
-      expect(notInstalled.io.errors()).toContain("Try: tasks service install");
+    });
+
+    test("[A2.3.3.3.service-install.start-by-hand] Linux with a user manager and no unit: start runs the service detached and says so, stop and status reach it, and install takes it over", async () => {
+      const fake = fakeContext({ platform: "linux", dir, tools: { linger: "yes" } });
+      const before = snapshot(fake.ctx.home);
+      const started = await run(fake, "start", {});
+      expect(started.code).toBe(0);
+      expect(started.io.text()).toBe(
+        [
+          "TT Tasks's service runs: ready, PID 4121, version 0.0.0-test (test), started by manual.",
+          "It does not start by itself when you sign in. To have it start by itself, run: tasks service install",
+          "",
+        ].join("\n"),
+      );
+      expect(fake.detached).toEqual([{ tool: fake.ctx.program, args: ["serve"] }]);
+      // Nothing was written and no unit was asked to start.
+      expect(snapshot(fake.ctx.home)).toEqual(before);
+      expect(changes(fake)).toEqual([]);
+      const again = await run(fake, "start", { json: true });
+      expect(JSON.parse(again.io.text())).toMatchObject({
+        outcome: "already_running",
+        via: "none",
+      });
+
+      // Status says what is true: no unit, so linger starts nothing.
+      const status = await run(fake, "status", {});
+      expect(status.io.text()).toContain("  Entry:    ");
+      expect(status.io.text()).toContain(": not installed\n");
+      expect(status.io.text()).toContain(
+        "  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: tasks service install\n",
+      );
+      expect(status.io.text()).toContain("  Linger:   on\n");
+      expect(status.io.text()).not.toContain("starts at boot");
+      expect(status.io.text()).toContain("started by manual");
+
+      // Stop asks it over the endpoint; a second start runs it by hand again.
+      const stopped = await run(fake, "stop", { json: true });
+      expect(JSON.parse(stopped.io.text())).toEqual({ outcome: "stopped", via: "shutdown" });
+      expect((await run(fake, "start", { json: true })).code).toBe(0);
+      expect(fake.detached).toHaveLength(2);
+
+      // Install takes it over: the preview names the stop, which comes right before the unit's
+      // start, and at no moment do two services run.
+      const preview = await run(fake, "install", { dryRun: true });
+      expect(preview.io.text()).toContain(
+        "  5. Stop the service that runs now, started by hand, and wait until it has stopped, so that the unit starts it in the next step.\n" +
+          `  6. Start the service: systemctl --user start ${UNIT}, and wait until it is ready.\n`,
+      );
+      const events = fake.service.events.length;
+      const installed = await run(fake, "install");
+      expect(installed.code).toBe(0);
+      expect(fake.service.events.slice(events)).toEqual(["stop", "start systemd"]);
+      expect(installed.io.text()).toContain("started by systemd");
+      expect(changes(fake)).toEqual([
+        "systemctl --user daemon-reload",
+        `systemctl --user enable ${UNIT}`,
+        `systemctl --user start ${UNIT}`,
+      ]);
+      // Once the unit runs it, status speaks of linger as before, and start goes through systemd.
+      const after = await run(fake, "status", {});
+      expect(after.io.text()).toContain(
+        "  Linger:   on: the service starts at boot, before you sign in\n",
+      );
+      expect(after.io.text()).toContain("  systemd:  enabled, active\n");
+      // A later install with the unit's service running stops nothing.
+      const calls = fake.service.events.length;
+      expect((await run(fake, "install")).code).toBe(0);
+      expect(fake.service.events.slice(calls)).toEqual([]);
     });
 
     test("macOS: install writes exactly its plist and bootstraps it; install then uninstall leaves no trace", async () => {

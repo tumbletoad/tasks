@@ -10,6 +10,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { blockedMessage, movedMessage } from "../http/messages.ts";
 import {
   applyPlan,
+  NO_UNIT_LINE,
   planInstall,
   planUninstall,
   serviceStatus,
@@ -159,7 +160,9 @@ function stepText(ctx: ServiceContext, step: Step): string {
     case "start":
       return startText(ctx);
     case "stop":
-      return `Stop the service if it runs, and wait until it has stopped.`;
+      return step.startedByHand === true
+        ? "Stop the service that runs now, started by hand, and wait until it has stopped, so that the unit starts it in the next step."
+        : "Stop the service if it runs, and wait until it has stopped.";
   }
 }
 
@@ -258,18 +261,26 @@ export function statusText(ctx: ServiceContext, report: StatusReport): string {
   ];
   const a = report.autostart;
   switch (a.kind) {
-    case "systemd":
+    case "systemd": {
+      // What linger means for the service holds only for this install's own unit: without one,
+      // nothing starts the service at sign-in or boot, linger or not.
+      const unit = entry.state === "ours";
       lines.push(
-        a.user_manager
-          ? `  systemd:  ${a.enabled ?? "unknown"}, ${a.active ?? "unknown"}`
-          : "  systemd:  no user manager on this machine: nothing starts the service at login",
-        a.linger === "yes"
-          ? "  Linger:   on: the service starts at boot, before you sign in"
-          : a.linger === "no"
-            ? "  Linger:   off: the service starts when you sign in. To start it at boot: loginctl enable-linger"
-            : "  Linger:   unknown",
+        !a.user_manager
+          ? "  systemd:  no user manager on this machine: nothing starts the service at login"
+          : unit
+            ? `  systemd:  ${a.enabled ?? "unknown"}, ${a.active ?? "unknown"}`
+            : `  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: ${CLI_NAME} service install`,
+        a.linger === "unknown"
+          ? "  Linger:   unknown"
+          : !unit || !a.user_manager
+            ? `  Linger:   ${a.linger === "yes" ? "on" : "off"}`
+            : a.linger === "yes"
+              ? "  Linger:   on: the service starts at boot, before you sign in"
+              : "  Linger:   off: the service starts when you sign in. To start it at boot: loginctl enable-linger",
       );
       break;
+    }
     case "run":
       lines.push(
         a.startup_apps === "off"
@@ -384,7 +395,11 @@ export async function serviceEntry(
         return await changeEntry(verb, ctx, flags, io);
       case "start": {
         const outcome = await startService(ctx);
-        io.out(flags.json === true ? json(outcome) : runningText(outcome));
+        if (flags.json === true) io.out(json(outcome));
+        else {
+          io.out(runningText(outcome));
+          if (outcome.unit === "not_installed") io.out(`${NO_UNIT_LINE}\n`);
+        }
         return 0;
       }
       case "stop": {
