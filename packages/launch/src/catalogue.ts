@@ -46,6 +46,12 @@ export interface RouteDef {
   readonly needsGui: boolean;
   /** Also copy the brief, for apps that may drop a prefill. */
   readonly copyBriefToo: boolean;
+  /**
+   * Link routes of the best-effort apps (A4 3.4.4, 3.4.5): the bridge's binding confirms the launch
+   * only when the bridge's working folder is the folder the link named. Otherwise a binding through
+   * the launch reference confirms it (A4 3.9.2).
+   */
+  readonly confirmFolder?: boolean;
   /** Terminal and t3-cli routes: whole-element placeholders only for {exec}, {permission}, {extra_args}. */
   readonly argv?: readonly Template[];
   /** Link routes: each value percent-encoded once when the route runs. */
@@ -305,6 +311,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "every-launch",
         needsGui: true,
         copyBriefToo: true,
+        confirmFolder: true,
         url: "claude://code/new?folder={cwd}&q={brief}",
       },
     ],
@@ -329,6 +336,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "unknown",
         needsGui: true,
         copyBriefToo: true,
+        confirmFolder: true,
         url: "codex://threads/new?path={cwd}&prompt={brief}",
       },
     ],
