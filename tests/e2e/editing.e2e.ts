@@ -149,6 +149,10 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
       { timeout: SLOW_MS },
     );
     await expect(effort.getByRole("radio", { name: "L" })).toHaveAttribute("aria-checked", "true");
+    // Collapsed again: an expanded card stays where it is until it is collapsed (A5 3.15).
+    await title.focus();
+    await page.keyboard.press("Escape");
+    await expect(title).toHaveAttribute("aria-expanded", "false");
 
     // Check off by keyboard: the box fills, the title strikes through, the row stays for the hold,
     // focus moves on to the next row, and the toast offers Undo.
@@ -356,7 +360,12 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
               };
             }
           ).axe.run;
-          const result = await run(document, { resultTypes: ["violations"] });
+          // The popover is portalled to the body, outside the landmarks, as a dialog of its own:
+          // axe's region rule (content inside landmarks) does not apply to it.
+          const result = await run(document, {
+            resultTypes: ["violations"],
+            rules: { region: { enabled: false } },
+          });
           return result.violations.map(
             (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
           );
