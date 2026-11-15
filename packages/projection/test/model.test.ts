@@ -3,7 +3,8 @@
 // path and elsewhere, a deleted generated file, a folder replaced by a file or a link, a hard link
 // to a file outside, text where the old control files were, files with temporary-looking names, a
 // rescue folder swapped for a link, during a batch too), and a kill at any act of a start or a
-// batch, each followed by a restart. After every step:
+// batch, each followed by a restart, the person sometimes typing into a temporary file the kill
+// left before it. After every step:
 //
 // 1. every byte a person put in the tree still exists, at its path or in a rescue folder, with
 //    its mode unchanged;
@@ -68,6 +69,8 @@ type Action =
       readonly steps: number;
       readonly killAt: Kill;
       readonly during: During;
+      /** After a kill, before the restart: the person types into a temporary file it left. */
+      readonly leftover: boolean;
     }
   | { readonly kind: "restart" | "rebuild"; readonly killAt: Kill }
   | { readonly kind: "edit" | "replace" | "delete"; readonly pick: number }
@@ -109,6 +112,7 @@ const action: fc.Arbitrary<Action> = fc.oneof(
       steps: fc.integer({ min: 1, max: 3 }),
       killAt: kill,
       during: fc.constantFrom<During>("none", "none", "none", "open-link", "view-link"),
+      leftover: fc.boolean(),
     }),
   },
   {
@@ -361,9 +365,10 @@ class Model {
 
   /**
    * Runs `work` as the projection, with a kill at its `at`-th act if one is armed, and checks
-   * invariant 2 around it. A kill ends in a restart, as the service's next start would be.
+   * invariant 2 around it. A kill ends in a restart, as the service's next start would be;
+   * `afterKill` is what the person does in between.
    */
-  async act(work: () => Promise<void>, at: Kill = null): Promise<void> {
+  async act(work: () => Promise<void>, at: Kill = null, afterKill?: () => void): Promise<void> {
     this.baseline = this.outsideState();
     this.killer =
       at === null ? undefined : killAt(at === "reported" ? Number.MAX_SAFE_INTEGER : at);
@@ -379,11 +384,33 @@ class Model {
     this.killOnReport = false;
     this.during = undefined;
     if (killed) {
+      // What the dead projection did is checked; the person's act then changes the baseline.
+      if (afterKill !== undefined) {
+        this.checkOutside(this.baseline);
+        afterKill();
+        this.baseline = this.outsideState();
+      }
       this.projector = this.newProjector();
       await this.projector.start();
     }
     this.checkOutside(this.baseline);
     this.baseline = undefined;
+  }
+
+  /** The person types into a temporary file a kill left in the tree, if there is one. */
+  typeIntoLeftover(): void {
+    if (!this.realFolder(this.view)) return;
+    const leftover = [...walk(this.view)]
+      .filter(([rel, entry]) => entry.type === "file" && rel.endsWith(".tmp"))
+      .map(([rel]) => rel)
+      .sort()[0];
+    if (leftover === undefined) return;
+    const parts = leftover.split("/");
+    for (let i = 1; i < parts.length; i += 1) {
+      if (!this.realFolder(join(this.view, ...parts.slice(0, i)))) return;
+    }
+    this.write(join(this.view, ...parts), this.personText());
+    seen.leftovers += 1;
   }
 
   async restart(at: Kill): Promise<void> {
@@ -393,7 +420,7 @@ class Model {
     }, at);
   }
 
-  async run(steps: number, at: Kill, during: During): Promise<void> {
+  async run(steps: number, at: Kill, during: During, leftover = false): Promise<void> {
     if (during !== "none") {
       const swap = (): void => {
         const target = during === "view-link" ? this.view : join(this.view, "open");
@@ -409,9 +436,19 @@ class Model {
       };
       this.during = swap;
     }
-    await this.act(async () => {
-      for (let i = 0; i < steps && this.current.pending().dirty; i += 1) await this.current.step();
-    }, at);
+    await this.act(
+      async () => {
+        for (let i = 0; i < steps && this.current.pending().dirty; i += 1) {
+          await this.current.step();
+        }
+      },
+      at,
+      leftover
+        ? () => {
+            this.typeIntoLeftover();
+          }
+        : undefined,
+    );
   }
 
   async rebuild(at: Kill): Promise<void> {
@@ -712,7 +749,7 @@ class Model {
         this.commit(a);
         return;
       case "run":
-        await this.run(a.steps, a.killAt, a.during);
+        await this.run(a.steps, a.killAt, a.during, a.leftover);
         return;
       case "restart":
         await this.restart(a.killAt);
@@ -752,7 +789,16 @@ class Model {
 let runs = 0;
 
 /** What the runs reached: a fixed seed must reach each often enough to mean something. */
-const seen = { kills: 0, during: 0, hardlinks: 0, folders: 0, swaps: 0, rescued: 0, rests: 0 };
+const seen = {
+  kills: 0,
+  during: 0,
+  hardlinks: 0,
+  folders: 0,
+  swaps: 0,
+  rescued: 0,
+  rests: 0,
+  leftovers: 0,
+};
 const LEAST = {
   kills: 40,
   during: 12,
@@ -761,6 +807,7 @@ const LEAST = {
   swaps: 5,
   rescued: 100,
   rests: 70,
+  leftovers: 3,
 };
 
 async function run(actions: readonly Action[]): Promise<void> {
