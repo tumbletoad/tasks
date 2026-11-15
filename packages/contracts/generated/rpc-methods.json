@@ -2736,7 +2736,7 @@
                 "type": "string"
               },
               "results": {
-                "description": "One result per operation: at most 50, and up to a million for an import",
+                "description": "One result per operation, the first 50 of an import's",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
@@ -2841,8 +2841,14 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 1000000,
+                "maxItems": 50,
                 "type": "array"
+              },
+              "results_more": {
+                "description": "An import's results beyond those 50",
+                "maximum": 1000000,
+                "minimum": 1,
+                "type": "integer"
               },
               "status": {
                 "description": "The overall outcome",
@@ -2853,6 +2859,11 @@
                   "conflict",
                   "rejected"
                 ],
+                "type": "string"
+              },
+              "target": {
+                "description": "An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo",
+                "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
               },
               "warnings": {

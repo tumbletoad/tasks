@@ -1203,7 +1203,8 @@ When `found` is `true`:
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `incarnation` | string | yes | The authority incarnation it was decided under |
 | `commit` | string | no | The commit it wrote |
-| `results` | object[], max 1000000 items | yes | One result per operation: at most 50, and up to a million for an import |
+| `target` | string | no | An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo |
+| `results` | object[], max 50 items | yes | One result per operation, the first 50 of an import's |
 | `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `results[].status` | "created" \| "updated" \| "unchanged" \| "existing" \| "proposed" | yes | What the operation did |
 | `results[].id` | string \| string, max 64 | yes | The row it acted on, or a preference's key |
@@ -1215,6 +1216,7 @@ When `found` is `true`:
 | `results[].matched_by` | "source_key" | no | A task draft that matched an existing task: how |
 | `results[].lifecycle` | "active" \| "completed" \| "archived" | no | The matched task's lifecycle |
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
+| `results_more` | integer, 1 to 1000000 | no | An import's results beyond those 50 |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" \| "runs" \| "areas" \| "projects" | yes | Table of the row |

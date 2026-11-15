@@ -121,10 +121,21 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("ai"))
       .describe("The authority incarnation it was decided under"),
     commit: z.string().regex(idPattern("op")).describe("The commit it wrote").optional(),
+    target: z
+      .string()
+      .regex(idPattern("op"))
+      .describe("An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo")
+      .optional(),
     results: z
       .array(ReceiptOpResult)
+      .max(50)
+      .describe("One result per operation, the first 50 of an import's"),
+    results_more: z
+      .int()
+      .min(1)
       .max(1_000_000)
-      .describe("One result per operation: at most 50, and up to a million for an import"),
+      .describe("An import's results beyond those 50")
+      .optional(),
     conflicts: z
       .array(ReceiptConflict)
       .describe("Every conflicting field, without its value: read again")
@@ -151,6 +162,7 @@ export interface StoredReceiptLike {
     status: string;
     as_of: string;
     commit?: string;
+    target?: string;
     results: readonly object[];
     conflicts: readonly { at: number }[];
     error?: { code: string; message: string; op?: number; field?: string };
@@ -178,7 +190,10 @@ export function receiptResult(
     as_of: result.as_of,
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
-    results: result.results as z.input<typeof ReceiptOpResult>[],
+    ...(result.target === undefined ? {} : { target: result.target }),
+    // An import's commit can hold far more than a request's 50 operations (A1 3.7): the first 50.
+    results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
+    ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),
     ...(result.conflicts.length === 0
       ? {}
       : {

@@ -250,6 +250,11 @@ export interface WriteResult {
   seq: number;
   /** The commit's `op_` ID, for `applied`. */
   commit?: Id<"op">;
+  /**
+   * For an undo or redo refused with UNDO_CONFLICT: the commit it met, so a caller that named none
+   * (Ctrl+Z) can name it in what it does next (A1 3.10.1).
+   */
+  target?: Id<"op">;
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
   /**
