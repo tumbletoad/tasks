@@ -433,6 +433,17 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       "Changed since your base: M-14 context (v1049), M-14 context (v1049), M-14 context (v1049)",
     );
     expect(conflict).toMatch(/\+\d+ more lines? not shown\. Read the task again for the rest\.$/);
+    // A wrap-up held whatever the base (A3 3.4.8) is not called a change since the base.
+    const wrapped = renderError({
+      code: "conflict",
+      message: "The task is already finished with another outcome, so nothing was changed.",
+      data: {
+        conflicts: [
+          { task: "M-14", field: "wrap", version: 1049, by: "user", at: "2026-11-12T10:00:00Z" },
+        ],
+      },
+    });
+    expect(split(wrapped).outside).toContain("Wrapped up already: M-14 wrap (v1049)");
     // One conflicting field, as a retry usually meets: its value fits, cut to 60 characters.
     const one = renderError({
       code: "conflict",
