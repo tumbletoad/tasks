@@ -40,6 +40,7 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | D25 | Identifier and folders | The identifier is **`tasks`** everywhere. All of a person's data and configuration live in `~/.tasks` (`%USERPROFILE%\.tasks`). The program is installed elsewhere, and removing it never removes data. |
 | D26 | Limits | **Limits are guidelines until real use.** The targets for performance, latency, memory and token counts were chosen by feel. Implementers aim for them and reviewers flag a breach, but no feature is cut or reworked for a limit unless the result is clearly bad or damaging, and a feature that is better or more complete while over a limit stays. **Functionality, usability, stability, flexibility and maintainability come before performance.** The limits are re-evaluated when the product is close to maturity and can be tested for its final look and feel. |
 | D27 | What quality work protects | **A person's work comes first.** Reviews, tests and hardening cover what a person does, in ordinary use and in unusual but plausible use, that could lose or damage their work or frustrate them: an edit at the wrong moment, a crash, a restore, two windows, a full disk, a sync tool, a wrong clock. Hostile code on the same machine is kept in mind and the cheap protections are taken, but not every such hole is closed: the specification says what is not covered. A small visual flaw or a minor bug ranks below all of that. |
+| D28 | Folders | **Folders belong to projects and tasks.** Adding a project means choosing an existing folder or creating one, from the page or by an agent. A folder is an absolute path stored in the space with the machine it is on, and it travels with sync, backups and export bundles: a local path is not a secret. A task may have its own absolute folder, also inside a project, and needs no project and no folder. There are no roots and no relative paths. **Tasks sets no limit on where agents work**: only the person's own setup of an agent app does. Where a rule costs a person a concept, a step or a refusal and buys little, it goes. |
 
 ### A.2 Architecture decisions
 
@@ -54,8 +55,8 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | R7 | Agent scope | Agents never launch agents, start runs, edit routines or change policy. Those actions belong to the user. |
 | R8 | Launch records | A **launch intent is persisted before dispatch**. Outcomes: Dispatched, Confirmed, Failed or Unknown. An uncertain launch is never retried automatically. |
 | R9 | Launch and run | **Launching** an app the user works in and **owning a run** are separate interfaces. A run's exit code never completes a task. |
-| R10 | Targets and instances | Built-in **targets** are reviewed code. **Instances** (one per account or config home), terminals, roots, custom targets and every executable command line live only in machine-local configuration. Space data holds only references. A definition that arrives with space data stays disabled until the user approves its exact command. |
-| R11 | Exact folders | A task's **place** (machine, root, relative path) must resolve exactly. Tasks never silently opens another clone or a containing project. |
+| R10 | Targets and instances | Built-in **targets** are reviewed code. **Instances** (one per account or config home), terminals, custom targets and every executable command line live only in machine-local configuration. Space data holds only references. A definition that arrives with space data stays disabled until the user approves its exact command. |
+| R11 | Exact folders | A launch uses the task's own **folder** on this machine, else its project's, else none here when either lives on another machine, else the space's Tasks work folder. A folder is `(owner, machine, absolute path)` (D28). Tasks never silently opens another clone, a parent folder, the current folder or the last folder used. |
 | R12 | Search | SQLite **FTS5**, compact rows, details on request, cursors bound to a snapshot. Related learnings in the task digest. No embeddings in v1. |
 | R13 | Local transport | Agents and the CLI use a **local socket or named pipe only the user's own processes can use**: a user-only folder plus a mutual handshake over a user-only key. The browser UI uses HTTP on 127.0.0.1 with a token and Host and Origin checks. No open TCP API for agents. |
 | R14 | Brief | The text an agent session starts with is **short and points to the task**. It never embeds the task's content. |
@@ -127,7 +128,7 @@ Tasks get in by quick capture (the search-or-add field), by agents through `add_
 
 ## F. The space (A1)
 
-A space is a folder, by default `~/.tasks/spaces/<slug>/`, holding `space.json` (marker `tasks_space`, identity, epoch, incarnation, schema version), `space.db` (the only truth: WAL, `synchronous=FULL`, STRICT tables), `attachments/`, `view/` (projection), `exchange/` (import working copies), `backups/` and `exports/`. Machine-local state (roots, instances, keys, UI state) lives in `~/.tasks/` and never in a space.
+A space is a folder, by default `~/.tasks/spaces/<slug>/`, holding `space.json` (marker `tasks_space`, identity, epoch, incarnation, schema version), `space.db` (the only truth: WAL, `synchronous=FULL`, STRICT tables), `attachments/`, `view/` (projection), `exchange/` (import working copies), `backups/` and `exports/`. Machine-local state (instances, keys, UI state) lives in `~/.tasks/` and never in a space. The folders of projects and tasks are space data (D28).
 
 Core rules: IDs are a type prefix plus 128 random bits in Crockford base32, with never-reused short references like `M-14`. Every write carries `base`, and a field changed since is a conflict. Undo, redo and revert follow each field's lineage and stop at another actor's change. Labels and source links are versioned rows. Wrap-up only adds, deletion is a restorable tombstone, and only a human-only `redact` destroys data. A copied or restored space opens read-only until claimed, transferred or forked. A space in a synced folder opens read-only until confirmed on that machine, a folder whose sync status cannot be checked counts as synced, and a network filesystem is never writable. Such a space leaves its folder by `tasks space open <folder> --excluded`, once the person confirms the folder is excluded from sync, or by a verified backup restored into a new folder and claimed. The old folder stays as it was. A move command comes later, built on transfer and claim (A7 section 6). No operation deletes a person's data or a backup as a side effect: it reuses what exists, retires and keeps what it replaces, and says where it is. Removal outside the backup retention policy is the person's explicit act. Migrations run in one transaction, each attempt behind a verified backup of its own, and are additive within a major version after 1.0. A failed migration leaves the space at its old schema and read-only, and the same build does not try again on an unchanged database: another build, a restore or `tasks space open <folder> --retry-migration` does. Schemas 0.1 and 0.2 are frozen. Backups: 7 daily, 4 weekly, plus one before every migration and restore. Scale target: 5,000 open and 50,000 completed tasks per space, 10 concurrent agent sessions.
 
@@ -155,10 +156,10 @@ One MCP server named `tasks`, registered once per agent home. Its name is a sepa
 | Claude Desktop, Codex app | Deep link | Copy | Best effort |
 | Any other app | Copy the brief or a context pack | – | Copy |
 
-- A place must equal the target's working folder. Tasks without a folder open or run in a **Tasks work folder** for that space on that machine, so any task can go to an agent.
+- The folder a launch resolves (R11) must equal the target's working folder. A task with no folder of its own or its project's anywhere opens or runs in a **Tasks work folder** for that space on that machine, so any task can go to an agent.
 - Terminals and runs run in their own process scope with the environment of a login-shell snapshot.
 - The brief is about 400 characters: task ID, title and launch reference. Composer text replaces the "wait" line.
-- **Runs** use `claude -p` and `codex exec` in v1 (a T3 run adapter after v1). Each has a parser, log, timeout and cancellation. Windows cancellation uses a small console-attach helper (M6.04h) with a forced kill after 10 seconds. Limits: 3 runs per machine, 2 per instance, 1 per task, 1 per folder. Runs start only in roots marked "Runs allowed", routine work folders or a Tasks work folder.
+- **Runs** use `claude -p` and `codex exec` in v1 (a T3 run adapter after v1). Each has a parser, log, timeout and cancellation. Windows cancellation uses a small console-attach helper (M6.04h) with a forced kill after 10 seconds. Limits: 3 runs per machine, 2 per instance, 1 per task, 1 per folder. A run starts in the folder its task resolves to, or a routine's work folder: Tasks sets no limit on where agents work (D28).
 - **Routines**: Refresh from sources (a run on the chosen agent instance that reads mail, calendar, documents, tickets and chat through the agent's own connectors and tools, and adds or updates tasks by source key) and Wrap-up. Both start on request. Each routine stores a schedule for M9. Agents cannot create, edit or start routines.
 
 ## I. Search (A1, A3)
@@ -206,7 +207,7 @@ Every step starts from a failing test and ends with `pnpm verify` and its Verify
 
 ## O. Milestones
 
-v1 is 104 steps across eight milestones (A7). A step starts when the code it builds on exists, on a branch if not yet merged: the milestone order is not itself a dependency. Independent steps run in parallel lanes. The interactive Open reaches the first user at the end of M2.
+v1 is 110 steps across eight milestones (A7). A step starts when the code it builds on exists, on a branch if not yet merged: the milestone order is not itself a dependency. Independent steps run in parallel lanes. The interactive Open reaches the first user at the end of M2.
 
 | Milestone | Goal | Depends on | Owner's part |
 |---|---|---|---|
@@ -256,7 +257,7 @@ Smaller UI choices are in A7 section 6. Their defaults stand until M5 settles th
 
 | File | Covers |
 |---|---|
-| `appendix/A1-data.md` | Schema, operations, history and undo, receipts, IDs, migrations, the space folder, wrap-up, projection and import, preferences, places, backups, search storage |
+| `appendix/A1-data.md` | Schema, operations, history and undo, receipts, IDs, migrations, the space folder, wrap-up, projection and import, preferences, folders, backups, search storage |
 | `appendix/A2-service.md` | Process model, service lifecycle per OS, transports and their security, the bridge, the CLI, packaging, install and update, diagnostics |
 | `appendix/A3-agent-interface.md` | Registry, MCP tools, server instructions, setup per app, autonomy and proposals, binding, search, briefs, sizes |
 | `appendix/A4-launch-and-runs.md` | Targets and instances, launch routes, terminals and the shim, launch intents, runs, routines, scheduling, process scopes |
@@ -280,7 +281,7 @@ Every name people, agents and the operating system see comes from `packages/bran
 | **Task**, **summary**, **context** | The unit of work; the one line under its title (the next step when there is one); the agent-maintained understanding of it. |
 | **Note**, **log** | An entry addressed to the user or to agents (only the user addresses notes to agents, agents write one only when asked); progress entries written by agents. |
 | **Source**, **source key** | A link to where a task came from, with a meaningful title; its dedupe key. |
-| **Place** | A task's folder: machine, named root, relative path. |
+| **Folder** | A project's or a task's working folder on one machine: an absolute path, with the home folder shown as `~`. Areas have none. |
 | **Machine** | A computer that runs Tasks. |
 | **Target**, **instance** | An app Tasks launches into; a target bound to one account or config home ("Codex · work"). |
 | **Open** | The button verb for starting an interactive session. |
