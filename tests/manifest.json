@@ -2306,6 +2306,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.12.1.runtime.safe-exit",
+      "title": "The pinned runtime hands Sparkplug batches to a V8 worker thread and compiles hot functions with Maglev, and with safe-exit.ts loaded first it does neither; every flag it sets is known to the runtime; every script that loads the product's code and ends through process.exit, found through the import graph of packages/, tests/ and scripts/, imports safe-exit.ts before any other module",
+      "source": "A2 3.12.1",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.1.build.node-download",
       "title": "The build's Node pin names .node-version and four platforms whose digests equal SHASUMS256.txt and pnpm-lock.yaml; a wrong digest, a missing entry and a malformed file are refused; gpgv accepts Node's real signature and refuses a changed file or an unknown key",
       "source": "A2 3.12.1, A7 3.8 M1.13",

@@ -10,6 +10,9 @@
 //    other command loads the CLI, which the build ships as `lib/chunks/cli.mjs`.
 // 3. It tells the CLI which version folder it runs from: its own parent, whose manifest.json
 //    doctor's integrity and runtime rows check, and whose `ui/` the service serves (M2.13).
+// Before all of these, safe-exit: the bridge, the shim and `tasks serve` end through
+// `process.exit`, which the pinned Node can otherwise hang in (A2 3.12.1).
+import "@tasks/bridge/safe-exit";
 import module from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
