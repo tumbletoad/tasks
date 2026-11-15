@@ -500,6 +500,8 @@ function decideMatched(
     // The space holds E's wrap-up once the lifecycle applies: E's outcome, or none.
     wrap = "settle";
   } else if (wrap === "apply") {
+    // A changed outcome wraps the finished task up again. An outcome the prototype dropped stays:
+    // an import never unwraps a task, as it never removes a place or an evidence entry.
     const done = (found.values.lifecycle as string) !== "active";
     if (outcome !== null && done) ops.push({ kind: "task.wrap_up", task: id, outcome });
     else wrap = "keep";
