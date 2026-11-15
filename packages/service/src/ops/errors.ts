@@ -91,7 +91,10 @@ const HINTS: Readonly<Record<string, string>> = {
   UNDO_BEFORE_FLOOR: "Changes from before the space's last format change stay as they are.",
 };
 
-const WRAPPED = "The task is already finished with another outcome, so nothing was changed.";
+/** A conflict's `reason` when complete_task's wrap-up was held (A3 3.4.8). */
+export const ALREADY_WRAPPED = "already_wrapped";
+const WRAPPED =
+  "The task is already wrapped up with another outcome or other learnings, so nothing was changed.";
 const WRAPPED_HINT =
   "To add to it, log an entry: add_entry (tasks log). To finish it again, reopen it first: reopen_task (tasks reopen).";
 
@@ -103,21 +106,42 @@ export const byOf = (by: { kind: string; label: string; origin?: string }): stri
   by.origin === "import" ? "import" : by.kind === "human" ? "user" : by.label;
 
 /**
+ * Whether a conflict is complete_task's held wrap-up (A3 3.4.8): every conflict is on `wrap` of
+ * the request's `once` wrap-up operation, on a task the writer found wrapped. A base conflict on
+ * that operation finds the task not wrapped (else it is held), so the value tells them apart. A
+ * replay's receipt holds no value, and is read as held, the case a person meets.
+ */
+function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
+  if (op === undefined || result.status !== "conflict" || result.conflicts.length === 0) {
+    return false;
+  }
+  return result.conflicts.every((c) => {
+    if (c.entity !== "tasks" || c.field !== "wrap" || c.op !== op) return false;
+    if (c.value === undefined) return true;
+    return (
+      typeof c.value === "object" &&
+      c.value !== null &&
+      (c.value as Record<string, unknown>)["wrap_state"] === "wrapped"
+    );
+  });
+}
+
+/**
  * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
- * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form.
+ * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form. `wrapUp` is the
+ * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
+ * base.
  */
 export function resultFailure(
   result: WriteResult,
   hints: Readonly<Record<string, string>> = {},
+  wrapUp?: number,
 ): AppError {
   const problem = result.error;
-  // complete_task on a task wrapped up already with another outcome (A3 3.4.8): the writer holds
-  // the wrap-up whatever the base, so no field changed after it and a fresh read changes nothing.
-  // The message says what happened, and the hint what the person can do instead.
-  const wrapped =
-    result.status === "conflict" &&
-    result.conflicts.length > 0 &&
-    result.conflicts.every((c) => c.entity === "tasks" && c.field === "wrap");
+  // complete_task on a task wrapped up already with another outcome or other learnings: the
+  // writer holds the wrap-up whatever the base, so a fresh read changes nothing. The message says
+  // what happened, `reason` names it for a script, and the hint says what the person can do.
+  const wrapped = heldWrapUp(result, wrapUp);
   const hint = wrapped
     ? WRAPPED_HINT
     : problem === undefined
@@ -158,6 +182,7 @@ export function resultFailure(
     hint: hint ?? "Read the task again, then send the change with a new request ID.",
     data: {
       ...base.data,
+      ...(wrapped ? { reason: ALREADY_WRAPPED } : {}),
       as_of: result.as_of,
       conflicts,
       ...(result.replayed === true ? { replayed: true } : {}),

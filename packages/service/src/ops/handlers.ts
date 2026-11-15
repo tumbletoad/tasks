@@ -618,6 +618,8 @@ async function submit(
     readonly undoable?: false;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
     readonly hints?: Readonly<Record<string, string>>;
+    /** The index of complete_task's `once` wrap-up operation (resultFailure). */
+    readonly wrapUp?: number;
   } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
@@ -673,7 +675,7 @@ async function submit(
     throw storageFailure(error);
   }
   if (result.status === "conflict" || result.status === "rejected") {
-    throw resultFailure(result, options.hints);
+    throw resultFailure(result, options.hints, options.wrapUp);
   }
   return result;
 }
@@ -1651,7 +1653,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // task.finish's result has no warnings, so a follow-up's folder under no root is refused. A
     // follow-up bound without a remote (its config unreadable) has no remote check, unannounced.
     ops.push(...(await placeSets(call, asks, "refuse", ops.length)).ops);
-    const result = await submit(call, ops);
+    const result = await submit(call, ops, own > 1 ? { wrapUp: 1 } : {});
     const done = opAt(result, 0);
     // Whether the call finished or wrapped up the task, from the operations' stored results; its
     // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a
@@ -1796,7 +1798,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     );
     // A3 3.7.4: a script of the same person (`cli-script` on this machine) writes as `script`,
     // whose changes are on no undo stack. When one changed the space after the change undone,
-    // the answer names it, so the person knows this undo did not take it back.
+    // the answer names it, so the person knows this undo did not take it back. The note is extra:
+    // the undo has applied, so a failed read of it leaves the note out and never turns the undo
+    // into a failure, which a plain `tasks undo` again would answer by undoing one more change.
     let scripted;
     try {
       scripted = await readScriptChange(readerOf(call.space), {
@@ -1804,8 +1808,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         undone: String(answer["commit"]),
         seq: result.seq,
       });
-    } catch (error) {
-      throw storageFailure(error);
+    } catch {
+      scripted = undefined;
     }
     return scripted === undefined ? answer : { ...answer, script_change: scripted };
   },

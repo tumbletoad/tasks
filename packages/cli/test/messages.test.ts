@@ -42,7 +42,7 @@ describe("[A3.3.4.finish.already-wrapped] tasks done on a finished task", () => 
       expect(other.code).toBe(EXIT_CODES.conflict);
       expect(other.stdout).toBe("");
       expect(other.stderr).toMatch(
-        /^request \S+\nerror conflict: The task is already finished with another outcome, so nothing was changed\. To add to it, log an entry: add_entry \(tasks log\)\. To finish it again, reopen it first: reopen_task \(tasks reopen\)\.\n {2}M-1 wrap: user at \S+\n$/,
+        /^request \S+\nerror conflict: The task is already wrapped up with another outcome or other learnings, so nothing was changed\. To add to it, log an entry: add_entry \(tasks log\)\. To finish it again, reopen it first: reopen_task \(tasks reopen\)\.\n {2}M-1 wrap: user at \S+\n$/,
       );
       expect(other.stderr).not.toContain("base");
     },

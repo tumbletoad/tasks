@@ -835,7 +835,7 @@ export function renderError(body: ErrorBody, random?: Random): string {
       conflicts.length === 0
         ? undefined
         : // A wrap-up held whatever the base (A3 3.4.8) did not change since it.
-          `${conflicts.every((c) => c.field === "wrap") ? "Wrapped up already" : "Changed since your base"}: ${conflicts
+          `${data["reason"] === "already_wrapped" ? "Wrapped up already" : "Changed since your base"}: ${conflicts
             .slice(0, 5)
             .map((c) => `${where(c)} (v${asText(c.version)})`)
             .join(", ")}`,

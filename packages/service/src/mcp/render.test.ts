@@ -433,17 +433,25 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       "Changed since your base: M-14 context (v1049), M-14 context (v1049), M-14 context (v1049)",
     );
     expect(conflict).toMatch(/\+\d+ more lines? not shown\. Read the task again for the rest\.$/);
-    // A wrap-up held whatever the base (A3 3.4.8) is not called a change since the base.
+    // A wrap-up held whatever the base (A3 3.4.8) is not called a change since the base; another
+    // conflict on wrap alone (a stale base, an undo) is.
+    const onWrap = [
+      { task: "M-14", field: "wrap", version: 1049, by: "user", at: "2026-11-12T10:00:00Z" },
+    ];
     const wrapped = renderError({
       code: "conflict",
-      message: "The task is already finished with another outcome, so nothing was changed.",
-      data: {
-        conflicts: [
-          { task: "M-14", field: "wrap", version: 1049, by: "user", at: "2026-11-12T10:00:00Z" },
-        ],
-      },
+      message:
+        "The task is already wrapped up with another outcome or other learnings, so nothing was changed.",
+      data: { reason: "already_wrapped", conflicts: onWrap },
     });
+    expect(wrapped.split("\n")[0]).toMatch(/^error conflict \(already_wrapped\): The task is/);
     expect(split(wrapped).outside).toContain("Wrapped up already: M-14 wrap (v1049)");
+    const stale = renderError({
+      code: "conflict",
+      message: "A field changed after the base: read again.",
+      data: { conflicts: onWrap },
+    });
+    expect(split(stale).outside).toContain("Changed since your base: M-14 wrap (v1049)");
     // One conflicting field, as a retry usually meets: its value fits, cut to 60 characters.
     const one = renderError({
       code: "conflict",
