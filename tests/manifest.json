@@ -2106,6 +2106,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.cli.space-words",
+      "title": "tasks space says what is so and the ways it names work: claim of another computer's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
+      "source": "A2 3.10.1, A2 3.10.5, A6 3.5, A1 3.18",
+      "owner": "M3",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.cli.space-export",
       "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title refuses the export with its kind and place and never the text",
       "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",

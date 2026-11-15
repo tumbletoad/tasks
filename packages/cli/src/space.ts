@@ -358,24 +358,19 @@ export async function spaceCommand(
         // A path is a file. A bare name is a backup's or a bundle's as `space backups` prints it,
         // in the folders of the space named after it; with --to, a bare file name with its
         // extension stays a file in the working folder.
-        const file =
+        const isFile =
           isAbsolute(backup) ||
           backup.includes("/") ||
           backup.includes("\\") ||
-          (/\.(?:db\.gz|zip)$/i.test(backup) && to !== undefined)
-            ? absolute(io, backup)
-            : backup;
-        const byName = file === backup && backup !== "latest";
+          (/\.(?:db\.gz|zip)$/i.test(backup) && to !== undefined);
         const result = await call("space/restore", {
-          backup: file,
+          backup: isFile ? absolute(io, backup) : backup,
           ...(to === undefined
             ? { space: await which(o.values.get("--in-place") ?? o.positional[1]) }
             : { to: absolute(io, to) }),
           // `latest` names the space whose newest verified backup it restores (A1 3.2), and a
           // backup's name the space it is of.
-          ...(to !== undefined && (backup === "latest" || byName)
-            ? { of: await which(o.positional[1]) }
-            : {}),
+          ...(to !== undefined && !isFile ? { of: await which(o.positional[1]) } : {}),
         });
         out(result, () => {
           if (typeof result["backup"] === "string") {

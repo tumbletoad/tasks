@@ -12,8 +12,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
+import { configOf } from "@tasks/service/test/harness";
+import { createSpace, newId } from "@tasks/storage";
+import { checkedDriver } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { wayOut } from "../src/space.ts";
+import { SPACE_HELP, wayOut } from "../src/space.ts";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
 
 let world: CliWorld;
@@ -124,9 +127,13 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
       space: { state: "read_only", reason: "read_only_copy" },
     });
     // The copy has the original's space ID: the original closes before the copy is claimed.
-    // Two spaces are called Mira now: the name is ambiguous, the folder is not.
-    expect((await user(["space", "close", "Mira", "--json"])).code).toBe(3);
-    expect((await user(["space", "close", world.spaceFolder, "--json"])).code).toBe(0);
+    // Two copies are called Mira now: the name means the writable one, the original (A2 3.10.5).
+    const closedOriginal = await user(["space", "close", "Mira", "--json"]);
+    expect(closedOriginal.code, closedOriginal.stdout).toBe(0);
+    expect(parsed(closedOriginal.stdout)["space"]).toMatchObject({
+      folder: world.spaceFolder,
+      state: "closed",
+    });
     // The read-only copy answers reads, receipt.get among them: its receipts came with it, and
     // its ID names it now that the original is closed.
     const receipt = await world.tasks(["receipt", addId, "--space", miraId, "--json"]);
@@ -148,16 +155,18 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     const lifeFolder = join(world.root, "s", "life");
     expect((await user(["space", "close", "Life"])).code).toBe(0);
 
-    // The closed original and the claimed copy share an ID: the ID names neither for certain.
+    // The closed original and the claimed copy share an ID: the ID means the claimed copy, which
+    // takes writes, never the closed original listed first.
     const byId = await user(["space", "backup", miraId, "--json"]);
-    expect(byId.code, byId.stdout).toBe(3);
-    expect(parsed(byId.stdout)).toMatchObject({ error: { code: "ambiguous" } });
+    expect(byId.code, byId.stdout + byId.stderr).toBe(0);
     // With no space named, the one open space is the copy, and the copy is what is backed up.
     const only = await user(["space", "backup", "--json"]);
     expect(only.code, only.stdout + only.stderr).toBe(0);
-    const onlyName = (parsed(only.stdout)["backup"] as { name: string }).name;
     const copyBackups = parsed((await user(["space", "backups", copyFolder, "--json"])).stdout);
-    expect(copyBackups["backups"]).toContainEqual(expect.objectContaining({ name: onlyName }));
+    for (const ran of [byId, only]) {
+      const backedUp = (parsed(ran.stdout)["backup"] as { name: string }).name;
+      expect(copyBackups["backups"]).toContainEqual(expect.objectContaining({ name: backedUp }));
+    }
 
     const reopened = await user(["space", "open", lifeFolder, "--json"]);
     expect(reopened.code, reopened.stdout + reopened.stderr).toBe(0);
@@ -390,7 +399,7 @@ const BACKUP_WAY = [
   `  ${CLI_NAME} space claim <new folder>`,
   "<name> is the name the backup prints. <new folder> must not exist yet.",
   "The old folder stays where it is, read-only, and keeps all its files.",
-  "If machine.toml names the old folder, change that path to the new folder: the next start then opens the copy.",
+  `The copy opens at every start from now on. Close the old folder when you no longer need it: ${CLI_NAME} space close <folder>`,
 ];
 const EXCLUDED_WAY = `If this folder is excluded from sync, open it for writing: ${CLI_NAME} space open <folder> --excluded`;
 
@@ -459,4 +468,148 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
     }
     expect(wayOut({ entry: 0, state: "open" })).toEqual([]);
   });
+});
+
+describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names work", () => {
+  test("another computer's space: claim names the way that works, the way works, and the claim prints A6's warning", async () => {
+    const theirs = join(world.root, "s", "theirs");
+    createSpace(await checkedDriver(), theirs, {
+      name: "Theirs",
+      ownerLabel: "Fixture owner",
+      machineId: newId("m"),
+    });
+    const opened = await user(["space", "open", theirs, "--json"]);
+    expect(opened.code, opened.stdout + opened.stderr).toBe(0);
+    expect(parsed(opened.stdout)["space"]).toMatchObject({
+      state: "read_only",
+      reason: "not_authority",
+    });
+    const refused = await user(["space", "claim", theirs]);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain("This space belongs to another computer");
+    for (const step of [
+      `${CLI_NAME} space export <folder>`,
+      `${CLI_NAME} space close <folder>`,
+      `${CLI_NAME} space restore <bundle> --to <new folder>`,
+      `${CLI_NAME} space claim <new folder>`,
+    ]) {
+      expect(refused.stderr).toContain(step);
+    }
+
+    // The way, as it is printed.
+    const exported = await user(["space", "export", theirs]);
+    expect(exported.code, exported.stdout + exported.stderr).toBe(0);
+    const bundle = /^Exported to (.+) \(seq /mu.exec(exported.stdout)?.[1] ?? "";
+    expect(bundle).not.toBe("");
+    expect((await user(["space", "close", theirs])).code).toBe(0);
+    const mine = join(world.root, "s", "theirs-mine");
+    const restored = await user(["space", "restore", bundle, "--to", mine]);
+    expect(restored.code, restored.stdout + restored.stderr).toBe(0);
+    const claimed = await user(["space", "claim", mine]);
+    expect(claimed.code, claimed.stdout + claimed.stderr).toBe(0);
+    expect(claimed.stdout).toMatch(/^Claimed Theirs .* open /mu);
+    expect(claimed.stdout).toContain(
+      "If another computer still has this space, its later changes will not appear here.\n",
+    );
+    // An open space is not claimed, and says why.
+    const again = await user(["space", "claim", mine, "--json"]);
+    expect(again.code).toBe(2);
+    expect(parsed(again.stdout)).toMatchObject({
+      error: {
+        message: "This space takes writes on this computer already: there is nothing to claim.",
+      },
+    });
+    expect((await user(["space", "close", mine])).code).toBe(0);
+  }, 240_000);
+
+  test("a backup by the name space backups prints, restored into a new folder; --space takes that folder for any command", async () => {
+    const folder = join(world.root, "s", "named");
+    expect((await user(["space", "create", "Named", "--path", folder])).code).toBe(0);
+    const added = await world.tasks([
+      "add",
+      "Named task",
+      "--space",
+      folder,
+      "--request-id",
+      "fixture-named-0001",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+    const ref = (parsed(added.stdout)["tasks"] as { ref: string }[])[0]?.ref ?? "";
+    expect((await user(["space", "backup", folder])).code).toBe(0);
+    const listed = await user(["space", "backups", folder]);
+    const name = /^(\S+) {2}ok/mu.exec(listed.stdout)?.[1] ?? "";
+    expect(name).not.toBe("");
+    const copy = join("s", "named-copy");
+    const restored = await user(["space", "restore", name, folder, "--to", copy]);
+    expect(restored.code, restored.stdout + restored.stderr).toBe(0);
+    expect(restored.stdout).toMatch(/^Restored Named .* read_only: read_only_copy /mu);
+
+    // A relative folder is the working folder's, as for the space verbs. The copy answers reads
+    // and refuses writes; the name means the writable original.
+    const shown = await world.tasks(["show", ref, "--space", copy, "--json"]);
+    expect(shown.code, shown.stdout + shown.stderr).toBe(0);
+    const write = await world.tasks([
+      "add",
+      "Into the copy",
+      "--space",
+      copy,
+      "--request-id",
+      "fixture-named-0002",
+      "--json",
+    ]);
+    expect(parsed(write.stdout)).toMatchObject({ error: { code: "read_only" } });
+    const original = await world.tasks([
+      "add",
+      "Into the original",
+      "--space",
+      "Named",
+      "--request-id",
+      "fixture-named-0003",
+      "--json",
+    ]);
+    expect(original.code, original.stdout + original.stderr).toBe(0);
+    for (const done of [join(world.root, copy), folder]) {
+      expect((await user(["space", "close", done])).code).toBe(0);
+    }
+  }, 240_000);
+
+  test("a create where a space is names tasks space open; tasks recover is tasks space recover; a record machine.toml cannot take is said on stderr", async () => {
+    const there = await user(["space", "create", "Mira", "--path", world.spaceFolder]);
+    expect(there.code).toBe(2);
+    expect(there.stderr).toContain("A space is already in that folder. Open it with: ");
+    expect(there.stderr).toContain(`${CLI_NAME} space open `);
+
+    // `tasks recover` is the same command: the same refusal for a space that needs none.
+    for (const argv of [
+      ["recover", world.spaceFolder, "--json"],
+      ["space", "recover", world.spaceFolder, "--json"],
+    ]) {
+      const ran = await user(argv);
+      expect(ran.code, argv.join(" ")).toBe(2);
+      expect(parsed(ran.stdout)).toMatchObject({
+        error: { message: "The space needs no recovery." },
+      });
+    }
+    expect((await user(["help", "recover"])).stdout).toBe(SPACE_HELP);
+    // Only the user recovers a space, under either name.
+    expect((await world.tasks(["recover", world.spaceFolder, "--json"])).code).toBe(5);
+
+    // machine.toml with a syntax error from a hand edit: the space is created for this run, and
+    // stderr says a restart will not keep it.
+    const file = join(configOf(world.home), "machine.toml");
+    const before = readFileSync(file, "utf8");
+    try {
+      writeFileSync(file, `${before}\n[log\n`);
+      const made = await user(["space", "create", "Unrecorded", "--path", join("s", "unrecorded")]);
+      expect(made.code, made.stdout + made.stderr).toBe(0);
+      expect(made.stdout).toMatch(/^Created Unrecorded .* open /mu);
+      expect(made.stderr).toBe(
+        `The space is open for now, but will not reopen after a restart: machine.toml cannot be read as it is. Run ${CLI_NAME} doctor: it names the problem. Then run this command again.\n`,
+      );
+    } finally {
+      writeFileSync(file, before);
+    }
+    expect((await user(["space", "close", join(world.root, "s", "unrecorded")])).code).toBe(0);
+  }, 240_000);
 });
