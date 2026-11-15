@@ -229,6 +229,28 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     );
   });
 
+  test("T3 Code's folder is where T3CODE_HOME names it, as setup reads its settings, without a t3 command", async () => {
+    // No t3 on PATH and no `~/.t3`: only the folder T3CODE_HOME names shows T3 is there.
+    const entries = Object.fromEntries(
+      Object.entries(LINUX.entries).filter(
+        ([path]) => !path.startsWith("/home/mira/.t3/") && !path.endsWith("/t3"),
+      ),
+    );
+    const bare = { ...LINUX, entries };
+    expect((await detect(fakeHost(bare))).t3Folder).toBe(false);
+    const named = {
+      ...bare,
+      env: { ...LINUX.env, T3CODE_HOME: "/srv/t3-home" },
+      entries: { ...entries, "/srv/t3-home/userdata/settings.json": { kind: "file" as const } },
+    };
+    const detection = await detect(fakeHost(named));
+    expect(detection.t3Folder).toBe(true);
+    expect(detection.proposals.find((p) => p.target === "t3")).toMatchObject({ id: "t3" });
+    // A relative value names no folder: the home folder's `.t3` decides, and there is none.
+    const relative = { ...named, env: { ...LINUX.env, T3CODE_HOME: "t3-home" } };
+    expect((await detect(fakeHost(relative))).t3Folder).toBe(false);
+  });
+
   test("a home is selected by the instance alone: the inherited home variables are scrubbed, every other home names its variable, and a chosen home moves the variable with it", async () => {
     // The launch removes these from the inherited environment (A4 3.8), so an instance without
     // one runs the default home. Pinning the default instead would move Claude's .claude.json.

@@ -64,6 +64,8 @@ export interface DetectRule {
   readonly homes?: { readonly folder: string; readonly env: string };
   /** A folder in the home whose presence shows the app is installed (T3's `~/.t3`). */
   readonly appFolder?: string;
+  /** A variable that names that folder instead when it holds an absolute path (`T3CODE_HOME`). */
+  readonly appFolderEnv?: string;
   /** A per-user command folder of the app, relative to the home (T3's `.t3/bin`). */
   readonly appBin?: string;
   /** URL scheme of the app's handler. Detected by a later step (A4 3.4.4, 3.4.5). */
@@ -136,7 +138,13 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
     ],
     instances: "per-provider-instance",
-    detect: { binaries: ["t3"], appFolder: ".t3", appBin: ".t3/bin", urlScheme: "t3code" },
+    detect: {
+      binaries: ["t3"],
+      appFolder: ".t3",
+      appFolderEnv: "T3CODE_HOME",
+      appBin: ".t3/bin",
+      urlScheme: "t3code",
+    },
     testedVersions: ">=0.1.7 <0.2.0",
     t3Models: { codex: "gpt-6-astra", claudeAgent: "claude-opus-5-5" },
     // A4 3.11.6: T3 takes a runtime mode per thread, not flags. M2.09 maps the permission.

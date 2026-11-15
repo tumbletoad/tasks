@@ -467,9 +467,19 @@ export async function detect(
 
   const p = pathOf(host.platform);
   const t3Def = targetDef("t3");
+  // T3 keeps its folder where T3CODE_HOME names it, else in the home folder: the rule setup reads
+  // T3's settings by (@tasks/service/setup `t3Folder`).
+  const t3Named =
+    t3Def.detect.appFolderEnv === undefined
+      ? undefined
+      : envValue(host.env, t3Def.detect.appFolderEnv, host.platform);
   const t3Folder =
     t3Def.detect.appFolder !== undefined &&
-    host.stat(p.join(host.home, t3Def.detect.appFolder))?.kind === "dir";
+    host.stat(
+      t3Named !== undefined && p.isAbsolute(t3Named)
+        ? t3Named
+        : p.join(host.home, t3Def.detect.appFolder),
+    )?.kind === "dir";
   const t3 = commands.find((c) => c.target === "t3");
   if (t3 !== undefined || t3Folder) {
     // T3's provider instances live in its settings, which Tasks reads only through T3's own
