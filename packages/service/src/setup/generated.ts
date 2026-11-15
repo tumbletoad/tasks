@@ -76,7 +76,7 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/u;
 /** Any run of spaces becomes one space, any dash a hyphen. */
 const plain = (text: string): string =>
   text
-    .replace(/[‐-―−]/gu, "-")
+    .replace(/[\u2010-\u2015\u2212]/gu, "-")
     .replace(/\s+/gu, " ")
     .trim();
 /** The text after heading and emphasis marks. */
