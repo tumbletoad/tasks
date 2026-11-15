@@ -349,18 +349,18 @@ describe("[A1.5.projection.rescue] what is not the projection's is never written
     }
     w.submit([{ kind: "task.patch", task: third?.id ?? "", set: { summary: "Free" } }]);
     const blocked = await projector.step();
-    expect(blocked.failed).toBe(2);
-    // The next batch takes the third task, which nothing blocks: the blocked two wait their pause.
-    const reports = await settle(projector);
-    expect(reports.reduce((sum, r) => sum + r.failed, 0)).toBe(0);
-    expect(readFileSync(join(w.dir, ...(third?.path ?? "").split("/")), "utf8")).toContain("Free");
-    expect(projector.pending().dirty).toBe(false);
-    // Their pause over, they are tried again; still blocked, they wait twice as long.
+    expect(blocked).toMatchObject({ failed: 2, blocked: 2 });
+    // Even once their pause is over (the worker paused for something else, say), a task that did
+    // not fail comes first: the third task is in the next batch, with one blocked one.
     clock += RETRY_FIRST_MS;
     expect(projector.pending().dirty).toBe(true);
-    expect((await projector.step()).failed).toBe(2);
+    expect(await projector.step()).toMatchObject({ failed: 1, blocked: 1 });
+    expect(readFileSync(join(w.dir, ...(third?.path ?? "").split("/")), "utf8")).toContain("Free");
+    // The other is tried in the batch after; then both wait, each twice as long as before.
+    const reports = await settle(projector);
+    expect(reports.reduce((sum, r) => sum + r.blocked, 0)).toBe(1);
+    expect(projector.pending().dirty).toBe(false);
     clock += RETRY_FIRST_MS;
-    await settle(projector);
     expect(projector.pending().dirty).toBe(false);
     clock += RETRY_FIRST_MS;
     expect(projector.pending().dirty).toBe(true);

@@ -25,9 +25,10 @@ const WAITING = "key NOT IN (SELECT value FROM json_each($waiting))";
 
 const SQL = {
   space: "SELECT * FROM space WHERE one = 1",
+  // Tasks that failed before come after every task that did not, oldest first within each.
   dirty:
     `SELECT key, first_seq FROM outbox WHERE topic = 'projection' AND key <> '*' AND ${WAITING} ` +
-    "ORDER BY first_seq, key LIMIT $limit",
+    "ORDER BY key IN (SELECT value FROM json_each($retried)), first_seq, key LIMIT $limit",
   all: "SELECT 1 AS dirty FROM outbox WHERE topic = 'projection' AND key = '*'",
   pending:
     "SELECT count(*) AS n, coalesce(max(seq), 0) AS newest FROM outbox " +
@@ -169,18 +170,20 @@ export function missingTasks(conn: Connection, ids: readonly string[]): string[]
 
 /**
  * One batch at one snapshot: at most `limit` dirty tasks, oldest first (A1 3.13 step 2), none of
- * the `waiting` tasks, so tasks that cannot be placed never fill every batch.
+ * the `waiting` tasks (in their pause), and the `retried` ones (whose file could not be placed
+ * before) only after every other: tasks that cannot be placed never fill a batch.
  */
 export function readBatch(
   conn: Connection,
   limit: number,
   waiting: readonly string[] = [],
+  retried: readonly string[] = [],
 ): BatchRead {
   return conn.transaction("deferred", () => {
     const space = spaceOf(conn);
     const keys = conn
       .prepare(SQL.dirty)
-      .all({ limit, waiting: JSON.stringify(waiting) })
+      .all({ limit, waiting: JSON.stringify(waiting), retried: JSON.stringify(retried) })
       .map((row) => str(row["key"]));
     const all = conn.prepare(SQL.all).get() !== undefined;
     const params = { ids: JSON.stringify(keys) };

@@ -129,6 +129,11 @@ export interface StepReport {
   readonly removed: number;
   /** Files that could not be placed or removed: their tasks wait, or they are tried again. */
   readonly failed: number;
+  /**
+   * Of those, tasks' files that could not be placed: each task waits a pause of its own (rule 7),
+   * so they never pause the worker. Any other failure does (loop.ts).
+   */
+  readonly blocked: number;
   /** The code of the first failure. */
   readonly code?: string;
   /** Entries rescued: each in a folder `<rescueStem>-<n>` (relative to the space's folder). */
@@ -435,7 +440,11 @@ export class Projector {
       // ran stays asked for.
       if (this.#reconcile === asked) this.#reconcile = "none";
     }
-    const read = readBatch(this.#conn, this.#batch, this.#waitingNow());
+    // Tasks that failed before: those still in their pause are not read, the others only after
+    // every task that did not fail, so tasks that cannot be placed never fill a batch (rule 7).
+    const waiting = this.#waitingNow();
+    const retried = new Set(this.#waiting.keys());
+    const read = readBatch(this.#conn, this.#batch, waiting, [...retried]);
     const record = this.#rec;
     const rescues = new Rescues(newStem(this.#now()));
     if (!sameIdentity(record.identity, read.space)) {
@@ -449,7 +458,7 @@ export class Projector {
       return this.#report(
         read.seq,
         0,
-        { written: 0, removed: 0, failed: 0 },
+        { written: 0, removed: 0, failed: 0, blocked: 0 },
         rescues,
         false,
         reconciled,
@@ -470,7 +479,7 @@ export class Projector {
       temps.push(tempPathOf(plan.next.path, plan.next.sha256, tag));
     }
     this.#state.writeJournal({ stem: rescues.stem, temps, placing, gone });
-    const counts = { written: 0, removed: 0, failed: 0 };
+    const counts = { written: 0, removed: 0, failed: 0, blocked: 0 };
     let code: string | undefined;
     let published = false;
     let watermark: number;
@@ -502,13 +511,15 @@ export class Projector {
           done.push(plan.key);
         } catch (error) {
           counts.failed += 1;
+          counts.blocked += 1;
           code ??= codeOf(error);
           this.#wait(plan.key);
         }
       }
       for (const key of done) this.#waiting.delete(key);
       watermark = await this.#writer.projected({ seq: read.seq, keys: done });
-      const drained = read.keys.length < this.#batch;
+      // Every task it could read: fewer than a batch, or room left for a task that failed before.
+      const drained = read.keys.length < this.#batch || read.keys.some((key) => retried.has(key));
       const moved = watermark > record.watermark;
       if (
         (drained || moved) &&
@@ -589,7 +600,7 @@ export class Projector {
   #report(
     seq: number,
     watermark: number,
-    counts: { written: number; removed: number; failed: number },
+    counts: { written: number; removed: number; failed: number; blocked: number },
     rescues: Rescues,
     published: boolean,
     reconciled?: Reconciled,

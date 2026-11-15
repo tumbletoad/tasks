@@ -1,12 +1,21 @@
 // When the projection runs (A1 3.13 step 2, A1 3.20, A7 3.10 M3.10's Verify line): one task shows
 // within 1 s of its commit; a batch waits 500 ms after the last change, at most 5 s while changes
 // keep coming; a backlog runs at once; failures pause. Fixture text only.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { runProjection, type Projector, type StepReport } from "../src/index.ts";
-import { checkWatermark, world } from "./helpers.ts";
+import { catalogOf, checkWatermark, settle, world } from "./helpers.ts";
 
 let root: string;
 beforeAll(() => {
@@ -23,6 +32,7 @@ const REPORT: StepReport = {
   written: 0,
   removed: 0,
   failed: 0,
+  blocked: 0,
   rescued: 0,
   published: true,
 };
@@ -31,11 +41,18 @@ const REPORT: StepReport = {
  * A stand-in projector on a fake clock: `changes` lists the instants of commits, a batch takes
  * every change so far, and `batches` records when each ran.
  */
-function scripted(changes: number[], options: { backlogBatches?: number; failing?: number } = {}) {
+function scripted(
+  changes: number[],
+  options: { backlogBatches?: number; failing?: number; blocked?: number; broken?: number } = {},
+) {
   let clock = 0;
   let seen = 0;
   let backlogs = options.backlogBatches ?? 0;
   let failing = options.failing ?? 0;
+  /** Batches that report a task that could not be placed, while other tasks wait. */
+  let blocked = options.blocked ?? 0;
+  /** Batches that report a failure that is no task's (a root file, a retired file). */
+  let broken = options.broken ?? 0;
   /** The last batch left a backlog: rows wait at or below its snapshot. */
   let owed = false;
   const batches: number[] = [];
@@ -59,6 +76,18 @@ function scripted(changes: number[], options: { backlogBatches?: number; failing
         return Promise.reject(new Error("EBUSY"));
       }
       seen = changes.filter((at) => at <= clock).length;
+      if (blocked > 0 || broken > 0) {
+        const task = blocked > 0;
+        if (task) blocked -= 1;
+        else broken -= 1;
+        owed = blocked > 0 || broken > 0;
+        return Promise.resolve({
+          ...REPORT,
+          backlog: owed,
+          failed: 1,
+          blocked: task ? 1 : 0,
+        });
+      }
       owed = backlogs > 0;
       if (owed) backlogs -= 1;
       return Promise.resolve({ ...REPORT, backlog: owed });
@@ -127,6 +156,43 @@ describe("[A1.5.projection.latency] one task shows within 1 s of its commit, and
     }
   });
 
+  test("a real space: tasks that cannot be placed and fill a batch never stop the task after them", async () => {
+    const folder = join(root, "blocked");
+    mkdirSync(folder);
+    const w = await world(folder, 12);
+    try {
+      const first = w.projector({ batch: 2 });
+      await first.start();
+      await settle(first);
+      const [a, b, c] = catalogOf(w.dir);
+      for (const line of [a, b]) {
+        const abs = join(w.dir, ...(line?.path ?? "").split("/"));
+        chmodSync(abs, 0o600);
+        writeFileSync(abs, "Blocking edit.\n");
+        w.submit([{ kind: "task.patch", task: line?.id ?? "", set: { summary: "Blocked" } }]);
+      }
+      // Nothing can be moved aside: the two blocked tasks are the oldest and fill a batch of two.
+      writeFileSync(join(w.folder, "exchange"), "Not a folder.\n");
+      w.submit([{ kind: "task.patch", task: c?.id ?? "", set: { summary: "Free" } }]);
+      let stop = false;
+      const running = runProjection(w.projector({ batch: 2 }), { stopped: () => stop });
+      try {
+        const file = join(w.dir, ...(c?.path ?? "").split("/"));
+        // A bound on waiting, not on speed: the old schedule never got there at all.
+        const deadline = Date.now() + 30_000;
+        while (!readFileSync(file, "utf8").includes("Free") && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(readFileSync(file, "utf8")).toContain("Free");
+      } finally {
+        stop = true;
+        await running;
+      }
+    } finally {
+      w.close();
+    }
+  }, 60_000);
+
   test("one change: the batch runs 500 ms after it", async () => {
     const { run, batches } = scripted([1_000]);
     await run;
@@ -154,5 +220,14 @@ describe("[A1.5.projection.latency] one task shows within 1 s of its commit, and
     expect(gaps[0]).toBeGreaterThanOrEqual(500);
     expect(gaps[1]).toBeGreaterThanOrEqual(1_000);
     expect(gaps[2]).toBeGreaterThanOrEqual(2_000);
+  });
+
+  test("a task that cannot be placed never pauses the worker: it waits its own pause, and the next batch runs at once; any other failure pauses", async () => {
+    const blocked = scripted([1_000], { blocked: 3 });
+    await blocked.run;
+    expect(blocked.batches).toEqual([1_500, 1_500, 1_500]);
+    const broken = scripted([1_000], { broken: 2 });
+    await broken.run;
+    expect((broken.batches[1] ?? 0) - (broken.batches[0] ?? 0)).toBeGreaterThanOrEqual(500);
   });
 });

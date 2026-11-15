@@ -1,8 +1,10 @@
 // When the projection runs a batch (A1 3.13 step 2): it waits 500 ms after the last change, at
 // most 5 s while changes keep coming, and runs the next batch at once while a backlog waits. It
 // looks at the outbox every 100 ms through its reader, so one task shows in the folder within 1 s
-// of its commit (A1 3.20). A batch that fails, or leaves tasks it could not place, is tried again
-// after a pause that doubles up to 30 s, so a file held open on Windows does not spin the worker.
+// of its commit (A1 3.20). A batch that fails, or leaves a root file or a retired file it could
+// not place or remove, is tried again after a pause that doubles up to 30 s, so a file held open
+// on Windows does not spin the worker. A task whose file could not be placed pauses only itself
+// (projector.ts, A1 3.13 rule 7): the next batch runs without it.
 import type { Projector, StartReport, StepReport } from "./projector.ts";
 
 export const POLL_MS = 100;
@@ -95,7 +97,9 @@ export async function runProjection(projector: Projector, options: LoopOptions):
       const report = await projector.step();
       options.onStep?.(report, Math.round(now() - t0));
       backlog = report.backlog;
-      failures = report.failed > 0 ? failures + 1 : 0;
+      // A task whose file could not be placed waits a pause of its own (projector.ts): it never
+      // pauses the worker, or its pause and the worker's would run in step and starve the rest.
+      failures = report.failed > report.blocked ? failures + 1 : 0;
     } catch (error) {
       backlog = false;
       failures += 1;
