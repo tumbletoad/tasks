@@ -79,7 +79,7 @@ export function groupKey(text: string, kind: "area" | "project"): string {
  */
 export function numberedSlug(
   base: string,
-  taken: ReadonlySet<string>,
+  taken: { has(slug: string): boolean },
   next: Map<string, number>,
 ): string {
   if (!taken.has(base)) return base;

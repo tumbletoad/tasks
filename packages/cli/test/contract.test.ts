@@ -25,6 +25,27 @@ function verbOf(entry: string, input: Record<string, unknown>): string {
   return verb;
 }
 
+/**
+ * The CLI's arguments for an entry: its verb with the input on stdin, or for the Planning
+ * import's dry run, which has a command of its own (`tasks import planning`), its options.
+ */
+function argvOf(entry: string, input: Record<string, unknown>): string[] {
+  if (entry !== "import.planning.preview") return [verbOf(entry, input), "--input", "-", "--json"];
+  const roots = (input["roots"] ?? []) as { id: string; folder: string }[];
+  return [
+    "import",
+    "planning",
+    String(input["folder"]),
+    "--dry-run",
+    "--json",
+    ...(typeof input["me"] === "string" ? ["--me", input["me"]] : []),
+    ...(roots.length === 0 ? [] : ["--roots", roots.map((r) => `${r.id}=${r.folder}`).join(",")]),
+    ...(typeof input["actions"] === "string" ? ["--actions", input["actions"]] : []),
+    ...(typeof input["checked_as"] === "string" ? ["--checked-as", input["checked_as"]] : []),
+    ...(input["include_orphans"] === true ? ["--include-orphans"] : []),
+  ];
+}
+
 contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --json", async () => {
   const w = await contractWorld("cj");
   const transport: ContractTransport = {
@@ -33,7 +54,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
     binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {
-      const ran = await runMain([verbOf(entry, input), "--input", "-", "--json"], {
+      const ran = await runMain(argvOf(entry, input), {
         home: w.home,
         tty: actor === "user",
         stdin: JSON.stringify(input),

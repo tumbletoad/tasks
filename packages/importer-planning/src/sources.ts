@@ -1,15 +1,21 @@
 // A metadata source as a space source (A7 3.15.3, `sources` and `Source keys`): its kind from the
 // URL, its key, and its title. Pure: a URL is parsed with the WHATWG parser, never fetched.
 //
-// Kind, in this order:
+// Kind, in this order. It gives every URL the page gives a kind of its own the matching kind of the
+// space (A7 3.15.3, Sources), and more:
 // - a `mailto:` URL: `email`;
+// - a `t3-thread:` URL, which names an agent thread: `session`;
+// - a host ending in `atlassian.net` with a path that starts with `/wiki`: `doc`;
 // - a path ending `/browse/<KEY>-<n>`: `ticket`, with `ref` `<KEY>-<n>` (the key upper-cased), when
 //   `<KEY>-<n>` fits a ref's 300 characters;
+// - any other URL of a host ending in `atlassian.net`: `ticket`, without a ref;
 // - a code host's path `/<owner>/<repo>[/-]/pull|pulls|merge_requests/<n>`: `pr`, and with
 //   `issues`: `issue`;
 // - by the host's first label: `mail`, `outlook`, `webmail`: `email`; `chat`, `teams`: `chat`;
 //   `calendar`: `calendar`; `docs`, `drive`, `sheets`, `slides`: `doc`;
 // - anything else: `web`.
+// A `file:` URL is a path on the machine that wrote it, no source: the mapping keeps its path
+// (`fileLinkPath`).
 //
 // Key: a ticket's is `jira:<KEY>-<n>`. Every other URL's is `url:<normalised URL>` (A3 3.11.1):
 // the WHATWG serialisation, which lower-cases the scheme and host, with `utm_*` query parameters
@@ -22,7 +28,7 @@ export const SOURCE_KEY_MAX = 512;
 
 /** The source kinds a mapping gives (A1 3.4's open set holds them). */
 export type PlannedSourceKind =
-  "email" | "chat" | "ticket" | "pr" | "issue" | "doc" | "calendar" | "web";
+  "email" | "chat" | "ticket" | "pr" | "issue" | "doc" | "calendar" | "session" | "web";
 
 export interface UrlClass {
   readonly kind: PlannedSourceKind;
@@ -32,7 +38,31 @@ export interface UrlClass {
   readonly ref?: string;
   /** Why there is no key: the URL does not parse, or the key is over 512 characters. */
   readonly keyProblem?: "unparsed" | "too-long";
+  /** A URL that parses with a scheme the page shows no link for (`mailto:`, `ftp:`). */
+  readonly hidden?: true;
 }
+
+/** The schemes the page shows a link for. */
+const SHOWN = new Set(["http:", "https:", "file:", "t3-thread:"]);
+
+/**
+ * The path a `file:` URL names, percent-decoded, when it names one on this machine's form of path:
+ * no host, or `localhost`. Undefined for any other URL, and for one whose path does not decode.
+ */
+export function fileLinkPath(text: string): string | undefined {
+  const url = URL.parse(text);
+  if (url?.protocol !== "file:") return undefined;
+  if (url.hostname !== "" && url.hostname !== "localhost") return undefined;
+  try {
+    const path = decodeURIComponent(url.pathname);
+    // A Windows drive path is written `/C:/…`.
+    return /^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path;
+  } catch {
+    return undefined;
+  }
+}
+
+export const isFileLink = (text: string): boolean => URL.parse(text)?.protocol === "file:";
 
 const TICKET = /\/browse\/([A-Za-z][A-Za-z0-9_]*-[0-9]+)\/?$/;
 const DIGITS = /^[0-9]+$/;
@@ -105,15 +135,24 @@ export const REF_MAX = 300;
 export function classifyUrl(text: string): UrlClass {
   const url = URL.parse(text);
   if (url === null) return { kind: "web", keyProblem: "unparsed" };
-  if (url.protocol === "mailto:") return keyed("email", `url:${normaliseUrl(url)}`);
+  const hidden = SHOWN.has(url.protocol) ? {} : { hidden: true as const };
+  const byUrl = (kind: PlannedSourceKind): UrlClass => ({
+    ...keyed(kind, `url:${normaliseUrl(url)}`),
+    ...hidden,
+  });
+  if (url.protocol === "mailto:") return byUrl("email");
+  if (url.protocol === "t3-thread:") return byUrl("session");
+  // The page's rule for its ticket and wiki host: a document under /wiki, else a ticket.
+  const atlassian = url.hostname.endsWith("atlassian.net");
+  if (atlassian && url.pathname.startsWith("/wiki")) return byUrl("doc");
   const ticket = TICKET.exec(url.pathname);
   // A key longer than a ref can hold is no ticket's: the URL is classified as any other.
   if (ticket !== null && (ticket[1] ?? "").length <= REF_MAX) {
     const ref = (ticket[1] ?? "").toUpperCase();
-    return { ...keyed("ticket", `jira:${ref}`), ref };
+    return { ...keyed("ticket", `jira:${ref}`), ref, ...hidden };
   }
-  const kind = codeKind(url.pathname) ?? hostKind(url.hostname);
-  return keyed(kind, `url:${normaliseUrl(url)}`);
+  if (atlassian) return byUrl("ticket");
+  return byUrl(codeKind(url.pathname) ?? hostKind(url.hostname));
 }
 
 function keyed(kind: PlannedSourceKind, key: string): UrlClass {
