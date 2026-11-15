@@ -156,6 +156,42 @@ describe("[A1.5.projection.reconcile] reconciliation file by file: what is missi
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
+  test("a rebuild asked for while a failing batch waits on the writer stays a full one", async () => {
+    const seen: Reconciled[] = [];
+    let during: (() => void) | undefined;
+    const projector = w.projector({
+      onReconciled: (r) => seen.push(r),
+      writer: {
+        projected: (batch) => {
+          const answer = w.writer.projected(batch);
+          const act = during;
+          during = undefined;
+          act?.();
+          return Promise.resolve(answer);
+        },
+        queueProjection: (keys) => Promise.resolve(w.writer.queueProjection(keys)),
+      },
+    });
+    await projector.start();
+    await settle(projector);
+    seen.length = 0;
+    // The task's file is the person's now, and nothing can be moved aside: its batch fails.
+    const [a] = catalogOf(w.dir);
+    edit(a?.path ?? "", "A person's edit.\n");
+    writeFileSync(join(w.folder, "exchange"), "Not a folder.\n");
+    w.submit([{ kind: "task.patch", task: a?.id ?? "", set: { summary: "Blocked" } }]);
+    during = () => {
+      projector.rebuild();
+    };
+    expect((await projector.step()).failed).toBe(1);
+    rmSync(join(w.folder, "exchange"));
+    const next = await projector.step();
+    expect(next.reconciled).toMatchObject({ full: true });
+    expect(seen.filter((r) => r.full)).toHaveLength(1);
+    await settle(projector);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
   test("a rebuild of an intact tree writes nothing, removes nothing and moves nothing aside", async () => {
     const projector = w.projector();
     await projector.start();

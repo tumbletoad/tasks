@@ -496,7 +496,10 @@ export class Projector {
       }
     }
     if (unsaved !== undefined) throw unsaved;
-    if (counts.failed > 0 || this.#tree.troubled) this.#reconcile = "files";
+    // Never over a rebuild asked for while the batch waited on the writer: it stays a full one.
+    if ((counts.failed > 0 || this.#tree.troubled) && this.#reconcile === "none") {
+      this.#reconcile = "files";
+    }
     if (published && read.all) {
       await this.#writer.projected({ seq: read.seq, keys: [PROJECTION_ALL] });
     }
