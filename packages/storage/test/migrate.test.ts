@@ -93,8 +93,8 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
     "copied",
     "checked",
     "compressed",
-    "data-renamed",
-    "sidecar-renamed",
+    "data-published",
+    "sidecar-published",
   ];
 
   test("a backup failure at any point: nothing migrates, and the space opens read-only", async () => {
@@ -120,7 +120,12 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
       expect(outcome.error.code, point).toBe("BACKUP_FAILED");
       expect(outcome.backup, point).toBeUndefined();
       expect(await state(folder), point).toEqual(before);
-      expect(listBackups(join(folder, "backups")).backups, point).toEqual([]);
+      // A failure after the sidecar was published leaves the pair to the reader's checks (A1
+      // 3.18): a backup of the state before, though no migration stands behind it.
+      expect(
+        listBackups(join(folder, "backups")).backups.map((b) => [b.state, b.sidecar?.kind]),
+        point,
+      ).toEqual(point === "sidecar-published" ? [["ok", "pre-migrate"]] : []);
     }
     // The space still opens: as the writer of the 0.1 build, and read-only, with the reason, for
     // this build, which would migrate it. Only the migration runner's writer accepts the older
@@ -170,7 +175,7 @@ describe("[A1.5.migration.barrier] a migration whose backup fails never starts",
         {
           backup: {
             at: (p) => {
-              if (p !== "sidecar-renamed") return;
+              if (p !== "sidecar-published") return;
               // Another connection commits after the snapshot: the backup is no longer the state.
               const other = openWriter(checked, join(folder, DATABASE_FILE));
               try {

@@ -1,10 +1,11 @@
-// Stand-in schema steps after the real ones, for the migration runner's tests only (A7 M1.06's
-// Verify line). They never ship: migrations/index.ts holds the real steps. The real chain ends at
-// 0.3 (M6.01), so the stand-in is a 0.4: a table, a column and an index, and it raises the undo
-// floor. A space built at 0.1 (revisions.ts) migrates through the real 0.2 and 0.3 and the stand-in
-// 0.4 in one migration of three steps. The failing variants of 0.4 fail midway through their `up`,
-// in their `verify`, or leave a broken foreign key behind, after the real steps ran in the same
-// transaction. A new real step rebases the stand-in above it (A1 3.17).
+// Stand-in schema steps after the real ones, for the migration runner's tests (A7 M1.06's Verify
+// line) and the restore's (M3.07: a schema whose restore fails at its first write, and the search
+// tables of a later real step). They never ship: migrations/index.ts holds the real steps. The real
+// chain ends at 0.3 (M6.01), so the stand-in is a 0.4: a table, a column and an index, and it raises
+// the undo floor. A space built at 0.1 (revisions.ts) migrates through the real 0.2 and 0.3 and the
+// stand-in 0.4 in one migration of three steps. The failing variants of 0.4 fail midway through
+// their `up`, in their `verify`, or leave a broken foreign key behind, after the real steps ran in
+// the same transaction. A new real step rebases the stand-ins above it (A1 3.17).
 // A failing 0.2 serves the service's tests of a failed migration (A1 3.17) and, with a slow
 // barrier backup, of an open that runs past its bound; so does the real 0.2 with a slow barrier.
 import type { Connection } from "../src/driver.ts";
@@ -13,6 +14,7 @@ import type { SchemaStep } from "../src/schema.ts";
 import { step0002 } from "../migrations/0002-schema-0.2.ts";
 import { step0003 } from "../migrations/0003-schema-0.3.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
+import { SEARCH_TABLE_STATEMENTS } from "../src/search/tables.ts";
 import { STEPS_0_1, STEPS_0_2 } from "./revisions.ts";
 
 const TABLES_0_4 = [...step0003.tables, "test_labels"];
@@ -101,6 +103,47 @@ export const SLOW_BARRIER_MS = 3_000;
 
 /** This build's real steps, then the stand-in 0.4. */
 export const STEPS_0_4: readonly SchemaStep[] = [...SCHEMA_STEPS, standIn0004];
+
+/**
+ * A 0.4 whose schema refuses a restore's first write once the space has three commits: an index on
+ * `space` whose expression overflows when `transfer` is set. The exact-schema rule passes it (its
+ * own steps made it), so only a restore that runs its first write finds it (A1 3.18, M3.07's trial
+ * restore). Backups taken before the third commit restore; later ones do not.
+ */
+export const markGuard0004: SchemaStep = {
+  ...standIn0004,
+  id: 9014,
+  up(conn) {
+    standIn0004.up(conn);
+    conn.exec(
+      "CREATE INDEX space_mark_guard ON space ((CASE WHEN transfer IS NOT NULL AND last_seq >= 3 " +
+        "THEN abs(-9223372036854775808) ELSE 0 END))",
+    );
+  },
+};
+
+/** This build's real steps, then the 0.4 whose schema refuses a later restore's first write. */
+export const STEPS_MARK_GUARD: readonly SchemaStep[] = [...SCHEMA_STEPS, markGuard0004];
+
+/**
+ * A 0.4 with the search tables A1 3.12 plans for a later real schema step: an FTS5 virtual table
+ * and its module's shadow tables, which the exact-schema rule compares by their own text (A1 3.18).
+ * It stands in for the real step until that step lands on main.
+ */
+export const search0004: SchemaStep = {
+  ...standIn0004,
+  id: 9024,
+  tables: [...step0003.tables, "search_docs", "search_fts"],
+  up(conn) {
+    for (const statement of SEARCH_TABLE_STATEMENTS) conn.exec(statement);
+  },
+  verify() {
+    // The tables are the statements': nothing else to check here.
+  },
+};
+
+/** This build's real steps, then the 0.4 with the search tables. */
+export const STEPS_SEARCH: readonly SchemaStep[] = [...SCHEMA_STEPS, search0004];
 
 /** The step lists a test storage worker can serve (stand-in-steps-worker.ts), by name. */
 export const STEP_SETS = {
