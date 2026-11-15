@@ -155,6 +155,241 @@
       "errors": [
         "invalid_input",
         "not_found",
+        "conflict",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "description": "The change you mean: refused unless it is the next one to redo",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "history.redo",
+      "ops": [
+        "redo"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "commit": {
+            "description": "The change undone or redone",
+            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "The change is back",
+            "enum": [
+              "redone"
+            ],
+            "type": "string"
+          },
+          "task_count": {
+            "description": "How many tasks it changed",
+            "maximum": 9999999999,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tasks": {
+            "description": "The tasks it changed, the first 50",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          }
+        },
+        "required": [
+          "result",
+          "commit",
+          "tasks",
+          "task_count",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Redo the change you undid last, as long as nobody changed its fields since."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "description": "The change you mean: refused when a newer one of yours stands before it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "partial": {
+            "description": "Undo the fields nobody changed since, and keep the others' changes",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "history.undo",
+      "ops": [
+        "undo"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "commit": {
+            "description": "The change undone or redone",
+            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "undone: all of it; partial: the unresolved fields stay as others set them",
+            "enum": [
+              "undone",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "task_count": {
+            "description": "How many tasks it changed",
+            "maximum": 9999999999,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tasks": {
+            "description": "The tasks it changed, the first 50",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "unresolved": {
+            "description": "Fields left as others set them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "When",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                  "type": "string"
+                },
+                "by": {
+                  "description": "Who changed it since: user, import or the actor's label",
+                  "type": "string"
+                },
+                "entity": {
+                  "description": "Table of the row: tasks, or a child such as notes or log_entries",
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                "field": {
+                  "description": "Logical field; deleted or removed for a child row",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "A row other than the task: its ID, or task_id|source_id for a link",
+                  "maxLength": 60,
+                  "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$",
+                  "type": "string"
+                },
+                "task": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "entity",
+                "field",
+                "by",
+                "at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "result",
+          "commit",
+          "tasks",
+          "task_count",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Undo your newest change in the space, field by field as long as nobody changed it."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
         "forbidden",
         "request_id_conflict",
         "space_unavailable",
@@ -441,7 +676,13 @@
                       "enum": [
                         "tasks",
                         "task_sources",
-                        "places"
+                        "places",
+                        "notes",
+                        "log_entries",
+                        "sources",
+                        "learnings",
+                        "attachments",
+                        "task_labels"
                       ],
                       "type": "string"
                     },
@@ -451,9 +692,9 @@
                       "type": "string"
                     },
                     "id": {
-                      "description": "The row, or task_id|source_id for a link",
+                      "description": "The row, or task_id|source_id (task_id|label_id) for a link",
                       "maxLength": 60,
-                      "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|s_[0-9a-hjkmnp-tv-z]{26})?$",
+                      "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$",
                       "type": "string"
                     },
                     "op": {
