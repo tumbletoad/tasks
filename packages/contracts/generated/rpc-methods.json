@@ -1655,8 +1655,8 @@
         "additionalProperties": false,
         "properties": {
           "copy": {
-            "description": "Text for the clipboard: Copy's pointer brief, or the brief to paste",
-            "maxLength": 40000,
+            "description": "Text for the clipboard: the pointer brief, context pack or brief to paste",
+            "maxLength": 200000,
             "type": "string"
           },
           "launch": {

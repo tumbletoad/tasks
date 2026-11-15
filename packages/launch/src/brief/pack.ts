@@ -16,14 +16,29 @@
 // and the summary is cut inside. A note the user addressed to agents is never cut: when the notes
 // alone are over the budget the pack is longer than its budget and its last line says so. The last
 // line lists everything left out to fit, so nothing is cut silently.
+//
+// The ceiling (PACK_CEILING) is what `launch.open` can return. A note is never cut inside, but
+// when the notes and the composer text would pass the ceiling, the oldest notes are left out whole
+// and counted, as the notes beyond the 200 read are. The trim takes each step's units by a
+// bisection, because a pack's length falls with every unit a step removes: a context of thousands
+// of short paragraphs costs a few dozen renders, never one per paragraph.
+//
+// The pack's hash is taken with the reference as a slot and the composer text as a marker (A4
+// 3.15.1), and the data blocks' marker is drawn from the text without the composer text, so the
+// person's words never reach the space, not even as a hash.
 import { createHash } from "node:crypto";
 import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { isLaunchRef } from "../intents.ts";
-import { type BriefFolder, briefHash, REFERENCE_SLOT, TASK_REF } from "./render.ts";
+import { type BriefFolder, briefHash, COMPOSER_MARK, REFERENCE_SLOT, TASK_REF } from "./render.ts";
 import { sanitiseComposer, sanitisePath, sanitiseTitle } from "./sanitise.ts";
 
 /** A4 3.15.5: the pack's budget, in UTF-16 code units. */
 export const PACK_BUDGET = 8_000;
+/**
+ * A4 3.15.5: the longest pack, in UTF-16 code units: `launch.open`'s `copy` limit. The composer
+ * text (64 KiB at most) always fits under it with the rest of a fully trimmed pack.
+ */
+export const PACK_CEILING = 200_000;
 /** A4 3.15.5: the last five log entries. */
 export const PACK_LOG = 5;
 /** A4 3.15.5: up to three related learnings, cut to one first. */
@@ -99,6 +114,8 @@ export interface PackLeftOut {
   readonly paragraphs: number;
   /** Characters of the summary cut from its end. */
   readonly summaryChars: number;
+  /** The oldest notes from the user left out whole at the ceiling (PACK_CEILING). */
+  readonly notes: number;
 }
 
 export interface Pack {
@@ -114,8 +131,12 @@ export interface Pack {
 const DATA_WORD = `${PRODUCT_ID}-data`;
 const MARKER_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** A marker that occurs nowhere in `payload`, drawn from its hash (deterministic per text). */
-export function packMarker(payload: string): string {
+/**
+ * A marker that occurs nowhere in `payload` nor in `avoid`, drawn from the payload's hash
+ * (deterministic per text). `avoid` (the composer text) does not choose the marker: it only makes
+ * the draw go on in the rare case it holds the drawn one.
+ */
+export function packMarker(payload: string, avoid = ""): string {
   for (let n = 0; ; n += 1) {
     const digest = createHash("sha256")
       .update(`${String(n)}\n${payload}`, "utf8")
@@ -125,8 +146,25 @@ export function packMarker(payload: string): string {
     for (let i = 0; i < length; i += 1) {
       marker += MARKER_ALPHABET[(digest[i] ?? 0) % MARKER_ALPHABET.length] ?? "X";
     }
-    if (!payload.includes(`${DATA_WORD} ${marker}`)) return marker;
+    const word = `${DATA_WORD} ${marker}`;
+    if (!payload.includes(word) && !avoid.includes(word)) return marker;
   }
+}
+
+/**
+ * The largest value in [low, high] for which `fits` holds, given that it holds for every value
+ * below one for which it holds; `low` when it holds for none.
+ */
+function largestFitting(low: number, high: number, fits: (value: number) => boolean): number {
+  if (high < low || fits(high)) return Math.max(low, high);
+  let lo = low;
+  let hi = high - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 const open = (marker: string): string =>
@@ -166,6 +204,8 @@ interface Keep {
   paragraphs: number;
   /** The summary's length in code points, or undefined for all of it. */
   summary: number | undefined;
+  /** How many of the oldest notes from the user are left out whole, at the ceiling only. */
+  dropped: number;
 }
 
 const plural = (n: number, one: string, many: string): string =>
@@ -192,7 +232,7 @@ export function renderContextPack(input: PackInput): Pack {
     const [first = "", ...rest] = lines(n.text);
     return item(`${line(n.day)} ${first}`, rest);
   });
-  const unread = Math.max(0, (input.instructionsTotal ?? 0) - input.instructions.length);
+  const unreadBefore = Math.max(0, (input.instructionsTotal ?? 0) - input.instructions.length);
   const composer =
     input.composer === undefined || input.composer.trim() === ""
       ? []
@@ -225,21 +265,29 @@ export function renderContextPack(input: PackInput): Pack {
   ].join(" · ");
   const folderLine = folderOf(input.folder);
 
-  // The marker comes from all the text the pack may hold, so it is the same for every trim.
+  // The marker comes from all the text the pack may hold but the composer text, so it is the same
+  // for every trim and the hash cannot give the person's words away; the composer text only
+  // rules out a marker it holds.
   const payload = [
     taskLine,
     summary ?? "",
     ...paragraphs.flat(),
     ...notes.flat(),
-    ...composer,
     ...sources,
     folderLine,
     ...learnings,
     ...log,
   ].join("\n");
-  const marker = packMarker(payload);
+  const marker = packMarker(payload, composer.join("\n"));
 
-  const compose = (keep: Keep, reference: string, isOver = false): string => {
+  const compose = (
+    keep: Keep,
+    reference: string,
+    isOver = false,
+    words: readonly string[] = composer,
+  ): string => {
+    const shownNotes = notes.slice(keep.dropped);
+    const unread = unreadBefore + keep.dropped;
     const shownSummary =
       summary === undefined
         ? undefined
@@ -264,13 +312,13 @@ export function renderContextPack(input: PackInput): Pack {
       });
     }
     out.push(close(marker));
-    if (notes.length > 0 || unread > 0) {
-      out.push("", "From the user, for agents:", ...notes.flat());
+    if (shownNotes.length > 0 || unread > 0) {
+      out.push("", "From the user, for agents:", ...shownNotes.flat());
       if (unread > 0) {
         out.push(`- ${plural(unread, "more note", "more notes")} for agents: ask me for them.`);
       }
     }
-    if (composer.length > 0) out.push("", "My request:", ...composer);
+    if (words.length > 0) out.push("", "My request:", ...words);
     out.push("", open(marker));
     const keptSources = sources.slice(0, keep.sources);
     if (keptSources.length > 0) out.push("Sources:", ...keptSources);
@@ -313,6 +361,7 @@ export function renderContextPack(input: PackInput): Pack {
     learnings: learnings.length - keep.learnings,
     paragraphs: paragraphs.length - keep.paragraphs,
     summaryChars: keep.summary === undefined ? 0 : Math.max(0, summaryPoints.length - keep.summary),
+    notes: keep.dropped,
   });
   const leftLine = (keep: Keep, isOver: boolean): string | undefined => {
     const left = leftOf(keep);
@@ -326,13 +375,22 @@ export function renderContextPack(input: PackInput): Pack {
       ...(left.summaryChars > 0
         ? [`${plural(left.summaryChars, "character", "characters")} of the summary`]
         : []),
+      ...(left.notes > 0
+        ? [
+            `${plural(left.notes, "oldest note", "oldest notes")} for agents, whole ` +
+              `(a pack holds ${PACK_CEILING.toLocaleString("en-US")} characters at most)`,
+          ]
+        : []),
     ];
     const size = budget.toLocaleString("en-US");
     if (isOver) {
+      const kept =
+        left.notes > 0
+          ? "no note the user wrote for agents is cut inside."
+          : "what the user wrote for agents is kept whole.";
       return parts.length === 0
-        ? `Over the ${size}-character budget: what the user wrote for agents is kept whole.`
-        : `Left out to fit the ${size}-character budget: ${parts.join(", ")}. ` +
-            "Still over it: what the user wrote for agents is kept whole.";
+        ? `Over the ${size}-character budget: ${kept}`
+        : `Left out to fit the ${size}-character budget: ${parts.join(", ")}. Still over it: ${kept}`;
     }
     return parts.length === 0
       ? undefined
@@ -342,46 +400,55 @@ export function renderContextPack(input: PackInput): Pack {
   // budget: the reference has the real one's length, so the text given and the one hashed agree.
   const composeFits = (k: Keep): boolean => compose(k, input.reference).length <= budget;
 
-  // The trim, in A4's order, each step taking one unit at a time.
+  // The trim, in A4's order. Each step keeps the most units of its part that let the pack fit, or
+  // its least: the same as taking one unit at a time, found by bisection, because once a step has
+  // removed a unit each further unit shortens the pack (a unit is longer than what its count adds
+  // to the last line).
   const keep: Keep = {
     log: log.length,
     sources: sources.length,
     learnings: learnings.length,
     paragraphs: paragraphs.length,
     summary: undefined,
+    dropped: 0,
   };
   const fits = (): boolean => composeFits(keep);
-  const steps: (() => boolean)[] = [
-    () => (keep.log > 1 ? ((keep.log -= 1), true) : false),
-    () => (keep.sources > PACK_SOURCES ? ((keep.sources -= 1), true) : false),
-    () => (keep.learnings > 1 ? ((keep.learnings -= 1), true) : false),
-    () => (keep.paragraphs > 0 ? ((keep.paragraphs -= 1), true) : false),
+  type Part = "log" | "sources" | "learnings" | "paragraphs";
+  const steps: readonly (readonly [Part, number])[] = [
+    ["log", 1],
+    ["sources", PACK_SOURCES],
+    ["learnings", 1],
+    ["paragraphs", 0],
     // Beyond A4's order: the rest of the log, the sources and the learnings, then the summary.
-    () => (keep.log > 0 ? ((keep.log -= 1), true) : false),
-    () => (keep.sources > 0 ? ((keep.sources -= 1), true) : false),
-    () => (keep.learnings > 0 ? ((keep.learnings -= 1), true) : false),
+    ["log", 0],
+    ["sources", 0],
+    ["learnings", 0],
   ];
-  for (const step of steps) {
-    while (!fits() && step()) {
-      // One unit at a time, until the pack fits or the step has nothing left.
-    }
+  for (const [part, least] of steps) {
+    const now = keep[part];
+    if (now <= least || fits()) continue;
+    keep[part] = largestFitting(least, now - 1, (value) => composeFits({ ...keep, [part]: value }));
   }
   if (!fits() && summaryPoints.length > 0) {
     // The summary is cut at the largest length that fits, or to nothing.
-    let low = 0;
-    let high = summaryPoints.length;
-    while (low < high) {
-      const mid = Math.ceil((low + high) / 2);
-      if (composeFits({ ...keep, summary: mid })) low = mid;
-      else high = mid - 1;
-    }
-    keep.summary = low;
+    keep.summary = largestFitting(0, summaryPoints.length, (value) =>
+      composeFits({ ...keep, summary: value }),
+    );
   }
   // Still over: only the notes from the user, which are never cut, can make it so. The last line
-  // says that too.
+  // says that too. Past the ceiling the oldest notes are left out whole and counted, as few as
+  // let the pack fit under it (each one left out shortens the pack once one is).
   const isOver = !fits();
+  const underCeiling = (k: Keep): boolean =>
+    compose(k, input.reference, true).length <= PACK_CEILING;
+  if (isOver && !underCeiling(keep) && notes.length > 0) {
+    const shown = largestFitting(0, notes.length - 1, (value) =>
+      underCeiling({ ...keep, dropped: notes.length - value }),
+    );
+    keep.dropped = notes.length - shown;
+  }
   const text = compose(keep, input.reference, isOver);
-  const hashed = compose(keep, REFERENCE_SLOT, isOver);
+  const hashed = compose(keep, REFERENCE_SLOT, isOver, composer.length > 0 ? [COMPOSER_MARK] : []);
   return {
     text,
     hash: briefHash(hashed),

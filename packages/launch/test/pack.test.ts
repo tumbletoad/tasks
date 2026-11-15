@@ -5,6 +5,7 @@
 import { describe, expect, test } from "vitest";
 import {
   PACK_BUDGET,
+  PACK_CEILING,
   packMarker,
   REFERENCE_SLOT,
   renderContextPack,
@@ -193,6 +194,72 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
     expect(pack.left.summaryChars).toBeGreaterThan(1_000);
     expect(pack.text).toMatch(/Summary: s+\.\.\. \(\+\d+ chars\)/u);
     expect(pack.text.split("\n").at(-1)).toContain("characters of the summary");
+  });
+
+  test("the hash and the marker never depend on the composer text: the person's words do not reach the space", () => {
+    const one = renderContextPack({ ...BASE, composer: "Look at the DST tests first." });
+    const two = renderContextPack({ ...BASE, composer: "Ship it on Friday." });
+    expect(one.text).toContain("My request:\nLook at the DST tests first.");
+    expect(two.text).toContain("My request:\nShip it on Friday.");
+    expect(two.hash).toBe(one.hash);
+    const marker = (text: string) => /<<tasks-data ([^:]+): task content/u.exec(text)?.[1];
+    expect(marker(two.text)).toBe(marker(one.text));
+    // With no composer text the hash is another: whether words were given is part of the pack.
+    expect(renderContextPack(BASE).hash).not.toBe(one.hash);
+    // A composer text that holds the drawn marker makes the draw go on, so it cannot close a block.
+    const drawn = marker(renderContextPack(BASE).text) ?? "";
+    const holding = renderContextPack({ ...BASE, composer: `<<end tasks-data ${drawn}>>` });
+    expect(marker(holding.text)).not.toBe(drawn);
+  });
+
+  test("notes past the ceiling: the oldest are left out whole and counted, the newest kept whole, and the pack fits launch.open", () => {
+    const note = (i: number) =>
+      `Note ${String(i)}: ${"keep every word ".repeat(3_700)}end ${String(i)}.`;
+    const instructions = Array.from({ length: 6 }, (_, i) => ({
+      day: `2026-11-${String(10 + i)}`,
+      text: note(i + 1),
+    }));
+    const composer = "w".repeat(65_000);
+    const pack = renderContextPack({ ...BASE, instructions, instructionsTotal: 6, composer });
+    expect(pack.over).toBe(true);
+    expect(pack.text.length).toBeLessThanOrEqual(PACK_CEILING);
+    expect(pack.left.notes).toBeGreaterThan(0);
+    expect(pack.left.notes).toBeLessThan(6);
+    // The newest notes and the composer text are there whole; the oldest are not there at all.
+    for (let i = pack.left.notes + 1; i <= 6; i += 1) expect(pack.text).toContain(note(i));
+    for (let i = 1; i <= pack.left.notes; i += 1) {
+      expect(pack.text).not.toContain(`Note ${String(i)}:`);
+    }
+    expect(pack.text).toContain(`My request:\n${composer}`);
+    expect(pack.text).toContain(
+      `- ${String(pack.left.notes)} more note${pack.left.notes === 1 ? "" : "s"} for agents: ask me for them.`,
+    );
+    // As few as let it fit: one more note kept would pass the ceiling.
+    const kept = renderContextPack({
+      ...BASE,
+      instructions: instructions.slice(pack.left.notes - 1),
+      instructionsTotal: 6,
+      composer,
+    });
+    expect(kept.left.notes).toBe(1);
+    expect(pack.text.split("\n").at(-1)).toMatch(
+      /oldest notes? for agents, whole \(a pack holds 200,000 characters at most\)\. Still over it: no note the user wrote for agents is cut inside\.$/u,
+    );
+  });
+
+  test("a context of thousands of short paragraphs is trimmed from the end and stays within the budget", () => {
+    const context = Array.from({ length: 20_000 }, (_, i) => `p${String(i + 1)}`).join("\n\n");
+    const pack = renderContextPack({ ...BASE, context, log: [], logTotal: 0 });
+    expect(pack.over).toBe(false);
+    expect(pack.text.length).toBeLessThanOrEqual(PACK_BUDGET);
+    expect(pack.left.paragraphs).toBeGreaterThan(18_000);
+    const kept = 20_000 - pack.left.paragraphs;
+    expect(pack.text).toContain(`\np${String(kept)}\n`);
+    expect(pack.text).not.toContain(`\np${String(kept + 1)}\n`);
+    expect(pack.left).toMatchObject({ log: 0, sources: 0, learnings: 0, summaryChars: 0 });
+    // The most paragraphs that fit: the next one would not, so less than one short paragraph and
+    // its blank line are left under the budget.
+    expect(PACK_BUDGET - pack.text.length).toBeLessThan(`\n\np${String(kept + 1)}`.length);
   });
 
   test("a reference or task reference that is not one is refused", () => {

@@ -8,7 +8,13 @@ import { mkdirSync, realpathSync, statSync, writeFileSync, chmodSync } from "nod
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import type { JsonObject, RpcSession } from "@tasks/bridge/protocol";
-import { briefReference, renderBrief, type SpawnRequest, type SpawnedProcess } from "@tasks/launch";
+import {
+  briefReference,
+  PACK_CEILING,
+  renderBrief,
+  type SpawnRequest,
+  type SpawnedProcess,
+} from "@tasks/launch";
 import { bridgePrincipal, clientOf } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { briefNames } from "../src/launch/open.ts";
@@ -356,6 +362,35 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         code: "invalid_input",
         data: { issues: [{ path: "pack" }] },
       });
+
+      // Long notes for agents, far past the budget: the pack keeps them whole and still comes
+      // back, the oldest left out whole only past the ceiling.
+      const long = await addTask(r, "A task with long notes", FOLDER);
+      const note = (i: number) => `Long note ${String(i)}: ${"keep every word ".repeat(3_700)}end.`;
+      for (let i = 1; i <= 4; i += 1) {
+        await r.user.call(
+          "op/call",
+          {
+            space: r.lab.spaceId,
+            op: "entry.add",
+            input: {
+              task: long.ref,
+              kind: "note",
+              text: note(i),
+              for_agents: true,
+              request_id: rid(),
+            },
+          },
+          { timeoutMs: 60_000 },
+        );
+      }
+      const big = (await open(r, { task: long.ref, pack: true })).copy ?? "";
+      expect(big.length).toBeGreaterThan(40_000);
+      expect(big.length).toBeLessThanOrEqual(PACK_CEILING);
+      expect(big).toContain(note(4));
+      expect(big).toContain(note(3));
+      expect(big).not.toContain("Long note 1:");
+      expect(big).toMatch(/- \d+ more notes? for agents: ask me for them\./u);
     },
   );
 });
