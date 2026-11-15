@@ -78,8 +78,9 @@ try {
       onReconciled: (reconciled) => {
         send({ kind: "reconciled", reconciled });
       },
-      onRescued: (rescued) => {
-        send({ kind: "rescued", rescued });
+      // Answered once the main thread recorded it: only then may the journal go.
+      onRescued: async (rescued) => {
+        await call((id) => ({ kind: "call", id, method: "rescued", rescued }));
       },
     });
     if (asked.rebuild) projector.rebuild();

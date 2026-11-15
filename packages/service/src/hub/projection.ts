@@ -40,10 +40,16 @@ export type ProjectionMessage =
       readonly method: "queue";
       readonly keys?: readonly string[];
     }
+  /** A batch moved entries aside: answered once it is recorded, so the worker drops its journal. */
+  | {
+      readonly kind: "call";
+      readonly id: number;
+      readonly method: "rescued";
+      readonly rescued: Rescued;
+    }
   | { readonly kind: "started"; readonly report: StartReport }
   | { readonly kind: "step"; readonly report: StepReport; readonly ms: number }
   | { readonly kind: "reconciled"; readonly reconciled: Reconciled }
-  | { readonly kind: "rescued"; readonly rescued: Rescued }
   | { readonly kind: "error"; readonly code: string };
 
 /** This thread to the worker. */
@@ -57,7 +63,10 @@ export interface ProjectionEvents {
   readonly started: (report: StartReport) => void;
   readonly step: (report: StepReport, ms: number) => void;
   readonly reconciled: (reconciled: Reconciled) => void;
-  /** A batch moved entries aside: once per batch, also one that failed or was killed. */
+  /**
+   * A batch moved entries aside: also one that failed or was killed, at least once (the same stem
+   * may come again after a kill). Recorded when it returns.
+   */
   readonly rescued: (rescued: Rescued) => void;
   readonly failed: (code: string | undefined) => void;
 }
@@ -110,6 +119,15 @@ export class ProjectionRunner {
     this.#worker.on("message", (message: ProjectionMessage) => {
       switch (message.kind) {
         case "call": {
+          if (message.method === "rescued") {
+            try {
+              events.rescued(message.rescued);
+            } catch {
+              // The rescue folders hold the entries either way.
+            }
+            reply({ kind: "reply", id: message.id, ok: true, value: 0 });
+            return;
+          }
           const work =
             message.method === "projected"
               ? writer.projected(message.batch)
@@ -135,9 +153,6 @@ export class ProjectionRunner {
             for (const waiting of this.#rebuilds.splice(0)) waiting.resolve(message.reconciled);
           }
           events.reconciled(message.reconciled);
-          return;
-        case "rescued":
-          events.rescued(message.rescued);
           return;
         case "error":
           events.failed(message.code);

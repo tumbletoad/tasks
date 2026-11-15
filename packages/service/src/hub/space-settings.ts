@@ -265,7 +265,8 @@ const RESCUE_STEM = /^exchange\/rescued\/[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
 /**
  * Records that a batch of the projection moved `files` entries a person made or edited into the
  * folders `<stem>-<n>` (relative to the space's folder), for the UI to show once (A1 3.13 rule 3).
- * Other fields are kept.
+ * One entry per stem: the projection tells a batch's rescues at least once, so a stem listed
+ * already is not listed again. Other fields are kept.
  */
 export function recordProjectionRescue(
   state: string,
@@ -285,6 +286,7 @@ export function recordProjectionRescue(
       isCount(entry["files"]) &&
       typeof entry["at"] === "string",
   );
+  if (kept.some((entry) => isRecord(entry) && entry["stem"] === rescue.stem)) return;
   makeDir(join(state, SPACES_FOLDER), 0o700);
   const next = {
     format: 1,

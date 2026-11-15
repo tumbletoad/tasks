@@ -257,7 +257,7 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
-  test("what a batch moved aside is reported once, also when its record then could not be written, and after a kill at the next start", async () => {
+  test("what a batch moved aside is reported before its journal goes: also when its record then could not be written, and after a kill at the next start", async () => {
     const reported: Rescued[] = [];
     const onRescued = (r: Rescued): void => {
       reported.push(r);
@@ -299,10 +299,21 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     expect(dead).toBe(true);
     // What the doomed batch still reported does not count: a killed process reports nothing.
     reported.length = 0;
+    // A start that reports them and is killed before its journal goes: the next start reports
+    // them again (at least once; the service keeps one entry per stem).
+    const cut = w.projector({
+      onRescued,
+      at: (act) => {
+        if (act === "journal-drop") throw new Error("fixture kill");
+      },
+    });
+    await expect(cut.start()).rejects.toThrow("fixture kill");
+    expect(reported).toEqual([{ stem: expect.stringMatching(STEM_PATH) as string, files: 1 }]);
     const after = w.projector({ onRescued });
     expect((await after.start()).rescued).toBe(1);
     await settle(after);
-    expect(reported).toEqual([{ stem: expect.stringMatching(STEM_PATH) as string, files: 1 }]);
+    expect(reported).toHaveLength(2);
+    expect(reported[1]).toEqual(reported[0]);
     expect([...rescuedOf().values()].sort()).toEqual([
       "A person's edit before a failed batch.\n",
       "A person's edit before a kill.\n",

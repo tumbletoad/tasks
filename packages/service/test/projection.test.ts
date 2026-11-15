@@ -18,7 +18,7 @@ import { backupSpace, newId, type Id } from "@tasks/storage";
 import { checkedDriver, seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService } from "../src/hub/service.ts";
-import { projectionStateOf } from "../src/hub/space-settings.ts";
+import { projectionStateOf, recordProjectionRescue } from "../src/hub/space-settings.ts";
 import {
   readLog,
   registerSpaces,
@@ -215,6 +215,27 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       }),
     ]);
   }, 120_000);
+
+  test("a batch's rescues told again after a kill are listed once, by their stem", () => {
+    const { root, cleanup } = tempRoot("projrsc");
+    cleanups.push(cleanup);
+    const state = join(root, "state");
+    const spaceId = newId("sp");
+    const stem = "exchange/rescued/20261114T080000000Z-0a1b";
+    recordProjectionRescue(state, spaceId, { stem, files: 2 });
+    recordProjectionRescue(state, spaceId, { stem, files: 2 });
+    recordProjectionRescue(state, spaceId, {
+      stem: "exchange/rescued/20261114T080001000Z-0a1c",
+      files: 1,
+    });
+    const value = JSON.parse(readFileSync(join(state, "spaces", `${spaceId}.json`), "utf8")) as {
+      projection_rescues: { stem: string; files: number }[];
+    };
+    expect(value.projection_rescues.map((r) => [r.stem, r.files])).toEqual([
+      [stem, 2],
+      ["exchange/rescued/20261114T080001000Z-0a1c", 1],
+    ]);
+  });
 
   test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {
     const { home, folder } = await setUp("projrip");

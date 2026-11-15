@@ -93,10 +93,12 @@ export interface ProjectorOptions {
   /** Each reconciliation, as soon as it has run: `tasks view rebuild` is answered by a full one. */
   readonly onReconciled?: (reconciled: Reconciled) => void;
   /**
-   * Each batch that moved entries aside (rule 3), once, also when the batch then failed; and at a
-   * start, a killed batch's. For the record of rescues the UI shows (A1 3.13).
+   * Each batch that moved entries aside (rule 3), also when the batch then failed; and at a start,
+   * a killed batch's. For the record of rescues the UI shows (A1 3.13). At least once: it is told
+   * before the journal that names the batch's stem is dropped, and waited for, so a kill in between
+   * tells it again at the next start. The receiver keeps one entry per stem.
    */
-  readonly onRescued?: (rescue: Rescued) => void;
+  readonly onRescued?: (rescue: Rescued) => void | Promise<void>;
 }
 
 /** Entries one batch moved aside: each in a folder `<stem>-<n>` (relative to the space's folder). */
@@ -296,11 +298,13 @@ export class Projector {
     // The writer may have marked them rendered before the kill: they are queued again, so the
     // watermark never covers a task whose file is not on disk and in the record (rule 7).
     await this.#queue([...unverified]);
-    // Only now: until the record is written and they are queued, the journal is what a next start
-    // plays.
+    // Told before the journal that names them goes: a kill in between tells it again.
+    if (journal !== undefined) {
+      await this.#rescued(`exchange/rescued/${journal.stem}`, rescued.length);
+    }
+    // Only now: until the record is written, they are queued and the rescues told, the journal is
+    // what a next start plays.
     this.#state.dropJournal();
-    // Once: a start that failed before this finds them again through the journal it kept.
-    if (journal !== undefined) this.#rescued(`exchange/rescued/${journal.stem}`, rescued.length);
     const reconciled = await this.#reconcileNow(full);
     return {
       rebuild: full,
@@ -550,6 +554,9 @@ export class Projector {
         // The journal stays, and the next batch writes the record before anything else.
         unsaved = new ProjectionError(codeOf(error), "The projection's record was not written");
       }
+      // Also when the batch failed, and before the journal that names its stem goes: what it
+      // moved aside is in its rescue folders either way.
+      await this.#rescued(`exchange/rescued/${rescues.stem}`, rescues.made.length);
       if (unsaved === undefined) {
         try {
           this.#state.dropJournal();
@@ -557,8 +564,6 @@ export class Projector {
           // The record holds what it says: the next batch's journal replaces this one.
         }
       }
-      // Also when the batch failed: what it moved aside is in its rescue folders either way.
-      this.#rescued(`exchange/rescued/${rescues.stem}`, rescues.made.length);
     }
     if (unsaved !== undefined) throw unsaved;
     // Never over a rebuild asked for while the batch waited on the writer: it stays a full one.
@@ -585,12 +590,12 @@ export class Projector {
   }
 
   /** Tells onRescued of `files` entries moved aside into `<stem>-<n>`, when there are any. */
-  #rescued(stem: string, files: number): void {
+  async #rescued(stem: string, files: number): Promise<void> {
     if (files === 0) return;
     try {
-      this.#onRescued?.({ stem, files });
+      await this.#onRescued?.({ stem, files });
     } catch {
-      // The caller's: the rescue folders hold the entries either way.
+      // The receiver's: the rescue folders hold the entries either way.
     }
   }
 
