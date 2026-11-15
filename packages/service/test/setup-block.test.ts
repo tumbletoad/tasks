@@ -18,6 +18,7 @@ import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { registry } from "@tasks/contracts";
+import { makeDir } from "@tasks/files";
 import {
   applyBlock,
   BLOCK_VERSION,
@@ -373,7 +374,7 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     const text = `top\r\n\r\n${older}\r\nafter, by the person\r\n`;
     writeFileSync(file, text);
     // The record of the older apply, as that build wrote it.
-    mkdirSync(setupDir(w.state), { recursive: true });
+    makeDir(setupDir(w.state), 0o700);
     writeFileSync(
       join(setupDir(w.state), BLOCKS_FILE),
       JSON.stringify({
@@ -439,7 +440,7 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     const home = w.home("claude-code", ".claude");
     const file = join(home.home, "CLAUDE.md");
     writeFileSync(file, "mine\n");
-    mkdirSync(setupDir(w.state), { recursive: true });
+    makeDir(setupDir(w.state), 0o700);
     // The record of an add that never reached the file.
     writeFileSync(
       join(setupDir(w.state), BLOCKS_FILE),
