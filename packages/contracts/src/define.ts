@@ -166,6 +166,19 @@ export interface AgentRules {
  */
 export type Defaults = Pairs<Scalar>;
 
+/**
+ * A write entry that also answers reads (A3 3.2.3 "Mixed actions"), such as `organize` and
+ * `preferences`: `field` names the required enum of the input that picks the action, and `reads`
+ * lists its values that only read. A read action takes no request ID and writes nothing. A write
+ * action needs `request_id`, and `base` when every operation the entry may emit needs one. The
+ * schema cannot tie one field's presence to another's value within the grammar, so the request
+ * path checks both, before the handler runs.
+ */
+export interface Actions {
+  readonly field: string;
+  readonly reads: readonly string[];
+}
+
 export interface Entry<
   N extends string = string,
   I extends InputSchema = InputSchema,
@@ -183,6 +196,8 @@ export interface Entry<
   readonly audience: AudienceFilter;
   /** The A1 operation kinds a write may emit. Empty for reads. */
   readonly ops: readonly string[];
+  /** A write entry whose action field also picks read actions (A3 3.2.3). */
+  readonly actions?: Actions;
   /** The full input, including user-only fields. Plain Zod: rules and defaults are data below. */
   readonly input: I;
   /** How the agent input differs from the full input. Agent-allowed entries only. */
@@ -216,6 +231,18 @@ export type Filled<T, D extends Defaults> = [D] extends [never]
 
 export function isAgentAllowed(entry: Pick<AnyEntry, "actors">): boolean {
   return entry.actors === "agent" || entry.actors === "run";
+}
+
+/**
+ * Whether a call of `entry` with `input` only reads: a read entry, or a mixed entry's read action
+ * (A3 3.2.3). Such a call takes no request ID and writes nothing.
+ */
+export function readsOnly(entry: Pick<AnyEntry, "kind" | "actions">, input: unknown): boolean {
+  if (entry.kind === "read") return true;
+  const actions = entry.actions;
+  if (actions === undefined || typeof input !== "object" || input === null) return false;
+  const action = (input as Record<string, unknown>)[actions.field];
+  return typeof action === "string" && actions.reads.includes(action);
 }
 
 /** The CLI faces of an entry as a list. */

@@ -120,9 +120,13 @@ export function toolCaller(options: {
     // Codex's per-call thread ID (A3 3.7.2): recorded for a later bind, never a binding itself.
     // On a connection that carries two conversations, a call whose own ID does not prove the
     // bound session acts without the binding (A3 3.7.5), in the space the connection pinned.
+    // A run-only tool's ID is not presented: outside a run it is refused before it may act and
+    // leaves no trace (A3 3.4.12), so its slot is chosen as if it were, and nothing is recorded.
     const native = typeof thread === "string" ? thread : undefined;
     const binding =
-      slot === undefined || bindings === undefined ? slot : bindings.forCall(slot, "codex", native);
+      slot === undefined || bindings === undefined
+        ? slot
+        : bindings.forCall(slot, "codex", native, entry.actors !== "run");
     const space = binding === undefined ? (slot?.space ?? named) : undefined;
     try {
       const result = await opCall(

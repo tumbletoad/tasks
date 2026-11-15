@@ -16,6 +16,7 @@ import {
   parseVerb,
   REQUEST_ID_RULE,
   UsageError,
+  writes,
   type Globals,
   type VerbSpec,
 } from "./args.ts";
@@ -132,11 +133,12 @@ export async function runVerb(
     if (error instanceof UsageError) return printUsage(io, globals.json, error.message);
     throw error;
   }
-  const write = verb.kind === "write";
+  // A mixed verb's read action (`tasks area list`) is a read: no request ID, no base (A3 3.2.3).
+  const write = writes(verb, input);
   if (verb.auto.includes("cwd") && input["cwd"] === undefined) input["cwd"] = io.cwd;
   absolutePlaces(input, io.cwd);
   let generated = false;
-  if (verb.auto.includes("request_id")) {
+  if (write && verb.auto.includes("request_id")) {
     const given = input["request_id"];
     if (globals.requestId !== undefined && given !== undefined && given !== globals.requestId) {
       return printUsage(io, globals.json, "--request-id and --input name two request IDs");
@@ -157,7 +159,7 @@ export async function runVerb(
   let session: Session | undefined;
   try {
     session = await connectService(io, options);
-    if (verb.auto.includes("base") && input["base"] === undefined) {
+    if (write && verb.auto.includes("base") && input["base"] === undefined) {
       // A retry finds its receipt first and reads no fresh base (A3 3.4.1): any request ID the
       // caller gave, through --request-id or --input, may be a retry.
       if (!generated && requestId !== undefined) {

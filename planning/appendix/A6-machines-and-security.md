@@ -63,7 +63,7 @@ Each hook is cheap in v1 and prevents a rewrite later. The owner implements it. 
 | Copy detection | Read-only copies, stale-restore and competing-branch detection, claim, fork and transfer states (3.5) | A1, A2 | Partly: a restored copy opens read-only until claimed |
 | Portable fields | Structured place fields reject absolute paths and `..`. Free text may mention paths | A1 | Yes |
 | Presence fields | `desktop` (`unlocked`, `locked`, `none`, `unknown`) and executor readiness, reported locally for the UI first | A2, A4 | No |
-| Remote envelope types | In the registry's type package, exposed by no transport | A3 | No |
+| Remote envelope types | In the registry's type package, exposed by no transport | A3 | Yes, types only: `packages/contracts/src/remote.ts`, named by no entry or generated face (`[A6.3.3.remote-envelope]`) |
 
 ### 3.4 Machine identity
 

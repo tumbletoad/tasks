@@ -45,8 +45,11 @@ export const LIMITS = {
 } as const;
 
 export interface CheckOptions {
-  /** The product's identifier, which tool names never contain (A3 3.2.4). From the brand package. */
-  readonly productId?: string;
+  /**
+   * The MCP server key (A3 3.2.4), from the brand package. The client puts it before every tool
+   * name (`mcp__tasks__search`), so no tool name starts with it as its first word.
+   */
+  readonly serverKey?: string;
 }
 
 type Say = (message: string) => void;
@@ -113,6 +116,8 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
   if (!valid) return;
 
   checkOps(entry, say);
+  const mixed = entry.actions !== undefined;
+  if (mixed) checkActions(entry, say);
   if (entry.kind === "write") {
     if (entry.ops.length === 0) say("a write entry names the A1 operations it may emit");
     if (READ_SCOPES.has(entry.scope))
@@ -120,7 +125,13 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
     if (entry.remote === "read") say('a write entry cannot have remote class "read"');
     const requestId = entry.input.shape["request_id"] as z.ZodType | undefined;
     if (requestId === undefined) say("a write entry requires request_id");
-    else if (!isShared(requestId, RequestId, false)) {
+    else if (mixed) {
+      // A read action takes none, so the field is optional; the request path requires it for a
+      // write action (A3 3.2.3).
+      if (requestId === RequestId || !isShared(requestId, RequestId, true)) {
+        say("request_id of an entry with read actions is RequestId.optional() (A3 3.2.3)");
+      }
+    } else if (!isShared(requestId, RequestId, false)) {
       say("request_id must be the shared RequestId schema from schemas.ts (A3 3.4.1)");
     }
     checkBase(entry, say);
@@ -225,8 +236,45 @@ function checkBase(entry: AnyEntry, say: Say): void {
     }
   } else if (!isShared(base, Base, true)) {
     say("base must be the shared Base schema from schemas.ts, or Base.optional() (A3 3.4.1)");
+  } else if (entry.actions !== undefined) {
+    // A read action takes no base: the request path requires it for a write action (A3 3.2.3).
+    if (base === Base) say("base of an entry with read actions is Base.optional() (A3 3.2.3)");
   } else if (base !== Base && guarded.length > 0 && guarded.length === entry.ops.length) {
     say("base is required: every operation of the entry changes existing fields (A1 3.5)");
+  }
+}
+
+/**
+ * A mixed entry (A3 3.2.3): a write entry whose required enum `field` picks the action, `reads`
+ * naming some of its values but not all of them. An entry that only reads is a read entry.
+ */
+function checkActions(entry: AnyEntry, say: Say): void {
+  const actions = entry.actions;
+  if (actions === undefined) return;
+  if (entry.kind !== "write") {
+    say("only a write entry declares read actions: a read entry reads in every action");
+    return;
+  }
+  const field = Object.hasOwn(entry.input.shape, actions.field)
+    ? (entry.input.shape[actions.field] as z.ZodType)
+    : undefined;
+  const def = field === undefined ? undefined : defOf(field);
+  if (def?.type !== "enum") {
+    say(`actions.field "${actions.field}" is a required enum field of the input`);
+    return;
+  }
+  const values = Object.values(def["entries"] as Record<string, string>);
+  const reads = actions.reads as readonly unknown[];
+  if (reads.length === 0) say("actions.reads names at least one read action");
+  reads.forEach((read, i) => {
+    if (typeof read !== "string" || !values.includes(read)) {
+      say(`actions.reads ${JSON.stringify(read)} is not a value of "${actions.field}"`);
+    } else if (reads.indexOf(read) !== i) {
+      say(`actions.reads "${read}" is listed twice`);
+    }
+  });
+  if (values.every((value) => reads.includes(value))) {
+    say("every action only reads: make it a read entry");
   }
 }
 
@@ -248,6 +296,8 @@ interface At {
   readonly path: string;
   readonly side: Side;
   readonly say: Say;
+  /** The node is an option of a union, where `null` may stand (A3 3.4.11). */
+  readonly option?: boolean;
 }
 
 type CheckName = "min_length" | "max_length" | "pattern" | "greater_than" | "less_than";
@@ -311,6 +361,7 @@ const checkDefs = (def: LooseDef) => checksOf(def).map((c) => c._zod.def);
 /** "a string", "an optional", "SafeText". */
 const a = (name: string) => {
   if (name === "text") return "SafeText";
+  if (name === "null") return "null";
   return `${["array", "enum", "integer", "object", "optional"].includes(name) ? "an" : "a"} ${name}`;
 };
 
@@ -350,6 +401,8 @@ function jsonTypes(schema: z.ZodType): string[] {
       return ["number"];
     case "boolean":
       return ["boolean"];
+    case "null":
+      return ["null"];
     case "literal":
       return (def["values"] as unknown[]).map((v) => typeof v);
     default:
@@ -365,7 +418,7 @@ const SHAPES: Readonly<Record<string, Shape>> = {
     sides: ALL,
     inspect: (def, at) => {
       limits(def, at, "array");
-      child(def["element"] as z.ZodType, { ...at, path: `${at.path}[]` });
+      child(def["element"] as z.ZodType, { ...at, path: `${at.path}[]`, option: false });
     },
   },
   enum: {
@@ -413,6 +466,9 @@ const SHAPES: Readonly<Record<string, Shape>> = {
   },
   number: { keys: [], checks: ["greater_than", "less_than"], sides: ALL, inspect: bounds },
   boolean: { keys: [], checks: [], sides: ALL, inspect: () => undefined },
+  // Only as a union option (`node` refuses it elsewhere): a preference value's reset to its
+  // default (A3 3.4.11). Never a field of its own, so no field is "absent or null".
+  null: { keys: [], checks: [], sides: ALL, inspect: () => undefined },
   union: { keys: ["options"], checks: [], sides: ALL, inspect: inspectUnion },
   optional: {
     keys: ["innerType"],
@@ -454,6 +510,12 @@ function node(schema: z.ZodType, at: At): void {
   }
   if (!shape.sides.includes(at.side)) {
     at.say(`${at.path}: ${name === "text" ? "a transform" : a(name)} is not allowed in outputs`);
+    return;
+  }
+  if (name === "null" && at.option !== true) {
+    at.say(
+      `${at.path}: null stands only as a union option, such as a preference value (A3 3.4.11)`,
+    );
     return;
   }
   // Every own key, symbols too.
@@ -549,7 +611,7 @@ function inspectObject(def: LooseDef, at: At): void {
         `${path}: description is ${String(description.length)} characters, the limit is ${String(LIMITS.description)}`,
       );
     }
-    node(field, { ...at, path });
+    node(field, { ...at, path, option: false });
   }
 }
 
@@ -595,7 +657,7 @@ function inspectUnion(def: LooseDef, at: At): void {
   options.forEach((option, i) => {
     const path = `${at.path}|${String(i)}`;
     if (defOf(option).type === "union") at.say(`${path}: a union option is not another union`);
-    child(option, { ...at, path });
+    child(option, { ...at, path, option: true });
     if (at.side === "output") return;
     if (shapeName(defOf(option)) === "text") {
       // When normalising pushes it past its limit, Zod reports invalid_union instead of
@@ -810,8 +872,13 @@ function checkFaces(
       );
     } else if (tool === "tasks") {
       say('no tool is called "tasks": it clashes with MCP\'s tasks extension');
-    } else if (options.productId !== undefined && tool.includes(options.productId)) {
-      say(`tool names carry no product name ("${options.productId}")`);
+    } else if (
+      options.serverKey !== undefined &&
+      (tool === options.serverKey || tool.startsWith(`${options.serverKey}_`))
+    ) {
+      // The client namespaces every tool by the server key (mcp__tasks__search), so a name that
+      // starts with it says it twice. A later word may be the key's word: add_tasks (A3 3.2.4).
+      say(`a tool name does not start with the MCP server key ("${options.serverKey}")`);
     }
     if (seen.tools.has(tool)) say(`tool name "${tool}" is used twice`);
     seen.tools.add(tool);

@@ -120,7 +120,7 @@ async function useClient(
 
 describe("[A3.3.3.mcp.clients] official clients of both eras through tasks mcp", () => {
   test(
-    "each lists the five tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
+    "each lists the eleven tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
     { timeout: 300_000 },
     async () => {
       const temp = tempRoot("oc");
@@ -147,8 +147,14 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through tasks mcp",
           const seen = await useClient(kind, { args: entryArgs, env: clientEnv(home) });
           expect(seen.tools, label).toEqual([
             "add_entry",
+            "add_tasks",
             "complete_task",
             "get_task",
+            "organize",
+            "preferences",
+            "reopen_task",
+            "run_report",
+            "search",
             "status",
             "update_task",
           ]);
