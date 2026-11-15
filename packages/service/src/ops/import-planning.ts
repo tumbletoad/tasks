@@ -699,6 +699,21 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
   });
   if (receipt !== undefined) {
     if (receipt.result.status !== "applied") throw resultFailure(receipt.result, HINTS);
+    // An apply that was undone since is not applied again by its retry: a new dry run imports anew.
+    let commit: Awaited<ReturnType<typeof readImportCommit>>;
+    try {
+      commit = await readImportCommit(call.reader, run);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    if (commit?.undone === true) {
+      throw new AppError({
+        code: "conflict",
+        message: "This run was applied and then undone, so applying it again changes nothing.",
+        hint: "Run the dry run again and apply its new token to import anew.",
+        data: { cause: "INVALID_TRANSITION" },
+      });
+    }
     return (
       replayOf(folder, receipt.result) ?? {
         run,

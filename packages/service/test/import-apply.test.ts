@@ -596,6 +596,11 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
         commit: undone.commit,
         replayed: true,
       });
+      // The undone run's apply again is no import: a new dry run imports anew.
+      expect(await refusal(world.apply(preview.run, preview.token ?? ""))).toMatchObject({
+        code: "conflict",
+        cause: "INVALID_TRANSITION",
+      });
 
       // A re-import after the undo makes the undone tasks again and leaves the two as they are.
       const again = await imported(world, prototype);

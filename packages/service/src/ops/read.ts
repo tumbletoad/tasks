@@ -262,13 +262,14 @@ export async function readImportRows(
 export async function readImportCommit(
   reader: WorkerConnection,
   run: string,
-): Promise<{ id: string; seq: number } | undefined> {
+): Promise<{ id: string; seq: number; undone: boolean } | undefined> {
   const [row] = await snapshot(
     reader,
     [
       {
         sql:
-          "SELECT k.id AS id, k.seq AS seq FROM exchanges x JOIN commits k ON k.seq = x.applied_seq " +
+          "SELECT k.id AS id, k.seq AS seq, k.reverted_by AS undone FROM exchanges x " +
+          "JOIN commits k ON k.seq = x.applied_seq " +
           "WHERE x.id = $run AND x.state = 'applied' AND k.origin = 'import'",
         mode: "get",
       },
@@ -277,7 +278,11 @@ export async function readImportCommit(
   );
   const found = row as Row | null | undefined;
   if (found === null || found === undefined) return undefined;
-  return { id: String(found["id"]), seq: Number(found["seq"]) };
+  return {
+    id: String(found["id"]),
+    seq: Number(found["seq"]),
+    undone: found["undone"] !== null,
+  };
 }
 
 /** The tasks a commit changed and the fields: what an import's undo removed and set back. */
