@@ -100,9 +100,14 @@ const doctorRow = async (id: string) => {
 };
 
 describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the service", () => {
+  /** machine.toml before setup instances: the world's space, which `space create` recorded. */
+  let before = "";
+
   test(
     "preview shows what was found and writes nothing; only the user applies; Open offers the instances at once",
     async () => {
+      before = readFileSync(machineToml(), "utf8");
+      expect(before).not.toContain("[[instance]]");
       expect(await doctorRow("instances")).toMatchObject({
         status: "warn",
         detail: expect.stringContaining("Run: tasks setup instances") as unknown,
@@ -134,7 +139,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
         "--apply",
         "--plan",
       ]);
-      expect(existsSync(machineToml())).toBe(false);
+      expect(readFileSync(machineToml(), "utf8")).toBe(before);
       const text = await run(["setup", "instances"], false);
       expect(text.stdout).toContain("[[instance]]");
       expect(text.stdout).toContain("Nothing was changed.");
@@ -145,7 +150,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       expect((await run(apply.slice(1), true, { CLAUDECODE: "1" })).code).toBe(5);
       const stale = await run(["setup", "instances", "--apply", "--plan", "0".repeat(16)]);
       expect(stale.code).toBe(4);
-      expect(existsSync(machineToml())).toBe(false);
+      expect(readFileSync(machineToml(), "utf8")).toBe(before);
 
       const applied = await run(apply.slice(1));
       expect(applied.code, applied.stderr).toBe(0);
@@ -218,7 +223,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       const rest = await run(["setup", "instances", "--remove", "--instance", "codex"]);
       expect(rest.code, rest.stdout).toBe(0);
       expect(rest.stdout).toContain("codex: removed from machine.toml");
-      expect(readFileSync(machineToml(), "utf8")).toBe("");
+      expect(readFileSync(machineToml(), "utf8")).toBe(before);
       expect(await tiles()).toEqual([]);
       expect((await run(["setup", "instances", "--remove"])).stdout).toContain("Nothing to remove");
     },
