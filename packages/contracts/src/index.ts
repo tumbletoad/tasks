@@ -6,7 +6,10 @@ export * from "./errors.ts";
 export * from "./http.ts";
 export * from "./import-planning.ts";
 export * from "./operations.ts";
+export * from "./preferences.ts";
 export * from "./registry.ts";
+export type * from "./remote.ts";
+export { REMOTE_MAX_VALIDITY_S, REMOTE_USER_TEXT_MAX, REMOTE_VALIDITY_S } from "./remote.ts";
 export * from "./safe-text.ts";
 export * from "./schemas.ts";
 export { checkRegistry, LIMITS, type CheckOptions } from "./check.ts";
@@ -31,6 +34,20 @@ export { createCaller, type Caller, type ClientTransport } from "./client-runtim
 export { entryAdd, EntryAddInput, EntryAddResult } from "./entries/entry-add.ts";
 export { historyRedo, HistoryRedoInput, HistoryRedoResult } from "./entries/history-redo.ts";
 export { historyUndo, HistoryUndoInput, HistoryUndoResult } from "./entries/history-undo.ts";
+export {
+  GROUP_ACTIONS,
+  GROUP_LIMITS,
+  groupManage,
+  GroupManageInput,
+  GroupManageResult,
+} from "./entries/group-manage.ts";
+export {
+  PREFS_ACTIONS,
+  prefsManage,
+  PrefsManageInput,
+  PrefsManageResult,
+} from "./entries/prefs-manage.ts";
+export { runReport, RunReportInput, RunReportResult } from "./entries/run-report.ts";
 export {
   receiptGet,
   ReceiptGetInput,

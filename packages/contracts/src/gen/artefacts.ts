@@ -142,6 +142,9 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
     ...(Object.keys(fixed).length === 0 ? {} : { fixed }),
     auto,
     inputOnly,
+    ...(entry.actions === undefined
+      ? {}
+      : { actions: { field: entry.actions.field, reads: entry.actions.reads } }),
   };
 }
 
