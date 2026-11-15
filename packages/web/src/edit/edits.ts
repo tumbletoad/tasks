@@ -666,8 +666,9 @@ export class Edits {
   }
 
   /**
-   * One request through `Call`: its answer, else its outcome by its ID (calls.ts). `note` reads a
-   * success before anything that waits for the request goes on, so a later base can move past it.
+   * One request through `Call`: its answer, else its outcome by its ID (calls.ts). `note` reads the
+   * decided success once, before anything that waits for the request goes on, so a later base can
+   * move past it; a later answer or receipt of the same request is not read again.
    */
   #call<T>(
     request: string,
@@ -683,15 +684,10 @@ export class Edits {
         alive: () => this.#deps.alive?.() ?? true,
       },
       request,
-      async () => {
-        const value = await post();
-        note(value);
-        return value;
-      },
-      (found) => {
-        const decision = fromReceipt(found);
-        if (decision?.ok === true) note(decision.value);
-        return decision;
+      post,
+      fromReceipt,
+      (decision) => {
+        if (decision.ok) note(decision.value);
       },
     );
     this.#calls.set(request, call as Call<unknown>);

@@ -16,6 +16,10 @@
 //   the person's value as not saved. The next wait on it asks again, so Try again goes out once
 //   the outcome is known, never before it.
 // - A decision that comes later (the answer, or the feed naming the request) is still taken.
+//
+// An outcome is decided once: the first decision. What depends on it runs from that decision and
+// nothing else (`noted` before anything waiting on the call goes on, `decided` for the rest), so an
+// answer or receipt that arrives after it changes nothing.
 import type { Client } from "@tasks/contracts/generated/client.ts";
 
 /**
@@ -96,6 +100,7 @@ export class Call<T> implements Turn {
   readonly #request: string;
   readonly #post: () => Promise<T>;
   readonly #fromReceipt: (found: Found) => Decision<T> | undefined;
+  readonly #noted: (decision: Decision<T>) => void;
   #decision: Decision<T> | undefined;
   #decide!: (decision: Decision<T>) => void;
   readonly #first: Promise<boolean>;
@@ -106,22 +111,26 @@ export class Call<T> implements Turn {
 
   /**
    * `post` sends the request with its ID and input, the same each time; `fromReceipt` reads a found
-   * receipt as the decision, or undefined when it cannot.
+   * receipt as the decision, or undefined when it cannot. `noted` runs once, for the first
+   * decision, before anything that waits on the call goes on (the next edit's base reads it).
    */
   constructor(
     deps: CallDeps,
     request: string,
     post: () => Promise<T>,
     fromReceipt: (found: Found) => Decision<T> | undefined,
+    noted: (decision: Decision<T>) => void = () => undefined,
   ) {
     this.#deps = deps;
     this.#request = request;
     this.#post = post;
     this.#fromReceipt = fromReceipt;
+    this.#noted = noted;
     this.decided = new Promise((resolve) => {
       this.#decide = (decision) => {
         if (this.#decision !== undefined) return;
         this.#decision = decision;
+        this.#noted(decision);
         resolve(decision);
       };
     });
