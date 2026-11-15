@@ -174,6 +174,46 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
+  test("a temporary file a kill left, edited by a person before the restart, is kept: only one that proves itself goes", async () => {
+    const first = w.projector();
+    await first.start();
+    await settle(first);
+    const [a] = activeIds();
+    w.submit([{ kind: "task.patch", task: a ?? "", set: { summary: "Left as a temporary file" } }]);
+    // Killed right before its first rename: the temporary file is whole, and the journal names it.
+    let dead = false;
+    const refuse = (): Promise<never> => Promise.reject(new Error("fixture kill"));
+    const doomed = w.projector({
+      at: (act) => {
+        if (dead || act === "rename") {
+          dead = true;
+          throw new Error("fixture kill");
+        }
+      },
+      writer: {
+        projected: (batch) => (dead ? refuse() : Promise.resolve(w.writer.projected(batch))),
+        queueProjection: (keys) =>
+          dead ? refuse() : Promise.resolve(w.writer.queueProjection(keys)),
+      },
+    });
+    await doomed.start();
+    await doomed.step().catch(() => undefined);
+    expect(dead).toBe(true);
+    const temps = [...filesOf(w.dir).keys()].filter((path) => path.endsWith(".tmp"));
+    expect(temps).toHaveLength(1);
+    const temp = join(w.dir, ...(temps[0] ?? "").split("/"));
+    chmodSync(temp, 0o600);
+    writeFileSync(temp, "A person's text, typed into a leftover.\n");
+    const after = w.projector();
+    expect((await after.start()).temps).toBe(0);
+    expect(readFileSync(temp, "utf8")).toBe("A person's text, typed into a leftover.\n");
+    await settle(after);
+    expect(readFileSync(temp, "utf8")).toBe("A person's text, typed into a leftover.\n");
+    rmSync(temp);
+    checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
   test("a retired file that could not be removed is a failure, and is tried again until it goes", async () => {
     const projector = w.projector();
     await projector.start();

@@ -24,8 +24,8 @@
 //   times over 1 s.
 // - **Temporary files prove themselves** (rule 4): `.<name>.<32 hex>.<8 hex>.tmp`, the first part
 //   the start of the content's SHA-256, the second a random tag of the batch. Clean-up removes one
-//   only when the trusted journal names it, or when its content hashes to its name; an unknown
-//   leftover stays where it is.
+//   only when its content hashes to its name, or when it is empty and the trusted journal names it
+//   (a name alone proves nothing: a person may type into a leftover); any other leftover stays.
 //
 // Not covered, and the contract says so (A1 3.13): a program that replaces a folder of the tree
 // with a link between the check and the act (the runtime has no handle-anchored file operations),
@@ -449,11 +449,15 @@ export class Tree {
     }
   }
 
-  /** Removes a temporary file this placement made, while its folder is still a real one of the tree. */
+  /**
+   * Removes a temporary file this placement made, in the synchronous stretch that made it (no
+   * await since): a regular file with one link, while its folder is still a real one of the tree.
+   */
   #dropTemp(temp: string, tempAbs: string): void {
     try {
       if (!this.#reachable(temp)) return;
-      if (lstatSync(tempAbs, { throwIfNoEntry: false })?.isFile() !== true) return;
+      const stats = lstatSync(tempAbs, { throwIfNoEntry: false });
+      if (stats?.isFile() !== true || stats.nlink !== 1) return;
       this.#act("unlink", temp);
       unlinkSync(tempAbs);
     } catch {
@@ -580,13 +584,16 @@ export class Tree {
   }
 
   /**
-   * Removes the temporary files a kill left (rule 4): those `named` by the trusted journal, and in
-   * every folder the tree writes those whose content hashes to their name. Each must be a regular
-   * file with one link, reached through real folders. Anything else stays. Returns how many went.
+   * Removes the temporary files a kill left (rule 4): in every folder the tree writes, those whose
+   * content hashes to their name, and of those the trusted journal `named`, also an empty one (a
+   * kill between its creation and its write). A name alone proves nothing: a person may have typed
+   * into a leftover. Each must be a regular file with one link, reached through real folders.
+   * Anything else stays. Returns how many went.
    */
   cleanTemps(named: readonly string[]): number {
     let removed = 0;
-    const tryRemove = (temp: string, proves: (hash: string) => boolean): void => {
+    const journalled = new Set(named.filter((temp) => isTempPath(temp)));
+    const tryRemove = (temp: string, prefix: string): void => {
       if (!this.#reachable(temp)) return;
       const abs = this.#abs(temp);
       try {
@@ -594,7 +601,9 @@ export class Tree {
         if (found.kind !== "file") return;
         let ours: boolean;
         try {
-          ours = found.links === 1 && proves(found.sha256);
+          ours =
+            found.links === 1 &&
+            (found.sha256.startsWith(prefix) || (found.size === 0 && journalled.has(temp)));
         } finally {
           closeSync(found.fd);
         }
@@ -606,9 +615,6 @@ export class Tree {
         // Held, or gone: the next clean-up looks again.
       }
     };
-    for (const temp of named) {
-      if (isTempPath(temp)) tryRemove(temp, () => true);
-    }
     for (const folder of this.#tempFolders()) {
       let names: string[];
       try {
@@ -620,8 +626,7 @@ export class Tree {
         const temp = folder === "" ? name : `${folder}/${name}`;
         const match = TEMP_NAME.exec(name);
         if (match === null || !isTempPath(temp)) continue;
-        const prefix = match[2] ?? "";
-        tryRemove(temp, (hash) => hash.startsWith(prefix));
+        tryRemove(temp, match[2] ?? "");
       }
     }
     return removed;
