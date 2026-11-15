@@ -166,11 +166,17 @@ async function blockCheck(
       );
     } else if (view.state === "outdated") warn.push(`${who}: an older version of the block`);
     else if (view.state === "missing") warn.push(`${who}: the block setup wrote is gone`);
-    else if (view.state === "refused") {
+    else if (view.refusal === "markers") {
+      warn.push(
+        `${who}: the block's markers are duplicated or unbalanced now (lines ${(view.lines ?? []).join(", ")} of the file); fix them by hand`,
+      );
+    } else if (view.state === "refused") {
       info.push(
         view.refusal === "managed"
           ? `${who}: its file is managed elsewhere now, so the block belongs at its source (${CLI_NAME} setup agents print-block --for ${view.for})`
-          : `${who}: its file cannot be checked (${view.refusal ?? "unreadable"})`,
+          : view.refusal === "no_folder"
+            ? `${who}: its home folder is gone`
+            : `${who}: its file cannot be read the way setup reads it (another owner, too large, or not UTF-8 text)`,
       );
     } else if (view.state === "edited") fine.push(`${who} (changed by hand)`);
     else fine.push(who);
