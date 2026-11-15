@@ -609,7 +609,8 @@ export interface LaunchTransition {
  * `pref.set` (A1 3.16): sets a space preference the registry declares, or resets it with null.
  * The value is checked against the key's declared shape before the transaction; whether the actor
  * may write the key is decided in it, so a refusal has its receipt (A3 3.8.3). A reset keeps the
- * row with the value null, so history, the base and undo work as for any other value.
+ * row with the value null, so history and the base work as for any other value. It is not undoable
+ * until undo inverts preferences (A1 3.16).
  */
 export interface PrefSet {
   kind: "pref.set";
@@ -1628,6 +1629,11 @@ export function checkRequest(value: unknown): CheckedRequest {
   const prefs = request.ops.filter((op) => op.kind === "pref.set").length;
   if (prefs > 0 && prefs < request.ops.length) {
     f.fail("VALIDATION_FAILED", "A preference request holds pref.set operations only", "ops");
+  }
+  // Undo never inverts a preference (history.ts), so a change of one never joins the undo stack,
+  // where it would block every undo behind it. Setting the earlier value again changes it back.
+  if (prefs > 0 && request.undoable === true) {
+    f.fail("VALIDATION_FAILED", "A preference change is not undoable: set it again", "undoable");
   }
   checkMatchableDrafts(request.ops);
   f.done();

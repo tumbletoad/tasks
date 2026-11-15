@@ -167,6 +167,28 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
     expect(one("SELECT status FROM tasks WHERE title = 'Ask'")).toBe("doing");
   });
 
+  test("a preference change never joins the undo stack, so it never blocks the person's undo", () => {
+    const refused = fx.writer.submit(
+      fx.request(fx.human, [set("autonomy.level", "full")], { base: fx.base(), undoable: true }),
+    );
+    expectStatus(refused, "rejected");
+    expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", field: "undoable" });
+    expect(receipts("rejected")).toBe(0);
+    // The person's own task change stays the newest on the stack, behind a preference change.
+    const created = fx.writer.submit(
+      fx.request(fx.human, [{ kind: "task.create", title: "Plan the week" }], {
+        base: fx.base(),
+        undoable: true,
+      }),
+    );
+    expectStatus(created, "applied");
+    expectStatus(submit([set("autonomy.level", "full")]), "applied");
+    const undone = fx.writer.submit(fx.request(fx.human, [{ kind: "undo" }]));
+    expectStatus(undone, "applied");
+    expect(one("SELECT count(*) FROM tasks WHERE deleted_at IS NULL")).toBe(0);
+    expect(read("autonomy.level").value).toBe("full");
+  });
+
   test("every receipt of pref.set is receipt.get's result: applied, conflict and refused", () => {
     const first = submit([set("ui.theme", "washi")], { base: null });
     const stale = first.as_of;
