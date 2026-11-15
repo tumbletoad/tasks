@@ -608,7 +608,7 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
   }
   const homes = t3Homes(settings);
   const plain = (id: string) => (PROVIDER_KEY.test(id) ? id : "(a key that is not a plain name)");
-  const off = settings.instances.filter((i) => !i.enabled).map((i) => plain(i.id));
+  const off = settings.off.map(plain);
   const unknown = settings.skipped.filter((s) => s.reason === "unknown_driver");
   const unclear = settings.skipped.filter((s) => s.reason !== "unknown_driver");
   // Facts that change nothing: said after the row's verdict.

@@ -122,11 +122,14 @@ export function codexAppEngines(input: HostsInput): string[] {
 // - An instance is off when its own `enabled` or its config's `enabled` is false.
 // - A legacy top-level `providers: {<driver>: {...}}` becomes `providerInstances[<driver>] =
 //   {driver, enabled?, config}` when the settings load, unless that ID is listed already.
-// - The home: `config.homePath` (`~` and `~/` expanded), else a CODEX_HOME or CLAUDE_CONFIG_DIR
-//   entry of the instance's `environment` (`~` expanded; on Windows matched in any case, the last
-//   one wins), else the variable T3 inherited, else `~/.codex` or `~/.claude`. A Codex instance in
-//   `setupMode: "managed"` ignores the variables. A Claude home named by a path is CLAUDE_CONFIG_DIR,
-//   so Claude Code reads `.claude.json` inside it.
+// - The home: `config.homePath` when not blank (`~` and `~/` expanded), else the home variable as
+//   the instance's `environment` sets it (`~` expanded; on Windows matched in any case, the last one
+//   wins, and an empty value replaces the inherited one too), else the variable T3 inherited (`~`
+//   expanded for Codex only), else `~/.codex` or `~/.claude` when the value is blank. Codex keeps a
+//   path as written, Claude trims it. A relative path is resolved against T3's working folder,
+//   which Tasks cannot know, so its instance is skipped. A Codex instance in `setupMode: "managed"`
+//   ignores the variables. A Claude home named by a path is CLAUDE_CONFIG_DIR, so Claude Code reads
+//   `.claude.json` inside it. An instance turned off runs nothing, and its home is not worked out.
 // - Codex's `config.shadowHomePath` is the folder Codex runs in, whose entries other than the
 //   sign-in are links into the home above: its `config.toml` is the home's.
 //
@@ -154,7 +157,7 @@ const T3_OTHER_DRIVERS: ReadonlySet<string> = new Set([
 /** T3's pattern for an instance ID and a driver kind. */
 const T3_SLUG = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u;
 
-/** One provider instance of a driver Tasks knows, as T3 runs it. */
+/** One enabled provider instance of a driver Tasks knows, as T3 runs it. */
 export interface T3ProviderInstance {
   /** Its key in `providerInstances`, which T3's `--provider` and `instanceId` take. */
   readonly id: string;
@@ -162,7 +165,6 @@ export interface T3ProviderInstance {
   readonly app: Extract<AgentApp, "claude-code" | "codex">;
   /** T3's display name, when the settings give one. */
   readonly displayName?: string;
-  readonly enabled: boolean;
   /** Listed in the settings; false for a built-in default instance the file does not name. */
   readonly listed: boolean;
   /** The home whose file holds the entry its agent reads (a shadow home's shared home). */
@@ -186,7 +188,10 @@ export type T3Skip =
 export interface T3Settings {
   /** `read`, or what kept the file from being read: then T3's defaults stand. */
   readonly file: "read" | "missing" | "refused";
+  /** The enabled instances of a driver Tasks knows: the only ones that run agents. */
   readonly instances: readonly T3ProviderInstance[];
+  /** The keys of instances of those drivers that T3 has turned off, their homes not worked out. */
+  readonly off: readonly string[];
   readonly skipped: readonly { readonly id: string; readonly reason: T3Skip }[];
   /** T3's `defaultModelSelection`, when it names a provider instance and a plain model. */
   readonly defaultModel?: { readonly instance: string; readonly model: string };
@@ -239,20 +244,28 @@ function expandHome(input: HostsInput, value: string): string {
   return value;
 }
 
-/** A path value T3 resolves: absolute after expansion, or the entry is skipped. */
-function folderOf(input: HostsInput, value: string): string {
+/**
+ * A path value T3 resolves: absolute after `~` expansion (when T3 expands that value), or the entry
+ * is skipped. T3 resolves a relative one against its own working folder, which Tasks cannot know.
+ */
+function folderOf(input: HostsInput, value: string, expand = true): string {
   const p = pathOf(input.platform);
-  const expanded = expandHome(input, value);
+  const expanded = expand ? expandHome(input, value) : value;
   if (!p.isAbsolute(expanded)) throw new Skip("invalid_entry");
   return p.resolve(expanded);
 }
 
-/** An optional string key: undefined when absent, trimmed otherwise; another type is skipped. */
-function optionalText(table: Record<string, unknown>, key: string): string | undefined {
+/** An optional string key: undefined when absent, as written otherwise; another type is skipped. */
+function optionalRaw(table: Record<string, unknown>, key: string): string | undefined {
   const value = table[key];
   if (value === undefined) return undefined;
   if (typeof value !== "string") throw new Skip("invalid_entry");
-  return value.trim();
+  return value;
+}
+
+/** An optional string key: undefined when absent, trimmed otherwise; another type is skipped. */
+function optionalText(table: Record<string, unknown>, key: string): string | undefined {
+  return optionalRaw(table, key)?.trim();
 }
 
 function optionalFlag(table: Record<string, unknown>, key: string): boolean | undefined {
@@ -263,8 +276,9 @@ function optionalFlag(table: Record<string, unknown>, key: string): boolean | un
 }
 
 /**
- * The value of the home variable in an instance's `environment`, or undefined. Only entries of that
- * name are looked at; another entry's value is never read.
+ * The value the home variable gets from an instance's `environment`, or undefined when no entry
+ * names it. An entry sets the variable as it is, an empty value too, and replaces the inherited one.
+ * Only entries of that name are looked at; another entry's value is never read.
  */
 function environmentHome(
   input: HostsInput,
@@ -282,38 +296,61 @@ function environmentHome(
     if (item["secret"] !== undefined) throw new Skip("secret_home");
     const value = item["value"];
     if (typeof value !== "string") throw new Skip("invalid_entry");
-    // T3 sets the variable as it is, so an empty one names no home and the next rule decides.
-    found = value.trim() === "" ? undefined : value.trim();
+    found = value;
   }
   return found;
 }
 
-/** One listed or default instance of a driver Tasks knows, as T3 runs it. */
+/** Whether T3 turns an instance off (`value` an entry of T3's form, `config` its config). */
+const isOff = (value: Record<string, unknown>, config: Record<string, unknown>): boolean =>
+  optionalFlag(value, "enabled") === false || optionalFlag(config, "enabled") === false;
+
+/**
+ * The home an enabled instance of a driver Tasks knows runs its agent in, as T3's drivers resolve
+ * it, or undefined for the app's default home. A path names a home when it is not blank: Codex keeps
+ * it as written, Claude trimmed. `~` is expanded in `homePath`, in an `environment` entry, and in an
+ * inherited CODEX_HOME, but not in an inherited CLAUDE_CONFIG_DIR, which T3 takes literally.
+ */
+function homeOfInstance(
+  input: HostsInput,
+  app: T3ProviderInstance["app"],
+  value: Record<string, unknown>,
+  config: Record<string, unknown>,
+): string | undefined {
+  const codex = app === "codex";
+  const named = (path: string | undefined): string | undefined =>
+    path === undefined || path.trim() === "" ? undefined : codex ? path : path.trim();
+  const homePath = named(optionalRaw(config, "homePath"));
+  if (homePath !== undefined) return folderOf(input, homePath);
+  // A Codex instance T3 manages takes no home from a variable.
+  if (codex && config["setupMode"] === "managed") return undefined;
+  const variable = codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+  // The instance's entry replaces the inherited variable, also when it is empty.
+  const own = environmentHome(input, value["environment"], variable);
+  if (own !== undefined) {
+    const path = named(own);
+    return path === undefined ? undefined : folderOf(input, path);
+  }
+  const inherited = named(envValue(input.env, variable, input.platform));
+  return inherited === undefined ? undefined : folderOf(input, inherited, codex);
+}
+
+/** One listed or default instance of a driver Tasks knows, as T3 runs it; undefined when off. */
 function instanceOf(
   input: HostsInput,
   id: string,
   driver: T3AgentDriver,
   value: Record<string, unknown>,
   listed: boolean,
-): T3ProviderInstance {
+): T3ProviderInstance | undefined {
   const p = pathOf(input.platform);
   const app = T3_AGENT_DRIVERS[driver];
-  const variable = app === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
   const config = value["config"] ?? {};
   if (!isObject(config)) throw new Skip("invalid_entry");
+  // An instance turned off runs nothing: its home is not worked out, so it is never a host.
+  if (isOff(value, config)) return undefined;
   const displayName = optionalText(value, "displayName");
-  const own = optionalFlag(value, "enabled");
-  const configured = optionalFlag(config, "enabled");
-  const enabled = own !== false && configured !== false;
-  const homePath = optionalText(config, "homePath") ?? "";
-  const managed = app === "codex" && config["setupMode"] === "managed";
-  let home: string | undefined;
-  if (homePath !== "") home = folderOf(input, homePath);
-  else if (!managed) {
-    const fromEnvironment = environmentHome(input, value["environment"], variable);
-    const named = fromEnvironment ?? absolute(input, variable);
-    if (named !== undefined) home = folderOf(input, named);
-  }
+  const home = homeOfInstance(input, app, value, config);
   const shadowPath = app === "codex" ? (optionalText(config, "shadowHomePath") ?? "") : "";
   const shadow = shadowPath === "" ? undefined : folderOf(input, shadowPath);
   return {
@@ -321,7 +358,6 @@ function instanceOf(
     driver,
     app,
     ...(displayName === undefined || displayName === "" ? {} : { displayName }),
-    enabled,
     listed,
     home: home ?? p.join(input.userHome, app === "codex" ? ".codex" : ".claude"),
     isDefault: home === undefined,
@@ -330,8 +366,8 @@ function instanceOf(
 }
 
 /**
- * The provider instances of T3's parsed settings (`doc`) whose driver Tasks knows, with the home
- * each runs in, enabled or not, and the entries passed over with why. T3's default `codex` and
+ * The enabled provider instances of T3's parsed settings (`doc`) whose driver Tasks knows, with the
+ * home each runs in, the keys of those turned off, and the entries passed over with why. T3's default `codex` and
  * `claudeAgent` instances are there when the file does not list them, and a missing or refused
  * file (`file`) means only those. Reads nothing but `doc`.
  */
@@ -342,6 +378,7 @@ export function t3ProviderInstances(
 ): T3Settings {
   const settings = isObject(doc) ? doc : {};
   const instances: T3ProviderInstance[] = [];
+  const off: string[] = [];
   const skipped: { id: string; reason: T3Skip }[] = [];
   const listed = new Map<string, unknown>();
   const declared = settings["providerInstances"];
@@ -370,7 +407,9 @@ export function t3ProviderInstances(
       if (typeof driver !== "string" || !T3_SLUG.test(driver)) throw new Skip("invalid_entry");
       if (T3_OTHER_DRIVERS.has(driver)) continue;
       if (!Object.hasOwn(T3_AGENT_DRIVERS, driver)) throw new Skip("unknown_driver");
-      instances.push(instanceOf(input, id, driver as T3AgentDriver, value, true));
+      const instance = instanceOf(input, id, driver as T3AgentDriver, value, true);
+      if (instance === undefined) off.push(id);
+      else instances.push(instance);
     } catch (error) {
       if (!(error instanceof Skip)) throw error;
       skipped.push({ id, reason: error.reason });
@@ -381,7 +420,8 @@ export function t3ProviderInstances(
   for (const driver of Object.keys(T3_AGENT_DRIVERS) as T3AgentDriver[]) {
     if (listed.has(driver)) continue;
     try {
-      instances.push(instanceOf(input, driver, driver, { driver }, false));
+      const instance = instanceOf(input, driver, driver, { driver }, false);
+      if (instance !== undefined) instances.push(instance);
     } catch (error) {
       if (!(error instanceof Skip)) throw error;
       skipped.push({ id: driver, reason: error.reason });
@@ -397,7 +437,7 @@ export function t3ProviderInstances(
       defaultModel = { instance, model };
     }
   }
-  return { file, instances, skipped, ...(defaultModel === undefined ? {} : { defaultModel }) };
+  return { file, instances, off, skipped, ...(defaultModel === undefined ? {} : { defaultModel }) };
 }
 
 /** A model as T3's `--model` and `t3_model` take it: one word that cannot be read as a flag. */
@@ -435,7 +475,6 @@ export function t3Proposals(
   const models = targetDef("t3").t3Models ?? {};
   const proposals: Proposal[] = [];
   for (const instance of settings.instances) {
-    if (!instance.enabled) continue;
     const own = settings.defaultModel?.instance === instance.id ? settings.defaultModel.model : "";
     const model = own !== "" ? own : (models[instance.driver] ?? "");
     const name = instance.displayName ?? (instance.driver === "codex" ? "Codex" : "Claude");
@@ -460,9 +499,12 @@ export function t3Proposals(
 
 /** The homes T3's enabled provider instances run their agents in (setup's hosts, doctor's row). */
 export function t3Homes(settings: T3Settings): T3Home[] {
-  return settings.instances
-    .filter((i) => i.enabled)
-    .map((i) => ({ app: i.app, provider: i.id, home: i.home, isDefault: i.isDefault }));
+  return settings.instances.map((i) => ({
+    app: i.app,
+    provider: i.id,
+    home: i.home,
+    isDefault: i.isDefault,
+  }));
 }
 
 /**

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   codexSharedHome,
   t3ProviderInstances,
+  t3SettingsOf,
   type HostsInput,
   type T3ProviderInstance,
 } from "../src/setup/index.ts";
@@ -64,7 +65,6 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
         driver: "claudeAgent",
         app: "claude-code",
         displayName: "Claude Personal",
-        enabled: true,
         listed: true,
         home: "/home/mira/.claude_personal",
         isDefault: false,
@@ -74,7 +74,6 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
         driver: "claudeAgent",
         app: "claude-code",
         displayName: "Claude Work",
-        enabled: true,
         listed: true,
         home: "/home/mira/.claude",
         isDefault: true,
@@ -84,7 +83,6 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
         id: "codex",
         driver: "codex",
         app: "codex",
-        enabled: true,
         listed: false,
         home: "/home/mira/.codex",
         isDefault: true,
@@ -162,6 +160,60 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     });
     expect(byId(exact.instances, "codex")).toMatchObject({ home: "/home/mira/.codex" });
 
+    // An entry that sets the variable empty replaces the inherited one: T3 then runs the default
+    // home, never the home the inherited variable names.
+    const blank = t3ProviderInstances(
+      linux({ CODEX_HOME: "/srv/inherited", CLAUDE_CONFIG_DIR: "/srv/inherited-claude" }),
+      {
+        providerInstances: {
+          codex: { driver: "codex", environment: [{ name: "CODEX_HOME", value: "" }] },
+          claudeAgent: {
+            driver: "claudeAgent",
+            environment: [
+              { name: "CLAUDE_CONFIG_DIR", value: "/srv/first" },
+              { name: "CLAUDE_CONFIG_DIR", value: "  " },
+            ],
+          },
+        },
+      },
+    );
+    expect(byId(blank.instances, "codex")).toMatchObject({
+      home: "/home/mira/.codex",
+      isDefault: true,
+    });
+    expect(byId(blank.instances, "claudeAgent")).toMatchObject({
+      home: "/home/mira/.claude",
+      isDefault: true,
+    });
+    // An inherited home T3 would resolve against its own working folder cannot be known: skipped,
+    // never taken for the default. T3 expands `~` in an inherited CODEX_HOME, not in an inherited
+    // CLAUDE_CONFIG_DIR.
+    const inherited = t3ProviderInstances(
+      linux({ CODEX_HOME: "relative/codex", CLAUDE_CONFIG_DIR: "~/.claude_personal" }),
+      undefined,
+      "missing",
+    );
+    expect(inherited.instances).toEqual([]);
+    expect(inherited.skipped).toEqual([
+      { id: "codex", reason: "invalid_entry" },
+      { id: "claudeAgent", reason: "invalid_entry" },
+    ]);
+    expect(
+      byId(
+        t3ProviderInstances(linux({ CODEX_HOME: "~/.codex_work" }), undefined).instances,
+        "codex",
+      ).home,
+    ).toBe("/home/mira/.codex_work");
+    // Codex keeps a path as written, Claude trims it.
+    const spaced = t3ProviderInstances(linux(), {
+      providerInstances: {
+        codex: { driver: "codex", config: { homePath: "/srv/codex " } },
+        claudeAgent: { driver: "claudeAgent", config: { homePath: " /srv/claude " } },
+      },
+    });
+    expect(byId(spaced.instances, "codex").home).toBe("/srv/codex ");
+    expect(byId(spaced.instances, "claudeAgent").home).toBe("/srv/claude");
+
     // A Codex instance T3 manages ignores the variables; its shadow home is named.
     const managed = t3ProviderInstances(linux({ CODEX_HOME: "/srv/shell" }), {
       providerInstances: {
@@ -185,6 +237,17 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
         codex: { driver: "codex", enabled: false },
         claudeAgent: { driver: "claudeAgent", config: { enabled: false, homePath: "~/.claude" } },
         claude_on: { driver: "claudeAgent", config: { homePath: "/srv/claude-on" } },
+        // Turned off: a home that cannot be known is not worked out, so not passed over either.
+        claude_off_relative: {
+          driver: "claudeAgent",
+          enabled: false,
+          config: { homePath: "relative" },
+        },
+        codex_off_secret: {
+          driver: "codex",
+          enabled: false,
+          environment: [{ name: "CODEX_HOME", sensitive: true, secret: "ref" }],
+        },
         cursor: { driver: "cursor", enabled: true },
         future: { driver: "futureAgent" },
         nodriver: { config: {} },
@@ -196,11 +259,8 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
       // Ignored for `codex`, which providerInstances lists; migrated for another driver only.
       providers: { codex: { homePath: "/srv/legacy" } },
     });
-    expect(read.instances.map((i) => [i.id, i.enabled])).toEqual([
-      ["codex", false],
-      ["claudeAgent", false],
-      ["claude_on", true],
-    ]);
+    expect(read.instances.map((i) => i.id)).toEqual(["claude_on"]);
+    expect(read.off).toEqual(["codex", "claudeAgent", "claude_off_relative", "codex_off_secret"]);
     // A disabled instance runs nothing: it is no T3 home.
     expect(t3Homes(read)).toEqual([
       { app: "claude-code", provider: "claude_on", home: "/srv/claude-on", isDefault: false },
@@ -257,6 +317,30 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     symlinkSync(join(shared, "config.toml"), join(shadow, "config.toml"));
     symlinkSync(join(shared, "sessions"), join(shadow, "sessions"));
     expect(codexSharedHome(process.platform, shadow)).toBe(shared);
+    // A T3 instance whose home is that shadow runs on the shared home's file: its home is the
+    // shared one, with the shadow named, so setup marks the shared home as T3's and doctor checks it.
+    const t3 = join(base, "t3");
+    mkdirSync(join(t3, "userdata"), { recursive: true, mode: 0o700 });
+    writeFileSync(
+      join(t3, "userdata", "settings.json"),
+      JSON.stringify({
+        providerInstances: {
+          codex: { driver: "codex", enabled: false },
+          codex_shadowed: { driver: "codex", config: { homePath: shadow } },
+        },
+      }),
+      { mode: 0o600 },
+    );
+    const settings = t3SettingsOf({
+      platform: process.platform,
+      userHome: base,
+      env: { T3CODE_HOME: t3 },
+    });
+    expect(settings?.file).toBe("read");
+    const codex = settings?.instances.filter((i) => i.app === "codex");
+    expect(codex?.map((i) => [i.id, i.home, i.shadow])).toEqual([
+      ["codex_shadowed", shared, shadow],
+    ]);
     // A config.toml linked alone (a dotfiles setup) is no shadow: setup refuses that link.
     const dotfiles = join(base, "dotfiles");
     mkdirSync(join(dotfiles, "sessions"), { recursive: true });

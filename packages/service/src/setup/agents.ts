@@ -726,18 +726,33 @@ function readHomeFile(home: AgentHome): FileRead {
  * T3's settings, read-only through the same reader (A3 3.13.6 step 1): the provider instances of
  * a driver Tasks knows, with their homes, or undefined when T3 is not on this machine. A file that
  * is not there, or that setup does not accept, leaves T3's default instances (`file` says which).
+ *
+ * A Codex instance whose home is itself a shadow home (hosts.ts `codexSharedHome`) reads the shared
+ * home's file, so its home is the shared one and the shadow is named on it: setup's homes, T3's
+ * hosts and doctor then all speak of the one home that holds the entry.
  */
 export function t3SettingsOf(input: HostsInput): T3Settings | undefined {
   if (!hasT3(input)) return undefined;
   const p = pathOf(input.platform);
   const file = t3SettingsFile(input);
   const read = readText(file, p.dirname(file), 4 * 1024 * 1024);
-  if (read.kind === "missing") return t3ProviderInstances(input, undefined, "missing");
-  if (read.kind !== "text") return t3ProviderInstances(input, undefined, "refused");
-  const parsed = parseStrictJson(read.text);
-  return parsed.ok
-    ? t3ProviderInstances(input, parsed.value)
-    : t3ProviderInstances(input, undefined, "refused");
+  const parsed = read.kind === "text" ? parseStrictJson(read.text) : undefined;
+  const settings =
+    read.kind === "missing"
+      ? t3ProviderInstances(input, undefined, "missing")
+      : parsed?.ok === true
+        ? t3ProviderInstances(input, parsed.value)
+        : t3ProviderInstances(input, undefined, "refused");
+  return {
+    ...settings,
+    instances: settings.instances.map((instance) => {
+      if (instance.app !== "codex") return instance;
+      const shared = codexSharedHome(input.platform, instance.home);
+      return shared === undefined
+        ? instance
+        : { ...instance, home: shared, shadow: instance.shadow ?? instance.home };
+    }),
+  };
 }
 
 const entryOf = (read: FileRead): unknown => (read.kind === "read" ? read.entry : undefined);
