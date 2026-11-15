@@ -11,7 +11,9 @@ import {
   joinChanges,
   priorityChange,
   restoreChange,
+  statusChange,
   titleChange,
+  triageChange,
 } from "./change.ts";
 import { Edits, HOLD_MS, COLLAPSE_MS, type Toast } from "./edits.ts";
 
@@ -363,6 +365,126 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     });
     await undone;
     expect(w.calls.map((c) => c.name)).toEqual(["task.update", "task.update", "history.undo"]);
+  });
+
+  test("an edit made after Ctrl+Z waits for the undo, so the undo never takes back that newer edit", async () => {
+    const w = new World([task(1), task(2)]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_u",
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(12),
+    }));
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-2",
+      fields: ["effort"],
+      as_of: w.asOf(13),
+      warnings: [],
+    }));
+    w.edits.edit(task(1), priorityChange(1));
+    const undone = w.edits.undo();
+    // Another task's edit, after Ctrl+Z: it shows at once and goes out after the undo.
+    w.edits.edit(task(2), effortChange("M"));
+    expect(w.row("t_00002")?.effort).toBe("M");
+    await flush();
+    expect(w.calls.map((c) => c.name)).toEqual(["task.update"]);
+    answerFirst({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    });
+    await undone;
+    await flush();
+    expect(w.calls.map((c) => [c.name, c.input["task"]])).toEqual([
+      ["task.update", "t_00001"],
+      ["history.undo", undefined],
+      ["task.update", "t_00002"],
+    ]);
+  });
+
+  test("Move to Open right after choosing a status moves past the person's own status change, never over someone else's", async () => {
+    const inbox = task(1, { inbox: true });
+    const w = new World([inbox]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["inbox", "status"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    // Waiting, then Move to Open at once, both seeing seq 10; the feed brings neither yet.
+    w.edits.edit(inbox, statusChange("waiting"));
+    w.edits.edit(inbox, triageChange());
+    await flush();
+    // The Waiting commit is seq 11, the next after what the person saw: nobody else wrote between.
+    answerFirst({
+      result: "updated",
+      task: "M-1",
+      fields: ["status"],
+      as_of: w.asOf(11),
+      warnings: [],
+    });
+    await flush();
+    expect(w.calls[1]?.input).toMatchObject({
+      set: { inbox: false, status: "open" },
+      base: w.asOf(11),
+    });
+
+    // The same, with another actor's commit (seq 13) before the person's own (seq 14): the
+    // Inbox field keeps what the person saw, so a change by someone else is never overwritten.
+    const w2 = new World([inbox]);
+    let answerOwn!: (value: unknown) => void;
+    w2.answer("task.update", () => new Promise((resolve) => (answerOwn = resolve)));
+    w2.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["inbox", "status"],
+      as_of: w2.asOf(15),
+      warnings: [],
+    }));
+    w2.edits.edit(inbox, statusChange("waiting"));
+    w2.edits.edit(inbox, triageChange());
+    await flush();
+    answerOwn({
+      result: "updated",
+      task: "M-1",
+      fields: ["status"],
+      as_of: w2.asOf(12),
+      warnings: [],
+    });
+    await flush();
+    expect(w2.calls[1]?.input).toMatchObject({ base: w2.asOf(10) });
+  });
+
+  test("an edit right after the person's own undo moves past that undo", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_u",
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(11),
+    }));
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    await w.edits.undo();
+    // The feed has not brought the undo yet: the screen is still at seq 10.
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    expect(w.calls[1]?.input).toMatchObject({ set: { priority: 2 }, base: w.asOf(11) });
   });
 
   test("an editor's base is the one it opened with: a conflict keeps the person's value with who changed it, and Apply mine sends it again with a fresh base", async () => {

@@ -16,10 +16,11 @@
 //
 // Bases. A control's edit takes the applied cursor when the person acts; an editor that stays open
 // while the person types (the title, a date) takes it when it opens. That is what the person saw.
-// Edits of one task go out one after another: the next waits for the answer to the one before. A
-// base moves past what the screen showed only to the tab's own newest write of every field the
-// edit writes (one commit that wrote them all), so two quick edits of one field never conflict
-// with each other, and a change someone else made to any of those fields meanwhile still does.
+// Edits of one task go out one after another: the next waits for the answer to the one before, and
+// for an undo or redo asked before it. A base moves past what the screen showed only over the
+// tab's own commits that directly follow it, or to the tab's own newest write of every field the
+// edit writes (one commit that wrote them all), so the person's quick choices never conflict with
+// each other, and a change someone else made to any of those fields meanwhile still does.
 // Writes go through the live store, so each shows at once as an overlay and settles only through
 // the feed (A5 3.15 item 4).
 import type { Client } from "@tasks/contracts/generated/client.ts";
@@ -145,6 +146,9 @@ function problemOf(error: unknown): Problem | undefined {
   };
 }
 
+type HistoryResult =
+  Awaited<ReturnType<Client["history"]["undo"]>> | Awaited<ReturnType<Client["history"]["redo"]>>;
+
 const AS_OF = /^(\d+)\.(\d+)\.([0-9a-z]+)$/u;
 
 /** The later of two `as_of`s of one authority; the store's when they differ in authority. */
@@ -235,6 +239,10 @@ export class Edits {
    * how far a later edit's base may move past what the screen showed (`#baseFor`).
    */
   readonly #own = new Map<string, string>();
+  /** The `as_of` of every commit the tab made itself (edits, check-offs, undo, redo). */
+  readonly #ownCommits = new Set<string>();
+  /** The undo or redo on its way: edits made after it go out after it (`#history`). */
+  #gate: Promise<unknown> | undefined;
   /** Per task and field, the number of the person's newest edit of it: an older one's refusal is moot. */
   readonly #latest = new Map<string, number>();
   #edits = 0;
@@ -470,19 +478,40 @@ export class Edits {
 
   // -------------------------------------------------------------------------------------------
 
-  async #history(kind: "undo" | "redo", commit: string | undefined, partial: boolean) {
-    // After the person's edits on their way: Ctrl+Z takes back the newest of them, never one
-    // before it while the newest is still to be sent.
-    await Promise.all(this.#chains.values());
-    const request = this.#deps.newRequest();
-    this.#mine.add(request);
-    const input = {
-      ...(commit === undefined ? {} : { commit }),
-      request_id: request,
-    };
-    return kind === "undo"
-      ? this.#deps.client.history.undo({ ...input, ...(partial ? { partial: true } : {}) })
-      : this.#deps.client.history.redo(input);
+  /**
+   * An undo or redo, in the order the person asked: after the edits already on their way (Ctrl+Z
+   * takes back the newest of them, never one before it while the newest is still to be sent), and
+   * before any edit made after it, which waits for it (`#sendWith`), so an unnamed undo never takes
+   * back a change the person made after pressing it.
+   */
+  #history(
+    kind: "undo" | "redo",
+    commit: string | undefined,
+    partial: boolean,
+  ): Promise<HistoryResult> {
+    const ahead = Promise.all([...this.#chains.values(), this.#gate]);
+    const run = ahead.then((): Promise<HistoryResult> => {
+      const request = this.#deps.newRequest();
+      this.#mine.add(request);
+      const input = {
+        ...(commit === undefined ? {} : { commit }),
+        request_id: request,
+      };
+      return kind === "undo"
+        ? this.#deps.client.history.undo({ ...input, ...(partial ? { partial: true } : {}) })
+        : this.#deps.client.history.redo(input);
+    });
+    const gate: Promise<unknown> = run.then(
+      (result) => {
+        this.#ownCommits.add(result.as_of);
+      },
+      () => undefined,
+    );
+    this.#gate = gate;
+    void gate.then(() => {
+      if (this.#gate === gate) this.#gate = undefined;
+    });
+    return run;
   }
 
   /**
@@ -632,20 +661,35 @@ export class Edits {
   }
 
   /**
-   * The base of an edit of `fields` the person made seeing `seen`. It moves on only to the tab's
-   * own newest write of those fields, and only when one commit wrote them all: that write passed
-   * its own base check, so nobody else wrote them between what the person saw and it. A field
-   * last written by someone else, or by two different own commits, keeps `seen`, so a change the
-   * person did not see is a conflict rather than overwritten.
+   * The base of an edit of `fields` the person made seeing `seen`: the later of two points, each
+   * of which nobody else wrote those fields after.
+   * - The end of the run of the tab's own commits that directly follow `seen` (seq + 1, + 2, ...):
+   *   every commit in between is the tab's, so nobody else wrote anything.
+   * - The tab's own newest write of those fields, when one commit wrote them all: that write
+   *   passed its own base check, so nobody else wrote them between what the person saw and it.
+   * Otherwise it stays `seen`, so a change the person did not see is a conflict, never overwritten.
    */
   #baseFor(task: string, fields: readonly string[], seen: string | undefined): string | undefined {
+    return newer(this.#ownRun(seen), this.#ownWrite(task, fields));
+  }
+
+  #ownRun(seen: string | undefined): string | undefined {
+    const parts = seen === undefined ? null : AS_OF.exec(seen);
+    if (parts === null) return seen;
+    const [, epoch, seq, tag] = parts;
+    let at = Number(seq);
+    while (this.#ownCommits.has(`${String(epoch)}.${String(at + 1)}.${String(tag)}`)) at += 1;
+    return `${String(epoch)}.${String(at)}.${String(tag)}`;
+  }
+
+  #ownWrite(task: string, fields: readonly string[]): string | undefined {
     let own: string | undefined;
     for (const field of fields) {
       const at = this.#own.get(keyOf(task, field));
-      if (at === undefined || (own !== undefined && at !== own)) return seen;
+      if (at === undefined || (own !== undefined && at !== own)) return undefined;
       own = at;
     }
-    return newer(seen, own);
+    return own;
   }
 
   /**
@@ -659,8 +703,9 @@ export class Edits {
     call: (base: string | undefined, request: string) => Promise<T>,
     overlay?: Overlay,
   ): Sent<T> {
-    const before = this.#chains.get(task);
-    // Sent at once when nothing of the task's is on its way, else after the answer before it.
+    // Sent at once when nothing of the task's and no undo or redo is on its way, else after them.
+    const waits = [this.#chains.get(task), this.#gate].filter((p) => p !== undefined);
+    const before = waits.length === 0 ? undefined : Promise.all(waits);
     const sent = this.#deps.write((request) => {
       const send = () => call(this.#baseFor(task, fields, seen), request);
       return before === undefined ? send() : before.then(send);
@@ -669,6 +714,7 @@ export class Edits {
     const answered = sent.answer.then((result) => {
       // A write that changed nothing wrote no field: its `as_of` is only the head.
       if (typeof result.as_of !== "string" || result.result === "no_change") return;
+      this.#ownCommits.add(result.as_of);
       // The task's writes answer in turn, so this is its newest.
       for (const field of fields) this.#own.set(keyOf(task, field), result.as_of);
     });
