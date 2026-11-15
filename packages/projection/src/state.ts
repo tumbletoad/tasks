@@ -26,8 +26,8 @@
 // which writes only files there, and may be a person's: it is never removed, written through or
 // written over. Before its path is written, or the journal dropped, it is moved aside once by one
 // rename of the entry itself, never followed, to `<its name>.moved-aside-<time>` beside it, and
-// told (onAside). That comes only after what it means was acted on: read back as unknown, it
-// started a rebuild whose queue went through the writer first (projector.ts).
+// told (onAside). A start that found it read it as unknown and sent its rebuild's queue through
+// the writer before either (projector.ts); a running projector holds its state in memory.
 import { lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { atomicWrite, makeDir, removeStaleTemps } from "@tasks/files";
