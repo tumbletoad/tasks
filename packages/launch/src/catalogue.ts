@@ -81,6 +81,12 @@ export interface TargetDef {
   readonly detect: DetectRule;
   /** Semver range. Outside it doctor warns; launches still work. Empty: not checked. */
   readonly testedVersions: string;
+  /**
+   * T3 only: the model a proposed T3 instance opens with, per T3 driver, when T3's own default
+   * selection does not name its provider instance (A4 3.2 `tasks setup instances`). These are T3's
+   * own defaults per driver at the T3 commit A4 names.
+   */
+  readonly t3Models?: Readonly<Record<string, string>>;
   readonly permissionArgs: Readonly<
     Record<Permission, { readonly open: readonly string[]; readonly run: readonly string[] | null }>
   >;
@@ -132,6 +138,7 @@ export const CATALOGUE: readonly TargetDef[] = [
     instances: "per-provider-instance",
     detect: { binaries: ["t3"], appFolder: ".t3", appBin: ".t3/bin", urlScheme: "t3code" },
     testedVersions: ">=0.1.7 <0.2.0",
+    t3Models: { codex: "gpt-6-astra", claudeAgent: "claude-opus-5-5" },
     // A4 3.11.6: T3 takes a runtime mode per thread, not flags. M2.09 maps the permission.
     permissionArgs: NO_ARGS,
   },

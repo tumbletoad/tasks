@@ -103,6 +103,16 @@ export interface Proposal {
   readonly argsPrefix?: readonly string[];
   readonly configHome?: string;
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * T3 only: the provider instance read from T3's settings and the model the instance opens with
+   * (`t3`: T3's own default selection names this provider instance; `catalogue`: the catalogue's
+   * default for its driver, `TargetDef.t3Models`).
+   */
+  readonly t3?: {
+    readonly providerInstance: string;
+    readonly model: string;
+    readonly modelFrom: "t3" | "catalogue";
+  };
   /** What the person must still give before the proposal can become an instance. */
   readonly needs: readonly ProposalNeed[];
 }
@@ -528,7 +538,9 @@ export function instanceEntry(
   | { readonly ok: false; readonly needs: readonly ProposalNeed[] } {
   const exec = choices.exec ?? proposal.exec;
   const configHome = choices.configHome ?? proposal.configHome;
-  const provider = choices.t3ProviderInstance;
+  const provider = choices.t3ProviderInstance ?? proposal.t3?.providerInstance;
+  // The proposal's model belongs to its own provider instance only.
+  const model = provider === proposal.t3?.providerInstance ? (proposal.t3?.model ?? "") : "";
   const needs = proposal.needs.filter(
     (need) =>
       (need === "exec" && exec === undefined) ||
@@ -564,6 +576,8 @@ export function instanceEntry(
   if (proposal.target === "t3" && provider !== undefined) {
     entry.set("t3_environment", "local");
     entry.set("t3_provider_instance", provider);
+    // T3 takes a provider instance with its model (A4 3.4.1 `model_required`).
+    if (model !== "") entry.set("t3_model", model);
   }
   entry.set("remote_allowed", false);
   return { ok: true, entry };
