@@ -99,7 +99,6 @@ export function placeProjects(
     return row;
   };
   const taken = new Set(plan.projects.map((p) => p.slug));
-  const free = { has: (slug: string) => look(slug) !== undefined || taken.has(slug) };
   const next = new Map<string, number>();
   const placements = new Map<string, ProjectPlacement>();
   for (const p of plan.projects) {
@@ -107,9 +106,19 @@ export function placeProjects(
     if (row === undefined) placements.set(p.slug, { slug: p.slug });
     else if (row.area === p.area) placements.set(p.slug, { slug: p.slug, reuses: row.id });
     else {
+      // A numbered slug a live project of the same area holds is that project: a re-import
+      // finds the project its first import numbered, rather than numbering a new one.
+      const free = {
+        has: (slug: string) => {
+          if (taken.has(slug)) return true;
+          const held = look(slug);
+          return held !== undefined && held.area !== p.area;
+        },
+      };
       const slug = numberedSlug(p.slug, free, next);
       taken.add(slug);
-      placements.set(p.slug, { slug });
+      const same = look(slug);
+      placements.set(p.slug, same === undefined ? { slug } : { slug, reuses: same.id });
     }
   }
   return { placements, met };

@@ -169,7 +169,7 @@ export async function attachWorld(
         roots,
         platform: process.platform,
         principal: user,
-        importer: writer.actor("import", "import"),
+        importer: () => Promise.resolve(writer.actor("import", "import")),
         scope: principal.scope,
         machine,
       }),

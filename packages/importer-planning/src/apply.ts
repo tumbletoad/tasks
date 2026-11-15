@@ -297,6 +297,8 @@ export function decideApply(
   /** The groups the operations name: upserted before them. */
   const areas = new Set<string>();
   const projects = new Set<string>();
+  /** Whether a live task's base moves although no operation changes it. */
+  let refreshed = false;
 
   for (const task of plan.tasks) {
     const project = projectSlug(task.project);
@@ -355,6 +357,7 @@ export function decideApply(
       continue;
     }
     const decided = decideMatched(expected, found, sourceFields);
+    if (decided.refreshed) refreshed = true;
     for (const op of decided.ops) {
       if (op.kind === "task.move") {
         areas.add(task.area);
@@ -382,8 +385,10 @@ export function decideApply(
     });
   }
 
-  // The same input twice: nothing to write, not even the exchange.
-  if (taskOps.length === 0) return { ops: [], tasks, gone: space.gone };
+  // The same input twice: nothing to write, not even the exchange. An import that changes no task
+  // still records where the prototype and the space came to agree (a field both set to one value):
+  // from then on a person's change of it counts from this import.
+  if (taskOps.length === 0 && !refreshed) return { ops: [], tasks, gone: space.gone };
 
   const live = new Set(space.state.areas.map((a) => a.slug));
   const upserts: ApplyOp[] = [];
@@ -417,10 +422,13 @@ function decideMatched(
   settled: Partial<Record<BaseField, unknown>>;
   changed: Changed[];
   conflicts: BaseField[];
+  refreshed: boolean;
 } {
   const settled: Partial<Record<BaseField, unknown>> = {};
   const changed: Changed[] = [];
   const conflicts: BaseField[] = [];
+  /** A field whose base this import moves: E is new to the record, and the space holds it. */
+  let refreshed = false;
   /** Whether to apply E, settle (record E), or neither, for each field. */
   const verdict = new Map<BaseField, "apply" | "settle" | "keep" | "conflict">();
   for (const field of BASE_FIELDS) {
@@ -526,7 +534,11 @@ function decideMatched(
     if (v === "apply" || v === "settle") settled[field] = expected.values[field];
     if (v === "apply") changed.push(field);
     if (v === "conflict") conflicts.push(field);
+    if (v === "settle") {
+      const b = baseOf(found, field);
+      if (b === undefined || !same(b.value, expected.values[field])) refreshed = true;
+    }
   }
   if (linked) changed.push("sources");
-  return { ops, settled, changed, conflicts };
+  return { ops, settled, changed, conflicts, refreshed };
 }

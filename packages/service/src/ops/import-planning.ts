@@ -325,7 +325,8 @@ export interface PlanningApplyCall {
   readonly platform: NodeJS.Platform;
   /** The user, who applies it, and the import actor, who writes it (A1 3.21). */
   readonly principal: Id<"ac">;
-  readonly importer: Id<"ac">;
+  /** The import actor's ID: it joins the space on its first act, so only when an apply writes. */
+  readonly importer: () => Promise<Id<"ac">>;
   readonly scope: string;
   readonly earlierScope?: string;
   readonly machine: Id<"m">;
@@ -761,6 +762,13 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
     return { ...applyResult(run, decision, new Map()), status: "unchanged", as_of: rows.asOf };
   }
 
+  // The import actor joins the space on the first import that writes (A1 3.6, 3.21).
+  let importer: Id<"ac">;
+  try {
+    importer = await call.importer();
+  } catch (error) {
+    throw storageFailure(error);
+  }
   const request: WriteRequest = {
     space_id: call.writer.spaceId,
     request_id: requestId,
@@ -769,7 +777,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
       ...(call.earlierScope === undefined ? {} : { earlier_scope_id: call.earlierScope }),
       principal_id: call.principal,
       actor_kind: "human",
-      author_id: call.importer,
+      author_id: importer,
       machine_id: call.machine,
       origin: "import",
     },

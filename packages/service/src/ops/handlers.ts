@@ -1787,11 +1787,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const folder = call.space.folder;
     if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
     let principal: Id<"ac">;
-    let importer: Id<"ac">;
     try {
       checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
       principal = await actorOf(writer, call.principal);
-      importer = await writer.actor("import", "import");
     } catch (error) {
       throw storageFailure(error);
     }
@@ -1804,7 +1802,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         roots: call.host.roots?.() ?? [],
         platform: call.host.platform ?? process.platform,
         principal,
-        importer,
+        importer: () => writer.actor("import", "import"),
         scope: call.principal.scope,
         ...(call.principal.earlierScope === undefined
           ? {}
