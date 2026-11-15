@@ -43,10 +43,9 @@ import {
   renameSync,
   rmdirSync,
   unlinkSync,
-  writeSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createFile, makeDir } from "@tasks/files";
+import { createFile, makeDir, writeAll } from "@tasks/files";
 
 /** The files at the tree's root besides the tasks', in the order a publish places them. */
 export const ROOT_FILES = ["README.md", "index.md", "catalog.jsonl", ".projection.json"] as const;
@@ -363,12 +362,7 @@ export class Tree {
     try {
       try {
         this.#act("write", temp);
-        let offset = 0;
-        while (offset < data.length) {
-          const n = writeSync(fd, data, offset, data.length - offset);
-          if (n <= 0) throw new ProjectionError("EIO", "A projected file's write made no progress");
-          offset += n;
-        }
+        writeAll(fd, data);
       } finally {
         closeSync(fd);
       }
