@@ -311,7 +311,7 @@ All writes go through the space's writer. The only writes that bypass history ar
 - Every decided outcome is a value (`applied`, `unchanged`, `conflict`, `rejected`, later `proposed`), never an error. A conflict names the origin of the commit that set each field, so text applied through an import is labelled `import`, never the user. Storage failures stay `StorageError` and leave the request undecided.
 - Problems name the operation and the field, never a value or a key, because a key is input too.
 - A learning is at most 1 KiB, and a task holds at most 20 live learnings (3.11.2).
-- An import's request (A7 3.15.5) may hold up to 1,000,000 operations and 512 MiB of JSON in its one commit (`WRITE_LIMITS.importOps`, `importBytes`): they follow from the importer's input bounds, so an import the dry run accepts is never refused for its size.
+- An import's request (A7 3.15.5) may hold up to 1,000,000 operations and 512 MiB of JSON in its one commit (`WRITE_LIMITS.importOps`, `importBytes`), and an `ext` value or an exchange item's base of up to 64 MiB (`WRITE_LIMITS.ext`, an import's only): they follow from the importer's input bounds (one metadata entry is at most 32 MiB), so an import the dry run accepts is never refused for its size. Only a request the writer classes as an import (`isImportRequest`) is allowed past 50 operations or 512 KiB.
 - Not built yet: `policy(plan, scope)` and proposals (M4.02), search rows (M3.05), the secret scan on written text (A6 3.16.4), and the limit of at most 20 labels per task.
 
 **Reasons and pitfalls.**

@@ -80,8 +80,13 @@ export const WRITE_LIMITS = {
   importBytes: 512 * 1024 * 1024,
   /** Characters of a legacy ID kept as an alias: the prototype's marker grammar (A7 3.15.2). */
   alias: 1_024,
-  /** UTF-8 bytes of a JSON `ext` value of a row, and of an exchange item's base (A1 3.4, 3.14). */
-  ext: 256 * 1024,
+  /**
+   * UTF-8 bytes of a JSON `ext` value of a row, and of an exchange item's base (A1 3.4, 3.14), both
+   * an import's only. Like `importBytes` they follow from the importer's input bounds (A7 3.15.2:
+   * one metadata entry is at most 32 MiB of JSON, and its file links join its paths), so a value
+   * the dry run accepts is never refused here.
+   */
+  ext: 64 * 1024 * 1024,
   /** Characters of a slug of an area or a project (A7 3.15.3: at most 48). */
   slug: 64,
 } as const;
@@ -2313,9 +2318,12 @@ function importFields(op: Operation): boolean {
  * undoable.
  */
 function checkImportRequest(f: Fields, request: CheckedRequest, bytes: number): void {
-  const importing =
-    isImportRequest(request) ||
-    (request.actor.origin === "import" && bytes > WRITE_LIMITS.requestBytes);
+  // One classifier: a request of origin `import` may be larger than 512 KiB only when it is an
+  // import (isImportRequest), which the writer then holds to the import actor.
+  const importing = isImportRequest(request);
+  if (request.actor.origin === "import" && !importing && bytes > WRITE_LIMITS.requestBytes) {
+    fail("TOO_LARGE", "The request is larger than 512 KiB", "");
+  }
   if (request.actor.origin !== "import") {
     const at = request.ops.findIndex(importFields);
     if (at >= 0) {

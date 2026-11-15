@@ -324,6 +324,23 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
         error: { code: "VALIDATION_FAILED", field: "actor.author_id" },
       });
       expect(world.seq()).toBe(seq);
+      // A request of origin import with no import's powers is a plain one, held to a plain one's
+      // size: over 512 KiB it is refused, whoever its author is.
+      const mira = String(world.rows("SELECT id FROM tasks ORDER BY ref LIMIT 1")[0]?.["id"]);
+      const large = world.writer.submit({
+        space_id: human.space_id,
+        request_id: `${human.request_id}-large`,
+        actor: { ...human.actor, author_id: world.user },
+        base: human.base,
+        // 40 entries of 16,000 characters: each within its limit, 640,000 bytes together.
+        ops: Array.from({ length: 40 }, () => ({
+          kind: "log.add" as const,
+          task: mira,
+          body: "x".repeat(16_000),
+        })),
+      });
+      expect(large).toMatchObject({ status: "rejected", error: { code: "TOO_LARGE" } });
+      expect(world.seq()).toBe(seq);
       expect(world.writer.submit(request(guard)).status).toBe("applied");
     } finally {
       world.close();

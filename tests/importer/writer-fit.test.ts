@@ -17,9 +17,11 @@ import { describe, expect, test } from "vitest";
 import { normaliseText } from "../../packages/contracts/src/index.ts";
 import {
   bindOperations,
+  decideApply,
   INSTANT_MAX,
   mapPrototype,
   parsePrototype,
+  type ApplySpace,
   type MappingOptions,
   type PrototypeInput,
 } from "../../packages/importer-planning/src/index.ts";
@@ -308,5 +310,62 @@ describe("[A7.3.15.importer.writer-fit] every value of a plan is one the space s
       }
     }
     expect(ops).toBeGreaterThan(RUNS * 3);
+  });
+
+  test("a metadata entry at the input's size: its ext.planning and its exchange item fit the writer", () => {
+    // Unknown keys, a confidence and paths far over any daily size, in one entry the parser takes.
+    const big = (n: number, c: string) => c.repeat(n);
+    const metadata = JSON.stringify({
+      a1: {
+        next: "Plan it",
+        confidence: big(300_000, "c"),
+        paths: ["/home/mira/work/a1", `/home/mira/${big(200_000, "p")}`],
+        notes_long: big(400_000, "n"),
+        more_text: { nested: [big(300_000, "m")] },
+      },
+    });
+    const input: PrototypeInput = {
+      todo: `- [ ] **Big one** ${big(30_000, "b ")} <!-- task:a1 -->\n`,
+      done: "# Done\n",
+      metadata,
+      events: [],
+    };
+    const options: MappingOptions = {
+      me: "Mira Okafor",
+      roots: { work: "/home/mira/work" },
+      timeZone: "Europe/Amsterdam",
+    };
+    const plan = mapPrototype(parsePrototype(input), options);
+    expect(plan.tasks).toHaveLength(1);
+    const empty: ApplySpace = {
+      state: {
+        id: SPACE,
+        epoch: 1,
+        incarnation: "in_0000000000000000000000000",
+        refPrefix: "M",
+        nextRef: 1,
+        aliases: [],
+        sources: [],
+        areas: [],
+        projects: [],
+      },
+      matched: new Map(),
+      gone: [],
+    };
+    const decision = decideApply(plan, empty, {
+      exchange: newId("ex"),
+      dir: "exchange/planning/run/input",
+      idOf: () => newId("t"),
+      importedAt: Date.UTC(2026, 10, 15),
+    });
+    const ops = decision.ops.map((op) => ({ ...op }));
+    expect(ops.map((op) => op["kind"])).toContain("exchange.create");
+    const checked = checkRequest({
+      space_id: SPACE,
+      request_id: "import-check-big",
+      actor: ACTOR,
+      ops,
+    });
+    expect(checked.ops).toEqual(ops);
   });
 });
