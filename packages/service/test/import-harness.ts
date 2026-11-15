@@ -10,18 +10,15 @@ import type {
   ImportPlanningApplyResult,
   ImportPlanningPreviewResult,
   ImportPlanningUndoResult,
-} from "../../packages/contracts/src/index.ts";
-import {
-  planningApply,
-  planningPreview,
-  planningUndo,
-} from "../../packages/service/src/ops/import-planning.ts";
+} from "@tasks/contracts";
 import {
   formatAsOf,
   newId,
   openSpace,
   SpaceWriter,
   submitBehindBackup,
+  type BackupSeams,
+  type CheckedDriver,
   type Connection,
   type Id,
   type Operation,
@@ -29,11 +26,10 @@ import {
   type SpaceWriterHandle,
   type WorkerConnection,
   type WriteResult,
-} from "../../packages/storage/src/index.ts";
-import type { BackupSeams } from "../../packages/storage/src/backup/backup.ts";
-import type { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
-import type { WriteSeams } from "../../packages/storage/src/write/writer.ts";
-import { checkedDriver, MIRA, seedMira } from "../../packages/testkit/src/index.ts";
+  type WriteSeams,
+} from "@tasks/storage";
+import { checkedDriver, MIRA, seedMira } from "@tasks/testkit";
+import { planningApply, planningPreview, planningUndo } from "../src/ops/import-planning.ts";
 
 /** The import's time zone in every test: days are 09:00 there. */
 export const ZONE = "Europe/Amsterdam";

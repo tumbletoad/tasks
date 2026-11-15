@@ -197,6 +197,7 @@ export {
   backupSpace,
   backupsFolder,
   type BackupRecord,
+  type BackupSeams,
   type SpaceBackupOptions,
 } from "./backup/backup.ts";
 export {
@@ -399,6 +400,7 @@ export {
   type MachineOs,
   type SubmitOptions,
   type WriterOptions,
+  type WriteSeams,
 } from "./write/writer.ts";
 export { planImportRevert, recomputeToken, type ImportRevert } from "./write/imports.ts";
 export {

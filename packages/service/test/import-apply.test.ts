@@ -1,24 +1,13 @@
 // M7.05 (A7 3.15.5, 3.15.6): the apply of a dry run, its guards, re-imports over a space the
 // person changed, and the undo, through the service's own dry run, apply and undo on the Mira
-// sample space, in one thread (harness.ts). The committed synthetic prototype is the input, copied
-// into a folder of the test's own where a test edits it. Fixture data only; every folder is made in
-// beforeAll and removed by its full name in afterAll.
-import {
-  cpSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+// sample space, in one thread (import-harness.ts). The committed synthetic prototype is the input,
+// copied into a folder of the test's own where a test edits it. Fixture data only; every folder is
+// made in beforeAll and removed by its full name in afterAll.
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import {
-  AppError,
-  ImportPlanningApplyResult,
-  ImportPlanningUndoResult,
-} from "../../packages/contracts/src/index.ts";
+import { AppError, ImportPlanningApplyResult, ImportPlanningUndoResult } from "@tasks/contracts";
 import {
   hashInputs,
   judgedNames,
@@ -28,18 +17,17 @@ import {
   readInput,
   type ImportPlan,
   type MappingOptions,
-} from "../../packages/importer-planning/src/index.ts";
-import { freeBytes } from "../../packages/storage/src/backup/policy.ts";
+} from "@tasks/importer-planning";
 import {
   formatAsOf,
   recomputeToken,
   StorageError,
   type Id,
   type PreviewGuard,
-} from "../../packages/storage/src/index.ts";
-import { openWorld, ZONE, type ImportWorld, type WorldOptions } from "./harness.ts";
+} from "@tasks/storage";
+import { openWorld, ZONE, type ImportWorld, type WorldOptions } from "./import-harness.ts";
 
-const REPO = join(import.meta.dirname, "..", "..");
+const REPO = join(import.meta.dirname, "..", "..", "..");
 const FIXTURE = join(REPO, "fixtures", "planning-prototype");
 
 interface Index {
@@ -373,19 +361,18 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
         at: (point) => {
           if (fail === "write" && point === "checked") throw new Error("the backup fails here");
         },
-        freeBytes: (folder) => (fail === "disk" ? 0 : freeBytes(folder)),
+        // A disk with room, or a full one: the backup checks the room before it writes.
+        freeBytes: () => (fail === "disk" ? 0 : Number.MAX_SAFE_INTEGER),
       },
     });
     try {
       const preview = await dryRun(world, prototype);
+      const before = world.rows("SELECT count(*) AS n FROM tasks")[0]?.["n"];
       const nothing = () => {
         expect(world.rows("SELECT * FROM exchanges")).toHaveLength(0);
         expect(world.rows("SELECT * FROM commits WHERE origin = 'import'")).toHaveLength(0);
-        expect(
-          world.rows("SELECT * FROM aliases a JOIN tasks t ON t.id = a.entity_id WHERE t.created_by IS NULL"),
-        ).toHaveLength(0);
+        expect(world.rows("SELECT count(*) AS n FROM tasks")[0]?.["n"]).toBe(before);
       };
-      const before = world.rows("SELECT count(*) AS n FROM tasks")[0]?.["n"];
       expect(await refusal(world.apply(preview.run, preview.token ?? ""))).toMatchObject({
         code: "space_unavailable",
         cause: "BACKUP_FAILED",
