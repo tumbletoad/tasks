@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -229,12 +230,13 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
       writeFileSync(file, '[log]\nlevel = "warn"\n', { mode: 0o600 });
       // Group write is refused unless the group is the person's own private group, which a new
       // file's group is when this account has one (permissions.ts, A2 3.2.2 rule 5).
-      const ownGroup = currentPerson()?.ownGroup() === true;
+      const own = currentPerson()?.ownGroup();
+      const ownGroup = (path: string) => own !== undefined && own === statSync(path).gid;
       expect(loadMachineConfig(dir, "linux").config.log.level).toBe("warn");
       for (const [path, mode, restore, refused] of [
-        [file, 0o620, 0o600, !ownGroup],
+        [file, 0o620, 0o600, !ownGroup(file)],
         [file, 0o602, 0o600, true],
-        [dir, 0o770, 0o700, !ownGroup],
+        [dir, 0o770, 0o700, !ownGroup(dir)],
         [dir, 0o707, 0o700, true],
       ] as const) {
         chmodSync(path, mode);

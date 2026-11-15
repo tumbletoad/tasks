@@ -18,7 +18,7 @@
 #
 # What it needs, all part of a usual Linux: a POSIX sh, uname, getconf, id, mkdir, mktemp, cp, mv
 # (GNU, for -T), rm, rmdir, cat, wc, cut, tail, tr, sed, awk, grep, find (GNU, for -printf), sort,
-# cmp, readlink, flock
+# timeout, cmp, readlink, flock
 # (util-linux), sha256sum, base64, gzip and tar; and ssh-keygen or openssl. Each is checked first, with a message naming what is
 # missing.
 #
@@ -36,7 +36,7 @@
 # builtin (bash, which is sh on some systems, imports them even in POSIX mode), and no option or
 # loader variable may change what GNU tar, gzip, grep or OpenSSL read and write, or what cd prints.
 unset -f printf command cd pwd read test [ echo umask readlink uname getconf id mkdir mktemp cp \
-  mv rm rmdir cat wc cut tail tr sed awk grep find sort cmp flock sha256sum base64 gzip tar ssh \
+  mv rm rmdir cat wc cut tail tr sed awk grep find sort timeout cmp flock sha256sum base64 gzip tar ssh \
   ssh-keygen openssl 2> /dev/null || true
 unset TAR_OPTIONS GZIP GREP_OPTIONS GREP_COLOR GREP_COLORS POSIXLY_CORRECT CDPATH ENV BASH_ENV \
   OPENSSL_CONF OPENSSL_CONF_INCLUDE OPENSSL_MODULES OPENSSL_ENGINES 2> /dev/null || true
@@ -181,7 +181,7 @@ IFS=$saved_ifs
 [ "$keys" -ge 1 ] && [ "$keys" -le 2 ] || fail 'This install script pins no release key. Nothing was installed.'
 
 # ---- The machine -------------------------------------------------------------------------------
-need uname getconf id mkdir mktemp cp mv rm rmdir cat wc cut tail tr sed awk grep find sort cmp \
+need uname getconf id mkdir mktemp cp mv rm rmdir cat wc cut tail tr sed awk grep find sort timeout cmp \
   readlink flock sha256sum base64 gzip tar
 [ "$(uname -s)" = Linux ] || fail 'This installer is for Linux.'
 case $(uname -m) in
@@ -262,9 +262,22 @@ judge() {
 # rule: end
 
 me=$(id -u)
-user_name=$(id -un 2> /dev/null) || user_name=''
-primary_name=$(id -gn 2> /dev/null) || primary_name=''
-own_gid=$(own_group "$user_name" "$(id -g)" "$primary_name")
+# read_own_group: sets own_gid (own_group) once, and only when a folder's group may write it. The
+# person's private group is their account's primary group, asked by their user name: not this
+# shell's group, which newgrp or sg changes for a while. Each question may go to a directory
+# service, so each gets 5 s; one that fails leaves no group of the person's own.
+own_gid=''
+own_read=''
+read_own_group() {
+  [ -z "$own_read" ] || return 0
+  own_read=1
+  user_name=$(timeout 5 id -un 2> /dev/null) || user_name=''
+  [ -n "$user_name" ] || return 0
+  primary_gid=$(timeout 5 id -g -- "$user_name" 2> /dev/null) || primary_gid=''
+  case $primary_gid in '' | *[!0-9]*) return 0 ;; esac
+  primary_name=$(timeout 5 id -gn -- "$user_name" 2> /dev/null) || primary_name=''
+  own_gid=$(own_group "$user_name" "$primary_gid" "$primary_name")
+}
 
 # A path as a person pastes it into a shell: as it is when it holds only plain characters, else in
 # single quotes. A root holds no line break, so neither does a folder on its way.
@@ -286,6 +299,7 @@ check_folder() {
   owner=${facts%% *}
   rest=${facts#* }
   gid=${rest%% *}
+  [ $((0${rest#* } & 020)) -eq 0 ] || read_own_group
   verdict=$(judge "$2" "$owner" "$gid" "${rest#* }")
   [ -n "$verdict" ] || return 0
   if [ "$owner" = "$me" ]; then
@@ -297,7 +311,7 @@ check_folder() {
     other_owner) fail "$1, $3, belongs to another user, so nothing was installed. $fix" ;;
     world_writable) fail "Every user on this computer can change $1, $3, so nothing was installed. $fix" ;;
     *)
-      name=$(find "$1" -prune -printf '%g\n' 2> /dev/null) || name=''
+      name=$(timeout 5 find "$1" -prune -printf '%g\n' 2> /dev/null) || name=''
       case $name in '' | *[!0-9]*) ;; *) name='' ;; esac
       fail "The members of the group ${name:-with ID $gid} can change $1, $3, not only you, so nothing was installed. $fix"
       ;;
@@ -307,6 +321,7 @@ check_folder() {
 # tree_unsafe <folder>: what lets someone else change a file or folder in it, by the rule (a link
 # in it has every bit, so it counts too); nothing when no one else can.
 tree_unsafe() {
+  [ -z "$(find "$1" -perm -0020 -print -quit)" ] || read_own_group
   find "$1" -printf '%U %G %m\n' | sort -u | while read -r owner gid mode; do
     judge mine "$owner" "$gid" "$mode"
   done

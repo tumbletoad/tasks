@@ -13,6 +13,7 @@ import { chmodSync, chownSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { ownGroupOf, readAccount } from "@tasks/files/person";
 import {
   currentPerson,
   factsOf,
@@ -48,8 +49,7 @@ const posix = process.platform !== "win32";
 /** The person a case describes, with names for its messages. */
 const personOf = (c: Case): Person => ({
   uid: c.uid,
-  gid: c.gid,
-  ownGroup: () => isOwnGroup(c.user, c.primary),
+  ownGroup: () => (isOwnGroup(c.user, c.primary) ? c.gid : undefined),
   groupName: (gid) => (gid === c.gid && c.primary !== "" ? c.primary : undefined),
 });
 
@@ -86,6 +86,31 @@ describe("[A2.3.2.2.permissions.group-rule] one rule for group write, in the ser
         `The folder (/srv/k) can be changed by the members of its group ${group}, not only by you. Why. To fix it, run: chmod g-w /srv/k`,
       );
     }
+  });
+
+  // The person's own private group is their account's primary group, asked by their user name,
+  // never this process's group, which `newgrp` changes. A question that fails gives no group.
+  test("the own private group is read from the account, by user name", () => {
+    const account: Record<string, string> = {
+      "-un": "ada",
+      "-g -- ada": "1000",
+      "-gn -- ada": "ada",
+    };
+    const asked: string[] = [];
+    const ask = (answers: Record<string, string>) => (args: readonly string[]) => {
+      asked.push(args.join(" "));
+      return answers[args.join(" ")];
+    };
+    expect(readAccount(ask(account))).toEqual({ user: "ada", gid: 1000, group: "ada" });
+    expect(asked).toEqual(["-un", "-g -- ada", "-gn -- ada"]);
+    expect(ownGroupOf(readAccount(ask(account)))).toBe(1000);
+    // A shared primary group, a group without a name, and questions that fail.
+    expect(ownGroupOf(readAccount(ask({ ...account, "-gn -- ada": "staff" })))).toBeUndefined();
+    const nameless = readAccount(ask({ "-un": "ada", "-g -- ada": "1000" }));
+    expect(nameless).toEqual({ user: "ada", gid: 1000, group: undefined });
+    expect(ownGroupOf(nameless)).toBeUndefined();
+    expect(readAccount(ask({}))).toBeUndefined();
+    expect(readAccount(ask({ ...account, "-g -- ada": "1000x" }))).toBeUndefined();
   });
 
   // The script's own block, run alone by the system's sh over each case's facts.
@@ -138,12 +163,16 @@ describe.runIf(posix)(
       chmodSync(dir, 0o775);
       const facts = factsOf(dir, "folder", { followLink: false });
       if (typeof facts !== "object") throw new Error(`no facts for ${dir}`);
-      expect(facts.gid).toBe(person.gid);
-      // What `id -un` and `id -gn` say, as the install script asks them.
-      const id = (flag: string) =>
-        spawnSync("id", [flag], { encoding: "utf8" }).stdout.replace(/\n$/u, "");
-      const own = isOwnGroup(id("-un"), id("-gn"));
-      expect(person.ownGroup()).toBe(own);
+      // The account's primary group and its name, as the install script asks them.
+      const id = (...args: string[]) =>
+        spawnSync("id", args, { encoding: "utf8" }).stdout.replace(/\n$/u, "");
+      const user = id("-un");
+      const primary = Number(id("-g", "--", user));
+      const ownId = isOwnGroup(user, id("-gn", "--", user)) ? primary : undefined;
+      expect(person.ownGroup()).toBe(ownId);
+      // A new folder's group is the account's primary group, unless a setgid folder above it or a
+      // `newgrp` shell gave it another.
+      const own = ownId !== undefined && ownId === facts.gid;
       if (own) {
         expect(problemOf(facts, person)).toBeUndefined();
       } else {
@@ -171,6 +200,8 @@ describe.runIf(posix)(
       () => {
         const person = currentPerson();
         if (person === undefined || supplementary === undefined) throw new Error("no group");
+        // In a `newgrp` shell the account's own private group is a supplementary one: not this case.
+        if (supplementary === person.ownGroup()) return;
         const dir = join(temp?.root ?? "", "shared");
         mkdirSync(dir, { mode: 0o700 });
         chownSync(dir, person.uid, supplementary);

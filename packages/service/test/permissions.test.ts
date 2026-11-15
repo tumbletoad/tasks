@@ -20,6 +20,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -125,8 +126,14 @@ async function startOnce(
 const commandIn = (line: string | undefined): string | undefined =>
   /(?:To fix it|For the others), run: (.*)$/su.exec(line ?? "")?.[1];
 
-/** Whether this account's primary group is its own private group, whose write the rule accepts. */
-const ownGroup = (): boolean => currentPerson()?.ownGroup() === true;
+/**
+ * Whether `path`'s group is this account's own private group, whose write the rule accepts: a new
+ * file's group is the account's primary group unless a setgid folder above gives it another.
+ */
+const ownGroup = (path: string): boolean => {
+  const own = currentPerson()?.ownGroup();
+  return own !== undefined && own === statSync(path).gid;
+};
 
 const ME = 1000;
 const ROOT = 0;
@@ -135,12 +142,11 @@ const GROUP = 20;
 /** A person whose primary group is shared (`staff`): no group but none may write. */
 const P: Person = {
   uid: ME,
-  gid: GROUP,
-  ownGroup: () => false,
+  ownGroup: () => undefined,
   groupName: (gid) => (gid === GROUP ? "staff" : undefined),
 };
 /** The same person with a private group of their own (`ada`), whose write the rule accepts. */
-const OWN: Person = { ...P, ownGroup: () => true, groupName: () => "ada" };
+const OWN: Person = { ...P, ownGroup: () => GROUP, groupName: () => "ada" };
 const facts = (
   path: string,
   need: Need,
@@ -303,7 +309,7 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
       chmodSync(dir, 0o775);
       chmodSync(file, 0o664);
       const grouped = loadMachineConfig(dir, "linux");
-      if (ownGroup()) {
+      if (ownGroup(dir) && ownGroup(file)) {
         expect(grouped.problems).toEqual([]);
         expect(grouped.config.log.level).toBe("warn");
       } else {

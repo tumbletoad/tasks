@@ -1,6 +1,6 @@
 // `tasks doctor`'s config row (A2 3.13, A2 3.2.4): machine.toml as the service reads it, with the
 // command that fixes a file or folder another user could change. Fixture text only.
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { currentPerson, shellPath } from "@tasks/service/permissions";
@@ -51,7 +51,7 @@ describe("[A2.3.2.2.permissions.rule] tasks doctor's config row", () => {
       // only when it is the account's own private group (A2 3.2.2 rule 5).
       chmodSync(file, 0o664);
       const group = configCheck(io);
-      if (currentPerson()?.ownGroup() === true) {
+      if (currentPerson()?.ownGroup() === statSync(file).gid) {
         expect(group.status).toBe("ok");
       } else {
         expect(group.status).toBe("fail");

@@ -4,15 +4,18 @@
 //
 // The rule: a file or folder Tasks trusts must belong to this user and may not be writable by every
 // user. Its group may write it only when that group is the person's own private group: the object's
-// group ID is the person's primary group ID, and that group's name is the person's user name (the
-// user private groups of distributions whose umask is 002). Any other group's write is refused,
-// because whether a group has members besides the person cannot be known for certain (a directory
-// service adds accounts no local file lists), and this rule lists no members. Its limit: whoever can
-// add a member to a person's private group administers the machine. macOS's primary group `staff` is
-// shared, so group write stays refused there. The install script (scripts/install/install.sh)
-// applies the same rule to the install root and the folders above it, and both run one table of
-// cases (test/fixtures/group-rule.json). Tasks gives everything it creates an exact mode (files.ts),
-// so only a file or folder a person made or changed by hand can fail the rule.
+// group ID is their account's primary group ID, and that group's name is their user name (the user
+// private groups of distributions whose umask is 002; @tasks/files/person reads it). Any other
+// group's write is refused, because whether a group has members besides the person cannot be known
+// for certain (a directory service adds accounts no local file lists), and this rule lists no
+// members. Its limits: whoever can add a member to a person's private group administers the
+// machine, and ACLs are not read, so a write a person grants another user by ACL on a folder of
+// their private group is not seen (A2 3.2.2 rule 5). macOS's primary group `staff` is shared, so
+// group write stays refused there. The install script (scripts/install/install.sh) applies the same
+// rule to the install root and the folders above it, launch applies it to T3's files
+// (t3-client.ts), and the script and this file run one table of cases (test/fixtures/
+// group-rule.json). Tasks gives everything it creates an exact mode (files.ts), so only a file or
+// folder a person made or changed by hand can fail the rule.
 //
 // This is the one place that turns the facts of a path into what is wrong with it and the command
 // that fixes it. factsOf reads them; problemOf judges them by the whole rule for that kind of object
@@ -25,12 +28,14 @@
 // never given for a path that is a link, or that has a link on its way: chown -h does not follow
 // the path's own link, but a link above it would still be followed. Configuration is never read
 // through a link at all (machine-toml.ts), so a link there is named with where it points.
-import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readlinkSync, statSync, type Stats } from "node:fs";
+import { lstatSync, readlinkSync, statSync, type Stats } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, resolve } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
+import { currentPerson, groupMayWrite, type Person } from "@tasks/files/person";
 import { MAX_LINE_BYTES, shellWord } from "@tasks/launch/shell-line";
+
+export { currentPerson, isOwnGroup, type Person } from "@tasks/files/person";
 
 /**
  * What Tasks needs of a file or folder it trusts. `folder`: the state, log, crash and cache folders
@@ -80,33 +85,8 @@ const NEEDED: Readonly<Record<Need, number>> = {
   file: 0o400,
 };
 
-/**
- * Who the rule judges for: this user and, when they have one, their own private group, which alone
- * besides them may write what Tasks trusts.
- */
-export interface Person {
-  readonly uid: number;
-  /** The person's primary group ID. */
-  readonly gid: number;
-  /**
-   * Whether the primary group is the person's own private group: its name is their user name
-   * (isOwnGroup). Asked only when a group-writable file or folder of that group is judged.
-   */
-  readonly ownGroup: () => boolean;
-  /** A group's name, for the person's message; undefined when it cannot be read. */
-  readonly groupName: (gid: number) => string | undefined;
-}
-
-/**
- * Whether a primary group of name `group` is the private group of the user named `user`: both
- * names are known and the same. The install script's `own_group` is the same test.
- */
-export const isOwnGroup = (user: string | undefined, group: string | undefined): boolean =>
-  user !== undefined && user !== "" && user === group;
-
 /** Whether the group of these facts may write: it is the person's own private group. */
-const groupMayWrite = (facts: PathFacts, person: Person): boolean =>
-  facts.gid === person.gid && person.ownGroup();
+const groupWrites = (facts: PathFacts, person: Person): boolean => groupMayWrite(facts.gid, person);
 
 /** Why these facts fail their rule, or undefined when they pass (POSIX). */
 export function problemOf(facts: PathFacts, person: Person): Unsafe | undefined {
@@ -121,78 +101,17 @@ export function problemOf(facts: PathFacts, person: Person): Unsafe | undefined 
     if ((facts.mode & 0o077) !== 0) return "open_to_others";
   } else if ((facts.mode & 0o002) !== 0) {
     return "world_writable";
-  } else if ((facts.mode & 0o020) !== 0 && !groupMayWrite(facts, person)) {
+  } else if ((facts.mode & 0o020) !== 0 && !groupWrites(facts, person)) {
     return "group_writable";
   }
   const needed = NEEDED[facts.need];
   return (facts.mode & needed) === needed ? undefined : "no_access";
 }
 
-/**
- * What a tool of the system's account services prints, through them alone (a directory service
- * included, which no local file lists): the first of `paths` that exists, never one found on PATH,
- * with no environment but the C locale, within 5 s. Its one line, or undefined.
- */
-function askAccounts(paths: readonly string[], args: readonly string[]): string | undefined {
-  const tool = paths.find((path) => existsSync(path));
-  if (tool === undefined) return undefined;
-  const ran = spawnSync(tool, args, {
-    env: { LC_ALL: "C" },
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: 5_000,
-    killSignal: "SIGKILL",
-  });
-  const line = typeof ran.stdout === "string" ? ran.stdout.replace(/\n$/u, "") : "";
-  // eslint-disable-next-line no-control-regex -- a name with a control character is no name
-  return ran.status === 0 && line !== "" && !/[\0-\x1f\x7f]/u.test(line) ? line : undefined;
-}
-
-/** This process's group's name, as `id -gn` says it. */
-const readGroupName = () => askAccounts(["/usr/bin/id", "/bin/id"], ["-gn"]);
-
-/** Another group's name, as `getent group` says it (Linux); undefined elsewhere. */
-function lookUpGroup(gid: number): string | undefined {
-  const entry = askAccounts(["/usr/bin/getent", "/bin/getent"], ["group", String(gid)]);
-  const name = entry?.split(":")[0];
-  return name === undefined || name === "" ? undefined : name;
-}
-
-/** This user's name from the account services, or undefined. */
-function readUserName(): string | undefined {
-  try {
-    return userInfo().username;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Read once per process, and only when a judgement or a message needs it. */
-let primary: { readonly name: string | undefined } | undefined;
-let own: boolean | undefined;
-const primaryGroupName = (): string | undefined => (primary ??= { name: readGroupName() }).name;
-
-/**
- * This process's person (POSIX): its UID and group, and whether that group is its own private
- * group. Undefined on Windows.
- */
-export function currentPerson(): Person | undefined {
-  const uid = process.getuid?.();
-  const gid = process.getegid?.();
-  if (process.platform === "win32" || uid === undefined || gid === undefined) return undefined;
-  return {
-    uid,
-    gid,
-    ownGroup: () => (own ??= isOwnGroup(readUserName(), primaryGroupName())),
-    groupName: (of) => (of === gid ? primaryGroupName() : lookUpGroup(of)),
-  };
-}
-
 /** A person whose group never writes: what pure judgements use when no person is given. */
 const NOBODY_ELSE: Person = {
   uid: -1,
-  gid: -1,
-  ownGroup: () => false,
+  ownGroup: () => undefined,
   groupName: () => undefined,
 };
 
@@ -331,7 +250,7 @@ export function repairOf(facts: PathFacts, problem: Unsafe, person = thisPerson(
   if (facts.need === "private_folder") {
     if ((facts.mode & 0o077) !== 0) parts.push("go-rwx");
   } else {
-    const group = (facts.mode & 0o020) !== 0 && !groupMayWrite(facts, person);
+    const group = (facts.mode & 0o020) !== 0 && !groupWrites(facts, person);
     const world = (facts.mode & 0o002) !== 0;
     if (group || world) parts.push(`${group ? "g" : ""}${world ? "o" : ""}-w`);
   }
