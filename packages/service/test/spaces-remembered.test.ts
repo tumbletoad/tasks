@@ -3,7 +3,15 @@
 // cannot be written is done for this run and says so. Which copy of a space an ID or a name means
 // when copies are served side by side (A2 3.10.5), over the socket and on the page's feed. Services
 // run in this process on temporary homes; fixture data only.
-import { chmodSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "@tasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
@@ -363,6 +371,59 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
         [copyFolder, "open"],
       ]);
       await follows(again, "claimed-add-0003");
+    },
+  );
+});
+
+describe("[A2.3.10.1.recover.id-check] recover checks the space before it plays a journal back", () => {
+  test(
+    "a folder whose space.json names another space is refused with nothing changed; the entry's own space is recovered and recorded open",
+    SLOW,
+    async () => {
+      const w = await world("recover");
+      const user = await w.user();
+      const [mira] = await list(user);
+      if (mira?.id === undefined) throw new Error("no Mira");
+      const otherFolder = join(w.root, "s", "other");
+      await user.call("space/create", { name: "Other", path: otherFolder }, CALL);
+      await user.call("space/close", { space: otherFolder }, CALL);
+      await user.call("space/close", { space: mira.folder }, CALL);
+
+      // A stray rollback journal beside the database: the space is refused until it is recovered.
+      writeFileSync(join(mira.folder, "space.db-journal"), "");
+      const refused = await user.call("space/open", { path: mira.folder }, CALL);
+      expect(refused).toMatchObject({
+        space: { state: "unavailable", reason: "needs_recovery" },
+        remembered: true,
+      });
+
+      // Another space with a journal of its own is put in the folder since: not this entry's to
+      // recover, and nothing of it is played back or moved.
+      const aside = `${mira.folder}-aside`;
+      renameSync(mira.folder, aside);
+      renameSync(otherFolder, mira.folder);
+      writeFileSync(join(mira.folder, "space.db-journal"), "");
+      const before = readdirSync(join(w.root, "s")).sort();
+      const mismatch = await user
+        .call("space/recover", { space: mira.folder }, CALL)
+        .catch((e: unknown) => e);
+      expect(errorOf(mismatch)).toMatchObject({ data: { cause: "SPACE_ID_MISMATCH" } });
+      expect(readdirSync(join(w.root, "s")).sort()).toEqual(before);
+      expect(existsSync(join(mira.folder, "space.db-journal"))).toBe(true);
+
+      // The entry's own space back: recovered, the old folder kept beside it, open and recorded.
+      renameSync(mira.folder, otherFolder);
+      renameSync(aside, mira.folder);
+      const recovered = await user.call("space/recover", { space: mira.folder }, CALL);
+      expect(recovered).toMatchObject({
+        recovered: true,
+        space: { state: "open" },
+        remembered: true,
+      });
+      expect(readdirSync(join(w.root, "s")).some((name) => name.startsWith("mira.replaced-"))).toBe(
+        true,
+      );
+      expect(recorded(w).find((s) => s.path === mira.folder)?.enabled).toBe(true);
     },
   );
 });
