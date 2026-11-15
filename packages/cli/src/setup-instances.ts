@@ -7,7 +7,8 @@
 //                                       the apply command and the plan's token. Writes nothing
 //   tasks setup instances --apply --plan <token>
 //                                       adds exactly those entries, or changes nothing when the
-//                                       proposal is not the same any more
+//                                       proposal is not the same any more (run again after it
+//                                       worked, it says the entries are there and exits 0)
 //   tasks setup instances --remove      takes out every entry this command added that is still
 //                                       exactly as it was written
 //   [--instance <id>] [--json]
@@ -39,7 +40,13 @@ import {
   type InstanceValue,
   type Proposal,
 } from "@tasks/launch";
-import { keyText, loadMachineConfig, valueText, type EditValue } from "@tasks/service/config";
+import {
+  keyText,
+  loadMachineConfig,
+  prepareEdit,
+  valueText,
+  type EditValue,
+} from "@tasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import { readRecords, samePath, type HomeRecord } from "@tasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
@@ -152,21 +159,24 @@ const APP_OF: Readonly<Record<string, HomeRecord["app"]>> = {
 
 /**
  * What this machine has and what the preview proposes: detection in the person's environment, the
- * instances machine.toml names, and the IDs setup agents already gave a home.
+ * instances machine.toml names, and the IDs setup agents already gave a home. `asIfNone` proposes
+ * as if machine.toml named no instance: what the preview offered before an apply wrote it.
  */
 async function surveyOf(
   io: Io,
   options: { readonly agents?: AgentsSetupOptions },
   only: string | undefined,
+  asIfNone = false,
 ): Promise<Survey> {
   const facts = hostFacts(io.env, io.platform);
   const layout = resolveLayout(facts);
   const env = options.agents?.env ?? io.env;
   const userHome = options.agents?.home ?? homeFolder(facts);
   const machine = loadMachineConfig(layout.config, io.platform).config;
+  const existing = asIfNone ? [] : machine.instances;
   const detection = await detect(
     nodeDetectHost({ platform: io.platform, env, home: userHome }),
-    machine.instances,
+    existing,
   );
   let records: HomeRecord[] = [];
   try {
@@ -174,7 +184,7 @@ async function surveyOf(
   } catch {
     // Setup agents' record cannot be read: the proposals keep detection's IDs.
   }
-  const taken = new Set(machine.instances.map((i) => i.id));
+  const taken = new Set(existing.map((i) => i.id));
   const offers: Offer[] = [];
   const left: Left[] = [];
   for (const found of detection.proposals) {
@@ -257,6 +267,16 @@ export async function instancesCommand(
     const plan = planToken(survey.offers);
     if (parsed.mode === "preview") return preview(io, globals, survey, plan, parsed);
     if (plan !== parsed.plan) {
+      // The same apply run again: the plan's entries are all there, exactly as it wrote them.
+      const already = await alreadyApplied(io, options, parsed);
+      if (already !== undefined) {
+        io.stdout(
+          globals.json
+            ? `${JSON.stringify({ added: [], already })}\n`
+            : `machine.toml has ${already.length === 1 ? "the instance" : "the instances"} ${already.join(", ")} already, as the preview showed ${already.length === 1 ? "it" : "them"}. Nothing was changed.\n`,
+        );
+        return 0;
+      }
       throw new AppError({
         code: "conflict",
         message: "What this machine has changed since the preview, so nothing was changed.",
@@ -286,6 +306,25 @@ export async function instancesCommand(
   } finally {
     session?.close();
   }
+}
+
+/**
+ * The IDs of a plan that was applied already: proposed as if machine.toml named no instance, the
+ * offers are the plan's, and each is in the file exactly as an apply writes it (the editor's
+ * `remove` would take it out; nothing is written here). Undefined otherwise.
+ */
+async function alreadyApplied(
+  io: Io,
+  options: { readonly agents?: AgentsSetupOptions },
+  parsed: Parsed,
+): Promise<string[] | undefined> {
+  const fresh = await surveyOf(io, options, parsed.instance, true);
+  if (fresh.offers.length === 0 || planToken(fresh.offers) !== parsed.plan) return undefined;
+  const config = resolveLayout(hostFacts(io.env, io.platform)).config;
+  const written = fresh.offers.every(
+    (o) => prepareEdit(config, [{ op: "remove", array: "instance", entries: o.entry }]).ok,
+  );
+  return written ? fresh.offers.map((o) => o.id) : undefined;
 }
 
 function preview(io: Io, globals: Globals, survey: Survey, plan: string, parsed: Parsed): number {

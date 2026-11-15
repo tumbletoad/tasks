@@ -153,6 +153,15 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       const written = readFileSync(machineToml(), "utf8");
       expect(written.match(/^\[\[instance\]\]$/gmu)).toHaveLength(2);
       expect(existsSync(join(stateOf(w.home), "instances.json"))).toBe(true);
+      // The same apply again: the entries are there as it wrote them, so it says so and exits 0.
+      const twice = await run(apply.slice(1));
+      expect(twice.code, twice.stderr).toBe(0);
+      expect(twice.stdout).toContain("already");
+      expect(twice.stdout).toContain("Nothing was changed.");
+      const twiceJson = await run([...apply.slice(1), "--json"]);
+      expect(twiceJson.code, twiceJson.stderr).toBe(0);
+      expect(JSON.parse(twiceJson.stdout)).toEqual({ added: [], already: ["claude", "codex"] });
+      expect(readFileSync(machineToml(), "utf8")).toBe(written);
       // Open offers them now, without a restart.
       expect(await tiles()).toEqual(["claude", "codex"]);
       // A second preview has nothing to add: machine.toml names both.

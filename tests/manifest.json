@@ -2123,7 +2123,7 @@
     },
     {
       "id": "A4.3.2.setup.instances",
-      "title": "tasks setup instances against fake agent commands and a real service: the preview shows each command with its version and each home, the exact entries and the plan, and writes nothing; only the person applies the preview's plan; the service writes machine.toml and Open offers the instances at once; doctor's instances row names setup instances, then setup agents, then passes; remove takes back only an entry still exactly as written and the file comes back",
+      "title": "tasks setup instances against fake agent commands and a real service: the preview shows each command with its version and each home, the exact entries and the plan, and writes nothing; only the person applies the preview's plan; the service writes machine.toml and Open offers the instances at once; the same apply again says the entries are there and exits 0 without a change; doctor's instances row names setup instances, then setup agents, then passes; remove takes back only an entry still exactly as written and the file comes back",
       "source": "A4 3.2, A2 3.2.4, A3 3.13.1, A5 3.17",
       "owner": "M2",
       "kind": "ci",
