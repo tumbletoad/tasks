@@ -33,6 +33,7 @@ import type { ReadOnlyReason } from "../space.ts";
 import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
+import type { RunRow } from "../write/runs.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -198,6 +199,10 @@ export interface Calls {
   projected: { args: { handle: number; batch: ProjectedBatch }; result: number };
   /** Tasks queued for the projection: every one (a full rebuild), or `keys`. The tasks queued. */
   queueProjection: { args: { handle: number; keys?: string[] }; result: number };
+  /** A run record (A4 3.16.1), or null. */
+  run: { args: { handle: number; run: string }; result: RunRow | null };
+  /** A machine's runs that are not final: the execution store's `openWork`. */
+  openRuns: { args: { handle: number; machine: string }; result: RunRow[] };
   exec: { args: { handle: number; sql: string }; result: null };
   query: { args: { handle: number; query: Query }; result: QueryResult };
   /** The queries in one transaction: all apply, or none. */

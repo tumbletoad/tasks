@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { APP_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { selfTest } from "@tasks/cli/doctor-http";
 import { indexProblems, loadUiFolder, UiFolderInvalid } from "@tasks/service/http";
 import { send } from "@tasks/service/test/http-client";
 import { httpWorld, type HttpWorld } from "@tasks/service/test/http-world";
@@ -168,6 +169,19 @@ describe("[A7.3.9.m2-13.web.build] the built page under SRI and the strict CSP",
         expect(asset.body, file).toBe(read(file).toString("utf8"));
       }
       expect((await send(port, { path: "/s/not-a-space/../../x" })).status).toBe(404);
+    },
+  );
+});
+
+describe("[A2.3.13.cli.doctor-page] doctor's self-test of the page a build produces", () => {
+  test(
+    "the built page, served by the service, passes doctor's self-test: the meta tag repeats the nonce",
+    SLOW,
+    async () => {
+      world ??= await httpWorld("web", { ui: built.out });
+      // The build's own output, not a hand-written page: the tag is written the way the build
+      // writes it, and doctor reads it the way a browser does.
+      expect(await selfTest(world.port())).toEqual([]);
     },
   );
 });

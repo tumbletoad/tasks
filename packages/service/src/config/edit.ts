@@ -49,7 +49,15 @@ export type Edit =
   /** Adds an element `[[array]]` after the array's last element, or at the end. */
   | { readonly op: "append"; readonly array: string; readonly entries: Entries }
   /** Adds a new standard table `[table…]` at the end. Refused when it exists. */
-  | { readonly op: "add_table"; readonly table: readonly string[]; readonly entries: Entries };
+  | { readonly op: "add_table"; readonly table: readonly string[]; readonly entries: Entries }
+  /**
+   * Takes out the one element `[[array]]` that is still exactly as `append` wrote `entries` in
+   * this file's line breaks: its header and key lines byte for byte, nothing added to it and no
+   * comment line right above or below it, with the blank line `append` put before it. Refused
+   * `absent` when no element is, so an element the person changed or annotated is never removed;
+   * `unsupported_layout` when more than one is.
+   */
+  | { readonly op: "remove"; readonly array: string; readonly entries: Entries };
 
 export type EditRefusal =
   /** The file is not valid TOML (or not UTF-8, or too large): fix it first. */
@@ -58,6 +66,8 @@ export type EditRefusal =
   | "unsupported_layout"
   /** `add_table` of a table that exists. */
   | "exists"
+  /** `remove` of an element the file does not hold exactly as it was written. */
+  | "absent"
   /** A value that cannot be written (a non-finite number, a control character in a key). */
   | "invalid_value"
   /** The file changed between the read and the write. */
@@ -213,6 +223,18 @@ function tableLines(lines: readonly ScannedLine[], header: ScannedHeader): Scann
   return out;
 }
 
+/**
+ * An appended element between `before` and `after`: on a line of its own after one blank line
+ * (none at the very start of a file). At the end of a file without a final line break the element
+ * ends without one too, so the file keeps its ending and `remove` can give it back byte for byte.
+ */
+function elementAt(before: string, after: string, eol: string, block: string): string {
+  if (before === "") return `${block}${after}`;
+  const lead = before.endsWith("\n") ? "" : eol;
+  const ending = after === "" && lead !== "" ? block.slice(0, block.length - eol.length) : block;
+  return `${before}${lead}${eol}${ending}${after}`;
+}
+
 function blockOf(header: string, entries: [string, EditValue][], eol: string): string {
   return `${header}${eol}${entries.map(([k, v]) => `${keyText(k)} = ${valueText(v)}${eol}`).join("")}`;
 }
@@ -262,7 +284,7 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const block = blockOf(`[[${keyText(edit.array)}]]`, entriesOf(edit.entries), eol);
       const lastElement = elements.at(-1);
       // No element yet: at the end. An array written inline fails the check of the result.
-      if (lastElement === undefined) return appendAtEnd(text, eol, block);
+      if (lastElement === undefined) return elementAt(text, "", eol, block);
       // After the element's last line, its sub-tables included, before what documents the next.
       const from = lines.indexOf(lastElement);
       let end = lastElement.end;
@@ -271,20 +293,104 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
         if (line.kind === "header" && samePath(line.path, [edit.array])) break;
         end = line.end;
       }
-      const before = text.slice(0, end);
-      const lead = before.endsWith("\n") ? "" : eol;
-      const after = text.slice(end);
-      return `${before}${lead}${eol}${block}${after}`;
+      return elementAt(text.slice(0, end), text.slice(end), eol, block);
     }
     case "add_table": {
       const block = blockOf(`[${edit.table.map(keyText).join(".")}]`, entriesOf(edit.entries), eol);
       return appendAtEnd(text, eol, block);
     }
+    case "remove": {
+      const found = removal(text, layout, edit);
+      return "refused" in found ? found : found.text;
+    }
   }
 }
 
-function intended(doc: TomlDocument, edit: Edit): TomlDocument | EditRefusal {
+/**
+ * Where `remove` takes its element out: the one element whose text is exactly the block `append`
+ * writes for the entries, with nothing after its key lines but the next header (never a key or a
+ * sub-table of its own), and the blank line before it. The element's index is for the check.
+ */
+function removal(
+  text: string,
+  layout: Layout,
+  edit: Extract<Edit, { op: "remove" }>,
+): { text: string; index: number } | { refused: EditRefusal } {
+  const { eol, lines } = layout;
+  const block = blockOf(`[[${keyText(edit.array)}]]`, entriesOf(edit.entries), eol);
+  const keys = entriesOf(edit.entries).length;
+  const elements = lines.filter(
+    (l): l is ScannedHeader => l.kind === "header" && l.array && samePath(l.path, [edit.array]),
+  );
+  // The element ends the file without a final line break when append wrote it so (elementAt).
+  const short = block.slice(0, block.length - eol.length);
+  const matches: { header: ScannedHeader; index: number; length: number }[] = [];
+  elements.forEach((header, index) => {
+    const length = text.startsWith(block, header.start)
+      ? block.length
+      : header.start + short.length === text.length && text.startsWith(short, header.start)
+        ? short.length
+        : undefined;
+    if (length === undefined) return;
+    const at = lines.indexOf(header);
+    const body = lines.slice(at + 1, at + 1 + keys);
+    const next = lines[at + 1 + keys];
+    const own =
+      body.length === keys &&
+      body.every((l) => l.kind === "keyval") &&
+      (next === undefined ||
+        (next.kind === "header" && !startsWithPath(next.path, [edit.array])) ||
+        (next.kind === "header" && samePath(next.path, [edit.array]))) &&
+      // A comment on the line right above or below, with no blank line between, is the person's
+      // note on this element: the element is theirs now, and is left whole with it.
+      !isComment(lastLine(text.slice(0, header.start))) &&
+      !isComment(firstLine(text.slice(header.start + length)));
+    if (own) matches.push({ header, index, length });
+  });
+  const [match, other] = matches;
+  if (match === undefined) return { refused: "absent" };
+  if (other !== undefined) return { refused: "unsupported_layout" };
+  let before = text.slice(0, match.header.start);
+  let after = text.slice(match.header.start + match.length);
+  // The blank line append put before the element; for the first element of a file, which append
+  // wrote without one, the blank line that the next append put after it.
+  const lineStart = (s: string) => s === "" || s.endsWith("\n");
+  if (before.endsWith(eol) && lineStart(before.slice(0, before.length - eol.length))) {
+    before = before.slice(0, before.length - eol.length);
+  } else if (before === "" && after.startsWith(eol)) {
+    after = after.slice(eol.length);
+  }
+  // An element that ended the file without a final line break: so does the file again.
+  if (match.length === short.length && before.endsWith(eol)) {
+    before = before.slice(0, before.length - eol.length);
+  }
+  return { text: before + after, index: match.index };
+}
+
+/** The last line of `text` that ends with its line break, without it; "" when none. */
+function lastLine(text: string): string {
+  const body = text.endsWith("\n") ? text.slice(0, -1) : "";
+  return body.slice(body.lastIndexOf("\n") + 1);
+}
+
+/** The first line of `text`, without its line break. */
+const firstLine = (text: string): string => {
+  const end = text.indexOf("\n");
+  return end < 0 ? text : text.slice(0, end);
+};
+
+const isComment = (line: string): boolean => line.trim().startsWith("#");
+
+function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | EditRefusal {
   switch (edit.op) {
+    case "remove": {
+      const current = doc[edit.array];
+      if (!Array.isArray(current)) return "absent";
+      const left = (current as unknown[]).filter((_, i) => i !== index);
+      // The last element gone: the array is gone from the document too.
+      const rest = Object.fromEntries(Object.entries(doc).filter(([key]) => key !== edit.array));
+      return left.length === 0 ? rest : { ...rest, [edit.array]: left };
+    }
     case "set":
       return withValue(doc, [...edit.table, edit.key], parsedValue(edit.value));
     case "unset":
@@ -334,11 +440,22 @@ export function applyEdits(text: string, edits: readonly Edit[]): EditResult {
       if (error instanceof ScanError) return { ok: false, reason: "unsupported_layout" };
       throw error;
     }
-    const want = intended(doc, edit);
-    if (typeof want === "string") return { ok: false, reason: want };
+    const layout = { eol: eolOf(current), lines };
     let next: string | { refused: EditRefusal };
+    let want: TomlDocument | EditRefusal;
     try {
-      next = place(current, { eol: eolOf(current), lines }, edit);
+      if (edit.op === "remove") {
+        // The element's place decides the intended document: the array without that element.
+        const found = removal(current, layout, edit);
+        if ("refused" in found) return { ok: false, reason: found.refused };
+        next = found.text;
+        want = intended(doc, edit, found.index);
+        if (typeof want === "string") return { ok: false, reason: want };
+      } else {
+        want = intended(doc, edit);
+        if (typeof want === "string") return { ok: false, reason: want };
+        next = place(current, layout, edit);
+      }
     } catch (error) {
       if (error instanceof InvalidValue) return { ok: false, reason: "invalid_value" };
       throw error;

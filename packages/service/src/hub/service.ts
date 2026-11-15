@@ -23,7 +23,7 @@ import { randomBytes } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { envVar, PRODUCT_NAME } from "@tasks/brand";
-import type { Root } from "@tasks/launch";
+import type { Instance, Root } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
   fatalProblems,
@@ -600,6 +600,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // This machine's roots, which places resolve with (A1 3.15): machine.toml's at start, and the
     // roots `tasks roots add` writes while the service runs (roots.ts).
     let roots: readonly Root[] = config.roots;
+    // The instances Open uses: machine.toml's at start, then what `tasks setup instances` writes.
+    let instances: readonly Instance[] = config.instances;
     // The machine's default space (A2 3.1): machine.toml's at start, then what Make default and
     // `tasks space use` write (default-space.ts).
     const defaults = new DefaultSpace({
@@ -678,6 +680,15 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         current: () => roots,
         set: (next: readonly Root[]) => {
           roots = next;
+        },
+      },
+      instances: {
+        configDir: layout.config,
+        stateDir: layout.state,
+        platform,
+        log,
+        set: (next: readonly Instance[]) => {
+          instances = next;
         },
       },
       launches: { handlers: () => launching.service?.handlers() ?? {} },
@@ -795,7 +806,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaces: () => made.spaces?.served() ?? [],
       log,
       terminalSettings: config.terminal,
-      instances: config.instances,
+      instances: () => instances,
       install,
       commandFolder: layout.bin,
       ...(accountHome === undefined ? {} : { home: accountHome }),

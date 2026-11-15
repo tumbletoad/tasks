@@ -27,7 +27,10 @@ export const Unresolved = z.strictObject({
     .describe("A row other than the task: its ID, or task_id|source_id for a link")
     .optional(),
   task: TaskRef.optional(),
-  field: z.string().max(40).describe("Logical field; deleted or removed for a child row"),
+  field: z
+    .string()
+    .max(40)
+    .describe("Logical field; deleted or removed for a child row, state for a run"),
   by: z.string().describe("Who changed it since: user, import or the actor's label"),
   at: z.string().regex(patterns.instant).describe("When"),
 });

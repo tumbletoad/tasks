@@ -56,6 +56,7 @@ import { destinationExists, destinationNotCreated, literalPath } from "../sqlite
 import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
+import type { RunRow } from "../write/runs.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
@@ -905,6 +906,19 @@ export class SpaceWriterHandle {
         ...(keys === undefined ? {} : { keys: [...keys] }),
       }),
     );
+  }
+
+  /** A run record as it is now (A4 3.16.1), or undefined, behind every request sent before. */
+  async run(id: string): Promise<RunRow | undefined> {
+    const found = await this.#queued(() =>
+      this.#worker.call("run", { handle: this.handle, run: id }),
+    );
+    return found ?? undefined;
+  }
+
+  /** Every run of `machine` that is not final, oldest first: `openWork` (A4 3.11.9, 3.16.1). */
+  openRuns(machine: string): Promise<RunRow[]> {
+    return this.#queued(() => this.#worker.call("openRuns", { handle: this.handle, machine }));
   }
 
   /** One call to the writer, within the queue limit and the time limit (A1 3.9). */
