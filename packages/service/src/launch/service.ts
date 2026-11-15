@@ -255,6 +255,9 @@ const answer = (reason: HostRefusal): AppError =>
       })
     : refusal();
 
+/** A best-effort app's folder check, as `launch.folder_check` logs it (A4 3.4.4). */
+type FolderCheck = "same" | "other" | "unknown";
+
 export class LaunchService {
   readonly host: ShimHost;
   /** Where the agent's environment comes from (A4 3.8). */
@@ -917,10 +920,20 @@ export class LaunchService {
       });
     }
     try {
-      const after = await machine.report(
-        launch,
-        await this.#bindingObservation(hosted.store, launch, at, folder),
-      );
+      // The bridge's folder is read by one stat before the section, only for a link launch (its
+      // route never changes); the decision is made in the section, on the record as it is then.
+      const before = await hosted.store.readIntent(launch);
+      const here =
+        before?.route === "link" && folder !== undefined
+          ? await folderKeyOf(folder, this.#options.platform)
+          : undefined;
+      let check: FolderCheck | undefined;
+      const after = await machine.report(launch, (intent) => {
+        const decided = this.#bindingObservation(intent, at, here);
+        check = decided.check;
+        return decided.observation;
+      });
+      if (check !== undefined) this.#options.log.log("launch.folder_check", { result: check });
       // The page's receipts follow at once, as for the shim's reports.
       this.#changed(space);
       return after;
@@ -939,33 +952,33 @@ export class LaunchService {
    * app's link (A4 3.4.4, 3.4.5), whose session may have started in another folder than the link
    * named. That one is Confirmed only when the bridge's working folder has the identity the link's
    * folder had at its dispatch; otherwise the binding is recorded as evidence and the launch stays
-   * Dispatched ("Opened · not confirmed"). The route and the instance of an intent never change and
-   * its evidence only grows, so they may be read before the report's section: a launch whose
-   * folder is not recorded yet is not confirmed. An instance no longer in machine.toml is checked.
+   * Dispatched ("Opened · not confirmed"). It is decided in the launch's section on the record as
+   * it is then (`here` is the bridge folder's identity key, read before), so a binding that arrives
+   * while the opener still runs is decided after the dispatch recorded the folder. A link launch is
+   * checked when its record holds a folder identity (only a best-effort app's link records one,
+   * whatever its instance has become in machine.toml since), when its instance's route asks for
+   * the check, and when its instance is no longer in machine.toml.
    */
-  async #bindingObservation(
-    store: SpaceExecutionStore,
-    launch: string,
+  #bindingObservation(
+    intent: LaunchIntent,
     at: number,
-    folder: string | undefined,
-  ): Promise<Observation> {
+    here: string | undefined,
+  ): { observation: Observation; check?: FolderCheck } {
     const confirmed: Observation = { kind: "confirmed", evidence: { bound_at: at } };
-    const intent = await store.readIntent(launch);
-    if (intent?.route !== "link") return confirmed;
+    if (intent.route !== "link") return { observation: confirmed };
+    const recorded = intent.evidence.folder_id;
     const instance = (this.#options.instances ?? []).find((i) => i.id === intent.instance);
     const checks =
+      recorded !== undefined ||
       instance === undefined ||
       !isBuiltInTarget(instance.target) ||
       routeOf(instance.target, "link")?.confirmFolder === true;
-    if (!checks) return confirmed;
-    const recorded = intent.evidence.folder_id;
-    const here =
-      folder === undefined ? undefined : await folderKeyOf(folder, this.#options.platform);
+    if (!checks) return { observation: confirmed };
     const same = recorded !== undefined && here !== undefined && here === recorded;
-    this.#options.log.log("launch.folder_check", {
-      result: same ? "same" : recorded === undefined || here === undefined ? "unknown" : "other",
-    });
-    return same ? confirmed : { kind: "evidence", evidence: { bound_at: at } };
+    return {
+      observation: same ? confirmed : { kind: "evidence", evidence: { bound_at: at } },
+      check: same ? "same" : recorded === undefined || here === undefined ? "unknown" : "other",
+    };
   }
 
   /** The rpc methods of the shim class (A2 3.6.4): the hub registers these in its handler table. */

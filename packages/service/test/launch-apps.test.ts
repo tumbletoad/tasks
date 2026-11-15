@@ -8,7 +8,7 @@ import { mkdirSync, realpathSync, statSync, writeFileSync, chmodSync } from "nod
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import type { JsonObject, RpcSession } from "@tasks/bridge/protocol";
-import { renderBrief, type SpawnRequest, type SpawnedProcess } from "@tasks/launch";
+import { briefReference, renderBrief, type SpawnRequest, type SpawnedProcess } from "@tasks/launch";
 import { bridgePrincipal, clientOf } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { briefNames } from "../src/launch/open.ts";
@@ -31,13 +31,16 @@ afterEach(async () => {
 }, 120_000);
 
 const opened: SpawnRequest[] = [];
+/** While set, the opener "runs" until the test releases it: an app may start before it exits. */
+let held: Promise<void> | undefined;
 
-/** A spawner that starts nothing: the opener "ran" and exited 0. */
+/** A spawner that starts nothing: the opener "ran" and exited 0, once released when held. */
 const recordingSpawner = (request: SpawnRequest): Promise<SpawnedProcess> => {
   opened.push(request);
+  const gate = held;
   return Promise.resolve({
     pid: 1,
-    exited: Promise.resolve({ code: 0, signal: null }),
+    exited: (gate ?? Promise.resolve()).then(() => ({ code: 0, signal: null })),
     stop: () => undefined,
   });
 };
@@ -61,6 +64,13 @@ async function rig(label: string): Promise<Rig> {
       [
         instanceToml({ id: "desktop", target: "claude-desktop", label: "Claude Desktop · test" }),
         instanceToml({ id: "codex-app", target: "codex-app", label: "Codex app · test" }),
+        // Claude Code's own link (`claude-cli://`), which asks for no folder check.
+        instanceToml({
+          id: "claude-link",
+          target: "claude-cli",
+          label: "Claude link · test",
+          prompt: "prefill",
+        }),
       ].join(""),
     launch: { terminals: { spawn: recordingSpawner } },
     ...(WINDOWS
@@ -219,6 +229,88 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       },
     );
   }
+
+  test(
+    "a bridge that binds while the opener still runs is decided after the dispatch recorded the folder: Confirmed from the link's folder",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("apps-early");
+      const task = await addTask(r, "Fix appointment time zones", FOLDER);
+      const folder = realpathSync.native(join(r.lab.work, FOLDER));
+      let release: () => void = () => undefined;
+      held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        const opening = open(r, { task: task.ref, instance: "desktop" });
+        // The opener runs: the app has the link, and its bridge binds before the opener exits.
+        for (let i = 0; opened.length === 0 && i < 3_000; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        const url = opened[0]?.argv.at(-1) ?? "";
+        const reference = briefReference(new URL(url).searchParams.get("q") ?? "") ?? "";
+        expect(reference).not.toBe("");
+        const here = await agentIn(r, folder);
+        const bound = here.getTask(reference);
+        // Whether the binding's report is queued before the opener exits or after, it is decided
+        // on the record the dispatch left.
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        release();
+        expect((await bound).bound).toBe(true);
+        const result = await opening;
+        const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+        expect(after?.evidence.folder_id).toBe(keyOf(folder));
+        expect(after?.state).toBe("confirmed");
+        here.close();
+        const checks = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_check");
+        expect(checks.map((e) => e["result"])).toEqual(["same"]);
+      } finally {
+        held = undefined;
+        release();
+      }
+    },
+  );
+
+  test(
+    "a link launch whose record holds a folder identity is checked whatever its instance is now; Claude Code's own link is not",
+    { timeout: 300_000 },
+    async () => {
+      const r = await rig("apps-retarget");
+      const first = await addTask(r, "First task", FOLDER);
+      const second = await addTask(r, "Second task", FOLDER);
+      mkdirSync(join(r.lab.work, "elsewhere"), { recursive: true });
+      const folder = realpathSync.native(join(r.lab.work, FOLDER));
+      const elsewhere = realpathSync.native(join(r.lab.work, "elsewhere"));
+
+      // `claude-cli://`: its binding through the reference confirms it, from any folder.
+      const plain = await open(r, { task: first.ref, instance: "claude-link" });
+      expect(plain.launch.route).toBe("link");
+      await r.lab.waitIntent(plain.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const one = await agentIn(r, elsewhere);
+      expect((await one.getTask(plain.launch.reference)).bound).toBe(true);
+      expect((await r.lab.running.launches.read(r.lab.spaceId, plain.launch.id))?.state).toBe(
+        "confirmed",
+      );
+      one.close();
+
+      // A record as a best-effort app's link leaves it (its folder's identity), under an instance
+      // ID that machine.toml now gives another target: the check still applies.
+      const marked = await open(r, { task: second.ref, instance: "claude-link" });
+      await r.lab.waitIntent(marked.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const machine = await r.lab.running.launches.machine(r.lab.spaceId);
+      await machine?.report(marked.launch.id, {
+        kind: "evidence",
+        evidence: { folder_id: keyOf(folder) },
+      });
+      const two = await agentIn(r, elsewhere);
+      expect((await two.getTask(marked.launch.reference)).bound).toBe(true);
+      expect((await r.lab.running.launches.read(r.lab.spaceId, marked.launch.id))?.state).toBe(
+        "dispatched",
+      );
+      two.close();
+    },
+  );
 
   test(
     "Shift+Copy: the context pack in place of the pointer brief, as a Copy launch; with an instance it is refused",
