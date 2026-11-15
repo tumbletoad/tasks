@@ -81,6 +81,8 @@ export const RPC_METHODS = {
   "space/recover": USER,
   // `tasks space use` (A2 3.1, M5.01): the machine's default space, for the user only.
   "space/use": USER,
+  // `tasks view rebuild` (A1 3.13, M3.10): a space's projection checked and rendered again.
+  "view/rebuild": USER,
   // `tasks roots` (A1 3.15, M2.07): the list for every CLI, adding a root for the user only.
   "roots/list": CLI,
   "roots/add": USER,

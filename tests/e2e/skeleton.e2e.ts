@@ -117,6 +117,52 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
   });
 });
 
+test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the clipboard", () => {
+  test("Shift+Copy copies the context pack, the toast says so, and the tooltip says what leaves", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
+    await showsSpace(page, world.mira.name);
+    await page.evaluate(() => {
+      const copied: string[] = [];
+      (window as unknown as { copied: string[] }).copied = copied;
+      navigator.clipboard.writeText = (text: string) => {
+        copied.push(text);
+        return Promise.resolve();
+      };
+    });
+    const row = page.locator(`li[data-task="${world.spare.ref}"]`);
+    await row.locator('[data-part="title"]').click();
+    await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
+    const copy = row
+      .getByRole("toolbar")
+      .getByRole("button", { name: `Copy ${world.spare.title}` });
+    await expect(copy).toHaveAttribute("title", /Shift-click copies the context pack/u);
+    await copy.click({ modifiers: ["Shift"] });
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { copied: string[] }).copied.length), {
+        timeout: SLOW_MS,
+      })
+      .toBe(1);
+    const pack = await page.evaluate(() => (window as unknown as { copied: string[] }).copied[0]);
+    expect(pack ?? "").toMatch(
+      new RegExp(
+        `^${PRODUCT_NAME} context pack for task ${world.spare.ref} \\(launch L[0-9A-Z]{5}\\)`,
+        "u",
+      ),
+    );
+    expect(pack ?? "").toContain(`\`\`\`tasks-update\ntask: ${world.spare.ref}\n`);
+    expect((pack ?? "").length).toBeLessThanOrEqual(8_000);
+    await expect(page.getByRole("status").filter({ hasText: "Context pack copied" })).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    expect(await violations(page)).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath("pack-copied.png") });
+  });
+});
+
 test.describe("[A7.3.9.m2-13.e2e.two-tabs] Each tab keeps its own space", () => {
   test("Two tabs on two spaces stay on their own space", async ({ context, world }) => {
     const mira = await context.newPage();
