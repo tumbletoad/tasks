@@ -466,26 +466,38 @@ export function t3Homes(settings: T3Settings): T3Home[] {
 }
 
 /**
- * The shared home a Codex shadow home reads, or undefined for a home of its own: the home's
- * `config.toml` is a symbolic link whose target, as the link names it (T3 writes the shared home's
- * path, so the spelling matches the home's own), is the `config.toml` file of another folder. Only
- * the link is read; nothing is followed to write.
+ * The shared home a Codex shadow home reads, or undefined for a home of its own. The sign is two
+ * links, as T3 makes a shadow home: its `config.toml` and its `sessions` are symbolic links to the
+ * `config.toml` file and the `sessions` folder of one other folder (each target as the link names
+ * it: T3 writes the shared home's path, so the spelling matches the home's own). A `config.toml`
+ * linked alone (a dotfiles setup) is no shadow: setup refuses that link as a managed file (A3 3.12),
+ * since a write would land in the link's target. Only the links are read; nothing is followed to
+ * write.
  */
 export function codexSharedHome(platform: NodeJS.Platform, home: string): string | undefined {
   const p = pathOf(platform);
-  const file = p.join(home, "config.toml");
-  try {
-    if (!lstatSync(file).isSymbolicLink()) return undefined;
-    const target = p.resolve(p.dirname(file), readlinkSync(file));
-    if (p.basename(target).toLowerCase() !== "config.toml" || kindOf(target) !== "file") {
+  const caseless = platform === "win32" || platform === "darwin";
+  const fold = (s: string) => (caseless ? p.resolve(s).toLowerCase() : p.resolve(s));
+  /** The folder a link in the home points into, when it is a link to `<folder>/<name>`. */
+  const linkedFrom = (name: string, kind: "file" | "dir"): string | undefined => {
+    const link = p.join(home, name);
+    if (!lstatSync(link).isSymbolicLink()) return undefined;
+    const target = p.resolve(home, readlinkSync(link));
+    const base = p.basename(target);
+    if ((caseless ? base.toLowerCase() : base) !== name || kindOf(target) !== kind) {
       return undefined;
     }
-    const shared = p.dirname(target);
-    const fold = (s: string) =>
-      platform === "win32" || platform === "darwin" ? p.resolve(s).toLowerCase() : p.resolve(s);
-    return fold(shared) === fold(home) || kindOf(shared) !== "dir" ? undefined : shared;
+    return p.dirname(target);
+  };
+  try {
+    const shared = linkedFrom("config.toml", "file");
+    const sessions = linkedFrom("sessions", "dir");
+    if (shared === undefined || sessions === undefined || fold(shared) !== fold(sessions)) {
+      return undefined;
+    }
+    return fold(shared) === fold(home) ? undefined : shared;
   } catch {
-    // No file, or a link that cannot be read: no shadow.
+    // No such entry, or a link that cannot be read: no shadow.
     return undefined;
   }
 }

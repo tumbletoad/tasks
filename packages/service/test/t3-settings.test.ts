@@ -240,11 +240,11 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     expect(id("/srv/agents/home", "Claude Lab")).toBe("claude-t3");
   });
 
-  test("a Codex shadow home is recognised by its config.toml linking into another home", () => {
+  test("a Codex shadow home is recognised by its config.toml and sessions linking into another home", () => {
     const shared = join(base, "shared");
     const own = join(base, "own");
-    mkdirSync(shared);
-    mkdirSync(own);
+    mkdirSync(join(shared, "sessions"), { recursive: true });
+    mkdirSync(join(own, "sessions"), { recursive: true });
     writeFileSync(join(shared, "config.toml"), "");
     writeFileSync(join(own, "config.toml"), "");
     expect(codexSharedHome(process.platform, own)).toBeUndefined();
@@ -255,16 +255,29 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     const shadow = join(base, "shadow");
     mkdirSync(shadow);
     symlinkSync(join(shared, "config.toml"), join(shadow, "config.toml"));
+    symlinkSync(join(shared, "sessions"), join(shadow, "sessions"));
     expect(codexSharedHome(process.platform, shadow)).toBe(shared);
-    // A link to another file name, or to nothing, is not a shadow.
+    // A config.toml linked alone (a dotfiles setup) is no shadow: setup refuses that link.
+    const dotfiles = join(base, "dotfiles");
+    mkdirSync(join(dotfiles, "sessions"), { recursive: true });
+    symlinkSync(join(shared, "config.toml"), join(dotfiles, "config.toml"));
+    expect(codexSharedHome(process.platform, dotfiles)).toBeUndefined();
+    // Links into two different folders, to another file name, or to nothing, are no shadow.
+    const split = join(base, "split");
+    mkdirSync(split);
+    symlinkSync(join(shared, "config.toml"), join(split, "config.toml"));
+    symlinkSync(join(own, "sessions"), join(split, "sessions"));
+    expect(codexSharedHome(process.platform, split)).toBeUndefined();
     const odd = join(base, "odd");
     mkdirSync(odd);
     writeFileSync(join(shared, "other.toml"), "");
     symlinkSync(join(shared, "other.toml"), join(odd, "config.toml"));
+    symlinkSync(join(shared, "sessions"), join(odd, "sessions"));
     expect(codexSharedHome(process.platform, odd)).toBeUndefined();
     const dangling = join(base, "dangling");
     mkdirSync(dangling);
     symlinkSync(join(base, "gone", "config.toml"), join(dangling, "config.toml"));
+    symlinkSync(join(base, "gone", "sessions"), join(dangling, "sessions"));
     expect(codexSharedHome(process.platform, dangling)).toBeUndefined();
   });
 });

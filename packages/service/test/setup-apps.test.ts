@@ -521,17 +521,18 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         // the home it links to is offered in its place and names it. (Windows links a file only
         // with an elevated right or developer mode.)
         writeFileSync(join(w.home, ".codex", "config.toml"), "");
+        mkdirSync(join(w.home, ".codex", "sessions"));
         mkdirSync(join(w.home, ".codex-linked"));
-        symlinkSync(
-          join(w.home, ".codex", "config.toml"),
-          join(w.home, ".codex-linked", "config.toml"),
-        );
+        for (const name of ["config.toml", "sessions"]) {
+          symlinkSync(join(w.home, ".codex", name), join(w.home, ".codex-linked", name));
+        }
         const linked = await survey(await inputOf(w));
         expect(linked.some((v) => v.home.home.endsWith(".codex-linked"))).toBe(false);
         expect(byFolder(linked, "codex", `${sep}.codex`).home.shadows).toEqual([
           join(w.home, ".codex-linked"),
         ]);
         rmSync(join(w.home, ".codex-linked"), { recursive: true });
+        rmSync(join(w.home, ".codex", "sessions"), { recursive: true });
         rmSync(join(w.home, ".codex", "config.toml"));
       }
     },
