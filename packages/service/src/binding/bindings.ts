@@ -3,8 +3,9 @@
 // that changes one, and it decides only from what the connection presented in its authenticated
 // bind frame (A2 3.6.4: the entry's `--space` and `--instance`, `env.TASKS_TICKET`, the native IDs,
 // `resume.handle`) and from what the service itself issued (the ticket, the launch reference, the
-// handle). Nothing an agent chooses freely binds: not its working folder (`cwd` is never read
-// here), not a tool argument (no tool names a session), not `TASKS_TASK` or `TASKS_SPACE`.
+// handle). Nothing an agent chooses freely binds: not its working folder (`cwd` only travels to
+// the launch side, which confirms a best-effort app's launch by it, A4 3.4.4), not a tool argument
+// (no tool names a session), not `TASKS_TASK` or `TASKS_SPACE`.
 //
 // The rules, in A3 3.7.3's order:
 // 1. `resume.handle`: a handle this service issued to a connection of the same instance, used in
@@ -134,9 +135,16 @@ export interface LaunchPort {
   /**
    * Records the bridge's binding on the launch (A4 3.9.1: `confirmed` with `bound_at`, which
    * also settles an Unknown launch) and returns the launch as it is after. Throws when the space's
-   * store cannot take it now.
+   * store cannot take it now. `folder` is the bridge's working folder as its bind frame said: a
+   * best-effort app's launch is confirmed only from its own folder (A4 3.4.4), and otherwise only
+   * records the binding. It never decides the binding itself.
    */
-  confirm(space: string, launch: string, at: number): Promise<LaunchIntent | undefined>;
+  confirm(
+    space: string,
+    launch: string,
+    at: number,
+    folder?: string,
+  ): Promise<LaunchIntent | undefined>;
 }
 
 export interface BindingsOptions {
@@ -243,12 +251,14 @@ export class Bindings implements BindingPort {
     this.#prune();
     const instance = instanceIn(context);
     const named = context["space"];
+    const cwd = context["cwd"];
     const slot = new Slot({
       kind: "bridge",
       instance,
       origin: "mcp",
       unboundScope: `bridge:${instance}:${this.#options.machine}`,
       ...(typeof named === "string" && named !== "" ? { named } : {}),
+      ...(typeof cwd === "string" && cwd !== "" ? { folder: cwd } : {}),
     });
     this.#present(slot, context["env"]);
 
@@ -607,7 +617,9 @@ export class Bindings implements BindingPort {
           }
           // The same connection again: the same binding. A binding the launch lost the record of
           // (a crash before its report) is recorded again.
-          if (launch.boundAt === undefined) this.#confirmLater(launch.space, launch.id);
+          if (launch.boundAt === undefined) {
+            this.#confirmLater(launch.space, launch.id, slot.folder);
+          }
           return { kind: "bound" };
         }
         if (slot.kind !== "bridge" || slot.shared || launch.task === null) {
@@ -656,7 +668,7 @@ export class Bindings implements BindingPort {
         const at = again?.at ?? this.#now();
         let after: LaunchIntent | undefined;
         try {
-          after = await this.#options.launches.confirm(launch.space, launch.id, at);
+          after = await this.#options.launches.confirm(launch.space, launch.id, at, slot.folder);
         } catch (error) {
           // The space's store did not answer, and may still write it late. Nothing is bound until
           // it answers: the agent retries (the error says so), and the retry sends this instant.
@@ -973,8 +985,8 @@ export class Bindings implements BindingPort {
    * holding up the bind frame, whose client waits 5 s at most: the ticket alone decided the
    * binding, and the launch's evidence follows. A failure is logged; the session stays bound.
    */
-  #confirmLater(space: string, launch: string): void {
-    this.#options.launches.confirm(space, launch, this.#now()).then(
+  #confirmLater(space: string, launch: string, folder?: string): void {
+    this.#options.launches.confirm(space, launch, this.#now(), folder).then(
       () => undefined,
       () => {
         this.#log({ ev: "binding.report_failed" });

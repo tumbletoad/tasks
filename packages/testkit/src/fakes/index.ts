@@ -20,6 +20,8 @@ export const FAKE_SHELL = here("shell.ts");
 export const FAKE_AGENT = here("agent.ts");
 /** A fake Claude Code or Codex CLI: any argv, steered by its environment (cli-agent.ts). */
 export const FAKE_CLI_AGENT = here("cli-agent.ts");
+/** A fake clipboard tool: what it reads on stdin goes to a file (clipboard.ts). */
+export const FAKE_CLIPBOARD = here("clipboard.ts");
 
 /** What the service asked a spawner to start, as the fake spawner recorded it. */
 export interface SpawnRecord {

@@ -333,11 +333,18 @@ export class LaunchMachine {
    * and `launch.failed`, the bridge's binding, T3's folder check. Applies it, in its turn, to the
    * intent as it is then and returns the result. A store that cannot take the write now
    * (`unavailable`) throws its refusal, so the reporter keeps what it reported and tries again; a
-   * definite refusal returns the record as it is.
+   * definite refusal returns the record as it is. An observation that depends on the record (a
+   * best-effort app's folder check, A4 3.4.4) is given as a function of the intent: it is decided
+   * in the section, on the record as it is then, so a dispatch still in its external call when the
+   * report arrived has recorded its evidence first.
    */
-  report(id: string, observation: Observation): Promise<LaunchIntent | undefined> {
+  report(
+    id: string,
+    observation: Observation | ((intent: LaunchIntent) => Observation),
+  ): Promise<LaunchIntent | undefined> {
+    const observe = typeof observation === "function" ? observation : () => observation;
     return this.#section(id, () =>
-      this.#decide(id, (intent) => this.#observed(intent, observation), undefined, true),
+      this.#decide(id, (intent) => this.#observed(intent, observe(intent)), undefined, true),
     );
   }
 

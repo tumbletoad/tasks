@@ -72,6 +72,8 @@ const WINDOWS: FakeHostSpec = {
     "C:\\Users\\mira\\.Codex\\auth.json": { kind: "file" },
     "C:\\Users\\mira\\.codex-personal\\auth.json": { kind: "file" },
     "C:\\Users\\mira\\.claude\\.credentials.json": { kind: "file" },
+    // A second home named as T3 Code's documentation suggests, with `_`.
+    "C:\\Users\\mira\\.claude_personal\\.credentials.json": { kind: "file" },
   },
   outputs: {
     "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.322 (Claude Code)\r\n",
@@ -122,6 +124,7 @@ const HOMES: Record<string, string[]> = {
     "C:\\Users\\mira\\.Codex",
     "C:\\Users\\mira\\.codex-personal",
     "C:\\Users\\mira\\.claude",
+    "C:\\Users\\mira\\.claude_personal",
     "C:\\Users\\mira\\.t3\\userdata",
   ],
   darwin: ["/Users/mira/.claude-work", "/Users/mira/.codex", "/Users/mira/codex-homes/lab"],
@@ -197,6 +200,55 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     const detection: Detection = await detect(fakeHost(LINUX), existing);
     expect(detection.proposals.map((p) => p.id)).toEqual(["claude", "codex-personal", "t3"]);
     expect(detection.configured).toEqual(["codex-work", "codex"]);
+  });
+
+  test("a second home named with `_` (T3 Code's documented form) is found like one with `-`", async () => {
+    const entries = {
+      ...LINUX.entries,
+      "/home/mira/.claude_personal/settings.json": { kind: "file" as const },
+      "/home/mira/.codex_lab/config.toml": { kind: "file" as const },
+      // Not a home: no suffix after the separator, or one Tasks cannot turn into an ID.
+      "/home/mira/.codex_/x": { kind: "file" as const },
+      "/home/mira/.codex_Old_Copy/x": { kind: "file" as const },
+    };
+    const detection = await detect(fakeHost({ ...LINUX, entries }));
+    expect(detection.homes.map((h) => [h.path, h.suffix])).toEqual([
+      ["/home/mira/.claude", ""],
+      ["/home/mira/.claude_personal", "personal"],
+      ["/home/mira/.codex", ""],
+      ["/home/mira/.codex-personal", "personal"],
+      ["/home/mira/.codex_lab", "lab"],
+    ]);
+    expect(detection.proposals.find((p) => p.id === "claude-personal")).toMatchObject({
+      configHome: "/home/mira/.claude_personal",
+      env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude_personal" },
+      needs: [],
+    });
+    expect(detection.proposals.find((p) => p.id === "codex-lab")?.configHome).toBe(
+      "/home/mira/.codex_lab",
+    );
+  });
+
+  test("T3 Code's folder is where T3CODE_HOME names it, as setup reads its settings, without a t3 command", async () => {
+    // No t3 on PATH and no `~/.t3`: only the folder T3CODE_HOME names shows T3 is there.
+    const entries = Object.fromEntries(
+      Object.entries(LINUX.entries).filter(
+        ([path]) => !path.startsWith("/home/mira/.t3/") && !path.endsWith("/t3"),
+      ),
+    );
+    const bare = { ...LINUX, entries };
+    expect((await detect(fakeHost(bare))).t3Folder).toBe(false);
+    const named = {
+      ...bare,
+      env: { ...LINUX.env, T3CODE_HOME: "/srv/t3-home" },
+      entries: { ...entries, "/srv/t3-home/userdata/settings.json": { kind: "file" as const } },
+    };
+    const detection = await detect(fakeHost(named));
+    expect(detection.t3Folder).toBe(true);
+    expect(detection.proposals.find((p) => p.target === "t3")).toMatchObject({ id: "t3" });
+    // A relative value names no folder: the home folder's `.t3` decides, and there is none.
+    const relative = { ...named, env: { ...LINUX.env, T3CODE_HOME: "t3-home" } };
+    expect((await detect(fakeHost(relative))).t3Folder).toBe(false);
   });
 
   test("a home is selected by the instance alone: the inherited home variables are scrubbed, every other home names its variable, and a chosen home moves the variable with it", async () => {

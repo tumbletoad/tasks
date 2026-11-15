@@ -119,6 +119,7 @@ export async function runVerb(
   verb: VerbSpec,
   args: readonly string[],
   options: ConnectOptions,
+  present?: (result: Record<string, unknown>, printed: string) => Promise<void>,
 ): Promise<number> {
   // `--space` may name a folder, as the space verbs' <space> does: sent absolute, it names that
   // copy of a space, a read-only copy beside its original too (A2 3.10.5).
@@ -186,9 +187,14 @@ export async function runVerb(
       }
     }
     const result = (await opCall(session, globals, verb.entry, input)) as Record<string, unknown>;
-    if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
-    else if (!globals.quiet || !write)
-      io.stdout(render(verb.entry, result, spaceName(session, globals, result)));
+    const printed = globals.json
+      ? `${JSON.stringify(result)}\n`
+      : !globals.quiet || !write
+        ? render(verb.entry, result, spaceName(session, globals, result))
+        : "";
+    // A verb with its own output (`tasks brief --copy`) is given the result and what it would print.
+    if (present !== undefined) await present(result, printed);
+    else io.stdout(printed);
     return 0;
   } catch (error) {
     const body = bodyOf(asAppError(error));

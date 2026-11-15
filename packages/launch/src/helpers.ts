@@ -15,7 +15,9 @@
 //   turns it into an exit only when the host had no listener for it, neither when the runner began
 //   to watch it nor at the signal: a host's own handler, a one-shot one too, keeps its shutdown.
 // - When a helper exits by itself, on Linux and macOS what it left in its group is killed at once.
-//   On Windows nothing follows it: what it started and left running stays.
+//   On Windows nothing follows it: what it started and left running stays. One kind of helper is
+//   meant to leave a process behind (`serves`: a clipboard tool's selection holder, A4 3.4.6): it
+//   leads no group, and only the helper itself is ever ended.
 //
 // What remains: a program that leaves its group (setsid), and on Windows anything a helper started
 // that outlives the helper (taskkill /T walks a tree only from a running process), cannot be found,
@@ -41,10 +43,18 @@ const PIPE_GRACE_MS = 1_000;
 /** The helpers still running, which the runner ends when this process exits. */
 const running = new Set<ChildProcess>();
 
+/** The helpers started with `serves`: they lead no group, so only they themselves are ended. */
+const serving = new WeakSet<ChildProcess>();
+
 /** Ends `child` and every process it started that can still be found, before it returns. */
 function endTree(child: ChildProcess): void {
   const pid = child.pid;
   if (pid === undefined) return;
+  if (serving.has(child) && ownsGroup(process.platform)) {
+    // Not a group leader: a kill of `-pid` could reach another group. The helper alone goes.
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    return;
+  }
   if (ownsGroup(process.platform)) {
     try {
       process.kill(-pid, "SIGKILL");
@@ -132,6 +142,14 @@ export interface HelperOptions {
   readonly stdin?: boolean;
   readonly stdout?: boolean;
   readonly stderr?: boolean;
+  /**
+   * The program forks a process that goes on serving after it exits, as a clipboard tool on Linux
+   * does to hold the selection (A4 3.4.6). It then leads no process group of its own, and what it
+   * leaves when it exits by itself stays: that process is the tool's, as when the person runs the
+   * tool in a shell. At the deadline, on `stop` and at this process's exit only the program itself
+   * is ended (on Windows its tree, as for every helper).
+   */
+  readonly serves?: boolean;
 }
 
 export interface Helper {
@@ -166,8 +184,9 @@ export function startHelper(argv: readonly string[], options: HelperOptions): He
     ],
     shell: false,
     windowsHide: true,
-    detached: ownsGroup(process.platform),
+    detached: ownsGroup(process.platform) && options.serves !== true,
   });
+  if (options.serves === true) serving.add(child);
   track(child);
   child.stdin?.on("error", () => undefined);
   const closePipes = () => {
@@ -203,8 +222,8 @@ export function startHelper(argv: readonly string[], options: HelperOptions): He
   }, options.deadlineMs);
   child.once("exit", (code) => {
     untrack(child);
-    // What it left in its group goes with it.
-    if (ownsGroup(process.platform)) endTree(child);
+    // What it left in its group goes with it, unless what it left serves on (`serves`).
+    if (ownsGroup(process.platform) && options.serves !== true) endTree(child);
     // Output still in a pipe is read first; a process it left may hold a pipe open.
     setTimeout(closePipes, PIPE_GRACE_MS).unref();
     settle(killed ? null : code);
