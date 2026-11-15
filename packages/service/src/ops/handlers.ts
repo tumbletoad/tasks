@@ -14,20 +14,22 @@
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import {
   findEntry,
-  findPreference,
   AppError,
+  fitsShape,
   GROUP_LIMITS,
+  isKeyList,
+  mayWrite,
   opSpec,
   parseInput,
   PREFERENCES,
-  prefShape,
-  prefValueSchema,
   readsOnly,
   receiptResult,
   registry,
+  shapeText,
   type AnyEntry,
-  type PrefDeclaration,
-  type PrefPlain,
+  type PreferenceRead,
+  type PreferenceSpec,
+  type PrefValue,
 } from "@tasks/contracts";
 import {
   isId,
@@ -80,7 +82,6 @@ import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
 import { editDistance, resolveGroup } from "./groups.ts";
 import {
-  keysOf,
   readCommit,
   readCommitTasks,
   readGroupNames,
@@ -88,8 +89,8 @@ import {
   readLaunch,
   readPlaced,
   readPlacedAny,
-  readPreferences,
   readReceipt,
+  readSpacePreferences,
   readLaunchTask,
   readSiblings,
   readSpace,
@@ -1900,8 +1901,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         throw invalid("keys", "A set names its keys in set", "Leave out keys.");
       }
       checkPrefSets(input["set"], actor);
-      // A1's pref.set and the rest of the registry arrive with M3.11 (A1 3.16).
-      throw unsupported("set", "M3.11 (the preferences registry and pref.set)");
+      // A1's pref.set exists (A1 3.16); this tool's set waits for the step that submits it, with
+      // `undoable: false` and the autonomy rules of A3 3.8 (A3 3.4.11).
+      throw unsupported("set", "the step that connects this tool to A1's pref.set");
     }
     if (input["set"] !== undefined) {
       throw invalid("set", `A ${action} changes nothing`, "Use action set to change a key.");
@@ -1909,17 +1911,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const declared = prefsAsked(input["keys"]);
     let read;
     try {
-      read = await readPreferences(
-        readerOf(call.space),
-        declared.map((p) => p.key),
-      );
+      read = await readSpacePreferences(readerOf(call.space));
     } catch (error) {
       throw storageFailure(error);
     }
     return {
       action,
       as_of: read.space.asOf,
-      prefs: declared.map((p) => prefRow(p, action, read.values.get(p.key), actor)),
+      prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), actor)),
     };
   },
 
@@ -1978,19 +1977,36 @@ function groupList(
   };
 }
 
+/**
+ * The keys the `preferences` tool shows (A3 3.4.11), sorted: the registry's space keys whose value
+ * is one of the tool's kinds, a word, a whole number, true or false, or a list of keys. An object
+ * or a map (`grouping.names`, `autonomy.overrides`, `autonomy.areas`) has no form in the schema
+ * grammar's outputs yet, and a machine key lives in machine.toml (A1 3.16).
+ */
+const TOOL_PREFERENCES: readonly PreferenceSpec[] = PREFERENCES.filter(
+  (p) =>
+    p.scope === "space" &&
+    (p.shape.type === "enum" ||
+      p.shape.type === "boolean" ||
+      p.shape.type === "integer" ||
+      p.shape.type === "text" ||
+      (p.shape.type === "list" && p.shape.item.type === "text") ||
+      isKeyList(p.shape)),
+).toSorted((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+
 /** The declarations `keys` names (A3 3.4.11): exact keys or prefixes ending in `.*`, else all. */
-function prefsAsked(keys: unknown): PrefDeclaration[] {
-  if (!Array.isArray(keys) || keys.length === 0) return [...PREFERENCES];
+function prefsAsked(keys: unknown): PreferenceSpec[] {
+  if (!Array.isArray(keys) || keys.length === 0) return [...TOOL_PREFERENCES];
   const wanted = new Set<string>();
   (keys as string[]).forEach((key, k) => {
     const prefix = key.endsWith(".*") ? key.slice(0, -1) : undefined;
-    const found = PREFERENCES.filter((p) =>
+    const found = TOOL_PREFERENCES.filter((p) =>
       prefix === undefined ? p.key === key : p.key.startsWith(prefix),
     );
     if (found.length === 0) throw unknownPref(`keys.${String(k)}`, key);
     for (const p of found) wanted.add(p.key);
   });
-  return PREFERENCES.filter((p) => wanted.has(p.key));
+  return TOOL_PREFERENCES.filter((p) => wanted.has(p.key));
 }
 
 /**
@@ -1998,7 +2014,7 @@ function prefsAsked(keys: unknown): PrefDeclaration[] {
  * one may stand in the hint.
  */
 function unknownPref(path: string, key: string): AppError {
-  const close = PREFERENCES.map((p) => p.key).find(
+  const close = TOOL_PREFERENCES.map((p) => p.key).find(
     (name) => editDistance(name, key.toLowerCase(), 3) <= 3,
   );
   return invalid(
@@ -2010,28 +2026,41 @@ function unknownPref(path: string, key: string): AppError {
   );
 }
 
-/** Whether `actor` may set the key (A1 3.16): never a policy key here, else by its writers. */
-const prefWritable = (p: PrefDeclaration, actor: "human" | "agent"): boolean =>
-  p.policy !== true && p.writers.includes(actor);
+/** Whether `actor` may set the key here (A1 3.16): never a policy key, else by its writers. */
+const prefWritable = (p: PreferenceSpec, actor: string): boolean => !p.policy && mayWrite(p, actor);
+
+/** A tool value as the registry stores it: a list of keys becomes the list of `{key}` objects. */
+function storedValue(p: PreferenceSpec, value: unknown): unknown {
+  return isKeyList(p.shape) && Array.isArray(value)
+    ? value.map((key: unknown) => ({ key }))
+    : value;
+}
+
+/** A stored or default value as the tool shows it: a list of `{key}` objects as its keys. */
+function shownValue(p: PreferenceSpec, value: PrefValue | null): PrefValue | null {
+  return isKeyList(p.shape) && Array.isArray(value)
+    ? value.map((item: unknown) => String((item as { key?: unknown }).key))
+    : value;
+}
 
 /**
  * Each pair of a `set` (A3 3.4.11), checked as far as the input decides: a declared key, once; a
  * policy key is `forbidden` with rule `policy` for every actor (policy changes through the user's
  * own settings, A3 3.8.2), a key whose writers leave the caller out is `forbidden` with rule
- * `user_only`, and a value other than null must fit its key's own schema.
+ * `user_only`, and a value other than null must fit its key's own shape in the registry.
  */
-function checkPrefSets(pairs: unknown, actor: "human" | "agent"): void {
+function checkPrefSets(pairs: unknown, actor: string): void {
   const list = Array.isArray(pairs) ? (pairs as Record<string, unknown>[]) : [];
   if (list.length === 0) throw invalid("set", "Name the keys to set", "Pass set: [{key, value}].");
   const seen = new Set<string>();
   list.forEach((pair, k) => {
     const at = `set.${String(k)}`;
     const key = String(pair["key"]);
-    const declared = findPreference(key);
+    const declared = TOOL_PREFERENCES.find((p) => p.key === key);
     if (declared === undefined) throw unknownPref(`${at}.key`, key);
     if (seen.has(key)) throw invalid(`${at}.key`, "This key is set twice");
     seen.add(key);
-    if (declared.policy === true) {
+    if (declared.policy) {
       throw new AppError({
         code: "forbidden",
         message: "This setting is policy: only the user changes it.",
@@ -2048,51 +2077,34 @@ function checkPrefSets(pairs: unknown, actor: "human" | "agent"): void {
       });
     }
     const value = pair["value"];
-    if (value !== null && !prefValueSchema(declared.value).safeParse(value).success) {
+    if (value !== null && !fitsShape(declared.shape, storedValue(declared, value))) {
       throw invalid(
         `${at}.value`,
         "Not a value of this key",
-        `It takes ${prefShape(declared.value)}.`,
+        `It takes ${shapeText(declared.shape)}.`,
       );
     }
   });
 }
 
-/**
- * A stored value as its key reads it (A1 3.16): the default when it is missing, unreadable or
- * refused by the key's own schema. A list is read in either stored form first (`keysOf`: keys, or
- * objects with a `key`), then checked like any other value.
- */
-function prefValue(p: PrefDeclaration, stored: string | undefined): PrefPlain {
-  if (stored === undefined) return p.default;
-  let value: unknown;
-  try {
-    value = p.value.kind === "keys" ? keysOf(stored, []) : JSON.parse(stored);
-  } catch {
-    return p.default;
-  }
-  return prefValueSchema(p.value).safeParse(value).success ? (value as PrefPlain) : p.default;
-}
-
-const plain = (value: PrefPlain): PrefPlain =>
-  typeof value === "object" ? value.map(String) : value;
-
+/** One key's row: its value as the registry reads it (the default unless it fits), A1 3.16. */
 function prefRow(
-  p: PrefDeclaration,
+  p: PreferenceSpec,
   action: string,
-  stored: string | undefined,
-  actor: "human" | "agent",
+  read: PreferenceRead | undefined,
+  actor: string,
 ): Record<string, unknown> {
-  const value = prefValue(p, stored);
+  const value = shownValue(p, read?.value ?? p.default);
+  const fallback = shownValue(p, p.default);
   return {
     key: p.key,
-    ...(action === "describe" ? { summary: p.summary, shape: prefShape(p.value) } : {}),
+    ...(action === "describe" ? { summary: p.summary, shape: shapeText(p.shape) } : {}),
     ...(action === "get"
-      ? { value: plain(value), is_default: JSON.stringify(value) === JSON.stringify(p.default) }
+      ? { value, is_default: JSON.stringify(value) === JSON.stringify(fallback) }
       : {}),
-    default: plain(p.default),
+    default: fallback,
     writable: prefWritable(p, actor),
-    ...(p.policy === true ? { policy: true } : {}),
+    ...(p.policy ? { policy: true } : {}),
   };
 }
 

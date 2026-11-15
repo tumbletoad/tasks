@@ -8,10 +8,19 @@
 // Text is normalised as A1 3.7 asks (NFC, LF line endings, NUL and the other C0 controls except tab
 // and newline removed) before any limit is checked, so the limit holds for the stored text. The
 // registry's SafeText (A3 3.10) normalises more at the boundary, and normalising again is harmless.
+import {
+  fitsShape,
+  PREFERENCE_KEY,
+  PREFERENCE_KEY_MAX,
+  PREFERENCE_VALUE_BYTES,
+  preferenceSpec,
+  readPreference,
+  type PrefValue,
+} from "@tasks/contracts/preferences";
 import { isId, type Id } from "../ids.ts";
 import { inRange, RANGES } from "../rows.ts";
 import { OPEN_SETS } from "../schema.ts";
-import { isJsonData } from "./canonical.ts";
+import { canonicalJson, isJsonData } from "./canonical.ts";
 import { PATCHABLE_FIELDS, type PatchableField } from "./fields.ts";
 import {
   RUN_APP_TOOLS,
@@ -91,6 +100,8 @@ export const WRITE_ERROR_CODES = [
   "NOTHING_TO_UNDO",
   "NOTHING_TO_REDO",
   "UNDO_BEFORE_FLOOR",
+  /** A preference whose declaration does not list the actor as a writer (A1 3.16, A3 3.8.3). */
+  "PREFERENCE_FORBIDDEN",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
@@ -121,8 +132,9 @@ export interface AsOf {
 
 /**
  * The tables whose existing rows a request can change, and so conflict on: a wrap-up's removal of
- * a learning among them. Undo and redo also name the child rows that block a create's inversion
- * (A1 3.10): notes, log entries, sources, learnings, attachments, label links and runs.
+ * a learning and a preference's value among them. Undo and redo also name the child rows that
+ * block a create's inversion (A1 3.10): notes, log entries, sources, learnings, attachments, label
+ * links and runs.
  */
 export type ConflictEntity =
   | "tasks"
@@ -134,6 +146,7 @@ export type ConflictEntity =
   | "learnings"
   | "attachments"
   | "task_labels"
+  | "preferences"
   | "runs";
 
 /**
@@ -312,7 +325,8 @@ export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
 export type DedupeMode = (typeof DEDUPE_MODES)[number];
 
 /** Days a finished task still matches a draft's key: `tasks.dedupe_window_days`'s default. */
-export const DEDUPE_WINDOW_DAYS = 30;
+export const DEDUPE_WINDOW_DAYS = readPreference("tasks.dedupe_window_days", undefined)
+  .value as number;
 
 export interface TaskCreate extends TaskValues, Placement {
   kind: "task.create";
@@ -648,6 +662,19 @@ export interface RunTransition {
 }
 
 /**
+ * `pref.set` (A1 3.16): sets a space preference the registry declares, or resets it with null.
+ * The value is checked against the key's declared shape before the transaction; whether the actor
+ * may write the key is decided in it, so a refusal has its receipt (A3 3.8.3). A reset keeps the
+ * row with the value null, so history and the base work as for any other value. It is not undoable
+ * until undo inverts preferences (A1 3.16).
+ */
+export interface PrefSet {
+  kind: "pref.set";
+  key: string;
+  value: PrefValue | null;
+}
+
+/**
  * `undo` (A1 3.10.1): inverts the principal's newest commit on its undo stack. It is guarded by
  * each field's provenance, never by a base, and is all or nothing unless `partial` asks for the
  * fields nobody changed since: then the rest stays as others set it, and the commit leaves the
@@ -690,6 +717,7 @@ export type Operation =
   | LaunchTransition
   | RunCreate
   | RunTransition
+  | PrefSet
   | Undo
   | Redo;
 export type OperationKind = Operation["kind"];
@@ -714,6 +742,7 @@ export const OPERATION_KINDS = [
   "launch.transition",
   "run.create",
   "run.transition",
+  "pref.set",
   "undo",
   "redo",
 ] as const satisfies readonly OperationKind[];
@@ -1439,6 +1468,9 @@ function checkOperation(value: unknown, i: number): Operation {
       op = transition;
       break;
     }
+    case "pref.set":
+      op = prefSet(f);
+      break;
     case "undo": {
       const undo: Undo = { kind };
       if (f.has("commit")) undo.commit = f.id("commit", "op");
@@ -1564,6 +1596,46 @@ function runResult(f: Fields): RunResultRow {
   };
   f.done();
   return result;
+}
+
+/** Every string of plain JSON data, normalised as the writer stores text (A1 3.7). */
+function normaliseJson(value: unknown): unknown {
+  if (typeof value === "string") return normaliseStored(value);
+  if (Array.isArray(value)) return value.map(normaliseJson);
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normaliseJson(v)]));
+  }
+  return value;
+}
+
+/**
+ * `pref.set`'s fields (A1 3.16): a key this build declares for the space, and a value of its
+ * declared shape, or null to reset it. The problem never quotes the key or the value.
+ */
+function prefSet(f: Fields): PrefSet {
+  const key = f.raw("key");
+  if (typeof key !== "string" || key.length > PREFERENCE_KEY_MAX || !PREFERENCE_KEY.test(key)) {
+    return f.fail("VALIDATION_FAILED", "Expected a preference name", "key");
+  }
+  const spec = preferenceSpec(key);
+  if (spec === undefined)
+    return f.fail("VALIDATION_FAILED", "Not a preference of this build", "key");
+  if (spec.scope !== "space") {
+    return f.fail("VALIDATION_FAILED", "A machine preference lives in machine.toml", "key");
+  }
+  if (!f.has("value")) {
+    return f.fail("VALIDATION_FAILED", "Give the value, or null to reset it", "value");
+  }
+  const raw = f.raw("value");
+  if (raw === null) return { kind: "pref.set", key, value: null };
+  const value = isJsonData(raw) ? normaliseJson(raw) : undefined;
+  if (value !== undefined && utf8Bytes(canonicalJson(value)) > PREFERENCE_VALUE_BYTES) {
+    return f.fail("TOO_LARGE", "The value is larger than a preference may hold", "value");
+  }
+  if (value === undefined || !fitsShape(spec.shape, value)) {
+    return f.fail("VALIDATION_FAILED", "The value does not fit the preference", "value");
+  }
+  return { kind: "pref.set", key, value: value as PrefValue };
 }
 
 /** An instance's key in machine.toml (A4 3.2). */
@@ -1787,6 +1859,17 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
+  // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,
+  // as the request starts, so no other operation may share a request with a change of them.
+  const prefs = request.ops.filter((op) => op.kind === "pref.set").length;
+  if (prefs > 0 && prefs < request.ops.length) {
+    f.fail("VALIDATION_FAILED", "A preference request holds pref.set operations only", "ops");
+  }
+  // Undo never inverts a preference (history.ts), so a change of one never joins the undo stack,
+  // where it would block every undo behind it. Setting the earlier value again changes it back.
+  if (prefs > 0 && request.undoable === true) {
+    f.fail("VALIDATION_FAILED", "A preference change is not undoable: set it again", "undoable");
+  }
   checkMatchableDrafts(request.ops);
   f.done();
   return request;

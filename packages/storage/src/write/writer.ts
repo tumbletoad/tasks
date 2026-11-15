@@ -26,6 +26,7 @@
 // that reach SQL text are the column names of fields.ts, so no request can run SQL of its own
 // (A1 3.7). The writer runs where its connection lives: in a storage worker in
 // the service, or in-thread in tests and the sample generator. It is synchronous.
+import { mayWrite, preferenceSpec } from "@tasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
@@ -44,6 +45,7 @@ import {
   RowReader,
   type SpaceRow,
 } from "../rows.ts";
+import { readSpacePreference } from "../preferences.ts";
 import { indexChanges } from "../search/documents.ts";
 import { hasSearchTables } from "../search/tables.ts";
 import type { OpenedSpace } from "../space.ts";
@@ -76,6 +78,7 @@ import {
   readOpenLaunches,
   type LaunchRecord,
 } from "./launches.ts";
+import { canonicalJson } from "./canonical.ts";
 import { isPosition, positionBetween } from "./positions.ts";
 import {
   decodeRun,
@@ -212,10 +215,6 @@ function opsText(entries: readonly OpsEntry[]): string {
   });
 }
 
-/** The statuses and effort keys of a space without its own (A1 3.16). */
-export const DEFAULT_STATUSES = ["open", "waiting", "review", "backlog"] as const;
-export const DEFAULT_EFFORTS = ["S", "M", "L"] as const;
-
 /** The value, or STORAGE_MISUSE: a staged operation always has what its kind needs. */
 function must<T>(value: T | null | undefined, message: string): T {
   if (value === null || value === undefined) throw misuse(message);
@@ -244,7 +243,8 @@ type Entity =
   | "places"
   | "launches"
   | "runs"
-  | "learnings";
+  | "learnings"
+  | "preferences";
 
 /** A task row as the write path needs it, checked against its domain. */
 interface TaskRow extends RowState {
@@ -280,7 +280,8 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
           entity === "places" ||
           entity === "launches" ||
           entity === "runs" ||
-          entity === "learnings"
+          entity === "learnings" ||
+          entity === "preferences"
         ? CHILD_FIELDS[entity]
         : undefined;
   const columns = fields?.[field];
@@ -455,7 +456,6 @@ const SQL = {
   projectById: "SELECT id, area_id, deleted_at FROM projects WHERE id = $id",
   projectBySlug:
     "SELECT id, area_id, deleted_at FROM projects WHERE slug = $slug AND deleted_at IS NULL",
-  preference: "SELECT value FROM preferences WHERE key = $key",
   actor: "SELECT kind FROM actors WHERE id = $id",
   systemActor: "SELECT id FROM actors WHERE kind = 'system' ORDER BY created_at, id LIMIT 1",
   lastAt: "SELECT at FROM commits ORDER BY seq DESC LIMIT 1",
@@ -570,6 +570,14 @@ const SQL = {
   learningVersions: "UPDATE learnings SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
   areaVersion: "SELECT version FROM areas WHERE id = $id",
   projectVersion: "SELECT version FROM projects WHERE id = $id",
+  // Preferences (A1 3.16): one row per key, which a reset keeps with the value null.
+  preferenceRow: "SELECT * FROM preferences WHERE key = $id",
+  insertPreference:
+    "INSERT INTO preferences (key, value, schema_ver, policy, created_seq, version, fv, fp) " +
+    "VALUES ($id, $value, $schema_ver, $policy, $seq, $seq, '{}', '{}')",
+  updatePreference:
+    "UPDATE preferences SET value = $value, schema_ver = $schema_ver WHERE key = $id",
+  preferenceVersions: "UPDATE preferences SET version = $seq, fv = $fv, fp = $fp WHERE key = $id",
 } as const;
 
 /** A new commit's instant: `now`, or the newest commit's when the clock stepped back (A1 3.9). */
@@ -668,6 +676,7 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
       launches: LAUNCH_SQL.launch,
       runs: RUN_SQL.run,
       learnings: SQL.learning,
+      preferences: SQL.preferenceRow,
     }[entity];
     row = conn.prepare(sql).get({ id });
   }
@@ -692,6 +701,8 @@ function setVersions(
     conn.prepare(RUN_SQL.versions).run({ ...maps, id: row.id });
   } else if (row.entity === "learnings") {
     conn.prepare(SQL.learningVersions).run({ ...maps, id: row.id });
+  } else if (row.entity === "preferences") {
+    conn.prepare(SQL.preferenceVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "task_sources") {
     const [task, source] = row.id.split("|");
     conn.prepare(SQL.linkVersions).run({ ...maps, task: task ?? "", source: source ?? "" });
@@ -710,28 +721,16 @@ export function readAsOf(conn: Connection): AsOf {
   };
 }
 
-/** The keys of a list preference such as `tasks.statuses`, or the default (A1 3.16). */
-function listPreference(conn: Connection, key: string, fallback: readonly string[]): string[] {
-  const row = conn.prepare(SQL.preference).get({ key });
-  const text = row?.["value"];
-  if (typeof text !== "string") return [...fallback];
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return [...fallback];
-  }
-  if (!Array.isArray(value) || value.length === 0) return [...fallback];
-  const keys: string[] = [];
-  for (const item of value as unknown[]) {
-    if (typeof item === "string") keys.push(item);
-    else if (typeof item === "object" && item !== null && "key" in item) {
-      const k = item.key;
-      if (typeof k !== "string") return [...fallback];
-      keys.push(k);
-    } else return [...fallback];
-  }
-  return keys;
+/**
+ * The keys of `tasks.statuses` or `tasks.effort_scale` as the registry reads them: the stored list
+ * when it fits its shape, else the default (A1 3.16).
+ */
+function listPreference(conn: Connection, key: "tasks.statuses" | "tasks.effort_scale"): string[] {
+  const value = readSpacePreference(conn, key).value;
+  if (!Array.isArray(value)) throw misuse("A list preference reads as a list");
+  return value.map((item: unknown) =>
+    typeof item === "string" ? item : String((item as { key?: unknown }).key),
+  );
 }
 
 /**
@@ -1094,8 +1093,8 @@ export class SpaceWriter {
     /** Runs that earlier operations create. */
     const draftRuns = new Set<Id<"ru">>();
     const draftRefs = new Set<string>();
-    const statuses = listPreference(conn, "tasks.statuses", DEFAULT_STATUSES);
-    const efforts = listPreference(conn, "tasks.effort_scale", DEFAULT_EFFORTS);
+    const statuses = listPreference(conn, "tasks.statuses");
+    const efforts = listPreference(conn, "tasks.effort_scale");
     const affected = new Set<Id<"t">>();
     const random = this.#random;
     /** Dedupe by source key (A1 3.6), and the drafts that matched a task, by the draft's ID. */
@@ -1746,6 +1745,34 @@ export class SpaceWriter {
           }
           return { i, op, target: op.run, task: null, touches: [], record: inputOf(op) };
         }
+        case "pref.set": {
+          // Who may write the key is decided here, so the refusal has its receipt (A3 3.8.3
+          // step 4). The admin scope a policy key also needs is the caller's check (A6 3.6.3).
+          const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
+          if (!mayWrite(spec, request.actor.actor_kind)) {
+            problem("PREFERENCE_FORBIDDEN", "Only the user changes this preference", i, "key");
+          }
+          const touches: Touch[] = [];
+          const row = conn.prepare(SQL.preferenceRow).get({ id: op.key });
+          if (row !== undefined) {
+            // A newer build's value is kept unchanged: read-only here (A1 3.16).
+            if (new RowReader("preferences", row).int("schema_ver", "count") > spec.schemaVer) {
+              problem(
+                "VALIDATION_FAILED",
+                "A newer build wrote this preference: it is read-only here",
+                i,
+                "key",
+              );
+            }
+            // Changing a stored value, or resetting it, needs a base (A1 3.5).
+            const key = rowKey("preferences", op.key);
+            if (!starts.has(key)) {
+              starts.set(key, rowState("preferences", row, CHILD_FIELDS.preferences));
+              touches.push({ entity: "preferences", id: op.key, field: "value", task: null });
+            }
+          }
+          return { i, op, target: op.key, task: null, touches, record: inputOf(op) };
+        }
         case "undo":
         case "redo":
           // A request of its own (request.ts), which #history decides.
@@ -2143,6 +2170,16 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           status,
           id: staged.target,
           version: new RowReader("runs", row).int("version", "seq"),
+        };
+      }
+      case "pref.set": {
+        // A key that was never set has no row, so a reset of it has version 0.
+        const row = conn.prepare(SQL.preferenceRow).get({ id: staged.target });
+        return {
+          i,
+          status,
+          id: staged.target,
+          version: row === undefined ? 0 : new RowReader("preferences", row).int("version", "seq"),
         };
       }
       case "task.wrap_up": {
@@ -3058,6 +3095,27 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         ended_at: entering && final ? wall : current.ended_at,
       });
       wrote(run, i, "runs", staged.target, null, ["state"]);
+      return;
+    }
+    case "pref.set": {
+      const spec = must(preferenceSpec(op.key), "A checked pref.set names a declared key");
+      const values = {
+        id: op.key,
+        value: op.value === null ? "null" : canonicalJson(op.value),
+        schema_ver: spec.schemaVer,
+      };
+      // An earlier operation of the request may have created the row: read it as it is now.
+      if (conn.prepare(SQL.preferenceRow).get({ id: op.key }) === undefined) {
+        // Nothing is set: a reset changes nothing.
+        if (op.value === null) return;
+        conn
+          .prepare(SQL.insertPreference)
+          .run({ ...values, policy: spec.policy ? 1 : 0, seq: run.seq });
+        wrote(run, i, "preferences", op.key, null, null);
+        return;
+      }
+      conn.prepare(SQL.updatePreference).run(values);
+      wrote(run, i, "preferences", op.key, null, ["value"]);
       return;
     }
   }

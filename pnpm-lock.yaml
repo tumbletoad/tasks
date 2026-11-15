@@ -396,13 +396,13 @@ importers:
 
   packages/storage:
     dependencies:
+      '@tasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tasks/files':
         specifier: workspace:*
         version: link:../files
     devDependencies:
-      '@tasks/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       fast-check:
         specifier: 4.10.2
         version: 4.10.2

@@ -337,10 +337,11 @@ export function checkHistory(conn: Connection): void {
 
 /**
  * The same invariants on the child rows a request can change after their create: links, places,
- * launches, runs, learnings, and the tombstones of notes, log entries and sources (A1 3.4, 3.10),
- * and on sessions, which no operation changes yet. Each starts with its create row, every field's
- * chain holds (checkChain), and the row's version is the latest change to any of its fields. A
- * table a space's schema does not have yet (runs and sessions before 0.3) holds no rows.
+ * launches, runs, learnings, the tombstones of notes, log entries and sources, and preferences
+ * (A1 3.4, 3.10, 3.16), and on sessions, which no operation changes yet. Each starts with its
+ * create row, every field's chain holds (checkChain), and the row's version is the latest change
+ * to any of its fields. A table a space's schema does not have yet (runs and sessions before 0.3)
+ * holds no rows.
  */
 function checkChildHistory(conn: Connection): void {
   const commits = commitKinds(conn);
@@ -363,6 +364,7 @@ function checkChildHistory(conn: Connection): void {
     { table: "notes", ...id, fields: CHILD_FIELDS.notes },
     { table: "log_entries", ...id, fields: CHILD_FIELDS.log_entries },
     { table: "sources", ...id, fields: CHILD_FIELDS.sources },
+    { table: "preferences", key: "key", fields: CHILD_FIELDS.preferences },
   ] as const;
   for (const { table, key, fields } of kinds) {
     if (!exists(table)) continue;

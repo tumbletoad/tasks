@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 62 of 104, and M2.04b and M4.05b outside the base count.
+**Done so far:** 63 of 104, and M2.04b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 8 · M5 13 · M6 15 · M7 10 · total 104. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -120,7 +120,7 @@ M2.04b is not in the base count.
 | M3.08 | Authority, transfer and claim | M3.07 | M | ready |
 | M3.09 | Synced and network folder detection, read-only modes | M1.08 | S | done |
 | M3.10 | Projection | M3.01 | M | doing |
-| M3.11 | Preferences and feature flags | M3.01 | S | doing |
+| M3.11 | Preferences and feature flags | M3.01 | S | done |
 | M3.12 | Hooks for later phases | M3.08, M2.12, M2.05 | S | todo |
 | M3.13 | Fallback driver | M1.02 | S | ready |
 | M3.14 | Redaction | M3.04, M3.05, M3.10 | S | todo |
@@ -160,7 +160,7 @@ M4.05b and M4.01b are not in the base count.
 | M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | doing |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | ready |
-| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | todo |
+| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | ready |
 | M5.12 | First-run setup | M5.11, M4.05 | S | todo |
 | M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
 

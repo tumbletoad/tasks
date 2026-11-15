@@ -5,7 +5,8 @@
 //
 // Sections have owners. This appendix (A2) owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]`
 // and `[[spaces]]`, checked here. A4 owns `[terminal]`, `[[instance]]`, `[approvals]` and, with A1,
-// `[roots]`: @tasks/launch checks those. `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
+// `[roots]`: @tasks/launch checks those. A1 owns `[preferences]` (3.16), checked here with the
+// preferences registry of @tasks/contracts. `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
 // `[security]` (A6) are reserved: the steps that use them check them, and until then they are
 // passed by without a problem. Any other top-level key is an `unknown_key` warning.
 //
@@ -33,6 +34,7 @@ import {
   type TerminalSettings,
   type Verdict,
 } from "@tasks/launch";
+import { fitsShape, preferenceSpec, type PrefValue } from "@tasks/contracts";
 import { isId, type Id } from "@tasks/storage";
 import { factsFrom, factsOf, problemOf, type PathFacts, type Unsafe } from "../hub/permissions.ts";
 import type { Level } from "../hub/log.ts";
@@ -81,6 +83,11 @@ export interface MachineConfig {
    * generates. Setup writes nothing there and prints the change instead.
    */
   readonly setup: { readonly managedPaths: readonly string[] };
+  /**
+   * `[preferences]` (A1 3.16): this machine's preferences that are set, by their whole name, each
+   * a value of its declared shape. A key not here takes the registry's default.
+   */
+  readonly preferences: ReadonlyMap<string, PrefValue>;
 }
 
 /** The configuration of a machine without machine.toml. */
@@ -96,7 +103,55 @@ export const DEFAULT_CONFIG: MachineConfig = {
   instances: [],
   approvals: new Map(),
   setup: { managedPaths: [] },
+  preferences: new Map(),
 };
+
+/**
+ * `[preferences]` (A1 3.16): each key is a machine preference's whole name, quoted
+ * (`"projection.dir" = "/srv/tasks-view"`), checked by the registry as the writer checks a space
+ * preference, and by this platform's rule for a path. A bad entry drops itself; a name the
+ * registry does not know is a warning, as a newer build may know it.
+ */
+function readMachinePreferences(
+  doc: TomlDocument,
+  platform: NodeJS.Platform,
+  problems: Problems,
+): Map<string, PrefValue> {
+  const out = new Map<string, PrefValue>();
+  const table = doc["preferences"];
+  if (table === undefined) return out;
+  if (!isTable(table)) {
+    problems.error("preferences", "wrong_type");
+    return out;
+  }
+  for (const [name, value] of Object.entries(table)) {
+    const key = keyPath("preferences", name);
+    const spec = preferenceSpec(name);
+    if (spec === undefined) {
+      problems.warn(key, "unknown_key");
+      continue;
+    }
+    if (spec.scope !== "machine") {
+      // A space preference lives in the space, where it travels with backups and exports.
+      problems.error(key, "invalid_value");
+      continue;
+    }
+    if (
+      spec.shape.type === "path" &&
+      typeof value === "string" &&
+      !isAbsoluteFor(platform, value)
+    ) {
+      problems.error(key, "not_absolute");
+      continue;
+    }
+    if (!fitsShape(spec.shape, value)) {
+      problems.error(key, "invalid_value");
+      continue;
+    }
+    out.set(name, value as PrefValue);
+  }
+  return out;
+}
 
 /** `[setup]` (A3 3.12): `[setup.managed] paths`, each an absolute path. A bad path drops itself. */
 function readSetup(doc: TomlDocument, platform: NodeJS.Platform, problems: Problems): string[] {
@@ -226,6 +281,7 @@ export function checkMachineConfig(
     instances: readInstances(doc["instance"], platform, problems),
     approvals: readApprovals(doc["approvals"], problems),
     setup: { managedPaths: readSetup(doc, platform, problems) },
+    preferences: readMachinePreferences(doc, platform, problems),
   };
   return { config, problems: problems.list };
 }
