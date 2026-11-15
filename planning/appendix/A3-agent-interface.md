@@ -225,7 +225,7 @@ Create 1 to 25 tasks in one transaction: follow-ups found during work, items fro
 - `create_new` against an active match is `invalid_input` (`data.field: "dedupe"`), so a refresh never makes two active tasks for one item.
 - A matched draft binds no folder. A source linked with `add_sources` reports `source_differs` as for a created draft.
 
-**A draft's folder and its project** (A1 3.15). A draft with `folder: "cwd"` (or an absolute folder) that names no project goes to the deepest live project whose folder on this machine contains that folder. When the folder is that project's folder itself, the task needs no folder of its own; when it is deeper, the task gets it as its own folder. Inside no project's folder, the task has no project and keeps the folder. When the deepest project is archived, the draft is filed as inside no project's folder, and the result warns `tasks.0: folder of archived project <name>`, so a follow-up in an old repository is never refused for it; the person or the agent unarchives the project and moves the task if it belongs there. A draft that names a project gets the folder as its own unless it is that project's folder on this machine. A draft that names an area and no project keeps the area: the project found by its folder must then be in that area, else the task goes to the area without a project, with its folder. So an agent at work in a repository files its follow-ups under that repository's project without naming it.
+**A draft's folder and its project** (A1 3.15). A draft with `folder: "cwd"` (or an absolute folder) that names no project goes to the deepest live project whose folder on this machine contains that folder. When the folder is that project's folder itself, the task needs no folder of its own; when it is deeper, the task gets it as its own folder. Inside no project's folder, the task has no project and keeps the folder. When the deepest project is archived, the draft is filed as inside no project's folder, and the result warns `tasks.0: folder of archived project <name>`, so a follow-up in an old repository is never refused for it; the person or the agent unarchives the project (`organize unarchive`) and moves the task if it belongs there. When the answer is unknown, because a project folder that may hold the folder did not answer (A1 3.15), a draft that names no project is `invalid_input` with `data.reason: "not_answering"` naming that project, and the agent names the project itself. A draft that names a project gets the folder as its own unless it is that project's folder on this machine. A draft that names an area and no project keeps the area: the project found by its folder must then be in that area, else the task goes to the area without a project, with its folder. So an agent at work in a repository files its follow-ups under that repository's project without naming it.
 - The `title` of an `exists` row is the draft's, as sent: the handler reads nothing for it.
 
 **Areas and projects by name** (`ops/groups.ts`). The writer takes IDs and slugs only (A1 3.6), so the handler resolves a draft's `area` and `project` first, and `update_task`'s `set.area` and `set.project` and `complete_task`'s follow-ups the same way:
@@ -276,10 +276,10 @@ Reopens a completed or archived task (`entries/task-reopen.ts`). The previous ou
 
 #### 3.4.10 `organize`
 
-List and shape areas and projects, so agents can sort the user's work (`entries/group-manage.ts`). A mixed entry (3.2.3): `list` reads, the others write. `list` is built; `create`, `rename`, `move` and `archive` need A1's `area.*` and `project.*` operations and arrive with them in M4.01b, refused until then naming that step, after the input rules: `request_id` (3.2.3), a `path` for every write and `base` for `rename`, `move` and `archive`, so an agent corrects its call once.
+List and shape areas and projects, so agents can sort the user's work (`entries/group-manage.ts`). A mixed entry (3.2.3): `list` reads, the others write. `list` is built; `create`, `rename`, `move`, `archive` and `unarchive` need A1's `area.*` and `project.*` operations and arrive with them in M4.01b, refused until then naming that step, after the input rules: `request_id` (3.2.3), a `path` for every write and `base` for `rename`, `move`, `archive` and `unarchive`, so an agent corrects its call once.
 
 ```ts
-{ action: "list" | "create" | "rename" | "move" | "archive" | "set_folder" | "clear_folder",
+{ action: "list" | "create" | "rename" | "move" | "archive" | "unarchive" | "set_folder" | "clear_folder",
   path?: string,                     // "Client work", "Client work/Lumen Health" or a slug; list: one area
   to?: string,                       // rename: new name; move: new parent area
   folder?: string,                   // create (a project) and set_folder: "cwd" or an absolute folder (3.4.1)
@@ -517,7 +517,7 @@ The levels apply to agent and routine actors only. The user and the service bypa
 | `task.wrap_up` (a task the user checked off) | Apply | Apply and mark | Propose |
 | `task.reopen` | Apply | Apply and mark | Propose |
 | `area.create`, `project.create` | Apply | Apply | Propose |
-| `area.patch`, `area.move`, `area.archive` and the same for projects | Apply | Apply and mark | Propose |
+| `area.patch`, `area.move`, `area.archive`, `area.unarchive` and the same for projects | Apply | Apply and mark | Propose |
 | `project.folder_set` (with the task folders it moves), `project.folder_clear` | Apply | Apply and mark | Propose |
 | `pref.set` for keys agents may write | Apply | Apply and mark | Propose |
 | `pref.set` for policy keys | Forbidden | Forbidden | Forbidden |
