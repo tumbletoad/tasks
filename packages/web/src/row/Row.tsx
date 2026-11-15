@@ -7,8 +7,13 @@
 // The row is memoised: it renders again only when its own task, its area or project, its receipts,
 // its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
 // value the list keeps by identity, so a store update that touches one task renders one row.
-import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Instance, Receipt } from "../api.ts";
+import { Session } from "../context.ts";
+import { titleChange } from "../edit/change.ts";
+import { whoOf, type Leaving } from "../edit/edits.ts";
+import { Unsaved } from "../edit/Unsaved.tsx";
+import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
@@ -59,6 +64,7 @@ const styles = classes(css, [
   "tile",
   "body",
   "edit",
+  "remote",
 ]);
 
 export interface RowProps {
@@ -77,6 +83,8 @@ export interface RowProps {
   readonly posinset: number;
   readonly setsize: number;
   readonly actions: RowActions;
+  /** Checked off and in its hold, or completed by someone else and leaving (A5 3.12). */
+  readonly leaving?: Leaving | undefined;
   /** In a virtual list: the item's index and its offset from the list's top, in px. */
   readonly index?: number;
   readonly start?: number;
@@ -235,25 +243,34 @@ function Slots({
 }
 
 /**
- * The title's editor: Enter or leaving the field saves a changed title, Escape keeps the old one.
- * Either way focus goes back to the title, so the keyboard stays on the row.
+ * The title's editor (A5 3.7, 3.11): Enter or leaving the field saves a changed title, Escape keeps
+ * the old one. Either way focus goes back to the title, so the keyboard stays on the row. The save
+ * is the person's edit like any other (edits.ts), with the base taken when the editor opened: a
+ * title someone else changed while the person typed is a conflict, never overwritten, and the
+ * field says so while the person types. Leaving the window is not leaving the field: the editor
+ * stays open with what was typed.
  */
 function TitleEditor({
   task,
   label,
-  actions,
   onDone,
 }: {
   readonly task: TaskRow;
   readonly label: string;
-  readonly actions: RowActions;
   readonly onDone: () => void;
 }) {
+  const t = useT();
+  const edits = useEdits();
+  const { live } = useContext(Session);
   const field = useRef<HTMLInputElement>(null);
   const done = useRef(false);
   // Taken once, as the editor opens: the save's base is the title the person began to change.
-  const [save] = useState(() => actions.rename(task));
-  const [before] = useState(task.title);
+  const [opened] = useState(() => ({
+    base: live.store.asOf,
+    mark: edits.mark(),
+    title: task.title,
+  }));
+  const before = opened.title;
   useEffect(() => {
     field.current?.focus();
     field.current?.select();
@@ -264,38 +281,65 @@ function TitleEditor({
     const title = (field.current?.value ?? "").trim();
     const line = field.current?.closest("[data-row-line]");
     onDone();
-    if (keep && title !== "" && title !== before) save(title);
+    if (keep && title !== "" && title !== before) {
+      edits.edit(task, titleChange(title), opened.base === undefined ? {} : { base: opened.base });
+    }
     // After React has put the title back.
     requestAnimationFrame(() => {
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
     });
   };
+  // Someone else changed the title while the person types: the typed text stays (A5 3.15 item 9).
+  const remote =
+    task.title === before ? undefined : edits.changedSince(task.id, "title", opened.mark);
   return (
-    <input
-      ref={field}
-      className={styles.edit}
-      data-part="title-edit"
-      aria-label={label}
-      defaultValue={before}
-      maxLength={500}
-      dir="auto"
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return;
-        if (event.key === "Enter") {
-          event.preventDefault();
+    <span className={styles.edit} data-part="title-editor">
+      <input
+        ref={field}
+        data-part="title-edit"
+        aria-label={label}
+        defaultValue={before}
+        maxLength={500}
+        dir="auto"
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            finish(true);
+          } else if (event.key === "Escape") {
+            // Escape leaves the editor only: the list must not collapse the row.
+            event.preventDefault();
+            event.stopPropagation();
+            finish(false);
+          }
+        }}
+        onBlur={() => {
+          // The window lost focus (another app, another tab): the field keeps it for its return.
+          if (!document.hasFocus()) return;
           finish(true);
-        } else if (event.key === "Escape") {
-          // Escape leaves the editor only: the list must not collapse the row.
-          event.preventDefault();
-          event.stopPropagation();
-          finish(false);
-        }
-      }}
-      onBlur={() => {
-        finish(true);
-      }}
-    />
+        }}
+      />
+      {task.title === before ? null : (
+        <span className={styles.remote} data-part="remote" role="status">
+          {t("edit.changedBy", whoOf(remote?.by ?? ""))}
+        </span>
+      )}
+    </span>
   );
+}
+/**
+ * After a check-off, focus moves to the next row, or else the previous one, or else the view
+ * (A5 3.12): never to a row that is itself leaving.
+ */
+function focusAfter(from: HTMLElement): void {
+  const list = from.closest("[data-list]");
+  const own = from.closest("li")?.querySelector<HTMLElement>('[data-part="title"]');
+  const titles = [...(list?.querySelectorAll<HTMLElement>('[data-part="title"]') ?? [])];
+  const at = own === null || own === undefined ? -1 : titles.indexOf(own);
+  const open = (e: HTMLElement) => e.closest('li[data-done="true"]') === null;
+  const next =
+    titles.slice(at + 1).find(open) ?? titles.slice(0, Math.max(at, 0)).reverse().find(open);
+  (next ?? document.getElementById("main"))?.focus({ preventScroll: true });
 }
 
 function RowView({
@@ -312,6 +356,7 @@ function RowView({
   posinset,
   setsize,
   actions,
+  leaving,
   index,
   start,
   measure,
@@ -333,6 +378,18 @@ function RowView({
     ctx,
   );
   const tab = current ? 0 : -1;
+  // Checked: completed, or checked off and in its hold. The box takes a check-off of an open task,
+  // and during this tab's own hold, its undo.
+  const active = task.lifecycle === "active";
+  const checked = leaving === undefined ? !active : leaving.done;
+  const checkable = leaving === undefined ? active : leaving.by === undefined;
+  const completedTip =
+    leaving?.by === undefined
+      ? undefined
+      : t("row.completedBy", {
+          ...whoOf(leaving.by),
+          time: intl.formatTime(leaving.at ?? 0, { timeStyle: "short" }),
+        });
   const body = `row-${task.id}-body`;
   const described = `row-${task.id}-desc`;
   const toggle = () => {
@@ -361,6 +418,8 @@ function RowView({
       data-expanded={expanded}
       data-current={current}
       data-fresh={fresh || undefined}
+      data-done={leaving?.done === true || undefined}
+      data-leaving={leaving === undefined ? undefined : leaving.out ? "out" : "hold"}
       aria-posinset={posinset}
       aria-setsize={setsize}
       onFocus={() => {
@@ -377,14 +436,21 @@ function RowView({
             />
           )}
         </span>
-        <span className={styles.check}>
-          {/* Check-off with its hold, toast and undo is M5.08's: until then the box is shown, not used. */}
+        <span className={styles.check} data-tip={completedTip} title={completedTip}>
+          {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). */}
           <input
             type="checkbox"
             className={styles.box}
+            data-part="check"
             aria-label={sayMsg(t, model.done)}
-            disabled
+            checked={checked}
+            disabled={!checkable}
             tabIndex={tab}
+            onChange={(event) => {
+              // Focus moves on at once, so the row that stays for its hold is not in the way.
+              if (!checked) focusAfter(event.currentTarget);
+              actions.check(task);
+            }}
           />
         </span>
         <div className={styles.main}>
@@ -393,7 +459,6 @@ function RowView({
               <TitleEditor
                 task={task}
                 label={t("task.title")}
-                actions={actions}
                 onDone={() => {
                   setEditing(false);
                 }}
@@ -434,7 +499,16 @@ function RowView({
             <div
               className={styles.summary}
               data-part="summary"
+              data-tip={expanded ? t("ask.tip") : undefined}
+              title={expanded ? t("ask.tip") : undefined}
               onClick={(event) => {
+                // Expanded, the summary is an agent's to change: a click asks one (A5 3.11), unless
+                // it ends a selection of its text.
+                if (expanded) {
+                  if (!(window.getSelection()?.isCollapsed ?? true)) return;
+                  actions.ask(task, "summary");
+                  return;
+                }
                 // The row becomes current, as if its title had been clicked.
                 event.currentTarget
                   .closest("li")
@@ -461,6 +535,7 @@ function RowView({
               )}
             </div>
           )}
+          {expanded ? <Unsaved task={task.id} field="title" /> : null}
         </div>
         <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>

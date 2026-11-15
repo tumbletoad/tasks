@@ -66,6 +66,9 @@ const SAMPLE = {
   area: "Client work",
   project: "Lumen Health",
   age: "3d",
+  value: "P1",
+  field: "the due date",
+  at: Date.UTC(2026, 10, 12, 9, 40),
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

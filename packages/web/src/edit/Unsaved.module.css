@@ -1,0 +1,26 @@
+/* The line under a control whose edit was not saved (A5 3.11): why, then two text buttons. */
+
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.why {
+  color: var(--k-late);
+}
+
+.act {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k-accent-strong);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

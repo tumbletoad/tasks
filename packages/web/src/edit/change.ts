@@ -40,10 +40,13 @@ export interface Change {
   /** The toast's sentence ("Priority set to P1"). */
   readonly said: Msg;
   /** The person's value as words ("P1"), for "Apply mine" while it is not saved. */
-  readonly shown: Msg;
+  readonly shown: Words;
 }
 
-const plain = (text: string): Msg => ({ id: "edit.value", values: { value: text } });
+/** Words for a value: a message, or the person's own text. */
+export type Words = Msg | string;
+
+const plain = (text: string): Words => text;
 
 export function titleChange(title: string): Change {
   return {
@@ -75,7 +78,7 @@ export function starChange(on: boolean, today: string): Change {
 
 /** P1 to P3, or 4: no priority (A1: 4 is the default and means none). */
 export function priorityChange(level: number): Change {
-  const shown: Msg = level >= 1 && level <= 3 ? { id: "row.priority", values: { level } } : none;
+  const shown: Words = level >= 1 && level <= 3 ? { id: "row.priority", values: { level } } : none;
   return {
     fields: ["priority"],
     set: { priority: level },
@@ -107,7 +110,7 @@ export function effortChange(effort: string | undefined): Change {
 }
 
 /** A due day (YYYY-MM-DD) in words, as the facts show it: the caller formats it. */
-export function dueChange(date: string | undefined, words: Msg | undefined): Change {
+export function dueChange(date: string | undefined, words: Words | undefined): Change {
   return date === undefined
     ? {
         fields: ["due"],
@@ -132,7 +135,7 @@ const STATUS_WORDS: Readonly<Record<string, Msg["id"]>> = {
   backlog: "status.backlog",
 };
 
-export const statusWords = (status: string): Msg => {
+export const statusWords = (status: string): Words => {
   const id = STATUS_WORDS[status];
   return id === undefined ? plain(status) : { id };
 };
@@ -181,7 +184,7 @@ export function groupingChange(
   area: { id: string; title: string },
   project: { id: string; title: string } | undefined,
 ): Change {
-  const shown: Msg =
+  const shown: Words =
     project === undefined
       ? plain(area.title)
       : { id: "fact.areaProject", values: { area: area.title, project: project.title } };
@@ -273,10 +276,10 @@ export function joinChanges(changes: readonly Change[]): Change | undefined {
   }
   return {
     fields: changes.flatMap((c) => c.fields),
-    ...(Object.keys(set).length > 0 ? { set: set as UpdateSet } : {}),
+    ...(Object.keys(set).length > 0 ? { set: set } : {}),
     ...(clear.length > 0 ? { clear } : {}),
     overlay: {
-      set: overlaySet as Partial<Omit<TaskRow, "id">>,
+      set: overlaySet,
       ...(overlayClear.length > 0 ? { clear: overlayClear } : {}),
     },
     said: { id: "toast.restored" },

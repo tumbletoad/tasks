@@ -148,7 +148,8 @@ function newer(store: string | undefined, answer: string | undefined): string | 
   return Number(b[2]) > Number(a[2]) ? answer : store;
 }
 
-const keyOf = (task: string, field: string) => `${task}\u0000${field}`;
+/** The key of a task's field in the maps of unsaved edits and others' changes. */
+export const keyOf = (task: string, field: string) => `${task}\u0000${field}`;
 
 /** "the due date", "the priority": a field as the toast names it. */
 const FIELD_WORDS: Readonly<Record<string, Msg["id"]>> = {
@@ -173,11 +174,6 @@ const FIELD_WORDS: Readonly<Record<string, Msg["id"]>> = {
 export const whoOf = (by: string): { who: string; by: string } => ({
   who: by === "user" || by === "import" ? by : "other",
   by,
-});
-
-const timeOf = (at: string | number): Msg => ({
-  id: "edit.time",
-  values: { at: typeof at === "number" ? at : Date.parse(at) },
 });
 
 export class Edits {
@@ -275,7 +271,7 @@ export class Edits {
     const unsaved = this.unsaved(task, field);
     if (unsaved === undefined) return;
     const row = this.#deps.rowOf(unsaved.ref);
-    this.edit(row ?? { id: unsaved.task, ref: unsaved.ref } as TaskRow, unsaved.change);
+    this.edit(row ?? ({ id: unsaved.task, ref: unsaved.ref } as TaskRow), unsaved.change);
   }
 
   /** The person keeps the other value: their own goes. */
@@ -288,7 +284,10 @@ export class Edits {
    * for the hold, then collapses; the toast's Undo names the commit.
    */
   checkOff(task: TaskRow): void {
-    if (this.#state.leaving.has(task.id)) return;
+    const entry = this.#state.leaving.get(task.id);
+    if (entry?.done === true) return;
+    // Checked again after its undo: the row that waited to come back holds again.
+    if (entry !== undefined) this.#drop(task.id);
     this.#leave(task, {});
     const sent = this.#sendWith(task.id, (base, request) =>
       this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
@@ -449,7 +448,7 @@ export class Edits {
         ...whoOf(first.by),
         field: words === undefined ? { id: "field.other" } : { id: words },
         count: fields.size,
-        time: timeOf(first.at),
+        at: Date.parse(first.at),
       },
     };
     const restore = this.#restoreOf(conflicts);
@@ -544,7 +543,11 @@ export class Edits {
     for (const [ref, change] of restore) {
       const row = this.#deps.rowOf(ref);
       const fresh = newer(this.#deps.asOf(), base);
-      this.edit(row ?? ({ id: ref, ref } as TaskRow), change, fresh === undefined ? {} : { base: fresh });
+      this.edit(
+        row ?? ({ id: ref, ref } as TaskRow),
+        change,
+        fresh === undefined ? {} : { base: fresh },
+      );
     }
   }
 
@@ -577,10 +580,11 @@ export class Edits {
     call: (base: string | undefined, request: string) => Promise<T>,
     overlay?: Overlay,
   ): Sent<T> {
-    const before = this.#chains.get(task) ?? Promise.resolve();
-    const sent = this.#deps.write(async (request) => {
-      await before.catch(() => undefined);
-      return call(newer(this.#deps.asOf(), this.#answers.get(task)), request);
+    const before = this.#chains.get(task);
+    // Sent at once when nothing of the task's is on its way, else after the answer before it.
+    const sent = this.#deps.write((request) => {
+      const send = () => call(newer(this.#deps.asOf(), this.#answers.get(task)), request);
+      return before === undefined ? send() : before.then(send);
     }, overlay);
     this.#mine.add(sent.request);
     const answered = sent.answer.then((result) => {
@@ -596,14 +600,13 @@ export class Edits {
     return sent;
   }
 
-
   #refused(task: TaskRow, change: Change, error: unknown): void {
     const signedOut = this.#deps.failed(error);
     const problem = problemOf(error);
     const conflict =
       problem?.code === "conflict"
-        ? problem.conflicts.find((c) => change.fields.some((f) => f === c.field)) ??
-          problem.conflicts[0]
+        ? (problem.conflicts.find((c) => change.fields.some((f) => f === c.field)) ??
+          problem.conflicts[0])
         : undefined;
     const field = change.fields[0] ?? "title";
     const unsaved: Unsaved = {
@@ -614,8 +617,9 @@ export class Edits {
       reason: conflict === undefined ? "failed" : "conflict",
       ...(conflict === undefined ? {} : { by: conflict.by, at: Date.parse(conflict.at) }),
     };
+    // Under each field it writes: the control of any of them shows it.
     const next = new Map(this.#state.unsaved);
-    next.set(keyOf(task.id, field), unsaved);
+    for (const each of change.fields) next.set(keyOf(task.id, each), unsaved);
     this.#set({ ...this.#state, unsaved: next });
     if (signedOut) return;
     const words = FIELD_WORDS[field];
@@ -637,11 +641,13 @@ export class Edits {
     });
   }
 
+  /** Drops the unsaved edit of a field, under every field it was kept for. */
   #forget(task: string, field: Field): void {
-    const key = keyOf(task, field);
-    if (!this.#state.unsaved.has(key)) return;
+    const unsaved = this.#state.unsaved.get(keyOf(task, field));
+    if (unsaved === undefined) return;
     const next = new Map(this.#state.unsaved);
-    next.delete(key);
+    for (const each of unsaved.change.fields) next.delete(keyOf(task, each));
+    next.delete(keyOf(task, field));
     this.#set({ ...this.#state, unsaved: next });
   }
 
