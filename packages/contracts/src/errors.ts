@@ -107,3 +107,25 @@ export class AppError extends Error {
     };
   }
 }
+
+/** A text as compared for "says the same": lower case, one space, no closing punctuation. */
+const plain = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[\s.!?:]+$/, "")
+    .trim();
+
+/**
+ * A3 3.5's text form of a message and its hint, `<message>. <hint>`, for every face that prints
+ * one (the CLI, the MCP tools). The message ends with a full stop, added when it has none. A hint
+ * that is a bare command (`<cli> …`) follows `Run: `. A hint the message already says is left out,
+ * so a message and its hint never say the same thing twice.
+ */
+export function messageWithHint(message: string, hint: string | undefined, cli: string): string {
+  const trimmed = message.trim();
+  const sentence = trimmed === "" || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  const tip = hint?.trim() ?? "";
+  if (tip === "" || plain(sentence).includes(plain(tip))) return sentence;
+  return `${sentence} ${tip.startsWith(`${cli} `) ? `Run: ${tip}` : tip}`;
+}

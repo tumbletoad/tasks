@@ -90,6 +90,7 @@ import {
   readPlaced,
   readPlacedAny,
   readReceipt,
+  readScriptChange,
   readSpacePreferences,
   readLaunchTask,
   readSiblings,
@@ -185,7 +186,7 @@ const opUnknown = (): AppError =>
   new AppError({
     code: "op_unknown",
     message: "The running service does not know this operation.",
-    hint: `Update ${PRODUCT_NAME}, or run: ${CLI_NAME} service restart`,
+    hint: `Update ${PRODUCT_NAME}, or restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start.`,
   });
 
 /** `op/list` (A2 3.6.4): the registry's metadata for help and completion. */
@@ -346,7 +347,7 @@ async function callWith(
   }
   checkHiddenFields(entry, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
-  if (!parsed.success) throw schemaFailure(parsed.error);
+  if (!parsed.success) throw schemaFailure(parsed.error, input);
   checkActionFields(entry, parsed.data);
   if (params.space !== undefined && typeof params.space !== "string") {
     throw invalid("space", "Expected a space ID or name");
@@ -1788,7 +1789,25 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(input["partial"] === true ? { partial: true } : {}),
     };
     const result = await submit(call, [op], { undoable: false });
-    return historyResult(call, result, result.conflicts.length > 0 ? "partial" : "undone");
+    const answer = await historyResult(
+      call,
+      result,
+      result.conflicts.length > 0 ? "partial" : "undone",
+    );
+    // A3 3.7.4: a script of the same person (`cli-script` on this machine) writes as `script`,
+    // whose changes are on no undo stack. When one changed the space after the change undone,
+    // the answer names it, so the person knows this undo did not take it back.
+    let scripted;
+    try {
+      scripted = await readScriptChange(readerOf(call.space), {
+        scope: principalOf("cli-script", call.host.machine.id).scope,
+        undone: String(answer["commit"]),
+        seq: result.seq,
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    return scripted === undefined ? answer : { ...answer, script_change: scripted };
   },
 
   "history.redo": async (call) => {

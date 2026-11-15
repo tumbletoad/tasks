@@ -1,0 +1,104 @@
+// The CLI's help (A2 3.10.1): every command of the verb table and every generated verb has its own
+// help, printed the same by `tasks help <command>` and `tasks <command> --help`, with its forms
+// and flags; a flag the contract requires is marked so; the columns of each help line up. No
+// service is needed: help runs nothing.
+import { describe, expect, test } from "vitest";
+import { SERVICE_VERBS } from "@tasks/service/install";
+import { CLI_SPEC } from "./args.ts";
+import { LOCAL_COMMANDS, shortHelp } from "./help.ts";
+import { main, type Io } from "./main.ts";
+
+function recorder(argv: readonly string[]): Io & { out: string; err: string } {
+  const io = {
+    argv,
+    env: {},
+    cwd: process.cwd(),
+    platform: process.platform,
+    tty: { stdin: false, stdout: false },
+    pid: process.pid,
+    out: "",
+    err: "",
+    stdout(text: string) {
+      io.out += text;
+    },
+    stderr(text: string) {
+      io.err += text;
+    },
+    readStdin: () => Promise.resolve(""),
+    readFile: () => Promise.reject(new Error("no file")),
+  };
+  return io;
+}
+
+async function helpOf(argv: readonly string[]): Promise<string> {
+  const io = recorder(argv);
+  // A help that started the bridge would wait on stdin: none may.
+  expect(await main(io, { mcp: () => Promise.reject(new Error("the bridge started")) })).toBe(0);
+  expect(io.err).toBe("");
+  return io.out;
+}
+
+const COMMANDS = [...CLI_SPEC.verbs.map((v) => v.verb), ...LOCAL_COMMANDS.map((c) => c.name)];
+
+describe("[A2.3.10.cli.help] help for every command", () => {
+  test("every command has its own help, the same from help <command> and <command> --help", async () => {
+    const list = shortHelp();
+    for (const command of COMMANDS) {
+      const help = await helpOf(["help", command]);
+      expect(help, command).not.toBe(list);
+      expect(help, command).toMatch(new RegExp(`^Usage: tasks ${command}\\b`));
+      // `tasks mcp …` is the bridge's own command line (A2 3.7.1): its help is `tasks help mcp`
+      // and `tasks --help mcp`.
+      const flagged = command === "mcp" ? ["--help", command] : [command, "--help"];
+      expect(await helpOf(flagged), command).toBe(help);
+    }
+    // The list names every command once.
+    for (const command of COMMANDS) {
+      expect(list.match(new RegExp(`^ {2}${command} {2,}`, "gm")), command).toHaveLength(1);
+    }
+  });
+
+  test("a command's subcommands are in its help, and the service's are the ones it takes", () => {
+    for (const command of LOCAL_COMMANDS) {
+      for (const sub of command.subcommands ?? []) {
+        expect(command.help, `${command.name} ${sub}`).toMatch(
+          new RegExp(`(^ {2}|tasks ${command.name} )${sub}\\b`, "m"),
+        );
+      }
+    }
+    const service = LOCAL_COMMANDS.find((c) => c.name === "service");
+    expect([...(service?.subcommands ?? [])].sort()).toEqual([...SERVICE_VERBS, "port"].sort());
+  });
+
+  test("an operation verb's help marks the flags its contract requires", async () => {
+    let checked = 0;
+    for (const verb of CLI_SPEC.verbs) {
+      const help = await helpOf(["help", verb.verb]);
+      const usage = help.split("\n")[0] ?? "";
+      for (const flag of verb.flags) {
+        const line = help
+          .split("\n")
+          .find((l) => l.match(new RegExp(`^ {2}(-\\w, )?${flag.flag}\\b`)));
+        expect(line, `${verb.verb} ${flag.flag}`).toBeDefined();
+        expect(line?.endsWith("(required)"), `${verb.verb} ${flag.flag}`).toBe(flag.required);
+        expect(usage.includes(` ${flag.flag}`), `${verb.verb} ${flag.flag}`).toBe(flag.required);
+        if (flag.required) checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect((await helpOf(["help", "reopen"])).split("\n")[0]).toBe(
+      "Usage: tasks reopen <task> --reason <reason> [options]",
+    );
+  });
+
+  test("the description column of each help lines up", () => {
+    for (const command of LOCAL_COMMANDS) {
+      const columns = new Set<number>();
+      for (const line of command.help.split("\n")) {
+        const found = /^ {2}\S.*?\S( {2,})\S/.exec(line);
+        if (found !== null) columns.add(found.index + found[0].length - 1);
+      }
+      expect([...columns], command.name).toHaveLength(columns.size === 0 ? 0 : 1);
+    }
+  });
+});

@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { ERROR_CODES, EXIT_CODES, type ErrorCode } from "@tasks/contracts";
+import { ERROR_CODES, EXIT_CODES, messageWithHint, type ErrorCode } from "@tasks/contracts";
 import { RpcError, LocalError } from "@tasks/bridge/protocol";
 import { SLOTS, main, type Io } from "./main.ts";
 import { bodyOf, exitCodeOf, printError, render } from "./output.ts";
@@ -179,7 +179,10 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       });
       const text = recorder(["status"], { TASKS_HOME: home });
       expect(await main(text)).toBe(6);
-      expect(text.err).toContain("Start it with: tasks service start");
+      // The message and its hint, each said once (A3 3.5).
+      expect(text.err).toBe(
+        "error service_unavailable: TT Tasks's service is not running. Run: tasks service start\n",
+      );
       const bare = recorder([], { TASKS_HOME: home });
       expect(await main(bare)).toBe(0);
       expect(bare.out).toContain("not running");
@@ -387,5 +390,39 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
       "Mira",
     );
     expect(described.split("\n")[0]).toBe("tasks.statuses: The statuses (a list of 1 to 12 keys)");
+  });
+});
+
+describe("[A3.3.5.error-text] a message and its hint, each said once", () => {
+  test("a full stop between them, Run: before a bare command, a hint the message says left out", () => {
+    expect(messageWithHint("A field changed after the base: read again", "Read it.", "tasks")).toBe(
+      "A field changed after the base: read again. Read it.",
+    );
+    expect(messageWithHint("The service is not running.", "tasks service start", "tasks")).toBe(
+      "The service is not running. Run: tasks service start",
+    );
+    expect(
+      messageWithHint(
+        "The service is not running. Start it with: tasks service start",
+        "tasks service start",
+        "tasks",
+      ),
+    ).toBe("The service is not running. Start it with: tasks service start.");
+    expect(messageWithHint("Something went wrong!", undefined, "tasks")).toBe(
+      "Something went wrong!",
+    );
+    expect(messageWithHint("Gone", "  ", "tasks")).toBe("Gone.");
+  });
+
+  test("every printed error joins its message and hint by that rule", () => {
+    const io = recorder();
+    printError(io, false, {
+      code: "conflict",
+      message: "A field changed after the base: read again",
+      hint: "Read the task again, then send the change with a new request ID.",
+    });
+    expect(io.err).toBe(
+      "error conflict: A field changed after the base: read again. Read the task again, then send the change with a new request ID.\n",
+    );
   });
 });

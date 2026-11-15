@@ -36,7 +36,7 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   open <folder> [--excluded]               Serve a space folder; --excluded: its synced folder
        [--retry-migration]                 is excluded from sync, so it opens for writing;
                                            --retry-migration: try a migration that failed again
-  close [<space>]                        Close a space while the service keeps running
+  close [<space>]                          Close a space while the service keeps running
   backup [<space>]                         Take a backup now
   backups [list] [<space>]                 The backups of a space
   export [<space>] [--mode backup|fork]    Write an export bundle into the space's exports folder,
@@ -50,7 +50,7 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
                                            exchange/rescued folder
   claim [<space>]                          Make a read-only copy this machine's
   recover [<space>]                        Play back a space's rollback journal
-  use <space>                             Make it the default: what a new tab and a command
+  use <space>                              Make it the default: what a new tab and a command
                                            without --space open
 
 <space> is an ID, a name or a folder. Without one, --space, else the one space the service serves.

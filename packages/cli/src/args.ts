@@ -251,6 +251,17 @@ function setAt(
   } else node[last] = value;
 }
 
+/** The value at a spec path (`reason`, `set.title`, `tasks[].title`), or undefined. */
+function valueAt(input: Record<string, unknown>, path: string): unknown {
+  let node: unknown = input;
+  for (const step of path.split(".")) {
+    if (!isObject(node)) return undefined;
+    node = node[step.replace(/\[\]$/, "")];
+    if (step.endsWith("[]")) node = Array.isArray(node) ? node[0] : undefined;
+  }
+  return node;
+}
+
 export interface ParsedVerb {
   readonly input: Record<string, unknown>;
   /** Whether any argument was given besides `--input`'s JSON. */
@@ -351,6 +362,15 @@ export async function parseVerb(
       false,
     );
     any = true;
+  }
+  // A flag the contract requires is named before the call, as a missing <positional> is: the
+  // person reads which flag, not a schema path.
+  if (base === undefined) {
+    for (const flag of verb.flags) {
+      if (flag.required && valueAt(input, flag.field) === undefined) {
+        throw new UsageError(`tasks ${verb.verb} needs ${flag.flag}`);
+      }
+    }
   }
   for (const [field, value] of Object.entries(verb.fixed ?? {})) setAt(input, field, value, false);
   return { input, arguments: any };
