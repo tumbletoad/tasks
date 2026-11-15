@@ -899,7 +899,7 @@ export const OPERATION_KINDS = [
   "import.undo",
 ] as const satisfies readonly OperationKind[];
 
-/** The operations only an import request carries (isImportRequest). */
+/** The operations only the prototype import's request carries (isImportRequest). */
 export const IMPORT_OPERATIONS: ReadonlySet<OperationKind> = new Set([
   "alias.add",
   "area.upsert",
@@ -908,13 +908,20 @@ export const IMPORT_OPERATIONS: ReadonlySet<OperationKind> = new Set([
 ]);
 
 /**
- * An import's request (A1 3.14, 3.21; A7 3.15.5): origin `import`, the user as the principal and
- * the import actor as the author, which the writer checks in its transaction. Only such a request
- * holds the import's operations and fields (creation and completion instants, `ext`) and may go
- * above the request limits.
+ * The prototype import's request (A1 3.21; A7 3.15.5): origin `import`, the user as the principal
+ * and the import actor as the author, which the writer checks in its transaction. It is the
+ * request that uses an import's powers: the import's operations and fields (creation and completion
+ * instants, `ext`), a preview guard, or more than a request's 50 operations. Another request of
+ * origin `import` (A1 3.14's working-copy import, whose author is the human) has none of them.
  */
-export const isImportRequest = (request: { actor: { origin: string } }): boolean =>
-  request.actor.origin === "import";
+export function isImportRequest(request: CheckedRequest): boolean {
+  return (
+    request.actor.origin === "import" &&
+    (request.ops.length > WRITE_LIMITS.ops ||
+      request.preview !== undefined ||
+      request.ops.some(importFields))
+  );
+}
 
 /** The operations that invert history (A1 3.10). */
 export type HistoryOperation = Undo | Redo;
@@ -2123,8 +2130,9 @@ export function checkRequest(value: unknown): CheckedRequest {
   // from the origin, which the credential's check below confirms.
   const importing =
     isRecord(value) && isRecord(value["actor"]) && value["actor"]["origin"] === "import";
+  const bytes = utf8Bytes(json ?? "");
   const maxBytes = importing ? WRITE_LIMITS.importBytes : WRITE_LIMITS.requestBytes;
-  if (utf8Bytes(json ?? "") > maxBytes) {
+  if (bytes > maxBytes) {
     fail(
       "TOO_LARGE",
       importing ? "The import is larger than 512 MiB" : "The request is larger than 512 KiB",
@@ -2172,7 +2180,7 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("preview")) request.preview = checkPreview(f.sub("preview"));
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
-  checkImportRequest(f, request);
+  checkImportRequest(f, request, bytes);
   // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,
   // as the request starts, so no other operation may share a request with a change of them.
   const prefs = request.ops.filter((op) => op.kind === "pref.set").length;
@@ -2296,15 +2304,19 @@ function importFields(op: Operation): boolean {
 }
 
 /**
- * An import's request and the undo of one (A7 3.15.5). Only an import request (origin `import`)
- * holds the import's operations and fields, and a preview; it comes from the user as the principal
- * with the import actor as the author (the writer checks the author's kind), and never joins an
- * undo stack, because its exchange is never undone by one (A1 3.6). An `import.undo` is a request
- * of its own, from a human, with no base, never undoable.
+ * The prototype import's request and the undo of one (A7 3.15.5). Only a request of origin
+ * `import` holds the import's operations and fields, a preview, more than 50 operations or more
+ * than 512 KiB (isImportRequest); such a request comes from the user as the principal with the
+ * import actor as the author (the writer checks the author's kind), and never joins an undo stack,
+ * because its exchange is never undone by one (A1 3.6). Another request of origin `import` is a
+ * plain request. An `import.undo` is a request of its own, from a human, with no base, never
+ * undoable.
  */
-function checkImportRequest(f: Fields, request: CheckedRequest): void {
-  const importing = isImportRequest(request);
-  if (!importing) {
+function checkImportRequest(f: Fields, request: CheckedRequest, bytes: number): void {
+  const importing =
+    isImportRequest(request) ||
+    (request.actor.origin === "import" && bytes > WRITE_LIMITS.requestBytes);
+  if (request.actor.origin !== "import") {
     const at = request.ops.findIndex(importFields);
     if (at >= 0) {
       fail("VALIDATION_FAILED", "Only an import writes this", `ops[${String(at)}]`, at);
@@ -2312,7 +2324,7 @@ function checkImportRequest(f: Fields, request: CheckedRequest): void {
     if (request.preview !== undefined) {
       f.fail("VALIDATION_FAILED", "Only an import carries a preview", "preview");
     }
-  } else {
+  } else if (importing) {
     if (request.actor.actor_kind !== "human" || request.actor.author_id === undefined) {
       f.fail(
         "VALIDATION_FAILED",

@@ -297,6 +297,18 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       const stale = world.writer.submit(request({ ...guard, token: `pv1_${"A".repeat(43)}` }));
       expect(stale).toMatchObject({ status: "rejected", error: { code: "PREVIEW_STALE" } });
       expect(world.seq()).toBe(seq);
+      // Only the import actor writes an import: the user as its author is refused, undecided.
+      const human = request(guard);
+      const byUser = world.writer.submit({
+        ...human,
+        request_id: `${human.request_id}-u`,
+        actor: { ...human.actor, author_id: world.user },
+      });
+      expect(byUser).toMatchObject({
+        status: "rejected",
+        error: { code: "VALIDATION_FAILED", field: "actor.author_id" },
+      });
+      expect(world.seq()).toBe(seq);
       expect(world.writer.submit(request(guard)).status).toBe("applied");
     } finally {
       world.close();
