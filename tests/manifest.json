@@ -3219,7 +3219,7 @@
     },
     {
       "id": "A1.5.projection.rescue",
-      "title": "What is not the projection's is never written through, overwritten, deleted or changed in mode: an edited file, a person's file at a task's path, a link where a folder goes and a hard link to a file outside are moved by one rename to a folder made for that rescue under exchange/rescued/, keeping their mode; files with temporary-looking names and text where the old control files were are kept; a rescue that cannot happen leaves the person's file in place and the task queued; a task whose file cannot be placed holds the watermark below it and never stops the tasks after it, a full batch of them included: each waits a pause of its own, doubling up to 30 s",
+      "title": "What is not the projection's is never written through, overwritten, deleted or changed in mode: an edited file, a person's file at a task's path, a link where a folder goes and a hard link to a file outside are moved by one rename to a folder made for that rescue under exchange/rescued/, keeping their mode; an edit that keeps the file's size, in place or by an editor's save through a temporary file, is rescued when its task changes and left in place when its task goes; files with temporary-looking names and text where the old control files were are kept; a rescue that cannot happen leaves the person's file in place and the task queued; a task whose file cannot be placed holds the watermark below it and never stops the tasks after it, a full batch of them included: each waits a pause of its own, doubling up to 30 s",
       "source": "A1 3.13, A1 3.1, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -3275,7 +3275,7 @@
     },
     {
       "id": "A1.5.projection.model",
-      "title": "Random sequences of commits, a person's acts in the tree (edits, files at generated paths and elsewhere, deleted files, folders replaced by files or links, hard links to files outside, text where control files were, temporary-looking names, swapped rescue folders, during a batch too) and kills at every act, each followed by a restart: no byte a person put there is lost or changed in mode, nothing outside the tree and the new rescue folders changes, the watermark covers only tasks whose files are on disk, the projection never moves its own files aside, and at rest the tree is a fresh render",
+      "title": "Random sequences of commits, a person's acts in the tree (edits in place and by an editor's save through a temporary file, some keeping the file's size, files at generated paths and elsewhere, deleted files, folders replaced by files or links, hard links to files outside, text where control files were, temporary-looking names, swapped rescue folders, during a batch too, and on Windows a file held open without sharing), kills at every act, and faults in the trusted state's writes (a short write, a full volume) and in saving a rescue notice, each followed by a restart: no byte a person put there is lost or changed in mode, nothing outside the tree and the new rescue folders changes, the watermark covers only tasks whose files are on disk, the projection never moves its own files aside, and at rest the tree is a fresh render and every rescue folder was told",
       "source": "A1 3.13, A1 5, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",

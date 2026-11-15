@@ -1,10 +1,13 @@
 // The projection against a model of what may happen to it (A1 3.13 rule 10): random sequences of
-// commits, a person's acts in the tree (an edit of a generated file, a file of theirs at a generated
-// path and elsewhere, a deleted generated file, a folder replaced by a file or a link, a hard link
-// to a file outside, text where the old control files were, files with temporary-looking names, a
-// rescue folder swapped for a link, during a batch too), and a kill at any act of a start or a
-// batch, each followed by a restart, the person sometimes typing into a temporary file the kill
-// left before it. After every step:
+// commits, a person's acts in the tree (an edit of a generated file, in place or by an editor's
+// save through a temporary file renamed over it, some keeping the file's size; a file of theirs at
+// a generated path and elsewhere, a deleted generated file, a folder replaced by a file or a link,
+// a hard link to a file outside, text where the old control files were, files with
+// temporary-looking names, a rescue folder swapped for a link, during a batch too; on Windows a
+// generated file held open without sharing while a batch runs), a kill at any act of a start or a
+// batch, and faults in what the projection writes outside the tree (a short write or a full volume
+// for its trusted state, a rescue notice the service could not save), each followed by a restart,
+// the person sometimes typing into a temporary file the kill left before it. After every step:
 //
 // 1. every byte a person put in the tree still exists, at its path or in a rescue folder, with
 //    its mode unchanged;
@@ -14,17 +17,21 @@
 //    excepted, until the projection has been at rest since);
 // 4. the projection never moves its own files aside;
 // 5. at rest (after a restart and its reconciliation, with nothing left to do), the generated files
-//    equal a fresh render and every path the catalogue names exists.
+//    equal a fresh render and every path the catalogue names exists;
+// 6. at rest, every rescue folder in the space's exchange/rescued/ was told to the receiver.
 //
 // Fixture text only; every person's text carries a marker, so the model finds it wherever it is.
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
+  constants,
   existsSync,
   linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -34,11 +41,21 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Projector, ProjectorOptions } from "../src/index.ts";
-import { checkWatermark, killAt, Killed, settle, treeOf, world, type World } from "./helpers.ts";
+import {
+  checkWatermark,
+  faultState,
+  killAt,
+  Killed,
+  settle,
+  treeOf,
+  world,
+  type Fault,
+  type World,
+} from "./helpers.ts";
 
 let root: string;
 beforeAll(() => {
@@ -49,7 +66,11 @@ afterAll(() => {
 });
 
 const LINK = process.platform === "win32" ? "junction" : "dir";
+/** libuv's UV_FS_O_EXLOCK on Windows: an open that shares nothing (no read, write or delete). */
+const EXCLUSIVE = 0x10000000;
 const MARK = "Person ";
+/** One of the projection's rescue folders: `<stem>-<n>`. */
+const RESCUE_FOLDER = /^([0-9]{8}T[0-9]{9}Z-[0-9a-f]{4})-[0-9]+$/;
 const FOLDERS = ["open", "completed", "completed/2026"] as const;
 
 /** A person swaps a folder for a link while a batch waits on the writer. */
@@ -57,6 +78,23 @@ type During = "none" | "open-link" | "view-link";
 
 /** A commit to an existing task; "delete-task" tombstones it, "restore" brings a deleted one back. */
 type Commit = "rename" | "summary" | "complete" | "archive" | "reopen" | "delete-task" | "restore";
+
+/**
+ * How a person edits a generated file: written in place, or saved by an editor (a new file beside
+ * it, renamed over it); "same" keeps its size, so only its bytes tell it from the generated file.
+ */
+type EditHow = "write" | "same" | "editor" | "editor-same";
+
+/**
+ * A fault in what a run writes outside the tree, from the `from`-th write of the trusted state on:
+ * each write takes half the bytes it is given ("short", as on a filling volume), or fails as on a
+ * full one ("enospc"); or the service cannot save the run's rescue notices ("notice"). A restart
+ * follows.
+ */
+interface RunFault {
+  readonly what: Fault | "notice";
+  readonly from: number;
+}
 
 type Action =
   | { readonly kind: "create"; readonly squat: boolean }
@@ -71,9 +109,13 @@ type Action =
       readonly during: During;
       /** After a kill, before the restart: the person types into a temporary file it left. */
       readonly leftover: boolean;
+      /** Windows: a generated file held open without sharing while the run lasts; its task changes. */
+      readonly hold: number | null;
+      readonly fault: RunFault | null;
     }
   | { readonly kind: "restart" | "rebuild"; readonly killAt: Kill }
-  | { readonly kind: "edit" | "replace" | "delete"; readonly pick: number }
+  | { readonly kind: "edit"; readonly pick: number; readonly how: EditHow }
+  | { readonly kind: "replace" | "delete"; readonly pick: number }
   | { readonly kind: "hardlink"; readonly pick: number; readonly same: boolean }
   | { readonly kind: "elsewhere" | "decoy"; readonly which: number }
   | { readonly kind: "folder-file" | "folder-link"; readonly which: number }
@@ -113,6 +155,20 @@ const action: fc.Arbitrary<Action> = fc.oneof(
       killAt: kill,
       during: fc.constantFrom<During>("none", "none", "none", "open-link", "view-link"),
       leftover: fc.boolean(),
+      hold: fc.oneof(
+        { weight: 4, arbitrary: fc.constant(null) },
+        { weight: 1, arbitrary: fc.nat() },
+      ),
+      fault: fc.oneof(
+        { weight: 4, arbitrary: fc.constant(null) },
+        {
+          weight: 1,
+          arbitrary: fc.record({
+            what: fc.constantFrom<RunFault["what"]>("short", "enospc", "notice"),
+            from: fc.integer({ min: 1, max: 6 }),
+          }),
+        },
+      ),
     }),
   },
   {
@@ -125,7 +181,15 @@ const action: fc.Arbitrary<Action> = fc.oneof(
   {
     weight: 4,
     arbitrary: fc.record({
-      kind: fc.constantFrom("edit" as const, "replace" as const, "delete" as const),
+      kind: fc.constant("edit" as const),
+      pick: fc.nat(),
+      how: fc.constantFrom<EditHow>("write", "same", "editor", "editor-same"),
+    }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constantFrom("replace" as const, "delete" as const),
       pick: fc.nat(),
     }),
   },
@@ -327,6 +391,14 @@ class Model {
   killOnReport = false;
   /** The state outside the tree the projection's current act is checked against. */
   baseline: Map<string, Entry> | undefined;
+  /** The stems of rescue folders the receiver saved, as the service's settings would hold them. */
+  readonly told = new Set<string>();
+  /** The service cannot save a rescue notice now: the receiver refuses. */
+  noticeFails = false;
+  /** A fault is armed for the current act: what it makes fail is expected. */
+  faulted = false;
+  /** Windows: a generated file the person holds open without sharing during the current act. */
+  held: number | undefined;
 
   /** A projector as the service makes one, its acts and its writer watched by the model. */
   newProjector(): Projector {
@@ -335,6 +407,16 @@ class Model {
     const options: Partial<ProjectorOptions> = {
       at: (act, path) => {
         this.killer?.hook(act, path);
+      },
+      // The service's receiver: a dead process tells nothing; one that cannot save refuses.
+      onRescued: (rescue) => {
+        if (this.killer?.dead() === true) return refuse();
+        if (this.noticeFails) {
+          seen.refused += 1;
+          return Promise.reject(Object.assign(new Error("fixture"), { code: "EBUSY" }));
+        }
+        this.told.add(rescue.stem);
+        return Promise.resolve();
       },
       writer: {
         projected: (batch) => {
@@ -369,14 +451,22 @@ class Model {
    * `afterKill` is what the person does in between.
    */
   async act(work: () => Promise<void>, at: Kill = null, afterKill?: () => void): Promise<void> {
-    this.baseline = this.outsideState();
+    try {
+      this.baseline = this.outsideState();
+    } catch (error) {
+      this.release();
+      throw error;
+    }
     this.killer =
       at === null ? undefined : killAt(at === "reported" ? Number.MAX_SAFE_INTEGER : at);
     this.killOnReport = at === "reported";
     try {
       await work();
     } catch (error) {
-      if (this.killer?.dead() !== true) throw error;
+      if (this.killer?.dead() !== true && !this.faulted) throw error;
+    } finally {
+      // The person lets go of a file they held: nothing after this act finds it locked.
+      this.release();
     }
     const killed = this.killer?.dead() === true;
     if (killed) seen.kills += 1;
@@ -420,7 +510,89 @@ class Model {
     }, at);
   }
 
-  async run(steps: number, at: Kill, during: During, leftover = false): Promise<void> {
+  /**
+   * Windows: the person holds a generated file open without sharing (as some editors and backup
+   * tools do), and its task changes, so the run must replace it: nothing can read, rename or
+   * remove it until it is let go. Elsewhere a file cannot be held that way: nothing happens.
+   */
+  hold(pick: number): void {
+    if (process.platform !== "win32") return;
+    const file = this.pickFile(pick, true);
+    // A hard link to a file outside would lock that file too, which the model reads.
+    if (file === undefined || statSync(file.abs).nlink !== 1) return;
+    this.w.submit([
+      { kind: "task.patch", task: file.task, set: { summary: `Held ${String((this.n += 1))}` } },
+    ]);
+    this.held = openSync(file.abs, constants.O_RDONLY | EXCLUSIVE);
+    seen.holds += 1;
+  }
+
+  release(): void {
+    if (this.held === undefined) return;
+    closeSync(this.held);
+    this.held = undefined;
+  }
+
+  /**
+   * A run with a fault armed (see RunFault), then a restart once it is gone: space freed, the
+   * service's settings writable again.
+   */
+  async faultedRun(steps: number, fault: RunFault): Promise<void> {
+    seen.faults += 1;
+    let end: (() => void) | undefined;
+    if (fault.what === "notice") {
+      // A rescue the run must make, and tell: the person edits a generated file, its task changes.
+      const file = this.pickFile(fault.from, true);
+      if (file !== undefined) {
+        this.disturb(file.task);
+        this.write(file.abs, this.personText());
+        this.w.submit([
+          {
+            kind: "task.patch",
+            task: file.task,
+            set: { summary: `Notice ${String((this.n += 1))}` },
+          },
+        ]);
+      }
+      this.noticeFails = true;
+    } else {
+      // Work for the run: a task deleted (A1 3.13's story of a full volume) or changed.
+      const pool = [...this.ids("active"), ...this.ids("completed")];
+      const task = pool[fault.from % Math.max(1, pool.length)];
+      if (task !== undefined) {
+        this.w.submit([
+          fault.from % 2 === 1
+            ? { kind: "task.delete", task }
+            : { kind: "task.patch", task, set: { summary: `Fault ${String((this.n += 1))}` } },
+        ]);
+      }
+      const what = fault.what;
+      end = faultState(this.w.state, (k) => (k >= fault.from ? what : "whole"));
+    }
+    this.faulted = true;
+    try {
+      await this.act(async () => {
+        for (let i = 0; i < steps && this.current.pending().dirty; i += 1) {
+          await this.current.step();
+        }
+      });
+    } finally {
+      end?.();
+      this.noticeFails = false;
+      this.faulted = false;
+    }
+    await this.restart(null);
+  }
+
+  async run(
+    steps: number,
+    at: Kill,
+    during: During,
+    leftover = false,
+    hold: number | null = null,
+  ): Promise<void> {
+    // A file held open stays where it is: a folder above it cannot be swapped then.
+    if (hold !== null && during === "none") this.hold(hold);
     if (during !== "none") {
       const swap = (): void => {
         const target = during === "view-link" ? this.view : join(this.view, "open");
@@ -498,13 +670,42 @@ class Model {
     else this.disturbed.add(task);
   }
 
+  /**
+   * A text of the person's with exactly as many bytes as the file at `abs` holds, other bytes: its
+   * start is the marker (a generated file and a person's text both start in ASCII).
+   */
+  sameSizeText(abs: string): string {
+    const text = readFileSync(abs, "utf8");
+    this.n += 1;
+    const mark = `${MARK}${String(this.n)}: `;
+    const edited = `${mark}${text.slice(mark.length)}`;
+    expect(Buffer.byteLength(edited)).toBe(Buffer.byteLength(text));
+    return edited;
+  }
+
+  /** An editor's save: the new text beside the file, renamed over it, the person's mode. */
+  editorSave(abs: string, text: string): void {
+    this.forget(abs);
+    const swap = join(dirname(abs), `.${basename(abs)}.swp`);
+    writeFileSync(swap, text);
+    // Windows refuses a rename over a read-only file: the editor makes it writable first.
+    chmodSync(abs, 0o600);
+    move(swap, abs);
+    this.artifacts.set(text, modeOf(abs));
+    seen.editorSaves += 1;
+  }
+
   person(a: Action): void {
     switch (a.kind) {
       case "edit": {
         const file = this.pickFile(a.pick);
         if (file === undefined) return;
         this.disturb(file.task);
-        this.write(file.abs, this.personText());
+        const same = a.how === "same" || a.how === "editor-same";
+        const text = same ? this.sameSizeText(file.abs) : this.personText();
+        if (same) seen.sameSize += 1;
+        if (a.how === "editor" || a.how === "editor-same") this.editorSave(file.abs, text);
+        else this.write(file.abs, text);
         return;
       }
       case "replace": {
@@ -734,6 +935,15 @@ class Model {
       const theirs = text.startsWith(MARK) || this.theirLinks.has(path);
       expect(theirs, `${path} is the person's`).toBe(true);
     }
+    // 6. Every rescue folder there is was told, whatever failed or was killed on the way.
+    if (this.realFolder(rescued) && this.realFolder(this.exchange)) {
+      for (const name of readdirSync(rescued)) {
+        const stem = RESCUE_FOLDER.exec(name)?.[1];
+        if (stem === undefined || !this.realFolder(join(rescued, name))) continue;
+        if (!existsSync(join(rescued, name, "view"))) continue;
+        expect(this.told.has(`exchange/rescued/${stem}`), `${name} was told`).toBe(true);
+      }
+    }
   }
 
   async apply(a: Action): Promise<void> {
@@ -749,7 +959,8 @@ class Model {
         this.commit(a);
         return;
       case "run":
-        await this.run(a.steps, a.killAt, a.during, a.leftover);
+        if (a.fault !== null) await this.faultedRun(a.steps, a.fault);
+        else await this.run(a.steps, a.killAt, a.during, a.leftover, a.hold);
         return;
       case "restart":
         await this.restart(a.killAt);
@@ -798,6 +1009,11 @@ const seen = {
   rescued: 0,
   rests: 0,
   leftovers: 0,
+  sameSize: 0,
+  editorSaves: 0,
+  faults: 0,
+  refused: 0,
+  holds: 0,
 };
 const LEAST = {
   kills: 40,
@@ -808,6 +1024,12 @@ const LEAST = {
   rescued: 100,
   rests: 70,
   leftovers: 3,
+  sameSize: 20,
+  editorSaves: 15,
+  faults: 20,
+  refused: 8,
+  // A file can be held open without sharing only on Windows.
+  holds: process.platform === "win32" ? 10 : -1,
 };
 
 async function run(actions: readonly Action[]): Promise<void> {
@@ -839,11 +1061,11 @@ async function run(actions: readonly Action[]): Promise<void> {
   }
 }
 
-describe("[A1.5.projection.model] commits, a person's acts in the tree and kills at every act, against the projection's invariants", () => {
-  test("no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render", async () => {
+describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at every act and faults in what the projection writes outside the tree, against the projection's invariants", () => {
+  test("no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told", async () => {
     const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
     // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
-    await fc.assert(property, { numRuns: 60, seed: 20261114 });
+    await fc.assert(property, { numRuns: 80, seed: 20261114 });
     for (const [what, least] of Object.entries(LEAST)) {
       expect(seen[what as keyof typeof seen], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(
         least,

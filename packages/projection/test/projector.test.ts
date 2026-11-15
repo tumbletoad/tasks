@@ -12,6 +12,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -233,6 +234,53 @@ describe("[A1.5.projection.rescue] what is not the projection's is never written
     expect(statSync(kept).mode).toBe(mode);
     expect(readFileSync(abs, "utf8")).toContain("Changed after the edit");
     expect(readFileSync(stray, "utf8")).toBe("Not the projection's.\n");
+    checkWatermark(w.dir, w.reader);
+  });
+
+  test("an edit that keeps the file's size, saved in place or by an editor through a temporary file, is the person's: rescued when its task changes, left in place when its task goes, never replaced or removed", async () => {
+    await settled();
+    const [first, second, third] = catalogOf(w.dir);
+    const absOf = (line: { path: string } | undefined): string =>
+      join(w.dir, ...(line?.path ?? "").split("/"));
+    /** The file's text with its start changed: other bytes, the same number of them. */
+    const sameSize = (abs: string, mark: string): string => {
+      const text = readFileSync(abs, "utf8");
+      const edited = `${mark}${text.slice(mark.length)}`;
+      expect(Buffer.byteLength(edited)).toBe(Buffer.byteLength(text));
+      expect(edited).not.toBe(text);
+      return edited;
+    };
+    const a = absOf(first);
+    const editedA = sameSize(a, "Mine:");
+    personWrites(a, editedA);
+    // An editor's save: the new text beside the file, renamed over it (made writable first, as
+    // Windows refuses a rename over a read-only file).
+    const c = absOf(third);
+    const editedC = sameSize(c, "Saved:");
+    const swap = join(w.dir, "open", ".editor-save.swp");
+    writeFileSync(swap, editedC);
+    chmodSync(c, 0o600);
+    renameSync(swap, c);
+    // A same-size edit of a file whose task is then deleted: a retired file not ours any more.
+    const b = absOf(second);
+    const editedB = sameSize(b, "Kept:");
+    personWrites(b, editedB);
+    for (const line of [first, third]) {
+      w.submit([
+        { kind: "task.patch", task: line?.id ?? "", set: { summary: "Changed after the edit" } },
+      ]);
+    }
+    w.submit([{ kind: "task.delete", task: second?.id ?? "" }]);
+    const projector = w.projector();
+    await projector.start();
+    const reports = await settle(projector);
+    expect(reports.reduce((sum, r) => sum + r.removed, 0)).toBe(0);
+    expect(readFileSync(a, "utf8")).toContain("Changed after the edit");
+    expect(readFileSync(c, "utf8")).toContain("Changed after the edit");
+    expect([...rescuedOf(w).values()].sort()).toEqual([editedA, editedC].sort());
+    // The deleted task's file is the person's now: it stays where it is, out of the catalogue.
+    expect(readFileSync(b, "utf8")).toBe(editedB);
+    expect(catalogOf(w.dir).map((line) => line.id)).not.toContain(second?.id);
     checkWatermark(w.dir, w.reader);
   });
 
