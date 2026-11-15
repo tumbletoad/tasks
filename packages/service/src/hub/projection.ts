@@ -6,7 +6,7 @@
 // crosses is counts, codes and task IDs, never a task's text.
 //
 // `tasks view rebuild` asks the worker for a full reconciliation (rebuild): the answer is what the
-// reconciliation found, once it ran before the worker's next batch.
+// reconciliation found, as soon as it ran (before the worker's next batch), whatever that batch\n// does next.
 //
 // Stopping asks the worker to end after the batch in progress, and stops the thread when it has
 // not ended within the bound: a batch cut off is a kill, which the next start recovers from
@@ -41,6 +41,7 @@ export type ProjectionMessage =
     }
   | { readonly kind: "started"; readonly report: StartReport }
   | { readonly kind: "step"; readonly report: StepReport; readonly ms: number }
+  | { readonly kind: "reconciled"; readonly reconciled: Reconciled }
   | { readonly kind: "error"; readonly code: string };
 
 /** This thread to the worker. */
@@ -53,6 +54,7 @@ export type ProjectionCommand =
 export interface ProjectionEvents {
   readonly started: (report: StartReport) => void;
   readonly step: (report: StepReport, ms: number) => void;
+  readonly reconciled: (reconciled: Reconciled) => void;
   readonly failed: (code: string | undefined) => void;
 }
 
@@ -122,11 +124,13 @@ export class ProjectionRunner {
           events.started(message.report);
           return;
         case "step":
-          if (message.report.reconciled?.full === true) {
-            const reconciled = message.report.reconciled;
-            for (const waiting of this.#rebuilds.splice(0)) waiting.resolve(reconciled);
-          }
           events.step(message.report, message.ms);
+          return;
+        case "reconciled":
+          if (message.reconciled.full) {
+            for (const waiting of this.#rebuilds.splice(0)) waiting.resolve(message.reconciled);
+          }
+          events.reconciled(message.reconciled);
           return;
         case "error":
           events.failed(message.code);

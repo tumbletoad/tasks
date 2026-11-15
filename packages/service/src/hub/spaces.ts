@@ -979,18 +979,18 @@ export class SpaceManager {
         // The log has it; the UI does not show this one.
       }
     };
-    const reconciled = (r: Reconciled): void => {
-      log.log("space.projection_reconciled", {
-        entry,
-        space: spaceId,
-        full: r.full,
-        checked: r.checked,
-        queued: r.queued,
-        forgotten: r.forgotten,
-      });
-    };
     const state = projectionStateOf(this.#options.settingsDir, spaceId);
     space.projection = new ProjectionRunner({ folder: space.folder, ...state }, writer, {
+      reconciled: (r: Reconciled) => {
+        log.log("space.projection_reconciled", {
+          entry,
+          space: spaceId,
+          full: r.full,
+          checked: r.checked,
+          queued: r.queued,
+          forgotten: r.forgotten,
+        });
+      },
       started: (report) => {
         log.log("space.projection_started", {
           entry,
@@ -999,11 +999,9 @@ export class SpaceManager {
           recovered: report.recovered,
           temps: report.temps,
         });
-        reconciled(report.reconciled);
         rescued(report.rescued, report.rescueStem);
       },
       step: (report, ms) => {
-        if (report.reconciled !== undefined) reconciled(report.reconciled);
         log.log("space.projected", {
           entry,
           space: spaceId,

@@ -75,6 +75,9 @@ try {
             ...(keys === undefined ? {} : { keys }),
           })),
       },
+      onReconciled: (reconciled) => {
+        send({ kind: "reconciled", reconciled });
+      },
     });
     if (asked.rebuild) projector.rebuild();
     await runProjection(projector, {

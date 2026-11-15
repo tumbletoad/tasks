@@ -14,7 +14,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { TrustedState, type Reconciled } from "../src/index.ts";
 import {
   catalogOf,
   checkWatermark,
@@ -119,6 +120,39 @@ describe("[A1.5.projection.reconcile] reconciliation file by file: what is missi
     expect(readFileSync(stray, "utf8")).toBe("---\ngenerated: true\n---\n");
     rmSync(stray);
     checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  test("a rebuild is answered as soon as its reconciliation ran, whatever the batch does next, and one cut off by a failure runs again", async () => {
+    const seen: Reconciled[] = [];
+    let refuse = false;
+    const projector = w.projector({
+      onReconciled: (r) => seen.push(r),
+      writer: {
+        projected: (batch) => Promise.resolve(w.writer.projected(batch)),
+        queueProjection: (keys) =>
+          // The writer refuses the rebuild's queue once, as a busy writer can.
+          keys === undefined && refuse
+            ? ((refuse = false),
+              Promise.reject(Object.assign(new Error("fixture"), { code: "STORAGE_OVERLOADED" })))
+            : Promise.resolve(w.writer.queueProjection(keys)),
+      },
+    });
+    await projector.start();
+    await settle(projector);
+    seen.length = 0;
+    projector.rebuild();
+    refuse = true;
+    await expect(projector.step()).rejects.toMatchObject({ code: "STORAGE_OVERLOADED" });
+    expect(seen.filter((r) => r.full)).toEqual([]);
+    // Still asked for: the next batch runs it, and the batch's own failure does not hide it.
+    vi.spyOn(TrustedState.prototype, "writeRecord").mockImplementationOnce(() => {
+      throw Object.assign(new Error("fixture"), { code: "EPERM" });
+    });
+    await expect(projector.step()).rejects.toMatchObject({ code: "EPERM" });
+    expect(seen.filter((r) => r.full)).toHaveLength(1);
+    vi.restoreAllMocks();
+    await settle(projector);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 

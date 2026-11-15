@@ -87,6 +87,8 @@ export interface ProjectorOptions {
   /** Tests only: runs before every act on disk; throwing is a kill (tree.ts). */
   readonly at?: Hook;
   readonly platform?: NodeJS.Platform;
+  /** Each reconciliation, as soon as it has run: `tasks view rebuild` is answered by a full one. */
+  readonly onReconciled?: (reconciled: Reconciled) => void;
 }
 
 /** What one reconciliation found. Counts only. */
@@ -160,6 +162,7 @@ export class Projector {
   readonly #timeZone: string;
   readonly #now: () => number;
   readonly #batch: number;
+  readonly #onReconciled: ProjectorOptions["onReconciled"];
   #record: TrustedRecord | undefined;
   /** The record on disk is behind this one: it is written before anything else. */
   #unsaved = false;
@@ -176,6 +179,7 @@ export class Projector {
     this.#timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.#now = options.now ?? Date.now;
     this.#batch = options.batch ?? PROJECTION_BATCH;
+    this.#onReconciled = options.onReconciled;
     if (!Number.isSafeInteger(this.#batch) || this.#batch < 1 || this.#batch > PROJECTION_BATCH) {
       throw new ProjectionError("EINVAL", "A batch holds 1 to 200 tasks");
     }
@@ -309,7 +313,9 @@ export class Projector {
       for (const id of missingTasks(this.#conn, [...record.entries.keys()])) queue.add(id);
     }
     queued += await this.#queue([...queue]);
-    return { full, checked, queued, forgotten };
+    const reconciled = { full, checked, queued, forgotten };
+    this.#onReconciled?.(reconciled);
+    return reconciled;
   }
 
   /** Queues `ids` for rendering again through the writer, in parts. Returns how many it queued. */
@@ -379,10 +385,12 @@ export class Projector {
       this.#state.dropJournal();
     }
     let reconciled: Reconciled | undefined;
-    if (this.#reconcile !== "none") {
-      const full = this.#reconcile === "full";
-      this.#reconcile = "none";
-      reconciled = await this.#reconcileNow(full);
+    const asked = this.#reconcile;
+    if (asked !== "none") {
+      reconciled = await this.#reconcileNow(asked === "full");
+      // Only once it ran: one cut off by a failure is tried again, and a rebuild asked for while it
+      // ran stays asked for.
+      if (this.#reconcile === asked) this.#reconcile = "none";
     }
     const read = readBatch(this.#conn, this.#batch);
     const record = this.#rec;
