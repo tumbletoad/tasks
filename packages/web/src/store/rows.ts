@@ -159,6 +159,8 @@ export interface FeedEntity {
 
 export interface FeedEvent {
   readonly seq: number;
+  /** The commit's ID (`op_`): what a toast's Undo names (A5 3.12). */
+  readonly op_id?: string;
   readonly request_id: string;
   readonly actor: { readonly kind: string; readonly label: string };
   readonly kind: string;
@@ -365,6 +367,7 @@ function eventOf(value: unknown): FeedEvent | undefined {
   }
   return {
     seq: value["seq"],
+    ...(isString(value["op_id"]) ? { op_id: value["op_id"] } : {}),
     request_id: isString(value["request_id"]) ? value["request_id"] : "",
     actor: {
       kind: isString(actor["kind"]) ? actor["kind"] : "",
