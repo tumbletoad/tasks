@@ -526,6 +526,28 @@
       "verb": "receipt"
     },
     {
+      "actors": "user",
+      "auto": [
+        "request_id"
+      ],
+      "entry": "history.redo",
+      "flags": [
+        {
+          "field": "commit",
+          "flag": "--commit",
+          "help": "The change you mean: refused unless it is the next one to redo",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [],
+      "summary": "Redo the change you undid last, as long as nobody changed its fields since.",
+      "verb": "redo"
+    },
+    {
       "actors": "agent",
       "auto": [
         "base",
@@ -839,6 +861,36 @@
       "positionals": [],
       "summary": "Orientation: date, autonomy, this session's binding, tasks for a folder and counts.",
       "verb": "status"
+    },
+    {
+      "actors": "user",
+      "auto": [
+        "request_id"
+      ],
+      "entry": "history.undo",
+      "flags": [
+        {
+          "field": "commit",
+          "flag": "--commit",
+          "help": "The change you mean: refused when a newer one of yours stands before it",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "partial",
+          "flag": "--partial",
+          "help": "Undo the fields nobody changed since, and keep the others' changes",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [],
+      "summary": "Undo your newest change in the space, field by field as long as nobody changed it.",
+      "verb": "undo"
     }
   ],
   "version": 1,

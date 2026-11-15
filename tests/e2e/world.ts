@@ -42,6 +42,8 @@ export interface FixtureTask {
   readonly id: string;
   readonly ref: string;
   readonly title: string;
+  /** Its area's ID: the area view lists it (Today lists only what A5 3.4 selects). */
+  readonly area: string;
 }
 
 export interface World {
@@ -104,14 +106,16 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       machine = opened.space.authority.machineId;
       const rows = opened.conn
         .prepare(
-          "SELECT t.id AS id, t.ref AS ref, t.title AS title FROM tasks t JOIN areas a ON a.id = t.area_id " +
+          "SELECT t.id AS id, t.ref AS ref, t.title AS title, t.area_id AS area FROM tasks t " +
+            "JOIN areas a ON a.id = t.area_id " +
             "WHERE t.lifecycle = 'active' AND t.deleted_at IS NULL ORDER BY a.position, t.position LIMIT 2",
         )
-        .all<{ id: string; ref: number; title: string }>();
+        .all<{ id: string; ref: number; title: string; area: string }>();
       const [first, second] = rows.map((row) => ({
         id: row.id,
         ref: `${opened.space.refPrefix}-${String(row.ref)}`,
         title: row.title,
+        area: row.area,
       }));
       if (first === undefined || second === undefined) {
         throw new Error("the fixture has fewer than two tasks in an area");

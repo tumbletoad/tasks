@@ -1,6 +1,7 @@
-// The content of each route until its own step builds it (A7 3.12): the skeleton's grouped list,
-// filtered to what the view holds, and a plain line for a view that has no list yet. No view has a
-// heading (U3); the sidebar's active item and the tab's title name it.
+// The content of each route: Today's sections (views/Today.tsx), and for the views whose own step
+// is still to come (A7 3.12) the grouped list filtered to what the view holds, or a plain line for
+// a view that has no list yet. No view has a heading (U3); the sidebar's active item and the tab's
+// title name it.
 //
 // A view holds its expanded task in the URL (`?task=<ref>`, A5 3.3): expanding a row writes it
 // there without a new history entry, collapsing removes it, and a reload, Back and Forward expand
@@ -19,6 +20,7 @@ import { hostOf, type Host } from "./host.ts";
 import css from "./pages.module.css";
 import { areaFilter, LANDING, VIEW_LABEL, viewFilter, type View } from "./views.ts";
 import { TaskList } from "../views/TaskList.tsx";
+import { TodayPage } from "../views/Today.tsx";
 import { classes } from "./css.ts";
 
 const styles = classes(css, ["line"]);
@@ -50,20 +52,44 @@ function useExpandInUrl(): (task: TaskRow | undefined, gone?: boolean) => void {
   );
 }
 
+/** Writes Today's chosen day into the URL (`?day=`), or takes it out: a step Back undoes. */
+function useDayInUrl(): (day: string | undefined) => void {
+  const navigate = useNavigate();
+  return useCallback(
+    (day: string | undefined) => {
+      void navigate({
+        to: ".",
+        search: (prev: Record<string, unknown>) => {
+          const rest = Object.fromEntries(Object.entries(prev).filter(([key]) => key !== "day"));
+          return day === undefined ? rest : { ...rest, day };
+        },
+      });
+    },
+    [navigate],
+  );
+}
+
 /** Completed lists nothing yet (M5.05): it holds only the task a link named. */
 const NONE = () => false;
 
 export function ViewPage({
   view,
   task,
+  day,
 }: {
   readonly view: View;
   readonly task?: string | undefined;
+  /** Today's chosen day in the strip (`?day=`). */
+  readonly day?: string | undefined;
 }) {
   const t = useT();
   useTitle(t(VIEW_LABEL[view]));
   const onExpand = useExpandInUrl();
+  const onDay = useDayInUrl();
   const filter = useMemo(() => viewFilter(view), [view]);
+  if (view === "today") {
+    return <TodayPage task={task} day={day} onExpand={onExpand} onDay={onDay} />;
+  }
   if (view === "completed" && task !== undefined) {
     return (
       <TaskList
@@ -83,7 +109,7 @@ export function ViewPage({
       key={view}
       view={view}
       filter={filter}
-      empty={t(view === "today" ? "view.nothingOpen" : "view.empty")}
+      empty={t("view.empty")}
       expand={task}
       onExpand={onExpand}
     />

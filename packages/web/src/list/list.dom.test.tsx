@@ -387,6 +387,35 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
     expect(groupOf(moved.id)).toBe("Home");
   });
 
+  test("a focused row that an update re-sorts inside its group stays where it was until focus leaves", () => {
+    const tasks = [task(1), task(2), task(3)];
+    mount(
+      <>
+        <button type="button" id="outside" />
+        <TaskList view="open" filter={OPEN} empty="" />
+      </>,
+    );
+    apply(snapshot(tasks));
+    const title = titleOf(tasks[0]?.id ?? "");
+    act(() => {
+      title?.focus();
+    });
+    // An agent moves the first task to the end of the space's order.
+    apply(batch([{ ...task(1), position: "p99999", version: 2 }], ["position"], "agent"));
+    expect(rowsInDom().map((r) => r.dataset["key"])).toEqual(tasks.map((t) => t.id));
+    expect(document.activeElement).toBe(title);
+    // Each row still announces its place as shown.
+    expect(rowsInDom().map((r) => r.getAttribute("aria-posinset"))).toEqual(["1", "2", "3"]);
+    act(() => {
+      container.querySelector<HTMLElement>("#outside")?.focus();
+    });
+    expect(rowsInDom().map((r) => r.dataset["key"])).toEqual([
+      tasks[1]?.id,
+      tasks[2]?.id,
+      tasks[0]?.id,
+    ]);
+  });
+
   test("the last row of a view stays while it holds focus; the empty line follows when focus leaves", () => {
     const tasks = [task(1)];
     mount(

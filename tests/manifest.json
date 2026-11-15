@@ -475,7 +475,7 @@
     },
     {
       "id": "A1.5.search.index",
-      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
+      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, an undo and a redo write the documents their inversions reach, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
       "source": "A1 3.12, A1 5, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
@@ -1370,6 +1370,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.environment.doctor",
+      "title": "Doctor's check of the agent's environment: without take nothing runs and the last snapshot attempt is reported with the age of the one in use; with take (doctor --live) a snapshot is taken now, fresh or not, kept when it succeeds, a failure keeps the previous one, and one snapshot runs at a time; Windows reports whether the registry was read",
+      "source": "A4 3.8, A3 3.14, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.environment.login-shell",
       "title": "via_login_shell takes a fresh login-shell snapshot in the task's folder before the launch, and the agent still starts directly from the shim with that environment after the folder check and A4's scrub: no profile runs between them, so it can change neither the folder nor a scrubbed or home variable; Windows has none",
       "source": "A4 3.8, A7 3.9 M2.09",
@@ -1390,6 +1398,38 @@
       "title": "place.clear and task.context_append through the write path: a clear tombstones the owner's place on the request's machine with one change row and needs a base, a place bound after the base conflicts, nothing bound is unchanged, a place is never bound and cleared in one request; an append needs no base, two appends both land after a blank line, a stale replace conflicts with them, and the total stays within 64 KiB",
       "source": "A1 3.5, A1 3.6, A1 3.15, A7 3.9 M2.03",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.undo-redo",
+      "title": "Undo and redo through the write path, fixed scenarios: two edits of one field, then two undos and two redos, match each step; overlapping field sets (C1 summary and due, C2 due and status) undo C2, then C1, then redo both; repeated cycles keep passing while fv only grows and a stale base still conflicts; a foreign edit gives UNDO_CONFLICT with the value written, the value now and who changed it when, and a partial undo leaves it and lists it; a create is undone by a tombstone that the creating commit's own rows pass and another actor's child row blocks, and redone by a restore that a taken place refuses; a wrap-up's learnings are undone and redone, and an undo never leaves a task more than 20 live learnings; one stack per human, a new undoable action ends the redo, the named commit, nothing to undo or redo, the undo floor, and retries replay",
+      "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.property",
+      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks; undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
+      "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.dedupe",
+      "title": "Undo and redo meet dedupe by source key: an undo of a request whose draft matched takes back its entries and linked sources on the match and never the match; an undone create holds no key; a redo that would take a key's source row is a conflict naming that row; a redo that would make a second active holder of a key, decided on the state it makes, is a conflict that names the standing holder's link (a shared source in either order of two humans' redos, and a source the redo brings back), or each holder's lifecycle when the redo brings back every holder itself, and writes nothing; a key that was double before is not the restore's doing; a partial inversion leaves out a broken key's restores and applies the rest; a finished holder never blocks; an undo or redo never shares a request with a create, and dedupe's start state sees what they left; an undone check-off is no finish and a finish set back keeps its own instant, an archived task's by its provenance; a retry after an undo replays; a link an undo removed comes back only with its link version",
+      "source": "A1 3.5, A1 3.6, A1 3.8, A1 3.10, A1 3.10.1, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.history",
+      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, UNDO_CONFLICT as conflict with the value written, the value now and the value undo restores, a partial undo's unresolved fields, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and tasks undo and tasks redo on the CLI",
+      "source": "A1 3.10.1, A3 3.2.3, A3 3.5, A5 3.12, A7 3.10 M3.02",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -2026,6 +2066,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.free-instance",
+      "title": "A detected home whose proposed instance another home's live row holds is offered a free one (<id>-2), which its entry and row carry and its record keeps; an instance machine.toml names that another home holds is kept and its refusal is named instance_taken, with the home left as it was; an entry added by hand is left and the preview says how to take it out with the app's own mcp remove",
+      "source": "A3 3.7.8, A3 3.13.1, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.json-edit",
       "title": "One entry spliced into and out of a JSON file (two spaces, four, tabs, CRLF, one line, an empty or a missing servers table): the document gains exactly the entry and the removal gives back every byte; not JSON, servers that are not an object or an entry already there are refused",
       "source": "A3 3.13.1, A3 3.13.3, A7 3.11 M4.05",
@@ -2061,6 +2109,30 @@
       "id": "A3.3.14.doctor.agents",
       "title": "tasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print and approve-tools write nothing",
       "source": "A3 3.14, A3 3.13.1, A3 3.13.7, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.launch",
+      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
+      "source": "A3 3.14, A4 3.4.1, A4 3.7, A4 3.8, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.sessions",
+      "title": "tasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts open bridge connections, the shared ones by instance and the dropped records through the binding service's public surface",
+      "source": "A3 3.14, A3 3.7.5, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.manual",
+      "title": "tasks doctor's manual row: an entry of the server's name that setup did not write warns, one without --instance for what it reaches (the default space only), one with an instance for its refusal, each with the app's own mcp remove and no path",
+      "source": "A3 3.14, A3 3.7.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2229,6 +2301,14 @@
       "id": "A2.3.12.1.build.runtime-gate",
       "title": "The runtime gate passes on the pinned Node 26.13.1 with SQLite 3.54.1 (FTS5, JSON, STRICT, backup API) started with --report-exclude-env, and fails on another Node or SQLite, without the launcher flag, or with a SQLite that lacks FTS5",
       "source": "A2 3.12.1, A7 3.7 R01, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.1.runtime.safe-exit",
+      "title": "The pinned runtime hands Sparkplug batches to a V8 worker thread and compiles hot functions with Maglev, and with safe-exit.ts loaded first it does neither; every flag it sets is known to the runtime; every script that loads the product's code and ends through process.exit, found through the import graph of packages/, tests/ and scripts/, imports safe-exit.ts before any other module",
+      "source": "A2 3.12.1",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2923,7 +3003,7 @@
     },
     {
       "id": "A5.3.22.web.list-keys",
-      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, or is the view's last row, and a held row stays the current row for the tab order and the keys",
+      "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, is re-sorted inside its list, or is the view's last row, and a held row stays the current row for the tab order and the keys",
       "source": "A5 3.22, A5 3.21, A5 3.15, A7 3.12 M5.03",
       "owner": "M5",
       "kind": "ci",
@@ -3085,6 +3165,38 @@
       "id": "A7.3.12.m5-03.e2e.rows",
       "title": "In Chromium and Firefox against the real service: rows show A5 3.6's columns and chips, the star writes through the store and shows at once, the title and summary expand while the controls do not, nothing scrolls horizontally at 390 px, and screenshots in Sumi and Washi at 1,440 and 390 px with long titles, every chip and tiles in several states",
       "source": "A5 3.6, A5 3.19, A5 3.22, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today",
+      "title": "Today's sections and strip as data: A5 3.4's fixture example, Focus's order (late by oldest due, due today, then priority, due date and age), This week by the day that selects it with a waiting task's follow-up day, Next's rule, order and limit, the strip's day narrowing Focus and This week only, Changes (agents' changes off the sections above, newest first, five at most, seven days), and the expanded task held at its place in its section",
+      "source": "A5 3.4, A5 3.14, A5 3.15, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today-disjoint",
+      "title": "Property test over generated clocks (time zones, instants around midnights and daylight-saving changes), tasks of every lifecycle, changes, days, Next limits and held tasks: no task is in two sections, each task is where an oracle written from the specification puts it (narrowed by the chosen day), Next is full whenever it has candidates, the strip's marks are exactly the Focus and This week tasks' due and planned days, and holding the expanded task keeps the sections disjoint and the task at its place",
+      "source": "A5 3.4, A5 5, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.4.web.today-page",
+      "title": "Today in a DOM with the real live store: the strip shows today's date once with one cell in the tab order, a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, the chosen day narrows Focus and This week and Escape clears it, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-04.e2e.today",
+      "title": "In Chromium and Firefox against the real service on a fixed Thursday: the strip and Focus, This week and Next with no task twice, today's date once on the screen, a day chosen in the strip by keyboard narrows Focus and This week and Escape clears it, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report",
+      "source": "A5 3.4, A5 3.3, A5 3.15, A5 3.19, A5 3.22, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

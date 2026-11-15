@@ -4,6 +4,10 @@
 // The product tests always run. The M0 lab self-tests (spikes/) run serially, and only when lab
 // code or a file they depend on changed, or when asked: pnpm verify --lab, or TASKS_VERIFY_LAB=1.
 // The rule is in lab-tests.ts (A7 3.3).
+//
+// safe-exit comes first: this script loads the product's generators and ends through
+// `process.exit` (A2 3.12.1).
+import "../packages/bridge/src/safe-exit.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkGenerated, generators } from "./generated.ts";

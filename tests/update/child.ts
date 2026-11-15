@@ -9,6 +9,8 @@
 // The service is reached through the service install's context (M1.12) with stand-in tools: no
 // user manager, no Explorer, and a start that runs the install's stable command `serve` detached,
 // as a manual start does. So no test restarts a real service or touches a real autostart place.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "../../packages/bridge/src/safe-exit.ts";
 import { spawn } from "node:child_process";
 import { existsSync, writeSync } from "node:fs";
 import { join } from "node:path";

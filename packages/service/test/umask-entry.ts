@@ -23,6 +23,8 @@
 // Prints one JSON line: every file and folder under the product's own folders with its type and
 // mode, and what the second start could do. A first start the service refuses (a umask that takes
 // away the person's own bits) prints the refusal and whether anything was made.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "@tasks/bridge/safe-exit";
 import { spawn } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";

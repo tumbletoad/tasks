@@ -45,6 +45,22 @@
   padding-top: 8px;
 }
 
+/*
+ * Today's sections (A5 3.4, 3.20 `t-section`): 12.5 px, muted, weight 500, aligned with the
+ * titles. 28 px above it, 6 px below: never shorter than the list's estimate (List.tsx).
+ */
+.head[data-kind="section"] {
+  padding: 28px 0 6px 40px;
+  font-size: 0.78125rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+  color: var(--k-muted);
+}
+
+.head[data-kind="section"][data-first="true"] {
+  padding-top: 8px;
+}
+
 .dot {
   flex: none;
   width: 8px;

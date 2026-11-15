@@ -386,6 +386,37 @@ export class LaunchService {
     }
   }
 
+  /**
+   * `doctor/launch` (A3 3.14; A4 3.7, 3.8): whether terminals start in scopes, asked through the
+   * very probe and environment a terminal launch uses (Linux only, else null), and how the agent's
+   * environment stands (null for a source doctor does not check): with `take` (`doctor --live`)
+   * the login shell's snapshot is taken now. Words and times only.
+   */
+  async doctor(take: boolean): Promise<JsonObject> {
+    const { platform } = this.#options;
+    let scopes: boolean | null = null;
+    if (platform === "linux") {
+      const session = await this.environment.session().catch(() => ({}));
+      scopes = await this.terminals.scopes(
+        terminalEnvironment(this.#options.env, session, platform),
+      );
+    }
+    const checked = await this.environment.check?.(take).catch(() => undefined);
+    const time = (at: number | undefined) => (at === undefined ? null : new Date(at).toISOString());
+    const environment: JsonObject | null =
+      checked === undefined
+        ? null
+        : checked.kind === "registry"
+          ? { kind: "registry", read: checked.read }
+          : {
+              kind: "snapshot",
+              outcome: checked.outcome ?? null,
+              attempted_at: time(checked.attemptedAt),
+              taken_at: time(checked.takenAt),
+            };
+    return { scopes, environment };
+  }
+
   /** Whether a terminal route can start here: a product command, or a test's terminal. */
   #terminalReady(): boolean {
     return this.#options.terminal !== undefined || this.terminals.ready();
