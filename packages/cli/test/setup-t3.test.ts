@@ -125,7 +125,8 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
       });
       expect(browsed).toHaveLength(0);
 
-      // Not paired: the instance with a `t3` command opens through the CLI (M6.10).
+      // Not paired: no route, also for the instance with a `t3` command, whose command line has no
+      // project list (A4 3.4.1): each says how to pair.
       expect(JSON.parse((await run(["setup", "t3", "--status", "--json"], false)).stdout)).toEqual({
         state: "not_paired",
         message: "Pair TT Tasks with T3 Code first: tasks setup t3",
@@ -133,9 +134,9 @@ describe("[A4.3.4.1.t3.setup] tasks setup t3 through the service", () => {
         instances: [
           {
             id: "t3-codex",
-            route: "t3-cli",
-            message:
-              "Not paired: opens through T3's command line, which sends the brief. Pair for an unsent draft: tasks setup t3",
+            route: null,
+            reason: "not_paired",
+            message: "Pair TT Tasks with T3 Code first: tasks setup t3",
           },
           {
             id: "t3-plain",

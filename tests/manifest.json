@@ -2227,7 +2227,7 @@
     },
     {
       "id": "A4.5.t3.cli-route",
-      "title": "The T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
+      "title": "With T3's command line as it is (no project list) only the paired T3 route opens a task and an unpaired instance names tasks setup t3; turned on, the T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
       "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A7 3.13 M6.10",
       "owner": "M6",
       "kind": "ci",
@@ -2317,6 +2317,14 @@
       "id": "A3.3.13.setup.apps",
       "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.6.t3-settings",
+      "title": "T3's provider instances are read as T3 writes them: driver, config.homePath with ~ expanded, a home variable in the instance's environment (no other environment value read), enabled false, T3's default instances the file does not list, the legacy providers key, other drivers passed over, unknown drivers and entries of another form skipped with their reason; a Codex shadow home is recognised by its config.toml linking into another home; a home's instance ID comes from its folder with - or _",
+      "source": "A3 3.13.6, A4 3.2",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
