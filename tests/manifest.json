@@ -2227,7 +2227,7 @@
     },
     {
       "id": "A4.5.t3.cli-route",
-      "title": "The T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
+      "title": "With T3's command line as it is (no project list) only the paired T3 route opens a task and an unpaired instance names tasks setup t3; turned on, the T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
       "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A7 3.13 M6.10",
       "owner": "M6",
       "kind": "ci",

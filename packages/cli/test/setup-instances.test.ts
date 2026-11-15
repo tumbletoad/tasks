@@ -281,7 +281,10 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       expect(text.stdout).toContain("change t3_model in machine.toml");
 
       // One of them, applied as the preview showed it.
-      const one = await run(["setup", "instances", "--instance", "t3-claude-personal", "--json"], false);
+      const one = await run(
+        ["setup", "instances", "--instance", "t3-claude-personal", "--json"],
+        false,
+      );
       const planned = JSON.parse(one.stdout) as Preview;
       expect(planned.add.map((a) => a.id)).toEqual(["t3-claude-personal"]);
       const applied = await run((planned.apply ?? []).slice(1));
@@ -292,7 +295,13 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       // Its provider instance is configured now, so it is not proposed again.
       expect((await preview()).add.map((a) => a.id)).not.toContain("t3-claude-personal");
 
-      const removed = await run(["setup", "instances", "--remove", "--instance", "t3-claude-personal"]);
+      const removed = await run([
+        "setup",
+        "instances",
+        "--remove",
+        "--instance",
+        "t3-claude-personal",
+      ]);
       expect(removed.code, removed.stdout).toBe(0);
       expect(readFileSync(machineToml(), "utf8")).toBe("");
       // T3's settings were only read.

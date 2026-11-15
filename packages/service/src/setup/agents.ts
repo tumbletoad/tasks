@@ -414,11 +414,12 @@ function hostsOf(
 }
 
 /**
- * Every agent home: the homes detection found (A4 3.2: `.claude`, `.claude-<suffix>`, `.codex`,
- * `.codex-<suffix>` and the home a variable names), the homes of machine.toml's instances that are
- * folders, the homes T3's provider instances use, and Claude Desktop's configuration folders. A
- * home an instance names takes the instance's ID and account; any other takes detection's
- * proposal (T3's from its folder or provider key, Claude Desktop's from the catalogue).
+ * Every agent home: the homes detection found (A4 3.2: `.claude`, `.claude-<suffix>` or
+ * `.claude_<suffix>`, the same for `.codex`, and the home a variable names), the homes of
+ * machine.toml's instances that are folders, the homes T3's enabled provider instances use, and
+ * Claude Desktop's configuration folders. A home an instance names takes the instance's ID and
+ * account; any other takes detection's proposal (T3's from its folder or provider key, Claude
+ * Desktop's from the catalogue).
  *
  * A Codex shadow home (its `config.toml` a link into another home, hosts.ts) is never a home of its
  * own: the home it links to is offered in its place, with the shadow named on it, and its ID comes
@@ -448,7 +449,10 @@ export async function agentHomes(
       shadows.push({ shared, shadow: p.resolve(given) });
       path = shared;
       found_ = samePath(platform, shared, p.join(userHome, ".codex"));
-      id = t3InstanceId({ app: "codex", provider: givenId, home: shared, isDefault: found_ }, platform);
+      id = t3InstanceId(
+        { app: "codex", provider: givenId, home: shared, isDefault: found_ },
+        platform,
+      );
       account = proposedAccount(id === "codex" ? "" : id.replace(/^codex-/u, ""));
     }
     if (homes.some((h) => h.app === app && samePath(platform, h.home, path))) return;

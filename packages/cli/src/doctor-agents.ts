@@ -670,10 +670,11 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
     );
   }
   parts.push(...notes);
-  parts.push(...elsewhere.map((t3) =>
-    t3.isDefault
-      ? `T3 Code's provider instance ${label(t3)} uses Claude Code's default home, so Claude Code reads the user's .claude.json, while machine.toml names that folder by its variable and setup's entry is inside it: set the instance's home path in T3 Code's settings to that folder.`
-      : `T3 Code's provider instance ${label(t3)} names Claude Code's default folder as its home path, so Claude Code reads the configuration inside that folder, where setup wrote no entry: in T3 Code's settings, clear the instance's home path so it uses the default home as the CLI does.`,
+  parts.push(
+    ...elsewhere.map((t3) =>
+      t3.isDefault
+        ? `T3 Code's provider instance ${label(t3)} uses Claude Code's default home, so Claude Code reads the user's .claude.json, while machine.toml names that folder by its variable and setup's entry is inside it: set the instance's home path in T3 Code's settings to that folder.`
+        : `T3 Code's provider instance ${label(t3)} names Claude Code's default folder as its home path, so Claude Code reads the configuration inside that folder, where setup wrote no entry: in T3 Code's settings, clear the instance's home path so it uses the default home as the CLI does.`,
     ),
   );
   if (gaps.length > 0) {

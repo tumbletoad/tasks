@@ -234,7 +234,8 @@ class Skip extends Error {
 function expandHome(input: HostsInput, value: string): string {
   const p = pathOf(input.platform);
   if (value === "~") return input.userHome;
-  if (value.startsWith("~/") || value.startsWith("~\\")) return p.join(input.userHome, value.slice(2));
+  if (value.startsWith("~/") || value.startsWith("~\\"))
+    return p.join(input.userHome, value.slice(2));
   return value;
 }
 
@@ -441,8 +442,11 @@ export function t3Proposals(
     proposals.push({
       id: t3ProposalId(instance),
       target: "t3",
-      // A label holds at most 40 characters (A4 3.2).
-      label: [...name].slice(0, 40).join("").trim(),
+      // A label holds at most 40 characters (A4 3.2), never half a surrogate pair.
+      label: name
+        .slice(0, 40)
+        .replace(/[\uD800-\uDBFF]$/u, "")
+        .trim(),
       account: homeAccount(instance.home, platform),
       source: "app",
       ...(base.exec === undefined ? {} : { exec: base.exec }),

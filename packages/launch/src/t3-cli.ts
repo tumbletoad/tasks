@@ -1,5 +1,6 @@
 // T3 Code's fallback route, `t3-cli` (A4 3.4.1 "Fallback route", A7 3.13 M6.10): when Tasks is not
-// paired with T3, a task opens through T3's own command line. It serves exact project roots only:
+// paired with T3, a task opens through T3's own command line. It is off (T3_CLI_ROUTE below): T3's
+// command line has no `project list`, which the route needs. It serves exact project roots only:
 //
 //   t3 project list --json                                   which projects T3 has (assumed, L06)
 //   t3 project add <P>                                        Register, after the person said yes
