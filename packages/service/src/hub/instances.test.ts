@@ -82,7 +82,8 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
     expect(existsSync(toml)).toBe(false);
     expect(existsSync(join(h.stateDir, INSTANCES_RECORD))).toBe(false);
 
-    writeFileSync(toml, "# mine\n[http]\nport = 7713\n");
+    // As the product makes it: 0600, whatever the umask (A2 3.2.2 rule 5).
+    writeFileSync(toml, "# mine\n[http]\nport = 7713\n", { mode: 0o600 });
     expect(await add({ entries: [codex()] }, "cli-interactive")).toEqual({ added: ["codex"] });
     expect(h.live.map((i) => i.id)).toEqual(["codex"]);
     expect(readFileSync(toml, "utf8")).toMatch(
