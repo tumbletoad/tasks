@@ -46,7 +46,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
     expect(total).toBe(TASKS.length - 1);
   });
 
-  test("Today has sections, not a filter; Completed and Agents have no list yet", () => {
+  test("Today has sections, not a filter; Completed and Agents read what the live rows do not hold", () => {
     expect(viewFilter("today")).toBeUndefined();
     expect(viewFilter("completed")).toBeUndefined();
     expect(viewFilter("agents")).toBeUndefined();

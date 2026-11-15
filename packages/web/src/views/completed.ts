@@ -35,6 +35,8 @@ const MAX_MONTHS = 1_200;
 
 /** Completed tasks whose outcome is still missing: the checked-off list (A1, A5 3.5). */
 export const CHECKED_OFF_QUERY = "is:unwrapped";
+/** Every other finished task: the month windows. */
+const NOT_CHECKED_OFF = `-${CHECKED_OFF_QUERY}`;
 
 const MONTH = /^(\d{4})-(\d{2})$/;
 
@@ -63,12 +65,14 @@ export function monthAfter(month: string): string {
  * page's today (another clock) still shows.
  */
 export function monthQuery(month: string, open: boolean): string {
-  const from = `-is:unwrapped completed>=${month}-01`;
-  return open ? from : `${from} completed<${monthAfter(month)}-01`;
+  const terms = [NOT_CHECKED_OFF, `completed>=${month}-01`];
+  if (!open) terms.push(`completed<${monthAfter(month)}-01`);
+  return terms.join(" ");
 }
 
 /** Whether a finished task was completed before `month` began, outside the checked-off list. */
-export const earlierQuery = (month: string): string => `-is:unwrapped completed<${month}-01`;
+export const earlierQuery = (month: string): string =>
+  [NOT_CHECKED_OFF, `completed<${month}-01`].join(" ");
 
 /** Where the next page starts: a month, and whether it is the newest (open-ended) one. */
 interface Cursor {

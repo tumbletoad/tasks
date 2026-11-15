@@ -220,7 +220,7 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
     expect(say(unknown.age?.tip)).toBe("Created Tuesday 4 August");
   });
 
-  test("Waiting under area headings (until M5.05 groups it by person): the person's chip stays", () => {
+  test("Waiting without person labels: the person's chip stays", () => {
     const photos = task({ title: "New product photos", status: "waiting", waiting_on: "Tom Haas" });
     const model = renderRow(row(photos, BRIGHTSIDE), ctx("waiting", "area"));
     expect(say(model.chip?.text)).toBe("Tom Haas");
@@ -256,6 +256,57 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
   test("an area view without project labels names the project on the summary line, without a dot", () => {
     const r = renderRow(row(task({ title: "x" }), LUMEN), ctx("area", "flat"));
     expect(r.prefix).toEqual({ text: "Lumen Health" });
+  });
+
+  test("Inbox and Review: the view's move out of it is a visible button on the row", () => {
+    const capture = task({ title: "Call the plumber", inbox: true });
+    expect(renderRow(row(capture), ctx("inbox", "flat")).move).toEqual({
+      kind: "triage",
+      text: { id: "fact.moveToOpen" },
+    });
+    const docs = task({ title: "Check the docs", status: "review" });
+    const back = renderRow(row(docs, LUMEN), ctx("review", "flat")).move;
+    expect([back?.kind, say(back?.text)]).toEqual(["reopen", "Back to open"]);
+    // Elsewhere, and on a finished task, no such button.
+    expect(renderRow(row(docs, LUMEN), ctx("area", "project")).move).toBeUndefined();
+    expect(renderRow(row(capture), ctx("today", "flat")).move).toBeUndefined();
+    const done = task({ title: "Done", inbox: true, lifecycle: "completed" });
+    expect(renderRow(row(done), ctx("inbox", "flat")).move).toBeUndefined();
+  });
+
+  test("Completed: the completion date in the due column, no age and no priority", () => {
+    const lease = task({
+      title: "Sign the lease",
+      lifecycle: "completed",
+      priority: 1,
+      due_date: "2026-11-01",
+      created_at: daysAgo(40),
+      completed_at: Date.UTC(2026, 10, 10, 9),
+    });
+    const r = read(renderRow(row(lease, LUMEN), ctx("completed", "flat")));
+    expect(r).toMatchObject({
+      due: "10 Nov",
+      tone: "done",
+      age: undefined,
+      priority: undefined,
+      prefix: "Lumen Health",
+    });
+    expect(r.description).toEqual(["Lumen Health", "completed Tuesday 10 November"]);
+    // A row read from search carries the day only.
+    const read2 = renderRow(
+      row(task({ title: "x", lifecycle: "completed", completed_on: "2026-11-12" })),
+      ctx("completed", "flat"),
+    );
+    expect([say(read2.due?.text), say(read2.due?.tip)]).toEqual([
+      "Today",
+      "Completed Thursday 12 November",
+    ]);
+  });
+
+  test("Agents: mixed areas and statuses, so the prefix and the chips show", () => {
+    const docs = task({ title: "Check the docs", status: "review" });
+    const r = read(renderRow(row(docs, LUMEN), ctx("agents", "flat")));
+    expect(r).toMatchObject({ chip: "Review", prefix: "Lumen Health", dot: 1 });
   });
 });
 

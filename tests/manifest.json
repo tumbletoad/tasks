@@ -2938,6 +2938,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.5.web.view-groups",
+      "title": "Each view's grouping as data: Inbox and Review one flat list newest first with no heading item, Waiting one group per person by name (one person whatever the case and spaces) with the follow-up day first and then the tasks that name no one, Open and Backlog by area and project, the area view by project with no area heading and backlog last, and a project's view with no label",
+      "source": "A5 3.5, A5 3.3, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.5.web.counts-add-up",
+      "title": "Property: over random tasks each task is in at most one counted view, each view lists exactly its sidebar count and each task once, the counts add up to the tasks some view holds, and no group heading names its view",
+      "source": "A5 3.5, A5 3.3, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.5.web.completed",
+      "title": "Completed's page source over a fake search: the checked-off list first, then whole month windows newest first in completion order whatever the search's order, empty months stepped over, a page of whole windows with a cursor that goes on from the next month, and the groups Checked off then each month (with its year when it is not this year), the expanded task the rows do not hold at the top of its group",
+      "source": "A5 3.5, A5 3.15, A3 3.9, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.15.web.live",
       "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped), never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
       "source": "A5 3.15, A1 3.7, A7 3.9 M2.13",
@@ -3083,7 +3107,7 @@
     },
     {
       "id": "A5.3.3.web.views",
-      "title": "The sidebar's views: Inbox and the status views are disjoint and their counts add up, Today lists every open task until M5.04, Completed and Agents have no list yet, and an area or project view holds every status of its area or project",
+      "title": "The sidebar's views: Inbox and the status views are disjoint and their counts add up, Today has sections rather than a filter, Completed and Agents read what the live rows do not hold, and an area or project view holds every status of its area or project",
       "source": "A5 3.3, A5 3.5, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",
@@ -3389,6 +3413,22 @@
       "id": "A7.3.12.m5-08.e2e.screens",
       "title": "In Chromium and Firefox against the real service: screenshots of the editable facts with a toast and the date popover in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation on the page in either theme, and nothing scrolls horizontally at 390 px",
       "source": "A5 3.7, A5 3.11, A5 3.19, A5 3.22, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-05.e2e.views",
+      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open and Review's Back to open move the task with an undo toast, the area view groups by project, and a task completed while Completed is open appears in its Checked off group",
+      "source": "A5 3.3, A5 3.5, A5 3.15, A5 3.16, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-05.e2e.screens",
+      "title": "In Chromium and Firefox against the real service: screenshots of Waiting, Completed and an area view in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation on any of them in either theme, and nothing scrolls horizontally at 390 px",
+      "source": "A5 3.5, A5 3.19, A5 3.22, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
