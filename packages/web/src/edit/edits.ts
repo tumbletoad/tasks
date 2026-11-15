@@ -23,12 +23,27 @@
 // each other, and a change someone else made to any of those fields meanwhile still does.
 // Writes go through the live store, so each shows at once as an overlay and settles only through
 // the feed (A5 3.15 item 4).
+//
+// The queue waits for outcomes, never for ever: a request that gets no answer is asked about by
+// its own ID, and what waits behind a request whose outcome cannot be learned stays with the
+// person as not saved, never sent out of order (calls.ts, A5 3.11 "No request holds the queue").
 import type { Client } from "@tasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
 import type { Change as FeedChange } from "../store/core.ts";
 import type { Overlay } from "../store/pending.ts";
 import type { TaskRow } from "../store/rows.ts";
 import type { Changes, Sent } from "../store/store.ts";
+import {
+  allOf,
+  ASK_MS,
+  Call,
+  NotSent,
+  Unanswered,
+  type Decision,
+  type Found,
+  type Timers,
+  type Turn,
+} from "./calls.ts";
 import { joinChanges, restoreChange, type Change, type Field } from "./change.ts";
 
 /** How long a checked-off row stays where it is (A5 3.12). */
@@ -85,7 +100,7 @@ export interface Remote {
 }
 
 export interface EditDeps {
-  readonly client: Pick<Client, "task" | "history">;
+  readonly client: Pick<Client, "task" | "history" | "receipt">;
   readonly write: <T>(send: (request: string) => Promise<T>, overlay?: Overlay) => Sent<T>;
   /** The applied cursor as an `as_of`: what the rows on screen show. */
   readonly asOf: () => string | undefined;
@@ -95,10 +110,56 @@ export interface EditDeps {
   /** The live row of a task, by its reference (a conflict names tasks by reference). */
   readonly rowOf: (ref: string) => TaskRow | undefined;
   readonly newRequest: () => string;
-  readonly timers?: {
-    readonly set: (run: () => void, ms: number) => unknown;
-    readonly clear: (handle: unknown) => void;
-  };
+  /** False once the tab's session stopped: an unanswered request is not asked about any more. */
+  readonly alive?: () => boolean;
+  readonly timers?: Timers;
+}
+
+/** An undo's commit: named, or the commit of the tab's own write, resolved in the undo's turn. */
+export type Named = string | Pick<Sent<unknown>, "commit" | "request">;
+
+/** A write of the tab's, with the call that carries it once it is sent (none when it was not). */
+type Write<T> = Sent<T> & { readonly call: Promise<Pick<Call<T>, "decided"> | undefined> };
+
+/** A toast's write whose commit the page cannot learn: its Undo says so and changes nothing. */
+class UnknownCommit extends Error {}
+
+/** The codes of a refusal that is no decision: the request may still be decided (A1 3.8). */
+const UNDECIDED = new Set(["service_unavailable", "space_unavailable", "internal"]);
+
+/** A receipt's conflict as an error's (the service's `resultFailure`): who by a label. */
+const byOf = (by: { kind: string; label: string; origin?: string | undefined }): string =>
+  by.origin === "import" ? "import" : by.kind === "human" ? "user" : by.label;
+
+/** A receipt that is no success, as the error the service's answer would have carried. */
+function receiptError(found: Found): Error {
+  return Object.assign(new Error(found.error?.message ?? "Refused"), {
+    code: found.status === "conflict" ? "conflict" : "refused",
+    data: {
+      cause: found.error?.cause ?? "",
+      // A receipt keeps a conflict without its values (A1 3.10.1): no Restore mine from it.
+      conflicts: (found.conflicts ?? []).map((c) => ({
+        ...(c.ref === undefined ? {} : { task: c.ref }),
+        ...(c.entity === "tasks" ? {} : { entity: c.entity, id: c.id }),
+        field: c.field,
+        version: c.version,
+        by: byOf(c.by),
+        at: c.at,
+      })),
+      ...(found.target === undefined ? {} : { commit: found.target }),
+    },
+  });
+}
+
+/** A write's receipt as its answer: where it landed, and whether it changed anything. */
+function writeOf(found: Found): Decision<{ result: string; as_of: string }> {
+  if (found.status === "applied" || found.status === "proposed") {
+    return { ok: true, value: { result: "updated", as_of: found.as_of } };
+  }
+  if (found.status === "unchanged") {
+    return { ok: true, value: { result: "no_change", as_of: found.as_of } };
+  }
+  return { ok: false, error: receiptError(found) };
 }
 
 /** A conflict as the service names it (A3 3.5, A1 3.10.1). */
@@ -148,6 +209,25 @@ function problemOf(error: unknown): Problem | undefined {
 
 type HistoryResult =
   Awaited<ReturnType<Client["history"]["undo"]>> | Awaited<ReturnType<Client["history"]["redo"]>>;
+
+/**
+ * An undo's or redo's receipt as its answer. The commit it moved is its operation's result; the
+ * tasks it changed are not in a receipt, so a row in its hold waits for the feed instead.
+ */
+function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult> | undefined {
+  if (found.status !== "applied") return { ok: false, error: receiptError(found) };
+  const commit = found.results[0]?.id;
+  if (commit === undefined) return undefined;
+  const partial = kind === "undo" && (found.conflicts?.length ?? 0) > 0;
+  const value = {
+    result: kind === "redo" ? "redone" : partial ? "partial" : "undone",
+    commit,
+    tasks: [],
+    task_count: 0,
+    as_of: found.as_of,
+  };
+  return { ok: true, value: value as HistoryResult };
+}
 
 const AS_OF = /^(\d+)\.(\d+)\.([0-9a-z]+)$/u;
 
@@ -232,8 +312,8 @@ export class Edits {
   readonly #listeners = new Set<() => void>();
   readonly #toastListeners = new Set<(toast: Toast | undefined) => void>();
   #state: EditState = { unsaved: new Map(), leaving: new Map() };
-  /** The newest write's answer per task, while it is on its way: the next edit waits for it. */
-  readonly #chains = new Map<string, Promise<unknown>>();
+  /** The newest write's turn per task, until its outcome is known: the next edit waits for it. */
+  readonly #chains = new Map<string, Turn>();
   /**
    * Per task and field, the `as_of` of the tab's own newest write of it that changed something:
    * how far a later edit's base may move past what the screen showed (`#baseFor`).
@@ -242,7 +322,9 @@ export class Edits {
   /** The `as_of` of every commit the tab made itself (edits, check-offs, undo, redo). */
   readonly #ownCommits = new Set<string>();
   /** The undo or redo on its way: edits made after it go out after it (`#history`). */
-  #gate: Promise<unknown> | undefined;
+  #gate: Turn | undefined;
+  /** The requests whose decision the page has not seen: the feed naming one is news (`Call.heard`). */
+  readonly #calls = new Map<string, Call<unknown>>();
   /** Per task and field, the number of the person's newest edit of it: an older one's refusal is moot. */
   readonly #latest = new Map<string, number>();
   #edits = 0;
@@ -315,7 +397,7 @@ export class Edits {
       action: {
         label: { id: "toast.undo" },
         run: () => {
-          void this.undo(sent.commit);
+          void this.undo(sent);
         },
       },
     });
@@ -334,6 +416,15 @@ export class Edits {
           part.fields.every((field) => this.#latest.get(keyOf(task.id, field)) === number),
         );
         if (kept.length > 0) this.#refused(task, kept, error);
+        if (!(error instanceof Unanswered)) return;
+        // Saved after all (a late answer, or the feed named it): the parts still waiting go.
+        void sent.call.then(async (call) => {
+          if ((await call?.decided)?.ok !== true) return;
+          for (const part of kept) {
+            const field = part.fields[0] ?? "title";
+            if (this.unsaved(task.id, field)?.change === part) this.#forget(task.id, field);
+          }
+        });
       },
     );
   }
@@ -364,14 +455,14 @@ export class Edits {
     const sent = this.#sendWith(task.id, ["lifecycle"], this.#deps.asOf(), (base, request) =>
       this.#deps.client.task.finish({ task: task.id, base: base ?? "", request_id: request }),
     );
-    this.#checks.set(task.id, sent.commit);
+    this.#checks.set(task.id, sent);
     this.#toast({
       kind: "undo",
       text: { id: "toast.done" },
       action: {
         label: { id: "toast.undo" },
         run: () => {
-          void this.undo(sent.commit);
+          void this.undo(sent);
         },
       },
     });
@@ -393,8 +484,8 @@ export class Edits {
     });
   }
 
-  /** The check-offs of this tab still in their hold, with their commits. */
-  readonly #checks = new Map<string, Promise<string | undefined>>();
+  /** The check-offs of this tab still in their hold, with their writes. */
+  readonly #checks = new Map<string, Named>();
 
   /**
    * The box clicked again during the hold: the check-off is undone, by its commit, or for a redone
@@ -404,7 +495,12 @@ export class Edits {
   uncheck(task: string): void {
     const leaving = this.#state.leaving.get(task);
     if (leaving === undefined || !leaving.done || leaving.by !== undefined) return;
-    void this.undo(this.#checks.get(task) ?? Promise.resolve(this.#redone.get(leaving.row.ref)));
+    const named = this.#checks.get(task) ?? this.#redone.get(leaving.row.ref);
+    if (named === undefined) {
+      this.#toast({ kind: "info", text: { id: "toast.undoUnknown" } });
+      return;
+    }
+    void this.undo(named);
   }
 
   /** Whether a feed event is one of this tab's own writes. */
@@ -425,20 +521,21 @@ export class Edits {
   }
 
   /**
-   * Undo (A5 3.12): the person's newest change, or the one a toast names. A commit the toast
-   * cannot name (its write was confirmed without one) is not guessed: the person uses Ctrl+Z.
+   * Undo (A5 3.12): the person's newest change, or the one a toast names. It takes its place in
+   * the queue at once, when the person acts, and a toast's write's commit is resolved there. A
+   * commit the page cannot learn (the write was refused) is not guessed: the person uses Ctrl+Z.
    */
-  async undo(commit?: Promise<string | undefined> | string, partial = false): Promise<void> {
-    const named = typeof commit === "object" ? await commit : commit;
-    if (commit !== undefined && named === undefined) {
-      this.#toast({ kind: "info", text: { id: "toast.undoUnknown" } });
-      return;
-    }
+  async undo(commit?: Named, partial = false): Promise<void> {
+    const asked: { commit?: string } = {};
     let result;
     try {
-      result = await this.#history("undo", named, partial);
+      result = await this.#history("undo", commit, partial, asked);
     } catch (error) {
-      this.#historyFailed("undo", error, named);
+      if (error instanceof UnknownCommit) {
+        this.#toast({ kind: "info", text: { id: "toast.undoUnknown" } });
+        return;
+      }
+      this.#historyFailed("undo", error, asked.commit);
       return;
     }
     this.#undone(result.tasks, true);
@@ -486,32 +583,157 @@ export class Edits {
    */
   #history(
     kind: "undo" | "redo",
-    commit: string | undefined,
+    commit: Named | undefined,
     partial: boolean,
+    asked: { commit?: string } = {},
   ): Promise<HistoryResult> {
-    const ahead = Promise.all([...this.#chains.values(), this.#gate]);
-    const run = ahead.then((): Promise<HistoryResult> => {
-      const request = this.#deps.newRequest();
-      this.#mine.add(request);
-      const input = {
-        ...(commit === undefined ? {} : { commit }),
-        request_id: request,
-      };
-      return kind === "undo"
-        ? this.#deps.client.history.undo({ ...input, ...(partial ? { partial: true } : {}) })
-        : this.#deps.client.history.redo(input);
-    });
-    const gate: Promise<unknown> = run.then(
-      (result) => {
-        this.#ownCommits.add(result.as_of);
-      },
-      () => undefined,
-    );
-    this.#gate = gate;
-    void gate.then(() => {
-      if (this.#gate === gate) this.#gate = undefined;
+    const ahead = allOf(this.#ahead());
+    const { turn, made } = this.#turn<HistoryResult>(ahead);
+    const run = (async (): Promise<HistoryResult> => {
+      try {
+        // Behind a request whose outcome is unknown, an unnamed undo could take back the wrong
+        // change: nothing is sent.
+        if (!(await ahead.wait())) throw new NotSent();
+        const named = await this.#commitOf(commit);
+        if (commit !== undefined && named === undefined) throw new UnknownCommit();
+        if (named !== undefined) asked.commit = named;
+        const request = this.#deps.newRequest();
+        this.#mine.add(request);
+        const input = {
+          ...(named === undefined ? {} : { commit: named }),
+          request_id: request,
+        };
+        const call = this.#call<HistoryResult>(
+          request,
+          (): Promise<HistoryResult> =>
+            kind === "undo"
+              ? this.#deps.client.history.undo({ ...input, ...(partial ? { partial: true } : {}) })
+              : this.#deps.client.history.redo(input),
+          (found) => historyOf(kind, found),
+          (result) => {
+            this.#ownCommits.add(result.as_of);
+          },
+        );
+        made(call);
+        return await call.answer;
+      } catch (error) {
+        made(undefined);
+        throw error;
+      }
+    })();
+    this.#gate = turn;
+    this.#release(run, () => {
+      if (this.#gate === turn) this.#gate = undefined;
     });
     return run;
+  }
+
+  /** What an undo or redo waits for: every task's newest write, and the undo or redo before it. */
+  #ahead(): Turn[] {
+    return [...this.#chains.values(), ...(this.#gate === undefined ? [] : [this.#gate])];
+  }
+
+  /**
+   * A place in the queue behind `ahead`, for a request made once `ahead` is known: its call's
+   * outcome, or, when nothing was sent, `ahead`'s again.
+   */
+  #turn<T>(ahead: Turn): {
+    turn: Turn;
+    made: (call: Call<T> | undefined) => void;
+    call: Promise<Call<T> | undefined>;
+  } {
+    let made!: (call: Call<T> | undefined) => void;
+    const call = new Promise<Call<T> | undefined>((resolve) => {
+      made = resolve;
+    });
+    const turn: Turn = {
+      wait: async () => {
+        const sent = await call;
+        return sent === undefined ? ahead.wait() : sent.wait();
+      },
+    };
+    return { turn, made, call };
+  }
+
+  /** Runs `free` once `answer` has an outcome; a request whose outcome is unknown keeps its place. */
+  #release(answer: Promise<unknown>, free: () => void): void {
+    answer.then(free, (error: unknown) => {
+      if (!(error instanceof Unanswered) && !(error instanceof NotSent)) free();
+    });
+  }
+
+  /**
+   * One request through `Call`: its answer, else its outcome by its ID (calls.ts). `note` reads a
+   * success before anything that waits for the request goes on, so a later base can move past it.
+   */
+  #call<T>(
+    request: string,
+    post: () => Promise<T>,
+    fromReceipt: (found: Found) => Decision<T> | undefined,
+    note: (value: T) => void,
+  ): Call<T> {
+    const call = new Call<T>(
+      {
+        receipt: (id) => this.#deps.client.receipt.get({ request: id }),
+        timers: this.#timers,
+        decided: (error) => this.#decided(error),
+        alive: () => this.#deps.alive?.() ?? true,
+      },
+      request,
+      async () => {
+        const value = await post();
+        note(value);
+        return value;
+      },
+      (found) => {
+        const decision = fromReceipt(found);
+        if (decision?.ok === true) note(decision.value);
+        return decision;
+      },
+    );
+    this.#calls.set(request, call as Call<unknown>);
+    void call.decided.then(() => {
+      this.#calls.delete(request);
+    });
+    return call;
+  }
+
+  /** Whether an error carries the service's decision (or the page's state says what happened). */
+  #decided(error: unknown): boolean {
+    if (this.#deps.failed(error)) return true;
+    const code = error instanceof Error ? (error as Error & { code?: unknown }).code : undefined;
+    return typeof code === "string" && !UNDECIDED.has(code);
+  }
+
+  /**
+   * The commit an undo names, in its turn: a string as it is; a toast's write's from the feed, else
+   * from the write's receipt (the feed did not name it in time, or a fresh snapshot covered it).
+   */
+  async #commitOf(named: Named | undefined): Promise<string | undefined> {
+    if (named === undefined || typeof named === "string") return named;
+    const fromFeed = await this.#within(named.commit);
+    if (fromFeed !== undefined) return fromFeed;
+    try {
+      const receipt = await this.#within(this.#deps.client.receipt.get({ request: named.request }));
+      return receipt?.found === true ? receipt.commit : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** `promise`'s value, or undefined after `ASK_MS`. */
+  async #within<T>(promise: Promise<T>): Promise<T | undefined> {
+    let handle: unknown;
+    const timeout = new Promise<undefined>((resolve) => {
+      handle = this.#timers.set(() => {
+        resolve(undefined);
+      }, ASK_MS);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      this.#timers.clear(handle);
+    }
   }
 
   /**
@@ -642,7 +864,7 @@ export class Edits {
   }
 
   /** Sends one `task.update` after the task's earlier writes have answered. */
-  #send(task: string, change: Change, seen: string | undefined): Sent<unknown> {
+  #send(task: string, change: Change, seen: string | undefined): Write<unknown> {
     const { set, clear } = change.overlay;
     return this.#sendWith(
       task,
@@ -702,28 +924,42 @@ export class Edits {
     seen: string | undefined,
     call: (base: string | undefined, request: string) => Promise<T>,
     overlay?: Overlay,
-  ): Sent<T> {
-    // Sent at once when nothing of the task's and no undo or redo is on its way, else after them.
-    const waits = [this.#chains.get(task), this.#gate].filter((p) => p !== undefined);
-    const before = waits.length === 0 ? undefined : Promise.all(waits);
-    const sent = this.#deps.write((request) => {
-      const send = () => call(this.#baseFor(task, fields, seen), request);
-      return before === undefined ? send() : before.then(send);
-    }, overlay);
-    this.#mine.add(sent.request);
-    const answered = sent.answer.then((result) => {
+  ): Write<T> {
+    // Sent once the task's earlier writes and any undo or redo before it have their outcome.
+    const waits = [this.#chains.get(task), this.#gate].filter((turn) => turn !== undefined);
+    const ahead = allOf(waits);
+    const { turn, made, call: mine } = this.#turn<T>(ahead);
+    const note = (result: T) => {
       // A write that changed nothing wrote no field: its `as_of` is only the head.
       if (typeof result.as_of !== "string" || result.result === "no_change") return;
       this.#ownCommits.add(result.as_of);
       // The task's writes answer in turn, so this is its newest.
       for (const field of fields) this.#own.set(keyOf(task, field), result.as_of);
+    };
+    const sent = this.#deps.write(async (request) => {
+      try {
+        if (waits.length > 0 && !(await ahead.wait())) throw new NotSent();
+        // The same base for a second send with the same request ID: one intent, sent again.
+        const base = this.#baseFor(task, fields, seen);
+        const one = this.#call(
+          request,
+          () => call(base, request),
+          (found) => writeOf(found) as Decision<T>,
+          note,
+        );
+        made(one);
+        return await one.answer;
+      } catch (error) {
+        made(undefined);
+        throw error;
+      }
+    }, overlay);
+    this.#mine.add(sent.request);
+    this.#chains.set(task, turn);
+    this.#release(sent.answer, () => {
+      if (this.#chains.get(task) === turn) this.#chains.delete(task);
     });
-    const chain = answered.catch(() => undefined);
-    this.#chains.set(task, chain);
-    void chain.then(() => {
-      if (this.#chains.get(task) === chain) this.#chains.delete(task);
-    });
-    return sent;
+    return { ...sent, call: mine };
   }
 
   #refused(task: TaskRow, parts: readonly Change[], error: unknown): void {
@@ -763,9 +999,10 @@ export class Edits {
             id: "toast.changedBy",
             values: { ...whoOf(conflict.by), field: { id: words ?? "field.other" } },
           };
-    // A finished task takes no edit until it is reopened: no action that would only fail again.
-    // The value waits under its fact, with Copy (Facts.tsx).
-    if (problem?.cause === "TASK_NOT_ACTIVE") {
+    // A finished task takes no edit until it is reopened, nor a deleted one until it is restored:
+    // no action that would only fail again. The value waits under its fact or the title, with
+    // Copy (Facts.tsx, Row.tsx).
+    if (problem?.cause === "TASK_NOT_ACTIVE" || problem?.cause === "DELETED") {
       this.#toast({ kind: "error", text });
       return;
     }
@@ -868,6 +1105,8 @@ export class Edits {
   /** What the feed brought: others' changes for open editors, and rows back from an undo. */
   #heard(changes: readonly FeedChange[]): void {
     for (const change of changes) {
+      // A request of this tab's whose outcome was unknown is decided: its outcome can be read.
+      this.#calls.get(change.request_id)?.heard();
       if (change.type !== "task" || change.task === undefined) continue;
       const leaving = this.#state.leaving.get(change.task);
       const after = change.after as TaskRow | undefined;

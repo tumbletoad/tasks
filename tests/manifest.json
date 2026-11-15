@@ -3346,6 +3346,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.web.edit-queue",
+      "title": "No request holds the edit queue for ever: an edit, check-off, undo or redo without an answer after the deadline is asked about by its request ID (its receipt, and a resend with the same ID), and what waits behind it goes out once its outcome is known, with a base past it; when the outcome cannot be learned the waiting edits are kept as not saved and never sent, Try again asks again first, and a late decision is still taken; a toast's Undo takes its place in the queue when clicked and names its commit, from the feed or the write's receipt",
+      "source": "A5 3.11, A5 3.12, A1 3.8, A1 3.10.1",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.web.due",
       "title": "The due date's field reads ISO dates, tod and today, tom and tomorrow, weekdays as the service does, +3d and +2w, and - to clear, and nothing else; the quick picks give today, tomorrow, the next Monday that is not today and a week on",
       "source": "A5 3.11, A7 3.12 M5.08",
