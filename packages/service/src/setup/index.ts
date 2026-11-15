@@ -9,6 +9,7 @@ export {
   hasT3,
   T3_AGENT_DRIVERS,
   t3Folder,
+  t3Homes,
   t3ProviderInstances,
   t3SettingsFile,
   type HostsInput,
