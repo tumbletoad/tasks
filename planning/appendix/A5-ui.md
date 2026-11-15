@@ -443,7 +443,7 @@ Invalidation is written in the feed's **logical field** names (A1 3.4: `due` cov
 |---|---|
 | Service unreachable for 3 s | A bar under the top bar: "Reconnecting". Controls become read-only (`aria-disabled`). Drafts stay |
 | Unreachable for 60 s | The bar reads "Tasks service is not running · Details". Details shows `tasks service start` and `tasks doctor` (A2 3.3.6). The UI never starts the service (R6) |
-| Page loaded while the service is stopped | The browser's own connection error. There is no cached shell. `tasks service start`, then `tasks open`, recovers |
+| Page loaded while the service is stopped | The browser's own connection error. There is no cached shell. `tasks open` starts the service and recovers (A2 3.9) |
 | Token expired or revoked: an API 401, or the feed closed with 4401 | A bar: "This window is signed out · Run `tasks open`". Drafts stay. The page never asks for a password or a code |
 | A mutation is rejected | A sticky error toast with A3's message and one action ("Reload", "Details") |
 | A network retry | Mutations retry with the same request ID, so a retry never doubles a change (R3) |

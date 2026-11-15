@@ -2386,6 +2386,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.9.cli.open-start",
+      "title": "tasks open with the service not running: it is started as tasks service start starts it, one line on stderr says so, then the page opens; a running service is not started again; a failed start says why and names the command, exit 6; an agent's shell never starts it and is told to ask the user",
+      "source": "A2 S6, A2 3.3.6, A2 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.13.cli.doctor-http",
       "title": "tasks doctor: other interactive user accounts warn per OS from injected facts, an agent app sandbox accounts are not counted; the http row passes the live self-test (Host evil.example gets 421, a fresh nonce repeated in the meta tag, worker-src none), fails with A2 message when blocked, warns when moved, and parses Windows excluded port ranges",
       "source": "A2 3.13, A2 3.8.2, A6 3.3, R18, A7 3.9 M2.12",

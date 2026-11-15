@@ -214,7 +214,7 @@ One table in `service.sqlite` for every credential and registration on this mach
 - The bridge answers offline (3.7.4) and reconnects in the background.
 - The shim retries for 30 s, then waits for Enter (A4 3.6.3).
 - A browser tab keeps its page and drafts, shows that the service is not running and retries every 5 s.
-- `tasks open` will start the service as `tasks service start` does (not built).
+- `tasks open` starts the service as `tasks service start` does (3.9 step 1).
 
 ### 3.4 Single instance and locks
 
@@ -432,7 +432,7 @@ One pure function (`http/checks.ts`, whose header gives the order) runs before a
 ### 3.9 Opening the UI
 
 **`tasks open [--space <id>] [--task <ref>] [--tab | --app] [--print-url]`** (`packages/cli/src/open.ts`, `A2.3.9.cli.open`)
-1. If no service answers, start it as `tasks service start` does and wait (not built).
+1. If the service is not running (`not_running`: no `service.json`, or nothing at its endpoint), start it with `tasks service start`'s own start (`startService`: through the OS, only a ready service counts), say so in one line on stderr, then go on. A service that is starting, stopping, unreachable or untrusted is reported as every command reports it, never started a second time. A start that fails says why and names the command to look further (exit 6). An agent's shell never starts it: it is told to ask the user, as when the service runs (S6). Code: `packages/cli/src/open.ts`, test `A2.3.9.cli.open-start`.
 2. Mint a code and prove the listener (3.8.4). `--space` and `--task` become the page's route.
 3. Open the URL with the OS's own opener. In a packaged context Windows uses `explorer.exe "<url>"`, so the browser does not start inside the container. `--app` or `ui.open_mode = "app"` starts a Chromium-family browser with `--app=<url>`, else the default browser (not built; A4's opener module takes it over).
 4. `--print-url` prints the URL and warns that it holds a one-time sign-in code.
