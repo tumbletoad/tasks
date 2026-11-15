@@ -999,9 +999,13 @@ const BLOCK_REASON: Readonly<Record<BlockReason, string>> = {
 /** Why a home's block was left, with what the person can do: print-block for a managed file. */
 function blockReason(reason: BlockReason, view: BlockView): string {
   const text = BLOCK_REASON[reason];
-  if (reason === "managed" || reason === "codex_cap") {
-    return `${text}. Add it at its source: ${CLI_NAME} setup agents print-block --for ${view.for} prints it`;
+  const print = `${CLI_NAME} setup agents print-block --for ${view.for} prints it`;
+  if (reason === "managed" && view.lines !== undefined) {
+    // Rule 2: the person can see the line, and add the block by hand if the file is their own.
+    return `line ${view.lines.join(", ")} of its file says the file is generated or managed by another tool, so setup writes nothing there. Add the block at its source, or by hand if the file is your own: ${print}`;
   }
+  if (reason === "managed" || reason === "codex_cap")
+    return `${text}. Add it at its source: ${print}`;
   if (reason === "markers" && view.lines !== undefined) {
     return `${text} (lines ${view.lines.join(", ")} of the file)`;
   }

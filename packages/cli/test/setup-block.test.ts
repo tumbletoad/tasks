@@ -176,6 +176,11 @@ describe("[A3.3.12.setup.block-cli] the instruction block through the CLI", () =
       expect(managed?.status).toBe("ok");
       expect(managed?.detail).toContain("managed elsewhere now");
       expect(managed?.detail).toContain("print-block --for agents");
+      // The preview names the notice's line and the way on, for a file that is the person's own.
+      const delegated = await run(["setup", "agents", "--parts", "block"], false);
+      expect(delegated.stdout).toContain(
+        `delegated: line 1 of its file says the file is generated or managed by another tool, so setup writes nothing there. Add the block at its source, or by hand if the file is your own: ${CLI_NAME} setup agents print-block --for agents prints it`,
+      );
 
       // A remove of the entries leaves the blocks and says so.
       const entries = await run(["setup", "agents", "--remove"]);

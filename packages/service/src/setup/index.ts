@@ -4,6 +4,7 @@
 export * from "./agents.ts";
 export * from "./block.ts";
 export { unifiedDiff } from "./diff.ts";
+export { generatorNotice, markedAsGenerated } from "./generated.ts";
 export {
   claudeDesktopFolders,
   codexAppEngines,

@@ -15,8 +15,8 @@
 //
 // - Where the file may be written is decided once, by the rules the MCP entries use (A3 3.12):
 //   setup's own reader refuses a link (the file, or the home folder) and on Linux and macOS another
-//   user's or a world-writable file or folder (agents.ts `readText`); a mark of another tool in the
-//   first 20 lines (`markedAsGenerated`), a path machine.toml lists, or a file another git
+//   user's or a world-writable file or folder (agents.ts `readText`); a generator's notice in the
+//   first 20 lines (generated.ts `generatorNotice`), a path machine.toml lists, or a file another git
 //   repository tracks (`managedFile`) make it managed. A managed file is never written: the preview
 //   shows it as delegated, and print-block gives the block to add at its source.
 // - The block goes at the end of the file, after one blank line. A newer version of the block
@@ -36,13 +36,13 @@ import { BOM, MAX_CONFIG_BYTES } from "../config/toml.ts";
 import { toolOf } from "../mcp/tools.ts";
 import {
   managedFile,
-  markedAsGenerated,
   readText,
   samePath,
   type AgentHome,
   type Refusal,
   type SetupInput,
 } from "./agents.ts";
+import { generatorNotice } from "./generated.ts";
 import { unifiedDiff } from "./diff.ts";
 import {
   isAgentApp,
@@ -372,7 +372,7 @@ export interface BlockView {
   readonly refusal?: BlockRefusal;
   /** SHA-256 of the file as read; null when there is no file. */
   readonly sha256: string | null;
-  /** Duplicate or unbalanced markers: the marker lines' numbers. */
+  /** Duplicate or unbalanced markers: the marker lines' numbers. A generator's notice: its line. */
   readonly lines?: readonly number[];
   /** The block as found, its markers included, and the version its begin marker names. */
   readonly found?: string;
@@ -426,7 +426,8 @@ function judge(
     return { ...base, state: record === undefined ? "absent" : "missing", sha256: null, text: "" };
   }
   const known = { sha256: read.sha256, text: read.text, bom: read.bom };
-  if (markedAsGenerated(read.text, "markdown")) return { ...refused("managed", read.sha256) };
+  const notice = generatorNotice(read.text, "markdown");
+  if (notice !== undefined) return { ...refused("managed", read.sha256), lines: [notice] };
   const found = findBlock(read.text);
   if (found.kind === "broken") return { ...refused("markers", read.sha256), lines: found.lines };
   if (found.kind === "none") {
