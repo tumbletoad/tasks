@@ -88,19 +88,31 @@ function openForAppend(path: string, mode: number): number {
 }
 
 /**
+ * Writes every byte of `data` (a string as UTF-8) at `fd`'s position, or throws (A2 3.2.2 rule 5,
+ * "whole writes"). One write may take fewer bytes than it was given (a full volume, a signal, a
+ * network file system), so the count each returns is followed until nothing is left; a write that
+ * takes none throws EIO rather than spin. Every write of durable state goes through this.
+ */
+export function writeAll(fd: number, data: string | Uint8Array): void {
+  const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : data;
+  let offset = 0;
+  while (offset < bytes.length) {
+    const n = writeSync(fd, bytes, offset, bytes.length - offset);
+    if (!(n > 0)) {
+      throw Object.assign(new Error("A write made no progress"), { code: "EIO" });
+    }
+    offset += n;
+  }
+}
+
+/**
  * Appends `text` to `path`. A file that is not there yet is created with exactly `mode`; one that
  * is keeps its mode. A link in its place is not followed.
  */
 export function appendPrivate(path: string, text: string, mode = 0o600): void {
   const fd = openForAppend(path, mode);
   try {
-    const data = Buffer.from(text, "utf8");
-    let offset = 0;
-    while (offset < data.length) {
-      const n = writeSync(fd, data, offset, data.length - offset);
-      if (n <= 0) throw new Error("A log write made no progress");
-      offset += n;
-    }
+    writeAll(fd, text);
   } finally {
     closeSync(fd);
   }
@@ -189,14 +201,12 @@ function pause(ms: number): void {
 
 /**
  * Replaces `path` with `text` atomically: a new temporary file beside it
- * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written and flushed, then renamed over it.
- * Readers see the old file or the new one, never a part. On Windows a rename over a file that
+ * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written whole (writeAll) and flushed, then renamed
+ * over it. Readers see the old file or the new one, never a part. On Windows a rename over a file that
  * another process has open without delete sharing fails for a moment, so it is tried a few times.
  * A failed write leaves no temporary file. `beforeRename` runs once the new file is written and
  * flushed, just before each rename attempt: it throws to give up, and the temporary file is removed
- * (a caller's last check that the file is still the one it read). Every byte is written before the
- * rename: one write call may write fewer bytes than asked (a disk filling up), and renaming a part
- * over the file would lose the rest of it.
+ * (a caller's last check that the file is still the one it read).
  */
 export function atomicWrite(
   path: string,
@@ -211,13 +221,7 @@ export function atomicWrite(
   const fd = createFile(temp, mode);
   try {
     try {
-      const data = Buffer.from(text, "utf8");
-      let offset = 0;
-      while (offset < data.length) {
-        const n = writeSync(fd, data, offset, data.length - offset);
-        if (n <= 0) throw new Error("A write made no progress");
-        offset += n;
-      }
+      writeAll(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);

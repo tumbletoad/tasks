@@ -3,6 +3,10 @@
 //
 // - `backup.dir`: the machine-local backup folder (A1 3.18). The service only reads it: a later
 //   step that owns the space's settings writes it. Default: the space's own `backups/`.
+// - `projection_rescues`: each batch of the projection that moved entries a person made or edited
+//   aside (A1 3.13 rule 3): when, how many, and the stem of its rescue folders relative to the
+//   space's folder (`exchange/rescued/<stem>`, each rescue in `<stem>-<n>`: a time stamp, never a
+//   task's name). The UI shows each once and removes it (A5). The newest MAX_RESCUES are kept.
 // - `seen`: A6 3.5's `spaces_seen` entry, `{epoch, incarnation}`: the highest epoch this machine
 //   has seen for the space. A claim and a restore in place go above it (A1 3.18,
 //   `knownEpochs`). The service records it when a writer opens the space as its authority and
@@ -24,9 +28,16 @@
 //   MAX_FAILED_MIGRATIONS of the current build are kept. An entry that does not read back whole is
 //   no entry: the open then tries again, behind a new barrier backup, which is the safe direction.
 //
+// Beside this file, in the same folder, the projection keeps its trusted state for each folder
+// that holds the space (`<space_id>.<folder key>.projection.json` and
+// `….projection-journal.json`, A1 3.13 rule 1; projectionStateOf): the projection's worker of
+// that folder writes them, nothing else. Per folder, because the record says what was placed in
+// one folder's `view/`: two folders that hold one space (a restored copy, claimed) never share one.
+//
 // Fields this module does not know are kept when it writes the file.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { isId, type Id, type MigrationAttempt } from "@tasks/storage";
 import { atomicWrite, makeDir } from "./files.ts";
 
@@ -87,6 +98,33 @@ export interface SpaceSettings {
 
 const fileOf = (state: string, spaceId: Id<"sp">): string =>
   join(state, SPACES_FOLDER, `${spaceId}.json`);
+
+/**
+ * The key of a space's folder for its projection's state: the start of the SHA-256 of its full
+ * path, compared as the service compares folders (without case on Windows and macOS). No path is
+ * stored, so the state folder never holds one.
+ */
+export function folderKey(folder: string, platform: NodeJS.Platform = process.platform): string {
+  const full = resolve(folder);
+  const text = platform === "win32" || platform === "darwin" ? full.toLowerCase() : full;
+  return createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * The projection's trusted state for the space in `folder` (A1 3.13 rule 1): its record and its
+ * journal, one pair per folder that holds the space.
+ */
+export const projectionStateOf = (
+  state: string,
+  spaceId: Id<"sp">,
+  folder: string,
+): { readonly record: string; readonly journal: string } => {
+  const stem = `${spaceId}.${folderKey(folder)}`;
+  return {
+    record: join(state, SPACES_FOLDER, `${stem}.projection.json`),
+    journal: join(state, SPACES_FOLDER, `${stem}.projection-journal.json`),
+  };
+};
 
 /** The file's object, or an empty one when it is missing, too large or not an object. */
 function readRecord(path: string): Record<string, unknown> {
@@ -250,6 +288,76 @@ export function recordSyncedConfirmed(
     format: 1,
     ...record,
     synced_folder_confirmed: { path: canonicalPath, at: now.toISOString() },
+  };
+  atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
+/** The projection's rescues kept for the UI. */
+export const MAX_RESCUES = 20;
+
+/** A batch's rescue stem as the projection names it, relative to the space's folder. */
+const RESCUE_STEM = /^exchange\/rescued\/[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
+
+/**
+ * The file's object for a change that must keep every other field: an empty one only when the file
+ * is not there. One that is there and does not read back whole throws (`EIO`), so nothing written
+ * over it can lose what it held (A1 3.13 rule 1): the caller tries again later.
+ */
+function readForChange(path: string): Record<string, unknown> {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") return {};
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = text.length > MAX_BYTES ? undefined : (JSON.parse(text) as unknown);
+  } catch {
+    value = undefined;
+  }
+  if (!isRecord(value)) {
+    throw Object.assign(new Error("The space's settings do not read back whole"), { code: "EIO" });
+  }
+  return value;
+}
+
+/**
+ * Records that a batch of the projection moved `files` entries a person made or edited into the
+ * folders `<stem>-<n>` (relative to the space's folder), for the UI to show once (A1 3.13 rule 3).
+ * One entry per stem: the projection tells a batch's rescues at least once, so a stem listed
+ * already is not listed again. Other fields are kept. Returns once the file is written, and throws
+ * when it could not be (a full volume, a file locked by another program, one that does not read
+ * back whole): the projection then tells the rescue again.
+ */
+export function recordProjectionRescue(
+  state: string,
+  spaceId: Id<"sp">,
+  rescue: { readonly stem: string; readonly files: number },
+  now: Date = new Date(),
+): void {
+  if (!RESCUE_STEM.test(rescue.stem) || !isCount(rescue.files)) return;
+  const path = fileOf(state, spaceId);
+  const record = readForChange(path);
+  const listed: unknown = record["projection_rescues"];
+  const kept = (Array.isArray(listed) ? (listed as unknown[]) : []).filter(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry["stem"] === "string" &&
+      RESCUE_STEM.test(entry["stem"]) &&
+      isCount(entry["files"]) &&
+      typeof entry["at"] === "string",
+  );
+  if (kept.some((entry) => isRecord(entry) && entry["stem"] === rescue.stem)) return;
+  makeDir(join(state, SPACES_FOLDER), 0o700);
+  const next = {
+    format: 1,
+    ...record,
+    projection_rescues: [
+      ...kept,
+      { at: now.toISOString(), stem: rescue.stem, files: rescue.files },
+    ].slice(-MAX_RESCUES),
   };
   atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
 }

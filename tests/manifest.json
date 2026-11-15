@@ -2850,6 +2850,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.2.2.files.whole-write",
+      "title": "A write of durable state through the files package writes every byte or throws: writes that each take a few bytes still leave the whole text, and a write that takes none throws, keeps the old file whole and leaves no temporary file",
+      "source": "A2 3.2.2, A1 3.13",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.2.2.permissions.repair",
       "title": "One place turns a path's facts (kind, owner, mode, link) into the words and the command, from the whole rule for that object: run against fixtures without root, each command makes the next start pass, and where root is needed the text is exact; an existing config folder is judged before machine.toml exists and nothing is written into one that fails; configuration is never read or written through a link, and no command that changes an owner is given for a link or a path below one; a folder this user cannot look into says what it hides",
       "source": "A2 3.2.2, A2 3.2.4",
@@ -3526,6 +3534,110 @@
       "title": "In Chromium and Firefox against the real service with 5,000 open fixture tasks: the built page virtualises the list, scrolling from top to bottom and back keeps the mounted rows bounded and leaves no frame with an uncovered gap, the focused row keeps focus while it leaves and re-enters the window, End and Home move focus across the whole list, an agent's add above the viewport keeps the first visible row in place, and no CSP violation is reported",
       "source": "A5 3.25, A5 3.22, A5 3.15, A5 3.26, A7 3.12 M5.03",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.outbox",
+      "title": "The projection's outbox bookkeeping: a reported key is done only through the snapshot it was rendered at, a row changed after it waits from T + 1, a full rebuild queues every task from commit 1, a reconciliation queues only the tasks it names (one without a task row too), a batch and a queue are checked, and under interleaved commits and reports the watermark never covers a commit a task still waits for and never moves back",
+      "source": "A1 3.7, A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.render",
+      "title": "A task's file: `<ref>-<slug>.md` under open/, completed/<year>/ or archived/<year>/ with an ASCII slug of at most 48 characters, front matter with generated first and A1's fixed keys that read back as strings, seq the task's last change, the sections in A1's order (Outcome and Learnings first, the rest under Record, for a completed task), the catalogue's header and line order, index.md's groups and README.md's text from the brand",
+      "source": "A1 3.13, A3 3.9.8, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.fresh",
+      "title": "After quiescence the projection equals a fresh render, files included that moved across batch boundaries (600 dirty tasks, renames, completions and reopenings during the batches); at every batch the watermark never covers an unrendered task and every catalogue path exists; every task is in the catalogue and every file read-only; a commit that touches no task still moves the watermark to last_seq",
+      "source": "A1 3.13, A1 3.20, A1 5, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.rescue",
+      "title": "What is not the projection's is never written through, overwritten, deleted or changed in mode: an edited file, a person's file at a task's path, a link where a folder goes and a hard link to a file outside are moved by one rename to a folder made for that rescue under exchange/rescued/, keeping their mode; an edit that keeps the file's size, in place or by an editor's save through a temporary file, is rescued when its task changes and left in place when its task goes; files with temporary-looking names and text where the old control files were are kept; a rescue that cannot happen leaves the person's file in place and the task queued; a task whose file cannot be placed holds the watermark below it and never stops the tasks after it, a full batch of them included: each waits a pause of its own, doubling up to 30 s",
+      "source": "A1 3.13, A1 3.1, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.kill",
+      "title": "A kill at every act on disk of a start and a batch, each rename, temporary file, record and journal write included, leaves complete files and no temporary file once the next projector starts, a watermark that covers no unrendered task and every catalogue path in place, rescues nothing, and settles to a fresh render",
+      "source": "A1 3.7, A1 3.13, A1 5, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.service",
+      "title": "The service keeps each space open as this machine's projected into its view/ in a worker of its own, with the trusted record beside the space's settings: the first render of the sample space, a task added through the request path in its file and the catalogue, tasks view rebuild bringing back a deleted file and moving an edited one aside, for the user only, a rescue whose save failed told again at the next start, with a settings file that does not read back never written over, and a restore in place projected anew",
+      "source": "A1 3.9, A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.latency",
+      "title": "One new task's file shows in the folder within 1 s of its commit; a batch waits 500 ms after the last change and at most 5 s while changes keep coming, a backlog runs at once, and a failing batch pauses longer each time",
+      "source": "A1 3.13, A1 3.20, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.recovery",
+      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing or unreadable reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; one of another incarnation in the same folder keeps its files, proved by their bytes, and queues every task; a journal that is there and does not read back (cut short, of another format) rebuilds every task, so a task its batch found gone leaves the catalogue, also after a short write and a full volume; a temporary file a kill left that a person typed into is kept; a batch's rescues are told from their folders, also when the batch failed or was killed, and again at the next batch and the next start while the receiver cannot save them, never again once saved; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "source": "A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.folders",
+      "title": "A folder of the projection's tree that went missing or became a link (a junction on Windows) is never followed: a look or a removal through it touches nothing behind it, the link is moved aside as it is, and what the record had below it is rendered again, also when the folder is removed while nothing changes, when it becomes a link while a batch waits on the writer, and when the tree's own folder is replaced by a link",
+      "source": "A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.escape",
+      "title": "Task text in the projection's Markdown is shown, never run: a one-line text has HTML, links, entity references, block markers and a heading's closing run escaped, a text of more lines is verbatim in a fence none of its lines closes, what may still render is A1's list and nothing else (emphasis, strikethrough, code spans, autolinks), index.md escapes task, area and project titles, the catalogue keeps the exact text, and front-matter values YAML 1.2 reads as numbers are quoted",
+      "source": "A1 3.13, A3 3.9.8, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.model",
+      "title": "Random sequences of commits, a person's acts in the tree (edits in place and by an editor's save through a temporary file, some keeping the file's size, files at generated paths and elsewhere, deleted files, folders replaced by files or links, hard links to files outside, text where control files were, temporary-looking names, swapped rescue folders, during a batch too, and on Windows a file held open without sharing), kills at every act, and faults in the trusted state's writes (a short write, a full volume) and in saving a rescue notice, each followed by a restart: no byte a person put there is lost or changed in mode, nothing outside the tree and the new rescue folders changes, the watermark covers only tasks whose files are on disk, the projection never moves its own files aside, and at rest the tree is a fresh render and every rescue folder was told",
+      "source": "A1 3.13, A1 5, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.reconcile",
+      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on tasks view rebuild; a rebuild asked for while a failing batch runs stays a full one; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
+      "source": "A1 3.13, A7 3.10 M3.10",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.projection.cli",
+      "title": "tasks view rebuild from the CLI: the user rebuilds a space's view from an interactive terminal and a deleted generated file comes back, a script is refused with forbidden, and help names the command",
+      "source": "A1 3.13, A2 3.10, A7 3.10 M3.10",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },

@@ -52,7 +52,9 @@
 //    per state of the database, and per retry the person asks for.
 // 3. Once open as this machine's: one maintenance run (maintenance.ts): leftovers in the space's
 //    own backups folder, the daily backup when due, retention. Then a check every hour whether the
-//    next daily backup is due.
+//    next daily backup is due. And the projection (projection.ts, A1 3.13) in a worker of its own,
+//    into the space's `view/`, until the space closes: a close stops it first, before the writer
+//    it asks for its bookkeeping. `tasks view rebuild` reaches it through rebuildView.
 // The highest epoch this machine has seen for a space is recorded when its writer opens as the
 // authority (space-settings.ts), and a claim or a restore in place goes above it.
 //
@@ -94,15 +96,19 @@ import {
   type OwnershipLoss,
   type OwnershipWatch,
 } from "./lock.ts";
+import type { Reconciled } from "@tasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
+import { ProjectionRunner } from "./projection.ts";
 import {
   clearFailedMigrations,
   failedOn,
   knownEpochs,
+  projectionStateOf,
   readSpaceSettings,
   recordFailedMigration,
+  recordProjectionRescue,
   recordSeen,
   recordSyncedConfirmed,
   recordWriterFolder,
@@ -130,6 +136,8 @@ export const SPACE_OPEN_TIMEOUT_MS = 30_000;
 export const SPACE_CLOSE_TIMEOUT_MS = 10_000;
 /** How often an open space checks whether its next daily backup is due (A1 3.18: after 03:00). */
 export const DAILY_CHECK_MS = 3_600_000;
+/** A space's projection gets this long to end its batch when the space closes, then it is stopped. */
+export const PROJECTION_STOP_MS = 5_000;
 
 /** One registered space (A2 3.2.4 `[[spaces]]`): its folder opens only as the space `id` names. */
 export interface SpaceEntry {
@@ -201,6 +209,11 @@ export interface SpaceManagerOptions {
   readonly onLockLost: (entry: number, what: OwnershipLoss, via: OwnershipCheck) => void;
   /** The backup upkeep (maintenance.ts). Without it, no space is maintained. */
   readonly maintenance?: Maintenance;
+  /**
+   * Whether each space open as this machine's keeps its projection (A1 3.13) in a worker of its
+   * own. Default false: tests that look at a space's folder.
+   */
+  readonly projection?: boolean;
   readonly now?: () => Date;
   /**
    * Where the synced-folder check reads its facts (A1 3.2, sync-folders.ts). Default: this machine
@@ -341,6 +354,8 @@ class Hosted {
   reader: WorkerConnection | undefined;
   /** The space's machine-local backup folder, when one is set. */
   backupDir: string | undefined;
+  /** The projection's worker while the space is open as this machine's. */
+  projection: ProjectionRunner | undefined;
   /** The hourly check whether the next daily backup is due. */
   daily: NodeJS.Timeout | undefined;
   /** The maintenance run in progress. */
@@ -724,6 +739,16 @@ export class SpaceManager {
   }
 
   /**
+   * `tasks view rebuild` (A1 3.13 rule 5): the space's projection looks at every file it placed
+   * and queues every task again, removing nothing it cannot prove it wrote. Resolves with what the
+   * reconciliation found, or undefined while the space has no projection running (it is not open
+   * as this machine's).
+   */
+  rebuildView(entry: number): Promise<Reconciled> | undefined {
+    return this.#space(entry).projection?.rebuild();
+  }
+
+  /**
    * Restores `backupFile` in place of the space (A1 3.18): the space closes first, the
    * restore claims the backup with an epoch above every one this machine has seen, under the
    * space's writer.lock in a worker of its own, and the space opens again, also when the restore
@@ -1030,6 +1055,88 @@ export class SpaceManager {
     }, DAILY_CHECK_MS);
     timer.unref();
     space.daily = timer;
+    this.#project(space);
+  }
+
+  /**
+   * The space's projection (A1 3.13), into its `view/`, in a worker of its own while the space is
+   * open as this machine's. Its trusted state is beside the space's machine-local settings. Its
+   * outcome is logged, counts and codes only; it never fails the space.
+   */
+  #project(space: Hosted): void {
+    const { log } = this.#options;
+    const spaceId = space.id;
+    const writer = space.writer;
+    if (this.#options.projection !== true || spaceId === undefined || writer === undefined) return;
+    const entry = space.index;
+    // The record is per folder: two folders that hold one space never share one (space-settings.ts).
+    const state = projectionStateOf(this.#options.settingsDir, spaceId, space.folder);
+    space.projection = new ProjectionRunner({ folder: space.folder, ...state }, writer, {
+      // Each batch that moved entries aside, at least once, also one that failed or was killed
+      // (A1 3.13 rule 3). Saved before it returns: a failure throws, so the worker keeps the stem
+      // untold and tells it again. One small file read and written on this thread, only at a start
+      // and after a batch that rescued.
+      rescued: ({ stem, files }) => {
+        log.log("space.projection_rescued", { entry, space: spaceId, files });
+        try {
+          recordProjectionRescue(this.#options.settingsDir, spaceId, { stem, files });
+        } catch (error) {
+          const code = (error as { code?: unknown } | null)?.code;
+          log.log("space.projection_failed", {
+            entry,
+            space: spaceId,
+            ...(typeof code === "string" ? { code } : {}),
+          });
+          throw error;
+        }
+      },
+      // A folder or a link a person left at the record's or the journal's path, moved aside
+      // beside it under `<name>.moved-aside-<time>` (A1 3.13 rule 1): theirs to look at.
+      aside: (file) => {
+        log.log("space.projection_state_moved_aside", { entry, space: spaceId, file });
+      },
+      reconciled: (r: Reconciled) => {
+        log.log("space.projection_reconciled", {
+          entry,
+          space: spaceId,
+          full: r.full,
+          checked: r.checked,
+          queued: r.queued,
+          forgotten: r.forgotten,
+        });
+      },
+      started: (report) => {
+        log.log("space.projection_started", {
+          entry,
+          space: spaceId,
+          rebuild: report.rebuild,
+          recovered: report.recovered,
+          temps: report.temps,
+        });
+      },
+      step: (report, ms) => {
+        log.log("space.projected", {
+          entry,
+          space: spaceId,
+          written: report.written,
+          removed: report.removed,
+          failed: report.failed,
+          watermark: report.watermark,
+          backlog: report.backlog,
+          ms,
+        });
+        if (report.code !== undefined) {
+          log.log("space.projection_failed", { entry, space: spaceId, code: report.code });
+        }
+      },
+      failed: (code) => {
+        log.log("space.projection_failed", {
+          entry,
+          space: spaceId,
+          ...(code === undefined ? {} : { code }),
+        });
+      },
+    });
   }
 
   /**
@@ -1446,13 +1553,17 @@ export class SpaceManager {
    * closed within the bound.
    */
   async #release(space: Hosted, ms: number = this.#closeMs): Promise<boolean> {
-    const { writer, reader, worker } = space;
+    const { writer, reader, worker, projection } = space;
     space.writer = undefined;
     space.reader = undefined;
     space.worker = undefined;
+    space.projection = undefined;
     clearInterval(space.daily);
     space.daily = undefined;
     const work = (async () => {
+      // The projection first: its batch in progress asks the writer for its bookkeeping, and its
+      // reader holds the database open (a restore in place swaps the folder after this).
+      await projection?.stop(Math.min(PROJECTION_STOP_MS, ms));
       for (const connection of [writer, reader]) {
         if (connection === undefined) continue;
         try {

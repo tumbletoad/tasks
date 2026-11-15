@@ -107,6 +107,7 @@ Code: `packages/service/src/hub/paths.ts` (`resolveLayout`, pure over host facts
 4. **Windows never uses AppData or `%TEMP%`** for anything another process of the product must see (3.5). A lint rule bans `os.tmpdir()` and AppData paths in product code.
 5. **Permissions.**
    - **Exact modes, whatever the umask** (Linux and macOS). A umask differs per system, so a mode passed to `open` or `mkdir` alone is never trusted: the mode is set on the new object through a descriptor, and what already exists keeps its mode. One implementation, `packages/files` (a package of its own because launch and the shim may import neither the service nor storage), re-exported by `hub/files.ts`. Storage keeps the same rule in its own `files.ts`. Folders are 0700 and files 0600, the two lock files 0644, a version folder 0755.
+   - **Whole writes.** A write of durable state writes every byte or throws. One write call may take fewer bytes than it was given, so `packages/files`' `writeAll` follows the count each call returns, and a call that takes none throws `EIO` rather than spin. `atomicWrite`, the log's append, the projection's files and the service manager's entry files write through it, so a short write never leaves a cut file in place of a whole one. Test: `A2.3.2.2.files.whole-write`.
    - **The socket file's mode is not set**: Node cannot set it through a descriptor, and a `chmod` by path could follow a link put there in between. Its folder keeps other users out.
    - **Who else can write** (`hub/permissions.ts`, whose header states the rule). A file or folder the product trusts must belong to this user, and neither its group nor others may write it, whatever the group, because whether a group has other members cannot be known reliably. The service refuses an unsafe state folder at start (exit 64) and names one command that fixes it, quoted by the rule for lines to paste (A3 3.13.7). A path with a control character other than a newline, or a command longer than a line to paste can be, gets no command, and the message says why. A command that changes an owner is never given for a path that is or passes through a link. Agent homes follow setup's own rule (A3 3.13).
    - **A umask that clears an owner bit** is refused (`hub/umask.ts`). The umask is only read, never set, because the service's agents must inherit the person's own, and `process.umask()` is banned: its read sets the mask to 0 for a moment, in which a worker thread's new file gets every bit.
@@ -452,7 +453,7 @@ Code: `packages/cli/src/` (`main.ts`, `args.ts`, `verbs.ts`, `output.ts`, `conne
 
 #### 3.10.1 Entry point
 
-One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `recover` (`tasks space recover` under a second name, one line in the CLI's command table), `roots`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden), `setup t3` and `setup instances`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
+One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `recover` (`tasks space recover` under a second name, one line in the CLI's command table), `roots`, `view`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden), `setup t3` and `setup instances`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
 
 **`tasks space`** verbs are rpc methods `space/*`, not registry entries, because a backup, restore or claim is no A1 operation. Only `space list` is open to scripts and agents. The CLI never opens a space database: create, backup and restore run in a worker of their own in the service.
 - A new space goes under the install's own data folder, so a test install never writes into the daily folder. A create into a folder that holds a space says "A space is already in that folder" and names `tasks space open <folder>`, quoted for the person's shell.
@@ -465,6 +466,8 @@ One command, `tasks`, at the stable path. **Operation verbs** are generated from
 - Tests: `A2.3.10.cli.space`, `A2.3.10.cli.space-use`, `A2.3.10.cli.space-words`.
 
 **`tasks roots`.** `roots [list]` is open to every class. `roots add` is user-only, refuses a folder places would never resolve through, and replaces the service's roots at once (`hub/roots.ts`).
+
+**`tasks view rebuild [<space>]`** is the rpc method `view/rebuild`, user-only: the space's projection reconciles every file it placed and queues every task again, removing nothing it cannot prove it wrote (A1 3.13), and answers the files checked and the tasks queued. Test: `A1.5.projection.cli`.
 
 #### 3.10.2 Conventions
 

@@ -34,6 +34,7 @@
     "@tasks/files": "workspace:*",
     "@tasks/importer-planning": "workspace:*",
     "@tasks/launch": "workspace:*",
+    "@tasks/projection": "workspace:*",
     "@tasks/storage": "workspace:*",
     "@modelcontextprotocol/server": "2.4.0",
     "smol-toml": "1.9.1",

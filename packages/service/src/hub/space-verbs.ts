@@ -20,6 +20,8 @@
 //                   `exchange/rescued/` (A1 3.2)
 //   space/claim     claim a read-only copy                    (SpaceManager.claim)
 //   space/recover   play a rollback journal back              (SpaceManager.recover)
+//   view/rebuild    the space's projection reconciled with every task queued (A1 3.13 rule 5;
+//                   SpaceManager.rebuildView): nothing it cannot prove it wrote is removed
 //
 // A1 3.2: a space in a synced folder opens read-only until the person confirms the folder is
 // excluded from sync (`space/open` with `excluded`), and one on a network file system is never
@@ -83,6 +85,7 @@ export interface SpaceVerbsHost {
     | "folderOf"
     | "checkFolder"
     | "confirmExcluded"
+    | "rebuildView"
   >;
   readonly machine: MachineInfo;
   /** The state folder, for each space's machine-local settings (`backup.dir`). */
@@ -479,6 +482,27 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
         return done.kind === "backup" ? { backup: done.backup } : {};
       } catch (error) {
         throw failure(error);
+      }
+    },
+
+    "view/rebuild": async (params, cls) => {
+      userOnly(cls);
+      const view = find(required(params, "space"));
+      const unavailable = (): AppError =>
+        new AppError({
+          code: "space_unavailable",
+          message: `${PRODUCT_NAME} keeps a space's view only while the space is open on this machine.`,
+          data: { reason: "not_served", retryable: view.state === "open", state: view.state },
+        });
+      const running = view.state === "open" ? manager.rebuildView(view.entry) : undefined;
+      if (running === undefined) throw unavailable();
+      try {
+        const found = await running;
+        return { checked: found.checked, queued: found.queued, forgotten: found.forgotten };
+      } catch (error) {
+        if (error instanceof StorageError) throw failure(error);
+        // The projection ended before its reconciliation ran: the space closed meanwhile.
+        throw unavailable();
       }
     },
 

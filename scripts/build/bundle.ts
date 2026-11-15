@@ -4,10 +4,11 @@
 //                       compile cache before it imports a chunk. Its import of ./run.ts becomes
 //                       ./chunks/cli.mjs, of @tasks/bridge/mcp ./bridge.mjs, and of the shim's
 //                       ./shim/run.ts ./shim.mjs.
-//   lib/chunks/*.mjs    the CLI (cli.mjs, from packages/cli/src/run.ts) and the three worker threads
+//   lib/chunks/*.mjs    the CLI (cli.mjs, from packages/cli/src/run.ts) and the four worker threads
 //                       the service starts from their own module files, each an entry of its own
-//                       (A2 3.12.2): storage-worker.mjs, maintenance-worker.mjs and
-//                       space-admin-worker.mjs, with the code they share in chunk-<hash>.mjs. Every
+//                       (A2 3.12.2): storage-worker.mjs, maintenance-worker.mjs,
+//                       space-admin-worker.mjs and projection-worker.mjs, with the code they share
+//                       in chunk-<hash>.mjs. Every
 //                       file of the split build sits in this one folder, so a module's URL relative
 //                       to import.meta.url resolves the same from whichever chunk holds its code.
 //                       The CLI's own route to the bridge (mcp.ts) imports ../bridge.mjs.
@@ -116,6 +117,12 @@ export const WORKERS = [
     entry: "packages/service/src/hub/space-admin-entry.ts",
     from: "packages/service/src/hub/space-admin.ts",
     find: 'new URL("./space-admin-entry.ts", import.meta.url)',
+  },
+  {
+    name: "projection-worker",
+    entry: "packages/service/src/hub/projection-entry.ts",
+    from: "packages/service/src/hub/projection.ts",
+    find: 'new URL("./projection-entry.ts", import.meta.url)',
   },
 ] as const;
 
