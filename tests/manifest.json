@@ -426,6 +426,110 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.no-replace",
+      "title": "A backup publishes its data and its sidecar by a hard link or an exclusive create, never a rename: a pair or a part of one planted under its names while it runs is never replaced, its own files go, and without hard links the copies restore",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.trial-restore",
+      "title": "Verified means a trial restore: a backup whose every check passes but whose restore fails at its first write (the read-only mark) is not verified, retention keeps the older backup that restores instead of removing it, a restore refuses the backup with BACKUP_INVALID and restore latest goes past it; the trials leave no file beside the backups",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.held-files",
+      "title": "A reader opens both files of a backup before it reads either and reads only through them: retention removing a backup while its verification holds both files leaves the verification passing, and a restore whose files are removed after they are open restores the backup whole",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.free-reserve",
+      "title": "The backup writer and the exporter check the shared free-space reserve against their estimated peak before they write anything: one byte short is BUNDLE_LIMIT_EXCEEDED with no backups or exports folder made, exactly enough runs",
+      "source": "A1 3.18, A7 3.10 M3.07, DA-17",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.backup.rotation",
+      "title": "Rotation removes only what A1's retention allows: a property test over random backup sets, clocks and offsets never removes a manual backup, the newest complete one, a pre-migration one under 30 days, another space's or a damaged one; on real files manual backups, the newest verified one and a damaged newer one stay",
+      "source": "A1 3.18, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.zip-hardening",
+      "title": "A restore refuses an archive with `..`, an absolute or drive path, a backslash, empty or dot parts, device names or NFD, a link, device or FIFO by its attributes, a Windows reparse point, too many entries, too many expanded bytes declared or produced, an oversized file, duplicate names by case, a file where a folder is, overlapping entries, encryption, another method, an unknown or unlisted file, a wrong checksum or no archive at all, and leaves no folder",
+      "source": "A1 3.18, A6 5, A7 3.10 M3.07, DA-17",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.export-restore",
+      "title": "Export bundles in backup, fork and transfer mode hold the vacuumed snapshot, space.json, export.json, the live attachments' blobs and data.jsonl when asked, owner-only under A1's name; they restore as read-only copies; a changed bundle is refused; a fault before publication leaves nothing, after it the bundle stays; publication never replaces a file at its name, with or without hard links",
+      "source": "A1 3.18, A6 3.5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.secret-scan",
+      "title": "The export's secret scan: an export that finds nothing writes its bundle; a secret-shaped string in any table, with or without data.jsonl, or in an attachment refuses it and writes nothing, naming the kind and place but never the text; the vacuumed snapshot holds no byte of text edited away; an attachment reached through a link into the secrets folder is refused",
+      "source": "A1 3.18, A6 3.16.4, A6 5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.stress",
+      "title": "The largest stress-corpus bundle passes the shared BundlePolicy: 10,000 open and 100,000 completed tasks export with data.jsonl and restore with the same counts, and a projection-sized archive of 110,001 files reads under the policy through ZIP64's end records",
+      "source": "A1 3.18, A1 3.20, A1 6 item 5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.bundle.restore-drill",
+      "title": "The restore drill: a backup and an export bundle each restore into a new folder with a passing integrity_check and the live space's last_seq and counts, open read-only, and so does a copy of the restored folder; restored in place from the bundle the space is claimed with a new epoch and its old folder kept",
+      "source": "A1 3.18, A6 3.5, A7 3.10 M3.07, A7 3.10 definition of done 3",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.sync.check-failed-ways",
+      "title": "The two actions for a failed check through the CLI: restore latest restores the space's newest backup that verifies into a new folder as a read-only copy, skipping and keeping a newer one that does not; rescue writes every readable row into exchange/rescued; the read-only words name both and never a new backup",
+      "source": "A1 3.2, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.rescue.damaged",
+      "title": "Rescue of a damaged database keeps the rows that can still be read from a private copy of its files: a table that fails partway is named by its product name, the others are written whole, every file of the space folder stays byte for byte (a write-ahead log beside an empty database, one with rows not checkpointed, a hot journal), a table the product does not have is neither written nor named, and each rescue writes a new file of its own",
+      "source": "A1 3.2, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A6.5.secrets.scanner",
+      "title": "The secret patterns of A6 3.16.4 find each kind of token alone and inside text, and across a chunk boundary through the kept overlap, and leave ordinary words, short or digitless look-alikes and public keys unflagged",
+      "source": "A6 3.16.4, A6 5, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.barrier",
       "title": "A migration whose barrier backup fails, at any point, never starts; a write between the backup and the migration stops it too; the space then opens read-only with the reason",
       "source": "A1 3.17, A1 3.18, A7 3.8 M1.06, MIL-02",
@@ -1919,6 +2023,14 @@
       "source": "A2 3.10.1, A1 3.18, A6 3.3, A7 3.8 M1.10",
       "owner": "M1",
       "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.space-export",
+      "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title refuses the export with its kind and place and never the text",
+      "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",
+      "owner": "M3",
+      "kind": "ci",
       "profiles": ["v1"]
     },
     {

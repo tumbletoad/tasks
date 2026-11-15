@@ -2,7 +2,14 @@
 // (in this process, with a TTY as the class says) creates, backs up, restores, claims and closes
 // spaces; the script and agent classes are refused the user-only verbs; a space read-only for its
 // synced or network folder names the ways out (A1 3.2). Fixture text only.
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -238,6 +245,143 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
   }, 180_000);
 });
 
+describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that restores", () => {
+  test("backup and fork mode, the bundle restored into a new folder, a transfer and a script refused", async () => {
+    const folder = join(world.root, "s", "exported");
+    const made = await user(["space", "create", "Exported", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const added = await world.tasks([
+      "add",
+      "Exported task",
+      "--space",
+      "Exported",
+      "--request-id",
+      "fixture-export-0001",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+
+    const ran = await user(["space", "export", folder, "--json"]);
+    expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+    const bundle = parsed(ran.stdout)["export"] as { file: string; mode: string; seq: number };
+    expect(bundle.mode).toBe("backup");
+    expect(bundle.file.startsWith(join(folder, "exports"))).toBe(true);
+    expect(existsSync(bundle.file)).toBe(true);
+    const forked = await user(["space", "export", folder, "--mode", "fork", "--with-jsonl"]);
+    expect(forked.code, forked.stdout + forked.stderr).toBe(0);
+    expect(forked.stdout).toMatch(
+      /^Exported to .+fork-[^ ]+\.zip \(seq \d+, \d+ bytes\)\nThe bundle is a plain, unencrypted copy of the space\./,
+    );
+
+    const copyFolder = join(world.root, "s", "exported-copy");
+    const copy = await user(["space", "restore", bundle.file, "--to", copyFolder, "--json"]);
+    expect(copy.code, copy.stdout + copy.stderr).toBe(0);
+    expect(parsed(copy.stdout)).toMatchObject({
+      read_only_copy: true,
+      space: { state: "read_only", reason: "read_only_copy" },
+    });
+
+    const transfer = await user(["space", "export", folder, "--mode", "transfer", "--json"]);
+    expect(transfer.code, transfer.stdout).toBe(2);
+    expect(parsed(transfer.stdout)).toMatchObject({
+      error: { code: "invalid_input", hint: "It arrives with M3.08." },
+    });
+    expect((await world.tasks(["space", "export", folder, "--json"])).code).toBe(5);
+    for (const done of [copyFolder, folder]) {
+      expect((await user(["space", "close", done, "--json"])).code).toBe(0);
+    }
+  }, 180_000);
+
+  test("[A1.5.sync.check-failed-ways] restore latest skips a newer backup that does not verify; rescue writes the readable rows", async () => {
+    const folder = join(world.root, "s", "rescued");
+    const made = await user(["space", "create", "Rescued", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const added = await world.tasks([
+      "add",
+      "Rescued task",
+      "--space",
+      "Rescued",
+      "--request-id",
+      "fixture-rescue-0001",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+    const names: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const backup = await user(["space", "backup", folder, "--json"]);
+      expect(backup.code, backup.stdout + backup.stderr).toBe(0);
+      names.push((parsed(backup.stdout)["backup"] as { name: string }).name);
+      // Two backups, two names: a backup's name has the millisecond it began.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    // The newer backup no longer verifies, though its size is right.
+    const dir = join(folder, "backups");
+    const newer = join(dir, `${names[1] ?? ""}.db.gz`);
+    const bytes = readFileSync(newer);
+    bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
+    writeFileSync(newer, bytes);
+
+    const copyFolder = join(world.root, "s", "rescued-copy");
+    const latest = await user(["space", "restore", "latest", folder, "--to", copyFolder, "--json"]);
+    expect(latest.code, latest.stdout + latest.stderr).toBe(0);
+    expect(parsed(latest.stdout)).toMatchObject({
+      backup: names[0],
+      read_only_copy: true,
+      space: { state: "read_only", reason: "read_only_copy" },
+    });
+    // The damaged one stays, for a person to look at.
+    expect(existsSync(newer)).toBe(true);
+
+    const rescue = await user(["space", "rescue", folder, "--json"]);
+    expect(rescue.code, rescue.stdout + rescue.stderr).toBe(0);
+    const rescued = parsed(rescue.stdout)["rescue"] as {
+      file: string;
+      rows: number;
+      failed: string[];
+    };
+    expect(rescued.failed).toEqual([]);
+    expect(rescued.file.startsWith(join(folder, "exchange", "rescued"))).toBe(true);
+    const lines = readFileSync(rescued.file, "utf8").trimEnd().split("\n");
+    expect(lines).toHaveLength(rescued.rows);
+    expect(lines.some((line) => line.includes("Rescued task"))).toBe(true);
+    for (const done of [copyFolder, folder]) {
+      expect((await user(["space", "close", done, "--json"])).code).toBe(0);
+    }
+  }, 180_000);
+
+  test("a secret-shaped title refuses the export, naming its kind and place but never the text", async () => {
+    // Built from parts: the source holds no token.
+    const token = ["gh", "p_", "aB3dE5".repeat(6)].join("");
+    const folder = join(world.root, "s", "secretive");
+    const made = await user(["space", "create", "Secretive", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const added = await world.tasks([
+      "add",
+      `Rotate ${token}`,
+      "--space",
+      "Secretive",
+      "--request-id",
+      "fixture-export-0002",
+      "--json",
+    ]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+    const ran = await user(["space", "export", folder, "--json"]);
+    expect(ran.code, ran.stdout).toBe(2);
+    const error = parsed(ran.stdout)["error"] as {
+      code: string;
+      data: { cause: string; secret: { kind: string; place: string } };
+    };
+    expect(error.code).toBe("invalid_input");
+    expect(error.data.cause).toBe("EXPORT_SECRET_FOUND");
+    expect(error.data.secret.kind).toBe("github_token");
+    // The first table that holds it, by name: the title's history comes before the task.
+    expect(error.data.secret.place).toMatch(/^[a-z_]+\.[a-z_]+$/);
+    expect(ran.stdout + ran.stderr).not.toContain(token);
+    expect(readdirSync(join(folder, "exports"))).toEqual([]);
+    expect((await user(["space", "close", folder, "--json"])).code).toBe(0);
+  }, 180_000);
+});
+
 /** What `tasks space` prints under a space read-only for its synced or network folder. */
 const BACKUP_WAY = [
   "To move the space, restore a backup into a new local folder and claim the copy:",
@@ -301,8 +445,14 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
       EXCLUDED_WAY,
       ...BACKUP_WAY,
     ]);
-    // A database that failed its check takes no new backup: its words name the restore already.
-    for (const reason of ["check_failed", "read_only_copy", "not_authority", undefined]) {
+    // A database that failed its check takes no new backup: its two actions are A1 3.2's.
+    expect(wayOut({ entry: 0, state: "read_only", reason: "check_failed" })).toEqual([
+      "Restore the newest backup that verifies into a new local folder, or keep the rows that can still be read:",
+      `  ${CLI_NAME} space restore latest <folder> --to <new folder>`,
+      `  ${CLI_NAME} space rescue <folder>`,
+      "<new folder> must not exist yet. The rescue writes a file into <folder>/exchange/rescued. The old folder keeps all its files.",
+    ]);
+    for (const reason of ["read_only_copy", "not_authority", undefined]) {
       expect(
         wayOut({ entry: 0, state: "read_only", ...(reason === undefined ? {} : { reason }) }),
       ).toEqual([]);

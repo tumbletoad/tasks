@@ -11,7 +11,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -25,7 +25,7 @@ import { listBackups, removeBackupLeftovers } from "../src/backup/list.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "../src/backup/policy.ts";
 import { backupName, parseBackupName, parseUtcStamp, utcStamp } from "../src/backup/sidecar.ts";
 import { StorageError } from "../src/errors.ts";
-import { NODE_IO } from "../src/files.ts";
+import { NODE_IO, type FileIo } from "../src/files.ts";
 import { restoreBackup, restoreBackupWith } from "../src/restore/restore.ts";
 import { openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
@@ -79,9 +79,12 @@ async function pad(folder: string, tasks: number): Promise<void> {
   }
 }
 
+/** The control slots before the writers' own (concurrent-writer.ts): stop, open, start. */
+const CONTROL_SLOTS = 3;
+
 /** Starts writers in worker threads, each with its own connection and the real write path. */
 function startWriters(folder: string, count: number) {
-  const control = new SharedArrayBuffer(4 * (count + 1));
+  const control = new SharedArrayBuffer(4 * (CONTROL_SLOTS + count));
   const slots = new Int32Array(control);
   const workers = Array.from({ length: count }, (_, writer) => {
     const data: ConcurrentWriterData = { folder, writer, control };
@@ -99,27 +102,48 @@ function startWriters(folder: string, count: number) {
         });
       }),
   );
+  // A writer that fails ends the wait for them at once, with its own error.
+  let failed: Error | undefined;
+  for (const exit of exits) {
+    exit.catch((error: unknown) => {
+      failed ??= error instanceof Error ? error : new Error(String(error));
+    });
+  }
   const committed = (): number => {
     let total = 0;
-    for (let i = 1; i <= count; i += 1) total += Atomics.load(slots, i);
+    for (let w = 0; w < count; w += 1) total += Atomics.load(slots, CONTROL_SLOTS + w);
     return total;
+  };
+  /** Waits until `done`, or until a writer failed. The test's own timeout bounds the wait. */
+  const until = async (done: () => boolean): Promise<void> => {
+    for (;;) {
+      if (failed !== undefined) throw failed;
+      if (done()) return;
+      await new Promise((r) => setTimeout(r, 5));
+    }
   };
   return {
     committed,
-    /** Waits until every writer committed at least once. */
+    /**
+     * Waits until every writer is open, starts their loops together, and waits until every writer
+     * committed at least once. No time limit of its own: ten threads loading the write path start
+     * late on a loaded machine (a 30 s limit once ran out in a full run).
+     */
     async running(): Promise<void> {
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
-        let all = true;
-        for (let w = 1; w <= count; w += 1) if (Atomics.load(slots, w) === 0) all = false;
-        if (all) return;
-        await new Promise((r) => setTimeout(r, 5));
-      }
-      throw new Error("the writers did not start");
+      await until(() => Atomics.load(slots, 1) === count);
+      Atomics.store(slots, 2, 1);
+      Atomics.notify(slots, 2);
+      await until(() => {
+        for (let w = 0; w < count; w += 1) {
+          if (Atomics.load(slots, CONTROL_SLOTS + w) === 0) return false;
+        }
+        return true;
+      });
     },
     async stop(): Promise<number[]> {
       Atomics.store(slots, 0, 1);
       Atomics.notify(slots, 0);
+      Atomics.notify(slots, 2);
       return Promise.all(exits);
     },
   };
@@ -336,8 +360,8 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     "copied",
     "checked",
     "compressed",
-    "data-renamed",
-    "sidecar-renamed",
+    "data-published",
+    "sidecar-published",
   ];
 
   test("a crash leaves either a complete backup or leftovers that are never listed as one", async () => {
@@ -362,7 +386,7 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     for (const [point, copy] of crashes) {
       const listing = listBackups(join(copy, "backups"));
       const complete = listing.backups.filter((b) => b.state === "ok");
-      if (point === "sidecar-renamed") {
+      if (point === "sidecar-published") {
         expect(complete, point).toHaveLength(1);
         expect(
           listing.leftovers.filter((l) => !l.startsWith(BACKUP_TEMP_PREFIX)),
@@ -386,14 +410,15 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
       // The leftovers go, and with them every file that is not a complete backup.
       removeBackupLeftovers(listing, AFTER_RESTART);
       const left = readdirSync(join(copy, "backups"));
-      expect(left.length, point).toBe(point === "sidecar-renamed" ? 2 : 0);
+      expect(left.length, point).toBe(point === "sidecar-published" ? 2 : 0);
     }
   });
 
-  test("a failure at any point removes everything the backup wrote", async () => {
+  test("a failure before the sidecar is published removes what the backup wrote; after it, the pair stays for the reader", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     const before = treeDigest(folder);
+    const dir = join(folder, "backups");
     for (const point of POINTS) {
       await expectCode(
         () =>
@@ -409,9 +434,18 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
           ),
         "BACKUP_FAILED",
       );
-      expect(readdirSync(join(folder, "backups")), point).toEqual([]);
+      if (point !== "sidecar-published") {
+        expect(readdirSync(dir), point).toEqual([]);
+        continue;
+      }
+      // The last step failed once the pair was published: nothing is removed, and the reader's
+      // checks judge it. This pair is whole, so it lists and restores as a backup.
+      const listing = listBackups(dir);
+      expect(listing.backups.map((b) => b.state)).toEqual(["ok"]);
+      expect(listing.leftovers).toEqual([]);
+      await restoreBackup(checked, listing.backups[0]?.file ?? "", join(folders.make(), "mira"));
     }
-    rmSync(join(folder, "backups"), { recursive: true });
+    rmSync(dir, { recursive: true });
     // The backup's read-only connection leaves what one leaves on a closed WAL space, an empty
     // -wal and the -shm (A1 3.1), and changes nothing else.
     const after = treeDigest(folder);
@@ -437,7 +471,7 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
             for (const name of readdirSync(dir)) utimesSync(join(dir, name), longAgo, longAgo);
             return;
           }
-          if (point !== "data-renamed") return;
+          if (point !== "data-published") return;
           // Cleanup in another process, just before the sidecar lands: the `.db.gz` has no
           // sidecar yet, but the backup refreshed it before it took its name.
           removed = removeBackupLeftovers(listBackups(dir));
@@ -463,7 +497,7 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
           {
             at: (point) => {
               // Another process's cleanup removed it (a backup stopped for over an hour).
-              if (point === "data-renamed") {
+              if (point === "data-published") {
                 for (const name of readdirSync(dir)) {
                   if (name.endsWith(".db.gz")) rmSync(join(dir, name));
                 }
@@ -490,7 +524,7 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
           { kind: "manual" },
           {
             at: (point) => {
-              if (point !== "sidecar-renamed") return;
+              if (point !== "sidecar-published") return;
               // A sync puts another pair under the backup's two names, right after its sidecar.
               for (const name of readdirSync(dir)) {
                 if (name.startsWith(BACKUP_TEMP_PREFIX)) continue;
@@ -507,6 +541,187 @@ describe("[A1.5.backup.crash-windows] a crash or a failure at each point of a ba
     for (const [name, text] of theirs) {
       expect(readFileSync(join(dir, name), "utf8"), name).toBe(text);
     }
+  });
+});
+
+describe("[A1.5.backup.no-replace] a backup publishes its pair without replacing anything", () => {
+  const noLinks: FileIo = {
+    ...NODE_IO,
+    linkSync: () => {
+      throw Object.assign(new Error("no hard links on this file system"), { code: "EPERM" });
+    },
+  };
+  const WAYS: [string, FileIo][] = [
+    ["links", NODE_IO],
+    ["exclusive copies", noLinks],
+  ];
+
+  test("a pair planted under the backup's names while it runs is never replaced", async () => {
+    const checked = await checkedDriver();
+    const at = Date.UTC(2026, 10, 14, 1, 2, 3, 4);
+    // Before the names are checked, after the check and before the data is published, and a
+    // sidecar alone after the data is published.
+    const plants: [BackupPoint, ("data" | "sidecar")[]][] = [
+      ["checked", ["data", "sidecar"]],
+      ["compressed", ["data", "sidecar"]],
+      ["compressed", ["data"]],
+      ["data-published", ["sidecar"]],
+    ];
+    for (const [way, io] of WAYS) {
+      for (const [point, which] of plants) {
+        const label = `${way}, ${point}, ${which.join("+")}`;
+        const { folder } = await createFixtureSpace(folders.make());
+        await writeCommits(folder, 2);
+        const dir = join(folder, "backups");
+        const name = backupName({ kind: "manual", createdAt: at, epoch: 1, seq: 2 });
+        const planted = new Map<string, string>();
+        for (const part of which) {
+          const file = `${name}${part === "data" ? ".db.gz" : ".json"}`;
+          planted.set(file, `another program's ${part}`);
+        }
+        await expectCode(
+          () =>
+            backupSpaceWith(
+              checked,
+              folder,
+              { kind: "manual", now: () => at },
+              {
+                io,
+                at: (p) => {
+                  if (p !== point) return;
+                  for (const [file, text] of planted) writeFileSync(join(dir, file), text);
+                },
+              },
+            ),
+          "BACKUP_FAILED",
+        );
+        for (const [file, text] of planted) {
+          expect(readFileSync(join(dir, file), "utf8"), label).toBe(text);
+        }
+        // Nothing of the backup's own is left beside them.
+        expect(readdirSync(dir).sort(), label).toEqual([...planted.keys()].sort());
+      }
+    }
+  });
+
+  test("a failure after the sidecar took its name (the folder's sync) removes nothing of the pair", async () => {
+    const checked = await checkedDriver();
+    for (const [way, base] of WAYS) {
+      const { folder } = await createFixtureSpace(folders.make());
+      await writeCommits(folder, 2);
+      const dir = join(folder, "backups");
+      // The folder sync is POSIX's (files.ts fsyncFolder): run it on every OS from the data's
+      // publication on, and fail it once the sidecar has its name.
+      const FOLDER_FD = -4242;
+      let failed = false;
+      const io: FileIo = {
+        ...base,
+        openSync: (path, flags, mode) =>
+          path === dir ? FOLDER_FD : base.openSync(path, flags, mode),
+        closeSync: (fd) => {
+          if (fd !== FOLDER_FD) base.closeSync(fd);
+        },
+        fsyncSync: (fd) => {
+          if (fd !== FOLDER_FD) {
+            base.fsyncSync(fd);
+            return;
+          }
+          if (readdirSync(dir).some((n) => n.endsWith(".json") && !n.startsWith("."))) {
+            failed = true;
+            throw Object.assign(new Error("injected"), { code: "EIO" });
+          }
+        },
+      };
+      const platform = Object.getOwnPropertyDescriptor(process, "platform");
+      try {
+        await expectCode(
+          () =>
+            backupSpaceWith(
+              checked,
+              folder,
+              { kind: "manual" },
+              {
+                io,
+                at: (p) => {
+                  if (p === "data-published") {
+                    Object.defineProperty(process, "platform", { value: "linux" });
+                  }
+                },
+              },
+            ),
+          "BACKUP_FAILED",
+        );
+      } finally {
+        if (platform !== undefined) Object.defineProperty(process, "platform", platform);
+      }
+      expect(failed, way).toBe(true);
+      // The pair stays for the reader's checks, and it is a complete backup that restores.
+      const listing = listBackups(dir);
+      expect(
+        listing.backups.map((b) => b.state),
+        way,
+      ).toEqual(["ok"]);
+      const restored = await restoreBackup(
+        checked,
+        listing.backups[0]?.file ?? "",
+        join(folders.make(), "mira"),
+      );
+      expect(restored.space.lastSeq, way).toBe(2);
+    }
+  });
+
+  test("a sidecar copy that fails after its last byte, and cannot be removed again, keeps the data with it", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const dir = join(folder, "backups");
+    // The sidecar under its own name (not the temporary file), its descriptor, and the faults: its
+    // flush fails, and so does its removal.
+    const isSidecar = (path: string): boolean =>
+      path.startsWith(dir) && path.endsWith(".json") && !basename(path).startsWith(".");
+    let sidecarFd: number | undefined;
+    let faults = 0;
+    const io: FileIo = {
+      ...noLinks,
+      openSync: (path, flags, mode) => {
+        const fd = NODE_IO.openSync(path, flags, mode);
+        if (isSidecar(path)) sidecarFd = fd;
+        return fd;
+      },
+      fsyncSync: (fd) => {
+        if (fd === sidecarFd) {
+          faults += 1;
+          throw Object.assign(new Error("injected"), { code: "EIO" });
+        }
+        NODE_IO.fsyncSync(fd);
+      },
+      rmSync: (path, options) => {
+        if (isSidecar(path)) {
+          faults += 1;
+          throw Object.assign(new Error("injected"), { code: "EPERM" });
+        }
+        NODE_IO.rmSync(path, options);
+      },
+    };
+    await expectCode(
+      () => backupSpaceWith(checked, folder, { kind: "manual" }, { io }),
+      "BACKUP_FAILED",
+    );
+    expect(faults).toBe(2);
+    // The complete sidecar stayed, so its data stayed too: a pair for the reader's checks.
+    expect(listBackups(dir).backups.map((b) => b.state)).toEqual(["ok"]);
+  });
+
+  test("without hard links the pair is published by exclusive copies, and restores", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    const record = await backupSpaceWith(checked, folder, { kind: "manual" }, { io: noLinks });
+    const listing = listBackups(join(folder, "backups"));
+    expect(listing.backups.map((b) => [b.name, b.state])).toEqual([[record.name, "ok"]]);
+    expect(listing.leftovers).toEqual([]);
+    const restored = await restoreBackup(checked, record.file, join(folders.make(), "mira"));
+    expect(restored.space.lastSeq).toBe(3);
   });
 });
 

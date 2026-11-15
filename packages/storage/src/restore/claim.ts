@@ -70,69 +70,77 @@ export function claimCopy(
 
 /** Claims the space on `conn`, a writer connection, in one IMMEDIATE transaction. */
 export function claimSpace(conn: Connection, options: ClaimOptions): Claim {
+  return conn.transaction("immediate", () => claimInTransaction(conn, options));
+}
+
+/**
+ * The claim's writes, inside the caller's write transaction on `conn`: claimSpace's body, which a
+ * restore's first write also runs on its copy and takes back (mark.ts), so a copy that cannot be
+ * claimed never restores or verifies.
+ */
+export function claimInTransaction(conn: Connection, options: ClaimOptions): Claim {
+  if (!conn.inTransaction) throw misuse("A claim is written inside a write transaction");
   if (!isId(options.machineId, "m")) throw misuse("The machine ID is not an m_ ID");
   if (!inRange(options.now, "instant")) throw misuse("The clock gave an instant outside its range");
   for (const epoch of options.knownEpochs ?? []) {
     if (!inRange(epoch, "epoch")) throw misuse("A known epoch is outside its range");
   }
-  return conn.transaction("immediate", () => {
-    const before = decodeSpaceRow(conn.prepare(SPACE).get());
-    const known = [
-      before.authority.epoch,
-      ...before.lineage.incarnations.map((entry) => entry.epoch),
-      ...(options.knownEpochs ?? []),
-    ];
-    const epoch = known.reduce((a, b) => Math.max(a, b), 0) + 1;
-    if (!inRange(epoch, "epoch")) {
-      throw new StorageError("STORAGE_CONSTRAINT", "The space's authority epochs are used up");
-    }
-    const incarnation = newId("ai", options.random);
-    const parent = { incarnation: before.authority.incarnation, through_seq: before.lastSeq };
-    const { seq, at } = writeSystemCommit(conn, {
-      kind: "ops",
-      origin: "system",
-      // The new incarnation is random, so the request ID is unique in the system scope.
-      request: `claim-${incarnation.slice(3)}`,
-      ops: [
-        {
-          v: 1,
-          op: "space.claim",
-          target: before.spaceId,
-          input: { kind: options.kind, epoch, incarnation, parent },
-        },
-      ],
-      epoch,
-      incarnation,
-      machine: options.machineId,
-      now: options.now,
-      random: options.random,
-    });
-    const entry: LineageEntry = {
-      incarnation,
-      epoch,
-      kind: options.kind,
-      parent,
-      machine_id: options.machineId,
-      at,
-    };
-    conn
-      .prepare(
-        `UPDATE space SET authority_machine = $machine, authority_epoch = $epoch,
-           authority_incarnation = $incarnation, authority_since = $seq, lineage = $lineage,
-           transfer = NULL
-         WHERE one = 1`,
-      )
-      .run({
-        machine: options.machineId,
-        epoch,
-        incarnation,
-        seq,
-        lineage: JSON.stringify({
-          forked_from: before.lineage.forked_from,
-          incarnations: [...before.lineage.incarnations, entry],
-        }),
-      });
-    const space = decodeSpaceRow(conn.prepare(SPACE).get());
-    return { epoch, incarnation, seq, parent, space };
+  const before = decodeSpaceRow(conn.prepare(SPACE).get());
+  const known = [
+    before.authority.epoch,
+    ...before.lineage.incarnations.map((entry) => entry.epoch),
+    ...(options.knownEpochs ?? []),
+  ];
+  const epoch = known.reduce((a, b) => Math.max(a, b), 0) + 1;
+  if (!inRange(epoch, "epoch")) {
+    throw new StorageError("STORAGE_CONSTRAINT", "The space's authority epochs are used up");
+  }
+  const incarnation = newId("ai", options.random);
+  const parent = { incarnation: before.authority.incarnation, through_seq: before.lastSeq };
+  const { seq, at } = writeSystemCommit(conn, {
+    kind: "ops",
+    origin: "system",
+    // The new incarnation is random, so the request ID is unique in the system scope.
+    request: `claim-${incarnation.slice(3)}`,
+    ops: [
+      {
+        v: 1,
+        op: "space.claim",
+        target: before.spaceId,
+        input: { kind: options.kind, epoch, incarnation, parent },
+      },
+    ],
+    epoch,
+    incarnation,
+    machine: options.machineId,
+    now: options.now,
+    random: options.random,
   });
+  const entry: LineageEntry = {
+    incarnation,
+    epoch,
+    kind: options.kind,
+    parent,
+    machine_id: options.machineId,
+    at,
+  };
+  conn
+    .prepare(
+      `UPDATE space SET authority_machine = $machine, authority_epoch = $epoch,
+         authority_incarnation = $incarnation, authority_since = $seq, lineage = $lineage,
+         transfer = NULL
+       WHERE one = 1`,
+    )
+    .run({
+      machine: options.machineId,
+      epoch,
+      incarnation,
+      seq,
+      lineage: JSON.stringify({
+        forked_from: before.lineage.forked_from,
+        incarnations: [...before.lineage.incarnations, entry],
+      }),
+    });
+  const space = decodeSpaceRow(conn.prepare(SPACE).get());
+  return { epoch, incarnation, seq, parent, space };
 }
