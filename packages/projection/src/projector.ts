@@ -254,8 +254,13 @@ export class Projector {
     const unverified = new Set<string>();
     if (found !== undefined && journal !== undefined) {
       for (const [path, placing] of journal.placing) {
-        const look = this.#tree.look(path);
-        if (look.kind !== "file" || look.links !== 1 || look.sha256 !== placing.sha256) {
+        const look = this.#tree.look(path, undefined, placing.size);
+        if (
+          look.kind !== "file" ||
+          look.links !== 1 ||
+          look.size !== placing.size ||
+          look.sha256 !== placing.sha256
+        ) {
           if (placing.task !== undefined) unverified.add(placing.task);
           continue;
         }
@@ -322,7 +327,7 @@ export class Projector {
     let forgotten = 0;
     for (const [path, file] of [...record.files]) {
       checked += 1;
-      const look = this.#tree.look(path, folders);
+      const look = this.#tree.look(path, folders, file.size);
       if (
         look.kind === "file" &&
         look.links === 1 &&

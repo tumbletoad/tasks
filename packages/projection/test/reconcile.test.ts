@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -194,6 +195,37 @@ describe("[A1.5.projection.reconcile] reconciliation file by file: what is missi
     await settle(projector);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
+
+  test("a generated file of any size proves itself: one over 16 MiB is left by a rebuild and retired by a rename, never moved aside", async () => {
+    const projector = w.projector();
+    await projector.start();
+    await settle(projector);
+    const [a] = catalogOf(w.dir);
+    // 260 notes of 64 KiB, as many as a request holds at a time: the file grows past 16 MiB.
+    const body = `${"Long fixture note ".repeat(3_640)}end`;
+    for (let i = 0; i < 260; i += 7) {
+      w.submit(
+        Array.from({ length: Math.min(7, 260 - i) }, () => ({
+          kind: "note.add" as const,
+          task: a?.id ?? "",
+          body,
+        })),
+      );
+    }
+    await settle(projector);
+    const big = join(w.dir, ...(a?.path ?? "").split("/"));
+    expect(statSync(big).size).toBeGreaterThan(16 * 1024 * 1024);
+    projector.rebuild();
+    const rebuilt = await settle(projector);
+    expect(rebuilt.reduce((sum, r) => sum + r.rescued + r.removed + r.failed, 0)).toBe(0);
+    w.submit([{ kind: "task.patch", task: a?.id ?? "", set: { title: "Renamed large fixture" } }]);
+    const renamed = await settle(projector);
+    expect(renamed.reduce((sum, r) => sum + r.rescued, 0)).toBe(0);
+    expect(renamed.reduce((sum, r) => sum + r.removed, 0)).toBe(1);
+    expect(existsSync(big)).toBe(false);
+    expect(existsSync(join(w.folder, "exchange"))).toBe(false);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  }, 120_000);
 
   test("a rebuild of an intact tree writes nothing, removes nothing and moves nothing aside", async () => {
     const projector = w.projector();

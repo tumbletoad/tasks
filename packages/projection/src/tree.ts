@@ -38,8 +38,8 @@ import {
   fstatSync,
   lstatSync,
   openSync,
-  readFileSync,
   readdirSync,
+  readSync,
   renameSync,
   rmdirSync,
   unlinkSync,
@@ -57,8 +57,8 @@ export const TASK_FILE =
 const TASK_FOLDER = /^(open|completed\/[0-9]{4}|archived\/[0-9]{4})$/;
 /** A temporary file's name: the file's own, the start of the content's hash, the batch's tag. */
 const TEMP_NAME = /^\.(.+)\.([0-9a-f]{32})\.([0-9a-f]{8})\.tmp$/;
-/** A file larger than this is no file the projection wrote: a task's file is far smaller. */
-const MAX_FILE_BYTES = 16 * 1024 * 1024;
+/** A file is hashed in parts of this size: a generated file has no size limit. */
+const CHUNK_BYTES = 1024 * 1024;
 const FILE_MODE = 0o400;
 const FOLDER_MODE = 0o700;
 /** A1 3.13: on a Windows sharing violation the check and the act run again, 5 times over 1 s. */
@@ -122,6 +122,20 @@ const codeIs = (error: unknown, ...codes: string[]): boolean => {
   return typeof code === "string" && codes.includes(code);
 };
 
+/** The SHA-256 and size of what `fd` holds, read in parts from its start. */
+function hashOf(fd: number): { sha256: string; size: number } {
+  const hash = createHash("sha256");
+  const buffer = Buffer.allocUnsafe(CHUNK_BYTES);
+  let size = 0;
+  for (;;) {
+    const n = readSync(fd, buffer, 0, CHUNK_BYTES, size);
+    if (n === 0) break;
+    hash.update(buffer.subarray(0, n));
+    size += n;
+  }
+  return { sha256: hash.digest("hex"), size };
+}
+
 const pauseSync = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 };
@@ -160,7 +174,7 @@ export type Look =
       readonly size: number;
       readonly links: number;
     }
-  /** A folder, a link, a file too large or unreadable: never a file of the projection's. */
+  /** A folder, a link, a file that could not be read: never a file of the projection's. */
   | { readonly kind: "other" };
 
 /** A regular file read through one descriptor, still open. */
@@ -262,12 +276,16 @@ export class Tree {
   /**
    * What a regular file at `abs` holds, read through one descriptor that is checked to be the entry
    * lstat saw (the same device and file), so a link swapped in between is never read as ours. The
-   * descriptor stays open for the caller.
+   * descriptor stays open for the caller. A file whose size `wanted` refuses is not read: it can
+   * hold none of the bytes it is compared with (its `sha256` is then empty).
    */
-  #open(abs: string): { kind: "missing" } | { kind: "other" } | Opened {
+  #open(
+    abs: string,
+    wanted?: (size: number) => boolean,
+  ): { kind: "missing" } | { kind: "other" } | Opened {
     const seen = lstatSync(abs, { bigint: true, throwIfNoEntry: false });
     if (seen === undefined) return { kind: "missing" };
-    if (!seen.isFile() || seen.size > BigInt(MAX_FILE_BYTES)) return { kind: "other" };
+    if (!seen.isFile()) return { kind: "other" };
     let fd: number;
     try {
       fd = openSync(abs, constants.O_RDONLY | NOFOLLOW);
@@ -282,16 +300,11 @@ export class Tree {
         closeSync(fd);
         return { kind: "other" };
       }
-      const data = readFileSync(fd);
-      return {
-        kind: "file",
-        fd,
-        sha256: sha256(data),
-        size: data.length,
-        links: Number(stats.nlink),
-        ino: stats.ino,
-        dev: stats.dev,
-      };
+      const known = { links: Number(stats.nlink), ino: stats.ino, dev: stats.dev };
+      if (wanted !== undefined && !wanted(Number(stats.size))) {
+        return { kind: "file", fd, sha256: "", size: Number(stats.size), ...known };
+      }
+      return { kind: "file", fd, ...hashOf(fd), ...known };
     } catch (error) {
       closeSync(fd);
       throw error;
@@ -300,9 +313,10 @@ export class Tree {
 
   /**
    * What is at `path`, without acting: for the reconciliation and the start. `folders` caches the
-   * look at each folder for one pass: no act depends on it, every act checks again.
+   * look at each folder for one pass: no act depends on it, every act checks again. A file of
+   * another `size` than the one it is compared with is not read (its `sha256` is empty).
    */
-  look(path: string, folders?: Map<string, boolean>): Look {
+  look(path: string, folders?: Map<string, boolean>, size?: number): Look {
     for (const rel of Tree.foldersOf(path)) {
       let real = folders?.get(rel);
       if (real === undefined) {
@@ -312,7 +326,10 @@ export class Tree {
       if (!real) return { kind: "unreachable" };
     }
     try {
-      const found = this.#open(this.#abs(path));
+      const found = this.#open(
+        this.#abs(path),
+        size === undefined ? undefined : (seen) => seen === size,
+      );
       if (found.kind !== "file") return found;
       closeSync(found.fd);
       return { kind: "file", sha256: found.sha256, size: found.size, links: found.links };
@@ -357,7 +374,8 @@ export class Tree {
       }
       for (let attempt = 1; ; attempt += 1) {
         try {
-          return this.#swap(path, abs, temp, tempAbs, hash, owned, rescues);
+          const next = { sha256: hash, size: data.length };
+          return this.#swap(path, abs, temp, tempAbs, next, owned, rescues);
         } catch (error) {
           if (!this.#win || !codeIs(error, "EPERM", "EBUSY", "EACCES") || attempt >= TRIES) {
             throw error;
@@ -377,7 +395,7 @@ export class Tree {
     abs: string,
     temp: string,
     tempAbs: string,
-    hash: string,
+    next: Owned,
     owned: Owned | undefined,
     rescues: Rescues,
   ): Placed {
@@ -385,7 +403,8 @@ export class Tree {
       this.#troubled = true;
       throw new ProjectionError("ENOTDIR", "A folder of the tree is not a real folder");
     }
-    const found = this.#open(abs);
+    // Only a file of the new content's size or the recorded one can hold either.
+    const found = this.#open(abs, (size) => size === next.size || size === owned?.size);
     if (found.kind === "missing") {
       this.#act("rename", path);
       renameSync(tempAbs, abs);
@@ -394,7 +413,7 @@ export class Tree {
     if (found.kind === "file") {
       let ours: boolean;
       try {
-        if (found.links === 1 && found.sha256 === hash) {
+        if (found.links === 1 && found.size === next.size && found.sha256 === next.sha256) {
           this.#dropTemp(temp, tempAbs);
           return "same";
         }
@@ -559,7 +578,7 @@ export class Tree {
           this.#troubled = true;
           return "not-ours";
         }
-        const found = this.#open(abs);
+        const found = this.#open(abs, (size) => size === owned.size);
         if (found.kind === "missing") return "missing";
         if (found.kind !== "file") return "not-ours";
         let ours: boolean;
