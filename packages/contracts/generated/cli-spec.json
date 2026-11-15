@@ -344,6 +344,14 @@
           "repeat": false,
           "required": false,
           "type": "string"
+        },
+        {
+          "field": "pack",
+          "flag": "--pack",
+          "help": "Copy the context pack: the task's text, for an app without the tools",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
         }
       ],
       "inputOnly": [],

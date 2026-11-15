@@ -29,6 +29,10 @@ export const LaunchOpenInput = z.strictObject({
   text: safeText(USER_LIMITS.note)
     .describe("Your words for the agent: they replace the brief's last line")
     .optional(),
+  pack: z
+    .boolean()
+    .describe("Copy the context pack: the task's text, for an app without the tools")
+    .optional(),
   request_id: RequestId,
 });
 
@@ -57,8 +61,10 @@ export const LaunchOpenResult = z.strictObject({
   launch: LaunchReceipt.describe("The launch's receipt: IDs, states, instants and codes only"),
   copy: z
     .string()
-    .max(40_000)
-    .describe("Text for the clipboard: Copy's pointer brief, or the brief to paste")
+    // The context pack's ceiling (A4 3.15.5, PACK_CEILING): the notes from the user are kept
+    // whole, so a pack may pass its 8,000-character budget by far.
+    .max(200_000)
+    .describe("Text for the clipboard: the pointer brief, context pack or brief to paste")
     .optional(),
   text: z
     .enum(["none", "inline", "note"])

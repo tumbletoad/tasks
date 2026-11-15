@@ -14,6 +14,7 @@
 // callers of main().
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { splitGlobals, UsageError, verbSpec, type Globals } from "./args.ts";
+import { briefCommand, type BriefOptions } from "./brief.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
 import { helpText, shortHelp } from "./help.ts";
@@ -30,7 +31,7 @@ import { asAppError, runVerb } from "./verbs.ts";
 
 export type { Io } from "./io.ts";
 
-export interface MainOptions extends DoctorOptions, OpenOptions, SetupOptions {
+export interface MainOptions extends DoctorOptions, OpenOptions, SetupOptions, BriefOptions {
   /** Runs `tasks serve`. The default loads the hub's entry (`@tasks/service/hub`). */
   readonly serve?: () => Promise<number>;
   /**
@@ -156,6 +157,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
             globals.json,
             `tasks has no command ${/^[a-z][a-z0-9-]{0,30}$/.test(command) ? command : "like that"}`,
           );
+        }
+        if (verb.entry === "launch.open") {
+          return await briefCommand(io, globals, verb, args, options);
         }
         return await runVerb(io, globals, verb, args, options);
       }

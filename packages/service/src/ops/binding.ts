@@ -68,6 +68,11 @@ export class Slot {
   shared = false;
   /** Native IDs the connection presented, by source (A3 3.7.3: recorded at a later bind). */
   readonly presented = new Map<NativeSource, string>();
+  /**
+   * The bridge's working folder as its bind frame said. It binds nothing: only a best-effort app's
+   * launch is confirmed by it, when it is the folder the launch's link named (A4 3.4.4).
+   */
+  readonly folder: string | undefined;
 
   constructor(options: {
     kind: "bridge" | "mapped";
@@ -77,12 +82,14 @@ export class Slot {
     named?: string;
     space?: string;
     session?: BoundSession;
+    folder?: string;
   }) {
     this.kind = options.kind;
     this.instance = options.instance;
     this.origin = options.origin;
     this.unboundScope = options.unboundScope;
     this.named = options.named;
+    this.folder = options.folder;
     this.space = options.space;
     this.session = options.session;
   }

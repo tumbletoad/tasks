@@ -214,6 +214,10 @@ export function verbHelp(verb: VerbSpec): string {
       `  ${f.short === undefined ? "" : `${f.short}, `}${withValue(f)}${f.repeat ? " (repeatable)" : ""}  ${f.help}${values}${f.required ? " (required)" : ""}`,
     );
   }
+  // `tasks brief --copy` is the CLI's own: the OS's clipboard tool, else the text printed.
+  if (verb.entry === "launch.open") {
+    lines.push("  --copy  Put the text on the clipboard instead of printing it");
+  }
   lines.push(
     "  --input <file or ->  The whole input as JSON",
     "  --json  Print the result as JSON",

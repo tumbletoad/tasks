@@ -36,6 +36,12 @@
       "source": "home"
     },
     {
+      "target": "claude-cli",
+      "path": "C:\\Users\\mira\\.claude_personal",
+      "suffix": "personal",
+      "source": "home"
+    },
+    {
       "target": "codex-cli",
       "path": "C:\\Users\\mira\\.Codex",
       "suffix": "",
@@ -60,6 +66,20 @@
       "exec": "C:\\Users\\mira\\.local\\bin\\claude.exe",
       "argsPrefix": [],
       "configHome": "C:\\Users\\mira\\.claude",
+      "needs": []
+    },
+    {
+      "id": "claude-personal",
+      "target": "claude-cli",
+      "label": "Claude Code · personal",
+      "account": "personal",
+      "source": "home",
+      "exec": "C:\\Users\\mira\\.local\\bin\\claude.exe",
+      "argsPrefix": [],
+      "configHome": "C:\\Users\\mira\\.claude_personal",
+      "env": {
+        "CLAUDE_CONFIG_DIR": "C:\\Users\\mira\\.claude_personal"
+      },
       "needs": []
     },
     {
