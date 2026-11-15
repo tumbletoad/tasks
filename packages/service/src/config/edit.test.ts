@@ -17,12 +17,30 @@ import {
 import { atomicWrite } from "../hub/files.ts";
 import { MAX_CONFIG_BYTES } from "./toml.ts";
 
-/** A rename that fails once with EBUSY (a Windows sharing failure), running a callback first. */
-const renameFaults = vi.hoisted(() => ({ busyOnce: undefined as undefined | (() => void) }));
+/**
+ * A rename that fails once with EBUSY (a Windows sharing failure), running a callback first; and
+ * writes that each write at most `shortWrites` bytes, as a disk filling up may.
+ */
+const renameFaults = vi.hoisted(() => ({
+  busyOnce: undefined as undefined | (() => void),
+  shortWrites: undefined as undefined | number,
+}));
 vi.mock("node:fs", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs")>();
   return {
     ...fs,
+    writeSync: (fd: number, data: unknown, ...rest: unknown[]) => {
+      const most = renameFaults.shortWrites;
+      if (most !== undefined && data instanceof Uint8Array) {
+        const offset = typeof rest[0] === "number" ? rest[0] : 0;
+        const length = typeof rest[1] === "number" ? rest[1] : data.length - offset;
+        return fs.writeSync(fd, data, offset, Math.min(most, length));
+      }
+      if (most !== undefined && typeof data === "string") {
+        return fs.writeSync(fd, data.slice(0, most));
+      }
+      return (fs.writeSync as (...args: unknown[]) => number)(fd, data, ...rest);
+    },
     renameSync: (from: string, to: string) => {
       const fault = renameFaults.busyOnce;
       if (fault !== undefined) {
@@ -230,6 +248,24 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
     }).toThrow("changed");
     expect(checked).toBe(1);
     expect(readFileSync(file, "utf8")).toBe("# mine\n");
+    expect(readdirSync(dir)).toEqual([MACHINE_TOML]);
+  });
+
+  test("a write the disk cuts short is written whole before the rename: the file is never replaced by a part", () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, MACHINE_TOML), '# my notes\n[log]\nlevel = "warn"\n', { mode: 0o600 });
+    // Each write call writes at most 5 bytes, as a disk that fills up may.
+    renameFaults.shortWrites = 5;
+    try {
+      expect(
+        editMachineToml(dir, [{ op: "set", table: ["log"], key: "level", value: "info" }]),
+      ).toMatchObject({ ok: true });
+    } finally {
+      renameFaults.shortWrites = undefined;
+    }
+    expect(readFileSync(join(dir, MACHINE_TOML), "utf8")).toBe(
+      '# my notes\n[log]\nlevel = "info"\n',
+    );
     expect(readdirSync(dir)).toEqual([MACHINE_TOML]);
   });
 

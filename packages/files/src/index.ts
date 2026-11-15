@@ -194,7 +194,9 @@ function pause(ms: number): void {
  * another process has open without delete sharing fails for a moment, so it is tried a few times.
  * A failed write leaves no temporary file. `beforeRename` runs once the new file is written and
  * flushed, just before each rename attempt: it throws to give up, and the temporary file is removed
- * (a caller's last check that the file is still the one it read).
+ * (a caller's last check that the file is still the one it read). Every byte is written before the
+ * rename: one write call may write fewer bytes than asked (a disk filling up), and renaming a part
+ * over the file would lose the rest of it.
  */
 export function atomicWrite(
   path: string,
@@ -209,7 +211,13 @@ export function atomicWrite(
   const fd = createFile(temp, mode);
   try {
     try {
-      writeSync(fd, text);
+      const data = Buffer.from(text, "utf8");
+      let offset = 0;
+      while (offset < data.length) {
+        const n = writeSync(fd, data, offset, data.length - offset);
+        if (n <= 0) throw new Error("A write made no progress");
+        offset += n;
+      }
       fsyncSync(fd);
     } finally {
       closeSync(fd);
