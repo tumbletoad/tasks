@@ -151,7 +151,9 @@ export type Act =
   | "rmdir"
   | "record"
   | "journal"
-  | "journal-drop";
+  | "journal-drop"
+  /** Not a file at the record's or the journal's path, moved aside (state.ts). */
+  | "aside";
 
 /** Tests only: runs before every act on disk. Throwing is a kill: the act does not happen. */
 export type Hook = (act: Act, path: string) => void;

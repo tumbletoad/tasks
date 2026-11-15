@@ -13,7 +13,7 @@
 // not ended within the bound: a batch cut off is a kill, which the next start recovers from
 // (@tasks/projection). A rebuild still waiting then fails with `STORAGE_WORKER_FAILED`.
 import { Worker } from "node:worker_threads";
-import type { Reconciled, Rescued, StartReport, StepReport } from "@tasks/projection";
+import type { Reconciled, Rescued, StartReport, StateFile, StepReport } from "@tasks/projection";
 import type { ProjectedBatch, SpaceWriterHandle } from "@tasks/storage";
 import { within } from "./wait.ts";
 
@@ -50,6 +50,8 @@ export type ProjectionMessage =
   | { readonly kind: "started"; readonly report: StartReport }
   | { readonly kind: "step"; readonly report: StepReport; readonly ms: number }
   | { readonly kind: "reconciled"; readonly reconciled: Reconciled }
+  /** Not a file at the record's or the journal's path: moved aside beside it, once. */
+  | { readonly kind: "aside"; readonly file: StateFile }
   | { readonly kind: "error"; readonly code: string };
 
 /** This thread to the worker. */
@@ -68,6 +70,8 @@ export interface ProjectionEvents {
    * may come again). Saved when it returns; it throws when it could not save, and is told again.
    */
   readonly rescued: (rescued: Rescued) => void;
+  /** Something that was not a file at the record's or the journal's path was moved aside. */
+  readonly aside: (file: StateFile) => void;
   readonly failed: (code: string | undefined) => void;
 }
 
@@ -156,6 +160,9 @@ export class ProjectionRunner {
             for (const waiting of this.#rebuilds.splice(0)) waiting.resolve(message.reconciled);
           }
           events.reconciled(message.reconciled);
+          return;
+        case "aside":
+          events.aside(message.file);
           return;
         case "error":
           events.failed(message.code);

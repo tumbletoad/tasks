@@ -82,6 +82,9 @@ try {
       onRescued: async (rescued) => {
         await call((id) => ({ kind: "call", id, method: "rescued", rescued }));
       },
+      onAside: (file) => {
+        send({ kind: "aside", file });
+      },
     });
     if (asked.rebuild) projector.rebuild();
     await runProjection(projector, {

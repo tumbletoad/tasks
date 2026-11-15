@@ -12,7 +12,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { RpcError } from "@tasks/bridge/protocol";
 import { backupSpace, newId, type Id } from "@tasks/storage";
 import { checkedDriver, seedMira } from "@tasks/testkit";
@@ -214,6 +214,34 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
         files: 1,
       }),
     ]);
+  }, 120_000);
+
+  test("a folder a person left at the projection's journal path (a mistaken restore of the machine state) is moved aside beside it, whole, and logged; the space's view renders", async () => {
+    const { home, folder, spaceId } = await setUp("projaside");
+    const state = projectionStateOf(stateOf(home), spaceId, folder);
+    mkdirSync(state.journal, { recursive: true });
+    writeFileSync(join(state.journal, "notes.txt"), "A person's notes.\n");
+    await start(home, folder);
+    const view = join(folder, "view");
+    await waitFor(
+      () => (existsSync(join(view, ".projection.json")) ? true : undefined),
+      30_000,
+      "the first render",
+    );
+    expect(catalog(view)).toHaveLength(12);
+    const spaces = join(stateOf(home), "spaces");
+    const name = basename(state.journal);
+    const [aside, ...more] = readdirSync(spaces).filter((entry) =>
+      entry.startsWith(`${name}.moved-aside-`),
+    );
+    expect(more).toEqual([]);
+    expect(readFileSync(join(spaces, aside ?? "", "notes.txt"), "utf8")).toBe(
+      "A person's notes.\n",
+    );
+    expect(existsSync(state.journal)).toBe(false);
+    const logged = readLog(home).filter((e) => e["ev"] === "space.projection_state_moved_aside");
+    expect(logged).toEqual([expect.objectContaining({ file: "journal" })]);
+    expect(readLog(home).some((e) => e["ev"] === "space.projection_failed")).toBe(false);
   }, 120_000);
 
   test("a batch's rescues told again after a kill are listed once, by their stem", () => {

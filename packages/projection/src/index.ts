@@ -50,6 +50,7 @@ export {
   type FileRecord,
   type Journal,
   type Read,
+  type StateFile,
   type TrustedRecord,
 } from "./state.ts";
 export {

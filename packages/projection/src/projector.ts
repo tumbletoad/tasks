@@ -67,7 +67,13 @@ import {
   type SpaceIdentity,
   type Watermark,
 } from "./render.ts";
-import { newRecord, TrustedState, type Placing, type TrustedRecord } from "./state.ts";
+import {
+  newRecord,
+  TrustedState,
+  type Placing,
+  type StateFile,
+  type TrustedRecord,
+} from "./state.ts";
 import {
   codeOf,
   newStem,
@@ -115,6 +121,11 @@ export interface ProjectorOptions {
    * returns only once the rescue is saved, and keeps one entry per stem.
    */
   readonly onRescued?: (rescue: Rescued) => void | Promise<void>;
+  /**
+   * Something that was not a file at the record's or the journal's path, a folder or a link a
+   * person left there, was moved aside beside it, once (state.ts), for the log.
+   */
+  readonly onAside?: (file: StateFile) => void;
 }
 
 /** Entries one batch moved aside: each in a folder `<stem>-<n>` (relative to the space's folder). */
@@ -242,7 +253,9 @@ export class Projector {
     this.#state = new TrustedState({
       record: options.record,
       journal: options.journal,
+      now: this.#now,
       ...(options.at === undefined ? {} : { at: options.at }),
+      ...(options.onAside === undefined ? {} : { onAside: options.onAside }),
     });
   }
 

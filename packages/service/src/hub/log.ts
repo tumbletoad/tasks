@@ -339,6 +339,12 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", space: "space", files: "int" },
   },
+  // Not a file at the projection's record or journal path: moved aside beside it, never removed.
+  "space.projection_state_moved_aside": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", file: ["record", "journal"] },
+  },
   "space.projection_failed": {
     lvl: "warn",
     c: "space",

@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { Tree, TrustedState, type Rescued } from "../src/index.ts";
 import {
@@ -221,6 +221,97 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
       expectCatalogInTree(w.dir);
       checkWatermark(w.dir, w.reader);
       expectSameTree(treeOf(w.dir), await freshRender());
+    });
+  }
+
+  for (const [which, what, killed] of [
+    ["journal", "folder", false],
+    ["journal", "link", false],
+    ["record", "folder", false],
+    ["record", "link", false],
+    ["journal", "folder", true],
+    ["record", "link", true],
+  ] as const) {
+    const kill = killed ? ", also when killed right after the move," : "";
+    test(`a ${what} at the ${which}'s path (a mistaken restore, a slip) is unknown and never removed: the start rebuilds every task, then moves it aside once, as it is, under a name that says so${kill} and the projection goes on`, async () => {
+      const first = w.projector();
+      await first.start();
+      await settle(first);
+      const [a] = activeIds();
+      const path = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
+      // What only the lost state knew, already marked rendered by the writer: for a journal a
+      // task its batch found gone, for a record a task that differs from its file.
+      w.submit([
+        which === "journal"
+          ? { kind: "task.delete", task: a ?? "" }
+          : { kind: "task.patch", task: a ?? "", set: { summary: "Known only to the record" } },
+      ]);
+      w.writer.projected({ seq: w.writer.asOf().seq, keys: [a ?? ""] });
+      const at = which === "journal" ? w.journal : w.record;
+      rmSync(at, { force: true });
+      const theirs = join(root, `theirs-${String(n)}`);
+      mkdirSync(theirs);
+      writeFileSync(join(theirs, "notes.txt"), "A person's notes.\n");
+      if (what === "folder") renameSync(theirs, at);
+      else symlinkSync(theirs, at, LINK);
+      const asideOf = (): string[] =>
+        readdirSync(w.state).filter((name) => name.startsWith(`${basename(at)}.moved-aside-`));
+      const moved: string[] = [];
+      const onAside = (file: string): void => {
+        moved.push(file);
+      };
+      if (killed) {
+        // The start moves it aside, and the process ends at its next act: for a record before
+        // the record is written, for a journal at the first batch's journal.
+        let gone = false;
+        const doomed = w.projector({
+          onAside,
+          at: (act) => {
+            if (gone) throw new Error("fixture kill");
+            if (act === "aside") gone = true;
+          },
+        });
+        const run = async (): Promise<void> => {
+          await doomed.start();
+          await doomed.step();
+        };
+        await expect(run()).rejects.toThrow("fixture kill");
+        expect(moved).toEqual([which]);
+      }
+      const after = w.projector({ onAside });
+      const start = await after.start();
+      // Unknown, it rebuilds; once moved aside, the queue the earlier start sent stands.
+      if (!killed) expect(start.rebuild).toBe(true);
+      await settle(after);
+      // Moved aside once, beside its path, as it was: nothing in it removed, nothing followed.
+      expect(moved).toEqual([which]);
+      const [name] = asideOf();
+      expect(asideOf()).toHaveLength(1);
+      expect(name).toMatch(/\.moved-aside-[0-9]{8}T[0-9]{9}Z$/);
+      const aside = join(w.state, name ?? "");
+      if (what === "folder") {
+        expect(lstatSync(aside).isDirectory()).toBe(true);
+        expect(readFileSync(join(aside, "notes.txt"), "utf8")).toBe("A person's notes.\n");
+      } else {
+        expect(lstatSync(aside).isSymbolicLink()).toBe(true);
+        expect(readdirSync(theirs)).toEqual(["notes.txt"]);
+        expect(readFileSync(join(theirs, "notes.txt"), "utf8")).toBe("A person's notes.\n");
+      }
+      // The path is the projection's own again: its record, or no journal at rest.
+      if (which === "record") expect(lstatSync(w.record).isFile()).toBe(true);
+      else expect(existsSync(w.journal)).toBe(false);
+      if (which === "journal") {
+        expect(catalogOf(w.dir).map((line) => line.id)).not.toContain(a);
+        expect(existsSync(join(w.dir, ...path.split("/")))).toBe(false);
+      }
+      expectClean(w.dir);
+      expectCatalogInTree(w.dir);
+      checkWatermark(w.dir, w.reader);
+      expectSameTree(treeOf(w.dir), await freshRender());
+      // Once: the next start moves nothing.
+      await w.projector({ onAside }).start();
+      expect(moved).toEqual([which]);
+      expect(asideOf()).toEqual([name]);
     });
   }
 

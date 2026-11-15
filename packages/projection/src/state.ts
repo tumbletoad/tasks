@@ -1,8 +1,9 @@
 // The projection's trusted state (A1 3.13 rule 1): the record of what it placed in the tree, and
-// the journal of the batch in progress. Both live in the product's machine state for the space
-// (`<state>/spaces/<space_id>.projection.json` and `….projection-journal.json`, beside the
-// space's machine-local settings), never in the tree: nothing a person can edit there, and nothing
-// a person is expected to touch, authorizes a write, an overwrite or a delete.
+// the journal of the batch in progress. Both live in the product's machine state for the space, one
+// pair per folder that holds it (`<state>/spaces/<space_id>.<folder key>.projection.json` and
+// `….projection-journal.json`, beside the space's machine-local settings), never in the tree:
+// nothing a person can edit there, and nothing a person is expected to touch, authorizes a write,
+// an overwrite or a delete.
 //
 // - **The record**: for every file the projection placed and still holds as its own, its path in
 //   the tree, its SHA-256, its size and the task it belongs to (none for a root file); for every
@@ -20,7 +21,14 @@
 // every task (projector.ts). Each is one JSON object, so one cut short does not parse. Every path
 // in them is checked against the tree's grammar before it is used. Both are written atomically,
 // whole (writeAll) and flushed, with mode 0600, through @tasks/files.
-import { lstatSync, readFileSync, rmSync } from "node:fs";
+//
+// **Not a file there** (a folder, a link: a mistaken restore, a slip) is never the projection's,
+// which writes only files there, and may be a person's: it is never removed, written through or
+// written over. Before its path is written, or the journal dropped, it is moved aside once by one
+// rename of the entry itself, never followed, to `<its name>.moved-aside-<time>` beside it, and
+// told (onAside). That comes only after what it means was acted on: read back as unknown, it
+// started a rebuild whose queue went through the writer first (projector.ts).
+import { lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { atomicWrite, makeDir, removeStaleTemps } from "@tasks/files";
 import {
@@ -162,6 +170,9 @@ function fileOf(path: string, value: unknown): FileRecord | undefined {
 const sorted = <V>(map: ReadonlyMap<string, V>): Record<string, V> =>
   Object.fromEntries([...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 
+/** Which file of the trusted state. */
+export type StateFile = "record" | "journal";
+
 export interface TrustedStateOptions {
   /** The record's file, in the product's machine state. */
   readonly record: string;
@@ -169,6 +180,10 @@ export interface TrustedStateOptions {
   readonly journal: string;
   /** Tests only: called before every write, with what is written. Throwing is a kill. */
   readonly at?: Hook;
+  /** Each entry that was not a file at the record's or the journal's path, once moved aside. */
+  readonly onAside?: (file: StateFile) => void;
+  /** Default: Date.now. The time in a moved-aside entry's name. */
+  readonly now?: () => number;
 }
 
 /** The record and the journal on disk. */
@@ -176,11 +191,35 @@ export class TrustedState {
   readonly #record: string;
   readonly #journal: string;
   readonly #at: Hook | undefined;
+  readonly #onAside: ((file: StateFile) => void) | undefined;
+  readonly #now: () => number;
 
   constructor(options: TrustedStateOptions) {
     this.#record = options.record;
     this.#journal = options.journal;
     this.#at = options.at;
+    this.#onAside = options.onAside;
+    this.#now = options.now ?? Date.now;
+  }
+
+  /**
+   * Moves aside what is at `file`'s path when it is there and not a regular file (see the header):
+   * one rename beside it to `<name>.moved-aside-<time>`, `-<n>` added while that name is taken, so
+   * nothing is renamed over. Returns whether it moved something.
+   */
+  #aside(file: StateFile): boolean {
+    const path = file === "record" ? this.#record : this.#journal;
+    const stats = lstatSync(path, { throwIfNoEntry: false });
+    if (stats === undefined || stats.isFile()) return false;
+    const stamp = new Date(this.#now()).toISOString().replace(/[-:.]/g, "");
+    for (let n = 1; ; n += 1) {
+      const to = `${path}.moved-aside-${stamp}${n === 1 ? "" : `-${String(n)}`}`;
+      if (lstatSync(to, { throwIfNoEntry: false }) !== undefined) continue;
+      this.#at?.("aside", "");
+      renameSync(path, to);
+      this.#onAside?.(file);
+      return true;
+    }
   }
 
   /** Makes the folder they live in, and removes what a kill left of an atomic write there. */
@@ -266,6 +305,7 @@ export class TrustedState {
       entries: sorted(record.entries),
       told: [...record.told].sort(),
     };
+    this.#aside("record");
     this.#at?.("record", "");
     atomicWrite(this.#record, `${JSON.stringify(value)}\n`, 0o600);
   }
@@ -317,11 +357,14 @@ export class TrustedState {
       placing: sorted(journal.placing),
       ...(journal.watermark === undefined ? {} : { watermark: journal.watermark }),
     };
+    this.#aside("journal");
     this.#at?.("journal", "");
     atomicWrite(this.#journal, `${JSON.stringify(value)}\n`, 0o600);
   }
 
+  /** Removes the journal: a file only. Anything else there is moved aside (see the header). */
   dropJournal(): void {
+    if (this.#aside("journal")) return;
     this.#at?.("journal-drop", "");
     rmSync(this.#journal, { force: true });
   }

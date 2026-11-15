@@ -992,6 +992,11 @@ export class SpaceManager {
           throw error;
         }
       },
+      // A folder or a link a person left at the record's or the journal's path, moved aside
+      // beside it under `<name>.moved-aside-<time>` (A1 3.13 rule 1): theirs to look at.
+      aside: (file) => {
+        log.log("space.projection_state_moved_aside", { entry, space: spaceId, file });
+      },
       reconciled: (r: Reconciled) => {
         log.log("space.projection_reconciled", {
           entry,
