@@ -340,7 +340,8 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         // A toast with its action, then the date popover open over the card.
         await row
           .getByRole("radiogroup", { name: "Effort" })
-          .getByRole("radio", { name: "L" })
+          // Another effort in each theme, so each toast sets one (the second would clear it).
+          .getByRole("radio", { name: theme === "sumi" ? "L" : "S" })
           .click();
         await expect(toastAction(page)).toHaveText("Undo");
         await row.locator('[data-part="due"]').click();
@@ -385,7 +386,13 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
           fullPage: true,
         });
         await row.locator('[data-part="due"]').click();
-        await expect(page.locator('[data-part="due-field"]')).toBeFocused();
+        const field = page.locator('[data-part="due-field"]');
+        await expect(field).toBeFocused();
+        // The popover fits the narrow window: inside it, nothing to scroll sideways.
+        const popover = page.locator('[role="dialog"]', { has: field });
+        await expect(popover).toBeInViewport();
+        const box = await popover.boundingBox();
+        expect(box === null ? -1 : box.x + box.width).toBeLessThanOrEqual(390);
         await page.screenshot({ path: test.info().outputPath(`editing-${theme}-390-popover.png`) });
       } finally {
         await context.close();
