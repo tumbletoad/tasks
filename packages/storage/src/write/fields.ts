@@ -50,17 +50,21 @@ export type PatchableField = (typeof PATCHABLE_FIELDS)[number];
 /**
  * The logical fields of the rows other than tasks that an operation of this build changes after
  * their create (A1 3.4): a link's one field `removed` (a revival clears it), a place's folder,
- * which `place.set` binds as a unit, and a launch's `state`, which `launch.transition` writes as a
+ * which `place.set` binds as a unit, a launch's `state`, which `launch.transition` writes as a
  * unit with its reason, its evidence and the time (A4 3.9), a learning's tombstone, which a
- * wrap-up sets when it removes the learning (A1 3.11.2), and a preference's `value` (A1 3.16,
- * `pref.set`). Later steps add the fields their
- * operations change (`note.patch`, `source.patch`, the deletes).
+ * wrap-up sets when it removes the learning (A1 3.11.2), the tombstone `deleted` of notes,
+ * log entries and sources, which undo writes when it inverts their create (A1 3.10), and a
+ * preference's `value` (A1 3.16, `pref.set`). Later steps add the fields their operations change
+ * (`note.patch`, `source.patch`, the deletes).
  */
 export const CHILD_FIELDS = {
   task_sources: { removed: ["removed_at"] },
   places: { folder: ["root_id", "rel_path", "kind", "identity"], deleted: ["deleted_at"] },
   launches: { state: ["state", "reason", "detail", "updated_at"] },
   learnings: { deleted: ["deleted_at"] },
+  notes: { deleted: ["deleted_at"] },
+  log_entries: { deleted: ["deleted_at"] },
+  sources: { deleted: ["deleted_at"] },
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;

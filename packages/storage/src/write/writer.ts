@@ -60,6 +60,14 @@ import {
   type TaskField,
 } from "./fields.ts";
 import {
+  applyInversions,
+  planInversions,
+  readChanges,
+  redoTarget,
+  undoTarget,
+  type Inversion,
+} from "./history.ts";
+import {
   decodeLaunch,
   detailText,
   FOCUS_MS,
@@ -80,10 +88,12 @@ import {
   type Receipt,
   type ReceiptLookup,
 } from "./receipts.ts";
+import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 import {
   checkRequest,
   formatAsOf,
   incarnationTag,
+  isHistoryOperation,
   LAUNCH_FAIL_REASONS,
   LAUNCH_UNKNOWN_REASONS,
   normaliseStored,
@@ -97,6 +107,7 @@ import {
   type ConflictEntity,
   type Due,
   type FieldConflict,
+  type HistoryOperation,
   type OpResult,
   type Operation,
   type Placement,
@@ -221,16 +232,6 @@ type Entity =
   | "learnings"
   | "preferences";
 
-/** An existing row's state at the start of the request: what coalescing and the base compare. */
-interface RowState {
-  createdSeq: number;
-  version: number;
-  fv: Record<string, number>;
-  fp: Record<string, number>;
-  /** Every column, as read. */
-  raw: Row;
-}
-
 /** A task row as the write path needs it, checked against its domain. */
 interface TaskRow extends RowState {
   id: Id<"t">;
@@ -240,36 +241,6 @@ interface TaskRow extends RowState {
   projectId: Id<"p"> | null;
   position: string;
   deleted: boolean;
-}
-
-/** A row's `fv` or `fp`: a map from its logical fields to seqs. */
-function versionMap(
-  r: RowReader,
-  table: string,
-  column: "fv" | "fp",
-  fields: Readonly<Record<string, unknown>>,
-): Record<string, number> {
-  const value = r.json(column);
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw invalidValue(table, column);
-  }
-  const map: Record<string, number> = {};
-  for (const [field, seq] of Object.entries(value)) {
-    if (!Object.hasOwn(fields, field) || !inRange(seq, "seq")) throw invalidValue(table, column);
-    map[field] = seq;
-  }
-  return map;
-}
-
-function rowState(table: string, row: Row, fields: Readonly<Record<string, unknown>>): RowState {
-  const r = new RowReader(table, row);
-  return {
-    createdSeq: r.int("created_seq", "seq"),
-    version: r.int("version", "seq"),
-    fv: versionMap(r, table, "fv", fields),
-    fp: versionMap(r, table, "fp", fields),
-    raw: row,
-  };
 }
 
 function decodeTask(row: Row): TaskRow {
@@ -285,10 +256,6 @@ function decodeTask(row: Row): TaskRow {
     deleted: r.optInt("deleted_at", "instant") !== null,
   };
 }
-
-/** A field's physical version: its `fv` entry, or the row's created_seq when it has none. */
-const versionOf = (row: RowState, field: string): number => row.fv[field] ?? row.createdSeq;
-const provenanceOf = (row: RowState, field: string): number => row.fp[field] ?? row.createdSeq;
 
 /** The columns of a logical field of `entity`. */
 function columnsOf(entity: Entity, field: string): readonly string[] {
@@ -326,7 +293,7 @@ interface GroupIntent {
 
 /** One logical field of a row that existed before the request, which an operation writes. */
 interface Touch {
-  entity: ConflictEntity;
+  entity: Extract<ConflictEntity, Entity>;
   /** The row's `changes.entity_id`. */
   id: string;
   field: string;
@@ -438,6 +405,11 @@ interface ChangeRow {
   after: string;
   beforeVer: number | null;
   beforeProv: number | null;
+  /**
+   * The provenance the field gets: the commit's own seq, unless the row inverts an earlier one
+   * (A1 3.10), whose provenance it sets back.
+   */
+  afterProv?: number;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -480,10 +452,17 @@ const SQL = {
   deadUndone:
     "UPDATE commits SET undo_status = 'dead' " +
     "WHERE principal_id = $principal AND undo_status = 'undone'",
+  // An undo or redo (A1 3.10.1): never on the stack itself, it names the commit it moves.
+  insertHistoryCommit:
+    `INSERT INTO commits (${COMMIT_COLUMNS}) VALUES ($seq, $id, $epoch, $incarnation, $at, ` +
+    "$actor_kind, $principal, $author, $scope, $machine, $session, $run, $origin, $request, " +
+    "$kind, $ops, $affected, $reason, NULL, NULL, NULL, $undo_of, $redo_of, NULL, NULL, 0)",
+  markUndone: "UPDATE commits SET undo_status = 'undone', undone_by = $seq WHERE seq = $target",
+  markRedone: "UPDATE commits SET undo_status = 'done', undone_by = NULL WHERE seq = $target",
   insertChange:
     "INSERT INTO changes (seq, n, op, entity, entity_id, task_id, action, field, before, after, " +
     "before_ver, before_prov, after_prov) VALUES ($seq, $n, $op, $entity, $entity_id, $task_id, " +
-    "$action, $field, $before, $after, $before_ver, $before_prov, $seq)",
+    "$action, $field, $before, $after, $before_ver, $before_prov, $after_prov)",
   insertTask:
     "INSERT INTO tasks (id, ref, title, summary, context, lifecycle, status, inbox, priority, " +
     "effort, due_date, due_at, due_tz, planned_for, focus_on, owner, waiting_on, area_id, " +
@@ -1033,6 +1012,11 @@ export class SpaceWriter {
   ): WriteResult {
     try {
       if (request.base !== undefined) checkBase(request.base, asOf);
+      // An undo or redo is a request of its own (request.ts), guarded by provenance.
+      const [first] = request.ops;
+      if (first !== undefined && isHistoryOperation(first)) {
+        return this.#history(conn, request, first, space, asOf, at);
+      }
       const plan = this.#stage(conn, request, space, at, wall);
       const conflicts = preconditions(conn, request, plan, space);
       if (conflicts.length > 0) {
@@ -1688,6 +1672,10 @@ export class SpaceWriter {
           }
           return { i, op, target: op.key, task: null, touches, record: inputOf(op) };
         }
+        case "undo":
+        case "redo":
+          // A request of its own (request.ts), which #history decides.
+          throw misuse("An undo or redo is never staged");
       }
     });
     return {
@@ -1783,6 +1771,143 @@ export class SpaceWriter {
       ...accepted("applied", { ...asOf, seq }),
       commit: commitId,
       results: opResults(conn, run, changes),
+    };
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Undo and redo (A1 3.10.1, 3.10.4)
+
+  /**
+   * An undo or a redo. The principal's stack decides what it inverts: an undo the newest `done`
+   * commit's change rows, a redo the rows of the oldest `undone` commit's undo. History (history.ts)
+   * plans the inversion under each field's provenance, applies it and checks the holder rule on
+   * what it made, and one commit of kind `undo` or `redo` records it and moves the stack: the
+   * undone commit becomes `undone` with `undone_by`, a redone
+   * one `done` again. An undo is all or nothing unless it is partial, and a partial undo leaves the
+   * stack even when it inverts nothing, so the next undo reaches the commit below; a redo is all or
+   * nothing. The commit itself never joins the stack.
+   */
+  #history(
+    conn: Connection,
+    request: CheckedRequest,
+    op: HistoryOperation,
+    space: SpaceRow,
+    asOf: AsOf,
+    at: number,
+  ): WriteResult {
+    const { actor } = request;
+    const principal = actor.principal_id;
+    const undo = op.kind === "undo";
+    const target = undo ? undoTarget(conn, principal) : redoTarget(conn, principal);
+    if (target === undefined) {
+      return undo
+        ? problem("NOTHING_TO_UNDO", "Nothing of yours is left to undo here", 0)
+        : problem("NOTHING_TO_REDO", "Nothing of yours is left to redo here", 0);
+    }
+    // A caller that names the commit it means (a toast's own undo) never moves another.
+    if (op.commit !== undefined && op.commit !== target.id) {
+      problem(
+        "INVALID_TRANSITION",
+        undo
+          ? "That change is not your newest one: read again"
+          : "That change is not the next one to redo: read again",
+        0,
+        "commit",
+      );
+    }
+    // The rows an undo inverts are the commit's own; a redo inverts its undo's.
+    const inverted = undo ? target.seq : must(target.undoneBy, "An undone commit names its undo");
+    if (inverted < space.undoFloorSeq) {
+      problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
+    }
+    const partial = op.kind === "undo" && op.partial === true;
+    const plan = planInversions(conn, readChanges(conn, inverted), {
+      creating: new Set([target.seq]),
+      refPrefix: space.refPrefix,
+      partial,
+      op: 0,
+    });
+    const conflict = (): WriteResult =>
+      refused(
+        "conflict",
+        asOf,
+        {
+          code: "UNDO_CONFLICT",
+          // A redo is all or nothing (A1 3.10.1): it offers no partial form.
+          message: undo
+            ? "Someone changed a field of it since: undo the rest, or keep theirs"
+            : "Someone changed one of its fields since: a redo is all or nothing",
+        },
+        plan.conflicts,
+      );
+    if (plan.conflicts.length > 0 && !partial) return conflict();
+    const seq = nextSeq(space);
+    const commitId = newId("op", this.#random);
+    conn.exec("SAVEPOINT exec");
+    try {
+      // The inversions first: the holder rule is decided on the state they make (A1 3.10).
+      const applied = applyInversions(conn, plan, {
+        seq,
+        at,
+        principal,
+        op: 0,
+        refPrefix: space.refPrefix,
+        partial,
+      });
+      if (applied === undefined) {
+        rollBack(conn);
+        return conflict();
+      }
+      conn.prepare(SQL.insertHistoryCommit).run({
+        seq,
+        id: commitId,
+        epoch: space.authority.epoch,
+        incarnation: space.authority.incarnation,
+        at,
+        actor_kind: actor.actor_kind,
+        principal,
+        author: actor.author_id ?? principal,
+        scope: actor.scope_id,
+        machine: actor.machine_id,
+        session: actor.session_id ?? null,
+        run: actor.run_id ?? null,
+        origin: actor.origin,
+        request: request.request_id,
+        kind: op.kind,
+        ops: opsText([
+          {
+            v: 1,
+            op: op.kind,
+            target: target.id,
+            input: { commit: target.id, ...(partial ? { partial: true } : {}) },
+          },
+        ]),
+        affected: affectedBy(plan.inversions),
+        reason: request.reason ?? null,
+        undo_of: undo ? target.seq : null,
+        redo_of: undo ? null : target.seq,
+      });
+      const inverted = applied.changes.map((c) => ({ ...c, action: "set" as const }));
+      insertChanges(conn, seq, inverted);
+      // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
+      // its children's, a restore brings them back, a field set back rewrites its document.
+      if (this.#search) indexChanges(conn, seq, inverted);
+      for (const task of applied.tasks) conn.prepare(SQL.outbox).run({ key: task, seq });
+      if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
+      if (undo) conn.prepare(SQL.markUndone).run({ target: target.seq, seq });
+      else conn.prepare(SQL.markRedone).run({ target: target.seq });
+      conn.prepare(SQL.lastSeq).run({ seq });
+      conn.exec("RELEASE exec");
+    } catch (error) {
+      if (error instanceof RequestProblem) rollBack(conn);
+      throw error;
+    }
+    return {
+      ...accepted("applied", { ...asOf, seq }),
+      commit: commitId,
+      results: [{ i: 0, status: "updated", id: target.id, version: seq }],
+      // What a partial undo left as others set it (WriteResult.conflicts).
+      conflicts: plan.conflicts,
     };
   }
 
@@ -1973,6 +2098,17 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
 
 // ---------------------------------------------------------------------------------------------
 // Checks and staging helpers
+
+/**
+ * The tasks an inversion moves, completes, reopens, archives or tombstones: `commits.affected`
+ * for A6's burst brake, which counts tasks rather than fields.
+ */
+function affectedBy(inversions: readonly Inversion[]): number {
+  const counted = new Set(["grouping", "lifecycle", "deleted"]);
+  return new Set(
+    inversions.filter((i) => i.entity === "tasks" && counted.has(i.field)).map((i) => i.id),
+  ).size;
+}
 
 function nextSeq(space: SpaceRow): number {
   const seq = space.lastSeq + 1;
@@ -2932,6 +3068,7 @@ function insertChanges(conn: Connection, seq: number, changes: readonly ChangeRo
       after: change.after,
       before_ver: change.beforeVer,
       before_prov: change.beforeProv,
+      after_prov: change.afterProv ?? seq,
     });
   });
 }

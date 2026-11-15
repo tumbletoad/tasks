@@ -475,7 +475,7 @@
     },
     {
       "id": "A1.5.search.index",
-      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
+      "title": "The search tables are written in the commit: each document holds A1 3.12's fields, a commit that changes no indexed text leaves its documents and seqs alone, a tombstone removes a task's documents and its children's and a restore brings them back, an undo and a redo write the documents their inversions reach, a space without the tables writes as before, and under random writes, tombstones, restores, entity and text redactions, learnings and area renames the index equals a fresh rebuild with no stray text and passes the FTS integrity check",
       "source": "A1 3.12, A1 5, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
@@ -1398,6 +1398,38 @@
       "title": "place.clear and task.context_append through the write path: a clear tombstones the owner's place on the request's machine with one change row and needs a base, a place bound after the base conflicts, nothing bound is unchanged, a place is never bound and cleared in one request; an append needs no base, two appends both land after a blank line, a stale replace conflicts with them, and the total stays within 64 KiB",
       "source": "A1 3.5, A1 3.6, A1 3.15, A7 3.9 M2.03",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.undo-redo",
+      "title": "Undo and redo through the write path, fixed scenarios: two edits of one field, then two undos and two redos, match each step; overlapping field sets (C1 summary and due, C2 due and status) undo C2, then C1, then redo both; repeated cycles keep passing while fv only grows and a stale base still conflicts; a foreign edit gives UNDO_CONFLICT with the value written, the value now and who changed it when, and a partial undo leaves it and lists it; a create is undone by a tombstone that the creating commit's own rows pass and another actor's child row blocks, and redone by a restore that a taken place refuses; a wrap-up's learnings are undone and redone, and an undo never leaves a task more than 20 live learnings; one stack per human, a new undoable action ends the redo, the named commit, nothing to undo or redo, the undo floor, and retries replay",
+      "source": "A1 3.5, A1 3.10, A1 3.10.1, A1 3.10.4, A1 5, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.property",
+      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks; undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
+      "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.dedupe",
+      "title": "Undo and redo meet dedupe by source key: an undo of a request whose draft matched takes back its entries and linked sources on the match and never the match; an undone create holds no key; a redo that would take a key's source row is a conflict naming that row; a redo that would make a second active holder of a key, decided on the state it makes, is a conflict that names the standing holder's link (a shared source in either order of two humans' redos, and a source the redo brings back), or each holder's lifecycle when the redo brings back every holder itself, and writes nothing; a key that was double before is not the restore's doing; a partial inversion leaves out a broken key's restores and applies the rest; a finished holder never blocks; an undo or redo never shares a request with a create, and dedupe's start state sees what they left; an undone check-off is no finish and a finish set back keeps its own instant, an archived task's by its provenance; a retry after an undo replays; a link an undo removed comes back only with its link version",
+      "source": "A1 3.5, A1 3.6, A1 3.8, A1 3.10, A1 3.10.1, A7 3.10 M3.02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.2.3.history",
+      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, UNDO_CONFLICT as conflict with the value written, the value now and the value undo restores, a partial undo's unresolved fields, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and tasks undo and tasks redo on the CLI",
+      "source": "A1 3.10.1, A3 3.2.3, A3 3.5, A5 3.12, A7 3.10 M3.02",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },

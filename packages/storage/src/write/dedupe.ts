@@ -20,11 +20,13 @@
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
 //   and nothing follows: the caller decides whether to reopen it or create anew.
 //
-// A task finished at its `completed_at`, else at the instant of the commit that last wrote its
-// lifecycle (an archived task has no completion time). Commit instants never go back, so two
-// finishes can share one: the later commit is the one finished last. A removed link or a deleted
-// task never matches. Everything is read inside the writer's transaction, so two requests never
-// both create a task for one key: the single writer decides them one after the other (A1 3.9).
+// A task finished at its `completed_at`, else at the instant of the commit whose write its
+// lifecycle holds (an archived task has no completion time): its provenance, so an undo or redo
+// that sets a finish back keeps the finish's own instant (A1 3.10). Commit instants never go back,
+// so two finishes can share one: the later commit is the one finished last. A removed link or a
+// deleted task never matches, so an undone create holds no key. Everything is read inside the
+// writer's transaction, so two requests never both create a task for one key: the single writer
+// decides them one after the other (A1 3.9).
 //
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
@@ -43,7 +45,7 @@ const SQL = {
   holders:
     "SELECT source_id, task_id FROM task_sources WHERE removed_at IS NULL " +
     "AND source_id IN (SELECT value FROM json_each($sources))",
-  task: "SELECT ref, lifecycle, completed_at, deleted_at, created_seq, fv FROM tasks WHERE id = $id",
+  task: "SELECT ref, lifecycle, completed_at, deleted_at, created_seq, fp FROM tasks WHERE id = $id",
   commitAt: "SELECT at FROM commits WHERE seq = $seq",
 } as const;
 
@@ -67,8 +69,8 @@ export interface Match {
 interface Holder {
   lifecycle: TaskLifecycle;
   /**
-   * When it finished: the instant, and the commit that wrote its lifecycle. Null while it is
-   * active. A task the request completes finished at the request's instant, after every commit.
+   * When it finished: the instant, and the commit whose write its lifecycle holds. Null while it
+   * is active. A task the request completes finished at the request's instant, after every commit.
    */
   finished: { at: number; seq: number } | null;
   /** The request completed, archived or wrapped it up: a draft after it is new work (A1 3.6). */
@@ -87,15 +89,19 @@ const byFinish = (a: Holder, b: Holder): number =>
   (b.finished?.seq ?? 0) - (a.finished?.seq ?? 0) ||
   byRank(b, a);
 
-/** The commit that last wrote a task's lifecycle: its `fv`, else its create. */
+/**
+ * The commit whose write a task's lifecycle holds: its provenance (`fp`, A1 3.10), else its
+ * create. Not the commit that last wrote it (`fv`): an undo of a reopen writes the lifecycle back,
+ * and the task finished when the write it holds again was made, as its `completed_at` says.
+ */
 function lifecycleSeq(r: RowReader): number {
-  const fv = r.json("fv");
-  const versioned =
-    typeof fv === "object" && fv !== null && !Array.isArray(fv)
-      ? (fv as Record<string, unknown>)["lifecycle"]
+  const fp = r.json("fp");
+  const held =
+    typeof fp === "object" && fp !== null && !Array.isArray(fp)
+      ? (fp as Record<string, unknown>)["lifecycle"]
       : undefined;
-  const seq = versioned === undefined ? r.int("created_seq", "seq") : versioned;
-  if (!inRange(seq, "seq")) throw invalidValue("tasks", "fv");
+  const seq = held === undefined ? r.int("created_seq", "seq") : held;
+  if (!inRange(seq, "seq")) throw invalidValue("tasks", "fp");
   return seq;
 }
 
