@@ -3354,6 +3354,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.e2e.unanswered",
+      "title": "In Chromium and Firefox against the real service: Ctrl+Z whose first request never reaches the service does not hold the star clicked after it; the page learns the undo's outcome by its request ID, sends it again, and the star goes out after it, so the undo takes back the priority and the star stays",
+      "source": "A5 3.11, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.e2e.finished-title",
+      "title": "In Chromium and Firefox against the real service: a title typed while the task is completed elsewhere is refused and shown under the title with Copy and Discard and no Try again, and once the task is reopened its Try again saves it",
+      "source": "A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.web.due",
       "title": "The due date's field reads ISO dates, tod and today, tom and tomorrow, weekdays as the service does, +3d and +2w, and - to clear, and nothing else; the quick picks give today, tomorrow, the next Monday that is not today and a week on",
       "source": "A5 3.11, A7 3.12 M5.08",
