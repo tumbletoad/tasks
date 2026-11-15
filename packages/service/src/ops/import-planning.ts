@@ -593,9 +593,11 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
     }
     const own = places.get(id) ?? [];
     const live = own.find((p) => p["deleted_at"] === null);
+    // The place's version covers its folder and its tombstone: a place cleared and then brought
+    // back (an undo of the clear) holds the same folder, but it changed since, as A1 3.14 counts.
     const placeVersion =
       live !== undefined
-        ? num(live["folder_version"])
+        ? Math.max(num(live["folder_version"]), num(live["deleted_version"]))
         : Math.max(0, ...own.map((p) => num(p["deleted_version"])));
     const values: Record<string, unknown> = {
       title: row["title"],
@@ -1000,7 +1002,11 @@ export async function planningUndo(call: PlanningUndoCall): Promise<ImportPlanni
     throw resultFailure(result, HINTS);
   }
   const changed = await readCommitFields(call.reader, result.seq);
-  const removed = new Set(changed.filter((c) => c.field === "deleted").map((c) => c.task));
+  // A task removed is one whose own tombstone the undo set; any other task it changed, in a field
+  // or a row of it (an evidence entry, a link, a place), is set back.
+  const removed = new Set(
+    changed.filter((c) => c.entity === "tasks" && c.field === "deleted").map((c) => c.task),
+  );
   const restored = new Set(changed.filter((c) => !removed.has(c.task)).map((c) => c.task));
   const kept = new Map<string, Set<string>>();
   for (const c of result.conflicts) {

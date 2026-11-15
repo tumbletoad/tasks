@@ -320,22 +320,27 @@ export async function readImportOutcome(
   }));
 }
 
-/** The tasks a commit changed and the fields: what an import's undo removed and set back. */
+/**
+ * The tasks a commit changed, with the table and field of each change, a task's child rows
+ * included (its entries, links, place): what an import's undo removed and set back.
+ */
 export async function readCommitFields(
   reader: WorkerConnection,
   seq: number,
-): Promise<{ task: string; field: string | null }[]> {
+): Promise<{ task: string; entity: string; field: string | null }[]> {
   const [rows] = await snapshot(
     reader,
     [
       {
-        sql: "SELECT task_id AS task, field FROM changes WHERE seq = $seq AND entity = 'tasks'",
+        sql:
+          "SELECT task_id AS task, entity, field FROM changes " +
+          "WHERE seq = $seq AND task_id IS NOT NULL",
         mode: "all",
       },
     ],
     { seq },
   );
-  return (rows as { task: string; field: string | null }[] | undefined) ?? [];
+  return (rows as { task: string; entity: string; field: string | null }[] | undefined) ?? [];
 }
 
 /** The rows an import plan meets and what its apply reads (APPLY_READS), in one snapshot. */

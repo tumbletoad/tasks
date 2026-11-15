@@ -705,6 +705,49 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       world.close();
     }
   }, 120_000);
+
+  test("a folder cleared and restored with an undo is a change: the prototype's new folder conflicts", async () => {
+    n += 1;
+    const root = join(scratch, `w${String(n)}`);
+    const places = join(root, "places");
+    for (const folder of ["a", "b"]) mkdirSync(join(places, folder), { recursive: true });
+    const world = await openWorld(root, { roots: [{ id: "work", path: places }] });
+    const prototype = join(root, "prototype");
+    try {
+      const at = (folder: string) => ({
+        tasks: [{ id: "pa", title: "Task", meta: { paths: [join(places, folder)] } }],
+      });
+      writePrototype(prototype, at("a"));
+      await importedSynthetic(world, prototype);
+      const ta = taskOf(world, "pa");
+      // The person clears the folder by mistake and takes it back with Ctrl+Z.
+      expect(world.edit([{ kind: "place.clear", task: ta }]).status).toBe("applied");
+      const undo = world.writer.submit({
+        space_id: world.writer.spaceId,
+        request_id: `undo-clear-${String(world.seq()).padStart(8, "0")}`,
+        actor: {
+          scope_id: "cli:import-test",
+          principal_id: world.user,
+          actor_kind: "human",
+          machine_id: world.machine,
+          origin: "cli",
+        },
+        ops: [{ kind: "undo" }],
+      });
+      expect(undo.status).toBe("applied");
+      const folder = () =>
+        world.rows("SELECT rel_path FROM places WHERE owner_id = $t AND deleted_at IS NULL", {
+          t: ta,
+        });
+      expect(folder()).toEqual([{ rel_path: "a" }]);
+      writePrototype(prototype, at("b"));
+      const { result } = await importedSynthetic(world, prototype);
+      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["place"]);
+      expect(folder()).toEqual([{ rel_path: "a" }]);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
 });
 
 describe("[A7.3.15.importer.undo] the undo of an import", () => {
@@ -876,7 +919,12 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
       const second = await importedSynthetic(world, prototype);
       expect(second.result.counts).toMatchObject({ created: 1, updated: 2 });
       const [ta, tb, tc] = [taskOf(world, "pa"), taskOf(world, "pb"), taskOf(world, "pc")];
-      expect((await world.undo(second.preview.run)).kept).toEqual([]);
+      // pa's title and pb's new evidence entry are set back, pc is removed.
+      expect(await world.undo(second.preview.run)).toMatchObject({
+        kept: [],
+        removed: 1,
+        restored: 2,
+      });
       expect(task(world, ta)["title"]).toBe("First pa");
       expect(task(world, tc)["deleted_at"]).not.toBeNull();
       const undone = await world.undo(first.preview.run);
