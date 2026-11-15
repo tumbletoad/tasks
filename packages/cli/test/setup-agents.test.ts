@@ -3,12 +3,18 @@
 // service keeps one agent-home row per home in its grants table and revokes it with the entry, and
 // the homes come back key for key. A real service in this process, the CLI in this process, fake
 // `claude` and `codex` commands (testkit) on a scratch PATH, scratch homes in a temporary folder.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { CLI_NAME, MCP_SERVER_KEY } from "@tasks/brand";
 import { startService, type RunningService } from "@tasks/service/hub";
-import { removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "@tasks/service/test/harness";
+import {
+  configOf,
+  removeRuntimeDir,
+  serviceEnv,
+  stateOf,
+  tempRoot,
+} from "@tasks/service/test/harness";
 import { classSession } from "@tasks/service/test/ops-helpers";
 import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
 import { runMain } from "./cli-harness.ts";
@@ -378,6 +384,189 @@ describe("[A3.3.13.setup.cli] tasks setup agents through the CLI and the service
       const removed = await run(["setup", "agents", "--remove", "--json"]);
       expect(removed.code, removed.stdout).toBe(0);
       expect(await rows()).toEqual([]);
+      expect(read()).toEqual(before);
+    },
+    SLOW,
+  );
+});
+
+describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and names the refusal of a taken one", () => {
+  /** A live row of another home, made as setup makes rows; the function revokes it. */
+  async function foreignRow(
+    instance: string,
+    of: string = join(user, ".codex-elsewhere"),
+  ): Promise<() => Promise<void>> {
+    const person = await classSession(home, service.endpoint.path, "cli-interactive");
+    try {
+      const made = (await person.call(
+        "setup/home_grant",
+        { app: "codex", home: of, instance, account: "", space },
+        { timeoutMs: 30_000 },
+      )) as { grant: { grant: string } };
+      return async () => {
+        const again = await classSession(home, service.endpoint.path, "cli-interactive");
+        try {
+          await again.call(
+            "setup/home_revoke",
+            { grants: [made.grant.grant] },
+            { timeoutMs: 30_000 },
+          );
+        } finally {
+          again.close();
+        }
+      };
+    } finally {
+      person.close();
+    }
+  }
+
+  test(
+    "a detected home whose proposed instance another home holds is offered another one",
+    async () => {
+      const before = read();
+      const revoke = await foreignRow("codex");
+      try {
+        const preview = await run(["setup", "agents", "--space", space, "--json"], false);
+        expect(preview.code, preview.stderr).toBe(0);
+        const planned = JSON.parse(preview.stdout) as {
+          apply: string[];
+          homes: { app: string; instance: string; change: { args: string[] } }[];
+        };
+        // The default Codex home would be `codex`, which the other home's row holds; Claude Code's
+        // `claude` is free and kept.
+        expect(planned.homes.map((h) => [h.app, h.instance]).sort()).toEqual([
+          ["claude-code", "claude"],
+          ["codex", "codex-2"],
+        ]);
+        const codex = planned.homes.find((h) => h.app === "codex");
+        expect(codex?.change.args).toEqual(expect.arrayContaining(["--instance", "codex-2"]));
+        // --instance selects by the instance the preview shows.
+        const selected = await run(
+          ["setup", "agents", "--space", space, "--instance", "codex-2", "--json"],
+          false,
+        );
+        expect(
+          (JSON.parse(selected.stdout) as { homes: { app: string }[] }).homes.map((h) => h.app),
+        ).toEqual(["codex"]);
+
+        const applied = await run([...planned.apply.slice(1), "--json"]);
+        expect(applied.code, applied.stdout + applied.stderr).toBe(0);
+        expect((await rows()).map((r) => [r.app, r.instance]).sort()).toEqual([
+          ["claude-code", "claude"],
+          ["codex", "codex"],
+          ["codex", "codex-2"],
+        ]);
+        // Registered, the home keeps its instance: setup's record names it from now on.
+        const again = JSON.parse(
+          (await run(["setup", "agents", "--space", space, "--json"], false)).stdout,
+        ) as { homes: { app: string; instance: string; state: string }[] };
+        expect(again.homes.find((h) => h.app === "codex")).toMatchObject({
+          instance: "codex-2",
+          state: "registered",
+        });
+        const removed = await run(["setup", "agents", "--remove", "--json"]);
+        expect(removed.code, removed.stdout).toBe(0);
+        expect(read()).toEqual(before);
+      } finally {
+        await revoke();
+      }
+      expect(await rows()).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a home whose own row outlived setup's record gets that row's instance back, not a new proposal",
+    async () => {
+      const before = read();
+      // The default Codex home's own row, as setup made it once, with setup's record gone since.
+      const revoke = await foreignRow("codex-7", join(user, ".codex"));
+      try {
+        const preview = await run(
+          ["setup", "agents", "--app", "codex", "--space", space, "--json"],
+          false,
+        );
+        expect(preview.code, preview.stderr).toBe(0);
+        const planned = JSON.parse(preview.stdout) as {
+          homes: { app: string; instance: string }[];
+        };
+        expect(planned.homes.map((h) => [h.app, h.instance])).toEqual([["codex", "codex-7"]]);
+        expect(read()).toEqual(before);
+      } finally {
+        await revoke();
+      }
+      expect(await rows()).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "an instance machine.toml names that another home holds: the refusal is named, and the home is left as it was",
+    async () => {
+      const before = read();
+      const config = join(configOf(home), "machine.toml");
+      mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
+      // The person's own instance for the default Codex home: setup keeps their ID, never another.
+      writeFileSync(
+        config,
+        [
+          "[[instance]]",
+          'id = "codex-mine"',
+          'target = "codex-cli"',
+          'label = "Codex mine"',
+          `config_home = '${join(user, ".codex")}'`,
+          "",
+        ].join("\n"),
+        { mode: 0o600 },
+      );
+      const revoke = await foreignRow("codex-mine");
+      try {
+        const argv = ["setup", "agents", "--app", "codex", "--space", space];
+        const preview = await run([...argv, "--json"], false);
+        expect(preview.code, preview.stderr).toBe(0);
+        const planned = JSON.parse(preview.stdout) as {
+          apply: string[];
+          homes: { instance: string }[];
+        };
+        expect(planned.homes.map((h) => h.instance)).toEqual(["codex-mine"]);
+        const applied = await run([...planned.apply.slice(1), "--json"]);
+        expect(applied.code, applied.stdout).toBe(10);
+        expect(JSON.parse(applied.stdout)).toMatchObject({
+          homes: [{ app: "codex", result: "failed", reason: "instance_taken" }],
+        });
+        const text = await run(planned.apply.slice(1));
+        expect(text.stdout).toContain("another agent home is registered as this instance");
+        expect(read()).toEqual(before);
+        expect((await rows()).map((r) => r.instance)).toEqual(["codex-mine"]);
+      } finally {
+        await revoke();
+        rmSync(config, { force: true });
+      }
+      expect(await rows()).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "an entry added by hand: the preview leaves the home and says how to take the entry out",
+    async () => {
+      const before = read();
+      const claudeFile = files()[0] ?? "";
+      const handMade = JSON.parse(before[0] ?? "{}") as { mcpServers: Record<string, unknown> };
+      handMade.mcpServers[MCP_SERVER_KEY] = { command: "/opt/tasks", args: ["mcp", "--app", "x"] };
+      writeFileSync(claudeFile, JSON.stringify(handMade, null, 2));
+      try {
+        const preview = await run(
+          ["setup", "agents", "--app", "claude-code", "--space", space],
+          false,
+        );
+        expect(preview.code, preview.stderr).toBe(0);
+        expect(preview.stdout).toContain("that setup did not write (one added by hand)");
+        expect(preview.stdout).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
+        expect(preview.stdout).toContain(`then run ${CLI_NAME} setup agents again`);
+      } finally {
+        writeFileSync(claudeFile, before[0] ?? "");
+      }
       expect(read()).toEqual(before);
     },
     SLOW,

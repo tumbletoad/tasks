@@ -6,6 +6,7 @@
   "exports": {
     "./discovery": "./src/mcp/discovery.ts",
     "./mcp": "./src/mcp/index.ts",
+    "./mcp/args": "./src/mcp/args.ts",
     "./mcp/names": "./src/mcp/names.ts",
     "./protocol": "./src/protocol/index.ts",
     "./safe-exit": "./src/safe-exit.ts",

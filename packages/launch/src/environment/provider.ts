@@ -4,10 +4,11 @@
 // - Linux and macOS: layer 1, the session, is read at each claim (`systemctl --user show-environment`,
 //   3 s). Layer 2, the login-shell snapshot, is kept as `env-snapshot.json` (0600) in machine state,
 //   never exported, and taken again before a launch when there is none, when the boot or the
-//   session changed (a new login), or once it is a day old; doctor will refresh it too. A snapshot
-//   has a hard deadline of 10 s; the shell runs in a minimal environment of the account's own
-//   (never the service's), with TERM=dumb, the marker variable, stdin closed, the home folder as its
-//   working folder, in a process group of its own that is killed at the deadline. When it times
+//   session changed (a new login), or once it is a day old; `doctor --live` takes it again too, and
+//   doctor reports how the last attempt ended (check). A snapshot has a hard deadline of 10 s; the
+//   shell runs in a minimal environment of the account's own (never the service's), with
+//   TERM=dumb, the marker variable, stdin closed, the home folder as its working folder, in a
+//   process group of its own that is killed at the deadline. When it times
 //   out, fails, prints no markers or too much, the previous snapshot stays in use; with none at
 //   all the base is the service's own environment through the allow-list (`service` kind).
 // - Windows: the registry layers, read at each claim through Windows PowerShell 5.1 (5 s). When
@@ -72,7 +73,30 @@ export interface EnvironmentSource {
   inFolder(folder: string, identity: FolderIdentityText): Promise<AgentBase | undefined>;
   /** The session layer now (Linux and macOS), for a terminal's own environment. Never throws. */
   session(): Promise<Record<string, string>>;
+  /**
+   * Doctor (A4 3.8, A3 3.14 `launch.env`): how the person's environment stands for launches. With
+   * `take` (`doctor --live`) the login shell runs now, as a launch's refresh runs it, and its
+   * snapshot is kept when it succeeds; without, nothing runs but the registry read on Windows. A
+   * source without it (a test's fixed one) is not checked. Never throws.
+   */
+  check?(take: boolean): Promise<EnvironmentCheck>;
 }
+
+/** What doctor learns of the agent's environment. Words and times only: never a name or value. */
+export type EnvironmentCheck =
+  /** Windows: whether the registry's layers could be read now. */
+  | { readonly kind: "registry"; readonly read: boolean }
+  /**
+   * Linux and macOS: how the last login-shell snapshot this start attempted ended and when (none
+   * when it attempted none), and when the snapshot in use was taken (none: launches get the
+   * service's own environment through the allow-list).
+   */
+  | {
+      readonly kind: "snapshot";
+      readonly outcome?: SnapshotOutcome;
+      readonly attemptedAt?: number;
+      readonly takenAt?: number;
+    };
 
 /** How one snapshot attempt ended, as the log and doctor say it. */
 export const SNAPSHOT_OUTCOMES = [
@@ -272,6 +296,8 @@ export class UserEnvironment implements EnvironmentSource {
   #snapshot: StoredSnapshot | undefined;
   #loaded = false;
   #refreshing: Promise<void> | undefined;
+  /** How the last snapshot this start attempted (a refresh's, not a folder's) ended, and when. */
+  #last: { readonly outcome: SnapshotOutcome; readonly at: number } | undefined;
 
   constructor(options: UserEnvironmentOptions) {
     this.#o = options;
@@ -322,13 +348,42 @@ export class UserEnvironment implements EnvironmentSource {
   async prepare(): Promise<void> {
     if (!this.#posix) return;
     // One refresh at a time: a second launch meanwhile waits for the same one.
-    this.#refreshing ??= this.#refresh().finally(() => {
+    this.#refreshing ??= this.#refresh(false).finally(() => {
       this.#refreshing = undefined;
     });
     await this.#refreshing;
   }
 
-  async #refresh(): Promise<void> {
+  /**
+   * Doctor: on Linux and macOS, with `take`, a snapshot taken now, fresh or not, and kept when it
+   * succeeds as a launch's refresh keeps it; without, the last attempt as it ended. On Windows the
+   * registry read once. Never throws.
+   */
+  async check(take: boolean): Promise<EnvironmentCheck> {
+    if (!this.#posix) {
+      const base = await this.#registryBase().catch(() => undefined);
+      return { kind: "registry", read: base?.kind === "user" };
+    }
+    this.#load();
+    if (take) {
+      // One refresh at a time: a launch's refresh under way finishes first.
+      while (this.#refreshing !== undefined) await this.#refreshing;
+      this.#refreshing = this.#refresh(true).finally(() => {
+        this.#refreshing = undefined;
+      });
+      await this.#refreshing;
+    }
+    const last = this.#last;
+    const takenAt = this.#snapshot?.takenAt;
+    return {
+      kind: "snapshot",
+      ...(last === undefined ? {} : { outcome: last.outcome, attemptedAt: last.at }),
+      ...(takenAt === undefined ? {} : { takenAt }),
+    };
+  }
+
+  /** Brings the snapshot up to date (`force`: fresh or not), and notes how its attempt ended. */
+  async #refresh(force: boolean): Promise<void> {
     try {
       this.#load();
       const session = await this.session();
@@ -340,15 +395,17 @@ export class UserEnvironment implements EnvironmentSource {
         old.boot === boot &&
         old.session === key &&
         Math.abs(this.#now() - old.takenAt) < SNAPSHOT_MAX_AGE_MS;
-      if (fresh) return;
+      if (fresh && !force) return;
       const taken = await this.take(session);
+      this.#last = { outcome: taken.outcome, at: this.#now() };
       this.#o.log?.("launch.env_snapshot", {
         result: taken.outcome,
         ms: taken.ms,
         variables: taken.env === undefined ? 0 : Object.keys(taken.env).length,
         previous: old !== undefined,
       });
-      if (taken.env === undefined) return; // The previous snapshot, if any, stays in use.
+      // The previous snapshot, if any, stays in use.
+      if (taken.env === undefined) return;
       const stored: StoredSnapshot = {
         format: 1,
         takenAt: this.#now(),
@@ -364,6 +421,7 @@ export class UserEnvironment implements EnvironmentSource {
       this.#snapshot = stored;
     } catch {
       // Never a reason to fail a launch: the base falls back below.
+      this.#last = { outcome: "failed", at: this.#now() };
     }
   }
 
