@@ -376,18 +376,13 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(submit(recent.ops).results[0]).toMatchObject({ id: first.id, lifecycle: "completed" });
   });
 
-  test("the window is the space's tasks.dedupe_window_days", async () => {
-    const conn = openWriter(await checkedDriver(), join(fx.folder, "space.db"));
-    try {
-      conn
-        .prepare(
-          "INSERT INTO preferences (key, value, schema_ver, policy, created_seq, version) " +
-            "VALUES ('tasks.dedupe_window_days', '5', 1, 0, 0, 0)",
-        )
-        .run();
-    } finally {
-      conn.close();
-    }
+  test("the window is the space's tasks.dedupe_window_days", () => {
+    expectStatus(
+      submit([{ kind: "pref.set", key: "tasks.dedupe_window_days", value: 5 }], {
+        actor: "human",
+      }),
+      "applied",
+    );
     const first = draft(["jira:FIX-1"]);
     submit(first.ops);
     complete(first.id);

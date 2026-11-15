@@ -2642,6 +2642,46 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.registry",
+      "title": "Every preference is declared once with a bounded value shape, a default that fits it, its scope, its writers and whether it is policy; policy keys have the human as their only writer, an agent writes only keys that list it, and a reader takes a stored value only when it fits, else the default, never a newer build's",
+      "source": "A1 3.16, A3 3.8.2, A6 3.6.3, A7 3.10 M3.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.flags",
+      "title": "Each feature flag lives under features., has a default, and reads its default unset, its value set and its default after a reset",
+      "source": "A1 3.16, A7 3.10 M3.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.set",
+      "title": "pref.set through the write path: a first set needs no base, a change does, null resets the key to its default with the row kept, history and undo-ready change rows are written, an agent is refused a key that does not list it with its receipt, a value outside its shape, an unknown key and a machine key are refused, and a newer build's value stays read-only",
+      "source": "A1 3.16, A1 3.5, A1 3.7, A3 3.8.3, A7 3.10 M3.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.read",
+      "title": "The writer, dedupe, status, search and the snapshot read preferences through the registry: a set value applies, an invalid or reset one gives the default, and the snapshot carries every space preference and flag",
+      "source": "A1 3.16, A5 3.15, A7 3.10 M3.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.machine",
+      "title": "Machine preferences live in machine.toml's [preferences] with the same registry and validation: a valid value is read, a bad entry is dropped with a content-free problem, a space key there is refused, and a set or a reset splices one line, keeping every other byte",
+      "source": "A1 3.16, A2 3.2.4, A7 3.10 M3.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.2.2.permissions.rule",
       "title": "Who else can write a file or folder: another owner, write for every user and write for the group all refuse, whatever the group, and the socket folder lets no one else in; the service and doctor say in plain words what is wrong with which file or folder and give one command that fixes all of it, and the log names only the code",
       "source": "A2 3.2.2, A2 3.2.4",

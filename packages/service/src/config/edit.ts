@@ -40,6 +40,12 @@ export type Edit =
       readonly key: string;
       readonly value: EditValue;
     }
+  /**
+   * Removes `key`'s line from the standard table `[table…]`; the table's header stays. A key that
+   * is not there leaves the text as it is; one set another way (a dotted key, an inline table) is
+   * refused by the check of the result.
+   */
+  | { readonly op: "unset"; readonly table: readonly string[]; readonly key: string }
   /** Adds an element `[[array]]` after the array's last element, or at the end. */
   | { readonly op: "append"; readonly array: string; readonly entries: Entries }
   /** Adds a new standard table `[table…]` at the end. Refused when it exists. */
@@ -159,6 +165,17 @@ function withValue(doc: TomlDocument, path: readonly string[], value: unknown): 
   return copy;
 }
 
+/** `doc` without the value at `path`, copying only the tables on the way. */
+function withoutValue(doc: TomlDocument, path: readonly string[]): TomlDocument {
+  const [head, ...rest] = path;
+  if (head === undefined || !Object.hasOwn(doc, head)) return doc;
+  if (rest.length === 0) {
+    return Object.fromEntries(Object.entries(doc).filter(([name]) => name !== head));
+  }
+  const inner = doc[head];
+  return isTable(inner) ? { ...doc, [head]: withoutValue(inner, rest) } : doc;
+}
+
 function valueAt(doc: TomlDocument, path: readonly string[]): unknown {
   let at: unknown = doc;
   for (const part of path) {
@@ -253,6 +270,14 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const before = text.slice(0, at);
       const lead = before === "" || before.endsWith("\n") ? "" : eol;
       return `${before}${lead}${keyText(edit.key)} = ${valueText(edit.value)}${eol}${text.slice(at)}`;
+    }
+    case "unset": {
+      const header = headers.find((h) => !h.array && samePath(h.path, edit.table));
+      if (header === undefined) return text;
+      const line = tableLines(lines, header).find(
+        (l) => l.kind === "keyval" && samePath(l.key, [edit.key]),
+      );
+      return line === undefined ? text : text.slice(0, line.start) + text.slice(line.end);
     }
     case "append": {
       const elements = headers.filter((h) => h.array && samePath(h.path, [edit.array]));
@@ -368,6 +393,8 @@ function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | Edi
     }
     case "set":
       return withValue(doc, [...edit.table, edit.key], parsedValue(edit.value));
+    case "unset":
+      return withoutValue(doc, [...edit.table, edit.key]);
     case "append": {
       const current = doc[edit.array];
       if (current !== undefined && !Array.isArray(current)) return "unsupported_layout";
@@ -463,6 +490,24 @@ function readIfPresent(path: string, maxBytes?: number): Buffer | undefined | "p
   return read.kind === "bytes" ? read.bytes : "problem";
 }
 
+/** Whether `dir` itself is a link (a junction on Windows too). A missing folder is none. */
+function isLinkedFolder(dir: string): boolean {
+  try {
+    return lstatSync(dir).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * machine.toml's rule for an edit: the folder is no link, on every OS (the reader's own check
+ * of a link folder needs an owner, which Windows does not give it), and the loader finds neither
+ * the folder nor the file unsafe.
+ */
+function unsafeMachineToml(configDir: string): boolean {
+  return isLinkedFolder(configDir) || loadMachineConfig(configDir).unsafe !== undefined;
+}
+
 /** Reads `<config>/machine.toml` and works out `edits` on it. Writes nothing. */
 export function prepareEdit(
   configDir: string,
@@ -470,7 +515,7 @@ export function prepareEdit(
 ): { ok: true; edit: PreparedEdit } | { ok: false; reason: EditRefusal } {
   const path = join(configDir, MACHINE_TOML);
   // The service's own rule: nothing is written into a config folder or machine.toml that fails it.
-  if (loadMachineConfig(configDir).unsafe !== undefined) return { ok: false, reason: "unsafe" };
+  if (unsafeMachineToml(configDir)) return { ok: false, reason: "unsafe" };
   const before = readIfPresent(path);
   if (before === "problem") return { ok: false, reason: "invalid_file" };
   let text = "";
@@ -521,8 +566,7 @@ export function commitEdit(edit: PreparedEdit, options: CommitOptions = {}): Edi
       ? again === undefined
       : again !== undefined && edit.before.equals(again);
   };
-  const unsafe =
-    options.unsafe ?? ((path: string) => loadMachineConfig(dirname(path)).unsafe !== undefined);
+  const unsafe = options.unsafe ?? ((path: string) => unsafeMachineToml(dirname(path)));
   if (unsafe(edit.path)) return { ok: false, reason: "unsafe" };
   if (!unchanged()) return { ok: false, reason: "changed_meanwhile" };
   let mode = 0o600;
