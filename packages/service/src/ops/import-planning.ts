@@ -102,9 +102,12 @@ function isInside(from: string, to: string): boolean {
 /**
  * `<space>/exchange/planning` through the space folder's real path. Each part that is there must
  * be a plain folder, never a link or a junction, so a run folder can only be inside the space.
+ * Real paths come from the system's own resolution (`realpathSync.native`), as the copy's do: on
+ * Windows it drops a `\\?\` prefix and spells short names and letter case as the disk does, so two
+ * spellings of one folder compare equal.
  */
 function runsFolder(space: string): string {
-  let path = realpathSync(space);
+  let path = realpathSync.native(space);
   for (const part of RUNS_FOLDER) {
     path = join(path, part);
     const stat = lstatSync(path, { throwIfNoEntry: false });
@@ -167,7 +170,7 @@ export async function planningPreview(
   // anything is written: its parents in the space are plain folders, so the run stays inside the
   // space, and it lies outside the prototype folder, which the run only reads.
   const runs = runsFolder(call.folder);
-  if (isInside(realpathSync(source), runs)) {
+  if (isInside(realpathSync.native(source), runs)) {
     throw invalid(
       "folder",
       "The space's run folders would be inside this folder",

@@ -101,6 +101,15 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     expect(report.tasks.at(-1)?.ref).toBe(`M-${String(15 + fixture.plan.tasks.length)}`);
     const md = renderPreview(report);
     for (const n of [1, 2, 3, 4, 5, 6]) expect(md).toContain(`## ${String(n)}.`);
+    // Four tables, each with a delimiter row Markdown reads as one: never escaped like a value.
+    const lines = md.split("\n");
+    const delimiters = lines.filter((l) => /^\|( --- \|)+$/.test(l));
+    expect(delimiters.map((l) => l.split("|").length - 2)).toEqual([2, 3, 5, 8]);
+    for (const d of delimiters) {
+      const header = lines[lines.indexOf(d) - 1] ?? "";
+      expect(header.split(" | ").length).toBe(d.split("|").length - 2);
+    }
+    expect(md).not.toContain("\\---");
   });
 
   test("every error blocks, and no warning does", () => {
@@ -125,6 +134,24 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     );
     expect(changed.report.blocked).toBe(true);
     expect(changed.report.counts.source_changes).toBe(1);
+    // A change both the copy's check and the second check found is one change.
+    const twice = previewOf(
+      warn.parse,
+      warn.plan,
+      runOf({
+        problems: [{ code: "source-changed", severity: "error", file: "TODO.md" }],
+        verified: [
+          { code: "source-changed", severity: "error", file: "TODO.md" },
+          { code: "source-changed", severity: "error", file: "DONE.md" },
+        ],
+      }),
+    );
+    expect(twice.report.counts.source_changes).toBe(2);
+    expect(twice.report.attention).toContainEqual({
+      code: "source-changed",
+      severity: "error",
+      count: 2,
+    });
   });
 
   test("what only the space and this machine tell: held keys, earlier imports, missing folders", () => {

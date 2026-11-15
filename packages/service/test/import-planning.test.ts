@@ -69,7 +69,13 @@ describe("[A7.3.15.importer.dry-run] the dry run refuses before it writes", () =
     const before = tree(w.base);
     // The folder above the space, the space itself, and its exchange folder.
     mkdirSync(join(w.space, "exchange"));
-    for (const folder of [w.base, w.space, join(w.space, "exchange")]) {
+    const folders = [w.base, w.space, join(w.space, "exchange")];
+    // On Windows the same folders in the namespaced and the lower-case spelling: the check compares
+    // the folders, not their spellings.
+    if (process.platform === "win32") {
+      folders.push(`\\\\?\\${w.base}`, `\\\\?\\${w.space}`, w.space.toLowerCase());
+    }
+    for (const folder of folders) {
       expect(await refusal(w.space, folder), folder).toMatchObject({ code: "invalid_input" });
     }
     expect(tree(w.base)).toEqual([...before, "space/exchange"].sort());

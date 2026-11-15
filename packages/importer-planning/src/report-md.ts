@@ -48,6 +48,11 @@ export function renderPreview(r: Report): string {
   const line = (text = "") => out.push(text);
   const row = (...cells: (string | number)[]) =>
     line(`| ${cells.map((v) => cell(String(v))).join(" | ")} |`);
+  /** A table's header: its titles, then the delimiter row, which is markup, never a value. */
+  const head = (...titles: string[]) => {
+    row(...titles);
+    line(`|${titles.map(() => " --- ").join("|")}|`);
+  };
 
   line("# Planning prototype import: dry run");
   line();
@@ -67,8 +72,7 @@ export function renderPreview(r: Report): string {
 
   line("## 1. Counts and reconciliation");
   line();
-  row("What", "Count");
-  row("---", "---");
+  head("What", "Count");
   row("Task lines in TODO.md", c.todo_task_lines);
   row("Task lines in DONE.md", c.done_task_lines);
   row("Metadata entries", c.metadata_entries);
@@ -109,15 +113,13 @@ export function renderPreview(r: Report): string {
 
   line("## 2. Status mapping");
   line();
-  row("Prototype", "Here", "Tasks");
-  row("---", "---", "---");
+  head("Prototype", "Here", "Tasks");
   for (const s of r.statuses) row(s.prototype, s.status, s.count);
   line();
 
   line("## 3. Roots");
   line();
-  row("Root", "Folder", "From", "Places", "Missing here");
-  row("---", "---", "---", "---", "---");
+  head("Root", "Folder", "From", "Places", "Missing here");
   for (const root of r.roots) row(root.id, root.folder, root.origin, root.places, root.missing);
   if (r.roots.some((root) => root.origin === "proposed")) {
     line();
@@ -155,8 +157,7 @@ export function renderPreview(r: Report): string {
 
   line("## 5. Per task");
   line();
-  row("Legacy ID", "Reference", "Area", "Project", "Status", "Place", "Due", "Focus");
-  row("---", "---", "---", "---", "---", "---", "---", "---");
+  head("Legacy ID", "Reference", "Area", "Project", "Status", "Place", "Due", "Focus");
   for (const t of r.tasks) {
     const status = t.lifecycle === "completed" ? `completed (${t.wrap ?? "pending"})` : t.status;
     const place =

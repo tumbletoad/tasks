@@ -322,12 +322,17 @@ function spaceProblems(plan: ImportPlan, run: PreviewRun): Problem[] {
 
 /** Builds the report and, when nothing blocks, its token. */
 export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewRun): Preview {
+  // The second check of the source finds again what the copy's own check found: one change of one
+  // file is one problem.
+  const placeOf = (p: Problem) =>
+    [p.code, p.file, p.line, p.task, p.field, p.index].map((v) => String(v ?? "")).join("\u0000");
+  const copied = new Set(run.problems.map(placeOf));
   const problems = [
     ...run.problems,
     ...parse.problems,
     ...plan.problems,
     ...spaceProblems(plan, run),
-    ...run.verified,
+    ...run.verified.filter((p) => !copied.has(placeOf(p))),
   ];
   const blocked = problems.some((p) => p.severity === "error");
   const count = (code: ImportProblemCode) => problems.filter((p) => p.code === code).length;
