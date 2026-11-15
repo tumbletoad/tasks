@@ -2,6 +2,8 @@
 // help, printed the same by `tasks help <command>` and `tasks <command> --help`, with its forms
 // and flags; a flag the contract requires is marked so; the columns of each help line up. No
 // service is needed: help runs nothing.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { SERVICE_VERBS } from "@tasks/service/install";
 import { CLI_SPEC } from "./args.ts";
@@ -56,6 +58,15 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     for (const command of COMMANDS) {
       expect(list.match(new RegExp(`^ {2}${command} {2,}`, "gm")), command).toHaveLength(1);
     }
+  });
+
+  test("every command the router takes is in the table, so none is left without help", () => {
+    // The router is main.ts's one switch: each of its cases is a command a person can type.
+    const router = readFileSync(fileURLToPath(new URL("./main.ts", import.meta.url)), "utf8");
+    const routed = [...router.matchAll(/^\s+case "([a-z][a-z0-9-]*)":/gm)].map((m) => m[1]);
+    expect(routed.length).toBeGreaterThan(5);
+    const table = new Set(LOCAL_COMMANDS.map((c) => c.name));
+    expect(routed.filter((name) => name !== undefined && !table.has(name))).toEqual([]);
   });
 
   test("a command's subcommands are in its help, and the service's are the ones it takes", () => {

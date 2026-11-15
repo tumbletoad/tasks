@@ -463,7 +463,7 @@ One command, `tasks`, at the stable path. **Operation verbs** are generated from
 
 **Help** (`help.ts`, `A2.3.10.cli.help`). Every command has its own help, printed the same by `tasks help <command>` and `tasks <command> --help`: what it does in one line, its forms and its flags. The local commands are one table that also names each command's subcommands. A generated verb's help comes from `cli-spec.json` alone, so a flag the contract requires is in its usage line and marked `(required)`, and the CLI names a missing one before any call (`tasks reopen needs --reason`). `tasks mcp --help` is the bridge's own argument error (3.7.1), so mcp's help is `tasks help mcp`.
 
-**Hints name only commands that exist** (`A2.3.10.cli.hints`). A test reads every string in the CLI's, the service's and the bridge's code and fails on a `tasks <command> [<subcommand>]` the table does not have. There is no `tasks service restart`: a hint says `tasks service stop`, then `tasks service start`.
+**Hints name only commands that exist** (`A2.3.10.cli.hints`). A test reads every string and JSX text in the code of every package a person reads text from (the CLI, the service, the bridge, the UI, launch, runs, the importer and the contracts) and fails on a `tasks <command> [<subcommand>]` the table does not have. In a command's place (after `Run: `, `run `, `with: `, a backtick or a quote) every word is checked; elsewhere a short list of English words after "tasks" is prose. A text built by concatenation is not read. A second test fails when the router takes a command the help table lacks. There is no `tasks service restart`: a hint says `tasks service stop`, then `tasks service start`.
 
 #### 3.10.2 Conventions
 

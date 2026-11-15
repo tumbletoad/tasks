@@ -120,12 +120,20 @@ const plain = (text: string): string =>
  * A3 3.5's text form of a message and its hint, `<message>. <hint>`, for every face that prints
  * one (the CLI, the MCP tools). The message ends with a full stop, added when it has none. A hint
  * that is a bare command (`<cli> …`) follows `Run: `. A hint the message already says is left out,
- * so a message and its hint never say the same thing twice.
+ * so a message and its hint never say the same thing twice. A message that ends with a colon is
+ * finished by its hint as it stands, or by a full stop when it has none; an empty message is its
+ * hint alone.
  */
 export function messageWithHint(message: string, hint: string | undefined, cli: string): string {
   const trimmed = message.trim();
-  const sentence = trimmed === "" || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
   const tip = hint?.trim() ?? "";
+  const open = trimmed.endsWith(":");
+  const sentence =
+    trimmed === "" || /[.!?]$/.test(trimmed)
+      ? trimmed
+      : `${open ? trimmed.slice(0, -1) : trimmed}.`;
   if (tip === "" || plain(sentence).includes(plain(tip))) return sentence;
-  return `${sentence} ${tip.startsWith(`${cli} `) ? `Run: ${tip}` : tip}`;
+  if (open) return `${trimmed} ${tip}`;
+  const told = tip.startsWith(`${cli} `) ? `Run: ${tip}` : tip;
+  return sentence === "" ? told : `${sentence} ${told}`;
 }

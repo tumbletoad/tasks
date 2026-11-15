@@ -412,6 +412,14 @@ describe("[A3.3.5.error-text] a message and its hint, each said once", () => {
       "Something went wrong!",
     );
     expect(messageWithHint("Gone", "  ", "tasks")).toBe("Gone.");
+    // A message that ends with a colon is finished by its hint, else by a full stop.
+    expect(messageWithHint("Could not start:", "tasks doctor", "tasks")).toBe(
+      "Could not start: tasks doctor",
+    );
+    expect(messageWithHint("Could not start:", undefined, "tasks")).toBe("Could not start.");
+    // An empty message is its hint alone, with no space before it.
+    expect(messageWithHint("", "tasks doctor", "tasks")).toBe("Run: tasks doctor");
+    expect(messageWithHint(" ", "Read it again.", "tasks")).toBe("Read it again.");
   });
 
   test("every printed error joins its message and hint by that rule", () => {
