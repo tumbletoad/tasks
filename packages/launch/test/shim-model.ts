@@ -18,7 +18,7 @@ import {
   type SpawnPlan,
 } from "../src/shim/records.ts";
 import { SHIM_METHODS, type ClaimReply, type ExitFile } from "../src/shim/wire.ts";
-import type { ExecutionStore, LaunchIntent } from "../src/store.ts";
+import type { LaunchStore, LaunchIntent } from "../src/store.ts";
 import { settle, Time } from "./machine-model.ts";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE } from "./stores.ts";
@@ -158,7 +158,7 @@ export class ShimWorld {
     // A slow commit takes effect once its time has passed, its call's deadline or not.
     const slow = <T>(call: () => Promise<T>): Promise<T> =>
       this.#storeDelay > 0 ? this.time.wait(this.#storeDelay).then(() => guard(call)) : guard(call);
-    const store: ExecutionStore = {
+    const store: LaunchStore = {
       createIntent: (input, id) => guard(() => inner.createIntent(input, id)),
       transitionIntent: (id, expect, next, outcome) =>
         slow(() => inner.transitionIntent(id, expect, next, outcome)),

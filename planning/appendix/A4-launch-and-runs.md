@@ -463,12 +463,12 @@ The receipt shows in the task's session list and briefly beside the launch butto
 
 A **session** groups the launches of one agent conversation.
 
-**Built: session records in machine state** (`packages/service/src/binding/sessions.ts`, A3 3.7, tests `[A3.3.7.binding.*]`). Until a schema step adds A1's `sessions` table, binding keeps session records and binding handles in `<state>/sessions.json`, because schemas 0.1 and 0.2 are frozen. The file holds no task text, ticket, handle or path. Everything a session does in a space still goes through the write path, under its actor `agent:<instance>:<session>`.
+**Built: session records in machine state** (`packages/service/src/binding/sessions.ts`, A3 3.7, tests `[A3.3.7.binding.*]`), and the space's `sessions` table (schema 0.3), which nothing writes yet. Until binding writes the table, it keeps session records and binding handles in `<state>/sessions.json`. The file holds no task text, ticket, handle or path. Everything a session does in a space still goes through the write path, under its actor `agent:<instance>:<session>`.
 - A launch's session is made at its first binding, not with the launch intent (A3 3.7.7).
 - **Live:** an open connection bound to it, or its launch's agent running. **Ended:** none of these and no call for 24 hours. Its record stays 30 days (`bindings.ts`).
-- Until the table exists, a session record lost with the state folder leaves its launch's `bound_at` in the space, so its reference answers `launch_used`.
+- Until binding writes the table, a session record lost with the state folder leaves its launch's `bound_at` in the space, so its reference answers `launch_used`.
 
-**To build: the `sessions` table** (schema step 0003, with its own migration and test). It brings A1's table, the execution store's `upsertSession` and `session.*` operations through the writer, and takes each record of `sessions.json` (id, space, task, instance, kind, how it bound, launches, native IDs, created, last seen, ended). Handles stay in machine state (A2). The crash harness then counts `sessions` among its tables. Native-ID binding (Claude's preset, Codex's reference match, T3's thread ID), the session list and Resume are M4.06's. The table's shape:
+**To build: the move into the `sessions` table** (M4.06, with native-ID binding, the session list and Resume). The table exists (schema 0.3, `packages/storage/migrations/0003-schema-0.3.ts`) and the crash harness checks its rows. The move brings the execution store's `upsertSession` and `session.*` operations through the writer, and takes each record of `sessions.json` (id, space, task, instance, kind, how it bound, launches, native IDs, created, ended) with no schema change: what A1's columns do not hold (how it bound, its launches, every presented native ID, the instance's label and account) goes in `sessions.detail`, which the writer checks key by key. The last-seen time and the handles stay in machine state (A2), so a call never writes the space. The record's shape:
 
 ```ts
 type Session = {
@@ -525,7 +525,9 @@ interface RunAdapter {
 }
 ```
 
-A plan has no shell-command field. `RunEvent` is built in `packages/runs/src/streams/events.ts` and moves to contracts with the run records (M6.01). Progress is a label key the UI translates, so no tool name or input reaches it. There is no `needs-input` event: neither v1 adapter waits for input. Journal events carry a `seq`.
+A plan has no shell-command field. `RunEvent`, the outcome's shapes and the caps live in `packages/contracts/src/runs.ts` (`@tasks/contracts/runs`) beside the run record's vocabulary; the stream parsers re-export them. Progress is a label key the UI translates, so no tool name or input reaches it. The `session` event carries Claude's `system/init` working folder and whether the Tasks tools connected; the folder never leaves machine state. There is no `needs-input` event: neither v1 adapter waits for input. Journal events carry a `seq` (`RunJournalEntry`).
+
+A run record's `task` and `routine` name what it belongs to: exactly one when the run is created (`run.create` and every store's `createRun` refuse neither and both). A run whose task was redacted holds neither (A1 3.4, 3.11.4). It keeps its states, reason, times, evidence, usage and counts, has no request and no result text, and still settles as any run does, because the run machine never reads its task.
 
 #### 3.11.2 Run states
 
@@ -535,14 +537,28 @@ queued ─▶ starting ─▶ running ─▶ succeeded
    │          │          ├─▶ failed
    │          │          ├─▶ timed_out
    │          │          └─▶ cancelling ─▶ cancelled | unknown
-   │          └─▶ failed (spawn error, shim never claimed)
+   │          ├─▶ failed (spawn error, shim never claimed, check failed)
+   │          ├─▶ cancelled (stopped before the shim claimed it)
+   │          ├─▶ cancelling (stopped after the claim)
+   │          └─▶ unknown (claimed, then nothing more)
    └─▶ cancelled (removed from the queue)
 any state with a lost shim ─▶ reconciling ─▶ a final state | unknown
+unknown ─▶ a final state, on a definite exit or start failure only
+unknown (stop_timed_out) with its shim found gone ─▶ reconciling ─▶ unknown (lost)
 ```
+
+**Built:** the states, edges, reasons, evidence keys and record shapes in `packages/contracts/src/runs.ts`, the writer's copy in `packages/storage/src/write/runs.ts` (a test compares them), the operations `run.create` and `run.transition` (A1 3.6), and `RunMachine` (`packages/runs/src/machine.ts`, whose header states its rules) over the execution store's run part. Tests: `[A1.5.write.runs]`, `[A4.5.run.machine]`, `[A4.5.run.state-machine]` (cancels in every state and a crash at every boundary), `[A4.5.execution-store.contract]`.
 
 - The run record is written in `queued` before anything spawns (R8). Runs follow 3.9.1's rules: one section per run, a compare-and-set on the version, a commit before each external step, deadlines, a monotonic clock for timeouts.
 - v1 runs never enter `waiting_for_input` (stdin is closed, neither CLI prompts). The state stays for later adapters.
-- `starting` is committed immediately before the spawn. A crash there with no claim becomes `failed` (`not_claimed`), with a claim and nothing more `unknown`.
+- `starting` is committed immediately before the spawn. The run shim's claim is a self edge on `starting`, committed before the reply that lets the shim start the agent, and its report of the agent's start moves the run to `running`. A run unclaimed 120 s after `starting` (`RUN_CLAIM_WINDOW_MS`) is `failed` (`not_claimed`), on the monotonic clock for a run this service started and on the wall clock either way for one from before a restart; a claimed run whose shim is lost and left nothing is `unknown`.
+- **Stop.** A queued run, or a starting one whose shim has not claimed it, is `cancelled` at once: a later claim is refused, so no agent starts. A run a process may hold is `cancelling`, committed before the stop step; another Stop sends the stop again and keeps the first one's time, also after a restart. A cancelling run whose process has not ended 60 s later (`RUN_STOP_TIMEOUT_MS`) is `unknown` (`stop_timed_out`), and a later exit settles it `cancelled`, live or from `exit.json` after a restart: `openWork` keeps listing such a run (`awaitsExit`) until its exit settles it or recovery finds its shim gone, which makes it `unknown` (`lost`) through `reconciling`.
+- **A definite start failure** (the shim's check or the agent's spawn failed: a claimed run with no agent PID recorded) settles the run `failed` with its reason, or `cancelled` once a Stop is recorded. It does so from `starting`, `cancelling`, `reconciling` and `unknown` with either reason, because the shim exits after its report: a sweep that runs while the report waits behind it finds the shim gone and settles the run `unknown` (`lost`) first, also after a stop that timed out. Once an agent's PID is recorded, a start failure is not the run's, and its exit decides.
+- **A lost shim** is recorded as `reconciling` before its files settle the run, so a crash while they are read leaves a record that says so. A live exit from `starting` or `waiting_for_input`, which have no direct edge to a final state, also goes through `reconciling`. Recovery reads what a shim left before it applies a time limit, because an exit the service did not hear while it was down is still a definite exit. The live sweep applies recovery's rule to every open run, so an observation that did not answer or a settling write that passed its deadline and then failed at start is tried again, and a shim lost while the service runs is settled without a restart.
+- **Every transition names the version it was decided on** (`run.transition` refuses one without it): a claim changes a run's version and keeps its state, so a Stop decided on the unclaimed record must not cancel a run whose shim may already start its agent.
+- **Reasons.** `failed`: `not_claimed`, `verify_failed`, `spawn_failed` and the outcome's reasons but `success` (a successful verdict with a non-zero exit is `exit_status`). `timed_out`: `wall` or `idle`. `unknown`: `lost` or `stop_timed_out`. `succeeded` and `cancelled` take none.
+- **Record.** A run holds IDs, states, codes, instants, counts and flags, and two texts: the person's request (64 KiB) and the agent's final result and error (8 KiB each), kept with the outcome's verdict, usage, native ID and counts in `result`, written once entering a final state. The working folder never reaches it. Evidence (claim, PID and start time, native ID, folder check) only grows.
+- **Texts as the space stores them.** Every execution store normalises a run's texts as the writer does (`normaliseRunText`: well-formed, LF, no C0 control but tab and line feed, NFC) before it measures them, because NFC can lengthen a text. The request is refused when it is empty or over its size after that. The agent's result text and error are cut to 8 KiB after it (`cutRunText`), never refused: what an agent wrote must never keep its run from settling. Every other field of a result is judged by the stores as the writer judges it: an object is a plain object, never a list, and a store keeps what the writer keeps. The contract suite holds this as one property rather than case by case: it feeds every store and the writer's own validation the same generated result values of every JSON shape and requires the same verdict and the same kept result from each. A result a store still refuses is left out, never the transition: the run settles with its state and reason and holds no result. An outcome that names none of A4's reasons ends the run `failed` (`no_result`).
 - The final state comes from the parser's outcome (3.11.4) and the state machine. `succeeded` means the process ended and the final event said success, a statement about the process, not the work. A run in `cancelling` that ends with any outcome is `cancelled`, on process exit only. A stop that times out is `unknown`. A timeout is `timed_out`.
 - **No automatic rerun.** A failed, timed-out or unknown run offers "Run again" (a new run with the same request), "Continue interactively" where possible, and "View log".
 
@@ -628,7 +644,7 @@ The first Run in an instance with `inherit` asks for a mode: "Runs in Codex · w
 
 The run shim does not need the service while it runs: it holds the agent, parses, journals, writes the outcome and enforces timeouts.
 1. When the service stops, the shim retries every 5 s.
-2. The new service lists the machine's runs in `starting`, `running`, `waiting_for_input` and `cancelling` (`openWork`), reads `meta.json`, checks the shim's PID and start time (and the unit on Linux), and waits for the re-attach.
+2. The new service lists the machine's runs in `starting`, `running`, `waiting_for_input`, `cancelling` and `reconciling`, and the `unknown` ones whose stop timed out (`openWork`, which also lists `queued` for the supervisor), reads `meta.json`, checks the shim's PID and start time (and the unit on Linux), and waits for the re-attach. `RunMachine.recover` does this, steps 4 and 5 included, from the observation `RunRecovery.observe` gives (M6.03 builds it on the run files), and `RunMachine.sweep` does it again periodically, so `observe` must be safe to call on a live run; the re-attach of step 3 is M6.03's, and a shim that re-attaches to a cancelling run is sent the cancel again.
 3. On `run.attach {credential, pid, start_time, seq}` the service applies the journal after its own last applied `seq`, then live `run.event {seq, event}` messages. If the journal was truncated in the gap, it applies `checkpoint.json`. The last applied `seq` is in machine state, and the record changes events cause are idempotent compare-and-set patches, so a replay changes nothing and no event is lost or counted twice.
 4. Shim gone with `exit.json`: finalize from it. The journal fills in labels.
 5. Shim gone without `exit.json`: `unknown`, never respawned.
@@ -889,8 +905,8 @@ Code never deletes a person's data or a backup as a side effect of another opera
 | Record | Where | Key fields |
 |---|---|---|
 | `launches` | Space (built) | `packages/storage/migrations/0001-schema-0.1.ts` |
-| `session` | Machine (built, `<state>/sessions.json`) until schema step 0003 moves it into the space | 3.10 |
-| `run` | Space (M6.01, own migration) | id, task or routine, session, instance snapshot, place ID or work folder, request text or routine, brief hash, permission snapshot, limits, state, version, reason, queued/started/ended times, exit code, native ID, result (8 KiB), usage, lease key, occurrence (M9), request ID |
+| `session` | Machine (built, `<state>/sessions.json`) until binding writes the space's table (schema 0.3, built) | 3.10 |
+| `run` | Space (built, schema 0.3) | id, task or routine, session, instance, adapter, place ID or work folder, request text, brief hash, permission, limits, state, version, reason, queued/started/ended times and each state's, evidence (claim, PID, native ID), result (8 KiB texts, exit code, usage, native ID), request ID (the receipt). Still to add as evidence or spec keys: the lease key (M6.02), the occurrence (M9) |
 | `routine` | Space | 3.12.1 |
 | `routine_occurrence`, `next_due_at` | Space, from M9 | 3.13.2 |
 | Launch machine state | Machine (built) | `launch.json` per intent (3.6.3). Never an absolute folder in the plan. A link's brief stays in memory, and the composer text is never stored |
@@ -907,19 +923,18 @@ Code never deletes a person's data or a backup as a side effect of another opera
 
 #### 3.16.1 The execution store
 
-Launch intents, sessions, runs and occurrences are written only through this interface. **Built:** the launch part in `packages/launch/src/store.ts`, with the v1 backend in `space-store.ts`. The contract suite `packages/launch/test/execution-store-contract.ts` (`[A4.5.execution-store.contract]`) runs against every backend. Still to add, each with the step that writes its records:
+Launch intents, sessions, runs and occurrences are written only through this interface. **Built:** the launch part (`LaunchStore`) and the run part (`RunStore`) in `packages/launch/src/store.ts`, with the v1 backend in `space-store.ts`. Each state machine takes only its part. The contract suites `packages/launch/test/execution-store-contract.ts` and `run-store-contract.ts` (`[A4.5.execution-store.contract]`) run against every backend. Still to add, each with the step that writes its records:
 
 ```ts
-interface ExecutionStore {
-  // ... the launch part (store.ts)
-  upsertSession(change: SessionChange): Promise<Session>;                      // schema step 0003
-  createRun(input: NewRun, requestId: string): Promise<RunRecord>;            // M6.01
-  transitionRun(id: string, expect: { state: RunState; version: number }, next: RunState, patch: RunPatch): Promise<RunRecord>;
+interface ExecutionStore extends LaunchStore, RunStore {
+  // createRun, transitionRun(id, expect: { state, version }, next, patch), readRun (built)
+  openWork(machine: string): Promise<{ intents: LaunchIntent[]; runs: RunRecord[] }>;  // built; runs: open, or unknown awaiting their exit
+  upsertSession(change: SessionChange): Promise<Session>;                      // M4.06, with the session move
   decideOccurrence(decision: OccurrenceDecision): Promise<void>;             // M9: decision, run and cursor together
 }
 ```
 
-- Each write is one atomic transition: record, history and receipt commit together. `openWork` returns runs beside intents from M6.01.
+- Each write is one atomic transition: record, history and receipt commit together. `openWork` returns runs beside intents.
 - No caller repeats a transition whose answer was lost. It reads again.
 - Recovery is machine-local: a machine recovers only what it dispatched.
 - **v1:** the space database, each call one A1 operation, on the machine that owns the space. **From L1:** a machine without authority writes through the same interface to a machine-local journal and publishes observations (A6). Launch and run code does not change.
@@ -963,13 +978,13 @@ interface ExecutionStore {
 
 ### 5.1 Automated tests (CI on Windows and Linux)
 
-**Built**, each pinned by its test IDs in `tests/manifest.json`: catalogue, detection and approval (`[A4.3.2.*]`), exact folders (`[A1.3.15.places.*]`), the work folder (`[A4.5.shim.work-folder]`), T3's two routes, binding, pairing, fake server and fake CLI (`[A4.3.4.1.t3.*]`, `[A4.3.16.t3.state]`, `[A4.5.t3.*]`), golden argv and homes (`[A4.5.routes.golden-argv]`, `[A4.5.routes.homes]`), routes through a real service, a real `tasks shim` and testkit's fake CLI, which on Windows covers the runtime's real quoting into one command line (`[A4.5.routes.service]`), the opener (`[A4.5.routes.opener]`), the Codex reference match (`[A4.5.routes.codex-match]`), terminals and hostile input (`[A4.5.terminal.*]`), the sanitiser and briefs (`[A4.5.brief.*]`), the environment (`[A4.5.environment.*]`, `[A4.5.shim.environment]`), the execution store contract on every backend (`[A4.5.execution-store.contract]`), the launch state machine over a model world with faults at every store call and step (`[A4.5.launch.*]`), launch request hygiene (`[A1.5.write.launches]`), the shim and its re-attachment (`[A4.5.shim.*]`), the installed shim (`[A4.5.shim.installed]`), the parsers and fake agents (`[A4.5.parsers.*]`, `[A4.5.fake-agents.replay]`), and the page's Open and Copy end to end (`[A7.3.9.m2-13.e2e.open]`, `[A7.3.9.m2-10.e2e.copy]`).
+**Built**, each pinned by its test IDs in `tests/manifest.json`: catalogue, detection and approval (`[A4.3.2.*]`), exact folders (`[A1.3.15.places.*]`), the work folder (`[A4.5.shim.work-folder]`), T3's two routes, binding, pairing, fake server and fake CLI (`[A4.3.4.1.t3.*]`, `[A4.3.16.t3.state]`, `[A4.5.t3.*]`), golden argv and homes (`[A4.5.routes.golden-argv]`, `[A4.5.routes.homes]`), routes through a real service, a real `tasks shim` and testkit's fake CLI, which on Windows covers the runtime's real quoting into one command line (`[A4.5.routes.service]`), the opener (`[A4.5.routes.opener]`), the Codex reference match (`[A4.5.routes.codex-match]`), terminals and hostile input (`[A4.5.terminal.*]`), the sanitiser and briefs (`[A4.5.brief.*]`), the environment (`[A4.5.environment.*]`, `[A4.5.shim.environment]`), the execution store contract on every backend (`[A4.5.execution-store.contract]`), the launch state machine over a model world with faults at every store call and step (`[A4.5.launch.*]`), launch request hygiene (`[A1.5.write.launches]`), the shim and its re-attachment (`[A4.5.shim.*]`), the installed shim (`[A4.5.shim.installed]`), the parsers and fake agents (`[A4.5.parsers.*]`, `[A4.5.fake-agents.replay]`), the run records and the run state machine with a cancel in every state and a crash at every boundary (`[A1.5.write.runs]`, `[A4.5.run.machine]`, `[A4.5.run.state-machine]`), and the page's Open and Copy end to end (`[A7.3.9.m2-13.e2e.open]`, `[A7.3.9.m2-10.e2e.copy]`).
 
 To build:
 
 | Kind | What it proves |
 |---|---|
-| Run state machine | As the launch machine, plus cancel in every state and timeouts while the service is down |
+| Run timeouts | A timeout fires while the service is down, enforced by the shim (M6.02, M6.03) |
 | Run cancellation | Unix: a fake agent that ignores SIGINT and starts a grandchild, and on Linux one that calls `setsid`: all end within 12 s, the shim writes `exit.json`, the run is `cancelled`. A timeout ends `timed_out` the same way. Windows: the helper under a detached parent, and its refusal of a foreign console process |
 | Event journal | The service stops, the agent writes past the raw cap and emits native ID, usage and result: after restart the record holds all three and every `seq` applies once. Past the journal cap, `finished` and the outcome still arrive |
 | Scheduler (M9, fake clock) | DST both ways, a 3-day sleep, a clock set back, overlap, the 08:30 deferral with a restart at 08:45, a crash just before the run's transaction commits. At most one run per decision and one catch-up run |

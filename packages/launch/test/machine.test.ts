@@ -8,7 +8,7 @@ import {
   type Observation,
   type RecoverySteps,
 } from "../src/machine.ts";
-import type { ExecutionStore, LaunchIntent } from "../src/store.ts";
+import type { LaunchStore, LaunchIntent } from "../src/store.ts";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE } from "./stores.ts";
 
@@ -600,7 +600,7 @@ function gate(): { wait: Promise<void>; open: () => void } {
 }
 
 /** A machine with the stub steps over another store. */
-function machineOn(over: ExecutionStore): LaunchMachine {
+function machineOn(over: LaunchStore): LaunchMachine {
   return new LaunchMachine({
     store: over,
     machine: MACHINE,

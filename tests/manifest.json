@@ -539,7 +539,7 @@
     },
     {
       "id": "A1.5.migration.stand-in-steps",
-      "title": "The migration runner from 0.1 through the real 0.2 and a stand-in 0.3: one system commit per step, user_version, format, undo floor and space.json; a step that fails midway, in its verify or on a foreign key leaves the space at its revision, and it still opens",
+      "title": "The migration runner from 0.1 through the real 0.2 and 0.3 and a stand-in 0.4: one system commit per step, user_version, format, undo floor and space.json; a step that fails midway, in its verify or on a foreign key leaves the space at its revision, and it still opens",
       "source": "A1 3.17, A1 5, A7 3.8 M1.06, A7 3.10 M3.01",
       "owner": "M1",
       "kind": "ci",
@@ -547,7 +547,7 @@
     },
     {
       "id": "A1.5.migration.from-0.1",
-      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to 0.2 behind its verified barrier backup: every 0.1 row stays, one migration commit, the new tables empty, the schema equal to a new 0.2 space's, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to the build's latest revision behind its verified barrier backup: every 0.1 row stays, one migration commit per step, the new tables empty, the schema equal to a new space's and to the pinned released schema, and the barrier backup restores the fixture's counts, last_seq and rows",
       "source": "A1 3.4, A1 3.17, A1 5, A7 3.10 M3.01, MIL-02",
       "owner": "M3",
       "kind": "ci",
@@ -555,7 +555,7 @@
     },
     {
       "id": "A1.5.migration.statement-faults",
-      "title": "A fault at every statement boundary of the 0.1 to 0.2 migration, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the fixture's, it opens read-only with A1's message, the 0.1 build still writes it, and without the fault it migrates",
+      "title": "A fault at every statement boundary of the 0.1 to 0.2 migration (the 0.2 chain), one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the fixture's, it opens read-only with A1's message, the 0.1 build still writes it, and without the fault it migrates",
       "source": "A1 3.17, A1 5, A7 3.10 M3.01",
       "owner": "M3",
       "kind": "ci",
@@ -570,8 +570,40 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.from-0.2",
+      "title": "The 0.2 fixture (the Mira sample built by the 0.2 chain, with a row in every 0.2 table) migrates to 0.3 behind its verified barrier backup: every 0.2 row stays, one migration commit, the sessions and runs tables empty, the schema equal to a new 0.3 space's and to the pinned 0.3 schema, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "source": "A1 3.4, A1 3.17, A1 5, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.statement-faults-0003",
+      "title": "A fault at every statement boundary of the 0.2 to 0.3 migration, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the 0.2 fixture's, it opens read-only with A1's message, the 0.2 build still writes it, and without the fault it migrates",
+      "source": "A1 3.17, A1 5, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.older-build-0003",
+      "title": "A 0.2 build refuses to open a 0.3 space writable: the 0.2 chain's writer, in the calling thread and in its storage worker, is refused with SPACE_TOO_NEW and changes nothing, its reader reads, and it restores no 0.3 backup",
+      "source": "A1 3.17, A1 5, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.run-parents-0003",
+      "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
+      "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2: a populated 0.1 fixture space, a fault planted in its migration, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
+      "title": "The installed-build migration failure and restore drill with the real 0.2 and 0.3: a populated 0.1 fixture space, a fault planted in its migration' last step, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",
@@ -1242,8 +1274,24 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.run.state-machine",
+      "title": "Property test of the run state machine with cancels in every state and the service killed at every boundary (a store write or an external step, before or after it takes effect, recovery included) and restarted, with claims repeated also after their reply, agents started and exiting with every outcome and the shim's timeouts, shims dying without exit.json, shims ending while the service is down, start failures (also reported while a sweep finds the shim gone, so they arrive after it settled the run) and wall clock steps, a fifth of the scenarios starting from a claimed, stopped, stop-timed-out, started or ended run: at most one spawn and one claim reply per run, no agent without a durable claim its shim was replied with, final states that match what the processes did, and every run final or still queued once every window has passed, never unknown when its shim left exit.json or a heard start failure, cancels shown to reach every state a v1 run can be in, and late start failures shown to arrive after a sweep settled the run lost, with and without a Stop, on the in-memory store and on the space database",
+      "source": "A4 3.11.2, A4 3.11.9, A4 5.1, A4 5.2, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.run.machine",
+      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep applying recovery's rule to every open run, a start failure after a Stop and one that arrives after a sweep settled the run lost (failed, or cancelled after a Stop, also after the stop timed out, on the in-memory store and the space database), and the claim window on the monotonic and the wall clock",
+      "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.execution-store.contract",
-      "title": "The ExecutionStore contract suite on every backend (in memory, the space database in the writer's thread and through a storage worker): one Prepared record per click with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart, records of IDs and codes only, and the writer's copy of A4's rules",
+      "title": "The ExecutionStore contract suites on every backend (in memory, the space database in the writer's thread and through a storage worker), for launches and for runs: one Prepared record per click and one queued run per request, with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart with the unknown runs that await their exit, texts kept as the space stores them with an agent's cut and never refused, every other result field judged as the writer judges it (a property feeds each store and the writer's own validation the same generated result values of every JSON shape and requires the same verdict and the same kept result), records of IDs and codes only, and the writer's copy of A4's rules and text normalisation",
       "source": "A4 3.16.1, A4 5.1, X7, A7 3.9 M2.05",
       "owner": "M2",
       "kind": "ci",
@@ -1514,6 +1562,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.write.runs",
+      "title": "run.create and run.transition through the write path: a queued record with its spec and normalised request text, create and state changes that carry no task and queue no projection, receipts and replay, a task or a routine, compare-and-set on the state and the version, both required, evidence of A4's keys and kinds that only grows, a result once and only entering a final state, A4's edges and each state's reasons, R7 and no undo, the request's own texts only, place and machine checks, and openRuns through its partial index with the unknown runs that await their exit",
+      "source": "A1 3.4, A1 3.6, A4 3.11.2, A4 3.16, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.write.clear-append",
       "title": "place.clear and task.context_append through the write path: a clear tombstones the owner's place on the request's machine with one change row and needs a base, a place bound after the base conflicts, nothing bound is unchanged, a place is never bound and cleared in one request; an append needs no base, two appends both land after a blank line, a stale replace conflicts with them, and the total stays within 64 KiB",
       "source": "A1 3.5, A1 3.6, A1 3.15, A7 3.9 M2.03",
@@ -1531,7 +1587,7 @@
     },
     {
       "id": "A1.5.history.property",
-      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks; undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
+      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks, and the human runs some of them (a run's commits never join a stack or end a redo, and a run keeps its task's create); undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
       "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -1542,6 +1598,14 @@
       "title": "Undo and redo meet dedupe by source key: an undo of a request whose draft matched takes back its entries and linked sources on the match and never the match; an undone create holds no key; a redo that would take a key's source row is a conflict naming that row; a redo that would make a second active holder of a key, decided on the state it makes, is a conflict that names the standing holder's link (a shared source in either order of two humans' redos, and a source the redo brings back), or each holder's lifecycle when the redo brings back every holder itself, and writes nothing; a key that was double before is not the restore's doing; a partial inversion leaves out a broken key's restores and applies the rest; a finished holder never blocks; an undo or redo never shares a request with a create, and dedupe's start state sees what they left; an undone check-off is no finish and a finish set back keeps its own instant, an archived task's by its provenance; a retry after an undo replays; a link an undo removed comes back only with its link version",
       "source": "A1 3.5, A1 3.6, A1 3.8, A1 3.10, A1 3.10.1, A7 3.10 M3.02",
       "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.history.runs",
+      "title": "Undo and redo beside run records: a run's commits are never on an undo stack, an undo or redo that names one is INVALID_TRANSITION with its receipt, a run commit between an undo and its redo keeps the redo, no request holds a run operation beside a task operation or an undo, and the history engine refuses a run's change rows whole; a run of the task in any state keeps its create from being undone, named by its table and state with who created it, and a partial undo keeps the task with its run; a task its create's undo tombstoned takes no run; an undo and a redo never write a run, so a run redaction detached stays detached; a session bound to the task keeps no create; a space at 0.2 without the runs table undoes and redoes as before",
+      "source": "A1 3.6, A1 3.10, A1 3.10.1, A1 3.11.4, A4 3.11, A7 3.13 M6.01",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },

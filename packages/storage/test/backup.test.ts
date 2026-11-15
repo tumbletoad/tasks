@@ -231,7 +231,7 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
       epoch: 1,
       incarnation: space.authority.incarnation,
       seq: 3,
-      user_version: 2,
+      user_version: 3,
       written_by: "0.0.0",
     });
     expect(sidecar.counts["commits"]).toBe(3);

@@ -19,7 +19,7 @@ import {
   type Observation,
   type RecoverySteps,
 } from "../src/machine.ts";
-import type { ExecutionStore, LaunchIntent, NewIntent } from "../src/store.ts";
+import type { LaunchStore, LaunchIntent, NewIntent } from "../src/store.ts";
 
 /** The service died. Nothing it does after this reaches the world or the store. */
 export class Crash extends Error {
@@ -47,9 +47,9 @@ const NOTHING_STARTED = ["expired", "cancelled", "refused", "not_claimed", "inte
 export interface ModelBackend {
   machine: string;
   /** The store on the durable state as it is now, unwrapped: the checker reads through it. */
-  durable(): ExecutionStore;
+  durable(): LaunchStore;
   /** Drops the service's store and returns a new one on the same durable state. */
-  restart(): Promise<ExecutionStore>;
+  restart(): Promise<LaunchStore>;
   /** Two tasks of the space. */
   tasks: readonly string[];
   /** Every committed transition so far, when the backend can list them. */
@@ -375,7 +375,7 @@ class Faults {
 }
 
 /** The store as the service sees it in one life: every call can be the one it dies at, or slow. */
-function faulty(store: ExecutionStore, faults: Faults, life: Life): ExecutionStore {
+function faulty(store: LaunchStore, faults: Faults, life: Life): LaunchStore {
   return {
     createIntent: (input, requestId) =>
       faults.around("store", life, () => store.createIntent(input, requestId)),
@@ -404,7 +404,7 @@ export class World {
   readonly backend: ModelBackend;
   readonly faults: Faults;
   #grant = 1;
-  #store: ExecutionStore;
+  #store: LaunchStore;
   #life: Life;
   machine: LaunchMachine;
   /** Intents the service created, in order. */

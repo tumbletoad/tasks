@@ -365,8 +365,8 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "place.clear",
     ]);
     for (const kind of OPERATION_KINDS) {
-      if (kind.startsWith("launch.")) {
-        // A4's family: the user's alone (R7), and a compare-and-set on the state, not a base.
+      if (kind.startsWith("launch.") || kind.startsWith("run.")) {
+        // A4's records: the user's alone (R7), and a compare-and-set on the state, not a base.
         expect(opSpec(kind), kind).toMatchObject({ class: "user", base: false, r7: true });
         continue;
       }
