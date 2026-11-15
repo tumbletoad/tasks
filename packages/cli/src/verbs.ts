@@ -100,8 +100,10 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
     );
     if (found?.name !== undefined) return found.name;
   }
-  const tasks = result["tasks"] as { ref?: string }[] | undefined;
-  const ref = (typeof result["task"] === "string" ? result["task"] : tasks?.[0]?.ref) ?? "";
+  // `tasks` lists created tasks (`tasks add`) or, for an undo or redo, their references.
+  const first = (result["tasks"] as unknown[] | undefined)?.[0];
+  const listed = typeof first === "string" ? first : (first as { ref?: string } | undefined)?.ref;
+  const ref = (typeof result["task"] === "string" ? result["task"] : listed) ?? "";
   const prefix = ref.slice(0, Math.max(0, ref.indexOf("-")));
   return (
     spaces.find((s) => s.ref_prefix === prefix)?.name ??

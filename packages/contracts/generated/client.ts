@@ -13,6 +13,12 @@ export function createClient(transport: ClientTransport) {
       /** Append to a task's log, or record a note for the user. */
       add: (input: InputOf<"entry.add">): Promise<OutputOf<"entry.add">> => call("entry.add", input),
     },
+    history: {
+      /** Redo the change you undid last, as long as nobody changed its fields since. */
+      redo: (input: InputOf<"history.redo">): Promise<OutputOf<"history.redo">> => call("history.redo", input),
+      /** Undo your newest change in the space, field by field as long as nobody changed it. */
+      undo: (input: InputOf<"history.undo">): Promise<OutputOf<"history.undo">> => call("history.undo", input),
+    },
     import: {
       planning: {
         /** Dry run of the Planning prototype import: a report and a preview token. */

@@ -290,6 +290,8 @@ const VERIFIED = new Set([
   "receipt.get 1",
   "receipt.get 2",
   "launch.open 0",
+  "history.undo 0",
+  "history.redo 0",
   "import.planning.preview 0",
 ]);
 
@@ -437,6 +439,16 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         counts: Object.fromEntries(FOLDER_COUNTS.map((k) => [k, counts[k]])),
       };
     }
+    case "history.undo":
+    case "history.redo":
+      // The user's newest change differs by face (as the UI, every example is the user's), so
+      // the outcome and how many tasks it changed back, not which.
+      return {
+        result: value["result"],
+        tasks: (value["tasks"] as unknown[]).length,
+        task_count: value["task_count"],
+        unresolved: value["unresolved"],
+      };
     case "receipt.get":
       return {
         found: value["found"],

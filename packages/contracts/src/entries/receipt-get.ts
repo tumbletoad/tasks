@@ -57,12 +57,25 @@ const ReceiptOpResult = z.strictObject({
 
 const ReceiptConflict = z.strictObject({
   op: OpIndex,
-  entity: z.enum(["tasks", "task_sources", "places"]).describe("Table of the row"),
+  // An undo or redo also names a child row that keeps a create from being undone (A1 3.10).
+  entity: z
+    .enum([
+      "tasks",
+      "task_sources",
+      "places",
+      "notes",
+      "log_entries",
+      "sources",
+      "learnings",
+      "attachments",
+      "task_labels",
+    ])
+    .describe("Table of the row"),
   id: z
     .string()
     .max(60)
-    .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|s_[0-9a-hjkmnp-tv-z]{26})?$/u)
-    .describe("The row, or task_id|source_id for a link"),
+    .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$/u)
+    .describe("The row, or task_id|source_id (task_id|label_id) for a link"),
   task: TaskId.optional(),
   ref: TaskRef.optional(),
   field: z.string().max(40).describe("Logical field"),
