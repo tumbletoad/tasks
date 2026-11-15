@@ -4,7 +4,7 @@
 import { chmodSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { waitFor } from "@tasks/service/test/harness";
+import { readLog, waitFor } from "@tasks/service/test/harness";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
 
 let world: CliWorld;
@@ -43,7 +43,14 @@ describe("[A1.5.projection.cli] tasks view rebuild from the CLI", () => {
     rmSync(file);
 
     const rebuilt = await user(["view", "rebuild", "--json"]);
-    expect(rebuilt.code, rebuilt.stderr).toBe(0);
+    // On a failure, what the projection logged (counts and codes only) says where it stood.
+    const events = (): string =>
+      JSON.stringify(
+        readLog(world.home)
+          .filter((e) => String(e["ev"]).startsWith("space.projection"))
+          .slice(-10),
+      );
+    expect(rebuilt.code, `${rebuilt.stdout} ${events()}`).toBe(0);
     expect(parsed(rebuilt.stdout)).toMatchObject({ queued: 1, forgotten: 0 });
     await waitFor(() => (existsSync(file) ? true : undefined), 30_000, "the file again");
 
