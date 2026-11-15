@@ -19,6 +19,9 @@ import { requestId, type Instance, type Receipt } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
+import { starChange } from "../edit/change.ts";
+import { useEditState, useEdits } from "../edit/useEdits.ts";
+import { askFor } from "../task/composer.ts";
 import { areaSlots, groupTasks, type Group } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
@@ -101,8 +104,21 @@ export function TaskList({
   const say = useToast();
   const { api, live } = useContext(Session);
   const state = useLive();
+  const edits = useEdits();
+  // Rows checked off, or completed by others, stay where they are for the hold (A5 3.12).
+  const { leaving: holding } = useEditState();
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [current, setCurrent] = useState<string | undefined>(undefined);
+  // The expanded one stays as the card shows it (below), with its newest data.
+  const tasks = useMemo(() => {
+    let merged: Map<string, TaskRow> | undefined;
+    for (const [id, entry] of holding) {
+      if (state.tasks.has(id) || id === expanded) continue;
+      merged ??= new Map(state.tasks);
+      merged.set(id, entry.row);
+    }
+    return merged ?? state.tasks;
+  }, [state.tasks, holding, expanded]);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -141,6 +157,7 @@ export function TaskList({
       ? undefined
       : (state.tasks.get(expanded) ??
         (injected?.id === expanded ? injected : undefined) ??
+        holding.get(expanded)?.row ??
         (held.current?.id === expanded ? held.current : undefined));
 
   /** Where the expanded row was shown last: its group and its place there. */
@@ -162,16 +179,16 @@ export function TaskList({
               task: expandedRow,
               ...(was?.id === expandedRow.id ? { group: was.group, index: was.index } : {}),
             };
-      groups = groupsOf(state.tasks, held);
+      groups = groupsOf(tasks, held);
     } else {
-      const tasks = [...state.tasks.values()].filter(filter);
-      if (expandedRow !== undefined && !tasks.some((task) => task.id === expandedRow.id)) {
-        tasks.push(expandedRow);
+      const shown = [...tasks.values()].filter(filter);
+      if (expandedRow !== undefined && !shown.some((task) => task.id === expandedRow.id)) {
+        shown.push(expandedRow);
       }
-      groups = groupTasks(tasks, state.areas.values(), state.projects.values());
+      groups = groupTasks(shown, state.areas.values(), state.projects.values());
     }
     return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [state.tasks, state.areas, state.projects, filter, groupsOf, expandedRow]);
+  }, [tasks, state.areas, state.projects, filter, groupsOf, expandedRow]);
 
   // Where the expanded row is now, for the next update (a view's own groups keep it there). Taken
   // after the commit, so a render React throws away (a transition it interrupted, a StrictMode
@@ -253,6 +270,30 @@ export function TaskList({
   // settles, by actor ("3 tasks updated by Codex").
   const inView = useRef(filter);
   inView.current = filter;
+
+  // A task someone else completes while the view shows it strikes through, says who, and leaves
+  // after the hold (A5 3.12). This tab's own check-off holds already.
+  useEffect(
+    () =>
+      live.onChanges(({ changes }) => {
+        for (const change of changes) {
+          if (change.type !== "task" || change.before === undefined) continue;
+          const before = change.before as TaskRow;
+          const after = change.after as TaskRow | undefined;
+          if (before.lifecycle !== "active" || after === undefined) continue;
+          if (after.lifecycle === "active" || after.deleted_at !== undefined) continue;
+          if (!inView.current(before)) continue;
+          // The tab's own write that it holds no row for yet (a redo) holds without an actor.
+          const by = edits.isMine(change.request_id)
+            ? undefined
+            : change.actor.kind === "human"
+              ? "user"
+              : change.actor.label;
+          edits.hold(before, by, Date.now());
+        }
+      }),
+    [live, edits],
+  );
   useEffect(() => {
     const burst = new Map<string, Set<string>>();
     let quiet: ReturnType<typeof setTimeout> | undefined;
@@ -466,55 +507,24 @@ export function TaskList({
             if (!live.failed(error)) say(t("row.copyFailed"));
           });
       },
-      // The star shows at once and holds until the feed confirms it (A5 3.15's overlay).
+      // The star is a person's edit like any other (A5 3.11): shown at once, with a base, undoable.
       star: (task, on) => {
-        const overlay = on
-          ? { tasks: [{ id: task.id, set: { focus_on: latest.current.today } }] }
-          : { tasks: [{ id: task.id, set: {}, clear: ["focus_on" as const] }] };
-        live
-          .write(
-            (request) =>
-              api.client.task.update(
-                // The base is what the row showed: a star changed since then is a conflict.
-                {
-                  task: task.id,
-                  ...(on ? { set: { focus: true } } : { clear: ["focus" as const] }),
-                  ...(live.store.asOf === undefined ? {} : { base: live.store.asOf }),
-                  request_id: request,
-                },
-              ),
-            overlay,
-          )
-          .answer.catch((error: unknown) => {
-            if (!live.failed(error)) say(t("row.starFailed"));
-          });
+        edits.edit(task, starChange(on, latest.current.today));
       },
-      // The title, edited in place (A5 3.7): shown at once, held until the feed confirms it.
-      rename: (task) => {
-        // The base is taken when the editor opens: what the person saw when they began to type.
-        const base = live.store.asOf;
-        return (title) => {
-          live
-            .write(
-              (request) =>
-                api.client.task.update({
-                  task: task.id,
-                  set: { title },
-                  ...(base === undefined ? {} : { base }),
-                  request_id: request,
-                }),
-              { tasks: [{ id: task.id, set: { title } }] },
-            )
-            .answer.catch((error: unknown) => {
-              if (!live.failed(error)) say(t("task.renameFailed"));
-            });
-        };
+      // Check-off, or during this tab's own hold, its undo (A5 3.12).
+      check: (task) => {
+        const entry = edits.getState().leaving.get(task.id);
+        if (entry?.done === true) edits.uncheck(task.id);
+        else edits.checkOff(task);
+      },
+      ask: (task, field) => {
+        if (live.spaceId !== undefined) askFor(live.spaceId, task.id, field);
       },
       current: (task) => {
         setCurrent(task.id);
       },
     };
-  }, [api, live, expandTask, chosen, collapse, say, shown, t, toClipboard]);
+  }, [api, live, edits, expandTask, chosen, collapse, say, shown, t, toClipboard]);
 
   const onCurrent = useCallback((key: string) => {
     setCurrent(key);
@@ -540,6 +550,7 @@ export function TaskList({
       posinset={item.posinset}
       setsize={item.setsize}
       actions={actions}
+      leaving={holding.get(item.key)}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}

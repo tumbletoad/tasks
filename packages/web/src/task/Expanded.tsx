@@ -4,23 +4,22 @@
 // - Content, with no section labels: the outcome and the task's own learnings once it is done,
 //   the context (Markdown, clamped at ten lines with More), one line per source with its own text,
 //   the place on this machine, a hairline, then the thread (Thread.tsx).
-// - Facts: a list of short muted labels and values. Each fact shows here and nowhere else in the
-//   card; the row's columns for them are hidden while it is expanded. Editing them is M5.08's, so
-//   no value is outlined yet: the outline is the only hint that a value can be changed by hand.
+// - Facts (Facts.tsx): short muted labels and their controls, edited in place (A5 3.11). Each fact
+//   shows here and nowhere else in the card; the row's columns for them are hidden while it is
+//   expanded.
 //
-// Below both, the composer's place: until M5.07 builds the composer and its strip, it holds a
-// button per instance and Copy, as the skeleton did. Everything a task holds is untrusted text: it
-// is rendered as text or as Markdown that is never HTML, and links open only through allowed
-// schemes (A5 3.26).
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+// Below both, the composer: its field (Composer.tsx), where a click on an agent-only field (the
+// context, the outcome, a source's line, a learning, the summary in the header) starts a request
+// for an agent (A5 3.11), and until M5.07 builds the strip, a button per instance and Copy, as the
+// skeleton did. Everything a task holds is untrusted text: it is rendered as text or as Markdown
+// that is never HTML, and links open only through allowed schemes (A5 3.26).
+import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Instance, Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
-import { areaSlots } from "../groups.ts";
-import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
+import { useT } from "../i18n/intl.tsx";
 import { tileClick, tileState } from "../row/launch.ts";
-import type { RowActions } from "../row/actions.ts";
-import { formatDay, formatInstant, localDate, type Clock } from "../row/dates.ts";
+import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
   CopyIcon,
@@ -29,13 +28,13 @@ import {
   OutcomeIcon,
   SourceIcon,
 } from "../row/icons.tsx";
-import { contextFor, renderRow, safeHref } from "../row/model.ts";
-import { sayMsg } from "../row/say.ts";
+import { safeHref } from "../row/model.ts";
 import { useClock } from "../row/useClock.ts";
-import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { ComposerField } from "./Composer.tsx";
 import type { Detail, SourceOutput } from "./detail.ts";
 import css from "./Expanded.module.css";
+import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
 import { Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
@@ -56,8 +55,6 @@ const styles = classes(css, [
   "act",
   "hairline",
   "line",
-  "facts",
-  "dot",
   "composer",
   "strip",
   "button",
@@ -69,133 +66,6 @@ export interface ExpandedProps {
   readonly receipts: readonly Receipt[];
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
-}
-
-const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
-  open: "status.open",
-  waiting: "status.waiting",
-  review: "status.review",
-  backlog: "status.backlog",
-};
-
-/** The status fact: the lifecycle for a finished task, Inbox, else the status's name. */
-function statusOf(task: TaskRow, t: Translate): string {
-  if (task.lifecycle === "completed") return t("status.completed");
-  if (task.lifecycle === "archived") return t("status.archived");
-  if (task.inbox) return t("status.inbox");
-  const label = STATUS_LABEL[task.status];
-  return label === undefined ? task.status : t(label);
-}
-
-/** "Fri 13 Nov", with the year when it is not this year; the catalogue orders the parts. */
-function shortDate(date: string, clock: Clock, t: Translate): string {
-  const options = (o: Intl.DateTimeFormatOptions) => formatDay(date, clock.locale, o);
-  const values = {
-    weekday: options({ weekday: "short" }),
-    day: Number(date.slice(8, 10)),
-    month: options({ month: "short" }),
-    year: date.slice(0, 4),
-  };
-  return date.slice(0, 4) === clock.today.slice(0, 4)
-    ? t("row.fullDate", values)
-    : t("row.fullDateYear", values);
-}
-
-/** The due fact: its date (and time), with the row's relative words as the tooltip. */
-function dueOf(
-  task: TaskRow,
-  clock: Clock,
-  t: Translate,
-): { text: string; tip: string } | undefined {
-  const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
-  const relative = model.due === undefined ? "" : sayMsg(t, model.due.text);
-  if (task.due_at !== undefined) {
-    const date = shortDate(localDate(task.due_at, clock.timeZone), clock, t);
-    const time = formatInstant(task.due_at, clock, {
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    });
-    return { text: t("fact.dueAt", { date, time }), tip: relative };
-  }
-  if (task.due_date !== undefined) {
-    return { text: shortDate(task.due_date, clock, t), tip: relative };
-  }
-  return undefined;
-}
-
-/** The created fact: "9 Nov · 3d", the only place a task's age shows while it is expanded. */
-function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
-  const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
-  const date = localDate(task.created_at, clock.timeZone);
-  // Created today: "today" alone, so today's date stays the strip's (A5 U1).
-  if (date === clock.today) return sayMsg(t, model.age.text);
-  const day = formatDay(date, clock.locale, { day: "numeric" });
-  const month = formatDay(date, clock.locale, { month: "short" });
-  const shown =
-    date.slice(0, 4) === clock.today.slice(0, 4)
-      ? t("row.date", { day, month })
-      : t("row.dateYear", { day, month, year: date.slice(0, 4) });
-  return t("fact.createdValue", { date: shown, age: sayMsg(t, model.age.text) });
-}
-
-function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd data-fact="">{children}</dd>
-    </>
-  );
-}
-
-function Facts({ task, clock }: { readonly task: TaskRow; readonly clock: Clock }) {
-  const t = useT();
-  const state = useLive();
-  const area = task.area_id === undefined ? undefined : state.areas.get(task.area_id);
-  const project = task.project_id === undefined ? undefined : state.projects.get(task.project_id);
-  const slot = area === undefined ? undefined : areaSlots(state.areas.values()).get(area.id);
-  const due = dueOf(task, clock, t);
-  const level = task.priority;
-  return (
-    <dl className={styles.facts} aria-label={t("fact.label")}>
-      <Fact label={t("fact.status")}>{statusOf(task, t)}</Fact>
-      {task.status === "waiting" && task.waiting_on !== undefined && task.waiting_on !== "" ? (
-        <Fact label={t("fact.waitingOn")}>
-          <span dir="auto">{task.waiting_on}</span>
-        </Fact>
-      ) : null}
-      {level === 1 || level === 2 || level === 3 ? (
-        <Fact label={t("fact.priority")}>{t("row.priority", { level })}</Fact>
-      ) : null}
-      {task.effort === undefined || task.effort === "" ? null : (
-        <Fact label={t("fact.effort")}>
-          <span dir="auto">{task.effort}</span>
-        </Fact>
-      )}
-      {due === undefined ? null : (
-        <Fact label={t("fact.due")}>
-          <span data-tip={due.tip} title={due.tip}>
-            {due.text}
-          </span>
-        </Fact>
-      )}
-      {area === undefined ? null : (
-        <Fact label={t("fact.area")}>
-          <span
-            className={`${styles.dot} slot-${String(slot ?? 1)}`}
-            aria-hidden="true"
-            data-slot={slot}
-          />
-          <span dir="auto">
-            {project === undefined
-              ? area.title
-              : t("fact.areaProject", { area: area.title, project: project.title })}
-          </span>
-        </Fact>
-      )}
-      <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
-    </dl>
-  );
 }
 
 /** Two texts a person reads as the same: case, spacing and a closing full stop aside. */
@@ -216,7 +86,15 @@ function sameText(a: string, b: string | undefined): boolean {
  * whose own text is the task's title or summary (a task named after its email) shows its key, or
  * else its kind's name, instead: the card shows each fact string once (A5 3.7).
  */
-function SourceLine({ source, task }: { readonly source: SourceOutput; readonly task: TaskRow }) {
+function SourceLine({
+  source,
+  task,
+  onAsk,
+}: {
+  readonly source: SourceOutput;
+  readonly task: TaskRow;
+  readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+}) {
   const t = useT();
   const ref = source.key === undefined ? undefined : keyRef(source.kind, source.key);
   const link = source.url === undefined ? undefined : safeHref(source.url);
@@ -244,7 +122,14 @@ function SourceLine({ source, task }: { readonly source: SourceOutput; readonly 
       </a>
     );
   return (
-    <li className={styles.link} data-part="source" data-kind={source.kind}>
+    <li
+      className={styles.link}
+      data-part="source"
+      data-kind={source.kind}
+      data-ask=""
+      data-tip={t("ask.tip")}
+      onClick={onAsk}
+    >
       <span className={styles.icon} role="img" aria-label={t("source.kind", { kind: source.kind })}>
         <SourceIcon kind={source.kind} />
       </span>
@@ -362,8 +247,30 @@ function PlaceLine({
   );
 }
 
+/**
+ * Click-to-ask (A5 3.11): a click on an agent-only field starts a request for an agent in the
+ * composer, unless it was on a link or a button inside it, or ended a selection of its text.
+ */
+function askOn(
+  ask: (task: TaskRow, field: AskField) => void,
+  task: TaskRow,
+  field: AskField,
+): (event: MouseEvent<HTMLElement>) => void {
+  return (event) => {
+    if ((event.target as Element).closest("a, button") !== null) return;
+    if (!(window.getSelection()?.isCollapsed ?? true)) return;
+    ask(task, field);
+  };
+}
+
 /** The context, clamped at ten lines with More when it is longer. */
-function Context({ text }: { readonly text: string }) {
+function Context({
+  text,
+  onAsk,
+}: {
+  readonly text: string;
+  readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+}) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -374,7 +281,13 @@ function Context({ text }: { readonly text: string }) {
     setLong(element.scrollHeight > element.clientHeight + 1);
   }, [text, open]);
   return (
-    <div className={styles.context} data-part="context">
+    <div
+      className={styles.context}
+      data-part="context"
+      data-ask=""
+      data-tip={t("ask.tip")}
+      onClick={onAsk}
+    >
       <div ref={box} data-clamped={!open} data-fact="">
         <Markdown text={text} />
       </div>
@@ -451,13 +364,20 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
       ...(s.url === undefined ? {} : { url: s.url }),
     }));
   const learnings = detail?.learnings ?? [];
+  const ask = actions.ask;
   return (
     <div className={styles.body} data-part="expanded">
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
       <Facts task={task} clock={clock} />
       <div className={styles.content}>
         {detail?.outcome === undefined ? null : (
-          <div className={styles.outcome} data-part="outcome">
+          <div
+            className={styles.outcome}
+            data-part="outcome"
+            data-ask=""
+            data-tip={t("ask.tip")}
+            onClick={askOn(ask, task, "outcome")}
+          >
             <span className={styles.icon} role="img" aria-label={t("task.outcome")}>
               <OutcomeIcon />
             </span>
@@ -467,7 +387,7 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
           </div>
         )}
         {detail === undefined || detail.context.trim() === "" ? null : (
-          <Context text={detail.context} />
+          <Context text={detail.context} onAsk={askOn(ask, task, "context")} />
         )}
         <ul className={styles.links}>
           {sources.map((source, i) => (
@@ -475,11 +395,19 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
               key={`${String(i)}:${source.key ?? source.title}`}
               source={source}
               task={task}
+              onAsk={askOn(ask, task, "sources")}
             />
           ))}
           <PlaceLine task={task} detail={detail} />
           {learnings.map((learning, i) => (
-            <li key={`learning:${String(i)}`} className={styles.link} data-part="learning">
+            <li
+              key={`learning:${String(i)}`}
+              className={styles.link}
+              data-part="learning"
+              data-ask=""
+              data-tip={t("ask.tip")}
+              onClick={askOn(ask, task, "learnings")}
+            >
               <span className={styles.icon} role="img" aria-label={t("task.learning")}>
                 <BulbIcon />
               </span>
@@ -512,6 +440,7 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
         ) : null}
       </div>
       <div className={styles.composer}>
+        <ComposerField task={task} />
         <Strip task={task} receipts={receipts} instances={instances} actions={actions} />
       </div>
     </div>

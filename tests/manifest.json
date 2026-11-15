@@ -3386,6 +3386,62 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.web.edits",
+      "title": "Every person's edit takes one path: it shows at once as an overlay, carries the applied cursor (or its editor's opening one) as its base, and its toast's Undo names the commit the feed confirmed; two quick edits of one task go out in turn with the newer answer's as_of; a conflict or a failed call keeps the person's value under the field with who changed it, through feed updates, until Apply mine sends it again with a fresh base; an editor hears others' changes after it opened and never the tab's own",
+      "source": "A5 3.11, A5 3.15, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.web.due",
+      "title": "The due date's field reads ISO dates, tod and today, tom and tomorrow, weekdays as the service does, +3d and +2w, and - to clear, and nothing else; the quick picks give today, tomorrow, the next Monday that is not today and a week on",
+      "source": "A5 3.11, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.12.web.undo",
+      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo that conflicts on every field offers Restore mine (a partial undo, then the person's value with a fresh base), one that conflicts on some offers Undo the rest, a value no hand edit can set offers no Restore mine, and nothing to undo, a newer change first and an unknown commit each change nothing",
+      "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-08.e2e.flow",
+      "title": "In Chromium and Firefox against the real service, by keyboard alone: empty facts are empty controls; priority, effort and the due date (through the popover's field, which refuses what is not a date) change at once and hold after a reload; a check-off fills the box, strikes the title, keeps the row for the hold, moves focus on and offers Undo; Ctrl+Z undoes it, Ctrl+Shift+Z redoes it and the row leaves after the hold, F6 reaches the toast's Undo, and the box clicked again during the hold undoes it",
+      "source": "A5 3.11, A5 3.12, A5 3.21, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-08.e2e.conflict",
+      "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since says who and when and changes nothing until Restore mine puts back the date from before the person's edit; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
+      "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-08.e2e.ask",
+      "title": "In Chromium and Firefox against the real service: a click on an agent-only field (the context, the summary) puts its request's stub in the composer after what the person wrote there, focused, nothing is sent, and the draft survives a reload",
+      "source": "A5 3.8, A5 3.11, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-08.e2e.screens",
+      "title": "In Chromium and Firefox against the real service: screenshots of the editable facts with a toast and the date popover in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation on the page in either theme, and nothing scrolls horizontally at 390 px",
+      "source": "A5 3.7, A5 3.11, A5 3.19, A5 3.22, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-03.e2e.scroll-5000",
       "title": "In Chromium and Firefox against the real service with 5,000 open fixture tasks: the built page virtualises the list, scrolling from top to bottom and back keeps the mounted rows bounded and leaves no frame with an uncovered gap, the focused row keeps focus while it leaves and re-enters the window, End and Home move focus across the whole list, an agent's add above the viewport keeps the first visible row in place, and no CSP violation is reported",
       "source": "A5 3.25, A5 3.22, A5 3.15, A5 3.26, A7 3.12 M5.03",

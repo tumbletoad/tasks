@@ -3,6 +3,9 @@
 import type { Instance } from "../api.ts";
 import type { TaskRow } from "../store/rows.ts";
 
+/** The agent-only fields a click asks an agent to change (A5 3.11, U11). */
+export type AskField = "summary" | "context" | "sources" | "outcome" | "learnings";
+
 /** What a row's controls do. The list keeps one object for every row, so it never changes. */
 export interface RowActions {
   /** The title or summary was clicked: expand or collapse. */
@@ -13,12 +16,10 @@ export interface RowActions {
   /** Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5). */
   readonly copy: (task: TaskRow, pack?: boolean) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
-  /**
-   * The title's editor opened (A5 3.7). The function it returns saves a changed title, which shows
-   * at once and holds until the feed confirms it. Its base is what the row showed when the editor
-   * opened, so a title an agent changed while the person typed is a conflict, never overwritten.
-   */
-  readonly rename: (task: TaskRow) => (title: string) => void;
+  /** The checkbox (A5 3.12): check-off, or, during its hold, its undo. */
+  readonly check: (task: TaskRow) => void;
+  /** An agent-only field was clicked (A5 3.11): a request for an agent starts in the composer. */
+  readonly ask: (task: TaskRow, field: AskField) => void;
   /** Focus moved into the row: it becomes the list's current row. */
   readonly current: (task: TaskRow) => void;
 }
