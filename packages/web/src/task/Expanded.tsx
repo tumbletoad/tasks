@@ -128,6 +128,8 @@ function dueOf(
 function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
   const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
   const date = localDate(task.created_at, clock.timeZone);
+  // Created today: "today" alone, so today's date stays the strip's (A5 U1).
+  if (date === clock.today) return sayMsg(t, model.age.text);
   const day = formatDay(date, clock.locale, { day: "numeric" });
   const month = formatDay(date, clock.locale, { month: "short" });
   const shown =

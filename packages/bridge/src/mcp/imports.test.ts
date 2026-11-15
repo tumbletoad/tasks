@@ -11,7 +11,10 @@ import { describe, expect, test } from "vitest";
 
 const ENTRY = fileURLToPath(new URL("./main.ts", import.meta.url));
 
-/** A2 3.7.1 names net, fs, crypto and process. path, os and url are small parts of Node's core. */
+/**
+ * A2 3.7.1 names net, fs, crypto and process. path, os and url are small parts of Node's core, and
+ * v8 sets the flag of safe-exit.ts (A2 3.12.1).
+ */
 const ALLOWED = [
   "node:crypto",
   "node:fs",
@@ -20,6 +23,7 @@ const ALLOWED = [
   "node:path",
   "node:process",
   "node:url",
+  "node:v8",
 ];
 
 /** Runtime import and re-export specifiers of one module, with or without import attributes. */
