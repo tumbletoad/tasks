@@ -104,10 +104,18 @@ export interface ImportRows {
   readonly incarnation: string;
   readonly refPrefix: string;
   readonly nextRef: number;
+  /** The space's `as_of` of the snapshot: an apply's base (A1 3.5). */
+  readonly asOf: string;
   readonly aliases: { alias: string; task: string; version: number }[];
   readonly sources: { key: string; id: string; version: number }[];
-  readonly areas: { slug: string; id: string; version: number }[];
-  readonly projects: { slug: string; id: string; version: number; area: string | null }[];
+  readonly areas: { slug: string; id: string; version: number; title: string }[];
+  readonly projects: {
+    slug: string;
+    id: string;
+    version: number;
+    area: string | null;
+    title: string;
+  }[];
 }
 
 const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
@@ -124,18 +132,114 @@ const IMPORT_READS: readonly Statement[] = [
     mode: "all",
   },
   {
-    sql: `SELECT slug, id, version FROM areas WHERE deleted_at IS NULL AND slug ${IN("$areas")}`,
+    sql: `SELECT slug, id, version, title FROM areas WHERE deleted_at IS NULL AND slug ${IN("$areas")}`,
     mode: "all",
   },
   {
     // Every live project with its live area's slug: a project slug is unique in the space, so a
     // planned project's slug depends on the slugs of other areas' projects too (placeProjects).
     sql:
-      "SELECT p.slug, p.id, p.version, a.slug AS area FROM projects p " +
+      "SELECT p.slug, p.id, p.version, a.slug AS area, p.title FROM projects p " +
       "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
     mode: "all",
   },
 ];
+
+/** The tasks that hold one of `$aliases` as a planning alias, as SQL. */
+const ALIASED = `SELECT entity_id FROM aliases WHERE namespace = 'planning' AND entity_kind = 'task' AND alias ${IN("$aliases")}`;
+
+/**
+ * What an import's apply reads besides the rows its preview met (A7 3.15.5, 3.15.6), in the same
+ * snapshot: each task that holds a legacy ID of the plan, with its grouping's slugs and what made
+ * its tombstone; its place on this machine; its live source links; its recorded bases from every
+ * applied import; the fields an import's undo set back since; and the legacy IDs of live tasks.
+ */
+const APPLY_READS: readonly Statement[] = [
+  {
+    sql:
+      "SELECT a.alias AS alias, t.*, ar.slug AS area_slug, pr.slug AS project_slug, " +
+      "(SELECT k.id FROM commits k WHERE k.seq = t.created_seq) AS created_commit, " +
+      "(SELECT k.kind FROM commits k WHERE t.deleted_at IS NOT NULL " +
+      "AND k.seq = coalesce(json_extract(t.fp, '$.deleted'), t.created_seq)) AS deleted_kind, " +
+      "(SELECT coalesce(k.revert_of, (SELECT u.id FROM commits u WHERE u.seq = k.undo_of)) " +
+      "FROM commits k WHERE t.deleted_at IS NOT NULL " +
+      "AND k.seq = coalesce(json_extract(t.fp, '$.deleted'), t.created_seq)) AS deleted_of " +
+      "FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
+      "LEFT JOIN areas ar ON ar.id = t.area_id LEFT JOIN projects pr ON pr.id = t.project_id " +
+      `WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND a.alias ${IN("$aliases")}`,
+    mode: "all",
+  },
+  {
+    // Each task's live place on this machine with its folder's version, else the newest version
+    // of a place it had here: a cleared place is a change too.
+    sql:
+      "SELECT owner_id AS task, root_id, rel_path, deleted_at, " +
+      "coalesce(json_extract(fv, '$.folder'), created_seq) AS folder_version, " +
+      "coalesce(json_extract(fv, '$.deleted'), created_seq) AS deleted_version FROM places " +
+      `WHERE owner_kind = 'task' AND machine_id = $machine AND owner_id IN (${ALIASED})`,
+    mode: "all",
+  },
+  {
+    sql:
+      "SELECT ts.task_id AS task, s.source_key AS key, s.url AS url FROM task_sources ts " +
+      "JOIN sources s ON s.id = ts.source_id WHERE ts.removed_at IS NULL " +
+      `AND s.deleted_at IS NULL AND ts.task_id IN (${ALIASED})`,
+    mode: "all",
+  },
+  {
+    sql:
+      "SELECT ei.task_id AS task, ei.base AS base, x.applied_seq AS seq, k.reverted_by AS undone " +
+      "FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
+      "JOIN commits k ON k.seq = x.applied_seq " +
+      `WHERE x.state = 'applied' AND ei.task_id IN (${ALIASED}) ORDER BY x.applied_seq DESC`,
+    mode: "all",
+  },
+  {
+    // What each import's undo set back, by task: its fields, and its links, places and entries.
+    sql:
+      "SELECT c.seq AS seq, c.entity AS entity, c.task_id AS task, c.field AS field FROM changes c " +
+      "WHERE c.seq IN (SELECT k.reverted_by FROM exchanges x JOIN commits k ON k.seq = x.applied_seq " +
+      `WHERE k.reverted_by IS NOT NULL) AND c.task_id IN (${ALIASED})`,
+    mode: "all",
+  },
+  {
+    sql:
+      "SELECT a.alias AS alias FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
+      "WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND t.deleted_at IS NULL",
+    mode: "all",
+  },
+];
+
+/** What an import's apply read (APPLY_READS), as rows. */
+export interface ApplyRows {
+  readonly tasks: Row[];
+  readonly places: Row[];
+  readonly links: Row[];
+  readonly bases: Row[];
+  readonly undone: Row[];
+  readonly aliases: Row[];
+}
+
+function importRows(row: unknown, lists: unknown[]): ImportRows {
+  const [aliases, sources, areas, projects] = lists;
+  const space = decodeSpaceRow(row as Row);
+  return {
+    spaceId: space.spaceId,
+    epoch: space.authority.epoch,
+    incarnation: space.authority.incarnation,
+    refPrefix: space.refPrefix,
+    nextRef: space.nextRef,
+    asOf: formatAsOf({
+      epoch: space.authority.epoch,
+      incarnation: space.authority.incarnation,
+      seq: space.lastSeq,
+    }),
+    aliases: aliases as ImportRows["aliases"],
+    sources: sources as ImportRows["sources"],
+    areas: areas as ImportRows["areas"],
+    projects: projects as ImportRows["projects"],
+  };
+}
 
 /**
  * The rows an import plan meets, in one snapshot: the space's authority and next reference, the
@@ -146,22 +250,81 @@ export async function readImportRows(
   reader: WorkerConnection,
   names: ImportNames,
 ): Promise<ImportRows> {
-  const [row, aliases, sources, areas, projects] = await snapshot(reader, IMPORT_READS, {
+  const [row, ...lists] = await snapshot(reader, IMPORT_READS, {
     aliases: JSON.stringify(names.aliases),
     keys: JSON.stringify(names.keys),
     areas: JSON.stringify(names.areas),
   });
-  const space = decodeSpaceRow(row as Row);
+  return importRows(row, lists);
+}
+
+/** The commit that applied an import's run (its exchange), or undefined: `--undo` reverts it. */
+export async function readImportCommit(
+  reader: WorkerConnection,
+  run: string,
+): Promise<{ id: string; seq: number } | undefined> {
+  const [row] = await snapshot(
+    reader,
+    [
+      {
+        sql:
+          "SELECT k.id AS id, k.seq AS seq FROM exchanges x JOIN commits k ON k.seq = x.applied_seq " +
+          "WHERE x.id = $run AND x.state = 'applied' AND k.origin = 'import'",
+        mode: "get",
+      },
+    ],
+    { run },
+  );
+  const found = row as Row | null | undefined;
+  if (found === null || found === undefined) return undefined;
+  return { id: String(found["id"]), seq: Number(found["seq"]) };
+}
+
+/** The tasks a commit changed and the fields: what an import's undo removed and set back. */
+export async function readCommitFields(
+  reader: WorkerConnection,
+  seq: number,
+): Promise<{ task: string; field: string | null }[]> {
+  const [rows] = await snapshot(
+    reader,
+    [
+      {
+        sql: "SELECT task_id AS task, field FROM changes WHERE seq = $seq AND entity = 'tasks'",
+        mode: "all",
+      },
+    ],
+    { seq },
+  );
+  return (rows as { task: string; field: string | null }[] | undefined) ?? [];
+}
+
+/** The rows an import plan meets and what its apply reads (APPLY_READS), in one snapshot. */
+export async function readApplyRows(
+  reader: WorkerConnection,
+  names: ImportNames,
+  machine: string,
+): Promise<{ rows: ImportRows; apply: ApplyRows }> {
+  const [row, aliases, sources, areas, projects, ...apply] = await snapshot(
+    reader,
+    [...IMPORT_READS, ...APPLY_READS],
+    {
+      aliases: JSON.stringify(names.aliases),
+      keys: JSON.stringify(names.keys),
+      areas: JSON.stringify(names.areas),
+      machine,
+    },
+  );
+  const [tasks, places, links, bases, undone, all] = apply as Row[][];
   return {
-    spaceId: space.spaceId,
-    epoch: space.authority.epoch,
-    incarnation: space.authority.incarnation,
-    refPrefix: space.refPrefix,
-    nextRef: space.nextRef,
-    aliases: aliases as ImportRows["aliases"],
-    sources: sources as ImportRows["sources"],
-    areas: areas as ImportRows["areas"],
-    projects: projects as ImportRows["projects"],
+    rows: importRows(row, [aliases, sources, areas, projects]),
+    apply: {
+      tasks: tasks ?? [],
+      places: places ?? [],
+      links: links ?? [],
+      bases: bases ?? [],
+      undone: undone ?? [],
+      aliases: all ?? [],
+    },
   };
 }
 

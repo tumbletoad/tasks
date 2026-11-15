@@ -104,7 +104,7 @@ import {
 } from "./read.ts";
 import { duplicateWarning } from "./similar.ts";
 import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
-import { planningPreview } from "./import-planning.ts";
+import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -120,6 +120,8 @@ export interface ServedSpace {
   readonly reader: WorkerConnection | undefined;
   /** The space's folder on this machine: where an import's run folder goes (A7 3.15.1). */
   readonly folder?: string;
+  /** The space's machine-local backup folder, when one is set: an import's barrier backup. */
+  readonly backupDir?: string;
 }
 
 /** What the request path needs from its host. */
@@ -1776,6 +1778,69 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     } catch (error) {
       throw storageFailure(error);
     }
+  },
+
+  // A7 3.15.5: the user's apply of a dry run, behind a verified backup, as the import actor.
+  "import.planning.apply": async (call) => {
+    const writer = writerOf(call.space);
+    const reader = readerOf(call.space);
+    const folder = call.space.folder;
+    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
+    let principal: Id<"ac">;
+    let importer: Id<"ac">;
+    try {
+      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+      principal = await actorOf(writer, call.principal);
+      importer = await writer.actor("import", "import");
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    try {
+      return await planningApply({
+        folder,
+        reader,
+        writer,
+        input: call.input,
+        roots: call.host.roots?.() ?? [],
+        platform: call.host.platform ?? process.platform,
+        principal,
+        importer,
+        scope: call.principal.scope,
+        ...(call.principal.earlierScope === undefined
+          ? {}
+          : { earlierScope: call.principal.earlierScope }),
+        machine: call.host.machine.id as Id<"m">,
+        ...(call.space.backupDir === undefined ? {} : { backupDir: call.space.backupDir }),
+        ...(call.host.now === undefined ? {} : { now: call.host.now }),
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
+  },
+
+  // A7 3.15.5: the undo of an applied import, partial by design, never on the undo stack.
+  "import.planning.undo": async (call) => {
+    const writer = writerOf(call.space);
+    const reader = readerOf(call.space);
+    let principal: Id<"ac">;
+    try {
+      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+      principal = await actorOf(writer, call.principal);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    return await planningUndo({
+      reader,
+      writer,
+      input: call.input,
+      principal,
+      scope: call.principal.scope,
+      ...(call.principal.earlierScope === undefined
+        ? {}
+        : { earlierScope: call.principal.earlierScope }),
+      machine: call.host.machine.id as Id<"m">,
+      origin: call.principal.origin,
+    });
   },
 
   // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by

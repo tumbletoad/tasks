@@ -112,9 +112,11 @@ export {
 export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
 export {
   canonicalJson,
+  judgedNames,
   placeProjects,
   planHash,
   previewOf,
+  previewPinned,
   previewToken,
   proposeRoots,
   type Preview,
@@ -125,6 +127,25 @@ export {
   type SpaceState,
 } from "./preview.ts";
 export { renderPreview } from "./report-md.ts";
+export {
+  BASE_FIELDS,
+  comparedPlanning,
+  decideApply,
+  expectedOf,
+  FIRST_IMPORT_KEYS,
+  sourceIdentity,
+  type AppliedTask,
+  type ApplyDecision,
+  type ApplyOp,
+  type ApplyOptions,
+  type ApplySpace,
+  type BaseField,
+  type Changed,
+  type Expected,
+  type ItemBase,
+  type MatchedTask,
+  type RecordedBase,
+} from "./apply.ts";
 export { groupKey, groupSlug, numberedSlug, SLUG_MAX } from "./slug.ts";
 export { exactNumber } from "./json.ts";
 export {

@@ -844,8 +844,11 @@ export class SpaceWriterHandle {
    * with STORAGE_OVERLOADED and a late answer with STORAGE_TIMEOUT: both may be retried with the
    * same request ID.
    */
-  submit(request: unknown): Promise<WriteResult> {
-    return this.#queued(() => this.#worker.call("submit", { handle: this.handle, request }));
+  submit(request: unknown, options: { timeoutMs?: number } = {}): Promise<WriteResult> {
+    return this.#queued(
+      () => this.#worker.call("submit", { handle: this.handle, request }),
+      options.timeoutMs,
+    );
   }
 
   /**

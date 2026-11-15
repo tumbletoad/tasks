@@ -49,11 +49,12 @@ export interface SpaceState {
     readonly id: string;
     readonly version: number;
   }[];
-  /** Live areas with one of the plan's slugs: the apply reuses them. */
+  /** Live areas with one of the plan's slugs: the apply reuses them, with their own titles. */
   readonly areas: readonly {
     readonly slug: string;
     readonly id: string;
     readonly version: number;
+    readonly title?: string;
   }[];
   /** Every live project with its area's slug (none without a live area): a slug is unique in the
    * space, so whether a planned project is reused or numbered depends on the space's other slugs
@@ -66,6 +67,8 @@ export interface SpaceProject {
   readonly id: string;
   readonly version: number;
   readonly area: string | null;
+  /** Its own title: a reused project keeps it. */
+  readonly title?: string;
 }
 
 /** Where a planned project goes in the space: the slug it gets, and the live project it reuses. */
@@ -209,15 +212,19 @@ function judged(plan: ImportPlan, space: SpaceState) {
 }
 
 /**
- * The preview token (A7 3.15.4): `pv1_` and the base64url SHA-256 of the canonical JSON of what
- * the apply depends on. The apply recomputes it from its own run and compares.
+ * What the token pins that the run folder holds (A7 3.15.4): the run, the inputs' and the actions
+ * export's hashes, the options and the plan's hash. The apply recomputes these from the folder,
+ * and the writer hashes them with the space's identity and the rows the plan meets, which it reads
+ * in the applying transaction (storage: recomputeToken).
  */
-export function previewToken(plan: ImportPlan, run: PreviewRun): string {
+export function previewPinned(
+  plan: ImportPlan,
+  run: Pick<PreviewRun, "run" | "inputs" | "actions" | "options">,
+): Record<string, unknown> {
   const o = run.options;
-  const pinned = {
+  return {
     v: 1,
     run: run.run,
-    space: { id: run.space.id, epoch: run.space.epoch, incarnation: run.space.incarnation },
     inputs: run.inputs.map((f) => [f.path, f.sha256]),
     actions: run.actions?.sha256 ?? null,
     options: {
@@ -228,6 +235,35 @@ export function previewToken(plan: ImportPlan, run: PreviewRun): string {
       time_zone: o.timeZone,
     },
     plan: planHash(plan),
+  };
+}
+
+/**
+ * The names whose rows the token pins (`judged`): the plan's legacy IDs, source keys and area
+ * slugs, and every project slug the placement of its projects looked at in `space`. The writer
+ * reads these rows again in the applying transaction.
+ */
+export function judgedNames(
+  plan: ImportPlan,
+  space: Pick<SpaceState, "projects">,
+): { aliases: string[]; keys: string[]; areas: string[]; projects: string[] } {
+  return {
+    aliases: plan.tasks.map((t) => t.legacyId),
+    keys: plan.sources.flatMap((s) => (s.key === undefined ? [] : [s.key])),
+    areas: plan.areas.map((a) => a.slug),
+    projects: [...placeProjects(plan, space.projects).met.keys()],
+  };
+}
+
+/**
+ * The preview token (A7 3.15.4): `pv1_` and the base64url SHA-256 of the canonical JSON of what
+ * the apply depends on. The apply recomputes it from its own run and compares, and the writer
+ * once more inside the applying transaction.
+ */
+export function previewToken(plan: ImportPlan, run: PreviewRun): string {
+  const pinned = {
+    ...previewPinned(plan, run),
+    space: { id: run.space.id, epoch: run.space.epoch, incarnation: run.space.incarnation },
     judged: judged(plan, run.space),
   };
   return `pv1_${sha256(canonicalJson(pinned)).toString("base64url")}`;
@@ -403,9 +439,16 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
     .filter((a) => a.count > 0)
     .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "error" ? -1 : 1));
 
-  // Titles by slug, so a large import costs linear time.
+  // Titles by slug, so a large import costs linear time. An area or project the apply reuses keeps
+  // its own title, so the report shows the space's.
   const areaTitles = new Map(plan.areas.map((a) => [a.slug, a.title]));
+  for (const a of run.space.areas) if (a.title !== undefined) areaTitles.set(a.slug, a.title);
   const projectTitles = new Map(plan.projects.map((p) => [p.slug, p.title]));
+  const spaceProjects = new Map(run.space.projects.map((p) => [p.id, p]));
+  for (const [slug, placed] of placements) {
+    const title = placed.reuses === undefined ? undefined : spaceProjects.get(placed.reuses)?.title;
+    if (title !== undefined) projectTitles.set(slug, title);
+  }
   const tasks = plan.tasks.map((t, i) => {
     const create = createOf(t);
     return {
