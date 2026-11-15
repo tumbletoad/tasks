@@ -122,7 +122,7 @@ export interface AsOf {
 /**
  * The tables whose existing rows a request can change, and so conflict on: a wrap-up's removal of
  * a learning among them. Undo and redo also name the child rows that block a create's inversion
- * (A1 3.10): notes, log entries, sources, learnings, attachments and label links.
+ * (A1 3.10): notes, log entries, sources, learnings, attachments, label links and runs.
  */
 export type ConflictEntity =
   | "tasks"
@@ -133,7 +133,8 @@ export type ConflictEntity =
   | "sources"
   | "learnings"
   | "attachments"
-  | "task_labels";
+  | "task_labels"
+  | "runs";
 
 /**
  * One field that changed after the caller's base, or the link version the caller named (A1 3.5).

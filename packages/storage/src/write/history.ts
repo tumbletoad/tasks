@@ -17,9 +17,10 @@
 //   provenance.
 // - A `create` row inverts by tombstoning its row, while every field of the row holds a write of
 //   the creating commits and every live child row (a task's notes, log entries, learnings,
-//   attachments, source links, label links and places; a source's links) was created by them. The
-//   tombstone is a write of its own (after_prov is the inverting commit), so a redo clears it
-//   under that guard.
+//   attachments, source links, label links, places and runs; a source's links) was created by
+//   them. A run has no tombstone and is never the creating commits', so a task with a run keeps
+//   its create. The tombstone is a write of its own (after_prov is the inverting commit), so a
+//   redo clears it under that guard.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -27,7 +28,8 @@
 //   tasks for one item), and never leaves a task more than 20 live learnings. These rules span
 //   rows, so they are decided on the state the inversion makes, not predicted from the state
 //   before it (applyInversions below).
-// - Launch, session, run and machine records are never inverted (A1 3.6, 3.10.3).
+// - Launch, session, run and machine records are never inverted (A1 3.6, 3.10.3), so no inversion
+//   writes one, and none re-attaches a run that redaction detached.
 //
 // A task's lifecycle and wrap-up obey one CHECK (an active task has no wrap state). An inversion of
 // both, where both pass, restores a state the task had; a partial one could split them, so with
@@ -103,14 +105,19 @@ interface Child {
   readonly where: string;
   /** Its logical fields (fields.ts), its tombstone among them. */
   readonly fields: Readonly<Record<string, readonly string[]>>;
-  /** Its tombstone field and that field's column. */
-  readonly field: "deleted" | "removed";
-  readonly column: "deleted_at" | "removed_at";
+  /**
+   * Its tombstone field and that field's column. A run has no tombstone: every run is live, and
+   * its conflict names its `state` with who created it.
+   */
+  readonly field: "deleted" | "removed" | "state";
+  readonly column: "deleted_at" | "removed_at" | null;
+  /** A table a later schema step added (runs, 0.3): a space without it has no such children. */
+  readonly since?: true;
 }
 
 const LINK_KEY = "task_id || '|' || source_id";
 
-/** A1 3.10: a task's notes, log entries, learnings, links, attachments and places. */
+/** A1 3.10: a task's notes, log entries, learnings, links, attachments, places and runs. */
 const TASK_CHILDREN: readonly Child[] = [
   ...(["notes", "log_entries", "learnings"] as const).map((entity): Child => ({
     entity,
@@ -163,6 +170,20 @@ const TASK_CHILDREN: readonly Child[] = [
     field: "deleted",
     column: "deleted_at",
   },
+  // A run holds the person's request and the agent's result, task text a tombstone would hide, so
+  // it keeps its task's create in any state (A1 3.10). It is always another commit's: a run
+  // request holds run operations only (A1 3.6). A detached run names no task and keeps nothing.
+  {
+    entity: "runs",
+    key: "id",
+    task: "task_id",
+    parent: "task_id",
+    where: "",
+    fields: CHILD_FIELDS.runs,
+    field: "state",
+    column: null,
+    since: true,
+  },
 ];
 
 /** A source's links: a source another task links to stays. */
@@ -191,8 +212,10 @@ const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = 
  */
 const childSql = (c: Child): string =>
   `SELECT ${c.key} AS key, ${c.task} AS task, ${c.parent} AS parent, * FROM ${c.entity} ` +
-  `WHERE ${c.parent} IN (SELECT value FROM json_each($parents))${c.where} AND ${c.column} IS NULL ` +
-  `ORDER BY created_seq, key`;
+  `WHERE ${c.parent} IN (SELECT value FROM json_each($parents))${c.where}` +
+  `${c.column === null ? "" : ` AND ${c.column} IS NULL`} ORDER BY created_seq, key`;
+
+const TABLE_EXISTS = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = $name";
 
 /** A live child row of a parent the plan may tombstone. */
 interface Kid {
@@ -212,6 +235,13 @@ function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<s
       .map((ch) => ch.entityId);
     if (parents.length === 0) continue;
     for (const child of children) {
+      // A space at 0.2 has no runs: its undo works as before the table existed.
+      if (
+        child.since === true &&
+        conn.prepare(TABLE_EXISTS).get({ name: child.entity }) === undefined
+      ) {
+        continue;
+      }
       const rows = conn.prepare(childSql(child)).all({ parents: JSON.stringify(parents) });
       for (const row of rows) {
         const r = new RowReader(child.entity, row);
@@ -608,7 +638,8 @@ export function planInversions(
               field,
               value: theirs ? null : columnsValue(state.raw, child.fields[field] ?? []),
             },
-            versionOf(state, field),
+            // A row without a tombstone (a run) is named with who created it.
+            theirs && child.column === null ? state.createdSeq : versionOf(state, field),
           ),
         );
       }

@@ -341,7 +341,7 @@
                   "type": "string"
                 },
                 "field": {
-                  "description": "Logical field; deleted or removed for a child row",
+                  "description": "Logical field; deleted or removed for a child row, state for a run",
                   "maxLength": 40,
                   "type": "string"
                 },
@@ -682,7 +682,8 @@
                         "sources",
                         "learnings",
                         "attachments",
-                        "task_labels"
+                        "task_labels",
+                        "runs"
                       ],
                       "type": "string"
                     },

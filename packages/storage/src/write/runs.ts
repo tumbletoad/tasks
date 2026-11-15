@@ -6,7 +6,8 @@
 //
 // A run is not a child of its task, as a launch is not: its changes carry no task, it moves neither
 // the task's `touched` nor its projection, and it is never on an undo stack (A1 3.6). Its exit never
-// changes its task (A4 3.11.5).
+// changes its task (A4 3.11.5). It holds task text (the request, the result), so it keeps its
+// task's create from being undone (A1 3.10, history.ts).
 import type { Connection, Row } from "../driver.ts";
 import { isId, type Id } from "../ids.ts";
 import { invalidValue, RowReader } from "../rows.ts";

@@ -337,13 +337,18 @@ export function checkHistory(conn: Connection): void {
 
 /**
  * The same invariants on the child rows a request can change after their create: links, places,
- * launches, runs, learnings, and the tombstones of notes, log entries and sources (A1 3.4, 3.10).
- * Each starts with its create row, every field's chain holds (checkChain), and the row's version is
- * the latest change to any of its fields.
+ * launches, runs, learnings, and the tombstones of notes, log entries and sources (A1 3.4, 3.10),
+ * and on sessions, which no operation changes yet. Each starts with its create row, every field's
+ * chain holds (checkChain), and the row's version is the latest change to any of its fields. A
+ * table a space's schema does not have yet (runs and sessions before 0.3) holds no rows.
  */
 function checkChildHistory(conn: Connection): void {
   const commits = commitKinds(conn);
   const id = { key: "id" };
+  const exists = (table: string): boolean =>
+    conn
+      .prepare("SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = $table")
+      .get({ table }) !== undefined;
   const kinds = [
     {
       table: "task_sources",
@@ -353,12 +358,14 @@ function checkChildHistory(conn: Connection): void {
     { table: "places", ...id, fields: CHILD_FIELDS.places },
     { table: "launches", ...id, fields: CHILD_FIELDS.launches },
     { table: "runs", ...id, fields: CHILD_FIELDS.runs },
+    { table: "sessions", ...id, fields: {} },
     { table: "learnings", ...id, fields: CHILD_FIELDS.learnings },
     { table: "notes", ...id, fields: CHILD_FIELDS.notes },
     { table: "log_entries", ...id, fields: CHILD_FIELDS.log_entries },
     { table: "sources", ...id, fields: CHILD_FIELDS.sources },
   ] as const;
   for (const { table, key, fields } of kinds) {
+    if (!exists(table)) continue;
     const rows = conn
       .prepare(`SELECT ${key} AS entity_id, * FROM ${table}`)
       .all<Record<string, unknown> & { entity_id: string; fv: string; fp: string }>();
