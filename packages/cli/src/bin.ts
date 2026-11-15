@@ -4,6 +4,10 @@
 // `tasks mcp` hands over to the bridge first, with nothing of the CLI loaded and no handler of the
 // CLI's installed: the bridge starts fast, owns stdout (MCP frames only) and its own signals, and
 // exits with its own code (A2 3.7.1). Every other command loads the CLI (run.ts).
+//
+// safe-exit comes before every other module: the bridge, the shim and `tasks serve` end through
+// `process.exit`, which the pinned Node can otherwise hang in (A2 3.12.1).
+import "@tasks/bridge/safe-exit";
 import { fileURLToPath } from "node:url";
 import { MCP_VERB, runBridge } from "./mcp.ts";
 

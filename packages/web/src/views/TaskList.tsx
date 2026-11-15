@@ -6,18 +6,27 @@
 // What it holds itself: which task is expanded (one at a time) and which row is current, the launch
 // receipts of the tasks this tab follows, the rows an agent has just added (they fade in), and the
 // screen reader's summary of agents' changes in the view (A5 3.15 items 7 and 10).
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { requestId, type Instance, type Receipt } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
-import { areaSlots, groupTasks } from "../groups.ts";
+import { areaSlots, groupTasks, type Group } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
-import { contextFor, type RowView } from "../row/model.ts";
+import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
+import type { Clock } from "../row/dates.ts";
 import { Row } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
@@ -33,11 +42,36 @@ const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
 const QUIET_MS = 2_000;
 
+/** The expanded task as the list last showed it: its group and its place in that group's list. */
+export interface HeldRow {
+  readonly task: TaskRow;
+  readonly group?: string;
+  readonly index?: number;
+}
+
+/**
+ * A view's groups from the live rows (A7 3.12: a view hands its rows to the list). `held` is the
+ * expanded task, which stays where it is until it is collapsed (A5 3.15), whatever an update did.
+ */
+export type GroupsOf = (
+  tasks: ReadonlyMap<string, TaskRow>,
+  held: HeldRow | undefined,
+) => readonly Group[];
+
 export interface TaskListProps {
   /** The view the list is shown in: what its rows leave out (A5 3.6 `ctx`). */
   readonly view: RowView;
-  /** Which open tasks the view holds. */
+  /** What the view's grouping states, so its rows leave it out (A5 3.6). Default: by area. */
+  readonly grouping?: Grouping;
+  /**
+   * Which open tasks the view may hold: the rows an agent adds there fade in, and its changes are
+   * announced. Without `groups`, also what the list shows, grouped by area and project.
+   */
   readonly filter: (task: TaskRow) => boolean;
+  /** The view's own groups (Today's sections). */
+  readonly groups?: GroupsOf;
+  /** The view's clock, when the view reads it too (Today's sections and strip). */
+  readonly clock?: Clock;
   /** The line an empty view shows. */
   readonly empty: string;
   /**
@@ -53,7 +87,16 @@ export interface TaskListProps {
   readonly onExpand?: (task: TaskRow | undefined, gone?: boolean) => void;
 }
 
-export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: TaskListProps) {
+export function TaskList({
+  view,
+  grouping = "area",
+  filter,
+  groups: groupsOf,
+  clock: viewClock,
+  empty,
+  expand: wantedRef,
+  onExpand,
+}: TaskListProps) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -99,7 +142,9 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
       : (state.tasks.get(expanded) ??
         (injected?.id === expanded ? injected : undefined) ??
         (held.current?.id === expanded ? held.current : undefined));
-  held.current = expandedRow;
+
+  /** Where the expanded row was shown last: its group and its place there. */
+  const place = useRef<{ id: string; group: string; index: number } | undefined>(undefined);
 
   // The view's rows, grouped, as one sequence of items. Recomputed when the published rows change.
   // An expanded task stays where it is until it is collapsed, even when an update takes it out
@@ -107,21 +152,49 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
   // Only the expanded task joins: the injected row is that task's row while it is expanded, and
   // the live row wins over it as soon as the store holds the task.
   const items = useMemo(() => {
-    const tasks = [...state.tasks.values()].filter(filter);
-    if (expandedRow !== undefined && !tasks.some((task) => task.id === expandedRow.id)) {
-      tasks.push(expandedRow);
+    let groups: readonly Group[];
+    if (groupsOf !== undefined) {
+      const was = place.current;
+      const held =
+        expandedRow === undefined
+          ? undefined
+          : {
+              task: expandedRow,
+              ...(was?.id === expandedRow.id ? { group: was.group, index: was.index } : {}),
+            };
+      groups = groupsOf(state.tasks, held);
+    } else {
+      const tasks = [...state.tasks.values()].filter(filter);
+      if (expandedRow !== undefined && !tasks.some((task) => task.id === expandedRow.id)) {
+        tasks.push(expandedRow);
+      }
+      groups = groupTasks(tasks, state.areas.values(), state.projects.values());
     }
-    const groups = groupTasks(tasks, state.areas.values(), state.projects.values());
     return itemsOf(groups, state.areas, state.projects, areaSlots(state.areas.values()));
-  }, [state.tasks, state.areas, state.projects, filter, expandedRow]);
+  }, [state.tasks, state.areas, state.projects, filter, groupsOf, expandedRow]);
+
+  // Where the expanded row is now, for the next update (a view's own groups keep it there). Taken
+  // after the commit, so a render React throws away (a transition it interrupted, a StrictMode
+  // second render) never moves the place the next update keeps the row at.
+  const shownAt = expanded === undefined ? undefined : items.index.get(expanded);
+  const shownItem = shownAt === undefined ? undefined : items.items[shownAt];
+  useLayoutEffect(() => {
+    held.current = expandedRow;
+    if (shownItem?.kind === "row") {
+      place.current = { id: shownItem.key, group: shownItem.group, index: shownItem.posinset - 1 };
+    } else if (expanded === undefined) {
+      place.current = undefined;
+    }
+  });
 
   const timed = useMemo(
     () => items.items.some((item) => item.kind === "row" && item.task.due_at !== undefined),
     [items],
   );
-  const clock = useClock(timed);
-  // Every view's rows sit under area headings until M5.04 and M5.05 give each view its grouping.
-  const ctx = useMemo(() => contextFor(view, "area", clock), [view, clock]);
+  const ownClock = useClock(timed && viewClock === undefined);
+  const clock = viewClock ?? ownClock;
+  // The other views' rows sit under area headings until M5.05 gives each its grouping.
+  const ctx = useMemo(() => contextFor(view, grouping, clock), [view, grouping, clock]);
 
   const loadReceipts = useCallback(
     (task: string) => {
@@ -157,6 +230,23 @@ export function TaskList({ view, filter, empty, expand: wantedRef, onExpand }: T
         }
       }),
     [live, loadReceipts],
+  );
+
+  // An update that takes the expanded task out of the live rows (completed, archived) carries its
+  // newest row: the card shows it until it is collapsed, as an injected row (A5 3.4, 3.15).
+  useEffect(
+    () =>
+      live.onChanges(({ changes }) => {
+        const id = latest.current.expanded;
+        if (id === undefined) return;
+        let left: TaskRow | undefined;
+        for (const change of changes) {
+          if (change.type !== "task" || change.id !== id || change.after === undefined) continue;
+          left = live.getState().tasks.has(id) ? undefined : (change.after as TaskRow);
+        }
+        if (left !== undefined) setInjected(left);
+      }),
+    [live],
   );
 
   // Rows an agent adds fade in; agents' changes to the view's tasks are announced once the burst

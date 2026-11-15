@@ -41,7 +41,7 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     page,
     world,
   }) => {
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
     // Its own task: the open test launches `world.task`, and a worker's tests share the world.
     const row = page.locator(`li[data-task="${world.spare.ref}"]`);
     const main = row.locator('[data-part="title"]');
@@ -96,7 +96,7 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
   });
 
   test("a task that is added keeps the draft typed while it was added", async ({ page, world }) => {
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
     const field = page.getByRole("textbox", { name: "New task" });
     const add = holdFirst();
     await page.route("**/api/v1/op/task.add", add.handler);

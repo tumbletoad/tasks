@@ -11,6 +11,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { Api } from "../api.ts";
 import { Session, type SessionValue } from "../context.ts";
 import { Live } from "../live.ts";
+import { changeLogOf } from "./changes.ts";
 
 /** The browser's sign-in: its token, the build that served the page, and the way out. */
 export interface Auth {
@@ -54,6 +55,8 @@ export function SpaceSession({
       onSpace: () => undefined,
       onSignedOut: auth.signedOut,
     });
+    // Today's Changes counts from the session's start, whichever view the tab opens on.
+    changeLogOf(live);
     setValue({ api, live });
     live.start();
     return () => {

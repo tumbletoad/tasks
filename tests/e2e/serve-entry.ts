@@ -6,6 +6,8 @@
 // written. Tests only.
 //
 // A line `stop` on stdin stops it gracefully, on every OS.
+// First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
+import "../../packages/bridge/src/safe-exit.ts";
 import { createInterface } from "node:readline";
 import { packageIdentity } from "../../packages/service/src/hub/identity.ts";
 import { runServe } from "../../packages/service/src/hub/serve.ts";

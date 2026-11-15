@@ -22,6 +22,9 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
     await showsSpace(page, world.mira.name);
     await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/today`);
+    // The task's area lists it (Today lists only what it selects, A5 3.4).
+    await page.goto(`${world.origin}/s/${world.mira.id}/area/${world.task.area}`);
+    await showsSpace(page, world.mira.name);
 
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row.locator('[data-part="title"]')).toHaveText(world.task.title);
@@ -69,7 +72,7 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
     world,
   }) => {
     await watchViolations(page);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
     await showsSpace(page, world.mira.name);
     // What the page writes to the clipboard, kept in the page: no clipboard permission needed.
     await page.evaluate(() => {
@@ -118,8 +121,9 @@ test.describe("[A7.3.9.m2-13.e2e.two-tabs] Each tab keeps its own space", () => 
   test("Two tabs on two spaces stay on their own space", async ({ context, world }) => {
     const mira = await context.newPage();
     const studio = await context.newPage();
-    await mira.goto(await world.signInUrl(`/s/${world.mira.id}`));
-    await studio.goto(await world.signInUrl(`/s/${world.studio.id}`));
+    // The Inbox, where the add field puts a task.
+    await mira.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await studio.goto(await world.signInUrl(`/s/${world.studio.id}/inbox`));
     await showsSpace(mira, world.mira.name);
     await showsSpace(studio, world.studio.name);
     await expect(studio.locator('[data-part="title"]')).toHaveText(["Sketch the spring poster"]);
@@ -142,7 +146,7 @@ test.describe("[A7.3.9.m2-13.e2e.two-tabs] Each tab keeps its own space", () => 
     await mira.reload();
     await showsSpace(studio, world.studio.name);
     await showsSpace(mira, world.mira.name);
-    await expect(studio).toHaveURL(`${world.origin}/s/${world.studio.id}/today`);
+    await expect(studio).toHaveURL(`${world.origin}/s/${world.studio.id}/inbox`);
     await expect(studio.locator('[data-part="title"]', { hasText: forStudio })).toBeVisible();
     await expect(studio.locator('[data-part="title"]', { hasText: forMira })).toHaveCount(0);
   });

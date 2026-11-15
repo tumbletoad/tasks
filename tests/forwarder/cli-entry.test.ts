@@ -25,8 +25,13 @@ const CLI_BIN = join(REPO, "packages", "cli", "src", "bin.ts");
 /** As a URL: --import takes a specifier, and a Windows path is not one. */
 const RECORDER = new URL("./load-recorder.ts", import.meta.url).href;
 
-/** A2 3.7.1 names net, fs, crypto and process; path, os and url are small parts of Node's core. */
-const ALLOWED = ["crypto", "fs", "net", "os", "path", "process", "url"].map((n) => `node:${n}`);
+/**
+ * A2 3.7.1 names net, fs, crypto and process; path, os and url are small parts of Node's core, and
+ * v8 sets the flag of the bridge's safe-exit.ts (A2 3.12.1).
+ */
+const ALLOWED = ["crypto", "fs", "net", "os", "path", "process", "url", "v8"].map(
+  (n) => `node:${n}`,
+);
 
 /** The CLI's modules on the way to the bridge: its entry and the hand-over. */
 const CLI_ENTRY_MODULES = ["packages/cli/src/bin.ts", "packages/cli/src/mcp.ts"];
