@@ -11,6 +11,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -140,6 +141,7 @@ describe.skipIf(!posix)(
         {
           detached: true,
           stdio: ["ignore", "pipe", "pipe"],
+          cwd: dir,
         },
       );
       terminalPid = terminal.pid;
@@ -166,6 +168,9 @@ describe.skipIf(!posix)(
       expect(group).not.toBe(String(terminal.pid));
       expect(session).not.toBe(terminalSession);
       expect(tty).toBe("0");
+      // It runs in the home folder, as the unit runs it, never in the terminal's folder (here the
+      // test's temporary folder), which it would keep busy.
+      expect(readlinkSync(`/proc/${String(started.pid)}/cwd`)).toBe(realpathSync.native(ctx.home));
       // The terminal closes: a hang-up to its whole process group, and it is gone.
       process.kill(-(terminal.pid ?? 0), "SIGHUP");
       await within(ended, EXIT_MS, "the terminal's end");

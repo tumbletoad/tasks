@@ -1471,7 +1471,8 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
         // restarts it, and nothing starts it at sign-in.
         needProgram(ctx);
         await ready();
-        ctx.startDetached(ctx.program, ["serve"]);
+        // In the home folder, as the unit runs it: never the caller's folder, which it would hold.
+        ctx.startDetached(ctx.program, ["serve"], { cwd: ctx.home });
         via = "manual";
         if (manager) unit = "not_installed";
       }
@@ -1498,7 +1499,7 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
           );
         }
         await ready();
-        ctx.startDetached(ctx.program, []);
+        ctx.startDetached(ctx.program, [], { cwd: ctx.home });
         via = "direct";
       }
       break;

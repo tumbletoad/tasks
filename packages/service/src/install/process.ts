@@ -1,6 +1,7 @@
 // Running the OS's tools (systemctl, loginctl, launchctl, reg.exe, tasklist.exe, explorer.exe) and
 // starting a detached service. Never through a shell: the program and an argument array.
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 export interface RunResult {
   /** The exit code, or null when the program did not start or was stopped. */
@@ -57,9 +58,21 @@ export const runProcess: Runner = (file, args, options = {}) =>
 /**
  * Starts a program detached from this process: its own session on Linux and macOS (setsid), no
  * console and a new process group on Windows, no standard handles. The caller does not wait.
+ * `cwd`, when that folder exists: where it runs, so it never holds the caller's folder busy (a
+ * drive that cannot be unmounted, a folder Windows will not delete).
  */
-export function startDetached(file: string, args: readonly string[]): void {
-  const child = spawn(file, args, { detached: true, stdio: "ignore", windowsHide: true });
+export function startDetached(
+  file: string,
+  args: readonly string[],
+  options: { readonly cwd?: string } = {},
+): void {
+  const cwd = options.cwd !== undefined && existsSync(options.cwd) ? options.cwd : undefined;
+  const child = spawn(file, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    ...(cwd === undefined ? {} : { cwd }),
+  });
   child.on("error", () => undefined);
   child.unref();
 }
