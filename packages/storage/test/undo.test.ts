@@ -367,6 +367,8 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
       },
     ]);
     expect(lastSeq()).toBe(before);
+    // It names the commit it met, for a caller that named none.
+    expect(refused.target).toBe(mine.commit);
     expect(commitAt(mine.seq)["undo_status"]).toBe("done");
     // Its receipt holds no task text: the values stay in the reply.
     const stored = JSON.parse(

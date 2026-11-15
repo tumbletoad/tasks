@@ -1,0 +1,72 @@
+/* The toast (A5 3.12): at the foot of the main column, at its inline start. One sentence and at
+   most one action; an error has a dismiss button. Tokens only. */
+
+.toast {
+  position: fixed;
+  inset-block-end: 24px;
+  inset-inline-start: calc(var(--k-sidebar) + var(--k-gutter));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(560px, calc(100vw - 2 * var(--k-gutter)));
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 8px;
+  background: var(--k-raised);
+  color: var(--k-text);
+}
+
+.toast[data-shown="false"] {
+  display: none;
+}
+
+.toast[data-kind="error"] {
+  border-color: var(--k-late);
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.action {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--k-accent-soft);
+  color: var(--k-accent-strong);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--k-selection);
+}
+
+.dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+@media (max-width: 1023px) {
+  .toast {
+    inset-inline-start: var(--k-gutter);
+  }
+}

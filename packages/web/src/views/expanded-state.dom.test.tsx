@@ -342,6 +342,172 @@ describe("[A5.3.15.web.expanded-state] the expanded task's state holds against t
   });
 });
 
+describe("[A5.3.11.web.edits] what the person types in an editor is never dropped", () => {
+  const type = (field: HTMLInputElement | null, value: string) => {
+    act(() => {
+      if (field === null) return;
+      field.value = value;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const waitingField = (id: string) =>
+    container.querySelector<HTMLInputElement>(`li[data-key="${id}"] [data-part="waiting-on"]`);
+  const expand = (id: string) => {
+    act(() => {
+      titleOf(id)?.focus();
+      titleOf(id)?.click();
+    });
+  };
+  const waitingSets = () =>
+    updates.filter((u) => (u["set"] as Record<string, unknown> | undefined)?.["waiting_on"]);
+
+  test("who it waits on: typing again after Enter is saved again", async () => {
+    // The service answers, so the second edit of the task goes out after the first.
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return Promise.resolve({ result: "updated", as_of: "1.10.01234567", warnings: [] });
+    };
+    const tasks = [task(1, { status: "waiting" }), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    expand("t_00001");
+    const field = waitingField("t_00001");
+    expect(field).not.toBeNull();
+    act(() => {
+      field?.focus();
+    });
+    type(field, "First");
+    press(field, "Enter");
+    await settle();
+    type(field, "Second");
+    press(field, "Enter");
+    await settle();
+    expect(waitingSets().map((u) => (u["set"] as Record<string, unknown>)["waiting_on"])).toEqual([
+      "First",
+      "Second",
+    ]);
+  });
+
+  test("who it waits on stays, with what was typed, when someone else moves the task out of Waiting", () => {
+    const tasks = [task(1, { status: "waiting" }), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    expand("t_00001");
+    const field = waitingField("t_00001");
+    act(() => {
+      field?.focus();
+    });
+    type(field, "Ana Reyes");
+    apply(batch(11, [task(1, { status: "open", version: 2 })], ["status"]));
+    // The field is still there, with the person's text, until they leave it.
+    expect(waitingField("t_00001")).toBe(field);
+    expect(field?.value).toBe("Ana Reyes");
+    expect(waitingSets()).toHaveLength(0);
+    press(field, "Enter");
+    expect(waitingSets()).toEqual([
+      expect.objectContaining({ set: { waiting_on: "Ana Reyes" }, base: "1.10.01234567" }),
+    ]);
+  });
+
+  test("who it waits on, typed while an agent checks the task off, stays readable with its choice", async () => {
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return Promise.reject(
+        Object.assign(new Error("not active"), { code: "invalid_state", data: {} }),
+      );
+    };
+    const tasks = [task(1, { status: "waiting" }), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    expand("t_00001");
+    const field = waitingField("t_00001");
+    act(() => {
+      field?.focus();
+    });
+    type(field, "Ana Reyes");
+    apply(
+      batch(
+        11,
+        [task(1, { status: "waiting", lifecycle: "completed", version: 2 })],
+        ["lifecycle"],
+      ),
+    );
+    await settle();
+    const card = container.querySelector('li[data-key="t_00001"]');
+    expect(card?.querySelector('[data-part="unsaved-value"]')?.textContent).toBe("Ana Reyes");
+    // A finished task takes no edit: the line says why and offers Copy, never a Try again that
+    // fails again.
+    const line = card?.querySelector('[data-part="unsaved"]');
+    expect(line?.getAttribute("data-reason")).toBe("finished");
+    expect(line?.querySelector('[data-part="apply-mine"]')).toBeNull();
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          copied.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+    act(() => {
+      line?.querySelector<HTMLButtonElement>('[data-part="copy-mine"]')?.click();
+    });
+    expect(copied).toEqual(["Ana Reyes"]);
+    expect(updates).toHaveLength(1);
+    // It waits until the person discards it: reopened, the task offers Try again.
+    expect(line?.querySelector('[data-part="keep-theirs"]')).not.toBeNull();
+  });
+
+  test("leaving the title editor for another control keeps focus there", async () => {
+    const tasks = [task(1), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    const id = "t_00001";
+    act(() => {
+      titleOf(id)?.focus();
+    });
+    press(titleOf(id), "F2");
+    const field = container.querySelector<HTMLInputElement>(
+      `li[data-key="${id}"] [data-part="title-edit"]`,
+    );
+    type(field, "Task 1, fixed");
+    const other = titleOf("t_00002");
+    act(() => {
+      other?.focus();
+    });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(document.activeElement).toBe(other);
+    expect(updates).toEqual([
+      expect.objectContaining({ task: id, set: { title: "Task 1, fixed" } }),
+    ]);
+  });
+
+  test("a title being typed is saved when the view changes under the person", () => {
+    const tasks = [task(1), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    const id = "t_00001";
+    act(() => {
+      titleOf(id)?.focus();
+    });
+    press(titleOf(id), "F2");
+    const field = container.querySelector<HTMLInputElement>(
+      `li[data-key="${id}"] [data-part="title-edit"]`,
+    );
+    type(field, "Task 1, fixed");
+    expect(updates).toHaveLength(0);
+    // Another view replaces this one (a link, the back button): the editor goes away.
+    mount(<div />);
+    expect(keys()).not.toContain(id);
+    expect(updates).toEqual([
+      expect.objectContaining({ task: id, set: { title: "Task 1, fixed" }, base: "1.10.01234567" }),
+    ]);
+  });
+});
+
 describe("[A5.3.15.web.expanded-state] a thread entry keeps focus while entries arrive", () => {
   const entry = (n: number): DetailLog => ({
     kind: "log",
