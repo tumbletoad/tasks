@@ -342,7 +342,9 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
             </span>
           </Fact>
         )}
-        <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+        {task.created_at > 0 ? (
+          <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+        ) : null}
         {/* A value the person chose before the task was finished stays readable here, with Copy
             and Discard, until they choose: it is never dropped because someone checked the task
             off. Reopened, the task's control offers Try again. */}
@@ -451,7 +453,9 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         <AreaPicker task={task} />
         <Unsaved task={task.id} field="grouping" />
       </Fact>
-      <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+      {task.created_at > 0 ? (
+        <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+      ) : null}
     </dl>
   );
 }
