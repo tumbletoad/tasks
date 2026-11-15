@@ -6,7 +6,7 @@
 // writer passes them. Fixture text only.
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { Id } from "../src/ids.ts";
+import { newId, type Id } from "../src/ids.ts";
 import {
   expectedDocuments,
   indexChanges,
@@ -170,6 +170,60 @@ describe("[A1.5.search.index] the search tables are written in the commit", () =
     });
     expect(count()).toBe(2);
     expectRebuildEqual(fx);
+  });
+
+  test("an undo and a redo write the documents their inversions reach, a create's tombstone and restore included", () => {
+    // The human's writes join the undo stack, as the service sends them (A1 3.10.1).
+    const write = (ops: Operation[]): WriteResult =>
+      fx.writer.submit(fx.request(fx.human, ops, { base: fx.base(), undoable: true }));
+    const history = (kind: "undo" | "redo"): WriteResult =>
+      fx.writer.submit(fx.request(fx.human, [{ kind }]));
+    const id = newId("t");
+    const task = created(
+      write([
+        { kind: "task.create", id, title: "Undo sentinel task" },
+        { kind: "note.add", task: id, body: "A note to take back." },
+        { kind: "log.add", task: id, body: "Logged with it." },
+        {
+          kind: "source.add",
+          task: id,
+          source: { kind: "ticket", title: "Undo sentinel ticket", key: "jira:UNDO-1" },
+        },
+      ]),
+    );
+    expect(write([{ kind: "task.patch", task, set: { summary: "Set and set back" } }]).status).toBe(
+      "applied",
+    );
+    expect(write([{ kind: "task.complete", task }]).status).toBe("applied");
+    const docs = () => storedDocuments(fx.reader).docs;
+    const count = (): unknown =>
+      fx.reader.prepare("SELECT count(*) AS n FROM search_docs WHERE task_id = $id").get({
+        id: task,
+      })?.["n"];
+    expect(docs().get(task)).toMatchObject({
+      lifecycle: "completed",
+      body: expect.stringContaining("Set and set back") as unknown,
+    });
+    // The check-off, the summary, then the create: each undo rewrites what it reaches.
+    expect(history("undo").status).toBe("applied");
+    expect(docs().get(task)?.lifecycle).toBe("active");
+    expectRebuildEqual(fx);
+    expect(history("undo").status).toBe("applied");
+    expect(docs().get(task)?.body).not.toContain("Set and set back");
+    expectRebuildEqual(fx);
+    expect(history("undo").status).toBe("applied");
+    expect(count()).toBe(0);
+    expectRebuildEqual(fx);
+    // Redone, the task, its note and its log entry are found again, then its summary and lifecycle.
+    for (let n = 0; n < 3; n += 1) {
+      expect(history("redo").status).toBe("applied");
+      expectRebuildEqual(fx);
+    }
+    expect(count()).toBe(3);
+    expect(docs().get(task)).toMatchObject({
+      lifecycle: "completed",
+      extra: expect.stringContaining("Undo sentinel ticket") as unknown,
+    });
   });
 
   test("a move reaches the task's learnings, which show its project", async () => {

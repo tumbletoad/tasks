@@ -86,6 +86,11 @@ export const WRITE_ERROR_CODES = [
   "REQUEST_ID_REUSED",
   "REQUEST_ID_INVALID",
   "SPACE_READ_ONLY",
+  // Undo and redo (A1 3.10.1, 3.10.4).
+  "UNDO_CONFLICT",
+  "NOTHING_TO_UNDO",
+  "NOTHING_TO_REDO",
+  "UNDO_BEFORE_FLOOR",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
@@ -114,12 +119,28 @@ export interface AsOf {
   seq: number;
 }
 
-/** The tables whose existing rows a request can change, and so conflict on. */
-export type ConflictEntity = "tasks" | "task_sources" | "places" | "learnings";
+/**
+ * The tables whose existing rows a request can change, and so conflict on: a wrap-up's removal of
+ * a learning among them. Undo and redo also name the child rows that block a create's inversion
+ * (A1 3.10): notes, log entries, sources, learnings, attachments and label links.
+ */
+export type ConflictEntity =
+  | "tasks"
+  | "task_sources"
+  | "places"
+  | "notes"
+  | "log_entries"
+  | "sources"
+  | "learnings"
+  | "attachments"
+  | "task_labels";
 
 /**
  * One field that changed after the caller's base, or the link version the caller named (A1 3.5).
  * A revival without a link version or a base lists the removed link here too, with who removed it.
+ * An undo or redo lists each field whose provenance is not the one its inversion needs (A1 3.10.1:
+ * the value the commit wrote, the value now, who changed it and when), and a live child row of
+ * another actor that keeps a create from being undone, as its tombstone field.
  */
 export interface FieldConflict {
   op: number;
@@ -135,6 +156,13 @@ export interface FieldConflict {
    * stores the conflict without it, so a replay never passes off an old read as current.
    */
   value?: unknown;
+  /**
+   * Undo and redo: the value the inverted change wrote, and the value the inversion would have
+   * set back (what "Restore mine" applies, A5 3.12). In the reply only, like `value`: a receipt
+   * holds no task text.
+   */
+  wrote?: unknown;
+  restore?: unknown;
   /** Its physical version: the commit that last wrote it. */
   version: number;
   /**
@@ -190,7 +218,10 @@ export interface WriteResult {
   commit?: Id<"op">;
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
-  /** Every conflict of the request together, for `conflict`. */
+  /**
+   * Every conflict of the request together, for `conflict`. For an `applied` partial undo, the
+   * fields it left as others set them (A1 3.10.1).
+   */
   conflicts: FieldConflict[];
   /** Why, for `rejected` and `conflict`. */
   error?: WriteProblem;
@@ -615,6 +646,29 @@ export interface RunTransition {
   result?: RunResultRow;
 }
 
+/**
+ * `undo` (A1 3.10.1): inverts the principal's newest commit on its undo stack. It is guarded by
+ * each field's provenance, never by a base, and is all or nothing unless `partial` asks for the
+ * fields nobody changed since: then the rest stays as others set it, and the commit leaves the
+ * stack even when nothing could be undone. A request holds it alone.
+ */
+export interface Undo {
+  kind: "undo";
+  /** The commit the caller means: refused unless it is the stack's newest (a toast's own undo). */
+  commit?: Id<"op">;
+  partial?: boolean;
+}
+
+/**
+ * `redo` (A1 3.10.1): inverts the undo of the principal's oldest undone commit, so the commit's
+ * values return with its own provenance. All or nothing. A request holds it alone.
+ */
+export interface Redo {
+  kind: "redo";
+  /** The commit the caller means: refused unless it is the one a redo would bring back. */
+  commit?: Id<"op">;
+}
+
 export type Operation =
   | TaskCreate
   | TaskPatch
@@ -634,7 +688,9 @@ export type Operation =
   | LaunchCreate
   | LaunchTransition
   | RunCreate
-  | RunTransition;
+  | RunTransition
+  | Undo
+  | Redo;
 export type OperationKind = Operation["kind"];
 
 export const OPERATION_KINDS = [
@@ -657,7 +713,15 @@ export const OPERATION_KINDS = [
   "launch.transition",
   "run.create",
   "run.transition",
+  "undo",
+  "redo",
 ] as const satisfies readonly OperationKind[];
+
+/** The operations that invert history (A1 3.10). */
+export type HistoryOperation = Undo | Redo;
+
+export const isHistoryOperation = (op: Operation): op is HistoryOperation =>
+  op.kind === "undo" || op.kind === "redo";
 
 /**
  * What the caller asked for, as A3 3.4.1 and A1 3.8 define the intent: the registry entry and its
@@ -939,7 +1003,10 @@ class Fields {
     return value;
   }
 
-  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la">(key: string, prefix: P): Id<P> {
+  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op">(
+    key: string,
+    prefix: P,
+  ): Id<P> {
     const value = this.raw(key);
     if (!isId(value, prefix)) return this.fail("VALIDATION_FAILED", "Expected an ID", key);
     return value;
@@ -1371,6 +1438,19 @@ function checkOperation(value: unknown, i: number): Operation {
       op = transition;
       break;
     }
+    case "undo": {
+      const undo: Undo = { kind };
+      if (f.has("commit")) undo.commit = f.id("commit", "op");
+      if (f.has("partial")) undo.partial = f.boolean("partial");
+      op = undo;
+      break;
+    }
+    case "redo": {
+      const redo: Redo = { kind };
+      if (f.has("commit")) redo.commit = f.id("commit", "op");
+      op = redo;
+      break;
+    }
   }
   f.done();
   return op;
@@ -1705,6 +1785,7 @@ export function checkRequest(value: unknown): CheckedRequest {
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
+  if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
   checkMatchableDrafts(request.ops);
   f.done();
   return request;
@@ -1761,6 +1842,29 @@ function checkMatchableDrafts(ops: readonly Operation[]): void {
       }
     }
   });
+}
+
+/**
+ * A request that undoes or redoes (A1 3.10.1): that one operation alone, from a human, guarded by
+ * provenance rather than a base, never on the undo stack itself (its commit is the stack's own
+ * move), and with no `active` mark (it changes back whatever the commit changed).
+ */
+function checkHistoryRequest(f: Fields, request: CheckedRequest): void {
+  if (request.ops.length !== 1) {
+    f.fail("VALIDATION_FAILED", "An undo or redo is a request of its own", "ops");
+  }
+  if (request.actor.actor_kind !== "human") {
+    f.fail("VALIDATION_FAILED", "Only a human undoes and redoes", "actor.actor_kind");
+  }
+  if (request.undoable === true) {
+    f.fail("VALIDATION_FAILED", "An undo or redo does not join the undo stack", "undoable");
+  }
+  if (request.base !== undefined) {
+    f.fail("VALIDATION_FAILED", "An undo or redo is guarded by provenance, not a base", "base");
+  }
+  if (request.active !== undefined) {
+    f.fail("VALIDATION_FAILED", "An undo or redo takes no active", "active");
+  }
 }
 
 /**

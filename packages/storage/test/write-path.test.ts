@@ -370,6 +370,12 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
         expect(opSpec(kind), kind).toMatchObject({ class: "user", base: false, r7: true });
         continue;
       }
+      if (kind === "undo" || kind === "redo") {
+        // The user's alone (A3 3.2.3), and guarded by provenance, not a base (A1 3.10.1).
+        expect(opSpec(kind), kind).toMatchObject({ class: "user", base: false });
+        expect(opSpec(kind)).not.toHaveProperty("r7");
+        continue;
+      }
       expect(opSpec(kind), kind).toMatchObject({ class: "agent", base: !baseFree.has(kind) });
     }
     expect(opSpec("machine.register")).toMatchObject({ class: "system" });
