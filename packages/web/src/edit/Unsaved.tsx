@@ -2,8 +2,8 @@
 // shows the current value, and this line keeps the person's own value one click away. After a
 // conflict: "Changed by Codex just now · Apply mine · Keep theirs". After a failed call: "Not saved
 // · Try again · Discard". On a finished task, which takes no edit until it is reopened: "Not saved:
-// the task is finished · Copy · Discard". The line stays until the person chooses, whatever the
-// feed brings.
+// the task is finished · Copy · Discard", after the value itself where no fact shows it (the
+// title). The line stays until the person chooses, whatever the feed brings.
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";

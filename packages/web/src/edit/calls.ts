@@ -136,10 +136,6 @@ export class Call<T> implements Turn {
     this.answer.catch(() => undefined);
   }
 
-  get request(): string {
-    return this.#request;
-  }
-
   /**
    * A wait that begins while the first answer is awaited gets its outcome; one that begins after
    * an unknown outcome asks again.
