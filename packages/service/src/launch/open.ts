@@ -15,6 +15,7 @@ import {
   type BriefNames,
   type Instance,
   type LaunchIntent,
+  type PackInput,
   type ResolveReason,
   type Route,
 } from "@tasks/launch";
@@ -94,7 +95,18 @@ export interface OpenTaskRequest {
    * intent is recorded. The request path saves it under the click's own request ID.
    */
   readonly saveNote: (text: string) => Promise<void>;
+  /**
+   * Shift+Copy (A4 3.15.5): the task's text as the request path read it, for the context pack in
+   * place of the pointer brief. Only with Copy (no instance).
+   */
+  readonly pack?: PackContent;
 }
+
+/** What the context pack takes of the task (A4 3.15.5); the launch adds its reference and folder. */
+export type PackContent = Omit<
+  PackInput,
+  "task" | "title" | "reference" | "folder" | "budget" | "composer"
+>;
 
 /** What the click gives back. */
 export interface OpenTaskResult {
@@ -193,8 +205,16 @@ export function chooseRoute(
         copy: route.copyBriefToo,
       };
     }
+    case "claude-desktop":
+    case "codex-app": {
+      // The best-effort apps (A4 3.4.4, 3.4.5): their one link, with the brief on the clipboard
+      // too, because the app may drop the prefill. A deep link cannot choose an account (A4 L3).
+      const link = routeOf(instance.target, "link");
+      if (link === undefined) throw new LaunchUnavailable("no_route");
+      return { route: "link", kind: "prefilled", budget: link.budget, copy: link.copyBriefToo };
+    }
     default:
-      // T3 opens through its own route (M2.11); the app links and custom targets come later.
+      // T3 opens through its own route (M2.11); custom targets come later.
       throw new LaunchUnavailable("no_route");
   }
 }
