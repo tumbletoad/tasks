@@ -756,15 +756,22 @@ export class Edits {
     const conflict = conflictOf(first);
     const field = first.fields[0] ?? "title";
     const words = FIELD_WORDS[field];
+    const text: Msg =
+      conflict === undefined
+        ? { id: "toast.notSaved", values: { field: { id: words ?? "field.other" } } }
+        : {
+            id: "toast.changedBy",
+            values: { ...whoOf(conflict.by), field: { id: words ?? "field.other" } },
+          };
+    // A finished task takes no edit until it is reopened: no action that would only fail again.
+    // The value waits under its fact, with Copy (Facts.tsx).
+    if (problem?.cause === "TASK_NOT_ACTIVE") {
+      this.#toast({ kind: "error", text });
+      return;
+    }
     this.#toast({
       kind: "error",
-      text:
-        conflict === undefined
-          ? { id: "toast.notSaved", values: { field: { id: words ?? "field.other" } } }
-          : {
-              id: "toast.changedBy",
-              values: { ...whoOf(conflict.by), field: { id: words ?? "field.other" } },
-            },
+      text,
       action: {
         label: { id: conflict === undefined ? "toast.tryAgain" : "toast.applyMine" },
         run: () => {

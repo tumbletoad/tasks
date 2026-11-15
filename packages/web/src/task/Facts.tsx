@@ -342,8 +342,9 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           </Fact>
         )}
         <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
-        {/* A value the person chose before the task was finished stays readable here, with its
-            choice, until they choose: it is never dropped because someone checked the task off. */}
+        {/* A value the person chose before the task was finished stays readable here, with Copy
+            and Discard, until they choose: it is never dropped because someone checked the task
+            off. Reopened, the task's control offers Try again. */}
         {UNSAVED_FACTS.map(([field, label]) => {
           const unsaved = edits.unsaved(task.id, field);
           if (unsaved === undefined) return null;
@@ -353,7 +354,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
               <span dir="auto" data-part="unsaved-value">
                 {typeof shown === "string" ? shown : sayMsg(t, shown)}
               </span>
-              <Unsaved task={task.id} field={field} />
+              <Unsaved task={task.id} field={field} finished />
             </Fact>
           );
         })}

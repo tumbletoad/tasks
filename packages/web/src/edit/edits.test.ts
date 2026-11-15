@@ -14,6 +14,7 @@ import {
   statusChange,
   titleChange,
   triageChange,
+  waitingChange,
 } from "./change.ts";
 import { Edits, HOLD_MS, COLLAPSE_MS, type Toast } from "./edits.ts";
 
@@ -551,6 +552,24 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     });
     w.edits.dismiss("t_00001", "due");
     expect(w.edits.unsaved("t_00001", "due")).toBeUndefined();
+  });
+
+  test("an edit refused because someone finished the task meanwhile keeps the value, and its toast offers no Try again", async () => {
+    const w = new World([task(1, { status: "waiting" })]);
+    w.answer("task.update", () => {
+      // An agent completed the task before the edit arrived.
+      w.feed([task(1, { status: "waiting", lifecycle: "completed", version: 2 })], "agent-1", [
+        "lifecycle",
+      ]);
+      throw appError("wrong_tool", { cause: "TASK_NOT_ACTIVE" });
+    });
+    w.edits.edit(task(1, { status: "waiting" }), waitingChange("Ana Reyes"));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "waiting_on")?.change.set).toEqual({
+      waiting_on: "Ana Reyes",
+    });
+    expect(w.lastToast()?.kind).toBe("error");
+    expect(w.lastToast()?.action).toBeUndefined();
   });
 
   test("an editor hears who else changed a field after it opened, never the tab's own writes", async () => {

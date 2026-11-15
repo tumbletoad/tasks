@@ -435,7 +435,28 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     await settle();
     const card = container.querySelector('li[data-key="t_00001"]');
     expect(card?.querySelector('[data-part="unsaved-value"]')?.textContent).toBe("Ana Reyes");
-    expect(card?.querySelector('[data-part="unsaved"]')).not.toBeNull();
+    // A finished task takes no edit: the line says why and offers Copy, never a Try again that
+    // fails again.
+    const line = card?.querySelector('[data-part="unsaved"]');
+    expect(line?.getAttribute("data-reason")).toBe("finished");
+    expect(line?.querySelector('[data-part="apply-mine"]')).toBeNull();
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          copied.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+    act(() => {
+      line?.querySelector<HTMLButtonElement>('[data-part="copy-mine"]')?.click();
+    });
+    expect(copied).toEqual(["Ana Reyes"]);
+    expect(updates).toHaveLength(1);
+    // It waits until the person discards it: reopened, the task offers Try again.
+    expect(line?.querySelector('[data-part="keep-theirs"]')).not.toBeNull();
   });
 
   test("leaving the title editor for another control keeps focus there", async () => {

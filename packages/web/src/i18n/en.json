@@ -211,6 +211,8 @@
   "edit.restoredMany": "Your {count} values",
   "edit.changedBy": "{who, select, user {Changed elsewhere just now} import {Changed by the import just now} other {Changed by {by} just now}}",
   "edit.notSaved": "Not saved",
+  "edit.notSavedFinished": "Not saved: the task is finished",
+  "edit.copyValue": "Copy: {value}",
   "edit.applyMine": "Apply mine",
   "edit.applyMineValue": "Apply mine: {value}",
   "edit.tryAgain": "Try again",
