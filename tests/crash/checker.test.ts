@@ -24,6 +24,7 @@ import { unpackBackup } from "../../packages/storage/src/restore/unpack.ts";
 import { DATABASE_FILE, manifestFor, writeManifest } from "../../packages/storage/src/manifest.ts";
 import { openWriter } from "../../packages/storage/src/open.ts";
 import { SCHEMA_0_2_STATEMENTS } from "../../packages/storage/migrations/0002-schema-0.2.ts";
+import { SCHEMA_0_3_STATEMENTS } from "../../packages/storage/migrations/0003-schema-0.3.ts";
 import { SOURCE_APP_VERSION } from "../../packages/storage/src/space.ts";
 import type { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
 import { formatAsOf, type WriteRequest } from "../../packages/storage/src/write/request.ts";
@@ -34,7 +35,7 @@ import { checkedDriver } from "../../packages/storage/test/space-helpers.ts";
 import { checkFolders, checkSpace } from "./checker.ts";
 import { Ledger, type Violation } from "./ledger.ts";
 import { reduce, type Acked, type BackupFacts } from "./protocol.ts";
-import { CREATE_STEPS, REVISION_0_1, REVISION_0_2 } from "./steps.ts";
+import { CREATE_STEPS, REVISION_0_1, REVISION_0_2, REVISION_0_3 } from "./steps.ts";
 
 const made: string[] = [];
 afterEach(() => {
@@ -257,7 +258,8 @@ describe(
 
     test("a migration half done: a revision between whole migrations, or a step's table without its revision", async () => {
       // What a migration that committed each step on its own would leave after a kill between them:
-      // the real 0.2 whole, the stand-in 0.3 not started. The build knows 0.2, so the space opens.
+      // the real 0.2 whole and the rest not started, or the real 0.2 and 0.3 whole and the stand-in
+      // 0.4 not started. The build knows both revisions, so the space opens.
       const built = await build();
       damage(
         built,
@@ -267,10 +269,24 @@ describe(
         ].join("; "),
       );
       expect(names(await check(built))).toEqual(["migration-atomic"]);
-      // A step's table at a revision before that step: the stand-in 0.3's, and the real 0.2's.
+      const two = await build();
+      damage(
+        two,
+        [
+          ...SCHEMA_0_2_STATEMENTS,
+          ...SCHEMA_0_3_STATEMENTS,
+          `UPDATE space SET format_minor = 3; PRAGMA user_version = ${String(REVISION_0_3)}`,
+        ].join("; "),
+      );
+      expect(names(await check(two))).toEqual(["migration-atomic"]);
+      // A step's table at a revision before that step: the stand-in 0.4's, the real 0.3's and the
+      // real 0.2's.
       const table = await build();
       damage(table, "CREATE TABLE test_labels (id TEXT PRIMARY KEY) STRICT");
       expect(names(await check(table))).toContain("migration-atomic");
+      const runs = await build();
+      damage(runs, "CREATE TABLE runs (id TEXT PRIMARY KEY) STRICT");
+      expect(names(await check(runs))).toContain("migration-atomic");
       const real = await build();
       damage(real, "CREATE TABLE learnings (id TEXT PRIMARY KEY) STRICT");
       expect(names(await check(real))).toContain("migration-atomic");

@@ -3,7 +3,7 @@
 //
 // It finishes an interrupted restore and opens the space's writer through a StorageWorker, which
 // migrates the space first when its revision is older (the harness's build has the stand-in steps
-// up to 0.3). Then it sends the plan's requests through the writer, up to `window` at a time, from
+// up to 0.4). Then it sends the plan's requests through the writer, up to `window` at a time, from
 // several writer scopes (the sessions), two of them as agent actors that the writer adds on their
 // first act (`actor.register`, as the service does), takes backups beside the writes from its main thread as the
 // maintenance worker will, and restores a backup in place through the worker. It reports every

@@ -84,6 +84,9 @@ export const RPC_METHODS = {
   // `tasks roots` (A1 3.15, M2.07): the list for every CLI, adding a root for the user only.
   "roots/list": CLI,
   "roots/add": USER,
+  // `tasks setup instances` (A4 3.2): writing and taking back [[instance]] entries, for the user.
+  "instances/add": USER,
+  "instances/remove": USER,
   // `tasks setup t3` (A4 3.4.1, M2.11): the status for every CLI, pairing for the user only.
   "t3/status": CLI,
   "t3/pair": USER,

@@ -39,12 +39,7 @@ import {
   type ClaimReply,
 } from "../src/shim/wire.ts";
 import { AFTER_EXIT } from "../src/sections.ts";
-import {
-  ExecutionRefused,
-  LAUNCH_ID,
-  type ExecutionStore,
-  type LaunchIntent,
-} from "../src/store.ts";
+import { ExecutionRefused, LAUNCH_ID, type LaunchStore, type LaunchIntent } from "../src/store.ts";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE, tempFolder } from "./stores.ts";
 
@@ -104,7 +99,7 @@ const probe: ProcessProbe = {
 /** A service life: a new machine and host on the same durable store and machine state. */
 function boot(): void {
   const inner = new MemoryExecutionStore(durable);
-  const store: ExecutionStore = {
+  const store: LaunchStore = {
     createIntent: (input, id) => inner.createIntent(input, id),
     transitionIntent: (id, expect, next, outcome) =>
       storeRefuses

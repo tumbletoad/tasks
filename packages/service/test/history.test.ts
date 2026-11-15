@@ -229,3 +229,65 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
     LONG,
   );
 });
+
+describe("[A1.5.history.runs] a run keeps its task's create, through the request path", () => {
+  test(
+    "the conflict and a partial undo's unresolved name the run, and receipt.get reads it",
+    async () => {
+      const task = await add("Fixture task the user runs");
+      const id = String((await show(task))["id"]);
+      // The run as the launch path writes it (A4 3.16): the person, in the launch's own scope.
+      const served = w.service.ops.spaces().find((s) => s.writer !== undefined);
+      const writer = served?.writer;
+      if (writer === undefined) throw new Error("no writer");
+      const machine = w.service.ops.machine.id;
+      const created = await writer.submit({
+        space_id: w.space,
+        request_id: rid(),
+        actor: {
+          scope_id: `launch:${machine}`,
+          principal_id: await writer.actor("human", "user"),
+          actor_kind: "human",
+          machine_id: machine as `m_${string}`,
+          origin: "ui",
+        },
+        ops: [
+          {
+            kind: "run.create",
+            task: id as `t_${string}`,
+            instance: "codex-work",
+            adapter: "codex-exec",
+            place: null,
+            request: "Fixture instruction.",
+            brief_hash: "a1b2c3d4".repeat(8),
+            permission: "full-access",
+            limits: { max_turns: 50, wall_ms: 1_800_000, idle_ms: 600_000 },
+          },
+        ],
+      });
+      expect(created.status).toBe("applied");
+      const run = String(created.results[0]?.id);
+      const refused = rid();
+      expect(await refusal("history.undo", { request_id: refused })).toMatchObject({
+        code: "conflict",
+        data: {
+          cause: "UNDO_CONFLICT",
+          conflicts: [{ task, entity: "runs", id: run, field: "state", value: null, by: "user" }],
+        },
+      });
+      expect(await call("receipt.get", { request: refused })).toMatchObject({
+        found: true,
+        status: "conflict",
+        conflicts: [{ entity: "runs", id: run, ref: task, field: "state" }],
+      });
+      const partial = await call("history.undo", { partial: true, request_id: rid() });
+      expect(partial).toMatchObject({
+        result: "partial",
+        tasks: [],
+        unresolved: [{ entity: "runs", id: run, task, field: "state", by: "user" }],
+      });
+      expect((await show(task))["ref"]).toBe(task);
+    },
+    LONG,
+  );
+});

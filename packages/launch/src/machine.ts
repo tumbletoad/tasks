@@ -49,8 +49,8 @@ import {
 import {
   ExecutionRefused,
   seen,
-  type ExecutionStore,
   type LaunchIntent,
+  type LaunchStore,
   type NewIntent,
 } from "./store.ts";
 
@@ -111,7 +111,8 @@ export interface Deadlines {
 }
 
 export interface LaunchMachineOptions {
-  store: ExecutionStore;
+  /** The launch part of the execution store: the machine reads and writes intents only. */
+  store: LaunchStore;
   /** This machine (`m_` ID): it recovers only the intents it dispatched (A4 3.16.1). */
   machine: string;
   steps: LaunchSteps;
@@ -195,7 +196,7 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export class LaunchMachine {
-  readonly #store: ExecutionStore;
+  readonly #store: LaunchStore;
   readonly #machine: string;
   readonly #steps: LaunchSteps;
   readonly #recovery: RecoverySteps;

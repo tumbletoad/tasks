@@ -6,6 +6,9 @@
 //
 //   claude.env            CLAUDE_CODE_MCP_ALLOWLIST_ENV=1 in the agent environment (warn)
 //   agents                no home registered yet, or setup's record cannot be read
+//   instances             machine.toml names no instance Open can start (run `tasks setup
+//                         instances`), or a Claude Code or Codex instance's home has no entry of
+//                         setup's (run `tasks setup agents`); reads machine.toml and the record only
 //   mcp.<instance>        the entry setup wrote: still there by the file and by the app's own
 //                         `mcp get`, running this install's command, its --space and --instance
 //                         the same as its grant row
@@ -37,7 +40,16 @@ import { join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import generatedTools from "@tasks/contracts/generated/mcp-tools.json" with { type: "json" };
 import { makeDir } from "@tasks/files";
-import { helperOutput, INSTANCE_ID, MANUAL_INSTANCE, startHelper, type Env } from "@tasks/launch";
+import {
+  helperOutput,
+  INSTANCE_ID,
+  instanceHome,
+  MANUAL_INSTANCE,
+  startHelper,
+  type Env,
+} from "@tasks/launch";
+import { loadMachineConfig } from "@tasks/service/config";
+import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import {
   appLabel,
   codexEngines,
@@ -51,6 +63,7 @@ import {
   SetupStateInvalid,
   survey,
   t3HomesOf,
+  type HomeRecord,
   type HomeView,
   type SetupInput,
 } from "@tasks/service/setup";
@@ -145,6 +158,7 @@ export async function agentChecks(
     if (!(error instanceof SetupStateInvalid)) throw error;
     return [
       ...checks,
+      instancesCheck(io, undefined, options),
       {
         id: "agents",
         status: "fail",
@@ -153,6 +167,7 @@ export async function agentChecks(
       ...SKIPPED_ROWS,
     ];
   }
+  checks.push(instancesCheck(io, records, options));
   if (records.length === 0) {
     return [
       ...checks,
@@ -238,6 +253,59 @@ export async function agentChecks(
   } finally {
     session?.close();
   }
+}
+
+/** Setup agents' app for an instance's target: the homes it registers. */
+const HOME_APP: Readonly<Record<string, HomeRecord["app"]>> = {
+  "claude-cli": "claude-code",
+  "codex-cli": "codex",
+};
+
+/**
+ * `instances`: the agent apps Open can start a task in here (machine.toml's enabled instances),
+ * and whether each Claude Code or Codex instance's home has the entry setup agents writes, without
+ * which its agent cannot read or update the task. It reads machine.toml and setup's record only,
+ * never an agent home. Instances by ID, never by path.
+ */
+function instancesCheck(
+  io: Io,
+  records: readonly HomeRecord[] | undefined,
+  options: AgentDoctorOptions,
+): Check {
+  const facts = hostFacts(io.env, io.platform);
+  const instances = loadMachineConfig(
+    resolveLayout(facts).config,
+    io.platform,
+  ).config.instances.filter((i) => i.enabled);
+  if (instances.length === 0) {
+    return {
+      id: "instances",
+      status: "warn",
+      detail: `No agent app is set up for Open on this machine, so a task offers only Copy. Run: ${CLI_NAME} setup instances`,
+    };
+  }
+  let userHome: string | undefined;
+  try {
+    userHome = options.agents?.home ?? homeFolder(facts);
+  } catch {
+    userHome = undefined;
+  }
+  const without = instances.filter((instance) => {
+    const app = HOME_APP[instance.target];
+    const home = instanceHome(instance, userHome, io.platform)?.path;
+    if (app === undefined || home === undefined || records === undefined) return false;
+    return !records.some((r) => r.app === app && samePath(io.platform, r.home, home));
+  });
+  const ids = instances.map((i) => i.id).join(", ");
+  if (without.length > 0) {
+    const named = without.map((i) => i.id).join(", ");
+    return {
+      id: "instances",
+      status: "warn",
+      detail: `Open can start a task in ${ids}, but ${named} ${without.length === 1 ? "runs in a home" : "run in homes"} without ${PRODUCT_NAME}'s tools, so ${without.length === 1 ? "its agent" : "their agents"} cannot read or update the task. Run: ${CLI_NAME} setup agents`,
+    };
+  }
+  return { id: "instances", status: "ok", detail: `Open can start a task in ${ids}.` };
 }
 
 function liveSkipped(live: boolean, why: string): Check {

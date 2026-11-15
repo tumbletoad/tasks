@@ -1,6 +1,7 @@
 // `tasks setup` (A2 3.10, A3 3.13, A4 3.4.1): connecting this machine's agent apps. M2.11 brought
 // `tasks setup t3`, the pairing with T3 Code; M2.14 `tasks setup agents` (setup-agents.ts, loaded
-// only for that command), Tasks's MCP server entry in each Claude Code and Codex home.
+// only for that command), Tasks's MCP server entry in each Claude Code and Codex home; `tasks setup
+// instances` (setup-instances.ts) the [[instance]] entries Open starts an agent with.
 //
 //   tasks setup agents [--preview|--apply --plan <token>|--remove|--status]   the agent homes' MCP entries
 //   tasks setup t3 [--no-browser]   pair with T3 Code: approve on T3's page in the browser
@@ -39,12 +40,22 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
   agents print --app <name>
                       The entry and the file it belongs in, to add by hand (also cursor, gemini,
                       opencode, zed, vscode). Writes nothing
+  instances [--preview]
+                      The agent apps Open can start a task in here: what was found (each agent
+                      command with its version, each home) and the machine.toml entries to add.
+                      Writes nothing
+  instances --apply --plan <token>
+                      Add exactly those entries; Open offers them at once
+  instances --remove  Take out every entry it added that is still exactly as it wrote it
+    [--instance <id>]
   t3 [--no-browser]   Pair with T3 Code: approve ${CLI_NAME} on T3's page in your browser
   t3 --status         Whether T3 Code can be used: paired, running, or Reconnect T3
 
 Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings:
 --parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are
 only read.
+setup instances makes an agent home a place Open starts the agent in; setup agents registers
+${CLI_NAME}'s tools in it, so the agent can read and update tasks. Run both.
 --apply, --remove and pairing run only from an interactive terminal. --no-browser prints the page
 to open instead of opening it. Pairing again replaces the earlier pairing: a T3 launch still
 waiting on the earlier one is then shown as unknown, never repeated.
@@ -104,6 +115,11 @@ export async function setupCommand(
   const [app, ...rest] = args;
   if (app === "agents") {
     return await (await import("./setup-agents.ts")).agentsCommand(io, globals, rest, options);
+  }
+  if (app === "instances") {
+    return await (
+      await import("./setup-instances.ts")
+    ).instancesCommand(io, globals, rest, options);
   }
   let session: Session | undefined;
   const call = async (

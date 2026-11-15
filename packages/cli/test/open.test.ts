@@ -11,7 +11,7 @@ import { blockedMessage, movedMessage } from "@tasks/service/http/shared";
 import { post, send } from "@tasks/service/test/http-client";
 import { httpWorld, persistPort, type HttpWorld } from "@tasks/service/test/http-world";
 import { selfTest } from "../src/doctor-http.ts";
-import { probeListener } from "../src/open.ts";
+import { probeListener, StartFailed } from "../src/open.ts";
 import { runMain } from "./cli-harness.ts";
 
 const SLOW = { timeout: 180_000 };
@@ -252,6 +252,98 @@ describe("[A2.3.9.cli.open] tasks open", () => {
         // The squatters read nothing, so they would not see the client go: closed here.
         for (const socket of accepted) socket.destroy();
       }
+    },
+  );
+});
+
+describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", () => {
+  test(
+    "a stopped service is started as tasks service start does, with one line, then the page opens",
+    SLOW,
+    async () => {
+      const w = await world("og", {}, { space: false });
+      await w.stop();
+      let starts = 0;
+      const startService = async () => {
+        starts += 1;
+        await w.restart();
+        return "started" as const;
+      };
+      const ran = await runMain(["open", "--print-url"], {
+        home: w.home,
+        tty: true,
+        main: { startService },
+      });
+      expect(ran.code).toBe(0);
+      expect(starts).toBe(1);
+      expect(ran.stderr).toContain("Started TT Tasks's service.\n");
+      expect(URL_SHAPE.exec(ran.stdout.trim())?.[1]).toBe(String(w.port()));
+      // A running service is not started again.
+      const again = await runMain(["open", "--print-url"], {
+        home: w.home,
+        tty: true,
+        main: { startService },
+      });
+      expect(again.code).toBe(0);
+      expect(starts).toBe(1);
+      expect(again.stderr).not.toContain("Started");
+      // A start that another start beat says nothing about starting.
+      await w.stop();
+      const beaten = await runMain(["open", "--print-url"], {
+        home: w.home,
+        tty: true,
+        main: {
+          startService: async () => {
+            await w.restart();
+            return "already_running" as const;
+          },
+        },
+      });
+      expect(beaten.code).toBe(0);
+      expect(beaten.stderr).not.toContain("Started");
+    },
+  );
+
+  test(
+    "a start that fails says why and names the command; an agent's shell never starts it",
+    SLOW,
+    async () => {
+      const w = await world("oh", {}, { space: false });
+      await w.stop();
+      const failed = await runMain(["open"], {
+        home: w.home,
+        tty: true,
+        main: {
+          startService: () =>
+            Promise.reject(
+              new StartFailed(
+                "TT Tasks's service did not become ready within 20 s.",
+                "tasks service status",
+              ),
+            ),
+          openUrl: () => Promise.reject(new Error("no browser may open")),
+        },
+      });
+      expect(failed.code).toBe(6);
+      expect(failed.stderr).toBe(
+        "error service_unavailable: TT Tasks's service is not running, and it could not be started: TT Tasks's service did not become ready within 20 s. Run: tasks service status\n",
+      );
+      expect(failed.stdout).toBe("");
+      let starts = 0;
+      const agent = await runMain(["open", "--print-url"], {
+        home: w.home,
+        env: { CODEX_THREAD_ID: "t-1" },
+        main: {
+          startService: () => {
+            starts += 1;
+            return Promise.resolve("started" as const);
+          },
+        },
+      });
+      expect(agent.code).toBe(5);
+      expect(agent.stderr).toContain("Ask the user to open TT Tasks.");
+      expect(agent.stdout).toBe("");
+      expect(starts).toBe(0);
     },
   );
 });

@@ -5,7 +5,7 @@
 import { win32 } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
 import { helperOutput } from "@tasks/launch/helpers";
-import { blockedMessage, movedMessage } from "@tasks/service/http/shared";
+import { blockedMessage, metaContent, movedMessage } from "@tasks/service/http/shared";
 import { countAccounts, type AccountFacts } from "./accounts.ts";
 import { listenerRequest } from "./listener-request.ts";
 
@@ -75,7 +75,9 @@ export async function selfTest(port: number, deadlineMs = GET_MS): Promise<strin
   const n2 = nonceOf(second);
   if (first?.status !== 200 || n1 === undefined) problems.push("index.html has no CSP nonce");
   else if (n1 === n2) problems.push("index.html's nonce is not fresh");
-  else if (!first.body.includes(`<meta name="csp-nonce" content="${n1}">`))
+  // The tag as a browser reads it (React Aria's `meta[name="csp-nonce"]`), in any spelling a build
+  // writes: the same reader as the service's check of a built page.
+  else if (metaContent(first.body, "csp-nonce") !== n1)
     problems.push("index.html's meta tag does not repeat the nonce");
   if (first !== undefined && !first.csp.includes("worker-src 'none'"))
     problems.push("the CSP lacks worker-src 'none'");

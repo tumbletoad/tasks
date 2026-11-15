@@ -403,7 +403,7 @@ Still to build:
 - **An explicit `task`** on any call applies to that call only. Once an output schema carries it (M4.06), the result adds "this session is bound to M-14".
 - **Routine sessions** (M6) bind to the space, not a task (A4's binding kind `routine`). Task tools then need an explicit `task`. Every tool works unbound with an explicit `task` or when it needs none, except `run_report`.
 - **A lost binding.** Calls that relied on the bound task return `unbound` with the hint "Your session ended. Pass task, or ask the user." Search cursors of that connection are invalidated (3.9.5).
-- **Session records move into the space** when a schema step adds A1's `sessions` table with its `session.*` operations. Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
+- **Session records move into the space** with the `session.*` operations (M4.06): the `sessions` table exists (schema 0.3, A4 3.10). Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
 
 #### 3.7.4 Credentials and actors
 
@@ -841,6 +841,8 @@ Built for Claude Code's user scope, every Codex home, Claude Desktop, and the ho
 
 **print.** `tasks setup agents print --app <name>` prints an entry and the file it belongs in, and reads no home and writes nothing: for `claude-code` (the command that adds it), `codex` and `claude-desktop`, for a home whose file is managed (3.12), and for the apps of 3.13.7 (`cursor`, `gemini`, `opencode`, `zed`, `vscode`). The printed entry is a hand-made one (3.7.4): `<tasks> mcp --app <name>`, with no `--instance` and no `--space`. Setup keeps no agent-home row for a file it does not write, and the grant gate refuses an instance without its row (3.7.8), so a printed instance would fail at every call. A hand-made entry uses the machine's default space, so `print` takes no `--space`. The formats follow each app's current public documentation, and a printed command line is quoted for the shell it names (3.13.7).
 
+**Instances.** An agent home is two things to the product: a home with its tools registered (this command), and an instance Open starts the agent in (`[[instance]]` in `machine.toml`, which `tasks setup instances` writes, A4 3.2). Neither writes the other's part, and a person who installs runs both. They meet at the instance ID: a home that a `machine.toml` instance names gets that ID in its entry, and an instance `tasks setup instances` writes for a home registered here keeps the ID its entry names.
+
 **Guarantees.** The preview writes nothing, and apply does exactly what the preview showed or refuses with `conflict`. Setup uses the app's own `mcp add` and `mcp remove` where one exists and changes only the server's own entry. Removal takes back only an entry that is provably setup's. Apply and remove run only for a person at a terminal: the CLI refuses a script or an agent before it reads or writes anything, and the service refuses the row changes for any other class.
 
 **Why it is built this way:**
@@ -953,6 +955,7 @@ Doctor reads and probes. It never launches an interactive agent app, opens a dee
 | Check | Fails or warns when |
 |---|---|
 | `agents` | No home is registered yet (warn), or setup's record cannot be read (fail) |
+| `instances` | `machine.toml` names no enabled instance, so Open offers only Copy (warn: run `tasks setup instances`), or a Claude Code or Codex instance runs in a home without setup's entry (warn: run `tasks setup agents`). It reads `machine.toml` and setup's record only (A4 3.2) |
 | `mcp.<instance>` | The entry is not there by setup's reader or by the app's own `mcp get` (Claude Desktop: the parsed file), runs a missing `tasks` or another one than this install's stable command, or its `--space` or `--instance` differs from its row in the `grants` table. Doctor reads setup's record and `setup/homes`. |
 | `bridge.<instance>` | Doctor runs the entry's command with a synthetic stdio client: `initialize`, `tools/list` with exactly this build's tool names, a `status` round trip to the service in under 2 seconds, and `server/discover` in a second process |
 | `codex.engines.<instance>` | An engine that reads the home (the CLI, the Codex app's bundled engine) does not name the entry in its own `mcp get --json` |

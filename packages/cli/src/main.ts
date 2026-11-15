@@ -77,7 +77,7 @@ const LOCAL: readonly [string, string][] = [
   ["import", "Preview the import of the Planning prototype (import planning <folder> --dry-run)"],
   [
     "setup",
-    "Connect this machine's agent apps: their MCP entries (setup agents), T3 Code (setup t3)",
+    "Connect this machine's agent apps: Open's instances (setup instances), their MCP entries (setup agents), T3 Code (setup t3)",
   ],
   ["mcp", "Connect an agent app to the service over stdio (its MCP server entry runs this)"],
   ["doctor", "Check the install, the service and the agent apps (--self-test, --live, --json)"],

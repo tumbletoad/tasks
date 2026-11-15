@@ -20,6 +20,7 @@
     "react-intl": "12.1.7"
   },
   "devDependencies": {
+    "@tasks/cli": "workspace:*",
     "@tasks/service": "workspace:*",
     "@tasks/storage": "workspace:*",
     "@types/react": "19.3.0",

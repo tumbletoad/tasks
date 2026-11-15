@@ -422,7 +422,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `unresolved[].entity` | string, max 20 | yes | Table of the row: tasks, or a child such as notes or log_entries |
 | `unresolved[].id` | string, max 60 | no | A row other than the task: its ID, or task_id\|source_id for a link |
 | `unresolved[].task` | string | no | Task reference |
-| `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row |
+| `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row, state for a run |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |
 | `unresolved[].at` | string | yes | When |
 
@@ -1051,7 +1051,7 @@ When `found` is `true`:
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 49 | yes | Index of the operation in the request |
-| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" | yes | Table of the row |
+| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" \| "runs" | yes | Table of the row |
 | `conflicts[].id` | string, max 60 \| string, max 64 | yes | The row, task_id\|source_id (task_id\|label_id) for a link, or a preference's key |
 | `conflicts[].task` | string | no | Task ID |
 | `conflicts[].ref` | string | no | Task reference |
