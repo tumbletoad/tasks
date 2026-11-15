@@ -163,6 +163,15 @@ export interface VerbSpec {
   readonly item?: string;
   readonly fixed?: Readonly<Record<string, unknown>>;
   readonly inputOnly: readonly string[];
+  /** A write verb whose action field also picks reads (A3 3.2.3): those take no request ID. */
+  readonly actions?: { readonly field: string; readonly reads: readonly string[] };
+}
+
+/** Whether a verb's call with `input` writes: a write verb, unless its action only reads. */
+export function writes(verb: VerbSpec, input: Readonly<Record<string, unknown>>): boolean {
+  if (verb.kind !== "write") return false;
+  const action = verb.actions === undefined ? undefined : input[verb.actions.field];
+  return !(typeof action === "string" && verb.actions?.reads.includes(action) === true);
 }
 
 export const CLI_SPEC = spec as unknown as {

@@ -261,6 +261,68 @@
       "verb": "add"
     },
     {
+      "actions": {
+        "field": "action",
+        "reads": [
+          "list"
+        ]
+      },
+      "actors": "agent",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "group.manage",
+      "flags": [
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "propose: ask the user to decide",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply",
+            "propose"
+          ]
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "action",
+          "help": "list reads; create, rename, move and archive change a group",
+          "name": "action",
+          "required": true,
+          "type": "string",
+          "values": [
+            "list",
+            "create",
+            "rename",
+            "move",
+            "archive"
+          ]
+        },
+        {
+          "field": "path",
+          "help": "\"Area\" or \"Area/Project\", by name or slug; list: one area",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "to",
+          "help": "rename: the new name; move: the new area",
+          "name": "to",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "List the areas and projects, or create, rename, move or archive one.",
+      "verb": "area"
+    },
+    {
       "actors": "user",
       "auto": [
         "request_id"
@@ -507,6 +569,63 @@
       "verb": "note"
     },
     {
+      "actions": {
+        "field": "action",
+        "reads": [
+          "describe",
+          "get"
+        ]
+      },
+      "actors": "agent",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "prefs.manage",
+      "flags": [
+        {
+          "field": "keys",
+          "flag": "--keys",
+          "help": "Keys, or prefixes ending in \".*\"; default every key",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "mode",
+          "flag": "--mode",
+          "help": "propose: ask the user to decide",
+          "repeat": false,
+          "required": false,
+          "type": "string",
+          "values": [
+            "apply",
+            "propose"
+          ]
+        }
+      ],
+      "inputOnly": [
+        "set"
+      ],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "action",
+          "help": "describe: the keys; get: their values; set: change them",
+          "name": "action",
+          "required": true,
+          "type": "string",
+          "values": [
+            "describe",
+            "get",
+            "set"
+          ]
+        }
+      ],
+      "summary": "Read and change the space's preferences that are not policy.",
+      "verb": "prefs"
+    },
+    {
       "actors": "agent",
       "auto": [],
       "entry": "receipt.get",
@@ -589,6 +708,30 @@
       ],
       "summary": "Reopen a completed or archived task. Its earlier outcome and learnings stay.",
       "verb": "reopen"
+    },
+    {
+      "actors": "run",
+      "auto": [
+        "request_id"
+      ],
+      "entry": "run.report",
+      "flags": [
+        {
+          "field": "summary",
+          "flag": "--summary",
+          "help": "Counts created, updated, unchanged; what was unsure",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [
+        "sources"
+      ],
+      "kind": "write",
+      "positionals": [],
+      "summary": "Report a run's coverage, one row per source: works only in a run or routine.",
+      "verb": "run-report"
     },
     {
       "actors": "agent",
