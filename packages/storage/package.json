@@ -11,10 +11,10 @@
     "./write-helpers": "./test/write-helpers.ts"
   },
   "dependencies": {
+    "@tasks/contracts": "workspace:*",
     "@tasks/files": "workspace:*"
   },
   "devDependencies": {
-    "@tasks/contracts": "workspace:*",
     "fast-check": "4.10.2",
     "vitest": "5.1.0"
   }

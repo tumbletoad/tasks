@@ -719,7 +719,7 @@
                 "value": {
                   "anyOf": [
                     {
-                      "maxLength": 40,
+                      "maxLength": 64,
                       "type": "string"
                     },
                     {
@@ -732,7 +732,7 @@
                     },
                     {
                       "items": {
-                        "maxLength": 40,
+                        "maxLength": 64,
                         "type": "string"
                       },
                       "maxItems": 20,

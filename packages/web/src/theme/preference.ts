@@ -1,9 +1,9 @@
 // The theme a browser shows (A5 3.19): `sumi` (the default, D17), `washi`, or `system`, which
 // follows the browser's colour scheme live through the stylesheet alone.
 //
-// A1's `ui.theme` space preference is the planned home of this choice, written by `pref.set`.
-// Neither the registry entry nor the snapshot's preferences exist yet, so the choice is kept per
-// browser under `localStorage["<product>.theme"]` until they do (A5 3.19).
+// A1's `ui.theme` space preference, written by `pref.set` and carried in the snapshot, is a
+// candidate home of this choice. Until the settings step (M5.11) decides between a space, machine
+// or browser scope, the choice is kept per browser under `localStorage["<product>.theme"]` (A5 3.19).
 // A stored value is untrusted (A5 3.26): only one of the three words is used, anything else is
 // removed and the default applies. Every access is wrapped: storage can be missing or blocked.
 import { PRODUCT_ID } from "@tasks/brand";
