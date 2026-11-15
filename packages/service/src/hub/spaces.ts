@@ -134,6 +134,8 @@ export const DAILY_CHECK_MS = 3_600_000;
 export interface SpaceEntry {
   readonly id: Id<"sp">;
   readonly path: string;
+  /** False: the person closed it (`enabled = false`). It is listed, closed, until opened again. */
+  readonly enabled?: boolean;
 }
 
 /**
@@ -145,6 +147,12 @@ export type SpaceState = "opening" | "open" | "read_only" | "unavailable" | "clo
 export interface SpaceView {
   /** The entry's index in the registered list. */
   readonly entry: number;
+  /**
+   * The space the entry names, which its folder opens only as (A2 3.2.4): in described(), for
+   * people and the space verbs, also before the space has been served.
+   */
+  readonly registered?: Id<"sp">;
+  /** The space's ID as read from the folder, once it has been served. */
   readonly id?: Id<"sp">;
   /** The space's name and reference prefix, once it is served. For people, never the log. */
   readonly name?: string;
@@ -357,8 +365,11 @@ class Hosted {
   message: string | undefined;
   readonly index: number;
   readonly folder: string;
-  /** The space the entry names: the folder opens only as this space. */
-  readonly registered: Id<"sp">;
+  /**
+   * The space the entry names: the folder opens only as this space. A create or a restore that
+   * makes a new space in the folder of an entry that serves nothing names that space from then on.
+   */
+  registered: Id<"sp">;
 
   constructor(index: number, folder: string, registered: Id<"sp">) {
     this.index = index;
@@ -437,25 +448,50 @@ export class SpaceManager {
   }
 
   /**
-   * Opens every entry in parallel (A2 3.1). Resolves when each is open, read-only or unavailable,
-   * and never rejects: an open that fails in an unforeseen way leaves its space
-   * unavailable(open_failed).
+   * Registers every entry and opens the enabled ones (A2 3.1). Resolves when each is open,
+   * read-only or unavailable, and never rejects: an open that fails in an unforeseen way leaves its
+   * space unavailable(open_failed). An entry the person closed (`enabled = false`) is listed,
+   * closed, and opens again on `space open`. Spaces open in parallel; copies of one space (one ID)
+   * open one after another in the entries' order, so the first one listed takes the space's writer
+   * when two could, never the one that happens to be faster.
    */
   async openAll(entries: readonly SpaceEntry[]): Promise<void> {
     const start = this.#spaces.length;
     const hosted = entries.map((entry, i) => new Hosted(start + i, resolve(entry.path), entry.id));
     this.#spaces.push(...hosted);
-    await Promise.all(hosted.map((space) => this.#begin(space)));
+    const copies = new Map<string, Hosted[]>();
+    hosted.forEach((space, i) => {
+      if (entries[i]?.enabled === false) {
+        space.state = "closed";
+        return;
+      }
+      const group = copies.get(space.registered);
+      if (group === undefined) copies.set(space.registered, [space]);
+      else group.push(space);
+    });
+    await Promise.all(
+      [...copies.values()].map(async (group) => {
+        for (const space of group) {
+          // Closed while it waited for the copy before it, or the service drains: not opened.
+          if (space.stopping || this.#draining) continue;
+          await this.#begin(space);
+        }
+      }),
+    );
   }
 
   list(): SpaceView[] {
     return this.#spaces.map((space) => space.view());
   }
 
-  /** list() with each served space's name and prefix, for people (status, `tasks space`). */
+  /**
+   * list() with the ID each entry names and each served space's name and prefix, for people
+   * (status, `tasks space`).
+   */
   described(): SpaceView[] {
     return this.#spaces.map((space) => ({
       ...space.view(),
+      registered: space.registered,
       ...(space.name === undefined ? {} : { name: space.name }),
       ...(space.refPrefix === undefined ? {} : { ref_prefix: space.refPrefix }),
     }));
@@ -484,12 +520,16 @@ export class SpaceManager {
   }
 
   /**
-   * Serves the space at `path` while the service runs (`tasks space open`, `create`, `restore
-   * --to`): a folder already registered opens again when it is closed, a new one is added.
-   * Resolves with its entry once the open has settled. Like a `[[spaces]]` entry, the entry opens
-   * only as one space (A2 3.2.4): `id` when the caller made the space and knows it, else the
-   * space the folder holds now, which is the one the person named. A space added here is served
-   * until the service stops: writing it to machine.toml is the step that adds `tasks space add`.
+   * Serves the space at `path` (`tasks space open`, `create`, `restore --to`): a folder already
+   * registered opens again when it is closed or unavailable, a new one is added. Resolves with its
+   * entry once the open has settled. Like a `[[spaces]]` entry, the entry opens only as one space
+   * (A2 3.2.4): `id` when the caller made the space and knows it, else the space the folder holds
+   * now, which is the one the person named. The space verbs record the entry in machine.toml
+   * (space-records.ts), so it opens again after a restart.
+   *
+   * `id` for a registered folder that serves nothing (closed or unavailable): a create or a restore
+   * made a new space in that folder, which was not there before, so the entry names that space
+   * from now on. An entry that serves a space is never re-pointed.
    *
    * `retryMigration` (the person's `--retry-migration`, A1 3.17): a migration that failed
    * before is tried again at this open, behind a new barrier backup, also when this build failed
@@ -509,8 +549,15 @@ export class SpaceManager {
         : other === folder;
     const known = this.#spaces.find((space) => same(space.folder));
     if (known !== undefined) {
-      if (id !== undefined && id !== known.registered) throw new UnexpectedSpace();
-      if (known.state === "closed" && known.replacing === undefined && !known.stuck) {
+      const free = () => known.replacing === undefined && !known.stuck;
+      // An entry its last open left unavailable (its folder was gone, its drive not mounted, its
+      // lock held elsewhere) is tried again: closed first, so it opens from the start.
+      if (known.state === "unavailable" && free()) await this.#close(known, this.#closeMs);
+      if (id !== undefined && id !== known.registered) {
+        if (known.state !== "closed" || !free()) throw new UnexpectedSpace();
+        known.registered = id;
+      }
+      if (known.state === "closed" && free()) {
         known.reset();
         await this.#begin(known, retry);
         return known.index;

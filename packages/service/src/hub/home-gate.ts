@@ -33,8 +33,9 @@ export interface HomeGateHost {
 function machineDefault(host: HomeGateHost): string | undefined {
   const configured = host.defaultSpace();
   if (configured !== undefined) return configured;
-  const live = host.spaces().filter((s) => s.state !== "closed");
-  return live.length === 1 ? live[0]?.id : undefined;
+  // Copies of one space share its ID (A2 3.10.5): they are one space here.
+  const live = new Set(host.spaces().flatMap((s) => (s.state === "closed" ? [] : [s.id])));
+  return live.size === 1 ? [...live][0] : undefined;
 }
 
 export function homeGate(host: HomeGateHost): HomeGate {

@@ -72,6 +72,7 @@ const LOCAL: readonly [string, string][] = [
   ["open", "Open the UI in the browser (--space, --task, --print-url)"],
   ["service", SERVICE_HELP],
   ["space", "List, create, open, close, back up, restore, claim and recover spaces"],
+  ["recover", "Play back a space's rollback journal: the same as tasks space recover"],
   ["roots", "List and add this machine's roots, the folders places live under"],
   ["import", "Preview the import of the Planning prototype (import planning <folder> --dry-run)"],
   [
@@ -167,7 +168,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       const topic = command === "help" ? args[0] : command;
       const verb = topic === undefined ? undefined : verbSpec(topic);
       io.stdout(
-        topic === "space"
+        topic === "space" || topic === "recover"
           ? SPACE_HELP
           : topic === "roots"
             ? ROOTS_HELP
@@ -193,6 +194,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       }
       case "space":
         return await spaceCommand(io, globals, args, options);
+      // `tasks recover <space>` is `tasks space recover <space>` under a second name (A2 3.10.1).
+      case "recover":
+        return await spaceCommand(io, globals, ["recover", ...args], options);
       case "roots":
         return await rootsCommand(io, globals, args, options);
       case "import":
