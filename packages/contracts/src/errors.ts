@@ -116,11 +116,17 @@ const plain = (text: string): string =>
     .replace(/[\s.!?:]+$/, "")
     .trim();
 
+/** Whether `text` ends with `tail` as whole words: the message's last instruction is the hint. */
+const endsWith = (text: string, tail: string): boolean =>
+  text.endsWith(tail) &&
+  (text.length === tail.length || /[^a-z0-9_-]/.test(text.charAt(text.length - tail.length - 1)));
+
 /**
  * A3 3.5's text form of a message and its hint, `<message>. <hint>`, for every face that prints
  * one (the CLI, the MCP tools). The message ends with a full stop, added when it has none. A hint
- * that is a bare command (`<cli> …`) follows `Run: `. A hint the message already says is left out,
- * so a message and its hint never say the same thing twice. A message that ends with a colon is
+ * that is a bare command (`<cli> …`) follows `Run: `. A hint the message already ends with (whole
+ * words, compared plainly) is left out, so a message and its hint never say the same thing twice;
+ * a message that names the command elsewhere, such as `<cli> doctor failed`, keeps it. A message that ends with a colon is
  * finished by its hint as it stands, or by a full stop when it has none; an empty message is its
  * hint alone.
  */
@@ -132,7 +138,7 @@ export function messageWithHint(message: string, hint: string | undefined, cli: 
     trimmed === "" || /[.!?]$/.test(trimmed)
       ? trimmed
       : `${open ? trimmed.slice(0, -1) : trimmed}.`;
-  if (tip === "" || plain(sentence).includes(plain(tip))) return sentence;
+  if (tip === "" || endsWith(plain(sentence), plain(tip))) return sentence;
   if (open) return `${trimmed} ${tip}`;
   const told = tip.startsWith(`${cli} `) ? `Run: ${tip}` : tip;
   return sentence === "" ? told : `${sentence} ${told}`;

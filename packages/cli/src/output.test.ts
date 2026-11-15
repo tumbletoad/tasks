@@ -420,6 +420,17 @@ describe("[A3.3.5.error-text] a message and its hint, each said once", () => {
     // An empty message is its hint alone, with no space before it.
     expect(messageWithHint("", "tasks doctor", "tasks")).toBe("Run: tasks doctor");
     expect(messageWithHint(" ", "Read it again.", "tasks")).toBe("Read it again.");
+    // Only a message that ends with the hint says it already: one that names the command for
+    // another reason keeps the hint.
+    expect(messageWithHint("tasks doctor failed", "tasks doctor", "tasks")).toBe(
+      "tasks doctor failed. Run: tasks doctor",
+    );
+    expect(messageWithHint("Run: xtasks doctor", "tasks doctor", "tasks")).toBe(
+      "Run: xtasks doctor. Run: tasks doctor",
+    );
+    expect(messageWithHint("Read it again. Then wait", "Read it again.", "tasks")).toBe(
+      "Read it again. Then wait. Read it again.",
+    );
   });
 
   test("every printed error joins its message and hint by that rule", () => {
