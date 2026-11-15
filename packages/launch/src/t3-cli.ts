@@ -1,5 +1,6 @@
 // T3 Code's fallback route, `t3-cli` (A4 3.4.1 "Fallback route", A7 3.13 M6.10): when Tasks is not
-// paired with T3, a task opens through T3's own command line. It serves exact project roots only:
+// paired with T3, a task opens through T3's own command line. It is off (T3_CLI_ROUTE below): T3's
+// command line has no `project list`, which the route needs. It serves exact project roots only:
 //
 //   t3 project list --json                                   which projects T3 has (assumed, L06)
 //   t3 project add <P>                                        Register, after the person said yes
@@ -845,8 +846,17 @@ export type T3Choice =
   | { readonly kind: "unavailable"; readonly reason: T3Unavailable };
 
 /**
+ * Whether the CLI route is offered (A4 3.4.1 "Fallback route"). Off: T3's command line has no
+ * `project list` (checked at T3 commit f82162f), so the route can never bind a folder to a project
+ * and would always fail closed. The route's code stays, tested, for a T3 that adds one: turning
+ * this on is the change then, after a real-machine check of the command's output.
+ */
+export const T3_CLI_ROUTE = false;
+
+/**
  * The T3 route for `instance` now, from what both routes already read (machine state, T3's runtime
- * file, the instance; no request, no process, no polling):
+ * file, the instance; no request, no process, no polling). With the CLI route off (T3_CLI_ROUTE) it
+ * is the paired route or why not: `not_paired` says to pair with `tasks setup t3`. With it on:
  * - `pick: "t3-cli"`, the person's choice: the CLI route, or why it cannot be used;
  * - paired and T3 running: `t3-mcp`;
  * - paired and T3 not running: `not_running`, "Start T3 Code";
@@ -859,7 +869,14 @@ export async function chooseT3Route(
   cli: Pick<T3CliRoute, "availability">,
   instance: T3CliInstance,
   pick?: "t3-cli",
+  options: { readonly cliRoute?: boolean } = {},
 ): Promise<T3Choice> {
+  if (!(options.cliRoute ?? T3_CLI_ROUTE)) {
+    const primary = await paired.availability();
+    return primary.state === "ready"
+      ? { kind: "route", route: "t3-mcp" }
+      : { kind: "unavailable", reason: primary.state };
+  }
   if (pick === "t3-cli") {
     const viaCli = await cli.availability(instance);
     return viaCli.state === "ready"

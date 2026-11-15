@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 63 of 104, and M2.04b and M4.05b outside the base count.
+**Done so far:** 65 of 104, and M2.04b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 8 · M5 13 · M6 15 · M7 10 · total 104. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -154,10 +154,10 @@ M4.05b and M4.01b are not in the base count.
 | M5.02 | Live store | M2.12 | M | done |
 | M5.03 | Task row and virtual list | M5.01, M5.02 | M | done |
 | M5.04 | Today | M5.03 | S | done |
-| M5.05 | Status, area, Completed, Agents views | M5.03 | S | ready |
+| M5.05 | Status, area, Completed, Agents views | M5.03 | S | doing |
 | M5.06 | Expanded task | M5.03 | M | done |
 | M5.07 | Composer and action strip | M5.06 | S | ready |
-| M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | doing |
+| M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | done |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | ready |
 | M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | ready |
@@ -168,9 +168,9 @@ M4.05b and M4.01b are not in the base count.
 
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
-| M6.01 | Run records and states | M2.05 | M | doing |
-| M6.02 | Supervisor and limits | M6.01 | M | todo |
-| M6.03 | Run shim | M6.01, M2.08 | M | todo |
+| M6.01 | Run records and states | M2.05 | M | done |
+| M6.02 | Supervisor and limits | M6.01 | M | ready |
+| M6.03 | Run shim | M6.01, M2.08 | M | ready |
 | M6.04 | Cancellation | M6.03 | M | todo |
 | M6.05 | Stream parsers | M0.11 | S | done |
 | M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | todo |
@@ -192,7 +192,7 @@ M4.05b and M4.01b are not in the base count.
 | M7.02 | Pure parsers | M7.01 | S | done |
 | M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | done |
 | M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | done |
-| M7.05 | Apply, undo, idempotent re-import | M7.04 | M | todo |
+| M7.05 | Apply, undo, idempotent re-import | M7.04 | M | doing |
 | M7.06 | Export to the prototype format | M7.03 | M | todo |
 | M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |
 | M7.08 | Trial tooling | M7.07 | S | todo |
