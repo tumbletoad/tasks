@@ -7,7 +7,9 @@
 // generated file held open without sharing while a batch runs), a kill at any act of a start or a
 // batch, and faults in what the projection writes outside the tree (a short write or a full volume
 // for its trusted state, a rescue notice the service could not save), each followed by a restart,
-// the person sometimes typing into a temporary file the kill left before it. After every step:
+// the person sometimes typing into a temporary file the kill left before it. A run ends early only
+// by a kill or by the full volume's own error: a short write must complete and a refused notice
+// must not fail a batch, and any other error fails the model. After every step:
 //
 // 1. every byte a person put in the tree still exists, at its path or in a rescue folder, with
 //    its mode unchanged;
@@ -44,7 +46,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { Projector, ProjectorOptions } from "../src/index.ts";
+import { ProjectionError, type Projector, type ProjectorOptions } from "../src/index.ts";
 import {
   checkWatermark,
   faultState,
@@ -54,6 +56,7 @@ import {
   treeOf,
   world,
   type Fault,
+  type FaultLog,
   type World,
 } from "./helpers.ts";
 
@@ -395,8 +398,11 @@ class Model {
   readonly told = new Set<string>();
   /** The service cannot save a rescue notice now: the receiver refuses. */
   noticeFails = false;
-  /** A fault is armed for the current act: what it makes fail is expected. */
-  faulted = false;
+  /**
+   * A fault is armed for the current act: the failures it injected, and only those, may end it.
+   * Anything else a run throws (a programming error) fails the model, faulted or not.
+   */
+  injected: ((error: unknown) => boolean) | undefined;
   /** Windows: a generated file the person holds open without sharing during the current act. */
   held: number | undefined;
 
@@ -463,7 +469,7 @@ class Model {
     try {
       await work();
     } catch (error) {
-      if (this.killer?.dead() !== true && !this.faulted) throw error;
+      if (this.killer?.dead() !== true && this.injected?.(error) !== true) throw error;
     } finally {
       // The person lets go of a file they held: nothing after this act finds it locked.
       this.release();
@@ -540,6 +546,7 @@ class Model {
   async faultedRun(steps: number, fault: RunFault): Promise<void> {
     seen.faults += 1;
     let end: (() => void) | undefined;
+    const log: FaultLog = { thrown: [], short: 0 };
     if (fault.what === "notice") {
       // A rescue the run must make, and tell: the person edits a generated file, its task changes.
       const file = this.pickFile(fault.from, true);
@@ -567,9 +574,15 @@ class Model {
         ]);
       }
       const what = fault.what;
-      end = faultState(this.w.state, (k) => (k >= fault.from ? what : "whole"));
+      end = faultState(this.w.state, (k) => (k >= fault.from ? what : "whole"), log);
     }
-    this.faulted = true;
+    // Only a full volume may end the run: its ENOSPC as the fault threw it, or as the projector
+    // reports it (a record it could not write). A short write must complete, since every write of
+    // the trusted state is whole, and a notice the service could not save is told again later:
+    // neither may fail a batch.
+    this.injected = (error) =>
+      log.thrown.includes(error as Error) ||
+      (error instanceof ProjectionError && error.code === "ENOSPC" && log.thrown.length > 0);
     try {
       await this.act(async () => {
         for (let i = 0; i < steps && this.current.pending().dirty; i += 1) {
@@ -579,7 +592,8 @@ class Model {
     } finally {
       end?.();
       this.noticeFails = false;
-      this.faulted = false;
+      this.injected = undefined;
+      seen.shortWrites += log.short;
     }
     await this.restart(null);
   }
@@ -1012,6 +1026,8 @@ const seen = {
   sameSize: 0,
   editorSaves: 0,
   faults: 0,
+  /** Writes of the trusted state cut short, each of which the run completed. */
+  shortWrites: 0,
   refused: 0,
   holds: 0,
 };
@@ -1027,6 +1043,7 @@ const LEAST = {
   sameSize: 20,
   editorSaves: 15,
   faults: 20,
+  shortWrites: 80,
   refused: 8,
   // A file can be held open without sharing only on Windows.
   holds: process.platform === "win32" ? 10 : -1,

@@ -277,6 +277,14 @@ export function expectClean(dir: string): void {
 /** What one write to the trusted state does under a fault: all of it, half of it, or ENOSPC. */
 export type Fault = "whole" | "short" | "enospc";
 
+/** What the faults did: a caller accepts only the failures they injected. */
+export interface FaultLog {
+  /** Each error a fault threw, as it was thrown. */
+  readonly thrown: Error[];
+  /** Writes cut short. */
+  short: number;
+}
+
 type FsCall = (...args: unknown[]) => unknown;
 
 /**
@@ -284,9 +292,10 @@ type FsCall = (...args: unknown[]) => unknown;
  * openSync, closeSync and writeSync are wrapped for every importer (module's
  * syncBuiltinESMExports), and the n-th write call (from 1) to a file opened in `state` does what
  * `plan(n)` says. A short write takes half the bytes it was given, at least one, and returns that
- * count, as a write on a filling volume does. Returns the function that ends the faults.
+ * count, as a write on a filling volume does. `log`, when given, gets what the faults did. Returns
+ * the function that ends the faults.
  */
-export function faultState(state: string, plan: (n: number) => Fault): () => void {
+export function faultState(state: string, plan: (n: number) => Fault, log?: FaultLog): () => void {
   const table = fs as unknown as Record<string, FsCall>;
   const real = {
     openSync: table["openSync"] as FsCall,
@@ -310,9 +319,14 @@ export function faultState(state: string, plan: (n: number) => Fault): () => voi
     n += 1;
     const what = plan(n);
     if (what === "enospc") {
-      throw Object.assign(new Error("fixture: no space left on the volume"), { code: "ENOSPC" });
+      const error = Object.assign(new Error("fixture: no space left on the volume"), {
+        code: "ENOSPC",
+      });
+      log?.thrown.push(error);
+      throw error;
     }
     if (what === "whole") return real.writeSync(fd, data, ...rest);
+    if (log !== undefined) log.short += 1;
     const offset = typeof rest[0] === "number" ? rest[0] : 0;
     const bytes =
       typeof data === "string"
