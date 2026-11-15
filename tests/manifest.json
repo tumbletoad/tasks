@@ -562,6 +562,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.sync.fails-closed",
+      "title": "The folder check is local only from positive evidence of every step of its chain: a look of the host that fails, answers a default, answers something unexpected or hangs leaves the folder unchecked on every platform; a real path that cannot be resolved is never replaced by the path as given; on Windows the folder's volume must be its drive's own and the drive of a local type and format, and a drive whose type the system could not determine is left out of the facts; kept Windows facts count only for the volumes they read at the drives' roots; a SyncTargets value counts only when every path in its bytes lies in a field read as a whole path; a new folder and a stale root are matched where they lead; a Linux folder on a bind mount with another name is unchecked; the real host answers nothing there only for a name that is not there; the facts run's output is checked byte by byte",
+      "source": "A1 3.2, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.sync.read-only",
       "title": "The service serves a space in a synced folder read-only with A1's words until the person confirms the folder is excluded, per machine and per path, and kept across a restart; a network file system refuses a new space, is read-only when found and takes no confirmation; writes are refused with the same words",
       "source": "A1 3.2, A1 5",
@@ -1363,7 +1371,7 @@
     },
     {
       "id": "A4.5.environment.layers",
-      "title": "The environment's layers: only the bytes between the snapshot's fences count, the session names from systemctl show-environment with $'…' decoded exactly, the session beats the snapshot and the snapshot's SSH agent only when its socket exists, and Windows' registry layers expanded and joined as a logon builds them",
+      "title": "The environment's layers: only the bytes between the snapshot's fences count, the session names from systemctl show-environment with $'…' decoded exactly, the session beats the snapshot and the snapshot's SSH agent only when its socket exists, and Windows' registry layers expanded and joined as a logon builds them, from a reader output whose every byte is one the reader writes",
       "source": "A4 3.8, A7 3.9 M2.09",
       "owner": "M2",
       "kind": "ci",
@@ -1374,6 +1382,14 @@
       "title": "The login-shell snapshot has a 10 s deadline and a defined result when the shell hangs (its process group killed), prints noise or half the output, fails or prints without end; the previous snapshot stays in use, and with none the base is the service's through the allow-list; it is stored 0600, never with the service's own variables, and taken again at a new boot, a new login or once a day",
       "source": "A4 3.8, A7 3.9 M2.09",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.environment.doctor",
+      "title": "Doctor's check of the agent's environment: without take nothing runs and the last snapshot attempt is reported with the age of the one in use; with take (doctor --live) a snapshot is taken now, fresh or not, kept when it succeeds, a failure keeps the previous one, and one snapshot runs at a time; Windows reports whether the registry was read",
+      "source": "A4 3.8, A3 3.14, A7 3.11 M4.05b",
+      "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -2034,6 +2050,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.free-instance",
+      "title": "A detected home whose proposed instance another home's live row holds is offered a free one (<id>-2), which its entry and row carry and its record keeps; an instance machine.toml names that another home holds is kept and its refusal is named instance_taken, with the home left as it was; an entry added by hand is left and the preview says how to take it out with the app's own mcp remove",
+      "source": "A3 3.7.8, A3 3.13.1, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.json-edit",
       "title": "One entry spliced into and out of a JSON file (two spaces, four, tabs, CRLF, one line, an empty or a missing servers table): the document gains exactly the entry and the removal gives back every byte; not JSON, servers that are not an object or an entry already there are refused",
       "source": "A3 3.13.1, A3 3.13.3, A7 3.11 M4.05",
@@ -2069,6 +2093,30 @@
       "id": "A3.3.14.doctor.agents",
       "title": "tasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print and approve-tools write nothing",
       "source": "A3 3.14, A3 3.13.1, A3 3.13.7, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.launch",
+      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
+      "source": "A3 3.14, A4 3.4.1, A4 3.7, A4 3.8, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.sessions",
+      "title": "tasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts open bridge connections, the shared ones by instance and the dropped records through the binding service's public surface",
+      "source": "A3 3.14, A3 3.7.5, A7 3.11 M4.05b",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.14.doctor.manual",
+      "title": "tasks doctor's manual row: an entry of the server's name that setup did not write warns, one without --instance for what it reaches (the default space only), one with an instance for its refusal, each with the app's own mcp remove and no path",
+      "source": "A3 3.14, A3 3.7.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
