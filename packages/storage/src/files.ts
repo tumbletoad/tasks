@@ -10,12 +10,16 @@
 import {
   closeSync,
   fchmodSync,
+  fstatSync,
   fsyncSync,
+  linkSync,
+  lstatSync,
   openSync,
   readSync,
   renameSync,
   rmSync,
   writeSync,
+  type BigIntStats,
 } from "node:fs";
 import { join } from "node:path";
 import { makeDir, type CreateFlags } from "@tasks/files";
@@ -67,6 +71,8 @@ export interface FileIo {
   fsyncSync(fd: number): void;
   closeSync(fd: number): void;
   renameSync(from: string, to: string): void;
+  /** Gives the file `from` the second name `to` (a hard link). Fails when anything is at `to`. */
+  linkSync(from: string, to: string): void;
   rmSync(path: string, options: { recursive?: boolean; force: boolean }): void;
   /** Sets the mode of the open file `fd` (POSIX; never called on Windows). */
   fchmodSync(fd: number, mode: number): void;
@@ -88,6 +94,9 @@ export const NODE_IO: FileIo = {
   },
   renameSync: (from, to) => {
     renameSync(from, to);
+  },
+  linkSync: (from, to) => {
+    linkSync(from, to);
   },
   rmSync: (path, options) => {
     rmSync(path, options);
@@ -240,7 +249,7 @@ export function writeFileAtomic(
   fsyncFolder(folder, io);
 }
 
-function closeQuietly(fd: number, io: FileIo): void {
+export function closeQuietly(fd: number, io: FileIo = NODE_IO): void {
   try {
     io.closeSync(fd);
   } catch {
@@ -269,26 +278,159 @@ export function readBounded(path: string, limit: number, io: FileIo = NODE_IO): 
   }
   let open = true;
   return withCleanup(
-    () =>
-      fsCall((): BoundedRead => {
-        const buffer = new Uint8Array(limit + 1);
-        let length = 0;
-        while (length < buffer.length) {
-          const read = io.readSync(fd, buffer, length, buffer.length - length, null);
-          if (read <= 0) break;
-          length += read;
-        }
-        open = false;
+    () => {
+      const read = readOpenBounded(fd, limit, io);
+      open = false;
+      fsCall(() => {
         io.closeSync(fd);
-        return length > limit
-          ? { state: "too_large" }
-          : { state: "ok", bytes: buffer.slice(0, length) };
-      }),
+      });
+      return read;
+    },
     () => {
       if (open) closeQuietly(fd, io);
     },
   );
 }
 
+/**
+ * Reads at most `limit` bytes of the open file `fd`, which the caller has just opened and not read
+ * yet: what readBounded reads, through a descriptor the caller holds and closes.
+ */
+export function readOpenBounded(
+  fd: number,
+  limit: number,
+  io: FileIo = NODE_IO,
+): { state: "too_large" } | { state: "ok"; bytes: Uint8Array } {
+  return fsCall(() => {
+    const buffer = new Uint8Array(limit + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = io.readSync(fd, buffer, length, buffer.length - length, null);
+      if (read <= 0) break;
+      length += read;
+    }
+    return length > limit
+      ? { state: "too_large" }
+      : { state: "ok", bytes: buffer.slice(0, length) };
+  });
+}
+
 /** A short random name part for temporary files and folders. */
 export const temporaryTag = randomHex;
+
+/** How `publishExclusive` gave the file its name. */
+export type Published = "link" | "copy";
+
+/** Codes after which a copy cannot help: something is there, or the disk failed. */
+const NO_FALLBACK = new Set(["EEXIST", "ENOENT", "ENOSPC", "EDQUOT", "EIO"]);
+
+/** The size of one read or write of a copy. */
+const COPY_CHUNK = 4 * 1024 * 1024;
+
+/**
+ * Publishes the complete, flushed file `source` under the new name `dest` without replacing
+ * anything there (A1 3.18): a hard link, or where the file system makes none (FAT, exFAT, some
+ * synced drives), a new file created exclusively with FILE_MODE and filled with a copy, flushed.
+ * A rename is never used, because it replaces what is at its target. Anything at `dest` fails with
+ * Node's EEXIST and stays as it is. `source` keeps its name: the caller removes it. A copy that
+ * fails midway removes its partial file while that is still the file it created. Returns the
+ * identity of the file now at `dest`, as the publication left it.
+ *
+ * It throws only when it published nothing: once `dest` holds the complete file nothing in it can
+ * fail, so a caller that sees it return knows the name is taken, and one that sees it throw knows
+ * it is not (a partial copy it could not remove again is a leftover, never a complete file).
+ */
+export function publishExclusive(
+  source: string,
+  dest: string,
+  io: FileIo = NODE_IO,
+): { how: Published; id: BigIntStats } {
+  // The source's identity before the link: a link changes none of what a caller compares (the
+  // file number, volume, size and modification time), and nothing may fail once it is made.
+  const id = lstatSync(source, { bigint: true });
+  try {
+    io.linkSync(source, dest);
+    // The new name is the source file itself, which is this caller's own.
+    return { how: "link", id };
+  } catch (error) {
+    const code = errnoCode(error);
+    if (code !== undefined && NO_FALLBACK.has(code)) throw error;
+  }
+  const out = createFileExact(dest, FILE_MODE, io);
+  // The file this call created, by its descriptor: whatever takes the name later is not it.
+  const created = fstatSync(out, { bigint: true });
+  let open = true;
+  try {
+    const input = io.openSync(source, "r");
+    try {
+      const buffer = new Uint8Array(COPY_CHUNK);
+      for (;;) {
+        const read = io.readSync(input, buffer, 0, buffer.length, null);
+        if (read <= 0) break;
+        writeAll(io, out, buffer.subarray(0, read));
+      }
+    } finally {
+      io.closeSync(input);
+    }
+    io.fsyncSync(out);
+    const id = fstatSync(out, { bigint: true });
+    // Complete and flushed: the name is published, so nothing after this may fail.
+    open = false;
+    closeQuietly(out, io);
+    return { how: "copy", id };
+  } catch (error) {
+    if (open) closeQuietly(out, io);
+    // The partial copy goes only while it is still the file this call created.
+    if (sameFileId(dest, created)) removeQuietly(dest, io);
+    throw error;
+  }
+}
+
+/** Whether `path` is still the regular file `before` describes, by its identity on its volume. */
+function sameFileId(path: string, before: BigIntStats): boolean {
+  try {
+    const now = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+    return (
+      now?.isFile() === true &&
+      before.ino !== 0n &&
+      now.ino === before.ino &&
+      now.dev === before.dev
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Writes `name` in `folder` without replacing anything there: the UTF-8 bytes to a temporary file
+ * `.<name>.tmp-<random>` (the same pattern writeFileAtomic uses, so a crash leaves a leftover the
+ * listings know), every byte written, fsync, then publishExclusive, the temporary name removed, and
+ * the folder synced. Anything at `name` fails with Node's EEXIST and stays. Returns the identity
+ * of the published file. `onPublished` runs the moment the name is taken, before the folder sync,
+ * which can still fail: a caller learns there that its file is published whatever follows.
+ */
+export function writeFileExclusive(
+  folder: string,
+  name: string,
+  text: string,
+  io: FileIo = NODE_IO,
+  onPublished?: () => void,
+): BigIntStats {
+  const temporary = join(folder, `.${name}.tmp-${randomHex()}`);
+  const data = Buffer.from(text, "utf8");
+  const fd = createFileExact(temporary, FILE_MODE, io);
+  let open = true;
+  try {
+    writeAll(io, fd, data);
+    io.fsyncSync(fd);
+    open = false;
+    io.closeSync(fd);
+    const { id } = publishExclusive(temporary, join(folder, name), io);
+    onPublished?.();
+    fsyncFolder(folder, io);
+    return id;
+  } finally {
+    if (open) closeQuietly(fd, io);
+    removeQuietly(temporary, io);
+  }
+}

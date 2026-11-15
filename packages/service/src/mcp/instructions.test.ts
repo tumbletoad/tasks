@@ -48,17 +48,21 @@ describe("[A3.3.6.mcp.instructions] the server instructions v0", () => {
     for (const word of words) {
       expect(tools.has(word) || fields.has(word) || word === "as_of", word).toBe(true);
     }
-    for (const tool of tools) expect(INSTRUCTIONS, tool).toContain(tool);
-    // No tool of A3's eleven that this build does not list yet (search, add_tasks: M4.01).
-    for (const later of [
-      "search",
-      "add_tasks",
-      "reopen_task",
-      "organize",
-      "preferences",
-      "run_report",
-    ]) {
-      if (!tools.has(later)) expect(INSTRUCTIONS).not.toMatch(new RegExp(`\\b${later}\\b`));
-    }
+    // Claude Code loads only the tool names and these instructions at start (A3 3.3): every one of
+    // the eleven is named, so a session finds each without a tool search.
+    expect(tools.size).toBe(11);
+    for (const tool of tools) expect(INSTRUCTIONS, tool).toMatch(new RegExp(`\\b${tool}\\b`));
+  });
+
+  test("search and add_tasks carry A3 3.6's lines for working and for small calls", () => {
+    expect(INSTRUCTIONS).toContain(
+      'call search with scope "learnings" for lessons from similar tasks.',
+    );
+    expect(INSTRUCTIONS).toMatch(/Work left for later becomes a task \(add_tasks\b/);
+    expect(INSTRUCTIONS).toContain("not a TODO in a file.");
+    expect(INSTRUCTIONS).toContain("Give items from email, chat or tickets a source key.");
+    expect(INSTRUCTIONS).toContain(
+      "Keep calls small: search rows first, then get_task with only the sections you need.",
+    );
   });
 });

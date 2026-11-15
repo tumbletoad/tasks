@@ -2,8 +2,9 @@
 // listing and a clock, tested on built listings, then applied to real files once.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
-import { backupSpace } from "../src/backup/backup.ts";
+import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import {
   listBackups,
   verifyBackup,
@@ -23,9 +24,14 @@ import {
   type BackupKind,
   type BackupSidecar,
 } from "../src/backup/sidecar.ts";
+import { StorageError } from "../src/errors.ts";
 import type { Id } from "../src/ids.ts";
-import { restoreBackup } from "../src/restore/restore.ts";
-import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
+import { restoreLatest } from "../src/restore/rescue.ts";
+import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
+import { unpackBackup } from "../src/restore/unpack.ts";
+import { rawWriter, readFacts, writeCommits } from "./backup-helpers.ts";
+import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
+import { STEPS_MARK_GUARD } from "./stand-in-steps.ts";
 
 const folders = tempFolders("retention");
 
@@ -162,7 +168,7 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
       { now, utcOffsetMinutes: 0 },
       { spaceId: SPACE },
     );
-    expect(plan).toEqual({ spaceId: SPACE, keep: [old.name], remove: [] });
+    expect(plan).toEqual({ spaceId: SPACE, keep: [old.name], remove: [], ahead: [] });
   });
 
   test("applying a plan removes each removed backup's two files and nothing else", async () => {
@@ -208,7 +214,12 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const listing = listBackups(dir);
     expect(listing.backups.map((b) => b.state)).toEqual(["ok", "ok"]);
     const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
-    expect(plan).toEqual({ spaceId: space.spaceId, keep: [newer.name], remove: [older.name] });
+    expect(plan).toEqual({
+      spaceId: space.spaceId,
+      keep: [newer.name],
+      remove: [older.name],
+      ahead: [],
+    });
     const applied = await applyRetention(checked, listing, plan);
     expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
     expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
@@ -378,5 +389,333 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const clock = { now, utcOffsetMinutes: 0 };
     expect(dailyBackupDue(ahead, clock, { atStart: false, spaceId: SPACE })).toBe(true);
     expect(dailyBackupDue(ahead, clock, { atStart: true, spaceId: SPACE })).toBe(true);
+  });
+});
+
+describe("[A1.5.backup.rotation] rotation removes only what A1's retention allows", () => {
+  const KINDS: BackupKind[] = ["daily", "manual", "pre-migrate"];
+  const STATES: ListedBackup["state"][] = ["ok", "ok", "ok", "missing_data", "invalid_sidecar"];
+
+  test("property: a plan never removes a manual backup, the newest complete one, a young pre-migration one, another space's or a damaged one", () => {
+    const backup = fc.record({
+      kind: fc.constantFrom(...KINDS),
+      // From two days ahead (a clock that ran ahead) to over a year back, in minutes.
+      age: fc.integer({ min: -2 * 24 * 60, max: 400 * 24 * 60 }),
+      state: fc.constantFrom(...STATES),
+      other: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(backup, { maxLength: 60, selector: (b) => `${b.kind}${String(b.age)}` }),
+        fc.integer({ min: -720, max: 840 }),
+        fc.integer({ min: 0, max: 7 * 24 * 60 }),
+        (drawn, offset, shift) => {
+          const now = WED + shift * 60_000;
+          const all = drawn.map((b) =>
+            listed(b.kind, now - b.age * 60_000, b.state, b.other ? OTHER_SPACE : SPACE),
+          );
+          const plan = planRetention(
+            listing(all),
+            { now, utcOffsetMinutes: offset },
+            {
+              spaceId: SPACE,
+            },
+          );
+          const complete = all.filter((b) => b.state === "ok" && b.sidecar?.space_id === SPACE);
+          const removed = new Set(plan.remove);
+          // Only complete backups of this space take part, each kept or removed, never both.
+          expect([...plan.keep, ...plan.remove].sort()).toEqual(complete.map((b) => b.name).sort());
+          for (const name of plan.keep) expect(removed.has(name)).toBe(false);
+          for (const b of complete) {
+            if (!removed.has(b.name)) continue;
+            expect(b.sidecar?.kind).not.toBe("manual");
+            const created = b.sidecar?.created_at ?? 0;
+            if (b.sidecar?.kind === "pre-migrate")
+              expect(now - created).toBeGreaterThanOrEqual(30 * DAY);
+          }
+          const newest = [...complete].sort(
+            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
+          )[0];
+          if (newest !== undefined) expect(removed.has(newest.name)).toBe(false);
+          // A backup dated after now (a clock that ran ahead) is kept, and so is the newest one
+          // dated at or before now: the future one counts for nothing.
+          const past = complete.filter((b) => (b.sidecar?.created_at ?? 0) <= now);
+          for (const b of complete) {
+            if ((b.sidecar?.created_at ?? 0) > now) expect(removed.has(b.name)).toBe(false);
+          }
+          const newestPast = [...past].sort(
+            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
+          )[0];
+          if (newestPast !== undefined) expect(removed.has(newestPast.name)).toBe(false);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  test("a clock that once ran ahead: its backups are kept and count for nothing, so the backups made since keep their days", () => {
+    const now = WED + 4 * HOUR;
+    const ahead = now + 365 * DAY;
+    // What retention left while the clock ran a year ahead: seven dailies and four weeklies.
+    const future = [0, 1, 2, 3, 4, 5, 6, 7, 14, 21, 28].map((d) =>
+      listed("daily", ahead - d * DAY),
+    );
+    // The daily backups made since the clock came back.
+    const since = [0, 1, 2].map((d) => listed("daily", now - d * DAY));
+    const plan = planRetention(
+      listing([...future, ...since]),
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: SPACE },
+    );
+    expect(plan.remove).toEqual([]);
+    expect([...plan.ahead].sort()).toEqual(future.map((b) => b.name).sort());
+  });
+
+  test("applied: the newest verified backup is looked for among those dated at or before now", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    const older = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 60 * DAY,
+    });
+    const newer = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 40 * DAY,
+    });
+    const future = await backupSpace(checked, folder, {
+      kind: "daily",
+      now: () => now + 365 * DAY,
+    });
+    // The newest backup dated before now no longer verifies; the older one is the newest that does.
+    const bytes = readFileSync(newer.file);
+    bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
+    writeFileSync(newer.file, bytes);
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([older.name]);
+    const applied = await applyRetention(checked, listing, plan);
+    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+    for (const b of [older, newer, future]) expect(existsSync(b.file)).toBe(true);
+  });
+
+  test("applied to real files: manual backups and the newest verified one stay, a damaged newer one too", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    const manual = [];
+    for (const days of [400, 200, 60]) {
+      manual.push(
+        await backupSpace(checked, folder, { kind: "manual", now: () => now - days * DAY }),
+      );
+    }
+    const dailies = [];
+    for (let i = 0; i < 12; i += 1) {
+      dailies.push(
+        await backupSpace(checked, folder, { kind: "daily", now: () => now - i * DAY - HOUR }),
+      );
+    }
+    // The newest backup no longer verifies, though its size is right.
+    const newest = dailies[0];
+    if (newest === undefined) throw new Error("no daily backup");
+    const bytes = readFileSync(newest.file);
+    bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
+    writeFileSync(newest.file, bytes);
+    const before = listBackups(dir);
+    const plan = planRetention(before, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const applied = await applyRetention(checked, before, plan);
+    expect(applied.verified).toBe(dailies[1]?.name);
+    expect(applied.unverified).toEqual([newest.name]);
+    expect(applied.removed.length).toBeGreaterThan(0);
+    const left = new Set(listBackups(dir).backups.map((b) => b.name));
+    for (const b of [...manual, newest, dailies[1]]) {
+      expect(b !== undefined && left.has(b.name), b?.name).toBe(true);
+    }
+    // Only dailies the plan named went.
+    for (const name of applied.removed) {
+      expect(dailies.some((d) => d.name === name) && plan.remove.includes(name), name).toBe(true);
+    }
+  });
+});
+
+async function expectCode(fn: () => unknown, code: string): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(StorageError);
+    expect((error as StorageError).code, (error as Error).message).toBe(code);
+    return;
+  }
+  throw new Error(`expected ${code}, but nothing was thrown`);
+}
+
+describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran to their first write on a scratch copy", () => {
+  test("a backup whose restore fails at its first write is never verified, and never the reason another backup is removed", async () => {
+    const checked = await checkedDriver();
+    // A schema whose restore refuses its read-only mark once the space has three commits: the
+    // exact-schema rule passes it, since its own steps made it (stand-in-steps.ts).
+    const steps = STEPS_MARK_GUARD;
+    const { folder, space } = await createFixtureSpace(folders.make(), "mira", {}, steps);
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    await writeCommits(folder, 1, "s", steps);
+    const older = await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "pre-migrate", now: () => now - 90 * DAY },
+      { steps },
+    );
+    await writeCommits(folder, 2, "t", steps);
+    const newer = await backupSpaceWith(
+      checked,
+      folder,
+      { kind: "pre-migrate", now: () => now - 80 * DAY },
+      { steps },
+    );
+    expect(newer.sidecar.seq).toBeGreaterThanOrEqual(3);
+    // Every check before the first write passes for the newer one: its files, its digests,
+    // integrity_check, its facts, its revision and its exact schema.
+    const parent = folders.make();
+    await unpackBackup(checked, newer.file, join(parent, "unpacked.db"), {}, { steps });
+
+    // Verification, marking and retention together: the plan would remove the older backup, and
+    // only the older one restores, so it is the newest verified one and stays.
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([older.name]);
+    const [first, second] = listing.backups;
+    if (first === undefined || second === undefined) throw new Error("two backups expected");
+    expect(await verifyBackup(checked, first, { steps })).toBeUndefined();
+    expect(await verifyBackup(checked, second, { steps })).toEqual(older.sidecar);
+    const applied = await applyRetention(checked, listing, plan, { steps });
+    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+    expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
+    // The trials left nothing beside the backups.
+    expect(readdirSync(dir).sort()).toEqual(
+      [older.file, older.sidecarFile, newer.file, newer.sidecarFile].map((f) => basename(f)).sort(),
+    );
+
+    // A restore refuses the newer one for the same reason, and leaves no folder; the older one
+    // restores, and `restore latest` goes past the newer one to it.
+    await expectCode(
+      () => restoreBackupWith(checked, newer.file, join(parent, "a"), {}, { steps }),
+      "BACKUP_INVALID",
+    );
+    expect(existsSync(join(parent, "a"))).toBe(false);
+    await restoreBackupWith(checked, older.file, join(parent, "b"), {}, { steps });
+    const latest = await restoreLatest(
+      checked,
+      dir,
+      space.spaceId,
+      join(parent, "c"),
+      {},
+      { steps },
+    );
+    expect(latest.backup).toBe(older.name);
+  });
+
+  test("a backup whose copy refuses a claim is never verified: the mark's transaction runs the claim and takes it back", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    await writeCommits(folder, 2);
+    const older = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 90 * DAY,
+    });
+    // The space's own schema, with rows a claim cannot use: no system actor to write its commit.
+    const conn = await rawWriter(folder);
+    try {
+      conn.exec("UPDATE actors SET kind = 'agent' WHERE kind = 'system'");
+    } finally {
+      conn.close();
+    }
+    const newer = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 80 * DAY,
+    });
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([older.name]);
+    const applied = await applyRetention(checked, listing, plan);
+    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+
+    // Neither restore takes it: into a new folder (its copy could never be claimed) nor in place.
+    const parent = folders.make();
+    await expectCode(() => restoreBackup(checked, newer.file, join(parent, "a")), "BACKUP_INVALID");
+    await expectCode(
+      () => restoreInPlace(checked, newer.file, folder, { machineId: TEST_MACHINE }),
+      "BACKUP_INVALID",
+    );
+    expect(readdirSync(parent)).toEqual([]);
+    // The older one restores, and the claim its restore ran was taken back: the copy keeps the
+    // backup's identity, last commit and rows.
+    const restored = await restoreBackup(checked, older.file, join(parent, "b"));
+    expect(restored.space.authority.epoch).toBe(older.sidecar.epoch);
+    expect(restored.space.authority.incarnation).toBe(older.sidecar.incarnation);
+    expect(restored.space.lastSeq).toBe(older.sidecar.seq);
+    expect(restored.space.lineage.incarnations).toHaveLength(1);
+    expect((await readFacts(restored.folder)).counts).toEqual(older.sidecar.counts);
+  });
+});
+
+describe("[A1.5.backup.held-files] a reader opens both files of a backup before it reads either, and holds them", () => {
+  test("retention removing a backup after a verification opened both of its files does not fail the verification", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    await writeCommits(folder, 1);
+    const old = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 90 * DAY,
+    });
+    await writeCommits(folder, 1, "t");
+    const kept = await backupSpace(checked, folder, {
+      kind: "pre-migrate",
+      now: () => now - 80 * DAY,
+    });
+    const listing = listBackups(dir);
+    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(plan.remove).toEqual([old.name]);
+    const oldListed = listing.backups.find((b) => b.name === old.name);
+    if (oldListed === undefined) throw new Error("the old backup is listed");
+    // The old backup's verification holds both files when retention runs and removes them.
+    let removed: string[] = [];
+    const verified = await verifyBackup(checked, oldListed, {
+      held: async (file) => {
+        if (file === old.file) removed = (await applyRetention(checked, listing, plan)).removed;
+      },
+    });
+    expect(removed).toEqual([old.name]);
+    expect(existsSync(old.file) || existsSync(old.sidecarFile)).toBe(false);
+    expect(verified).toEqual(old.sidecar);
+    expect(existsSync(kept.file) && existsSync(kept.sidecarFile)).toBe(true);
+  });
+
+  test("a restore whose backup goes away after both files are open restores it whole", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3);
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const restored = await restoreBackupWith(
+      checked,
+      backup.file,
+      join(folders.make(), "mira"),
+      {},
+      {
+        held: () => {
+          // As retention removes a backup: the sidecar first, then the data.
+          rmSync(backup.sidecarFile);
+          rmSync(backup.file);
+        },
+      },
+    );
+    expect(existsSync(backup.file) || existsSync(backup.sidecarFile)).toBe(false);
+    expect(restored.space.lastSeq).toBe(backup.sidecar.seq);
+    expect((await readFacts(restored.folder)).integrity).toBe("ok");
   });
 });

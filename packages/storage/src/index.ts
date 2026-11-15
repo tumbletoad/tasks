@@ -233,6 +233,28 @@ export {
   type RestoredSpace,
   type RestoreOptions,
 } from "./restore/restore.ts";
+export { isBundleFile, type RestoreSource } from "./restore/unpack.ts";
+// The ways out of a space whose check failed (A1 3.2).
+export { restoreLatest, rescueSpace, RESCUED_FOLDER, type RescueRecord } from "./restore/rescue.ts";
+// Export bundles (M3.07): the exporter, and the reader every side that opens a bundle shares. M3.08
+// builds transfer and import on these.
+export {
+  exportBundle,
+  exportName,
+  exportsFolder,
+  EXPORTS_FOLDER,
+  type ExportOptions,
+  type ExportRecord,
+} from "./bundle/export.ts";
+export {
+  decodeExport,
+  EXPORT_MODES,
+  type ExportManifest,
+  type ExportMode,
+  type TransferStatement,
+} from "./bundle/export-file.ts";
+export { readBundle, type ReadBundle, type ReadBundleOptions } from "./bundle/read.ts";
+export { findSecret, SECRET_KINDS, type SecretKind } from "./secrets.ts";
 export type { Claim } from "./restore/claim.ts";
 export type { OpenedSpaceInfo } from "./worker/protocol.ts";
 export {

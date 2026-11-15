@@ -1,5 +1,5 @@
-// task.reopen: reopen a completed or archived task (A3 3.4.9). Its MCP tool, reopen_task, arrives
-// in M4.01. The previous outcome and learnings stay as the earlier result.
+// task.reopen: reopen a completed or archived task (A3 3.4.9). Its MCP tool is reopen_task. The
+// previous outcome and learnings stay as the earlier result.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
@@ -48,7 +48,16 @@ export const taskReopen = defineEntry({
   input: TaskReopenInput,
   defaults: [["mode", "apply"]],
   output: TaskReopenResult,
-  faces: { ui: true, cli: { verb: "reopen", positional: ["task"] } },
+  faces: {
+    ui: true,
+    cli: { verb: "reopen", positional: ["task"] },
+    mcp: {
+      tool: "reopen_task",
+      title: "Reopen a finished task",
+      description:
+        "Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass base and a reason. update_task changes only active tasks.",
+    },
+  },
   budget: { typical: 40, max: 150 },
   errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
   examples: [

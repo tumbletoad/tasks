@@ -328,3 +328,64 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
     expect(learnings).toBe("0 of 0 · scope learnings · as of 1.1046.5n0w8k3q\n");
   });
 });
+
+describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs print for a person", () => {
+  test("areas with their projects and counts, and keys with their values or shapes", () => {
+    const groups = render(
+      "group.manage",
+      {
+        action: "list",
+        as_of: "1.1046.5n0w8k3q",
+        areas: [
+          {
+            name: "Client work",
+            active: 7,
+            projects: [{ name: "Lumen Health", active: 4 }],
+            more_projects: 2,
+          },
+          { name: "Learning", active: 1, projects: [] },
+        ],
+        projects: [{ name: "Loose", active: 0 }],
+      },
+      "Mira",
+    );
+    expect(groups).toBe(
+      [
+        "Client work (7)",
+        "  Lumen Health (4)",
+        "  and 2 more projects",
+        "Learning (1)",
+        "No area: Loose (0)",
+        "as of 1.1046.5n0w8k3q",
+        "",
+      ].join("\n"),
+    );
+    const got = render(
+      "prefs.manage",
+      {
+        action: "get",
+        as_of: "1.1046.5n0w8k3q",
+        prefs: [
+          { key: "autonomy.level", value: "review", is_default: true, policy: true },
+          { key: "tasks.statuses", value: ["open", "parked"] },
+        ],
+      },
+      "Mira",
+    );
+    expect(got).toBe(
+      'autonomy.level: "review" (default) · policy\ntasks.statuses: ["open","parked"]\nas of 1.1046.5n0w8k3q\n',
+    );
+    const described = render(
+      "prefs.manage",
+      {
+        action: "describe",
+        as_of: "1.1046.5n0w8k3q",
+        prefs: [
+          { key: "tasks.statuses", summary: "The statuses", shape: "a list of 1 to 12 keys" },
+        ],
+      },
+      "Mira",
+    );
+    expect(described.split("\n")[0]).toBe("tasks.statuses: The statuses (a list of 1 to 12 keys)");
+  });
+});

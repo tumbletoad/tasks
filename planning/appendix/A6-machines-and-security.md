@@ -63,7 +63,7 @@ Each hook is cheap in v1 and prevents a rewrite later. The owner implements it. 
 | Copy detection | Read-only copies, stale-restore and competing-branch detection, claim, fork and transfer states (3.5) | A1, A2 | Partly: a restored copy opens read-only until claimed |
 | Portable fields | Structured place fields reject absolute paths and `..`. Free text may mention paths | A1 | Yes |
 | Presence fields | `desktop` (`unlocked`, `locked`, `none`, `unknown`) and executor readiness, reported locally for the UI first | A2, A4 | No |
-| Remote envelope types | In the registry's type package, exposed by no transport | A3 | No |
+| Remote envelope types | In the registry's type package, exposed by no transport | A3 | Yes, types only: `packages/contracts/src/remote.ts`, named by no entry or generated face (`[A6.3.3.remote-envelope]`) |
 
 ### 3.4 Machine identity
 
@@ -80,7 +80,7 @@ The file `<state>/machine.json` (A2's `<state>`). It sits outside spaces, synced
 
 **Epoch and incarnation (R20).** The epoch is an integer that rises every time authority changes hands or a restore is accepted as current. It orders authority changes but does not identify one. The incarnation is a random ID that names one stretch of authority. Every create, claim, transfer import, restore claim and cancelled transfer starts a new incarnation with a lineage entry of that kind (`packages/storage/src/rows.ts`). Copies with the same incarnation share one history. Copies with different incarnations never match silently, even at the same epoch.
 
-**Built:** create, the claim of a read-only copy and the restore claim of a restore in place (A1 3.18). **Not built:** export bundles, transfers, fork, the full role model, stale-restore and competing-branch detection.
+**Built:** create, the claim of a read-only copy, the restore claim of a restore in place, and export bundles in backup and fork mode with their restore as a read-only copy (A1 3.18). **Not built:** transfers, fork import, the full role model, and stale-restore and competing-branch detection (M3.08).
 
 **Local role of a space on a machine:**
 
@@ -98,7 +98,7 @@ A copy whose incarnation competes with another known copy keeps its role and is 
 
 **Claiming a copy** (`tasks space claim`) commits a new incarnation of kind `claim`, an epoch above every one known on this machine and the end of the mark, in one transaction. It is refused while the original's writer is open in the process, because the claim is a writer of the same space ID. The claim runs on the copy's own revision and the next writer open migrates it, never the other way round, because a migration commit under the old incarnation would fork its history. So a schema step that changes `space` or `commits` must keep the claim working on the revisions it migrates from. The warning says "If another computer still has this space, its later changes will not appear here." `packages/storage/src/restore/claim.ts`, `[A1.5.restore.one-writer]`, `[A1.5.restore.claim]`.
 
-**Highest epoch seen.** Each space's machine-local settings hold `seen` (`spaces_seen`), the highest `{epoch, incarnation}` this machine has seen. Every claim and restore claim goes above it. Stale-restore detection adds `last_seq`. `packages/service/src/hub/space-settings.ts`, `[A2.3.1.hub.startup]`.
+**Highest epoch seen.** Each space's machine-local settings hold `seen` (`spaces_seen`), the highest `{epoch, incarnation}` this machine has seen. Every claim and restore claim goes above it. Stale-restore detection adds its freshness floors with M3.08 (below). `packages/service/src/hub/space-settings.ts`, `[A2.3.1.hub.startup]`.
 
 **Transitions.** All are user-only operations. A2 implements the CLI.
 
@@ -126,7 +126,10 @@ At restart a `transfer_pending` space with no bundle at the final path returns t
 - **One descends from the other** through parent links, each transfer link backed by its signed statement and from L1 by a signed handover (3.6.5): the ancestor becomes `superseded` if it holds operations after the fork point, and those are offered as an import file for review.
 - **Neither descends** (two Claims of one backup on disconnected machines, at any epochs): a **competing branch**. Tasks merges nothing and supersedes neither, and the epoch alone never decides. Both copies show "Another copy of this space also acts as its main copy" with the other machine and its last activity. With `tasks space resolve <space>` the user picks the copy that continues (the other becomes `superseded` and offers its operations since the common ancestor for review) or forks one into a new space. Until then each copy accepts writes on its own machine, and devices stay with the authority they are pinned to.
 
-**Stale restores.** A folder with the incarnation in `seen` and a `seq` below `last_seq`, or with an ancestor incarnation, opens read-only with "Use this restore as current" (a restore claim with an epoch above every one known locally) and "Close".
+**Stale restores** (not built, M3.08). A folder with an incarnation this machine has seen and a `seq` below the highest it saw of it, or with an ancestor incarnation, opens read-only with "Use this restore as current" (a restore claim with an epoch above every one known locally) and "Close". The judgement is made before the writer opens, so a stale copy is never migrated, registered or backed up, and against the space's registered ID, never one found through `space.json`, which can be missing. An epoch alone never judges a folder: it orders and says nothing of descent (two claims of one backup are siblings). One `seen` record per space cannot carry this, so the detection needs three things:
+- **A freshness floor per copy:** the highest `seq` seen of each incarnation, not of the latest one only, so a sibling seen later does not erase the first sibling's floor.
+- **Ancestry that is never cut off:** a true ancestor is still known after any number of claims, never only the newest entries of a lineage.
+- **A durable claim intent:** a claim records its intent (the new incarnation and its parent) durably before it commits, and a start-up reconciles an intent whose claim committed without its record, so a crash between the two never leaves the ancestor's folder writable.
 
 **Why the incarnation matters.** After a restore at `seq` 100 is claimed, numbering continues at 101 even if an older copy reached 150, so two operations can share a `seq`. `as_of`, `base`, cursors, receipts and signed commands therefore carry epoch and incarnation, and a mismatch means a resnapshot or a conflict. A new incarnation invalidates every replica cursor (resnapshot), every pending remote command (`epoch_mismatch`), every agent search cursor (A3), and every remote device grant whose pin does not follow a signed handover (3.6.5). Local bindings on the authority survive a local incarnation change, so a claim never cuts off a running session. Their next write carries an old base and gets `EPOCH_CHANGED` (A1).
 
@@ -609,12 +612,12 @@ Code: the UI listener in `packages/service/src/http/`, the socket and pipe in `p
 - **Launch tickets** (A4). A process listing shows a ticket for its terminal window's life, so a ticket is worth something only briefly and only for its own launch: one shim claim and one bridge redemption, each in a short window. The attachment credential never travels in argv, a file or a log. Tests: `[A4.5.shim.claim]`, `[A4.5.shim.attach]`, `[A4.5.launch.shim-property]`.
 - **The login-shell snapshot** (A4 3.8) holds whatever the person's profile exports, secrets included: owner-only, never exported or logged (`packages/launch/src/environment/provider.ts`).
 - **Hashes:** tokens and pairing secrets are stored as SHA-256 and compared in constant time (`[A2.3.6.local.grants]`).
-- **Secret scan:** writes to notes, context, logs and summaries are checked for PEM private-key headers, `ghp_`, `github_pat_`, `glpat-`, `sk-`, `xox[abp]-`, `AKIA` and JWT-shaped strings. A match adds a warning to the result and flags the field in the UI. `security.secret_scan = "block"` refuses the write.
+- **Secret scan:** writes to notes, context, logs and summaries are checked for PEM private-key headers, `ghp_`, `github_pat_`, `glpat-`, `sk-`, `xox[abp]-`, `AKIA` and JWT-shaped strings. A match adds a warning to the result and flags the field in the UI. `security.secret_scan = "block"` refuses the write. **Built:** the patterns (`packages/storage/src/secrets.ts`, `[A6.5.secrets.scanner]`) and the export's scan (A1 3.18). Each pattern is the token's shape, not its bare prefix, which would match ordinary words ("task-" holds "sk-"): the prefix at the start of a word, at least as many token characters as the issuer's shortest real token, and for random tokens at least one digit, which no hyphenated phrase has. A match names only its kind. **Not built:** the write path's warning (M4.03).
 - **Redaction:** the user-only `redact` operation replaces text with a marker: the one deliberate exception to "no data destroyed", recorded as an operation (A1).
   - One traversal (A1) covers every store of the active database and its derived stores: current state, history, `commits` payloads, pending and superseded proposals and their alternatives, exchange bases, receipts where they hold text, FTS, the projection, the outbox and caches. Receipts keep identity and hash metadata only. Pending work that refers to the text is invalidated.
   - Later, `redact` travels like any operation, replicas apply the same traversal, and the authority uploads fresh snapshots of the touched streams and deletes older blobs.
   - Backups, exports and working copies already written are not changed. The confirmation says so, and A1 says how open working copies are handled.
-- **Exports** are checked before writing: no file from the secrets folder, no string matching the patterns.
+- **Exports** are checked before writing: no file from the secrets folder, no string matching the patterns. Built (A1 3.18 "Export bundle"): a hit writes nothing and names the kind and the table and column, never the text. A place a diagnostic names comes from the product's own list of its tables and columns, never from a name read out of the database being inspected, which could itself hold a secret.
 
 #### 3.16.5 Managed machines (A2 implements)
 
