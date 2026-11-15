@@ -92,7 +92,8 @@ export type Brief =
 
 /** Stands for the launch reference in the hashed text. */
 export const REFERENCE_SLOT = "{{launch.ref}}";
-const COMPOSER_MARK = "{{composer}}";
+/** Stands for the composer text in the hashed text: the person's words never reach the space. */
+export const COMPOSER_MARK = "{{composer}}";
 
 /** A task's reference (A1: the space's prefix, a dash and a number). */
 export const TASK_REF = /^[A-Z][A-Z0-9]{0,15}-[1-9][0-9]{0,9}$/;

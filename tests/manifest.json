@@ -1482,6 +1482,46 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.routes.golden-urls",
+      "title": "Golden URLs per OS for the best-effort app links: claude://code/new with folder and q, codex://threads/new with path and prompt, each value encoded once, a Windows and a Linux folder with spaces, &, #, %, + and non-ASCII names decoding back exactly, one URL element",
+      "source": "A4 3.4.4, A4 3.4.5, A4 3.6.4, A7 3.14 M6.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.apps",
+      "title": "Open in Claude Desktop and the Codex app through the service: the link with the folder resolved at dispatch and the prefilled brief, the brief returned for the clipboard, Dispatched with the folder's identity, and the bridge's binding confirms only from the same folder: from another folder the launch stays Dispatched and the binding still holds",
+      "source": "A4 3.4.4, A4 3.4.5, A4 3.9.2, A7 3.14 M6.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.clipboard.tools",
+      "title": "The clipboard tools of tasks brief --copy: wl-copy, xclip, then xsel by session on Linux, pbcopy on macOS, Windows PowerShell's Set-Clipboard by its full path; the text on standard input byte for byte and never in argv; only an exit 0 is a copy; the next tool after a failure; a hung tool ended; a forked selection holder left to serve; PowerShell reads standard input as UTF-8",
+      "source": "A4 3.4.6, A7 3.14 M6.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.brief.pack",
+      "title": "The context pack: A4 3.15.5's headings in order, task text inside data blocks whose marker no text holds, the notes the user addressed to agents outside and never cut, the return block for the task and launch; a large task stays within 8,000 characters, trimmed in A4's order with a last line that names what was left out",
+      "source": "A4 3.15.5, A3 3.10, A7 3.14 M6.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.brief.copy-cli",
+      "title": "tasks brief --copy puts the brief or the context pack on the clipboard through the injected tool and says so; with no tool, or a tool that fails, it says why and prints the text; tasks brief --pack prints the context pack",
+      "source": "A4 3.4.6, A4 3.15.5, A7 3.14 M6.11",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.routes.opener",
       "title": "The OS's URL opener: rundll32's FileProtocolHandler or gio open with the URL as one element, a fallback only when the opener before it never started, xdg-open's codes 3 and 4 as no handler, no session without a display, a hung opener stopped and unknown",
       "source": "A4 3.6.5, A4 3.9.2, A7 3.9 M2.10",
@@ -2862,6 +2902,14 @@
       "title": "Playwright with fakes, in Chromium and Firefox against the real service process: Open on a row's tile sends exactly `<cli> shim <ticket>` to the fake terminal, the receipt reaches Confirmed live in the expanded row, and an agent's log entry appears without a reload",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A4 3.6.2",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.14.m6-11.e2e.pack",
+      "title": "Playwright in Chromium and Firefox against the real service process: Shift+Copy on the expanded task puts the context pack on the clipboard (its first line the task's and launch's references, the return block for the task, within 8,000 characters), the toast says Context pack copied, and the Copy button's tooltip says what leaves, under the strict CSP",
+      "source": "A7 3.14 M6.11, A4 3.4.6, A4 3.15.5, A5 3.8",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },

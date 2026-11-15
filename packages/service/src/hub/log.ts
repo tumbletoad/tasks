@@ -506,6 +506,13 @@ export const EVENTS = {
       result: OPEN_RESULTS,
     },
   },
+  // A best-effort app's binding (A4 3.4.4, 3.4.5): whether the bridge's folder was the launch's,
+  // never either folder.
+  "launch.folder_check": {
+    lvl: "info",
+    c: "launch",
+    fields: { result: ["same", "other", "unknown"] },
+  },
   // Codex's reference match (A4 3.4.3): whether a native ID was found, never the ID or a path.
   "launch.native_id": {
     lvl: "info",

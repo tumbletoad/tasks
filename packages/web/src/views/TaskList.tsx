@@ -445,11 +445,11 @@ export function TaskList({
 
   /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). */
   const toClipboard = useCallback(
-    (text: string) => {
+    (text: string, pack = false) => {
       navigator.clipboard
         .writeText(text)
         .then(() => {
-          say(t("row.copied"));
+          say(t(pack ? "row.packCopied" : "row.copied"));
         })
         .catch(() => {
           say(t("row.copyFailed"));
@@ -494,13 +494,14 @@ export function TaskList({
           });
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
-      copy: (task) => {
+      // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).
+      copy: (task, pack = false) => {
         watched.current.add(task.id);
         api
-          .openLaunch(task.id, undefined, requestId())
+          .openLaunch(task.id, undefined, requestId(), pack)
           .then(({ receipt, copy: text }) => {
             shown(task, receipt);
-            if (text !== undefined) toClipboard(text);
+            if (text !== undefined) toClipboard(text, pack);
           })
           .catch((error: unknown) => {
             if (!live.failed(error)) say(t("row.copyFailed"));
