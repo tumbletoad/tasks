@@ -85,8 +85,12 @@ function context(userManager = false): ServiceContext {
   }
   const real = defaultServiceContext({ env: { ...env, TASKS_HOME: root }, program });
   const tools = new FakeTools(new FakeService(), join(dir, "units"), { userManager });
+  // A home folder of the test's own: a service started by hand runs in it.
+  const home = join(dir, "home");
+  mkdirSync(home, { mode: 0o700 });
   return {
     ...real,
+    home,
     run: tools.run,
     roots: { ...real.roots, unitDir: join(dir, "units"), launchAgentsDir: join(dir, "agents") },
   };
@@ -137,7 +141,7 @@ describe.skipIf(!posix)(
       // A terminal: its own process group and session, as a terminal's shell has.
       const terminal = spawn(
         process.execPath,
-        [START_ENTRY, root, ctx.program, join(dir, "units")],
+        [START_ENTRY, root, ctx.program, join(dir, "units"), ctx.home],
         {
           detached: true,
           stdio: ["ignore", "pipe", "pipe"],
@@ -168,8 +172,8 @@ describe.skipIf(!posix)(
       expect(group).not.toBe(String(terminal.pid));
       expect(session).not.toBe(terminalSession);
       expect(tty).toBe("0");
-      // It runs in the home folder, as the unit runs it, never in the terminal's folder (here the
-      // test's temporary folder), which it would keep busy.
+      // It runs in the home folder (here a folder of the test's own), as the unit runs it, never in
+      // the terminal's folder, which it would keep busy.
       expect(readlinkSync(`/proc/${String(started.pid)}/cwd`)).toBe(realpathSync.native(ctx.home));
       // The terminal closes: a hang-up to its whole process group, and it is gone.
       process.kill(-(terminal.pid ?? 0), "SIGHUP");

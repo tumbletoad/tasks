@@ -1,0 +1,13 @@
+#!/bin/sh
+# A stand-in for systemd-run, first on every test's PATH on Linux (packages/testkit/src/setup.ts),
+# so no service or command a test starts reaches the person's user manager through the real one.
+# Like `systemd-run --user --scope ... -- <command>`, it runs the command after `--` and passes its
+# exit status through, without a scope. Tests only.
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -- ]; then
+    shift
+    exec "$@"
+  fi
+  shift
+done
+exit 64
