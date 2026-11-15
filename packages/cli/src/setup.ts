@@ -35,16 +35,20 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
   agents --remove     Take out every entry setup wrote that is still exactly as it wrote it
   agents --status     Each home: registered or not, and its grant row
     [--app claude-code,codex,claude-desktop,codex-app,t3] [--instance <id>] [--home <folder>]
-    [--parts mcp,approve-tools] [--space <id or name>]
+    [--parts mcp,approve-tools,block] [--space <id or name>]
   agents print --app <name>
                       The entry and the file it belongs in, to add by hand (also cursor, gemini,
                       opencode, zed, vscode). Writes nothing
+  agents print-block --for claude|agents
+                      The optional instruction block and the file it belongs in, to add by hand.
+                      Writes nothing
   t3 [--no-browser]   Pair with T3 Code: approve ${CLI_NAME} on T3's page in your browser
   t3 --status         Whether T3 Code can be used: paired, running, or Reconnect T3
 
 Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings:
 --parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are
-only read.
+only read. --parts block adds the optional instruction block to Claude Code's CLAUDE.md and Codex's
+AGENTS.md, changing nothing else in them; --remove --parts block takes it out again.
 --apply, --remove and pairing run only from an interactive terminal. --no-browser prints the page
 to open instead of opening it. Pairing again replaces the earlier pairing: a T3 launch still
 waiting on the earlier one is then shown as unknown, never repeated.
