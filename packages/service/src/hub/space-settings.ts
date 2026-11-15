@@ -13,7 +13,8 @@
 // - `writer_folder`: the folder of the copy that last opened as this machine's writer, by its
 //   canonical real path, and when (A2 3.1). Copies of one space (a restored copy, claimed) share
 //   this file, and at a start the copy in this folder opens first, so the copy the person last
-//   wrote to keeps the writer when another copy could take it.
+//   wrote to keeps the writer when another copy could take it. Written at every writer open and by
+//   `space open` of the copy that writes; when its folder is not listed, `seen` decides (spaces.ts).
 // - `failed_migrations`: the migrations that failed on this machine (A1 3.17), each with the
 //   product build that tried, the revision it was to reach, the state of the database it was tried
 //   on (its revision, epoch, incarnation and last_seq), its code, its barrier backup's name and

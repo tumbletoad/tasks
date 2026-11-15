@@ -454,15 +454,15 @@ export class SpaceManager {
    * space unavailable(open_failed). An entry the person closed (`enabled = false`) is listed,
    * closed, and opens again on `space open`. Spaces open in parallel; copies of one space (one ID)
    * open one after another, never the one that happens to be faster first: the copy that last
-   * opened as this machine's writer (its settings' `writer_folder`), then the others in the
-   * entries' order. So the copy the person last wrote to keeps the writer when another could take
-   * it (an original listed before a claimed copy, whose read-only reason has gone).
+   * opened as this machine's writer (#writerFirst), then the others in the entries' order. So the
+   * copy the person last wrote to keeps the writer when another could take it (an original listed
+   * before a claimed copy, whose read-only reason has gone).
    */
   async openAll(entries: readonly SpaceEntry[]): Promise<void> {
     const start = this.#spaces.length;
     const hosted = entries.map((entry, i) => new Hosted(start + i, resolve(entry.path), entry.id));
     this.#spaces.push(...hosted);
-    const copies = new Map<string, Hosted[]>();
+    const copies = new Map<Id<"sp">, Hosted[]>();
     hosted.forEach((space, i) => {
       if (entries[i]?.enabled === false) {
         space.state = "closed";
@@ -474,9 +474,7 @@ export class SpaceManager {
     });
     await Promise.all(
       [...copies.entries()].map(async ([id, group]) => {
-        const writes =
-          group.length > 1 ? this.#settingsFor(id as Id<"sp">).writerFolder : undefined;
-        const first = group.find((space) => canonicalFolder(space.folder) === writes);
+        const first = group.length > 1 ? this.#writerFirst(id, group) : undefined;
         const ordered = first === undefined ? group : [first, ...group.filter((s) => s !== first)];
         for (const space of ordered) {
           // Closed while it waited for the copy before it, opened by a verb meanwhile, or the
@@ -575,6 +573,9 @@ export class SpaceManager {
       if (retry && known.state === "read_only" && known.reason === "migration_failed") {
         await this.#retryMigration(known);
       }
+      // `space open` of the copy that writes: its record as the writer, which its open may not
+      // have been able to write, is made again (A2 3.1).
+      if (known.state === "open" && known.id !== undefined) this.#recordWriter(known, known.id);
       return known.index;
     }
     const registered = id ?? (await this.#heldBy(folder));
@@ -644,6 +645,46 @@ export class SpaceManager {
       return { spaceId: recovered.space.spaceId };
     });
     return { replaced: true };
+  }
+
+  /**
+   * Records that `space`'s copy is the space's writer now (`writer_folder`): at the next start it
+   * opens before the other copies (openAll), so another copy never takes the writer from it. Best
+   * effort: without it the next start picks by the newest authority, then the file's order, and the
+   * next open of this copy, `space open` of it while it writes too, records it again.
+   */
+  #recordWriter(space: Hosted, spaceId: Id<"sp">): void {
+    try {
+      recordWriterFolder(this.#options.settingsDir, spaceId, canonicalFolder(space.folder));
+    } catch {
+      // As above.
+    }
+  }
+
+  /**
+   * Which copy of the space `id` among `group` (two or more, in the file's order) opens first at a
+   * start: the copy that last opened as this machine's writer; when its folder is not listed (moved
+   * by hand, its entry's path changed), the copy whose space.json names the newest authority this
+   * machine has seen, the one a claim made; else none, and the file's order decides.
+   */
+  #writerFirst(id: Id<"sp">, group: readonly Hosted[]): Hosted | undefined {
+    const settings = this.#settingsFor(id);
+    const writes = settings.writerFolder;
+    const byFolder =
+      writes === undefined
+        ? undefined
+        : group.find((space) => canonicalFolder(space.folder) === writes);
+    if (byFolder !== undefined) return byFolder;
+    const newest = settings.seen?.incarnation;
+    if (newest === undefined) return undefined;
+    return group.find((space) => {
+      try {
+        const read = readManifest(space.folder);
+        return read.state === "present" && read.manifest?.authority.incarnation === newest;
+      } catch {
+        return false;
+      }
+    });
   }
 
   /** Reads the served space's name and prefix through its reader, for people's output. */
@@ -973,13 +1014,7 @@ export class SpaceManager {
     } catch {
       // The record is a floor for later claims; the next open writes it again.
     }
-    try {
-      // This copy is the space's writer now: at the next start it opens before the other copies
-      // (openAll), so another copy never takes the writer from it.
-      recordWriterFolder(this.#options.settingsDir, writer.spaceId, canonicalFolder(space.folder));
-    } catch {
-      // Without it the next start opens the copies in the file's order; the next open writes it.
-    }
+    this.#recordWriter(space, writer.spaceId);
     space.state = "open";
     log.log("space.open", {
       entry: space.index,

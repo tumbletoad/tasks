@@ -237,16 +237,23 @@ function fix(why: NotRecorded, again: string, id: string): string {
 /**
  * The plain line a verb's answer carries when its record was not written: what a restart does
  * instead, why, and the fix. `served`: the verb left the space served (else closed). `again`: the
- * command that records it, quoted for the person's shell; `id`: the space's ID.
+ * command that records it, quoted for the person's shell; `id`: the space's ID. `repoint`: a create
+ * or a restore made a new space in the folder, which an entry the file lists for the folder must
+ * name first, since `space open` never changes an entry's ID.
  */
 export function notRememberedLine(
   why: NotRecorded,
   served: boolean,
   again: string,
   id: string,
+  repoint = false,
 ): string {
   const after = served
     ? "The space is open for now, but will not reopen after a restart"
     : "The space is closed for now, but a restart may open it again";
-  return `${after}: ${because(why)}. ${fix(why, again, id)}`;
+  const entry =
+    repoint && why !== "other_space" && why !== "unsupported_layout"
+      ? ` If machine.toml lists this folder for another space, change that entry's id to ${id} first.`
+      : "";
+  return `${after}: ${because(why)}. ${fix(why, again, id)}${entry}`;
 }

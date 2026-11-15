@@ -6,6 +6,7 @@
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -18,7 +19,7 @@ import type { RpcSession } from "@tasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { parseMachineConfig } from "../src/config/machine-toml.ts";
 import { CLAIM_WARNING } from "../src/hub/space-verbs.ts";
-import { configOf } from "./harness.ts";
+import { configOf, stateOf } from "./harness.ts";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "./http-world.ts";
 import { errorOf } from "./ops-helpers.ts";
 
@@ -437,6 +438,58 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
       expect(rows.find((r) => r.folder === mira.folder)?.state).not.toBe("open");
       expect(await get(again, written, mira.id)).toMatchObject({ task: { ref: written } });
       expect(await get(again, written)).toMatchObject({ task: { ref: written } });
+    },
+  );
+
+  test(
+    "a claimed copy moved by hand, its entry's path changed, still writes at a start; and space open of the copy that writes records it again when its settings could not be written",
+    SLOW,
+    async () => {
+      const w = await world("writer-moved");
+      const user = await w.user();
+      const [mira] = await list(user);
+      if (mira?.id === undefined) throw new Error("no Mira");
+      const exported = (await user.call("space/export", { space: mira.folder }, CALL)) as {
+        export: { file: string };
+      };
+      await user.call("space/close", { space: mira.folder }, CALL);
+      const copyFolder = join(w.root, "s", "mira-copy");
+      await user.call("space/restore", { backup: exported.export.file, to: copyFolder }, CALL);
+      await user.call("space/claim", { space: copyFolder }, CALL);
+      const written = (await add(user, "Only in the copy", "writer-moved-add-0001")).tasks[0]?.ref;
+      if (written === undefined) throw new Error("not written");
+      await user.call("space/open", { path: mira.folder }, CALL);
+
+      // Moved by hand while the service is stopped, and machine.toml changed to the new folder.
+      await w.stop();
+      const movedFolder = join(w.root, "s", "mira-moved");
+      renameSync(copyFolder, movedFolder);
+      writeFileSync(fileOf(w), tomlOf(w).replace(copyFolder, movedFolder));
+      expect(recorded(w).map((s) => s.path)).toEqual([mira.folder, movedFolder]);
+      let again = await restart(w);
+      expect((await list(again)).find((r) => r.folder === movedFolder)?.state).toBe("open");
+      expect(await get(again, written, mira.id)).toMatchObject({ task: { ref: written } });
+
+      // The space's settings cannot be written while the original takes the writer back by hand:
+      // the next start may follow the older record, until space open of the copy that writes.
+      const settings = join(stateOf(w.home), "spaces", `${mira.id}.json`);
+      await again.call("space/close", { space: movedFolder }, CALL);
+      await again.call("space/open", { path: mira.folder }, CALL);
+      await again.call("space/close", { space: mira.folder }, CALL);
+      const kept = readFileSync(settings, "utf8");
+      rmSync(settings);
+      mkdirSync(settings);
+      await again.call("space/open", { path: movedFolder }, CALL);
+      await again.call("space/open", { path: mira.folder }, CALL);
+      rmSync(settings, { recursive: true });
+      writeFileSync(settings, kept);
+      const recordedAgain = (await again.call("space/open", { path: movedFolder }, CALL)) as {
+        space: Row;
+      };
+      expect(recordedAgain.space.state).toBe("open");
+      again = await restart(w);
+      expect((await list(again)).find((r) => r.folder === movedFolder)?.state).toBe("open");
+      expect(await get(again, written, mira.id)).toMatchObject({ task: { ref: written } });
     },
   );
 

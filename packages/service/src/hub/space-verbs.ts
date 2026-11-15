@@ -356,7 +356,7 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       : command(["space", "close", folder], "space close <folder>");
     return {
       remembered: false,
-      not_remembered: notRememberedLine(done.why, enabled, again, id),
+      not_remembered: notRememberedLine(done.why, enabled, again, id, extra.repoint === true),
     };
   };
 
