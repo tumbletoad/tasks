@@ -6,10 +6,8 @@ import { registry } from "../registry.ts";
 import { renderArtefacts } from "./artefacts.ts";
 import { renderDocs, type DocNames } from "./docs.ts";
 
-export interface GeneratorNames extends DocNames {
-  /** The product identifier, which no tool name may contain (A3 3.2.4). */
-  readonly productId: string;
-}
+/** The names the generators take: the CLI's and the MCP server key, which starts no tool name. */
+export type GeneratorNames = DocNames;
 
 /** The shape scripts/generated.ts expects. Contracts depend on nothing in the repository. */
 export interface ContractsGenerator {
@@ -26,7 +24,7 @@ export function contractsGenerators(
   entries: readonly AnyEntry[] = registry,
 ): ContractsGenerator[] {
   const valid = () => {
-    const problems = checkRegistry(entries, { productId: names.productId });
+    const problems = checkRegistry(entries, { serverKey: names.mcpServerKey });
     if (problems.length > 0) {
       throw new Error(`the registry check failed:\n  ${problems.join("\n  ")}`);
     }

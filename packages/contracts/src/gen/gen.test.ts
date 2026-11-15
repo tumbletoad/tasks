@@ -11,7 +11,7 @@ import { contractsGenerators } from "./index.ts";
 
 const generatedDir = fileURLToPath(new URL("../../generated/", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-const names = { cli: "acme", mcpServerKey: "acme", productId: "acme" };
+const names = { cli: "acme", mcpServerKey: "acme" };
 
 function renderAll(): Map<string, string> {
   const files = new Map<string, string>();
@@ -87,6 +87,8 @@ describe("[A3.5.registry.generated] the generated files are fresh and byte-stabl
     const [contracts] = contractsGenerators(names, [
       { ...status, faces: { ...status.faces, mcp } },
     ]);
-    await expect(contracts?.render()).rejects.toThrow(/tool names carry no product name/);
+    await expect(contracts?.render()).rejects.toThrow(
+      /a tool name does not start with the MCP server key/,
+    );
   });
 });

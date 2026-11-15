@@ -8,6 +8,11 @@
       "tokens": 638
     },
     {
+      "bytes": 3333,
+      "name": "add_tasks",
+      "tokens": 1667
+    },
+    {
       "bytes": 3866,
       "name": "complete_task",
       "tokens": 1933
@@ -16,6 +21,31 @@
       "bytes": 1379,
       "name": "get_task",
       "tokens": 690
+    },
+    {
+      "bytes": 1242,
+      "name": "organize",
+      "tokens": 621
+    },
+    {
+      "bytes": 1697,
+      "name": "preferences",
+      "tokens": 849
+    },
+    {
+      "bytes": 1012,
+      "name": "reopen_task",
+      "tokens": 506
+    },
+    {
+      "bytes": 1327,
+      "name": "run_report",
+      "tokens": 664
+    },
+    {
+      "bytes": 1042,
+      "name": "search",
+      "tokens": 521
     },
     {
       "bytes": 1189,
@@ -29,8 +59,8 @@
     }
   ],
   "total": {
-    "bytes": 11575,
-    "tokens": 5789,
-    "tools": 5
+    "bytes": 21228,
+    "tokens": 10617,
+    "tools": 11
   }
 }

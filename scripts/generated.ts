@@ -5,7 +5,7 @@
 // below.
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID } from "../packages/brand/src/index.ts";
+import { CLI_NAME, MCP_SERVER_KEY } from "../packages/brand/src/index.ts";
 import { contractsGenerators } from "../packages/contracts/src/gen/index.ts";
 import { bridgeOfflineGenerator } from "./bridge-offline.ts";
 
@@ -21,7 +21,7 @@ export interface Generator {
 export const generators: readonly Generator[] = [
   // packages/contracts/generated/ and docs/agents/ (A3 3.2.2). The names come from the brand, so
   // contracts depend on nothing in the repository (A7 3.2).
-  ...contractsGenerators({ cli: CLI_NAME, mcpServerKey: MCP_SERVER_KEY, productId: PRODUCT_ID }),
+  ...contractsGenerators({ cli: CLI_NAME, mcpServerKey: MCP_SERVER_KEY }),
   // packages/bridge/lib/mcp-offline.json (A2 3.7.3): the bridge's offline answers, captured from
   // the service's MCP endpoint, whose tool list is contracts' generated one.
   bridgeOfflineGenerator(),

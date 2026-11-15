@@ -19,7 +19,8 @@ import {
   type Row,
   type WorkerConnection,
 } from "@tasks/storage";
-import { AppError, readPreference } from "@tasks/contracts";
+import { AppError, readPreference, type PreferenceRead } from "@tasks/contracts";
+import { PREFERENCE_ROWS, spacePreferencesOf } from "./preferences.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
 interface Statement {
@@ -946,6 +947,168 @@ function remoteOfIdentity(identity: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Areas and projects (A3 3.4.5, 3.4.10)
+
+/** Active tasks of a group, its projects' included for an area. Tombstoned tasks never count. */
+const ACTIVE_IN = (column: string, owner: string): string =>
+  `(SELECT count(*) FROM tasks t WHERE t.${column} = ${owner}.id AND t.lifecycle = 'active' ` +
+  "AND t.deleted_at IS NULL)";
+
+const AREA_LIST: Statement = {
+  sql:
+    `SELECT a.id, a.slug, a.title, ${ACTIVE_IN("area_id", "a")} AS active FROM areas a ` +
+    "WHERE a.deleted_at IS NULL AND a.lifecycle = 'active' ORDER BY a.position, a.id",
+  mode: "all",
+};
+const PROJECT_LIST: Statement = {
+  sql:
+    `SELECT p.id, p.area_id, p.slug, p.title, ${ACTIVE_IN("project_id", "p")} AS active ` +
+    "FROM projects p WHERE p.deleted_at IS NULL AND p.lifecycle = 'active' " +
+    "ORDER BY p.position, p.id",
+  mode: "all",
+};
+
+/** The space's active areas and projects with their active task counts, in the space's order. */
+export async function readGroups(
+  reader: WorkerConnection,
+): Promise<{ space: SpaceFacts; areas: Row[]; projects: Row[] }> {
+  const [space, areas, projects] = await snapshot(reader, [SPACE, AREA_LIST, PROJECT_LIST]);
+  return { space: spaceFacts(space), areas: areas as Row[], projects: projects as Row[] };
+}
+
+/** One area or project as a name resolves against it (groups.ts). */
+export interface GroupName {
+  readonly id: string;
+  readonly slug: string;
+  readonly title: string;
+  /** A project's area. */
+  readonly area: string | null;
+}
+
+/** Every area and project that is not deleted, and their old slugs (A1 3.3 aliases). */
+export interface GroupNames {
+  readonly areas: readonly GroupName[];
+  readonly projects: readonly GroupName[];
+  /** An old slug and the area or project it names now. */
+  readonly aliases: readonly {
+    readonly alias: string;
+    readonly kind: string;
+    readonly id: string;
+  }[];
+}
+
+const AREA_NAMES: Statement = {
+  sql: "SELECT id, slug, title FROM areas WHERE deleted_at IS NULL ORDER BY position, id",
+  mode: "all",
+};
+const PROJECT_NAMES: Statement = {
+  sql: "SELECT id, area_id, slug, title FROM projects WHERE deleted_at IS NULL ORDER BY position, id",
+  mode: "all",
+};
+const GROUP_ALIASES: Statement = {
+  sql:
+    "SELECT alias, entity_kind, entity_id FROM aliases WHERE namespace = 'slug' " +
+    "AND entity_kind IN ('area', 'project')",
+  mode: "all",
+};
+
+const nameOf = (row: Row): GroupName => ({
+  id: text(row["id"]),
+  slug: text(row["slug"]),
+  title: text(row["title"]),
+  area: typeof row["area_id"] === "string" ? row["area_id"] : null,
+});
+
+/** The names a draft's area and project resolve against (A3 3.4.5), in one snapshot. */
+export async function readGroupNames(reader: WorkerConnection): Promise<GroupNames> {
+  const [areas, projects, aliases] = await snapshot(reader, [
+    AREA_NAMES,
+    PROJECT_NAMES,
+    GROUP_ALIASES,
+  ]);
+  return {
+    areas: (areas as Row[]).map(nameOf),
+    projects: (projects as Row[]).map(nameOf),
+    aliases: (aliases as Row[]).map((row) => ({
+      alias: text(row["alias"]),
+      kind: text(row["entity_kind"]),
+      id: text(row["entity_id"]),
+    })),
+  };
+}
+
+/** Where a new task lands, as a duplicate check compares it (similar.ts). */
+export interface Destination {
+  readonly project: string | null;
+  readonly area: string | null;
+  readonly inbox: boolean;
+}
+
+/** The newest active tasks a duplicate check reads per call: enough for any one group. */
+export const SIBLING_LIMIT = 2000;
+
+const SIBLINGS: Statement = {
+  sql:
+    "SELECT id, ref, title, area_id, project_id, inbox FROM tasks WHERE lifecycle = 'active' " +
+    "AND deleted_at IS NULL AND (project_id IN (SELECT value FROM json_each($projects)) " +
+    "OR (project_id IS NULL AND area_id IN (SELECT value FROM json_each($areas))) " +
+    "OR ($loose = 1 AND project_id IS NULL AND area_id IS NULL)) " +
+    `ORDER BY touched DESC, id LIMIT ${String(SIBLING_LIMIT)}`,
+  mode: "all",
+};
+
+/** An active task as a duplicate check sees it: its reference, title and group. */
+export interface Sibling {
+  readonly ref: string;
+  readonly title: string;
+  readonly destination: Destination;
+}
+
+/** The active tasks in the groups of `destinations`, newest first, with the space's facts. */
+export async function readSiblings(
+  reader: WorkerConnection,
+  destinations: readonly Destination[],
+): Promise<Sibling[]> {
+  const projects = destinations.flatMap((d) => (d.project === null ? [] : [d.project]));
+  const areas = destinations.flatMap((d) =>
+    d.project === null && d.area !== null ? [d.area] : [],
+  );
+  const loose = destinations.some((d) => d.project === null && d.area === null);
+  const [space, rows] = await snapshot(reader, [SPACE, SIBLINGS], {
+    projects: JSON.stringify([...new Set(projects)]),
+    areas: JSON.stringify([...new Set(areas)]),
+    loose: loose ? 1 : 0,
+  });
+  const prefix = spaceFacts(space).refPrefix;
+  return (rows as Row[]).map((row) => ({
+    ref: formatTaskRef(prefix, Number(row["ref"])),
+    title: text(row["title"]),
+    destination: {
+      project: typeof row["project_id"] === "string" ? row["project_id"] : null,
+      area: typeof row["area_id"] === "string" ? row["area_id"] : null,
+      inbox: row["inbox"] === 1,
+    },
+  }));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Preferences (A1 3.16, A3 3.4.11)
+
+/**
+ * Every space preference as the registry reads it (`spacePreferencesOf`: the value when it fits
+ * its shape, else the default), with the space's facts, in one snapshot: the `preferences` tool.
+ */
+export async function readSpacePreferences(
+  reader: WorkerConnection,
+): Promise<{ space: SpaceFacts; reads: Map<string, PreferenceRead> }> {
+  const [space, rows] = await snapshot(reader, [SPACE, { sql: PREFERENCE_ROWS, mode: "all" }]);
+  return {
+    space: spaceFacts(space),
+    reads: new Map(spacePreferencesOf(rows as Row[]).map((read) => [read.key, read])),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------

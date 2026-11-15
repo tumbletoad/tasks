@@ -303,6 +303,40 @@ export function fitsShape(shape: ValueShape, value: unknown): boolean {
   }
 }
 
+/** A list of objects with one field `key`, such as `tasks.effort_scale`: a list of keys to a reader. */
+export function isKeyList(shape: ValueShape): boolean {
+  return (
+    shape.type === "list" &&
+    shape.item.type === "object" &&
+    Object.keys(shape.item.fields).length === 1 &&
+    Object.hasOwn(shape.item.fields, "key")
+  );
+}
+
+/** A shape in words, for `describe` (A3 3.4.11): product words only, never a pattern. */
+export function shapeText(shape: ValueShape): string {
+  switch (shape.type) {
+    case "enum":
+      return `one of ${shape.values.join(", ")}`;
+    case "boolean":
+      return "true or false";
+    case "integer":
+      return `a whole number from ${String(shape.min)} to ${String(shape.max)}`;
+    case "text":
+      return `one line of up to ${String(shape.max)} characters`;
+    case "path":
+      return "an absolute path";
+    case "list":
+      return shape.item.type === "text" || isKeyList(shape)
+        ? `a list of ${String(shape.min)} to ${String(shape.max)} keys`
+        : `a list of ${String(shape.min)} to ${String(shape.max)} items`;
+    case "object":
+      return `the fields ${Object.keys(shape.fields).join(", ")}`;
+    case "map":
+      return `up to ${String(shape.max)} names, each with a value`;
+  }
+}
+
 /** Who a writer is, by the commit's actor kind: routines are agents (A3 3.8.1). */
 export function writerOf(actorKind: string): PrefWriter | undefined {
   if (actorKind === "human") return "human";

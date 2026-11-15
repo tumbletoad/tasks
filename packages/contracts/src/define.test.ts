@@ -197,10 +197,17 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
       .map((e) => e.faces.mcp?.tool)
       .sort();
     expect(tools.map((t) => t.name)).toEqual(expected);
+    // A3 1 item 3: the eleven tools of every connection (M4.01).
     expect(tools.map((t) => t.name)).toEqual([
       "add_entry",
+      "add_tasks",
       "complete_task",
       "get_task",
+      "organize",
+      "preferences",
+      "reopen_task",
+      "run_report",
+      "search",
       "status",
       "update_task",
     ]);
@@ -351,7 +358,8 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
 
   test("annotations are explicit: reads are read-only, nothing is destructive or open-world", () => {
     for (const tool of mcpTools(registry).tools) {
-      const read = tool.name === "status" || tool.name === "get_task";
+      // A tool with write actions is no read, even when most calls of it only read (organize).
+      const read = ["status", "get_task", "search"].includes(tool.name);
       expect(tool.annotations, tool.name).toEqual({
         readOnlyHint: read,
         destructiveHint: false,

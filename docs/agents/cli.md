@@ -13,14 +13,17 @@ and `cwd`.
 | Verb | Entry | Summary |
 |---|---|---|
 | `tasks add` | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. |
+| `tasks area` | `group.manage` | List the areas and projects, or create, rename, move or archive one. |
 | `tasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
 | `tasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
 | `tasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
 | `tasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `tasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
+| `tasks prefs` | `prefs.manage` | Read and change the space's preferences that are not policy. |
 | `tasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
 | `tasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
 | `tasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
+| `tasks run-report` | `run.report` | Report a run's coverage, one row per source: works only in a run or routine. |
 | `tasks set` | `task.update` | Change an active task's fields, summary, context, group or sources. |
 | `tasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full. With launch, bind first. |
 | `tasks status` | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. |
@@ -51,6 +54,19 @@ Usage: `tasks add <title> [flags]`
 | `--on-existing` | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | When a source key matches; default return |
 
 Only through `--input`: `tasks[].sources`.
+
+## `tasks area`
+
+List the areas and projects, or create, rename, move or archive one.
+
+Usage: `tasks area <action> [<path>] [<to>] [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<action>` | `action` | string | list reads; create, rename, move and archive change a group |
+| `<path>` | `path` | string | "Area" or "Area/Project", by name or slug; list: one area |
+| `<to>` | `to` | string | rename: the new name; move: the new area |
+| `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
 ## `tasks brief`
 
@@ -123,6 +139,20 @@ Sets `kind: "note"`.
 
 Only through `--input`: `links`.
 
+## `tasks prefs`
+
+Read and change the space's preferences that are not policy.
+
+Usage: `tasks prefs <action> [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<action>` | `action` | string | describe: the keys; get: their values; set: change them |
+| `--keys` | `keys` | string | Keys, or prefixes ending in ".*"; default every key (repeatable) |
+| `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
+
+Only through `--input`: `set`.
+
 ## `tasks receipt`
 
 The stored result of a write, by its request_id, in the caller's own writer scope.
@@ -154,6 +184,18 @@ Usage: `tasks reopen <task> [flags]`
 | `<task>` | `task` | string | Task ref (M-14) or ID |
 | `--reason` | `reason` | string | Why it is open again (required) |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
+
+## `tasks run-report`
+
+Report a run's coverage, one row per source: works only in a run or routine.
+
+Usage: `tasks run-report [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `--summary` | `summary` | string | Counts created, updated, unchanged; what was unsure |
+
+Only through `--input`: `sources`.
 
 ## `tasks set`
 
