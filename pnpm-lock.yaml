@@ -353,6 +353,9 @@ importers:
       '@tasks/files':
         specifier: workspace:*
         version: link:../files
+      '@tasks/importer-planning':
+        specifier: workspace:*
+        version: link:../importer-planning
       '@tasks/launch':
         specifier: workspace:*
         version: link:../launch

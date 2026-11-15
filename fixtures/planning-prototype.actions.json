@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "exported": "2026-11-07T19:30:00.000Z",
+  "events": [
+    {
+      "id": "web-8ea5b0ee-f465-438e-a9dc-bed3c261da73",
+      "task": "t-6e1e9b9a",
+      "action": "focus",
+      "at": "2026-11-02T08:00:00.000Z"
+    },
+    {
+      "id": "cli-0002",
+      "task": "t-6e1e9b9a",
+      "action": "unfocus",
+      "at": "2026-11-02T16:00:00Z"
+    },
+    {
+      "id": "cli-0003",
+      "task": "home-fence",
+      "action": "focus",
+      "at": "2026-11-03T07:00:00Z"
+    },
+    {
+      "id": "web-679845b9-e316-4910-8919-713813d9e892",
+      "task": "t-505646c0",
+      "action": "check",
+      "at": "2026-11-03T09:15:00.000Z"
+    },
+    {
+      "id": "cli-0001",
+      "task": "t-8ae0f771",
+      "action": "check",
+      "at": "2026-11-03T10:00:00Z"
+    },
+    {
+      "id": "web-dd34ae1a-5273-4292-8895-eb53dd61da77",
+      "task": "t-8ae0f771",
+      "action": "uncheck",
+      "at": "2026-11-03T11:30:00.000Z"
+    },
+    {
+      "id": "web-71ae44e1-0013-4e92-8ad8-32ae5a68c25e",
+      "task": "t-8ae0f771",
+      "action": "check",
+      "at": "2026-11-04T08:00:00.000Z"
+    },
+    {
+      "id": "cli-0004",
+      "task": "t-9de100f7",
+      "action": "check",
+      "at": "2026-11-04T18:00:00Z"
+    },
+    {
+      "id": "cli-0005",
+      "task": "t-0badc0de",
+      "action": "check",
+      "at": "2026-11-04T18:05:00Z"
+    },
+    {
+      "id": "cli-0009",
+      "task": "t-0e7b3bc1",
+      "action": "focus",
+      "at": "2026-11-05T09:30:00+02:00"
+    },
+    {
+      "id": "cli-0008",
+      "task": "t-0e7b3bc1",
+      "action": "unfocus",
+      "at": "2026-11-05T08:00:00Z"
+    },
+    {
+      "id": "cli-0006",
+      "task": "t-c06f2944",
+      "action": "unfocus",
+      "at": "2026-11-05T10:00:00Z"
+    },
+    {
+      "id": "cli-0007",
+      "task": "t-c06f2944",
+      "action": "focus",
+      "at": "2026-11-05T10:00:00Z"
+    },
+    {
+      "id": "cli-0012",
+      "task": "lum-staging-cert",
+      "action": "uncheck",
+      "at": "2026-11-05T15:00:00Z"
+    },
+    {
+      "id": "cli-0010",
+      "task": "t-de4f5a3d",
+      "action": "focus",
+      "at": "2026-11-06T07:45Z"
+    },
+    {
+      "id": "cli-0011",
+      "task": "t-de4f5a3d",
+      "action": "unfocus",
+      "at": "2026-11-06T07:45:00.123456789Z"
+    },
+    {
+      "id": "web-a577fdb4-7812-40f6-9d5e-a9ffdde79c5e",
+      "task": "t-ae318657",
+      "action": "focus",
+      "at": "2026-11-06T12:00:00Z"
+    },
+    {
+      "id": "web-66b1e7e1-2892-47f4-8191-49dc6d732106",
+      "task": "t-88f5ce83",
+      "action": "check",
+      "at": "2026-11-06T18:00:00.000Z"
+    }
+  ]
+}

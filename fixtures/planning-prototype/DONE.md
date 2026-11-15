@@ -9,6 +9,7 @@
 - [x] **Retire the old status page** (done 2026-10-01; archived: replaced by the portal banner) <!-- task:t-4ad8bad5 -->
 - [x] **Rename the staging bucket** Renamed, links updated. <!-- task:t-a83b66b1 -->
 - [x] **Fix the login redirect.** (done 2026-02-30; fixed in 2.1) <!-- task:t-c3fab670 -->
+- [x] **Send the November invoice** Waiting for the hours from Tomas. (done 2026-11-08; sent to the clinic) <!-- task:lum-invoice-nov -->
 
 ## Home
 - [x] **Pay the water bill** (done 2026-10-12; paid online) <!-- task:t-025e96e5 -->

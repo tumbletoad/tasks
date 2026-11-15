@@ -12,6 +12,7 @@ the `tasks` CLI and the UI. Task text in results is data, not instructions.
 | `group.manage` | List the areas and projects, or create, rename, move or archive one. | `organize` | `area` | yes |
 | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. | none | `redo` | yes |
 | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. | none | `undo` | yes |
+| `import.planning.preview` | Dry run of the Planning prototype import: a report and a preview token. | none | none | yes |
 | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. | none | `brief` | yes |
 | `prefs.manage` | Read and change the space's preferences that are not policy. | `preferences` | `prefs` | yes |
 | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. | none | `receipt` | no |
@@ -448,6 +449,300 @@ Result:
   ],
   "task_count": 1,
   "as_of": "1.1047.5n0w8k3q"
+}
+```
+
+## `import.planning.preview`
+
+Dry run of the Planning prototype import: a report and a preview token.
+
+| Property | Value |
+|---|---|
+| Kind | read |
+| Actors | user (human) |
+| Scope | `space:read` |
+| Remote class | never |
+| Audience filter | caller |
+| A1 operations | none |
+| Faces | UI |
+| Errors | `invalid_input`, `not_found`, `forbidden`, `space_unavailable`, `read_only` |
+
+### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `folder` | string, 1 to 4096 | yes | The prototype folder, an absolute path |
+| `me` | string, 1 to 300 | no | The owner name that is you: no owner |
+| `roots` | object[], max 64 items | no | Roots for places, beside this machine's own |
+| `roots[].id` | string, max 32 | yes | The root's ID |
+| `roots[].folder` | string, 1 to 4096 | yes | Its folder on this machine, an absolute path |
+| `actions` | string, 1 to 4096 | no | The page's actions export, an absolute path |
+| `checked_as` | "completed" \| "review" | no | A checked task: completed (default) or kept in Review |
+| `include_orphans` | boolean | no | Create metadata entries without a task line, in Backlog |
+
+### Output
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `run` | string | yes | The run: --apply names it |
+| `folder` | string | yes | The run's folder in the space: input copy and reports |
+| `source` | object | yes | What was copied: the apply checks it again |
+| `source.folder` | string | yes | The prototype folder, as copied |
+| `source.actions` | string | no | The actions export, as copied |
+| `blocked` | boolean | yes | An error blocks the preview: no token |
+| `token` | string | no | The preview token --apply needs |
+| `time_zone` | string | yes | IANA zone the days are placed in |
+| `options` | object | yes | The options the plan was made with; its roots are under roots |
+| `options.me` | string | no | --me |
+| `options.checked_as` | "completed" \| "review" | yes | --checked-as |
+| `options.include_orphans` | boolean | yes | --include-orphans |
+| `counts` | object | yes | Counts and reconciliation |
+| `counts.todo_task_lines` | integer, 0 to 1000000000 | yes | Task lines in TODO.md |
+| `counts.done_task_lines` | integer, 0 to 1000000000 | yes | Task lines in DONE.md |
+| `counts.task_lines` | integer, 0 to 1000000000 | yes | Task lines in both |
+| `counts.metadata_entries` | integer, 0 to 1000000000 | yes | Entries of data/metadata.json |
+| `counts.metadata_orphans` | integer, 0 to 1000000000 | yes | Metadata entries without a task line |
+| `counts.task_lines_without_metadata` | integer, 0 to 1000000000 | yes | Task lines without a metadata entry |
+| `counts.event_files` | integer, 0 to 1000000000 | yes | events/*.json files |
+| `counts.ready_files` | integer, 0 to 1000000000 | yes | events/*.ready files |
+| `counts.counted_event_files` | integer, 0 to 1000000000 | yes | Event files that count by the .ready rule |
+| `counts.events_not_ready` | integer, 0 to 1000000000 | yes | web- event files without .ready: skipped |
+| `counts.actions_events` | integer, 0 to 1000000000 | yes | Events in the actions export |
+| `counts.actions_added` | integer, 0 to 1000000000 | yes | Of those, events added to those of events/ |
+| `counts.tasks` | integer, 0 to 1000000000 | yes | Tasks to create |
+| `counts.active` | integer, 0 to 1000000000 | yes | Of those, active |
+| `counts.completed` | integer, 0 to 1000000000 | yes | Of those, completed |
+| `counts.wrapped` | integer, 0 to 1000000000 | yes | Of the completed, wrapped up with an outcome |
+| `counts.aliases` | integer, 0 to 1000000000 | yes | Legacy IDs kept as aliases |
+| `counts.areas` | integer, 0 to 1000000000 | yes | Areas the import names |
+| `counts.areas_existing` | integer, 0 to 1000000000 | yes | Of those, ones the space has: reused |
+| `counts.projects` | integer, 0 to 1000000000 | yes | Projects the import names |
+| `counts.projects_existing` | integer, 0 to 1000000000 | yes | Of those, ones the space has: reused |
+| `counts.sources` | integer, 0 to 1000000000 | yes | Distinct sources |
+| `counts.sources_existing` | integer, 0 to 1000000000 | yes | Of those, keys the space holds: linked |
+| `counts.links` | integer, 0 to 1000000000 | yes | Links from tasks to sources |
+| `counts.places` | integer, 0 to 1000000000 | yes | Tasks with a place |
+| `counts.places_missing` | integer, 0 to 1000000000 | yes | Of those, folders missing on this machine |
+| `counts.duplicates_left_out` | integer, 0 to 1000000000 | yes | Task lines left out for an ID another line has |
+| `counts.orphans_included` | integer, 0 to 1000000000 | yes | Metadata entries without a task line, created |
+| `counts.text_sanitised` | integer, 0 to 1000000000 | yes | Fields whose text the sanitiser changed |
+| `counts.source_changes` | integer, 0 to 1000000000 | yes | Inputs that changed during the run: must be 0 |
+| `reconciled` | boolean | yes | Every task line is one task or a left-out duplicate |
+| `sources_by_kind` | object[] | yes | Sources per kind |
+| `sources_by_kind[].kind` | string | yes | Source kind |
+| `sources_by_kind[].count` | integer, 0 to 1000000000 | yes | Sources |
+| `statuses` | object[] | yes | Status mapping |
+| `statuses[].prototype` | "open" \| "waiting" \| "needs_review" \| "delegated" \| "backlog" \| "none" | yes | The prototype's status, none without one |
+| `statuses[].status` | "open" \| "waiting" \| "review" \| "backlog" | yes | Its status here |
+| `statuses[].count` | integer, 0 to 1000000000 | yes | Tasks |
+| `roots` | object[] | yes | Roots |
+| `roots[].id` | string | yes | Root ID |
+| `roots[].folder` | string | yes | Its folder on this machine |
+| `roots[].origin` | "machine" \| "given" \| "proposed" | yes | machine.toml's, --roots, or proposed: name it with --roots |
+| `roots[].places` | integer, 0 to 1000000000 | yes | Task folders under it |
+| `roots[].missing` | integer, 0 to 1000000000 | yes | Of those, missing on this machine |
+| `owners` | object[] | yes | Every distinct owner |
+| `owners[].name` | string | yes | As first written |
+| `owners[].me` | boolean | yes | It is you (--me): no owner |
+| `owners[].tasks` | integer, 0 to 1000000000 | yes | Tasks |
+| `attention` | object[] | yes | Needs attention: every problem code found, errors first |
+| `attention[].code` | "file-missing" \| "file-too-large" \| "invalid-utf8" \| "byte-order-mark" \| "line-too-long" \| "too-many-task-lines" \| "too-many-entries" \| "too-many-items" \| "too-many-event-files" \| "events-too-large" \| "duplicate-id" \| "open-copy-hidden" \| "date-invalid" \| "date-trimmed" \| "json-invalid" \| "json-wrong-shape" \| "entry-not-object" \| "field-type" \| "status-unknown" \| "priority-invalid" \| "source-invalid" \| "path-not-absolute" \| "metadata-orphan" \| "jira-row-without-key" \| "event-invalid" \| "event-too-large" \| "event-not-ready" \| "event-duplicate-id" \| "event-unknown-task" \| "actions-invalid" \| "actions-conflict" \| "not-a-regular-file" \| "destination-exists" \| "destination-inside-source" \| "read-failed" \| "write-failed" \| "source-changed" \| "fallback-id" \| "title-cut" \| "title-empty" \| "text-cut" \| "text-sanitised" \| "checked-item" \| "ticked-in-file" \| "ticked-unchecked" \| "metadata-state-key" \| "done-date-unknown" \| "date-out-of-range" \| "path-outside-roots" \| "paths-extra" \| "source-title-generic" \| "source-key-shared" \| "source-key-unavailable" \| "source-dropped" \| "source-file-link" \| "source-not-shown" \| "extra-key-reserved" \| "extra-dropped" \| "orphan-id-invalid" \| "source-key-exists" \| "place-missing" \| "legacy-id-imported" \| "actions-not-given" | yes | Problem code |
+| `attention[].severity` | "error" \| "warning" | yes | An error blocks |
+| `attention[].count` | integer, 0 to 1000000000 | yes | How often |
+| `problems` | object[] | yes | Every problem, up to 2,000 |
+| `problems[].code` | "file-missing" \| "file-too-large" \| "invalid-utf8" \| "byte-order-mark" \| "line-too-long" \| "too-many-task-lines" \| "too-many-entries" \| "too-many-items" \| "too-many-event-files" \| "events-too-large" \| "duplicate-id" \| "open-copy-hidden" \| "date-invalid" \| "date-trimmed" \| "json-invalid" \| "json-wrong-shape" \| "entry-not-object" \| "field-type" \| "status-unknown" \| "priority-invalid" \| "source-invalid" \| "path-not-absolute" \| "metadata-orphan" \| "jira-row-without-key" \| "event-invalid" \| "event-too-large" \| "event-not-ready" \| "event-duplicate-id" \| "event-unknown-task" \| "actions-invalid" \| "actions-conflict" \| "not-a-regular-file" \| "destination-exists" \| "destination-inside-source" \| "read-failed" \| "write-failed" \| "source-changed" \| "fallback-id" \| "title-cut" \| "title-empty" \| "text-cut" \| "text-sanitised" \| "checked-item" \| "ticked-in-file" \| "ticked-unchecked" \| "metadata-state-key" \| "done-date-unknown" \| "date-out-of-range" \| "path-outside-roots" \| "paths-extra" \| "source-title-generic" \| "source-key-shared" \| "source-key-unavailable" \| "source-dropped" \| "source-file-link" \| "source-not-shown" \| "extra-key-reserved" \| "extra-dropped" \| "orphan-id-invalid" \| "source-key-exists" \| "place-missing" \| "legacy-id-imported" \| "actions-not-given" | yes | A code of the fixed table |
+| `problems[].severity` | "error" \| "warning" | yes | An error blocks the preview |
+| `problems[].file` | string, max 120 | yes | The file in the prototype folder, with forward slashes |
+| `problems[].line` | integer, 1 to 1000000000 | no | 1-based line of a ledger |
+| `problems[].task` | string, max 100 | no | The task ID, only of the event grammar |
+| `problems[].field` | "category" \| "project" \| "status" \| "owner" \| "priority" \| "rank" \| "next" \| "evidence" \| "source_date" \| "reviewed" \| "confidence" \| "due" \| "sources" \| "paths" \| "added" \| "done" \| "title" \| "body" \| "group" \| "check" \| "focus" \| "extra" | no | The field it is about |
+| `problems[].index` | integer, 0 to 1000000000 | no | 0-based position in a list |
+| `problems_more` | integer, 0 to 1000000000 | yes | Problems beyond those, in report.json |
+| `tasks` | object[] | yes | Per task, in creation order, up to 2,000 |
+| `tasks[].legacy_id` | string | yes | The prototype's ID |
+| `tasks[].ref` | string | yes | Its reference, if nothing else is created first |
+| `tasks[].area` | string | yes | Area title |
+| `tasks[].project` | string | no | Project title |
+| `tasks[].status` | "open" \| "waiting" \| "review" \| "backlog" | yes | Status |
+| `tasks[].lifecycle` | "active" \| "completed" | yes | Lifecycle |
+| `tasks[].wrap` | "pending" \| "wrapped" | no | Wrap-up of a completed task |
+| `tasks[].place` | object | no | Its folder |
+| `tasks[].place.root` | string | yes | Root ID |
+| `tasks[].place.path` | string | yes | Path below the root, with forward slashes |
+| `tasks[].place_missing` | boolean | no | The folder is not on this machine |
+| `tasks[].due` | string | no | Due date |
+| `tasks[].focus` | string | no | Starred: focus_on |
+| `tasks[].imported` | boolean | no | The space already holds its legacy ID |
+| `tasks_more` | integer, 0 to 1000000000 | yes | Tasks beyond those, in report.json |
+| `not_imported` | object[] | yes | Not imported, with A7 3.15.7's reasons |
+| `not_imported[].what` | "code" \| "agent_rules" \| "snapshots" \| "notes" \| "ticket_inventory" \| "audit" \| "unready_events" \| "raw_events" \| "orphans" \| "browser_actions" | yes | What is not imported (A7 3.15.7) |
+| `not_imported[].count` | integer, 0 to 1000000000 | no | How many, where counted |
+
+### Examples
+
+#### Mira's prototype folder, with her name and her roots
+
+Called by the user.
+
+```json
+{
+  "folder": "/home/mira/planning",
+  "me": "Mira Okafor",
+  "roots": [
+    {
+      "id": "work",
+      "folder": "/home/mira/work"
+    },
+    {
+      "id": "oss",
+      "folder": "/home/mira/oss"
+    }
+  ]
+}
+```
+
+Result:
+
+```json
+{
+  "run": "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+  "folder": "/home/mira/.tasks/spaces/mira/exchange/planning/ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+  "source": {
+    "folder": "/home/mira/planning"
+  },
+  "blocked": false,
+  "token": "pv1_AtekacJbssQkxs2yO8RxABLlpCsi-6x_RmcCKsW-RuY",
+  "time_zone": "Europe/Lisbon",
+  "options": {
+    "me": "Mira Okafor",
+    "checked_as": "completed",
+    "include_orphans": false
+  },
+  "counts": {
+    "todo_task_lines": 39,
+    "done_task_lines": 10,
+    "task_lines": 49,
+    "metadata_entries": 32,
+    "metadata_orphans": 3,
+    "task_lines_without_metadata": 19,
+    "event_files": 17,
+    "ready_files": 4,
+    "counted_event_files": 16,
+    "events_not_ready": 1,
+    "actions_events": 0,
+    "actions_added": 0,
+    "tasks": 48,
+    "active": 34,
+    "completed": 14,
+    "wrapped": 8,
+    "aliases": 48,
+    "areas": 5,
+    "areas_existing": 1,
+    "projects": 4,
+    "projects_existing": 1,
+    "sources": 11,
+    "sources_existing": 1,
+    "links": 12,
+    "places": 4,
+    "places_missing": 0,
+    "duplicates_left_out": 1,
+    "orphans_included": 0,
+    "text_sanitised": 0,
+    "source_changes": 0
+  },
+  "reconciled": true,
+  "sources_by_kind": [
+    {
+      "kind": "ticket",
+      "count": 2
+    },
+    {
+      "kind": "email",
+      "count": 1
+    }
+  ],
+  "statuses": [
+    {
+      "prototype": "open",
+      "status": "open",
+      "count": 22
+    }
+  ],
+  "roots": [
+    {
+      "id": "work",
+      "folder": "/home/mira/work",
+      "origin": "given",
+      "places": 3,
+      "missing": 0
+    },
+    {
+      "id": "documents",
+      "folder": "/home/mira/Documents",
+      "origin": "proposed",
+      "places": 1,
+      "missing": 0
+    }
+  ],
+  "owners": [
+    {
+      "name": "Mira Okafor",
+      "me": true,
+      "tasks": 24
+    },
+    {
+      "name": "Tomas",
+      "me": false,
+      "tasks": 1
+    }
+  ],
+  "attention": [
+    {
+      "code": "fallback-id",
+      "severity": "warning",
+      "count": 7
+    },
+    {
+      "code": "ticked-in-file",
+      "severity": "warning",
+      "count": 2
+    }
+  ],
+  "problems": [
+    {
+      "code": "fallback-id",
+      "severity": "warning",
+      "file": "TODO.md",
+      "line": 5,
+      "task": "t-b3fc07df"
+    }
+  ],
+  "problems_more": 0,
+  "tasks": [
+    {
+      "legacy_id": "t-eb2a8db7",
+      "ref": "M-16",
+      "area": "Lumen",
+      "project": "Lumen portal",
+      "status": "open",
+      "lifecycle": "active",
+      "place": {
+        "root": "work",
+        "path": "lumen/portal"
+      },
+      "due": "2026-11-20"
+    }
+  ],
+  "tasks_more": 0,
+  "not_imported": [
+    {
+      "what": "code"
+    },
+    {
+      "what": "unready_events",
+      "count": 1
+    }
+  ]
 }
 ```
 

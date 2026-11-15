@@ -9,13 +9,15 @@
 // The inputs are the files the importer reads (A7 3.15.2) and the ones 3.15.7 says are copied:
 // TODO.md, DONE.md, data/metadata.json, data/jira.json, data/audit.json, tasks-export.json (a
 // return import, 3.15.6) and every events/*.json and events/*.ready. Code, agent files, context/,
-// reviews/ and snapshots/ stay in the frozen folder and are not copied.
+// reviews/ and snapshots/ stay in the frozen folder and are not copied. The page's actions export
+// (`--actions`) is a file of its own, outside the prototype folder: it is copied beside the input
+// copy (`copyActions`), hashed and checked again the same way.
 
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, opendir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { EVENTS_DIR, type EventFileInput } from "./events.ts";
+import { ACTIONS_FILE, EVENTS_DIR, type EventFileInput } from "./events.ts";
 import { limitsWith, type Limits } from "./limits.ts";
 import { METADATA_FILE } from "./metadata.ts";
 import { AUDIT_FILE, JIRA_FILE } from "./optional.ts";
@@ -201,6 +203,34 @@ async function readBounded(path: string, bound: number): Promise<Buffer> {
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
+const isEventPath = (path: string): boolean => path.startsWith(`${EVENTS_DIR}/`);
+
+/**
+ * The bound on every event file together (`eventsBytes`). The copy, the hash and the read take the
+ * files in one sorted order and stop at the same file, so they agree on which files a run holds;
+ * the first file past the bound gives `events-too-large`, once.
+ */
+function eventBudget(limits: Limits, problems: Problem[]) {
+  let total = 0;
+  let over = false;
+  return {
+    /** True once the bound is passed: no later event file is read. */
+    get over(): boolean {
+      return over;
+    },
+    /** Counts a file's bytes; false when they take the total past the bound. */
+    take(size: number): boolean {
+      if (!over && total + size <= limits.eventsBytes) {
+        total += size;
+        return true;
+      }
+      if (!over) problems.push(problem("events-too-large", { file: EVENTS_DIR }));
+      over = true;
+      return false;
+    },
+  };
+}
+
 /** Hashes every input of a folder as it is now. */
 export async function hashInputs(
   folder: string,
@@ -210,11 +240,15 @@ export async function hashInputs(
   const listed = await listInputs(folder, limits);
   const files: InputFile[] = [];
   const problems = listed.problems;
+  const budget = eventBudget(limits, problems);
   for (const { path, bound } of listed.files) {
+    if (isEventPath(path) && budget.over) break;
     try {
       const bytes = await readBounded(local(folder, path), bound);
       if (bytes.length > bound) problems.push(problem("file-too-large", { file: path }));
-      else files.push({ path, size: bytes.length, sha256: sha256(bytes) });
+      else if (!isEventPath(path) || budget.take(bytes.length)) {
+        files.push({ path, size: bytes.length, sha256: sha256(bytes) });
+      }
     } catch {
       problems.push(problem("read-failed", { file: path }));
     }
@@ -226,14 +260,16 @@ export async function hashInputs(
  * Checks a source folder against the hashes a copy recorded. Every input that changed, appeared or
  * went away gives `source-changed`. An empty result means the folder still holds what was copied.
  * It fails closed: anything the check cannot list or hash (an unreadable or oversized file, a
- * folder where a file belongs, too many event files) is a change too.
+ * folder where a file belongs, too many event files) is a change too, unless it is one of `known`,
+ * the problems the copy itself reported, which are the same state again.
  */
 export async function verifySource(
   source: string,
   recorded: readonly InputFile[],
   overrides?: Partial<Limits>,
+  known: readonly Problem[] = [],
 ): Promise<Problem[]> {
-  return compareSource(source, recorded, [], limitsWith(overrides));
+  return compareSource(source, recorded, known, limitsWith(overrides));
 }
 
 const problemKey = (p: Problem): string => `${p.code}|${p.file}|${String(p.index ?? "")}`;
@@ -302,7 +338,9 @@ export async function copyInput(
   const problems: Problem[] = [...listed.problems];
   const files: InputFile[] = [];
   const made = new Set<string>();
+  const budget = eventBudget(limits, problems);
   for (const { path, bound } of listed.files) {
+    if (isEventPath(path) && budget.over) break;
     let bytes: Buffer;
     try {
       bytes = await readBounded(local(from, path), bound);
@@ -314,6 +352,7 @@ export async function copyInput(
       problems.push(problem("file-too-large", { file: path }));
       continue;
     }
+    if (isEventPath(path) && !budget.take(bytes.length)) break;
     try {
       const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
       if (dir !== "" && !made.has(dir)) {
@@ -332,6 +371,66 @@ export async function copyInput(
   const changes = await compareSource(from, files, problems, limits);
   problems.push(...changes);
   return { ok: !problems.some((p) => p.severity === "error"), files, problems };
+}
+
+/**
+ * Copies the page's actions export (`--actions`) to the new file `destination`, with the bytes'
+ * SHA-256 under the name ACTIONS_FILE, then hashes the source again: a difference gives
+ * `source-changed`. A source that is no regular file (a link, a folder), unreadable or over its
+ * bound gives its problem and no copy.
+ */
+export async function copyActions(
+  source: string,
+  destination: string,
+  overrides?: Partial<Limits>,
+): Promise<{ file?: InputFile; problems: Problem[] }> {
+  const bound = limitsWith(overrides).jsonBytes;
+  const read = await readActionsSource(source, bound);
+  if (read.bytes === undefined) return { problems: read.problems };
+  try {
+    await writePrivateFile(destination, read.bytes);
+  } catch {
+    return { problems: [problem("write-failed", { file: ACTIONS_FILE })] };
+  }
+  const file: InputFile = {
+    path: ACTIONS_FILE,
+    size: read.bytes.length,
+    sha256: sha256(read.bytes),
+  };
+  return { file, problems: await verifyActions(source, file, overrides) };
+}
+
+/** Checks the actions export against the hash its copy recorded: `source-changed` when it differs,
+ * went away or cannot be read. Fails closed, like verifySource. */
+export async function verifyActions(
+  source: string,
+  recorded: InputFile,
+  overrides?: Partial<Limits>,
+): Promise<Problem[]> {
+  const read = await readActionsSource(source, limitsWith(overrides).jsonBytes);
+  return read.bytes !== undefined && sha256(read.bytes) === recorded.sha256
+    ? []
+    : [problem("source-changed", { file: ACTIONS_FILE })];
+}
+
+async function readActionsSource(
+  source: string,
+  bound: number,
+): Promise<{ bytes?: Buffer; problems: Problem[] }> {
+  const at = { file: ACTIONS_FILE };
+  try {
+    if (!(await lstat(source)).isFile()) return { problems: [problem("not-a-regular-file", at)] };
+    const bytes = await readBounded(source, bound);
+    if (bytes.length > bound) return { problems: [problem("file-too-large", at)] };
+    return { bytes, problems: [] };
+  } catch {
+    return { problems: [problem("read-failed", at)] };
+  }
+}
+
+/** Reads a copy the run made itself (the actions export's), bounded. */
+export async function readCopy(path: string, overrides?: Partial<Limits>): Promise<Buffer> {
+  return readBounded(path, limitsWith(overrides).jsonBytes);
 }
 
 /** Whether `to` is `from` or lies under it, by whole path parts: `<from>/..input` is inside. */
@@ -359,8 +458,11 @@ export async function readInput(
   const problems = listed.problems;
   const single = new Map<string, Buffer>();
   const events: EventFileInput[] = [];
+  // The copy stops at the bound on every event file together; so does this read of it.
+  const budget = eventBudget(limits, problems);
   for (const { path, bound } of listed.files) {
-    const isEvent = path.startsWith(`${EVENTS_DIR}/`);
+    const isEvent = isEventPath(path);
+    if (isEvent && budget.over) break;
     const name = isEvent ? path.slice(EVENTS_DIR.length + 1) : path;
     if (isEvent && name.endsWith(".ready")) {
       events.push({ name });
@@ -375,6 +477,7 @@ export async function readInput(
       if (isEvent) events.push({ name });
       continue;
     }
+    if (isEvent && !budget.take(Math.min(bytes.length, bound))) break;
     if (isEvent) events.push({ name, bytes });
     else single.set(path, bytes);
   }

@@ -20,6 +20,8 @@ export const PLANNING = {
   folder: "planning-prototype",
   /** The index file, beside the folder. */
   index: "planning-prototype.index.json",
+  /** The page's actions export (`--actions`), beside the folder: a downloaded file, not in it. */
+  actions: "planning-prototype.actions.json",
   /** `--me`: the owner name that means the user. */
   me: MIRA.owner,
   /** `--roots`: the roots the fixture's paths are under, or deliberately not. */
@@ -96,6 +98,16 @@ export interface PlanningIndex {
     eventFiles: number;
     readyFiles: number;
     countedEventFiles: number;
+    /** web- event files without their .ready file. */
+    eventsNotReady: number;
+  };
+  /** The page's actions export beside the folder (`--actions`). */
+  actions: {
+    file: string;
+    /** Events in it. */
+    events: number;
+    /** Events it adds to those of events/: their IDs. */
+    added: string[];
   };
   tasks: IndexedTask[];
   cases: Record<string, { description: string; where: CaseLocation[] }>;
@@ -104,6 +116,8 @@ export interface PlanningIndex {
 export interface PlanningFixture {
   /** Every file of the prototype folder by its POSIX path, as text written as UTF-8. */
   files: ReadonlyMap<string, string>;
+  /** The page's actions export, which lies beside the folder, not in it. */
+  actions: string;
   index: PlanningIndex;
 }
 
@@ -149,7 +163,27 @@ const CASES: Record<string, string> = {
   "unmarked-task-line": "A task line without an ID marker: the ID is the fallback ID",
   "non-task-line":
     "A line that is neither a heading nor a task line: prose, a plain bullet, a bullet without bold",
-  "checked-in-todo": "A checked task line ([x] or [X]) still in TODO.md: done",
+  "checked-in-todo":
+    "A ticked task line ([x] or [X]) in TODO.md: a ticked box, not a check-off on the page (checkOff)",
+  "ticked-in-file":
+    "A [x] box in TODO.md that no event checks or unchecks. The page does not show it checked " +
+    "(only events check a task there); the import completes it as the person's own statement",
+  "ticked-unchecked":
+    "A [x] box in TODO.md whose last check event is an uncheck: the page shows it unchecked, " +
+    "and the import keeps it active",
+  "metadata-state-key":
+    "A metadata key checked, focus or ticked, which the page applies to a task without events: " +
+    "kept in ext.planning, reported, and neither checks nor stars the task",
+  "in-both-ledgers":
+    "One ID on a TODO.md line and a DONE.md line: the page shows the DONE.md line and hides the " +
+    "open one, so the DONE.md line is the task",
+  "source-file-link":
+    "A file: link: a path on the machine that wrote it, kept with the task's paths, not a source",
+  "source-session": "A t3-thread: link, which names an agent thread: a source of kind session",
+  "actions-export":
+    "The page's actions export beside the folder (planning-prototype.actions.json): every event " +
+    "the page knew, those of events/ too. Merged by event ID, it adds the browser's own events " +
+    "and the web- event whose .ready file is missing",
   "repeated-heading": "A `## ` heading that appears a second time in the same file",
   u2028:
     "U+2028 in a task body before the marker ends the line there (str.splitlines()). The task keeps " +
@@ -350,6 +384,8 @@ interface TaskInput {
   /** Line cases, and metadata cases as `case@key`. */
   cases?: string[];
   expect?: Expects;
+  /** The marker is one a line of the other ledger already has (`in-both-ledgers`). */
+  again?: boolean;
 }
 
 /** A task line written exactly as `line`, with the parse it must give stated by hand. */
@@ -399,6 +435,9 @@ class Builder {
   eventFiles = 0;
   readyFiles = 0;
   countedEventFiles = 0;
+  notReady = 0;
+  /** Every event the page knows: each one written to events/, and its browser's own. */
+  readonly known: { id: string; task: string; action: string; at: string }[] = [];
 
   /** A marker drawn from the seeded source, in the prototype's `t-` plus eight hex digits form. */
   marker(): string {
@@ -503,6 +542,7 @@ class Builder {
       eol: input.eol,
       cases: input.cases ?? [],
       expect: input.expect,
+      again: input.again === true,
     });
   }
 
@@ -528,14 +568,17 @@ class Builder {
       eol: Eol | undefined;
       cases: readonly string[];
       expect: Expects | undefined;
+      again?: boolean;
     },
   ): string {
-    if (this.#ids.has(t.id)) throw new Error(`duplicate task ID ${t.id}`);
+    if (this.#ids.has(t.id) !== (t.again === true)) throw new Error(`task ID ${t.id}`);
     if (!/^[a-z0-9_-]+$/.test(t.id)) throw new Error(`bad task ID ${t.id}`);
     this.#ids.add(t.id);
+    // Metadata is keyed by ID: a line whose ID another line gave an entry has metadata too.
+    const hasMeta = t.meta !== undefined || this.metadata.has(t.id);
     const lineCases = t.cases.filter((c) => !c.includes("@"));
     lineCases.push(t.marked ? "marked" : "unmarked-task-line");
-    if (t.meta === undefined) lineCases.push("task-line-without-metadata");
+    if (!hasMeta) lineCases.push("task-line-without-metadata");
     const line = this.#add(text, t.eol ?? this.#eol, lineCases, { task: t.id }, t.expect);
     for (const c of t.cases.filter((c) => c.includes("@"))) {
       const [name = "", key = ""] = c.split("@");
@@ -551,9 +594,12 @@ class Builder {
       marked: t.marked,
       checked: t.mark !== " ",
       done: this.#file === "DONE.md" || t.mark !== " ",
-      metadata: t.meta !== undefined,
+      metadata: hasMeta,
     });
-    if (t.meta !== undefined) this.metadata.set(t.id, t.meta);
+    if (t.meta !== undefined) {
+      if (this.metadata.has(t.id)) throw new Error(`two metadata entries for ${t.id}`);
+      this.metadata.set(t.id, t.meta);
+    }
     return t.id;
   }
 
@@ -579,12 +625,14 @@ class Builder {
       input.writer === "page" ? JSON.stringify(body) : `${JSON.stringify(body, null, 2)}\n`,
     );
     this.eventFiles += 1;
+    this.known.push(body);
     const ready = input.writer === "page" ? input.ready !== false : web;
     if (ready) {
       this.files.set(`events/${input.id}.ready`, "");
       this.readyFiles += 1;
     }
     if (!web || ready) this.countedEventFiles += 1;
+    else this.notReady += 1;
     const cases = [...(input.cases ?? [])];
     if (web) cases.push(ready ? "event-ready" : "event-web-without-ready");
     else cases.push("event-non-web");
@@ -828,15 +876,31 @@ export function buildPlanningFixture(): PlanningFixture {
       evidence: "Release notes merged in the portal repository.",
       source_date: "2026-10-15",
     },
-    cases: ["checked-in-todo"],
+    cases: ["checked-in-todo", "ticked-in-file"],
   });
   b.task({
     bold: "Check the backup restore drill.",
     mark: "X",
     body: "Ran it on staging.",
     meta: { category: "Lumen", project: "Lumen portal", status: "open", owner: me, priority: "P2" },
-    cases: ["checked-in-todo", "trailing-dots"],
+    cases: ["checked-in-todo", "ticked-in-file", "trailing-dots"],
     expect: { "trailing-dots": { title: "Check the backup restore drill" } },
+  });
+  const certificate = b.task({
+    bold: "Renew the staging certificate",
+    mark: "x",
+    marker: "lum-staging-cert",
+    body: "Ticked too early: the renewal failed.",
+    meta: { category: "Lumen", project: "Lumen portal", status: "open", owner: me, priority: "P2" },
+    cases: ["ticked-unchecked"],
+  });
+  const invoice = b.task({
+    bold: "Send the November invoice",
+    body: "Waiting for the hours from Tomas.",
+    marker: "lum-invoice-nov",
+    meta: { category: "Lumen", project: "Lumen portal", status: "open", owner: me, priority: "P2" },
+    cases: ["in-both-ledgers"],
+    expect: { "in-both-ledgers": { hidden: true } },
   });
   b.text("- Ask Aiko about the staging access next week", ["non-task-line"]);
   b.text("- [ ] Plain checkbox without a bold title", ["non-task-line"]);
@@ -896,6 +960,8 @@ export function buildPlanningFixture(): PlanningFixture {
       priority: "P3",
       due: "2026-13-01",
       paths: [`${HOME}/Documents/health`],
+      checked: true,
+      focus: true,
     },
     cases: [
       "trailing-dots",
@@ -903,6 +969,8 @@ export function buildPlanningFixture(): PlanningFixture {
       "due-invalid@due",
       "invalid-date@due",
       "path-outside-roots@paths",
+      "metadata-state-key@checked",
+      "metadata-state-key@focus",
     ],
     expect: { "trailing-dots": { title: "Book the dentist" } },
   });
@@ -921,8 +989,14 @@ export function buildPlanningFixture(): PlanningFixture {
           url: "https://calendar.mira.example/calendar/event?eid=FixturePassport",
         },
       ],
+      ticked: true,
     },
-    cases: ["due-invalid@due", "invalid-date@due", "source-calendar@sources"],
+    cases: [
+      "due-invalid@due",
+      "invalid-date@due",
+      "source-calendar@sources",
+      "metadata-state-key@ticked",
+    ],
   });
   const bulbs = b.task({
     bold: "Plant the spring bulbs",
@@ -1078,15 +1152,24 @@ export function buildPlanningFixture(): PlanningFixture {
     ["Buy rice", "\r"],
   ];
   for (const [bold, eol] of errands) b.task({ bold, body: "From the corner shop.", eol });
-  b.task({ bold: "Buy tea", body: "From the corner shop." });
+  const tea = b.task({ bold: "Buy tea", body: "From the corner shop." });
   b.text("");
 
   b.heading("Lumen");
   const offsite = b.task({
     bold: "Plan the team offsite",
     body: "Venue shortlist is in the doc. (added 2026-10-22, claude)",
-    meta: { category: "Lumen", status: "open", owner: me, priority: "P2" },
-    cases: ["no-project@project"],
+    meta: {
+      category: "Lumen",
+      status: "open",
+      owner: me,
+      priority: "P2",
+      sources: [
+        { label: "Folder", url: `file://${WORK}/lumen/offsite` },
+        { label: "Planning thread", url: "t3-thread:fixture-thread-0001" },
+      ],
+    },
+    cases: ["no-project@project", "source-file-link@sources", "source-session@sources"],
   });
   b.task({
     bold: "Order printer toner",
@@ -1207,6 +1290,14 @@ export function buildPlanningFixture(): PlanningFixture {
     meta: { category: "Lumen", project: "Lumen portal", status: "open", owner: me, priority: "P2" },
     cases: ["done-with-suffix", "invalid-date", "trailing-dots"],
     expect: { "trailing-dots": { title: "Fix the login redirect" } },
+  });
+  b.task({
+    bold: "Send the November invoice",
+    body: "Waiting for the hours from Tomas. (done 2026-11-08; sent to the clinic)",
+    marker: invoice,
+    again: true,
+    cases: ["in-both-ledgers", "done-with-suffix"],
+    expect: { "in-both-ledgers": { hidden: false } },
   });
   b.text("");
   b.heading("Home");
@@ -1390,6 +1481,42 @@ export function buildPlanningFixture(): PlanningFixture {
     at: "2026-11-06T12:00:00Z",
     expect: { counted: true, starred: true },
   });
+  b.event({
+    id: "cli-0012",
+    writer: "import",
+    task: certificate,
+    action: "uncheck",
+    at: "2026-11-05T15:00:00Z",
+    cases: ["ticked-unchecked"],
+    expect: { checked: false },
+  });
+
+  // The page's actions export: every event it knows, those of events/ (the web- one without its
+  // .ready file too, which is the browser's own) and one only the browser holds, de-duplicated and
+  // sorted by time, then ID, saved on 7 November.
+  const browserOnly = {
+    id: b.webId(),
+    task: tea,
+    action: "check",
+    at: "2026-11-06T18:00:00.000Z",
+  };
+  const exported = [...b.known, browserOnly].sort(
+    (x, y) => Date.parse(x.at) - Date.parse(y.at) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0),
+  );
+  const actions = `${JSON.stringify(
+    { version: 1, exported: "2026-11-07T19:30:00.000Z", events: exported },
+    null,
+    2,
+  )}\n`;
+  const notReadyIds = [...b.files.keys()]
+    .filter((p) => /^events\/web-.*\.json$/.test(p) && !b.files.has(p.replace(/json$/, "ready")))
+    .map((p) => p.slice("events/".length, -".json".length));
+  b.mark("actions-export", {
+    file: PLANNING.actions,
+    task: tea,
+    event: browserOnly.id,
+    note: "the browser's own check, and the web- event without .ready, are added",
+  });
 
   // data/metadata.json: one object keyed by task ID, ledger order, then the orphans.
   b.files.set("data/metadata.json", `${JSON.stringify(Object.fromEntries(b.metadata), null, 2)}\n`);
@@ -1479,6 +1606,7 @@ export function buildPlanningFixture(): PlanningFixture {
   const done = b.tasks.length - todo;
   return {
     files: sortedFiles,
+    actions,
     index: {
       fixture: `fixtures/${PLANNING.folder}`,
       generator: "pnpm seed --planning",
@@ -1493,7 +1621,9 @@ export function buildPlanningFixture(): PlanningFixture {
           "trailing dot stripped. A line starting '## ' sets the group to the rest of the line, " +
           "trimmed; before any heading the group is Other. After the split no line holds a line " +
           "terminator, so JavaScript's `.` matches what Python's does without the s flag",
-        done: "Every task line in DONE.md is done whatever its checkbox. In TODO.md x or X is done",
+        done:
+          "Every task line in DONE.md is done whatever its checkbox. In TODO.md an x or X box is " +
+          "a ticked box, which does not check the task on the page (checkOff)",
         markers:
           "<!-- task:ID --> with ID [a-z0-9_-]+. The first marker anywhere in the line, title " +
           "included, gives the ID. The body is the text after the title with every marker " +
@@ -1506,15 +1636,51 @@ export function buildPlanningFixture(): PlanningFixture {
         events:
           "Every events/*.json is read, in sorted file-name order. A file whose name starts with " +
           "web- counts only when events/<same stem>.ready (an empty file) exists. Any other file " +
-          "counts as soon as it exists. An event is an object {id, task, action, at}: action " +
+          "counts as soon as it exists. Neither the page nor planning.py checks that a file's name " +
+          "is its event's id. An event is an object {id, task, action, at}: action " +
           "check, uncheck, focus or unfocus; id and task [a-zA-Z0-9_-]{1,100}; at " +
           "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,9})?)?(Z|[+-]\\d{2}:\\d{2}). An invalid " +
-          "file makes the prototype's read of the folder fail as a whole: every event file here " +
-          "is valid",
+          "file makes planning.py's read fail as a whole, and the page drops it: every event file " +
+          "here is valid. An event's task may hold upper-case letters; a ledger ID never does",
         eventOrder:
-          "Counted events apply in order of the instant of at, then id as text. The last check or " +
+          "Events are de-duplicated by id, then apply in order of the instant of at, then id: " +
+          "planning.py compares ids by code point, the page with localeCompare. The last check or " +
           "uncheck per task wins, and the last focus or unfocus sets the star. No two times here " +
           "differ by less than a microsecond",
+        checkOff:
+          "Only events check a task on the page. A [x] box in TODO.md does not: the page shows the " +
+          "line with a note that it was ticked in the file and leaves it unchecked unless an event " +
+          "checks it, and a later uncheck event leaves it unchecked. reconcile archives a task whose " +
+          "last check event is a check and ignores a [x] box. Events fold onto DONE.md tasks with no " +
+          "visible effect: a done task shows checked, without a star, and nothing reopens it. A " +
+          "metadata key checked, focus or ticked takes effect on the page for a task with no events, " +
+          "since the page copies every metadata key onto its task",
+        groups:
+          "The page shows a task under its metadata category, Small todos without one, and in it " +
+          "under its group: metadata project, else the heading without a trailing (...)",
+        bothLedgers:
+          "An id on a TODO.md line and a DONE.md line: the page shows the DONE.md line and hides the " +
+          "open one; planning.py's build refuses the duplicate id",
+        next:
+          "The page reads next from metadata, else from the body as Next:\\s*(.*?)(?=\\sRefs:|" +
+          "\\s\\(added|$), else it shows a placeholder",
+        links:
+          "The page gives a link a kind, first match wins: no URL, link; file:, folder; host " +
+          "mail.google.com, mail; chat.google.com, chat; a host ending in atlassian.net, wiki when " +
+          "the path starts with /wiki, else ticket; docs.google.com, doc; drive.google.com, drive; a " +
+          "host containing gitlab or github, code; else link. It shows links only for http:, " +
+          "https:, file: and t3-thread:, each URL once, and a folder for the first path starting " +
+          "with /. A label is the link's own, else the kind's name; a label that is the ticket's " +
+          "key is not the ticket's title. The fixture's hosts stay RFC 2606 names, so the hosts " +
+          "of real services are tested on inline URLs",
+        actions:
+          "The page saves its actions export as planning-actions-YYYY-MM-DD.json: {version: 1, " +
+          "exported, events}, events holding every event the page knows, those of events/ too, " +
+          "de-duplicated and sorted. The prototype's import command reads only events, at most " +
+          "10,000, checks all of them before it writes (action one of the four, id and task " +
+          "[a-zA-Z0-9_-]{1,100}, at RFC 3339 with Z or an offset and up to nine fraction digits, " +
+          "extra fields allowed), and refuses an event file it would change. The export carries " +
+          "the times of events/ as written, so the importer reads them with the events grammar",
         eventWriters:
           "The page writes events/web-<lower-case UUID>.json, then the .ready file. Its JSON is " +
           "written compactly here with a millisecond UTC time (the fixture's choice). The " +
@@ -1525,7 +1691,11 @@ export function buildPlanningFixture(): PlanningFixture {
           "into '- [x]', right-trimmed, then ' (done YYYY-MM-DD; <evidence>) <!-- task:<id> -->'. " +
           "New lines go after the first line of DONE.md, separated by blank lines",
         optionalFiles:
-          "data/metadata.json: one object keyed by task ID (missing: {}). data/jira.json: a list " +
+          "data/metadata.json: one object keyed by task ID (missing: {}); an entry that is no " +
+          "object is ignored. The page keeps due only when it starts with YYYY-MM-DD, keeps the " +
+          "sources whose url is text, shows each path once, sorts rank 0 last with the tasks " +
+          "without a rank, defaults a missing owner to a fixed first name in its code, and files a " +
+          "task without a category under Small todos. data/jira.json: a list " +
           "of ticket rows (missing: []); a row without key is skipped, key and url (path " +
           "/browse/<KEY>) are read, other fields are free. data/audit.json: one free-form object " +
           "(missing: {}) with a scalar reviewed time and nested objects or lists the page only " +
@@ -1551,6 +1721,12 @@ export function buildPlanningFixture(): PlanningFixture {
         eventFiles: b.eventFiles,
         readyFiles: b.readyFiles,
         countedEventFiles: b.countedEventFiles,
+        eventsNotReady: b.notReady,
+      },
+      actions: {
+        file: `fixtures/${PLANNING.actions}`,
+        events: exported.length,
+        added: [...notReadyIds, browserOnly.id].sort(),
       },
       tasks: b.tasks,
       cases,
@@ -1569,6 +1745,7 @@ export function digestPlanningFixture(fixture: PlanningFixture): string {
     hash.update(`${path}\0${String(Buffer.byteLength(text, "utf8"))}\0`);
     hash.update(text, "utf8");
   }
+  hash.update(fixture.actions, "utf8");
   hash.update(serializeIndex(fixture.index), "utf8");
   return hash.digest("hex");
 }

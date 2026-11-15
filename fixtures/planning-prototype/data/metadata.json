@@ -129,6 +129,20 @@
     "owner": "Mira Okafor",
     "priority": "P2"
   },
+  "lum-staging-cert": {
+    "category": "Lumen",
+    "project": "Lumen portal",
+    "status": "open",
+    "owner": "Mira Okafor",
+    "priority": "P2"
+  },
+  "lum-invoice-nov": {
+    "category": "Lumen",
+    "project": "Lumen portal",
+    "status": "open",
+    "owner": "Mira Okafor",
+    "priority": "P2"
+  },
   "lum_report-api": {
     "category": "Lumen",
     "project": "Clinic sync (Q4)",
@@ -166,7 +180,9 @@
     "due": "2026-13-01",
     "paths": [
       "/home/mira/Documents/health"
-    ]
+    ],
+    "checked": true,
+    "focus": true
   },
   "t-c06f2944": {
     "category": "Home",
@@ -179,7 +195,8 @@
         "label": "Passport appointment",
         "url": "https://calendar.mira.example/calendar/event?eid=FixturePassport"
       }
-    ]
+    ],
+    "ticked": true
   },
   "t-6e1e9b9a": {
     "category": "Home",
@@ -235,7 +252,17 @@
     "category": "Lumen",
     "status": "open",
     "owner": "Mira Okafor",
-    "priority": "P2"
+    "priority": "P2",
+    "sources": [
+      {
+        "label": "Folder",
+        "url": "file:///home/mira/work/lumen/offsite"
+      },
+      {
+        "label": "Planning thread",
+        "url": "t3-thread:fixture-thread-0001"
+      }
+    ]
   },
   "t-0e7b3bc1": {
     "category": "Open source",
