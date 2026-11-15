@@ -353,8 +353,10 @@ async function pickSpace(
       : byDefault.length > 0
         ? byDefault
         : served;
-  const [only, other] = found;
-  if (only !== undefined && other === undefined) return only.id;
+  // Copies of one space share its ID, which is what an entry names (A2 3.10.5): one space.
+  const ids = [...new Set(found.map((s) => s.id))];
+  const [only, other] = ids;
+  if (only !== undefined && other === undefined) return only;
   throw new AppError({
     code: "invalid_input",
     message:

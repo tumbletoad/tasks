@@ -153,16 +153,20 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
     const broken = () => Promise.reject(new RpcError(-32603, "Internal error"));
     const open = (entry: number, id: string) => ({ entry, id, state: "open" });
 
-    // A copy beside its original: both share the ID, neither can be named, nothing is asked.
+    // A copy beside its original: both share the ID, which names one copy (A2 3.10.5), so the
+    // space is asked once, and a failure there fails the check.
     const shared = await requestCheck(session(broken), [open(0, "sp_a"), open(1, "sp_a")]);
-    expect(shared.status).toBe("warn");
-    expect(asked).toEqual([]);
-    // Beside a space it can name, the check asks that one and passes.
-    expect(
-      (await requestCheck(session(answers), [open(0, "sp_a"), open(1, "sp_a"), open(2, "sp_b")]))
-        .status,
-    ).toBe("ok");
-    expect(asked).toEqual(["sp_b"]);
+    expect(shared.status).toBe("fail");
+    expect(asked).toEqual(["sp_a"]);
+    asked.length = 0;
+    const both = await requestCheck(session(answers), [
+      open(0, "sp_a"),
+      open(1, "sp_a"),
+      open(2, "sp_b"),
+    ]);
+    expect(both.status).toBe("ok");
+    expect(both.detail).toContain("for 2 space(s)");
+    expect(asked).toEqual(["sp_a", "sp_b"]);
     expect((await requestCheck(session(broken), [open(2, "sp_b")])).status).toBe("fail");
     // No space served: op/call must still answer with A3's body.
     expect((await requestCheck(session(notServed), [])).status).toBe("ok");
