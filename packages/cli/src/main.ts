@@ -1,7 +1,7 @@
 // `tasks` (A2 3.10): one command. The generated operation verbs come from the registry's
 // `cli-spec.json` (A3 3.2.2); the local commands are routed here.
 //
-// Every operation verb, `tasks space` and `tasks roots` go through the service: the CLI opens no space database
+// Every operation verb, `tasks space`, `tasks roots` and `tasks view` go through the service: the CLI opens no space database
 // itself. These work without a service, by design: `tasks` alone and `tasks help` (they print the
 // service's state from service.json), `tasks version`, `tasks doctor` (a stopped or untrusted
 // service is what it diagnoses) and `tasks serve` (it is the service).
@@ -34,6 +34,7 @@ import { SERVICE_HELP, serviceCommand } from "./service.ts";
 import { SETUP_HELP, setupCommand, type SetupOptions } from "./setup.ts";
 import { SPACE_HELP, spaceCommand } from "./space.ts";
 import { asAppError, runVerb } from "./verbs.ts";
+import { VIEW_HELP, viewCommand } from "./view.ts";
 
 export type { Io } from "./io.ts";
 
@@ -74,6 +75,7 @@ const LOCAL: readonly [string, string][] = [
   ["service", SERVICE_HELP],
   ["space", "List, create, open, close, back up, restore, claim and recover spaces"],
   ["roots", "List and add this machine's roots, the folders places live under"],
+  ["view", "Check a space's generated view/ and render it again (view rebuild)"],
   ["import", "Preview the import of the Planning prototype (import planning <folder> --dry-run)"],
   [
     "setup",
@@ -176,13 +178,15 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
           ? SPACE_HELP
           : topic === "roots"
             ? ROOTS_HELP
-            : topic === "setup"
-              ? SETUP_HELP
-              : topic === "import"
-                ? IMPORT_HELP
-                : verb === undefined
-                  ? shortHelp()
-                  : verbHelp(verb),
+            : topic === "view"
+              ? VIEW_HELP
+              : topic === "setup"
+                ? SETUP_HELP
+                : topic === "import"
+                  ? IMPORT_HELP
+                  : verb === undefined
+                    ? shortHelp()
+                    : verbHelp(verb),
       );
       return 0;
     }
@@ -200,6 +204,8 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         return await spaceCommand(io, globals, args, options);
       case "roots":
         return await rootsCommand(io, globals, args, options);
+      case "view":
+        return await viewCommand(io, globals, args, options);
       case "import":
         return await importCommand(io, globals, args, options);
       case "setup":

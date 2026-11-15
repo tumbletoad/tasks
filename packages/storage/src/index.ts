@@ -349,6 +349,14 @@ export {
 export { canonicalJson, isJsonData } from "./write/canonical.ts";
 export { readSpacePreference, readSpacePreferences, storedPreference } from "./preferences.ts";
 export {
+  markProjected,
+  PROJECTION_ALL,
+  PROJECTION_BATCH,
+  PROJECTION_QUEUE_KEYS,
+  queueProjection,
+  type ProjectedBatch,
+} from "./write/outbox.ts";
+export {
   FOCUS_MS,
   isLaunchRef,
   LAUNCH_EDGES,

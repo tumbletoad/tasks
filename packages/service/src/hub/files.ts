@@ -15,6 +15,7 @@ export {
   makeDir,
   removeStaleTemps,
   setModeOf,
+  writeAll,
   type MakeDirOptions,
 } from "@tasks/files";
 export { judgePath, type Judged };

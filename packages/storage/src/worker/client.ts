@@ -56,6 +56,7 @@ import type { ReadOnlyReason } from "../space.ts";
 import { destinationExists, destinationNotCreated, literalPath } from "../sqlite-uri.ts";
 import type { DriverReport } from "../startup-check.ts";
 import type { LaunchRecord } from "../write/launches.ts";
+import type { ProjectedBatch } from "../write/outbox.ts";
 import type { RunRow } from "../write/runs.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
 import type { WriteResult } from "../write/request.ts";
@@ -910,6 +911,28 @@ export class SpaceWriterHandle {
   /** Every launch of `machine` that is not final, oldest first: `openWork` (A4 3.16.1). */
   openLaunches(machine: string): Promise<LaunchRecord[]> {
     return this.#queued(() => this.#worker.call("openLaunches", { handle: this.handle, machine }));
+  }
+
+  /**
+   * The projection rendered a batch (A1 3.13 step 5): marks its outbox rows and returns the
+   * watermark (write/outbox.ts). Waits in the writer's queue like a request.
+   */
+  projected(batch: ProjectedBatch): Promise<number> {
+    return this.#queued(() => this.#worker.call("projected", { handle: this.handle, batch }));
+  }
+
+  /**
+   * Queues tasks for the projection: every task, a full rebuild, or only `keys` (at most
+   * PROJECTION_QUEUE_KEYS), the tasks a reconciliation found missing or different. Returns the
+   * tasks queued.
+   */
+  queueProjection(keys?: readonly string[]): Promise<number> {
+    return this.#queued(() =>
+      this.#worker.call("queueProjection", {
+        handle: this.handle,
+        ...(keys === undefined ? {} : { keys: [...keys] }),
+      }),
+    );
   }
 
   /** A run record as it is now (A4 3.16.1), or undefined, behind every request sent before. */

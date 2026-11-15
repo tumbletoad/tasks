@@ -585,6 +585,8 @@ export function serve(
         receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,
         launch: ({ handle, launch }) => writer(handle).launch(launch) ?? null,
         openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),
+        projected: ({ handle, batch }) => writer(handle).projected(batch),
+        queueProjection: ({ handle, keys }) => writer(handle).queueProjection(keys),
         run: ({ handle, run }) => writer(handle).run(run) ?? null,
         openRuns: ({ handle, machine }) => writer(handle).openRuns(machine),
         exec: ({ handle, sql }) => {

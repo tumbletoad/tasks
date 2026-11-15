@@ -83,6 +83,7 @@ import {
   type LaunchRecord,
 } from "./launches.ts";
 import { canonicalJson } from "./canonical.ts";
+import { markProjected, queueProjection, type ProjectedBatch } from "./outbox.ts";
 import { isPosition, positionBetween } from "./positions.ts";
 import {
   decodeRun,
@@ -1033,6 +1034,25 @@ export class SpaceWriter {
   openRuns(machine: string): RunRow[] {
     const conn = this.#usable();
     return conn.transaction("deferred", () => readOpenRuns(conn, machine));
+  }
+
+  /**
+   * The projection rendered `keys` at the snapshot `seq` (A1 3.13 step 5): their outbox rows are
+   * done, or wait for the commits after `seq`. Returns the watermark (step 6). A bookkeeping write
+   * (A1 3.7): no commit, no history (outbox.ts).
+   */
+  projected(batch: ProjectedBatch): number {
+    const conn = this.#usable();
+    return conn.transaction("immediate", () => markProjected(conn, batch));
+  }
+
+  /**
+   * Queues tasks for the projection (outbox.ts): every task, a full rebuild, or only `keys`, the
+   * tasks a reconciliation found missing or different. Returns the tasks queued.
+   */
+  queueProjection(keys?: readonly string[]): number {
+    const conn = this.#usable();
+    return conn.transaction("immediate", () => queueProjection(conn, keys));
   }
 
   /**
