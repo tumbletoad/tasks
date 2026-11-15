@@ -19,6 +19,7 @@ import {
   type PlannedOp,
   type PlannedTask,
   type PlannedTaskCreate,
+  type PrototypeInput,
   type PrototypeParse,
 } from "./index.ts";
 
@@ -45,6 +46,7 @@ const read = (path: string): string => readFileSync(join(ROOT, path), "utf8");
 
 let index: Index;
 let raw: Record<string, Record<string, unknown>>;
+let input: PrototypeInput;
 let parse: PrototypeParse;
 let plan: ImportPlan;
 /** The import machine's zone for the fixture: CEST until 25 October 2026, CET after. */
@@ -53,9 +55,19 @@ let options: MappingOptions;
 
 beforeAll(async () => {
   index = JSON.parse(read("fixtures/planning-prototype.index.json")) as Index;
+  // One task per ID: the TODO.md line of an ID that DONE.md has too is hidden, as on the page
+  // (case in-both-ledgers). Every row below reads the lines that stand for their tasks.
+  const hidden = (index.cases["in-both-ledgers"]?.where ?? []).filter(
+    (w) => w.expect?.["hidden"] === true,
+  );
+  expect(hidden).toHaveLength(1);
+  index.tasks = index.tasks.filter(
+    (t) => !hidden.some((w) => w.file === t.file && w.line === t.line),
+  );
   raw = JSON.parse(read("fixtures/planning-prototype/data/metadata.json")) as typeof raw;
-  const { input, problems } = await readInput(FIXTURE);
-  expect(problems).toEqual([]);
+  const folder = await readInput(FIXTURE);
+  expect(folder.problems).toEqual([]);
+  input = folder.input;
   parse = parsePrototype(input);
   options = { me: index.me, roots: index.roots, timeZone: ZONE };
   plan = mapPrototype(parse, options);
@@ -360,8 +372,9 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
     cases: ["next-set", "next-from-body", "next-empty"],
     check() {
       for (const id of ids("next-set")) expect(createOf(id).summary).toBe(meta(id)["next"]);
+      // The page's own pattern for the clause.
       for (const id of ids("next-from-body")) {
-        const clause = /Next: (.*?)\. /.exec(indexed(id)?.body ?? "")?.[1];
+        const clause = /Next:\s*(.*?)(?=\sRefs:|\s\(added|$)/.exec(indexed(id)?.body ?? "")?.[1];
         expect(clause).toBeTruthy();
         expect(createOf(id).summary).toBe(clause);
       }
@@ -595,22 +608,35 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
     },
   },
   {
-    row: "[x] in TODO.md or a folded check: completed, pending, at the event time or the import time",
+    row: "A folded check, or a [x] box in TODO.md no event decides: completed, pending, at the event time or the import time. The last check event wins over a box",
     cases: [
       "checked-in-todo",
+      "ticked-in-file",
+      "ticked-unchecked",
       "rollback-checked",
       "event-on-fallback-id",
       "rollback-unchecked",
       "event-web-without-ready",
     ],
     check() {
-      for (const id of ids("checked-in-todo")) {
+      // A ticked box no event decides: the page does not show it checked, the import completes it
+      // as the person's own statement, under a code of its own.
+      for (const id of ids("ticked-in-file")) {
+        expect(ids("checked-in-todo")).toContain(id);
         expect(taskOf(id).lifecycle).toBe("completed");
         expect(taskOf(id).wrap).toBe("pending");
         expect(opsOf(id, "task.complete")).toEqual([
           { kind: "task.complete", task: { draft: id } },
         ]);
-        expect(problemsOf("checked-item", id)).toHaveLength(1);
+        expect(problemsOf("ticked-in-file", id)).toHaveLength(1);
+        expect(problemsOf("checked-item", id)).toEqual([]);
+      }
+      // A ticked box whose last check event is an uncheck: unchecked, as on the page.
+      for (const id of ids("ticked-unchecked")) {
+        expect(indexed(id)?.file).toBe("TODO.md");
+        expect(taskOf(id).lifecycle).toBe("active");
+        expect(opsOf(id, "task.complete")).toEqual([]);
+        expect(problemsOf("ticked-unchecked", id)).toHaveLength(1);
       }
       for (const name of ["rollback-checked", "event-on-fallback-id"]) {
         for (const w of where(name)) {
@@ -619,12 +645,28 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
           expect(opsOf(w.task ?? "", "task.complete")).toEqual([
             { kind: "task.complete", task: { draft: w.task }, at: Date.parse(at) },
           ]);
+          expect(problemsOf("checked-item", w.task ?? "")).toHaveLength(1);
         }
       }
       // Checked, then unchecked; and a check whose page write never finished: still active.
       for (const id of [...ids("rollback-unchecked"), ...ids("event-web-without-ready")]) {
         expect(taskOf(id).lifecycle).toBe("active");
         expect(opsOf(id, "task.complete")).toEqual([]);
+      }
+      // With the page's actions export, the browser's own check and the unfinished write count.
+      const actions = readFileSync(join(ROOT, "fixtures", "planning-prototype.actions.json"));
+      const merged = mapPrototype(parsePrototype({ ...input, actions }), options);
+      for (const w of where("actions-export")) {
+        const event = (
+          JSON.parse(actions.toString("utf8")) as { events: { id: string; at: string }[] }
+        ).events.find((e) => e.id === w.event);
+        expect(opsOf(w.task ?? "", "task.complete")).toEqual([]);
+        expect(opsOf(w.task ?? "", "task.complete", merged)).toEqual([
+          { kind: "task.complete", task: { draft: w.task }, at: Date.parse(event?.at ?? "") },
+        ]);
+      }
+      for (const id of ids("event-web-without-ready")) {
+        expect(taskOf(id, merged).lifecycle).toBe("completed");
       }
       // --checked-as review keeps them active in Review.
       const review = mapPrototype(parse, { ...options, checkedAs: "review" });
@@ -728,7 +770,91 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
       }
     },
   },
+  {
+    row: "Metadata keys checked, focus and ticked: kept in ext.planning and reported, never applied",
+    cases: ["metadata-state-key"],
+    check() {
+      for (const w of where("metadata-state-key")) {
+        const id = w.task ?? "";
+        const key = w.key ?? "";
+        expect(ext(id)[key]).toEqual(meta(id)[key]);
+        const index = Object.keys(meta(id))
+          .filter((k) => !KNOWN_KEYS.has(k))
+          .indexOf(key);
+        expect(problemsOf("metadata-state-key", id).map((p) => p.index)).toContain(index);
+        // No event decides the task, and the key neither checks nor stars it.
+        if (parse.events.state.get(id) === undefined) {
+          expect(taskOf(id).lifecycle).toBe("active");
+          expect(createOf(id).focus).toBeUndefined();
+        }
+      }
+    },
+  },
+  {
+    row: "An ID in both ledgers: the DONE.md line is the task, as the page shows it",
+    cases: ["in-both-ledgers"],
+    check() {
+      const [open, done] = [true, false].map((hidden) =>
+        where("in-both-ledgers").find((w) => w.expect?.["hidden"] === hidden),
+      );
+      const id = done?.task ?? "";
+      expect(open?.task).toBe(id);
+      expect(ext(id)).toMatchObject({ legacy_id: id, file: "DONE.md", line: done?.line });
+      expect(taskOf(id).lifecycle).toBe("completed");
+      expect(plan.tasks.filter((t) => t.legacyId === id)).toHaveLength(1);
+      expect(parse.problems).toContainEqual({
+        code: "open-copy-hidden",
+        severity: "warning",
+        file: "TODO.md",
+        line: open?.line,
+        task: id,
+      });
+    },
+  },
+  {
+    row: "Links of the page's own kinds: a file: link is a kept path, a t3-thread: link a session",
+    cases: ["source-file-link", "source-session"],
+    check() {
+      for (const id of ids("source-file-link")) {
+        const links = (meta(id)["sources"] as { url: string }[]).filter((s) =>
+          s.url.startsWith("file:"),
+        );
+        expect(links.length).toBeGreaterThan(0);
+        for (const link of links) {
+          expect(ext(id)["paths"]).toContain(decodeURIComponent(new URL(link.url).pathname));
+          expect(opsOf(id, "source.add").map((o) => o.source.url)).not.toContain(link.url);
+        }
+        expect(problemsOf("source-file-link", id)).toHaveLength(links.length);
+      }
+      for (const id of ids("source-session")) {
+        const thread = (meta(id)["sources"] as { url: string }[]).find((s) =>
+          s.url.startsWith("t3-thread:"),
+        );
+        const add = opsOf(id, "source.add").find((o) => o.source.url === thread?.url);
+        expect(add?.source.kind).toBe("session");
+        expect(add?.source.key).toBe(`url:${thread?.url ?? ""}`);
+      }
+    },
+  },
 ];
+
+/** The metadata keys of the prototype's grammar (A7 3.15.2): every other key is `extra`. */
+const KNOWN_KEYS = new Set([
+  "category",
+  "project",
+  "status",
+  "owner",
+  "priority",
+  "rank",
+  "next",
+  "evidence",
+  "source_date",
+  "reviewed",
+  "confidence",
+  "due",
+  "sources",
+  "paths",
+]);
 
 describe("[A7.3.15.importer.mapping] each mapping row of A7 3.15.3 on its fixture cases", () => {
   for (const { row, check } of ROWS) test(row, check);

@@ -126,6 +126,15 @@ const URLS = [
   `https://www.example.org/${"a".repeat(2100)}`,
   "not a url",
   "https://www.example.org/\u200b",
+  // The page's own kinds: its wiki and ticket host, a file: link (a kept path, no source), an
+  // agent thread, and a scheme the page shows no link for.
+  "https://lumen.atlassian.net/wiki/spaces/P/pages/1",
+  "https://lumen.atlassian.net/jira/software/projects/LUM/boards/2",
+  "file:///home/mira/work/a%20b",
+  "file:///home/mira/%E2%80%8B",
+  "file://server.example/share",
+  "t3-thread:thread-0001",
+  "ftp://files.lumen.example/a",
   "  ",
 ];
 const LABELS = ["", "Email", "Ticket", "Notes", "Chat with Aiko", "\u202e", "x".repeat(320)];

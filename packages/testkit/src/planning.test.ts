@@ -193,6 +193,11 @@ describe("[A7.3.14.planning-fixture.index] the synthetic prototype and its index
     for (const name of ROW_CASES) expect(where(name).length, name).toBeGreaterThan(0);
     for (const [name, { where: places }] of Object.entries(index.cases)) {
       for (const w of places) {
+        // The actions export lies beside the folder: its place names an event in it.
+        if (w.file === PLANNING.actions) {
+          expect(fixture.actions, name).toContain(`"${w.event ?? "-"}"`);
+          continue;
+        }
         expect(files.has(w.file), `${name}: ${w.file}`).toBe(true);
         if (w.line !== undefined) expect(lineAt(w), name).toBeDefined();
       }
@@ -206,7 +211,16 @@ describe("[A7.3.14.planning-fixture.index] the synthetic prototype and its index
       a.file === b.file ? a.line - b.line : a.file === "TODO.md" ? -1 : 1,
     );
     expect(sorted).toEqual(parsed);
-    expect(new Set(parsed.map((t) => t.id)).size).toBe(parsed.length);
+    // One ID per line, but for the case of an ID in both ledgers, once in each.
+    for (const file of ["TODO.md", "DONE.md"]) {
+      const ids = parsed.filter((t) => t.file === file).map((t) => t.id);
+      expect(new Set(ids).size, file).toBe(ids.length);
+    }
+    const twice = parsed
+      .filter((t) => t.file === "DONE.md")
+      .filter((t) => parsed.some((o) => o.file === "TODO.md" && o.id === t.id))
+      .map((t) => t.id);
+    expect(twice).toEqual([...new Set(where("in-both-ledgers").map((w) => w.task))]);
     const ids = new Set(parsed.map((t) => t.id));
     const paths = [...files.keys()];
     expect(index.counts).toEqual({
@@ -219,6 +233,7 @@ describe("[A7.3.14.planning-fixture.index] the synthetic prototype and its index
       eventFiles: eventFiles.length,
       readyFiles: paths.filter((p) => /^events\/[^/]+\.ready$/.test(p)).length,
       countedEventFiles: counted.length,
+      eventsNotReady: eventFiles.filter((f) => !f.counts).length,
     });
     // A case on a ledger line names the task the parse finds there, and states only what the
     // parse gives: taskLine, and any of id, title, body, marked, checked and done.
@@ -613,6 +628,29 @@ describe("[A7.3.14.planning-fixture.index] the synthetic prototype and its index
       (w) => eventFiles.find((f) => f.stem === w.event)?.event,
     );
     expect(new Set(tie.map((e) => (e ? instant(e.at) : -1n))).size).toBe(1);
+  });
+
+  test("the actions export holds every event the page knows, sorted, and adds the uncounted", () => {
+    const exported = JSON.parse(fixture.actions) as { version: number; events: Event[] };
+    expect(exported.version).toBe(1);
+    expect(exported.events).toHaveLength(index.actions.events);
+    // Every event of events/ is in it as written, the web- one without .ready too.
+    for (const { event } of eventFiles) expect(exported.events).toContainEqual(event);
+    const sorted = [...exported.events].sort((a, b) => {
+      const d = instant(a.at) / 1_000_000n - instant(b.at) / 1_000_000n;
+      return d < 0n ? -1 : d > 0n ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    expect(exported.events).toEqual(sorted);
+    const ids = new Set(exported.events.map((e) => e.id));
+    expect(ids.size).toBe(exported.events.length);
+    const countedIds = new Set(counted.map((e) => e.id));
+    expect(
+      exported.events
+        .filter((e) => !countedIds.has(e.id))
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual(index.actions.added);
+    expect(index.actions.file).toBe(`fixtures/${PLANNING.actions}`);
   });
 
   test("fixture text only: every host is a reserved example domain, every path is Mira's", () => {

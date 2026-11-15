@@ -5,14 +5,20 @@
     "source": "Every rule here is the prototype's own, read from its code (A7 3.15.2)",
     "lines": "Each ledger is split as Python's str.splitlines() splits: at LF, CRLF, CR, U+000B, U+000C, U+001C, U+001D, U+001E, U+0085, U+2028 and U+2029. Each piece is matched on its own. Line numbers are 1-based in that split. A line never holds its line end",
     "grammar": "Task line ^- \\[([ xX])\\] \\*\\*(.+?)\\*\\*\\s*(.*)$. The title is the bold text with every trailing dot stripped. A line starting '## ' sets the group to the rest of the line, trimmed; before any heading the group is Other. After the split no line holds a line terminator, so JavaScript's `.` matches what Python's does without the s flag",
-    "done": "Every task line in DONE.md is done whatever its checkbox. In TODO.md x or X is done",
+    "done": "Every task line in DONE.md is done whatever its checkbox. In TODO.md an x or X box is a ticked box, which does not check the task on the page (checkOff)",
     "markers": "<!-- task:ID --> with ID [a-z0-9_-]+. The first marker anywhere in the line, title included, gives the ID. The body is the text after the title with every marker removed, then trimmed",
     "fallbackId": "t- and eight lower-case hex digits of 32-bit FNV-1a (offset basis 2166136261, prime 16777619, modulo 2^32) over the Unicode code points of <group>|<title>, the title without its trailing dots. Each whole code point is XORed in, then multiplied. Not UTF-8 bytes, not UTF-16 units",
-    "events": "Every events/*.json is read, in sorted file-name order. A file whose name starts with web- counts only when events/<same stem>.ready (an empty file) exists. Any other file counts as soon as it exists. An event is an object {id, task, action, at}: action check, uncheck, focus or unfocus; id and task [a-zA-Z0-9_-]{1,100}; at \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,9})?)?(Z|[+-]\\d{2}:\\d{2}). An invalid file makes the prototype's read of the folder fail as a whole: every event file here is valid",
-    "eventOrder": "Counted events apply in order of the instant of at, then id as text. The last check or uncheck per task wins, and the last focus or unfocus sets the star. No two times here differ by less than a microsecond",
+    "events": "Every events/*.json is read, in sorted file-name order. A file whose name starts with web- counts only when events/<same stem>.ready (an empty file) exists. Any other file counts as soon as it exists. Neither the page nor planning.py checks that a file's name is its event's id. An event is an object {id, task, action, at}: action check, uncheck, focus or unfocus; id and task [a-zA-Z0-9_-]{1,100}; at \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,9})?)?(Z|[+-]\\d{2}:\\d{2}). An invalid file makes planning.py's read fail as a whole, and the page drops it: every event file here is valid. An event's task may hold upper-case letters; a ledger ID never does",
+    "eventOrder": "Events are de-duplicated by id, then apply in order of the instant of at, then id: planning.py compares ids by code point, the page with localeCompare. The last check or uncheck per task wins, and the last focus or unfocus sets the star. No two times here differ by less than a microsecond",
+    "checkOff": "Only events check a task on the page. A [x] box in TODO.md does not: the page shows the line with a note that it was ticked in the file and leaves it unchecked unless an event checks it, and a later uncheck event leaves it unchecked. reconcile archives a task whose last check event is a check and ignores a [x] box. Events fold onto DONE.md tasks with no visible effect: a done task shows checked, without a star, and nothing reopens it. A metadata key checked, focus or ticked takes effect on the page for a task with no events, since the page copies every metadata key onto its task",
+    "groups": "The page shows a task under its metadata category, Small todos without one, and in it under its group: metadata project, else the heading without a trailing (...)",
+    "bothLedgers": "An id on a TODO.md line and a DONE.md line: the page shows the DONE.md line and hides the open one; planning.py's build refuses the duplicate id",
+    "next": "The page reads next from metadata, else from the body as Next:\\s*(.*?)(?=\\sRefs:|\\s\\(added|$), else it shows a placeholder",
+    "links": "The page gives a link a kind, first match wins: no URL, link; file:, folder; host mail.google.com, mail; chat.google.com, chat; a host ending in atlassian.net, wiki when the path starts with /wiki, else ticket; docs.google.com, doc; drive.google.com, drive; a host containing gitlab or github, code; else link. It shows links only for http:, https:, file: and t3-thread:, each URL once, and a folder for the first path starting with /. A label is the link's own, else the kind's name; a label that is the ticket's key is not the ticket's title. The fixture's hosts stay RFC 2606 names, so the hosts of real services are tested on inline URLs",
+    "actions": "The page saves its actions export as planning-actions-YYYY-MM-DD.json: {version: 1, exported, events}, events holding every event the page knows, those of events/ too, de-duplicated and sorted. The prototype's import command reads only events, at most 10,000, checks all of them before it writes (action one of the four, id and task [a-zA-Z0-9_-]{1,100}, at RFC 3339 with Z or an offset and up to nine fraction digits, extra fields allowed), and refuses an event file it would change. The export carries the times of events/ as written, so the importer reads them with the events grammar",
     "eventWriters": "The page writes events/web-<lower-case UUID>.json, then the .ready file. Its JSON is written compactly here with a millisecond UTC time (the fixture's choice). The prototype's import command writes <id>.json as two-space JSON with a final newline, and a .ready file only when the id starts with web-",
     "reconcile": "reconcile writes a DONE line as the TODO line with its marker removed, '- [ ]' turned into '- [x]', right-trimmed, then ' (done YYYY-MM-DD; <evidence>) <!-- task:<id> -->'. New lines go after the first line of DONE.md, separated by blank lines",
-    "optionalFiles": "data/metadata.json: one object keyed by task ID (missing: {}). data/jira.json: a list of ticket rows (missing: []); a row without key is skipped, key and url (path /browse/<KEY>) are read, other fields are free. data/audit.json: one free-form object (missing: {}) with a scalar reviewed time and nested objects or lists the page only displays",
+    "optionalFiles": "data/metadata.json: one object keyed by task ID (missing: {}); an entry that is no object is ignored. The page keeps due only when it starts with YYYY-MM-DD, keeps the sources whose url is text, shows each path once, sorts rank 0 last with the tasks without a rank, defaults a missing owner to a fixed first name in its code, and files a task without a category under Small todos. data/jira.json: a list of ticket rows (missing: []); a row without key is skipped, key and url (path /browse/<KEY>) are read, other fields are free. data/audit.json: one free-form object (missing: {}) with a scalar reviewed time and nested objects or lists the page only displays",
     "hosts": "Every URL host is a reserved example domain (RFC 2606)"
   },
   "me": "Mira Okafor",
@@ -28,15 +34,24 @@
     "key": "jira:LUM-1000"
   },
   "counts": {
-    "todoTaskLines": 37,
-    "doneTaskLines": 9,
-    "taskLines": 46,
-    "metadataEntries": 30,
+    "todoTaskLines": 39,
+    "doneTaskLines": 10,
+    "taskLines": 49,
+    "metadataEntries": 32,
     "metadataOrphans": 3,
     "taskLinesWithoutMetadata": 19,
-    "eventFiles": 16,
+    "eventFiles": 17,
     "readyFiles": 4,
-    "countedEventFiles": 15
+    "countedEventFiles": 16,
+    "eventsNotReady": 1
+  },
+  "actions": {
+    "file": "fixtures/planning-prototype.actions.json",
+    "events": 18,
+    "added": [
+      "web-66b1e7e1-2892-47f4-8191-49dc6d732106",
+      "web-71ae44e1-0013-4e92-8ad8-32ae5a68c25e"
+    ]
   },
   "tasks": [
     {
@@ -172,9 +187,33 @@
       "metadata": true
     },
     {
+      "id": "lum-staging-cert",
+      "file": "TODO.md",
+      "line": 18,
+      "group": "Lumen",
+      "title": "Renew the staging certificate",
+      "body": "Ticked too early: the renewal failed.",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
+      "id": "lum-invoice-nov",
+      "file": "TODO.md",
+      "line": 19,
+      "group": "Lumen",
+      "title": "Send the November invoice",
+      "body": "Waiting for the hours from Tomas.",
+      "marked": true,
+      "checked": false,
+      "done": false,
+      "metadata": true
+    },
+    {
       "id": "lum_report-api",
       "file": "TODO.md",
-      "line": 22,
+      "line": 24,
       "group": "Clinic sync",
       "title": "Migrate the reports to the new API",
       "body": "Two reports left. Refs: LUM-1042. (added 2026-10-16, claude)",
@@ -186,7 +225,7 @@
     {
       "id": "t-f857f3b4",
       "file": "TODO.md",
-      "line": 23,
+      "line": 25,
       "group": "Clinic sync",
       "title": "Read the accessibility audit",
       "body": "Section 4 covers the report pages. Refs: LUM-1042.",
@@ -198,7 +237,7 @@
     {
       "id": "t-5216665d",
       "file": "TODO.md",
-      "line": 26,
+      "line": 28,
       "group": "Home",
       "title": "Book the dentist",
       "body": "Ask for an early slot.",
@@ -210,7 +249,7 @@
     {
       "id": "t-c06f2944",
       "file": "TODO.md",
-      "line": 27,
+      "line": 29,
       "group": "Home",
       "title": "Renew the passport",
       "body": "Photos are done. Book the appointment at the town hall.",
@@ -222,7 +261,7 @@
     {
       "id": "t-6e1e9b9a",
       "file": "TODO.md",
-      "line": 28,
+      "line": 30,
       "group": "Home",
       "title": "Plant the spring bulbs",
       "body": "Tulips along the fence. (added 2026-10-20, codex)",
@@ -234,7 +273,7 @@
     {
       "id": "home-fence",
       "file": "TODO.md",
-      "line": 29,
+      "line": 31,
       "group": "Home",
       "title": "Repair the garden fence",
       "body": "Two posts are loose.",
@@ -246,7 +285,7 @@
     {
       "id": "t-b4618591",
       "file": "TODO.md",
-      "line": 30,
+      "line": 32,
       "group": "Home",
       "title": "Reply to Zoë about the café booking",
       "body": "(added 2026-10-21, claude)",
@@ -258,7 +297,7 @@
     {
       "id": "t-c768ea6d",
       "file": "TODO.md",
-      "line": 31,
+      "line": 33,
       "group": "Home",
       "title": "Pick up the 🎂 for Aiko's birthday",
       "body": "Order it at the bakery on Main Street first.",
@@ -270,7 +309,7 @@
     {
       "id": "t-9de100f7",
       "file": "TODO.md",
-      "line": 32,
+      "line": 34,
       "group": "Home",
       "title": "Sort the photo archive",
       "body": "Started with 2019. (added 2026-09-31, codex)",
@@ -282,7 +321,7 @@
     {
       "id": "t-ae318657",
       "file": "TODO.md",
-      "line": 33,
+      "line": 35,
       "group": "Home",
       "title": "Collect every garden idea from the green notebook, the photos on the kitchen board and the notes from the allotment meeting into one plan for the spring, with the beds along the fence, the herbs by the back door, the compost corner, the rain barrel and the new path to the shed, and decide which of them fit the budget this year",
       "body": "Start with the beds along the fence.",
@@ -294,7 +333,7 @@
     {
       "id": "t-3a7b6ae3",
       "file": "TODO.md",
-      "line": 34,
+      "line": 36,
       "group": "Home",
       "title": "Renew the library card",
       "body": "Bring the old card.",
@@ -306,7 +345,7 @@
     {
       "id": "home-bike",
       "file": "TODO.md",
-      "line": 38,
+      "line": 40,
       "group": "Home",
       "title": "Fix the bike light <!-- task:home-bike -->",
       "body": "The rear one flickers.",
@@ -318,7 +357,7 @@
     {
       "id": "home-receipts",
       "file": "TODO.md",
-      "line": 39,
+      "line": 41,
       "group": "Home",
       "title": "Sort the receipts",
       "body": "Start with October.  Then file them by month.",
@@ -330,7 +369,7 @@
     {
       "id": "t-de4f5a3d",
       "file": "TODO.md",
-      "line": 42,
+      "line": 44,
       "group": "Errands",
       "title": "Return the library books",
       "body": "Due back at the branch on Main Street.",
@@ -342,7 +381,7 @@
     {
       "id": "t-cd015091",
       "file": "TODO.md",
-      "line": 43,
+      "line": 45,
       "group": "Errands",
       "title": "Buy coffee beans",
       "body": "From the corner shop.",
@@ -354,7 +393,7 @@
     {
       "id": "t-4ed417b2",
       "file": "TODO.md",
-      "line": 44,
+      "line": 46,
       "group": "Errands",
       "title": "Buy oat milk",
       "body": "From the corner shop.",
@@ -366,7 +405,7 @@
     {
       "id": "t-3781cf0d",
       "file": "TODO.md",
-      "line": 45,
+      "line": 47,
       "group": "Errands",
       "title": "Buy batteries",
       "body": "From the corner shop.",
@@ -378,7 +417,7 @@
     {
       "id": "t-7c9180f4",
       "file": "TODO.md",
-      "line": 46,
+      "line": 48,
       "group": "Errands",
       "title": "Buy light bulbs",
       "body": "From the corner shop.",
@@ -390,7 +429,7 @@
     {
       "id": "t-0cf50703",
       "file": "TODO.md",
-      "line": 47,
+      "line": 49,
       "group": "Errands",
       "title": "Buy stamps",
       "body": "From the corner shop.",
@@ -402,7 +441,7 @@
     {
       "id": "t-11f39526",
       "file": "TODO.md",
-      "line": 48,
+      "line": 50,
       "group": "Errands",
       "title": "Buy bin bags",
       "body": "From the corner shop.",
@@ -414,7 +453,7 @@
     {
       "id": "t-b1800612",
       "file": "TODO.md",
-      "line": 49,
+      "line": 51,
       "group": "Errands",
       "title": "Buy dish soap",
       "body": "From the corner shop.",
@@ -426,7 +465,7 @@
     {
       "id": "t-d17fc050",
       "file": "TODO.md",
-      "line": 50,
+      "line": 52,
       "group": "Errands",
       "title": "Buy rice",
       "body": "From the corner shop.",
@@ -438,7 +477,7 @@
     {
       "id": "t-88f5ce83",
       "file": "TODO.md",
-      "line": 51,
+      "line": 53,
       "group": "Errands",
       "title": "Buy tea",
       "body": "From the corner shop.",
@@ -450,7 +489,7 @@
     {
       "id": "t-505646c0",
       "file": "TODO.md",
-      "line": 54,
+      "line": 56,
       "group": "Lumen",
       "title": "Plan the team offsite",
       "body": "Venue shortlist is in the doc. (added 2026-10-22, claude)",
@@ -462,7 +501,7 @@
     {
       "id": "t-a9f461a4",
       "file": "TODO.md",
-      "line": 55,
+      "line": 57,
       "group": "Lumen",
       "title": "Order printer toner",
       "body": "For the office printer on the second floor.",
@@ -474,7 +513,7 @@
     {
       "id": "t-0e7b3bc1",
       "file": "TODO.md",
-      "line": 58,
+      "line": 60,
       "group": "Open source",
       "title": "Answer the tidy-md issue about tables",
       "body": "A user reports broken column alignment. (added 2026-10-25, codex)",
@@ -556,9 +595,21 @@
       "metadata": true
     },
     {
+      "id": "lum-invoice-nov",
+      "file": "DONE.md",
+      "line": 12,
+      "group": "Lumen",
+      "title": "Send the November invoice",
+      "body": "Waiting for the hours from Tomas. (done 2026-11-08; sent to the clinic)",
+      "marked": true,
+      "checked": true,
+      "done": true,
+      "metadata": true
+    },
+    {
       "id": "t-025e96e5",
       "file": "DONE.md",
-      "line": 14,
+      "line": 15,
       "group": "Home",
       "title": "Pay the water bill",
       "body": "(done 2026-10-12; paid online)",
@@ -570,7 +621,7 @@
     {
       "id": "t-a1d04fae",
       "file": "DONE.md",
-      "line": 15,
+      "line": 16,
       "group": "Home",
       "title": "Archive the 2025 invoices",
       "body": "Filed in the cabinet. (done 2026-10-18; scanned and filed)",
@@ -582,7 +633,7 @@
     {
       "id": "t-5b9fb0b9",
       "file": "DONE.md",
-      "line": 18,
+      "line": 19,
       "group": "Lumen",
       "title": "Close the Q3 survey",
       "body": "Results shared with the team.",
@@ -593,6 +644,17 @@
     }
   ],
   "cases": {
+    "actions-export": {
+      "description": "The page's actions export beside the folder (planning-prototype.actions.json): every event the page knew, those of events/ too. Merged by event ID, it adds the browser's own events and the web- event whose .ready file is missing",
+      "where": [
+        {
+          "file": "planning-prototype.actions.json",
+          "task": "t-88f5ce83",
+          "event": "web-66b1e7e1-2892-47f4-8191-49dc6d732106",
+          "note": "the browser's own check, and the web- event without .ready, are added"
+        }
+      ]
+    },
     "added-clause": {
       "description": "A body with `(added YYYY-MM-DD, <agent>)`",
       "where": [
@@ -608,7 +670,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 30,
+          "line": 32,
           "task": "t-b4618591"
         }
       ]
@@ -618,7 +680,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 31,
+          "line": 33,
           "task": "t-c768ea6d",
           "expect": {
             "id": "t-c768ea6d",
@@ -629,7 +691,7 @@
       ]
     },
     "checked-in-todo": {
-      "description": "A checked task line ([x] or [X]) still in TODO.md: done",
+      "description": "A ticked task line ([x] or [X]) in TODO.md: a ticked box, not a check-off on the page (checkOff)",
       "where": [
         {
           "file": "TODO.md",
@@ -693,21 +755,21 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 21
+          "line": 23
         },
         {
           "file": "TODO.md",
-          "line": 22,
+          "line": 24,
           "task": "lum_report-api"
         },
         {
           "file": "TODO.md",
-          "line": 23,
+          "line": 25,
           "task": "t-f857f3b4"
         },
         {
           "file": "TODO.md",
-          "line": 24
+          "line": 26
         },
         {
           "file": "DONE.md",
@@ -761,7 +823,8 @@
         },
         {
           "file": "DONE.md",
-          "line": 12
+          "line": 12,
+          "task": "lum-invoice-nov"
         },
         {
           "file": "DONE.md",
@@ -769,17 +832,17 @@
         },
         {
           "file": "DONE.md",
-          "line": 14,
-          "task": "t-025e96e5"
+          "line": 14
         },
         {
           "file": "DONE.md",
           "line": 15,
-          "task": "t-a1d04fae"
+          "task": "t-025e96e5"
         },
         {
           "file": "DONE.md",
-          "line": 16
+          "line": 16,
+          "task": "t-a1d04fae"
         },
         {
           "file": "DONE.md",
@@ -787,7 +850,11 @@
         },
         {
           "file": "DONE.md",
-          "line": 18,
+          "line": 18
+        },
+        {
+          "file": "DONE.md",
+          "line": 19,
           "task": "t-5b9fb0b9"
         }
       ]
@@ -858,7 +925,7 @@
       "where": [
         {
           "file": "DONE.md",
-          "line": 18,
+          "line": 19,
           "task": "t-5b9fb0b9",
           "expect": {
             "checked": false,
@@ -897,12 +964,17 @@
         },
         {
           "file": "DONE.md",
-          "line": 14,
-          "task": "t-025e96e5"
+          "line": 12,
+          "task": "lum-invoice-nov"
         },
         {
           "file": "DONE.md",
           "line": 15,
+          "task": "t-025e96e5"
+        },
+        {
+          "file": "DONE.md",
+          "line": 16,
           "task": "t-a1d04fae"
         }
       ]
@@ -917,7 +989,7 @@
         },
         {
           "file": "DONE.md",
-          "line": 18,
+          "line": 19,
           "task": "t-5b9fb0b9"
         }
       ]
@@ -1081,6 +1153,14 @@
           "expect": {
             "starred": false,
             "note": "as instants the focus (07:45:00) comes first; as text it sorts last"
+          }
+        },
+        {
+          "file": "events/cli-0012.json",
+          "event": "cli-0012",
+          "task": "lum-staging-cert",
+          "expect": {
+            "checked": false
           }
         }
       ]
@@ -1253,9 +1333,30 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 41,
+          "line": 43,
           "expect": {
             "group": "Errands"
+          }
+        }
+      ]
+    },
+    "in-both-ledgers": {
+      "description": "One ID on a TODO.md line and a DONE.md line: the page shows the DONE.md line and hides the open one, so the DONE.md line is the task",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 19,
+          "task": "lum-invoice-nov",
+          "expect": {
+            "hidden": true
+          }
+        },
+        {
+          "file": "DONE.md",
+          "line": 12,
+          "task": "lum-invoice-nov",
+          "expect": {
+            "hidden": false
           }
         }
       ]
@@ -1285,7 +1386,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 32,
+          "line": 34,
           "task": "t-9de100f7"
         },
         {
@@ -1312,7 +1413,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 34,
+          "line": 36,
           "task": "t-3a7b6ae3",
           "expect": {
             "end": "U+2028"
@@ -1320,14 +1421,14 @@
         },
         {
           "file": "TODO.md",
-          "line": 36,
+          "line": 38,
           "expect": {
             "end": "U+2028"
           }
         },
         {
           "file": "TODO.md",
-          "line": 43,
+          "line": 45,
           "task": "t-cd015091",
           "expect": {
             "end": "U+000B"
@@ -1335,7 +1436,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 44,
+          "line": 46,
           "task": "t-4ed417b2",
           "expect": {
             "end": "U+000C"
@@ -1343,7 +1444,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 45,
+          "line": 47,
           "task": "t-3781cf0d",
           "expect": {
             "end": "U+001C"
@@ -1351,7 +1452,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 46,
+          "line": 48,
           "task": "t-7c9180f4",
           "expect": {
             "end": "U+001D"
@@ -1359,7 +1460,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 47,
+          "line": 49,
           "task": "t-0cf50703",
           "expect": {
             "end": "U+001E"
@@ -1367,7 +1468,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 48,
+          "line": 50,
           "task": "t-11f39526",
           "expect": {
             "end": "U+0085"
@@ -1375,7 +1476,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 49,
+          "line": 51,
           "task": "t-b1800612",
           "expect": {
             "end": "U+2029"
@@ -1383,7 +1484,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 50,
+          "line": 52,
           "task": "t-d17fc050",
           "expect": {
             "end": "CR"
@@ -1396,7 +1497,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 33,
+          "line": 35,
           "task": "t-ae318657"
         }
       ]
@@ -1456,107 +1557,117 @@
         },
         {
           "file": "TODO.md",
-          "line": 22,
+          "line": 18,
+          "task": "lum-staging-cert"
+        },
+        {
+          "file": "TODO.md",
+          "line": 19,
+          "task": "lum-invoice-nov"
+        },
+        {
+          "file": "TODO.md",
+          "line": 24,
           "task": "lum_report-api"
         },
         {
           "file": "TODO.md",
-          "line": 23,
+          "line": 25,
           "task": "t-f857f3b4"
         },
         {
           "file": "TODO.md",
-          "line": 26,
+          "line": 28,
           "task": "t-5216665d"
         },
         {
           "file": "TODO.md",
-          "line": 27,
+          "line": 29,
           "task": "t-c06f2944"
         },
         {
           "file": "TODO.md",
-          "line": 28,
+          "line": 30,
           "task": "t-6e1e9b9a"
         },
         {
           "file": "TODO.md",
-          "line": 29,
+          "line": 31,
           "task": "home-fence"
         },
         {
           "file": "TODO.md",
-          "line": 33,
+          "line": 35,
           "task": "t-ae318657"
         },
         {
           "file": "TODO.md",
-          "line": 38,
+          "line": 40,
           "task": "home-bike"
         },
         {
           "file": "TODO.md",
-          "line": 39,
+          "line": 41,
           "task": "home-receipts"
         },
         {
           "file": "TODO.md",
-          "line": 42,
+          "line": 44,
           "task": "t-de4f5a3d"
         },
         {
           "file": "TODO.md",
-          "line": 43,
+          "line": 45,
           "task": "t-cd015091"
         },
         {
           "file": "TODO.md",
-          "line": 44,
+          "line": 46,
           "task": "t-4ed417b2"
         },
         {
           "file": "TODO.md",
-          "line": 45,
+          "line": 47,
           "task": "t-3781cf0d"
         },
         {
           "file": "TODO.md",
-          "line": 46,
+          "line": 48,
           "task": "t-7c9180f4"
         },
         {
           "file": "TODO.md",
-          "line": 47,
+          "line": 49,
           "task": "t-0cf50703"
         },
         {
           "file": "TODO.md",
-          "line": 48,
+          "line": 50,
           "task": "t-11f39526"
         },
         {
           "file": "TODO.md",
-          "line": 49,
+          "line": 51,
           "task": "t-b1800612"
         },
         {
           "file": "TODO.md",
-          "line": 50,
+          "line": 52,
           "task": "t-d17fc050"
         },
         {
           "file": "TODO.md",
-          "line": 51,
+          "line": 53,
           "task": "t-88f5ce83"
         },
         {
           "file": "TODO.md",
-          "line": 54,
+          "line": 56,
           "task": "t-505646c0"
         },
         {
           "file": "TODO.md",
-          "line": 58,
+          "line": 60,
           "task": "t-0e7b3bc1"
         },
         {
@@ -1591,12 +1702,17 @@
         },
         {
           "file": "DONE.md",
-          "line": 14,
+          "line": 12,
+          "task": "lum-invoice-nov"
+        },
+        {
+          "file": "DONE.md",
+          "line": 15,
           "task": "t-025e96e5"
         },
         {
           "file": "DONE.md",
-          "line": 18,
+          "line": 19,
           "task": "t-5b9fb0b9"
         }
       ]
@@ -1606,7 +1722,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 38,
+          "line": 40,
           "task": "home-bike",
           "expect": {
             "id": "home-bike",
@@ -1641,6 +1757,26 @@
         {
           "file": "data/metadata.json",
           "task": "t-f2692dae"
+        }
+      ]
+    },
+    "metadata-state-key": {
+      "description": "A metadata key checked, focus or ticked, which the page applies to a task without events: kept in ext.planning, reported, and neither checks nor stars the task",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "checked"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "focus"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-c06f2944",
+          "key": "ticked"
         }
       ]
     },
@@ -1694,7 +1830,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 55,
+          "line": 57,
           "task": "t-a9f461a4"
         }
       ]
@@ -1719,7 +1855,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 30,
+          "line": 32,
           "task": "t-b4618591",
           "expect": {
             "id": "t-b4618591",
@@ -1741,23 +1877,23 @@
         },
         {
           "file": "TODO.md",
-          "line": 18
+          "line": 20
         },
         {
           "file": "TODO.md",
-          "line": 19
-        },
-        {
-          "file": "TODO.md",
-          "line": 35
-        },
-        {
-          "file": "TODO.md",
-          "line": 36
+          "line": 21
         },
         {
           "file": "TODO.md",
           "line": 37
+        },
+        {
+          "file": "TODO.md",
+          "line": 38
+        },
+        {
+          "file": "TODO.md",
+          "line": 39
         }
       ]
     },
@@ -2015,11 +2151,11 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 53
+          "line": 55
         },
         {
           "file": "DONE.md",
-          "line": 17
+          "line": 18
         }
       ]
     },
@@ -2126,7 +2262,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 55,
+          "line": 57,
           "task": "t-a9f461a4"
         }
       ]
@@ -2236,6 +2372,16 @@
         }
       ]
     },
+    "source-file-link": {
+      "description": "A file: link: a path on the machine that wrote it, kept with the task's paths, not a source",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-505646c0",
+          "key": "sources"
+        }
+      ]
+    },
     "source-issue": {
       "description": "A code-host issue",
       "where": [
@@ -2252,6 +2398,16 @@
         {
           "file": "data/metadata.json",
           "task": "t-0e7b3bc1",
+          "key": "sources"
+        }
+      ]
+    },
+    "source-session": {
+      "description": "A t3-thread: link, which names an agent thread: a source of kind session",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-505646c0",
           "key": "sources"
         }
       ]
@@ -2361,77 +2517,77 @@
         },
         {
           "file": "TODO.md",
-          "line": 30,
+          "line": 32,
           "task": "t-b4618591"
         },
         {
           "file": "TODO.md",
-          "line": 31,
+          "line": 33,
           "task": "t-c768ea6d"
         },
         {
           "file": "TODO.md",
-          "line": 34,
+          "line": 36,
           "task": "t-3a7b6ae3"
         },
         {
           "file": "TODO.md",
-          "line": 38,
+          "line": 40,
           "task": "home-bike"
         },
         {
           "file": "TODO.md",
-          "line": 39,
+          "line": 41,
           "task": "home-receipts"
         },
         {
           "file": "TODO.md",
-          "line": 43,
+          "line": 45,
           "task": "t-cd015091"
         },
         {
           "file": "TODO.md",
-          "line": 44,
+          "line": 46,
           "task": "t-4ed417b2"
         },
         {
           "file": "TODO.md",
-          "line": 45,
+          "line": 47,
           "task": "t-3781cf0d"
         },
         {
           "file": "TODO.md",
-          "line": 46,
+          "line": 48,
           "task": "t-7c9180f4"
         },
         {
           "file": "TODO.md",
-          "line": 47,
+          "line": 49,
           "task": "t-0cf50703"
         },
         {
           "file": "TODO.md",
-          "line": 48,
+          "line": 50,
           "task": "t-11f39526"
         },
         {
           "file": "TODO.md",
-          "line": 49,
+          "line": 51,
           "task": "t-b1800612"
         },
         {
           "file": "TODO.md",
-          "line": 50,
+          "line": 52,
           "task": "t-d17fc050"
         },
         {
           "file": "TODO.md",
-          "line": 51,
+          "line": 53,
           "task": "t-88f5ce83"
         },
         {
           "file": "TODO.md",
-          "line": 55,
+          "line": 57,
           "task": "t-a9f461a4"
         },
         {
@@ -2446,8 +2602,41 @@
         },
         {
           "file": "DONE.md",
-          "line": 15,
+          "line": 16,
           "task": "t-a1d04fae"
+        }
+      ]
+    },
+    "ticked-in-file": {
+      "description": "A [x] box in TODO.md that no event checks or unchecks. The page does not show it checked (only events check a task there); the import completes it as the person's own statement",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 16,
+          "task": "t-1d168059"
+        },
+        {
+          "file": "TODO.md",
+          "line": 17,
+          "task": "t-3caf46f3"
+        }
+      ]
+    },
+    "ticked-unchecked": {
+      "description": "A [x] box in TODO.md whose last check event is an uncheck: the page shows it unchecked, and the import keeps it active",
+      "where": [
+        {
+          "file": "TODO.md",
+          "line": 18,
+          "task": "lum-staging-cert"
+        },
+        {
+          "file": "events/cli-0012.json",
+          "event": "cli-0012",
+          "task": "lum-staging-cert",
+          "expect": {
+            "checked": false
+          }
         }
       ]
     },
@@ -2472,7 +2661,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 26,
+          "line": 28,
           "task": "t-5216665d",
           "expect": {
             "title": "Book the dentist"
@@ -2493,7 +2682,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 39,
+          "line": 41,
           "task": "home-receipts",
           "expect": {
             "id": "home-receipts",
@@ -2507,7 +2696,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 34,
+          "line": 36,
           "task": "t-3a7b6ae3",
           "expect": {
             "taskLine": true,
@@ -2519,7 +2708,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 35,
+          "line": 37,
           "expect": {
             "taskLine": false,
             "marker": "t-a3aa2367",
@@ -2533,7 +2722,7 @@
       "where": [
         {
           "file": "TODO.md",
-          "line": 36,
+          "line": 38,
           "expect": {
             "taskLine": false,
             "note": "no closing **"
@@ -2541,7 +2730,7 @@
         },
         {
           "file": "TODO.md",
-          "line": 37,
+          "line": 39,
           "expect": {
             "taskLine": false,
             "marker": "t-7f372f22"
@@ -2569,32 +2758,32 @@
         },
         {
           "file": "TODO.md",
-          "line": 30,
+          "line": 32,
           "task": "t-b4618591"
         },
         {
           "file": "TODO.md",
-          "line": 31,
+          "line": 33,
           "task": "t-c768ea6d"
         },
         {
           "file": "TODO.md",
-          "line": 32,
+          "line": 34,
           "task": "t-9de100f7"
         },
         {
           "file": "TODO.md",
-          "line": 34,
+          "line": 36,
           "task": "t-3a7b6ae3"
         },
         {
           "file": "TODO.md",
-          "line": 55,
+          "line": 57,
           "task": "t-a9f461a4"
         },
         {
           "file": "DONE.md",
-          "line": 15,
+          "line": 16,
           "task": "t-a1d04fae"
         }
       ]

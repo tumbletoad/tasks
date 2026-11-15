@@ -15,6 +15,8 @@ Open work for Mira. Agents update this file through planning.py; check-offs come
 - [ ] **Clean up the flags from v2.1...** <!-- task:t-9a0298cb -->
 - [x] **Write the release notes for 2.3** Notes merged, waiting for reconcile. (added 2026-10-15, codex) <!-- task:t-1d168059 -->
 - [X] **Check the backup restore drill.** Ran it on staging. <!-- task:t-3caf46f3 -->
+- [x] **Renew the staging certificate** Ticked too early: the renewal failed. <!-- task:lum-staging-cert -->
+- [ ] **Send the November invoice** Waiting for the hours from Tomas. <!-- task:lum-invoice-nov -->
 - Ask Aiko about the staging access next week
 - [ ] Plain checkbox without a bold title
 

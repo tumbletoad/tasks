@@ -86,6 +86,9 @@ const PRIORITIES = new Map<string, 1 | 2 | 3>([
 /** A POSIX absolute path, a Windows drive path or a UNC path. */
 const ABSOLUTE = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
 
+/** A text that starts with a day as the page reads a due date. */
+const DAY_FIRST = /^\d{4}-\d{2}-\d{2}/;
+
 export function parseMetadata(
   source: Source | undefined,
   overrides?: Partial<Limits>,
@@ -160,7 +163,16 @@ function entryFrom(
   set("evidence", text("evidence"));
   set("sourceDate", date("source_date"));
   set("reviewed", date("reviewed"));
-  set("due", date("due"));
+  // The page keeps a due that starts with a day: the day is kept, and more after it is reported.
+  const due = text("due");
+  if (due !== undefined) {
+    const day = due.slice(0, 10);
+    if (isIsoDate(due)) entry.due = due;
+    else if (DAY_FIRST.test(due) && isIsoDate(day)) {
+      entry.due = day;
+      report("date-trimmed", "due");
+    } else report("date-invalid", "due");
+  }
 
   const status = raw["status"];
   if (typeof status === "string") {
@@ -198,23 +210,32 @@ function entryFrom(
     return (value as unknown[]).slice(0, limits.itemsPerEntry);
   };
 
+  // The page keeps every source whose url is text. A label that is not text is no label: the
+  // source is kept with an empty one, reported.
   const sources: MetadataSource[] = [];
   for (const [i, item] of list("sources").entries()) {
     const url = isObject(item) ? item["url"] : undefined;
-    const label = isObject(item) ? (item["label"] ?? "") : undefined;
-    if (typeof url === "string" && url !== "" && typeof label === "string") {
-      sources.push({ label, url, index: i });
-    } else report("source-invalid", "sources", i);
+    if (!isObject(item) || typeof url !== "string" || url === "") {
+      report("source-invalid", "sources", i);
+      continue;
+    }
+    const label = item["label"] ?? "";
+    if (typeof label !== "string") report("field-type", "sources", i);
+    sources.push({ label: typeof label === "string" ? label : "", url, index: i });
   }
   entry.sources = sources;
 
+  // The page shows each path once: a path equal to an earlier one adds nothing and is dropped.
   const paths: string[] = [];
   const pathIndexes: number[] = [];
+  const seenPaths = new Set<string>();
   for (const [i, item] of list("paths").entries()) {
     if (typeof item !== "string") {
       report("field-type", "paths", i);
       continue;
     }
+    if (seenPaths.has(item)) continue;
+    seenPaths.add(item);
     if (!ABSOLUTE.test(item)) report("path-not-absolute", "paths", i);
     paths.push(item);
     pathIndexes.push(i);

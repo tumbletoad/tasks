@@ -16,6 +16,9 @@ export interface Limits {
   readonly itemsPerEntry: number;
   /** One event file. */
   readonly eventBytes: number;
+  /** Every event file together: the copy and the read stop at it, so the files a run holds in
+   * memory at once stay bounded however many there are. */
+  readonly eventsBytes: number;
   /** Files in events/: `.json` and `.ready` together. */
   readonly eventFiles: number;
 }
@@ -28,6 +31,7 @@ export const LIMITS: Limits = {
   entries: 100_000,
   itemsPerEntry: 1_000,
   eventBytes: 64 * 1024,
+  eventsBytes: 64 * 1024 * 1024,
   eventFiles: 200_000,
 };
 
