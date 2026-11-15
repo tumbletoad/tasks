@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 56 of 104, and the grant gate M2.04b outside the base count.
+**Done so far:** 61 of 104, and M2.04b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 8 · M5 13 · M6 15 · M7 10 · total 104. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -111,13 +111,13 @@ M2.04b is not in the base count.
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
 | M3.01 | Schema 0.2 and migration | M2.01–M2.14, M1.06 | M | done |
-| M3.02 | Undo and redo | M3.01 | M | doing |
-| M3.03 | Revert commit and session | M3.02 | S | todo |
+| M3.02 | Undo and redo | M3.01 | M | done |
+| M3.03 | Revert commit and session | M3.02 | S | ready |
 | M3.04 | Lifecycle | M3.01 | S | done |
 | M3.05 | Search | M3.01 | M | done |
 | M3.06 | Source keys and dedupe | M3.01 | S | done |
-| M3.07 | Export bundles and restore | M3.01, M1.06 | M | doing |
-| M3.08 | Authority, transfer and claim | M3.07 | M | todo |
+| M3.07 | Export bundles and restore | M3.01, M1.06 | M | done |
+| M3.08 | Authority, transfer and claim | M3.07 | M | ready |
 | M3.09 | Synced and network folder detection, read-only modes | M1.08 | S | done |
 | M3.10 | Projection | M3.01 | M | doing |
 | M3.11 | Preferences and feature flags | M3.01 | S | doing |
@@ -133,17 +133,19 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
-| M4.01 | Remaining tools | M3.05, M3.06 | M | doing |
+| M4.01 | Remaining tools | M3.05, M3.06 | M | done |
 | M4.02 | Autonomy and proposals | M3.01 | M | ready |
 | M4.03 | Digest v1 and framing | M3.01, M3.05 | M | ready |
-| M4.04 | Final server instructions | M4.01 | S | todo |
+| M4.04 | Final server instructions | M4.01 | S | ready |
 | M4.05 | Setup for remaining apps, doctor | M2.14 | M | done |
-| M4.05b | What M4.05 left: doctor's launch rows and sessions row, a free instance ID in setup | M4.05, M2.04b | S | doing |
+| M4.05b | What M4.05 left: doctor's launch rows and sessions row, a free instance ID in setup | M4.05, M2.04b | S | done |
 | M4.06 | Binding complete | M2.04, M2.04b | M | doing |
-| M4.07 | Source ingestion | M4.01 | S | todo |
+| M4.07 | Source ingestion | M4.01 | S | ready |
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
 
-M4.05b is not in the base count.
+| M4.01b | What M4.01 left: area and project operations in the writer, and organize's create, rename, move and archive | M4.01 | M | ready |
+
+M4.05b and M4.01b are not in the base count.
 
 ## M5: the planner UI (parallel with M6 and the importer)
 
@@ -152,11 +154,11 @@ M4.05b is not in the base count.
 | M5.01 | App shell | M2.13 | M | done |
 | M5.02 | Live store | M2.12 | M | done |
 | M5.03 | Task row and virtual list | M5.01, M5.02 | M | done |
-| M5.04 | Today | M5.03 | S | doing |
+| M5.04 | Today | M5.03 | S | done |
 | M5.05 | Status, area, Completed, Agents views | M5.03 | S | ready |
 | M5.06 | Expanded task | M5.03 | M | done |
 | M5.07 | Composer and action strip | M5.06 | S | ready |
-| M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | todo |
+| M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | doing |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | ready |
 | M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | todo |
@@ -189,8 +191,8 @@ M4.05b is not in the base count.
 |---|---|---|---|---|
 | M7.01 | Synthetic prototype fixture | M1.03 | S | done |
 | M7.02 | Pure parsers | M7.01 | S | done |
-| M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | doing |
-| M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | todo |
+| M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | done |
+| M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | doing |
 | M7.05 | Apply, undo, idempotent re-import | M7.04 | M | todo |
 | M7.06 | Export to the prototype format | M7.03 | M | todo |
 | M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |
