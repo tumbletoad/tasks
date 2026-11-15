@@ -76,8 +76,14 @@ export interface CliWorld {
   close(): Promise<void>;
 }
 
-/** Starts a service child with one space, "Mira" (prefix M), created by the user. */
-export async function startWorld(label: string): Promise<CliWorld> {
+/**
+ * Starts a service child with one space, "Mira" (prefix M), created by the user. `env` adds to the
+ * service's environment.
+ */
+export async function startWorld(
+  label: string,
+  options: { readonly env?: Record<string, string> } = {},
+): Promise<CliWorld> {
   const temp = tempRoot(label);
   const home = join(temp.root, "h");
   const services = new Services();
@@ -85,10 +91,10 @@ export async function startWorld(label: string): Promise<CliWorld> {
   let json: ServiceJson | undefined;
   try {
     const install = INSTALLED === undefined ? undefined : layoutTestInstall(INSTALLED, home);
-    const service = services.start(
-      home,
-      install === undefined ? {} : { command: [install.launcher, "serve"] },
-    );
+    const service = services.start(home, {
+      ...(install === undefined ? {} : { command: [install.launcher, "serve"] as const }),
+      ...(options.env === undefined ? {} : { env: options.env }),
+    });
     // tasks.exe starts Node as its child, so on Windows service.json names Node's PID, not the
     // launcher's. The POSIX launcher execs Node: one process.
     json =

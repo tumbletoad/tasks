@@ -688,7 +688,11 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           instances = next;
         },
       },
-      launches: { handlers: () => launching.service?.handlers() ?? {} },
+      launches: {
+        handlers: () => launching.service?.handlers() ?? {},
+        // `doctor/launch` (A3 3.14): the launch service's own scope probe and environment check.
+        doctor: (take: boolean) => launching.service?.doctor(take) ?? Promise.resolve(undefined),
+      },
       // `tasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
       // fallback (M6.10). Launching through them is a later step's.
       t3: t3Host({
