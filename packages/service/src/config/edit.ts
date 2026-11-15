@@ -43,7 +43,14 @@ export type Edit =
   /** Adds an element `[[array]]` after the array's last element, or at the end. */
   | { readonly op: "append"; readonly array: string; readonly entries: Entries }
   /** Adds a new standard table `[table…]` at the end. Refused when it exists. */
-  | { readonly op: "add_table"; readonly table: readonly string[]; readonly entries: Entries };
+  | { readonly op: "add_table"; readonly table: readonly string[]; readonly entries: Entries }
+  /**
+   * Takes out the one element `[[array]]` that is still exactly as `append` wrote `entries` in
+   * this file's line breaks: its header and key lines byte for byte, nothing added to it, with the
+   * blank line `append` put before it. Refused `absent` when no element is, so an element the
+   * person changed is never removed; `unsupported_layout` when more than one is.
+   */
+  | { readonly op: "remove"; readonly array: string; readonly entries: Entries };
 
 export type EditRefusal =
   /** The file is not valid TOML (or not UTF-8, or too large): fix it first. */
@@ -52,6 +59,8 @@ export type EditRefusal =
   | "unsupported_layout"
   /** `add_table` of a table that exists. */
   | "exists"
+  /** `remove` of an element the file does not hold exactly as it was written. */
+  | "absent"
   /** A value that cannot be written (a non-finite number, a control character in a key). */
   | "invalid_value"
   /** The file changed between the read and the write. */
@@ -255,11 +264,69 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const block = blockOf(`[${edit.table.map(keyText).join(".")}]`, entriesOf(edit.entries), eol);
       return appendAtEnd(text, eol, block);
     }
+    case "remove": {
+      const found = removal(text, layout, edit);
+      return "refused" in found ? found : found.text;
+    }
   }
 }
 
-function intended(doc: TomlDocument, edit: Edit): TomlDocument | EditRefusal {
+/**
+ * Where `remove` takes its element out: the one element whose text is exactly the block `append`
+ * writes for the entries, with nothing after its key lines but the next header (never a key or a
+ * sub-table of its own), and the blank line before it. The element's index is for the check.
+ */
+function removal(
+  text: string,
+  layout: Layout,
+  edit: Extract<Edit, { op: "remove" }>,
+): { text: string; index: number } | { refused: EditRefusal } {
+  const { eol, lines } = layout;
+  const block = blockOf(`[[${keyText(edit.array)}]]`, entriesOf(edit.entries), eol);
+  const keys = entriesOf(edit.entries).length;
+  const elements = lines.filter(
+    (l): l is ScannedHeader => l.kind === "header" && l.array && samePath(l.path, [edit.array]),
+  );
+  const matches: { header: ScannedHeader; index: number }[] = [];
+  elements.forEach((header, index) => {
+    if (!text.startsWith(block, header.start)) return;
+    const at = lines.indexOf(header);
+    const body = lines.slice(at + 1, at + 1 + keys);
+    const next = lines[at + 1 + keys];
+    const own =
+      body.length === keys &&
+      body.every((l) => l.kind === "keyval") &&
+      (next === undefined ||
+        (next.kind === "header" && !startsWithPath(next.path, [edit.array])) ||
+        (next.kind === "header" && samePath(next.path, [edit.array])));
+    if (own) matches.push({ header, index });
+  });
+  const [match, other] = matches;
+  if (match === undefined) return { refused: "absent" };
+  if (other !== undefined) return { refused: "unsupported_layout" };
+  let before = text.slice(0, match.header.start);
+  let after = text.slice(match.header.start + block.length);
+  // The blank line append put before the element; for the first element of a file, which append
+  // wrote without one, the blank line that the next append put after it.
+  const lineStart = (s: string) => s === "" || s.endsWith("\n");
+  if (before.endsWith(eol) && lineStart(before.slice(0, before.length - eol.length))) {
+    before = before.slice(0, before.length - eol.length);
+  } else if (before === "" && after.startsWith(eol)) {
+    after = after.slice(eol.length);
+  }
+  return { text: before + after, index: match.index };
+}
+
+function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | EditRefusal {
   switch (edit.op) {
+    case "remove": {
+      const current = doc[edit.array];
+      if (!Array.isArray(current)) return "absent";
+      const left = (current as unknown[]).filter((_, i) => i !== index);
+      // The last element gone: the array is gone from the document too.
+      const rest = Object.fromEntries(Object.entries(doc).filter(([key]) => key !== edit.array));
+      return left.length === 0 ? rest : { ...rest, [edit.array]: left };
+    }
     case "set":
       return withValue(doc, [...edit.table, edit.key], parsedValue(edit.value));
     case "append": {
@@ -307,11 +374,22 @@ export function applyEdits(text: string, edits: readonly Edit[]): EditResult {
       if (error instanceof ScanError) return { ok: false, reason: "unsupported_layout" };
       throw error;
     }
-    const want = intended(doc, edit);
-    if (typeof want === "string") return { ok: false, reason: want };
+    const layout = { eol: eolOf(current), lines };
     let next: string | { refused: EditRefusal };
+    let want: TomlDocument | EditRefusal;
     try {
-      next = place(current, { eol: eolOf(current), lines }, edit);
+      if (edit.op === "remove") {
+        // The element's place decides the intended document: the array without that element.
+        const found = removal(current, layout, edit);
+        if ("refused" in found) return { ok: false, reason: found.refused };
+        next = found.text;
+        want = intended(doc, edit, found.index);
+        if (typeof want === "string") return { ok: false, reason: want };
+      } else {
+        want = intended(doc, edit);
+        if (typeof want === "string") return { ok: false, reason: want };
+        next = place(current, layout, edit);
+      }
     } catch (error) {
       if (error instanceof InvalidValue) return { ok: false, reason: "invalid_value" };
       throw error;

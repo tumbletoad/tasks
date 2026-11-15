@@ -369,3 +369,64 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
     expect(approval?.kind === "keyval" && approval.key).toEqual([ALLOW]);
   });
 });
+
+describe("[A2.3.2.4.config.edit-remove] taking out an element exactly as it was written", () => {
+  const entry = new Map<string, string | boolean | readonly string[] | Record<string, string>>([
+    ["id", "codex"],
+    ["target", "codex-cli"],
+    ["label", "Codex"],
+    ["account", "default"],
+    ["exec", "/usr/bin/codex"],
+    ["config_home", "/home/mira/.codex"],
+    ["remote_allowed", false],
+  ]);
+  const append: Edit = { op: "append", array: "instance", entries: entry };
+  const remove: Edit = { op: "remove", array: "instance", entries: entry };
+
+  test("append then remove gives the file back byte for byte, in its own line breaks", () => {
+    const files = [
+      BEFORE,
+      "",
+      "# mine\n[http]\nport = 7713\n",
+      "[http]\r\nport = 7713\r\n",
+      '[[instance]]\nid = "claude"\ntarget = "claude-cli"\nlabel = "Claude Code"\n\n[terminal]\napp = "ghostty"\n',
+    ];
+    for (const text of files) {
+      const added = applyEdits(text, [append]);
+      expect(added.ok, text).toBe(true);
+      const back = applyEdits(added.ok ? added.text : "", [remove]);
+      expect(back, text).toEqual({ ok: true, text });
+    }
+    // Two added to an empty file, taken out first to last: the file is empty again.
+    const other = new Map(entry).set("id", "claude").set("target", "claude-cli");
+    const both = applyEdits("", [append, { op: "append", array: "instance", entries: other }]);
+    const first = applyEdits(both.ok ? both.text : "", [remove]);
+    expect(first).toEqual(applyEdits("", [{ op: "append", array: "instance", entries: other }]));
+    const last = applyEdits(first.ok ? first.text : "", [
+      { op: "remove", array: "instance", entries: other },
+    ]);
+    expect(last).toEqual({ ok: true, text: "" });
+  });
+
+  test("an element the person changed, or one with more in it, is never taken out", () => {
+    const added = applyEdits("", [append]);
+    const text = added.ok ? added.text : "";
+    // A value changed, a key added, a comment inside, a sub-table: each is no longer setup's.
+    const changed = [
+      text.replace('label = "Codex"', 'label = "Codex · work"'),
+      text.replace("remote_allowed = false", "remote_allowed = false\nenabled = false"),
+      text.replace('label = "Codex"\n', 'label = "Codex" # mine\n'),
+      `${text}\n[instance.env]\nCODEX_HOME = "/home/mira/.codex"\n`,
+    ];
+    for (const other of changed) {
+      expect(applyEdits(other, [remove]), other).toEqual({ ok: false, reason: "absent" });
+    }
+    expect(applyEdits("[http]\nport = 7713\n", [remove])).toEqual({ ok: false, reason: "absent" });
+    // Two elements written the same: which one setup wrote cannot be told.
+    const twice = applyEdits("", [append, append]);
+    expect(applyEdits(twice.ok ? twice.text : "", [remove])).toEqual({
+      ok: false,
+      reason: "unsupported_layout",
+    });
+  });
+});

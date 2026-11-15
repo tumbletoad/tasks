@@ -133,6 +133,7 @@ Code: `packages/service/src/hub/paths.ts` (`resolveLayout`, pure over host facts
 | `t3/` | A4's T3 pairing, answers and launch plans, written only by the service |
 | `env-snapshot.json` | A4's login-shell environment snapshot |
 | `service-entry.json` | What `tasks service install` created (3.3.5) |
+| `instances.json` | The `[[instance]]` entries `tasks setup instances` wrote, so its removal takes back only those (A4 3.2). Written only by the service |
 | `install.json` | The install record: method, channel, root, install ID, versions, `previous`, `last_update`, and what the installer `created`, so an uninstall removes only that |
 | `update.lock`, `update.json` | The update lock, which also covers `install --finish`, and the update journal (3.12.6) |
 | `workdirs/`, `logs/`, `crash/`, `tmp/` | A4's work folders, 3.13 |
@@ -147,8 +148,8 @@ One machine-local file, `<config>/machine.toml`, never synced or exported. This 
 - The keys of this appendix: `[service] default_space`; `[http] port`; `[ui] open_mode` (`tab` or `app`); `[updates] channel`, `check`, `auto` (`auto = true` installs only while no run or launched session is active); `[log] level`; `[[spaces]]` with `id`, `path` and `enabled`.
 - **Reading is strict and content-free** (the key and a fixed code, never the value). A bad entry is dropped, so a half-understood instance is never offered and an approval that is not exactly `allow` approves nothing. A problem in the file itself or in `[[spaces]]` refuses the start, because hosting another set of spaces than the person wrote is worse than not starting.
 - The file names commands that run as this user, so its folder and the file follow 3.2.2 rule 5, and **a configuration file or folder that is a link is refused**: it would take the file out of the folder whose owner and mode are checked.
-- **Reload** is not built: the file is read once per start, except that `tasks roots add` replaces the service's roots at once. The planned rule: watch, reload changed sections after 500 ms of quiet, keep the last good version.
-- **Editing never rewrites the file**: `editMachineToml` splices one change into the file's own text and refuses what it cannot place exactly.
+- **Reload** is not built: the file is read once per start, except that `tasks roots add` replaces the service's roots at once, and `tasks setup instances` replaces its instances with those the file holds as it wrote it (A4 3.2). The planned rule: watch, reload changed sections after 500 ms of quiet, keep the last good version.
+- **Editing never rewrites the file**: `editMachineToml` splices one change into the file's own text and refuses what it cannot place exactly. Its `remove` takes an `[[instance]]` element out only while it is byte for byte what `append` wrote, with the blank line `append` put beside it, so an append and its removal give the file back (`A2.3.2.4.config.edit-remove`); an element the person changed is never removed.
 - **The product never writes `machine.toml` on its own**, apart from the UI port the first start persists (3.8.2). Every other edit is a user-only operation that runs in the service under `service.lock`.
 
 #### 3.2.5 The `grants` table
@@ -448,7 +449,7 @@ Code: `packages/cli/src/` (`main.ts`, `args.ts`, `verbs.ts`, `output.ts`, `conne
 
 #### 3.10.1 Entry point
 
-One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `roots`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden) and `setup t3`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
+One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `roots`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden), `setup t3` and `setup instances`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
 
 **`tasks space`** verbs are rpc methods `space/*`, not registry entries, because a backup, restore or claim is no A1 operation. Only `space list` is open to scripts and agents. The CLI never opens a space database: create, backup and restore run in a worker of their own in the service.
 - A new space goes under the install's own data folder, so a test install never writes into the daily folder.

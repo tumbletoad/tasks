@@ -74,7 +74,7 @@ const LOCAL: readonly [string, string][] = [
   ["roots", "List and add this machine's roots, the folders places live under"],
   [
     "setup",
-    "Connect this machine's agent apps: their MCP entries (setup agents), T3 Code (setup t3)",
+    "Connect this machine's agent apps: Open's instances (setup instances), their MCP entries (setup agents), T3 Code (setup t3)",
   ],
   ["mcp", "Connect an agent app to the service over stdio (its MCP server entry runs this)"],
   ["doctor", "Check the install, the service and the agent apps (--self-test, --live, --json)"],

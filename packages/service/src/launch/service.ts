@@ -215,8 +215,11 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly commandFolder?: string;
   /** The account's home folder. */
   readonly home?: string;
-  /** machine.toml's `[[instance]]` (A4 3.2): what Open can open a task in. Default: none. */
-  readonly instances?: readonly Instance[];
+  /**
+   * machine.toml's `[[instance]]` (A4 3.2): what Open can open a task in. Default: none. A function
+   * is asked at each use, so instances `tasks setup instances` writes are used at once.
+   */
+  readonly instances?: readonly Instance[] | (() => readonly Instance[]);
 }
 
 interface Hosted {
@@ -418,6 +421,12 @@ export class LaunchService {
   }
 
   /** Whether a terminal route can start here: a product command, or a test's terminal. */
+  /** The instances now: machine.toml's as this start read them, or as setup last wrote them. */
+  #instances(): readonly Instance[] {
+    const given = this.#options.instances;
+    return typeof given === "function" ? given() : (given ?? []);
+  }
+
   #terminalReady(): boolean {
     return this.#options.terminal !== undefined || this.terminals.ready();
   }
@@ -428,7 +437,7 @@ export class LaunchService {
    */
   instances(): LaunchInstance[] {
     const out: LaunchInstance[] = [];
-    for (const instance of this.#options.instances ?? []) {
+    for (const instance of this.#instances()) {
       let choice: Choice;
       try {
         choice = this.#route(instance);
@@ -487,7 +496,7 @@ export class LaunchService {
     let instance: Instance | undefined;
     let choice: Choice = COPY;
     if (request.instance !== undefined) {
-      instance = (this.#options.instances ?? []).find((i) => i.id === request.instance);
+      instance = this.#instances().find((i) => i.id === request.instance);
       if (instance === undefined) throw this.#unavailable("not_set_up");
       try {
         choice = this.#route(instance);
@@ -679,7 +688,7 @@ export class LaunchService {
     }
     let choice: Choice | undefined = COPY;
     if (request.instance !== undefined) {
-      const instance = (this.#options.instances ?? []).find((i) => i.id === request.instance);
+      const instance = this.#instances().find((i) => i.id === request.instance);
       try {
         choice = instance === undefined ? undefined : this.#route(instance);
       } catch {
