@@ -84,6 +84,12 @@ export interface Sent<T> {
   readonly answer: Promise<T>;
   /** How the write settled: confirmed by the feed, or refused. */
   readonly settled: Promise<Settled>;
+  /**
+   * The commit the write made (its `op_` ID), once the feed confirmed it with an event that names
+   * it. Undefined when it was refused, made no commit, or was confirmed without such an event (a
+   * fresh snapshot that covers it): then the page does not know which commit is its own.
+   */
+  readonly commit: Promise<string | undefined>;
 }
 
 const EMPTY: Overlay = { tasks: [] };
@@ -96,6 +102,8 @@ export class LiveStore {
   readonly #listeners = new Set<() => void>();
   readonly #touchListeners = new Set<(touched: Touched) => void>();
   readonly #changeListeners = new Set<(changes: Changes) => void>();
+  /** The commit IDs the feed named for own writes still pending, until each write settles. */
+  readonly #commits = new Map<string, string>();
   #stopped = false;
   /** The confirmed open tasks, without overlays. */
   #confirmed: ReadonlyMap<string, TaskRow> = new Map();
@@ -231,7 +239,12 @@ export class LiveStore {
         throw error;
       },
     );
-    return { request, answer: answered, settled };
+    const commit = settled.then((how) => {
+      const id = this.#commits.get(request);
+      this.#commits.delete(request);
+      return how === "confirmed" ? id : undefined;
+    });
+    return { request, answer: answered, settled, commit };
   }
 
   #drain(items: readonly Queued[]): void {
@@ -258,6 +271,9 @@ export class LiveStore {
         case "applied":
           changes.push(...outcome.changes);
           requests.push(...outcome.requests);
+          for (const [request, commit] of outcome.commits) {
+            if (this.#pending.has(request)) this.#commits.set(request, commit);
+          }
           applied = true;
           break;
         case "resnapshot":
