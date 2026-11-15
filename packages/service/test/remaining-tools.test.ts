@@ -416,8 +416,37 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     const described = PrefsManageResult.parse(
       await call(fx, script, "prefs.manage", { action: "describe" }),
     );
-    expect(described.prefs.map((p) => p.key)).toEqual(PREFERENCES.map((p) => p.key));
-    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual(["tasks.statuses"]);
+    // The registry's space keys whose value is one of the tool's kinds, sorted (A3 3.4.11). An
+    // object, a map and a machine key are not shown.
+    expect(described.prefs.map((p) => p.key)).toEqual([
+      "autonomy.agent_tasks_to_inbox",
+      "autonomy.level",
+      "features.search_trigram",
+      "projection.enabled",
+      "targets.default",
+      "tasks.dedupe_window_days",
+      "tasks.effort_scale",
+      "tasks.statuses",
+      "ui.theme",
+    ]);
+    const shown = new Set(described.prefs.map((p) => p.key));
+    expect(
+      PREFERENCES.filter((p) => !shown.has(p.key)).map((p) => [p.key, p.scope, p.shape.type]),
+    ).toEqual([
+      ["grouping.names", "space", "object"],
+      ["autonomy.overrides", "space", "map"],
+      ["autonomy.areas", "space", "map"],
+      ["projection.dir", "machine", "path"],
+    ]);
+    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual([
+      "tasks.statuses",
+      "ui.theme",
+    ]);
+    expect(described.prefs.find((p) => p.key === "targets.default")).toMatchObject({
+      policy: true,
+      writable: false,
+      default: null,
+    });
     expect(described.prefs.find((p) => p.key === "autonomy.level")).toMatchObject({
       policy: true,
       writable: false,
@@ -481,6 +510,16 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
         code: "forbidden",
         data: { rule: "policy" },
       });
+      // Every policy key the tool shows, whatever the value (A3 3.8.2).
+      for (const [key, value] of [
+        ["autonomy.agent_tasks_to_inbox", true],
+        ["targets.default", "codex-work"],
+      ] as const) {
+        expect(await set(caller, key, value), key).toMatchObject({
+          code: "forbidden",
+          data: { rule: "policy" },
+        });
+      }
     }
     expect(await set(script, "tasks.dedupe_window_days", 7)).toMatchObject({
       code: "forbidden",
@@ -490,11 +529,17 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       code: "invalid_input",
       data: { issues: [{ path: "set.0.value" }] },
     });
-    // What passes every input rule waits for pref.set, null as much as a value.
+    // What passes every input rule waits for the step that submits pref.set, null as much as a
+    // value, and a list of keys checked as the registry's list of `{key}` objects.
     for (const value of [["open", "waiting", "parked"], null]) {
-      expect((await set(script, "tasks.statuses", value)).hint).toContain("M3.11");
+      expect((await set(script, "tasks.statuses", value)).hint).toContain("pref.set");
     }
-    expect((await set(user, "tasks.dedupe_window_days", 7)).hint).toContain("M3.11");
+    expect((await set(user, "tasks.dedupe_window_days", 7)).hint).toContain("pref.set");
+    expect((await set(user, "tasks.effort_scale", ["XS", "S"])).hint).toContain("pref.set");
+    expect(await set(user, "tasks.effort_scale", ["XS", "XS"])).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "set.0.value" }] },
+    });
     // A write action needs its request ID and, as pref.set does, a base.
     const bare = await refusal(
       call(fx, script, "prefs.manage", {

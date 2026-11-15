@@ -8,8 +8,10 @@
 // writer (A1 3.7), each with its receipt. The
 // record kinds whose operations arrive in later steps still go in through StandIn below, which
 // writes the commits, change rows, outbox rows and receipts those operations will write: areas and
-// projects (area.*, project.*) and preferences (pref.set). Each step that adds one of those
-// operations moves its rows to the writer.
+// projects (area.*, project.*). Each step that adds one of those operations moves its rows to the
+// writer. Preferences stay here although `pref.set` exists (M3.11): the frozen 0.1 sample
+// (FIXED_SAMPLE_0_1) pins these rows and the IDs drawn after them, and its rows are what the
+// writer would write.
 import { join } from "node:path";
 import {
   CheckedDriver,

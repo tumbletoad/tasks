@@ -57,7 +57,8 @@ const ReceiptOpResult = z.strictObject({
 
 const ReceiptConflict = z.strictObject({
   op: OpIndex,
-  // An undo or redo also names a child row that keeps a create from being undone (A1 3.10).
+  // Every table a request can conflict on: storage's ConflictEntity (write/request.ts). An undo
+  // or redo also names a child row that keeps a create from being undone (A1 3.10).
   entity: z
     .enum([
       "tasks",
@@ -69,13 +70,18 @@ const ReceiptConflict = z.strictObject({
       "learnings",
       "attachments",
       "task_labels",
+      "preferences",
     ])
     .describe("Table of the row"),
   id: z
-    .string()
-    .max(60)
-    .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$/u)
-    .describe("The row, or task_id|source_id (task_id|label_id) for a link"),
+    .union([
+      z
+        .string()
+        .max(60)
+        .regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$/u),
+      PreferenceKey,
+    ])
+    .describe("The row, task_id|source_id (task_id|label_id) for a link, or a preference's key"),
   task: TaskId.optional(),
   ref: TaskRef.optional(),
   field: z.string().max(40).describe("Logical field"),

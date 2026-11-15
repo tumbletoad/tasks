@@ -12,7 +12,6 @@ import { AppError, CURSOR_PATTERN, type SEARCH_SCOPES } from "@tasks/contracts";
 import {
   decodeRowsByIds,
   decodeSpaceRow,
-  DEFAULT_EFFORTS,
   formatAsOf,
   formatTaskRef,
   HAS_SEARCH_TABLES_SQL,
@@ -26,7 +25,7 @@ import {
 } from "@tasks/storage";
 import { dateIn } from "../ops/dates.ts";
 import { invalid } from "../ops/errors.ts";
-import { DEFAULT_STATUS_ORDER, keysOf, present, taskRow } from "../ops/read.ts";
+import { keysOf, present, taskRow } from "../ops/read.ts";
 import {
   cursorExpired,
   type FrozenItem,
@@ -88,8 +87,11 @@ const SPACE: SqlQuery = { sql: "SELECT * FROM space WHERE one = 1", mode: "get" 
 
 const VOCABULARY: readonly SqlQuery[] = [
   SPACE,
-  { sql: "SELECT value FROM preferences WHERE key = 'tasks.statuses'", mode: "get" },
-  { sql: "SELECT value FROM preferences WHERE key = 'tasks.effort_scale'", mode: "get" },
+  { sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.statuses'", mode: "get" },
+  {
+    sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'",
+    mode: "get",
+  },
   {
     sql: "SELECT id, slug, title FROM areas WHERE deleted_at IS NULL ORDER BY position, id",
     mode: "all",
@@ -145,8 +147,8 @@ function vocabularyOf(results: readonly unknown[]): Known {
     places: `${String((places as Row | null)?.["n"])}:${String((places as Row | null)?.["v"])}`,
     vocabulary: {
       refPrefix: decoded.refPrefix,
-      statuses: keysOf((statuses as Row | null)?.["value"], DEFAULT_STATUS_ORDER),
-      efforts: keysOf((efforts as Row | null)?.["value"], DEFAULT_EFFORTS),
+      statuses: keysOf("tasks.statuses", statuses),
+      efforts: keysOf("tasks.effort_scale", efforts),
       areas: groups(areas),
       projects: groups(projects),
       machines: rows(machines).map((r) => ({ id: str(r["id"]), name: str(r["name"]) })),

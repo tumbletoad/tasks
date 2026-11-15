@@ -13,6 +13,8 @@ export const SECTIONS = [
   "approvals",
   // A3 3.12: `[setup.managed] paths`, files setup treats as managed by another source.
   "setup",
+  // A1 3.16: this machine's preferences, by their whole name.
+  "preferences",
   "custom_target",
   "override",
   "remote",
