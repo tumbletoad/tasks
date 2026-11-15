@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import {
   mapPrototype,
   parsePrototype,
+  placeGroups,
   placeProjects,
   previewOf,
   previewToken,
@@ -368,6 +369,52 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     ).report;
     expect(given.attention.map((a) => a.code)).not.toContain("actions-not-given");
     expect(given.not_imported.map((n) => n.what)).not.toContain("browser_actions");
+  });
+
+  test("a planned area or project is the live one with its identity first, whatever its slug", () => {
+    // Two areas whose slugs meet and a project "Admin" in each: the plan numbers by first
+    // appearance, here the reverse of the space's.
+    const { plan } = small({
+      todo: "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->\n",
+      metadata: JSON.stringify({
+        a: { category: "Дом", project: "Admin" },
+        b: { category: "Работа", project: "Admin" },
+      }),
+    });
+    expect(plan.areas.map((a) => a.slug)).toEqual(["area", "area-2"]);
+    expect(plan.projects.map((p) => [p.slug, p.area])).toEqual([
+      ["admin", "area"],
+      ["admin-2", "area-2"],
+    ]);
+    const area = (slug: string, title: string) => ({ slug, id: `ar_${slug}`, version: 1, title });
+    const admin = (slug: string, inArea: string) => ({
+      slug,
+      id: `pr_${slug}`,
+      version: 1,
+      area: inArea,
+      title: "Admin",
+    });
+    const placed = placeGroups(plan, {
+      areas: [area("area", "Работа"), area("area-2", "Дом")],
+      projects: [admin("admin", "area"), admin("admin-2", "area-2")],
+    });
+    expect(Object.fromEntries(placed.areas)).toEqual({
+      area: { slug: "area-2", reuses: "ar_area-2" },
+      "area-2": { slug: "area", reuses: "ar_area" },
+    });
+    expect(Object.fromEntries(placed.projects)).toEqual({
+      admin: { slug: "admin-2", reuses: "pr_admin-2" },
+      "admin-2": { slug: "admin", reuses: "pr_admin" },
+    });
+    // Without a live area of its identity, the live area with its slug is reused (an import into
+    // a space it did not make), unless another planned area has taken it: then a new number.
+    const other = placeGroups(plan, { areas: [area("area", "Работа")], projects: [] });
+    expect(Object.fromEntries(other.areas)).toEqual({
+      area: { slug: "area-3" },
+      "area-2": { slug: "area", reuses: "ar_area" },
+    });
+    const bySlug = placeGroups(plan, { areas: [area("area", "Кухня")], projects: [] });
+    expect(bySlug.areas.get("area")).toEqual({ slug: "area", reuses: "ar_area" });
   });
 
   test("a project slug of another area is not reused: the next free number, pinned by the token", () => {

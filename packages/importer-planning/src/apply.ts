@@ -31,7 +31,7 @@
 //
 // The same input twice gives no operation: an import that changes nothing writes no exchange.
 import type { ImportPlan, PlannedSource, PlannedSourceFields, PlannedTask } from "./plan.ts";
-import { placeProjects, type SpaceState } from "./preview.ts";
+import { placeGroups, type SpaceState } from "./preview.ts";
 
 /** The logical fields a re-import compares (A1 3.4), in the order the report names them. */
 export const BASE_FIELDS = [
@@ -184,8 +184,8 @@ function compared(planning: Readonly<Record<string, unknown>> | null): Record<st
 /** The space's value of `ext.planning` in the compared form. */
 export const comparedPlanning = compared;
 
-/** E for one planned task, with the project slug its placement gives. */
-export function expectedOf(task: PlannedTask, project: string | undefined): Expected {
+/** E for one planned task, with the area and project slugs its placement gives. */
+export function expectedOf(task: PlannedTask, area: string, project: string | undefined): Expected {
   const create = task.ops[0];
   if (create?.kind !== "task.create") throw new Error("A planned task starts with its create");
   let completedAt: number | undefined;
@@ -220,7 +220,7 @@ export function expectedOf(task: PlannedTask, project: string | undefined): Expe
       reviewed_at: create.reviewed_at ?? null,
       due: create.due?.date ?? null,
       focus: create.focus ?? null,
-      grouping: { area: create.area, project: project ?? null },
+      grouping: { area, project: project ?? null },
       lifecycle: completed ? "completed" : "active",
       wrap: completed ? outcome : null,
       "ext.planning": compared(create.ext.planning),
@@ -281,7 +281,8 @@ export function decideApply(
   space: ApplySpace,
   options: ApplyOptions,
 ): ApplyDecision {
-  const { placements } = placeProjects(plan, space.state.projects);
+  const { areas: areaPlacements, projects: placements } = placeGroups(plan, space.state);
+  const areaSlug = (slug: string): string => areaPlacements.get(slug)?.slug ?? slug;
   const projectSlug = (slug: string | undefined): string | undefined =>
     slug === undefined ? undefined : (placements.get(slug)?.slug ?? slug);
   const sourcesById = new Map<string, PlannedSource>(
@@ -303,8 +304,9 @@ export function decideApply(
   let refreshed = false;
 
   for (const task of plan.tasks) {
+    const area = areaSlug(task.area);
     const project = projectSlug(task.project);
-    const expected = expectedOf(task, project);
+    const expected = expectedOf(task, area, project);
     const found = space.matched.get(task.legacyId);
     if (found?.state === "deleted") {
       tasks.push({
@@ -331,6 +333,7 @@ export function decideApply(
             ...create,
             kind: "task.create",
             id,
+            area,
             ...(project === undefined ? {} : { project }),
             ext: { planning: { ...op.ext.planning, imported_at: options.importedAt } },
           });
@@ -391,17 +394,22 @@ export function decideApply(
   // from then on a person's change of it counts from this import.
   if (taskOps.length === 0 && !refreshed) return { ops: [], tasks, gone: space.gone };
 
-  const live = new Set(space.state.areas.map((a) => a.slug));
+  // The groups the operations need that the space lacks, at the slugs their placement gives.
   const upserts: ApplyOp[] = [];
-  for (const area of plan.areas) {
-    if (areas.has(area.slug) && !live.has(area.slug)) {
-      upserts.push({ kind: "area.upsert", slug: area.slug, title: area.title });
-    }
+  for (const a of plan.areas) {
+    const placed = areaPlacements.get(a.slug);
+    if (!areas.has(a.slug) || placed === undefined || placed.reuses !== undefined) continue;
+    upserts.push({ kind: "area.upsert", slug: placed.slug, title: a.title });
   }
   for (const p of plan.projects) {
     const placed = placements.get(p.slug);
     if (!projects.has(p.slug) || placed === undefined || placed.reuses !== undefined) continue;
-    upserts.push({ kind: "project.upsert", slug: placed.slug, title: p.title, area: p.area });
+    upserts.push({
+      kind: "project.upsert",
+      slug: placed.slug,
+      title: p.title,
+      area: areaSlug(p.area),
+    });
   }
   const exchange: ApplyOp = {
     kind: "exchange.create",

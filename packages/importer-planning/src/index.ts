@@ -113,6 +113,7 @@ export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
 export {
   canonicalJson,
   judgedNames,
+  placeGroups,
   placeProjects,
   planHash,
   previewOf,
@@ -122,7 +123,9 @@ export {
   type Preview,
   type PreviewRoot,
   type PreviewRun,
+  type GroupPlacement,
   type ProjectPlacement,
+  type SpaceArea,
   type SpaceProject,
   type SpaceState,
 } from "./preview.ts";

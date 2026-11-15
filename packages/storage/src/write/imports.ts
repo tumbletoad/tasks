@@ -9,8 +9,8 @@
 // service recomputes from the folder and sends as `pinned`, and the space's identity and the rows
 // the plan meets with their versions, which this module reads in the request's transaction. So an
 // apply never lands on a space that changed since its preview in a row the plan depends on: an
-// alias of one of its legacy IDs, a source of one of its keys, an area of one of its slugs, and every
-// project slug the placement of its projects looked at, with that project's area.
+// alias of one of its legacy IDs, a source of one of its keys, and every area and project slug the
+// placement of its groups looked at (the importer's placeGroups), with a project's area.
 //
 // An import's undo is a revert of its commit under A1 3.10's guards, made partial in one way that
 // keeps a person's work whole: a task that someone changed since the import (a field, a note, a

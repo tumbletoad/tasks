@@ -806,7 +806,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
   const options = optionsOf(report, call);
   const { plan, inputs, actions } = await planAgain(folder, report, options);
 
-  const names = judgedNames(plan, { projects: [] });
+  const names = judgedNames(plan, { areas: [], projects: [] });
   const ids = new Map<string, string>();
   const now = (call.now ?? Date.now)();
   // The decision is made on one read, and the barrier serves it only while the space still stands

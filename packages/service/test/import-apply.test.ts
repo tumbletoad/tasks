@@ -152,7 +152,7 @@ async function guardOf(world: ImportWorld, folder: string, run: string, token: s
   const { files } = await hashInputs(join(folder, "input"));
   const projects = world
     .rows(
-      "SELECT p.slug, p.id, p.version, a.slug AS area FROM projects p LEFT JOIN areas a " +
+      "SELECT p.slug, p.id, p.version, a.slug AS area, p.title FROM projects p LEFT JOIN areas a " +
         "ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
     )
     .map((r) => ({
@@ -160,11 +160,20 @@ async function guardOf(world: ImportWorld, folder: string, run: string, token: s
       id: String(r["id"]),
       version: Number(r["version"]),
       area: (r["area"] as string | null) ?? null,
+      title: String(r["title"]),
+    }));
+  const areas = world
+    .rows("SELECT slug, id, version, title FROM areas WHERE deleted_at IS NULL")
+    .map((r) => ({
+      slug: String(r["slug"]),
+      id: String(r["id"]),
+      version: Number(r["version"]),
+      title: String(r["title"]),
     }));
   const guard: PreviewGuard = {
     token,
     pinned: previewPinned(plan, { run, inputs: files, options: OPTIONS }) as PreviewGuard["pinned"],
-    ...judgedNames(plan, { projects }),
+    ...judgedNames(plan, { areas, projects }),
   };
   return { plan, guard };
 }
@@ -701,6 +710,46 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       expect(task(world, td)["summary"]).not.toBe("Changed in the prototype");
       expect(result.tasks.find((t) => t.legacy_id === e)?.conflicts).toEqual(["grouping"]);
       expect(areaOf(te)).toBe(moved);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
+
+  test("a reordered prototype keeps every task in its area and project, however their slugs number", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      // Two areas whose slugs meet (`area`, `area-2`), each with a project "Admin" (`admin`,
+      // `admin-2`): which gets the number follows from the order of first appearance.
+      const work = { id: "pa", title: "Work task", meta: { category: "Работа", project: "Admin" } };
+      const home = { id: "pb", title: "Home task", meta: { category: "Дом", project: "Admin" } };
+      const homeToo = { id: "pc", title: "Home too", meta: { category: "Дом", project: "Admin" } };
+      writePrototype(prototype, { tasks: [work, home] });
+      await importedSynthetic(world, prototype);
+      const groups = () => ({
+        areas: world.rows("SELECT id FROM areas WHERE deleted_at IS NULL").length,
+        projects: world.rows("SELECT id FROM projects WHERE deleted_at IS NULL").length,
+      });
+      const before = groups();
+      const where = (legacy: string) => {
+        const t = task(world, taskOf(world, legacy));
+        return { area: t["area_id"], project: t["project_id"] };
+      };
+      const [wa, hb] = [where("pa"), where("pb")];
+      expect(wa.area).not.toBe(hb.area);
+      // Home first now, with a new task: nothing moves, nothing is made twice, and the new task
+      // joins Home's area and project.
+      writePrototype(prototype, { tasks: [homeToo, home, work] });
+      const second = await importedSynthetic(world, prototype);
+      expect(second.result.counts).toMatchObject({ created: 1, updated: 0, conflicts: 0 });
+      expect([where("pa"), where("pb"), where("pc")]).toEqual([wa, hb, hb]);
+      expect(groups()).toEqual(before);
+      // The first of the two gone from the prototype: the other keeps its area and project.
+      writePrototype(prototype, { tasks: [home, homeToo] });
+      const third = await importedSynthetic(world, prototype);
+      expect(third.result.status).toBe("unchanged");
+      expect(third.result.gone).toContain("pa");
+      expect([where("pa"), where("pb"), where("pc")]).toEqual([wa, hb, hb]);
+      expect(groups()).toEqual(before);
     } finally {
       world.close();
     }

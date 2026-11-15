@@ -134,12 +134,15 @@ const IMPORT_READS: readonly Statement[] = [
     mode: "all",
   },
   {
-    sql: `SELECT slug, id, version, title FROM areas WHERE deleted_at IS NULL AND slug ${IN("$areas")}`,
+    // Every live area with its title: a planned area is the live area with its identity first,
+    // whatever its slug (placeGroups). A space has few areas.
+    sql: "SELECT slug, id, version, title FROM areas WHERE deleted_at IS NULL",
     mode: "all",
   },
   {
-    // Every live project with its live area's slug: a project slug is unique in the space, so a
-    // planned project's slug depends on the slugs of other areas' projects too (placeProjects).
+    // Every live project with its live area's slug and its title: a project slug is unique in the
+    // space, so a planned project's slug depends on the slugs of other areas' projects too, and a
+    // planned project is the live one with its identity in its area first (placeGroups).
     sql:
       "SELECT p.slug, p.id, p.version, a.slug AS area, p.title FROM projects p " +
       "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
