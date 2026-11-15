@@ -420,13 +420,13 @@ export class LaunchService {
     return { scopes, environment };
   }
 
-  /** Whether a terminal route can start here: a product command, or a test's terminal. */
   /** The instances now: machine.toml's as this start read them, or as setup last wrote them. */
   #instances(): readonly Instance[] {
     const given = this.#options.instances;
     return typeof given === "function" ? given() : (given ?? []);
   }
 
+  /** Whether a terminal route can start here: a product command, or a test's terminal. */
   #terminalReady(): boolean {
     return this.#options.terminal !== undefined || this.terminals.ready();
   }
