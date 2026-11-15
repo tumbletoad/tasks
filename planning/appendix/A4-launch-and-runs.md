@@ -911,7 +911,7 @@ Built (`packages/launch/src/brief/pack.ts`, read by `packOf` in `packages/servic
   ```
   ````
 
-  The pack asks for it (built). To build, with the composer (M5.07) and A3's proposals: pasted into the task's composer, such a block offers **Apply as proposal**. It is parsed as a small YAML subset (scalars, lists, one level of maps, at most 16 KB). Policy-bearing keys (instance, autonomy, routines) and a folder are refused: a folder binds only where its machine's service can check it. It always becomes a proposal (A3), whatever the autonomy. A block for another task shows a warning.
+  The pack asks for it (built). To build, with the composer (M5.07) and A3's proposals: pasted into the task's composer, such a block offers **Apply as proposal**. It is parsed as a small YAML subset (scalars, lists, one level of maps, at most 16 KB). Policy-bearing keys (instance, autonomy, routines) and a folder are refused: a folder is set in the page or by an agent with the Tasks tools, under the checks at bind (A1 3.15). It always becomes a proposal (A3), whatever the autonomy. A block for another task shows a warning.
 
 #### 3.15.6 Sanitising
 
