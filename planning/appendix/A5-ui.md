@@ -374,7 +374,7 @@ Built, in `packages/web/src/edit/edits.ts` (check-off, the hold, undo and redo),
 **Check-off** (D12) never waits for a model:
 
 1. The checkbox fills and the title is struck through at once. The row **stays in place for 4 s**, so nothing moves under the pointer.
-2. Focus moves to the next row immediately (or the previous row, then the section heading).
+2. Focus moves to the next row immediately (or the previous row, then the view itself: a heading takes no focus).
 3. The toast "Done · Undo" appears.
 4. After the hold, the row collapses in 180 ms. Under reduced motion it disappears at once after the hold.
 
