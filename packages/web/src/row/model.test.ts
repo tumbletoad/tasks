@@ -278,6 +278,7 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
     const lease = task({
       title: "Sign the lease",
       lifecycle: "completed",
+      status: "review",
       priority: 1,
       due_date: "2026-11-01",
       created_at: daysAgo(40),
@@ -287,6 +288,7 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
     expect(r).toMatchObject({
       due: "10 Nov",
       tone: "done",
+      chip: undefined,
       age: undefined,
       priority: undefined,
       prefix: "Lumen Health",

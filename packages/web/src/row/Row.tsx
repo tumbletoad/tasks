@@ -432,6 +432,9 @@ function RowView({
   // The title edits in place, for typo fixes (A5 3.7): only an open task's, the one kind the
   // service changes. Editing expands the row, so the card is what is being edited.
   const [editing, setEditing] = useState(false);
+  // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
+  // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
+  const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
   const edit = () => {
     if (task.lifecycle !== "active") return;
     if (!expanded) actions.expand(task);
@@ -527,7 +530,7 @@ function RowView({
                 <span dir="auto">{sayMsg(t, model.chip.text)}</span>
               </span>
             )}
-            {model.move === undefined || expanded ? null : (
+            {model.move === undefined || expanded || movedFrom === task ? null : (
               // The view's move out of it, visible on the row (A5 3.5); expanded, the facts own it.
               <button
                 type="button"
@@ -543,7 +546,9 @@ function RowView({
                     .closest("[data-row-line]")
                     ?.querySelector<HTMLElement>('[data-part="title"]')
                     ?.focus({ preventScroll: true });
-                  if (model.move !== undefined) actions.move(task, model.move.kind);
+                  if (model.move === undefined) return;
+                  setMovedFrom(task);
+                  actions.move(task, model.move.kind);
                 }}
               >
                 {sayMsg(t, model.move.text)}

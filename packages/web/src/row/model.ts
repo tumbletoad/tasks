@@ -409,9 +409,10 @@ function folderOf(place: PlaceFact | undefined): RowModel["folder"] {
 }
 
 function chipOf(task: TaskRow, ctx: RowContext): RowModel["chip"] {
-  if (task.status === "open") return undefined;
+  // A finished task's status is history, not state: Completed shows no chip (A5 3.5).
+  if (task.status === "open" || ctx.view === "completed") return undefined;
   // The person is the waiting chip's text, unless the row's group already names them. A view that
-  // implies the status still shows the person when no group does (Waiting before M5.05).
+  // implies the status still shows the person when no group does.
   const person =
     task.status === "waiting" &&
     task.waiting_on !== undefined &&
