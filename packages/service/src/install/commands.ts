@@ -32,7 +32,6 @@ import {
   rmdirSync,
   rmSync,
   unlinkSync,
-  writeSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
@@ -43,6 +42,7 @@ import {
   ensurePrivateDir,
   judgePath,
   makeDir,
+  writeAll,
   type Judged,
 } from "../hub/files.ts";
 import { unsafeMessage } from "../hub/permissions.ts";
@@ -987,7 +987,7 @@ function createEntryFile(path: string, text: string, changedError: () => Error):
   }
   try {
     try {
-      writeSync(fd, text);
+      writeAll(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -1017,7 +1017,7 @@ function replaceEntryFile(
   const fd = createFile(temp, ENTRY_FILE_MODE);
   try {
     try {
-      writeSync(fd, text);
+      writeAll(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
