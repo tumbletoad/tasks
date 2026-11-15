@@ -114,8 +114,16 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       expect(conflict.data?.["conflicts"]).toEqual([
         expect.not.objectContaining({ entity: expect.anything() as unknown }),
       ]);
-      const partial = await call("history.undo", { partial: true, request_id: rid() });
+      // The commit it met is named, so the next step can name it too (A1 3.10.1).
+      const met = conflict.data?.["commit"];
+      expect(met).toMatch(/^op_[0-9a-hjkmnp-tv-z]{26}$/);
+      const partial = await call("history.undo", {
+        partial: true,
+        commit: met,
+        request_id: rid(),
+      });
       expect(partial).toMatchObject({
+        commit: met,
         result: "partial",
         tasks: [task],
         task_count: 1,
