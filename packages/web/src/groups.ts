@@ -8,6 +8,7 @@
 // - Then tasks with no area that are not in the Inbox.
 // - Inside a group: open first, then the other statuses, backlog last (A5 3.5), then position.
 // Each task appears exactly once.
+import type { MessageId } from "./i18n/intl.tsx";
 import type { AreaRow, ProjectRow, TaskRow } from "./live.ts";
 
 export interface Section {
@@ -19,9 +20,12 @@ export interface Section {
 
 export interface Group {
   readonly key: string;
-  readonly kind: "inbox" | "area" | "loose";
+  /** `section`: one of Today's sections (A5 3.4), a small muted heading and no dot. */
+  readonly kind: "inbox" | "area" | "loose" | "section";
   /** The area's title (inbox and loose groups take theirs from the messages). */
   readonly title?: string;
+  /** A section's heading, from the catalogue. */
+  readonly label?: MessageId;
   /** The area's colour slot, 1 to 8. */
   readonly slot?: number;
   readonly sections: readonly Section[];

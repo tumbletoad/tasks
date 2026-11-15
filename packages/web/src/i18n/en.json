@@ -41,8 +41,14 @@
   "top.addFailed": "The task was not added. Try again.",
   "top.slash": "/",
 
-  "view.nothingOpen": "Nothing open.",
   "view.empty": "Nothing here.",
+
+  "today.focus": "Focus",
+  "today.week": "This week",
+  "today.next": "Next",
+  "today.changes": "Changes",
+  "today.nothing": "Nothing planned.",
+  "today.strip": "The next seven days",
   "view.notBuilt": "This view is not built yet.",
   "view.noArea": "This area is not in the space.",
 
