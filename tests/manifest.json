@@ -2394,6 +2394,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.13.cli.doctor-page",
+      "title": "Doctor's self-test against the page a real web build produces, served by the service: the meta tag repeats the response's nonce as a browser reads it, so the build's spelling of the tag and doctor's reading cannot drift apart",
+      "source": "A2 3.13, A2 3.8.3, A5 3.26",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.tags",
+      "title": "The page's start tags read as a browser reads them, by the one reader of the service's check of a built page and doctor's self-test: a meta tag's content self-closed or not, attributes in any order, case and quoting, character references decoded, the first tag and attribute of a name kept, values compared exactly, comments not read",
+      "source": "A2 3.8.3, A2 3.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.8.http.cross-user",
       "title": "On a GitHub-hosted Linux runner only, with a second account the test creates: that account holding the persisted UI port leaves no UI, every UI token revoked, the socket working and the sighting recorded with its UID; its connection to the UI port is closed before any byte. Skipped everywhere else",
       "source": "A2 3.8.2, A2 3.8.4, A2 5, A7 3.9 M2.12, AGENTS.md (second users only on throwaway runners)",

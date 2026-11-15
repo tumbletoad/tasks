@@ -665,7 +665,7 @@ GitHub Actions in `.github/workflows/`, third-party actions pinned by commit SHA
 
 ### 3.13 Diagnostics
 
-Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/doctor.ts` (its header lists the rows), `doctor-http.ts`, `accounts.ts`. Tests: `A2.3.13.hub.logs-content-free`, `A2.3.13.hub.crash-files`, `A2.3.13.cli.doctor`, `.doctor-http`, `.doctor-version`.
+Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/doctor.ts` (its header lists the rows), `doctor-http.ts`, `accounts.ts`. Tests: `A2.3.13.hub.logs-content-free`, `A2.3.13.hub.crash-files`, `A2.3.13.cli.doctor`, `.doctor-http`, `.doctor-page`, `.doctor-version`, `A2.3.8.http.tags`.
 
 **Logs** are local and **content-free by construction**: every event is an entry of one catalogue (`EVENTS`) with typed fields, no field takes a path or a message string, and the log drops anything else again at run time. Never logged: operation inputs and outputs, task text, context, prompts, briefs, tokens, codes, keys, HTTP bodies, environment values. Only the `service.lock` holder rotates the file. Bridges log only to stderr (3.7.2). Planned: `TASKS_BRIDGE_LOG=1` writes `<state>/logs/bridge-<pid>.log` for one session.
 
@@ -675,6 +675,7 @@ Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/docto
 - `paths` says where the hidden data folder is. `config` reads `machine.toml` as the service does, with the same rule and words.
 - `runtime` is loaded by a dynamic import only doctor reaches, so no other command loads storage.
 - `accounts` counts other interactive accounts, never names them, and leaves out an agent app's sandbox accounts. v1 assumes one user per machine (3.8.6), so the row warns on every run and cannot be acknowledged.
+- `http` self-tests the live listener: `Host: evil.example` gets 421, and `index.html` carries a fresh nonce that its `<meta name="csp-nonce">` repeats. The page's tags are read as a browser reads them (any attribute order, case, quoting, a self-closed tag), by `http/tags.ts`, the same reader `loadUiFolder` checks a built page with, so the build's spelling and doctor's reading cannot drift apart. `A2.3.13.cli.doctor-page` runs the check against the web build's own output.
 - **Not built:** Windows ACLs in `paths` (3.2.2 rule 5); lock holder, file system and free disk in `spaces`; autostart (unit, Run value, Startup apps, LaunchAgent, linger, a moved separate install's old entries), packaged context, Smart App Control and updates.
 - `--bundle` (not built) zips the output, logs and crash files after showing the list, with `--redact-paths` (home as `~`, space paths as IDs). The person attaches it by hand.
 
