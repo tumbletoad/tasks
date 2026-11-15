@@ -72,6 +72,8 @@ const ReceiptConflict = z.strictObject({
       "task_labels",
       "preferences",
       "runs",
+      "areas",
+      "projects",
     ])
     .describe("Table of the row"),
   id: z

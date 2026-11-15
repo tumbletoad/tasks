@@ -65,6 +65,8 @@ export const A1_ERRORS = {
   PREFERENCE_FORBIDDEN: { code: "forbidden", rule: "policy" },
   /** An absolute path under no root of this machine (A1 3.15, M2.07). */
   PLACE_OUTSIDE_ROOTS: { code: "invalid_input" },
+  /** An import's space changed since its dry run: run the dry run again (A7 3.15.5). */
+  PREVIEW_STALE: { code: "conflict" },
   /** Undecided: the writer passes A1's reason on (transfer_pending, held, not the authority). */
   SPACE_READ_ONLY: readOnly(),
   // Undecided outcomes (A1 3.8): no receipt, and a retry with the same ID runs the request.

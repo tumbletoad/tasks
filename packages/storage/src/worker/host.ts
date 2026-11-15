@@ -20,6 +20,7 @@ import { statSync } from "node:fs";
 import type { MessagePort } from "node:worker_threads";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import type { BackupSeams } from "../backup/backup.ts";
+import { submitBehindBackup } from "../backup/barrier.ts";
 import { MEMORY, type Connection, type Row, type SqliteDriver } from "../driver.ts";
 import { misuse, StorageError, type SerializedStorageError } from "../errors.ts";
 import { fsCall } from "../files.ts";
@@ -83,6 +84,8 @@ export interface WorkerFaults {
   migrate?: MigrateSeams["at"];
   /** The migration's barrier backup (backup/backup.ts). */
   barrier?: BackupSeams["at"];
+  /** An import's barrier backup (backup/barrier.ts). */
+  importBarrier?: BackupSeams["at"];
   /** A restore in place (restore/restore.ts, restore/folders.ts). */
   restore?: RestoreSeams["at"];
 }
@@ -565,6 +568,19 @@ export function serve(
         registerMachine: ({ handle }) => writer(handle).registerMachine(),
         actor: ({ handle, actorKind, label }) => writer(handle).actor(actorKind, label),
         submit: ({ handle, request }) => writer(handle).submit(request),
+        importSubmit: ({ handle, request, backupDir, appVersion }) =>
+          submitBehindBackup(
+            checked,
+            writer(handle),
+            request,
+            {
+              // The writer's own space: a backup of another folder could guard nothing here.
+              folder: writer(handle).folder,
+              ...(backupDir === undefined ? {} : { backupDir }),
+              ...(appVersion === undefined ? {} : { appVersion }),
+            },
+            { steps, ...(faults.importBarrier === undefined ? {} : { at: faults.importBarrier }) },
+          ),
         receipt: ({ handle, lookup }) => writer(handle).receipt(lookup) ?? null,
         launch: ({ handle, launch }) => writer(handle).launch(launch) ?? null,
         openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),

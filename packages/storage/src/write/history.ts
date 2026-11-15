@@ -43,7 +43,16 @@ import { misuse, StorageError } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
-import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
+import { canonicalJson } from "./canonical.ts";
+import {
+  CHILD_FIELDS,
+  columnsValue,
+  EXT_TABLES,
+  extValue,
+  fieldJson,
+  isExtField,
+  TASK_FIELDS,
+} from "./fields.ts";
 import {
   RequestProblem,
   WRITE_LIMITS,
@@ -54,7 +63,15 @@ import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts
 
 /** The tables whose rows an inversion writes. */
 export type InvertibleEntity =
-  "tasks" | "notes" | "log_entries" | "learnings" | "sources" | "task_sources" | "places";
+  | "tasks"
+  | "notes"
+  | "log_entries"
+  | "learnings"
+  | "sources"
+  | "task_sources"
+  | "places"
+  | "areas"
+  | "projects";
 
 interface Table {
   readonly fields: Readonly<Record<string, readonly string[]>>;
@@ -78,7 +95,27 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
     where: "task_id = $task AND source_id = $source",
   },
   places: { fields: CHILD_FIELDS.places, tombstone: "deleted", where: BY_ID },
+  // An import's areas and projects (A7 3.15.5): their tombstone is their one field so far.
+  areas: { fields: CHILD_FIELDS.areas, tombstone: "deleted", where: BY_ID },
+  projects: { fields: CHILD_FIELDS.projects, tombstone: "deleted", where: BY_ID },
 };
+
+/**
+ * A logical field's value in a row: its columns', or for `ext.<key>` the key's value in the row's
+ * `ext` map (A1 3.4).
+ */
+function valueIn(
+  entity: InvertibleEntity,
+  raw: Readonly<Record<string, unknown>>,
+  field: string,
+): unknown {
+  if (EXT_TABLES.has(entity) && isExtField(field)) return extValue(raw, field);
+  return columnsValue(raw, TABLES[entity].fields[field] ?? []);
+}
+
+/** Whether `field` is a logical field of `entity`'s rows. */
+const hasField = (entity: InvertibleEntity, field: string): boolean =>
+  Object.hasOwn(TABLES[entity].fields, field) || (EXT_TABLES.has(entity) && isExtField(field));
 
 const isInvertible = (entity: string): entity is InvertibleEntity => Object.hasOwn(TABLES, entity);
 
@@ -200,9 +237,52 @@ const SOURCE_CHILDREN: readonly Child[] = [
   },
 ];
 
+/** A group's places: a place another commit bound to it keeps it. */
+const groupPlaces = (kind: "area" | "project"): Child => ({
+  entity: "places",
+  key: "id",
+  task: "NULL",
+  parent: "owner_id",
+  where: ` AND owner_kind = '${kind}'`,
+  fields: CHILD_FIELDS.places,
+  field: "deleted",
+  column: "deleted_at",
+});
+
+/** A group's tasks: a task in it that another commit created or moved there keeps it. */
+const groupTasks = (column: "area_id" | "project_id"): Child => ({
+  entity: "tasks",
+  key: "id",
+  task: "id",
+  parent: column,
+  where: "",
+  fields: TASK_FIELDS,
+  field: "deleted",
+  column: "deleted_at",
+});
+
+/** An area's tasks, projects and places, and a project's tasks and places (A7 3.15.5). */
+const AREA_CHILDREN: readonly Child[] = [
+  groupTasks("area_id"),
+  {
+    entity: "projects",
+    key: "id",
+    task: "NULL",
+    parent: "area_id",
+    where: "",
+    fields: CHILD_FIELDS.projects,
+    field: "deleted",
+    column: "deleted_at",
+  },
+  groupPlaces("area"),
+];
+const PROJECT_CHILDREN: readonly Child[] = [groupTasks("project_id"), groupPlaces("project")];
+
 const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = {
   tasks: TASK_CHILDREN,
   sources: SOURCE_CHILDREN,
+  areas: AREA_CHILDREN,
+  projects: PROJECT_CHILDREN,
 };
 
 /**
@@ -279,6 +359,8 @@ const SQL = {
   placeTaken:
     "SELECT * FROM places WHERE owner_kind = $kind AND owner_id = $owner " +
     "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
+  areaTaken: "SELECT * FROM areas WHERE slug = $slug AND deleted_at IS NULL AND id <> $id",
+  projectTaken: "SELECT * FROM projects WHERE slug = $slug AND deleted_at IS NULL AND id <> $id",
   /**
    * The active holders, as they stand, of the keyed sources in `$sources` and of those the tasks
    * in `$tasks` link to (A1 3.6): an active task that is not deleted, with a live link to the live
@@ -536,7 +618,7 @@ export function planInversions(
         id,
         ...(task === null ? {} : { task }),
         field,
-        value: columnsValue(row.raw, TABLES[entity].fields[field] ?? []),
+        value: valueIn(entity, row.raw, field),
         ...values,
       },
       versionOf(row, field),
@@ -558,8 +640,7 @@ export function planInversions(
 
     if (change.action === "set") {
       const field = change.field ?? "";
-      const columns = table.fields[field];
-      if (columns === undefined) throw invalidValue("changes", "field");
+      if (!hasField(entity, field)) throw invalidValue("changes", "field");
       const restore = change.before ?? "null";
       if (provenanceOf(row, field) !== change.afterProv) {
         blocked(
@@ -609,12 +690,17 @@ export function planInversions(
       throw invalidValue("changes", "after");
     }
     let passes = true;
-    for (const [field, columns] of Object.entries(table.fields)) {
+    // Every field, and every `ext.<key>` a later commit wrote (its provenance is in `fp`).
+    const guarded = [
+      ...Object.keys(table.fields),
+      ...Object.keys(row.fp).filter((f) => isExtField(f) && !Object.hasOwn(table.fields, f)),
+    ];
+    for (const field of guarded) {
       if (options.creating.has(provenanceOf(row, field))) continue;
       passes = false;
       blocked(
         fieldConflict(entity, id, change.taskId, field, {
-          wrote: columnsValue(created as Record<string, unknown>, columns),
+          wrote: valueIn(entity, created as Record<string, unknown>, field),
         }),
       );
     }
@@ -626,9 +712,15 @@ export function planInversions(
       const theirs = !options.creating.has(state.createdSeq);
       const fields = theirs
         ? [child.field]
-        : Object.keys(child.fields).filter((f) => !options.creating.has(provenanceOf(state, f)));
+        : [
+            ...Object.keys(child.fields),
+            ...Object.keys(state.fp).filter((f) => isExtField(f) && !Object.hasOwn(child.fields, f)),
+          ].filter((f) => !options.creating.has(provenanceOf(state, f)));
       for (const field of fields) {
         passes = false;
+        const value = isExtField(field)
+          ? extValue(state.raw, field)
+          : columnsValue(state.raw, child.fields[field] ?? []);
         blocked(
           conflict(
             {
@@ -636,7 +728,7 @@ export function planInversions(
               id: kid.id,
               ...(kid.task === null ? {} : { task: kid.task }),
               field,
-              value: theirs ? null : columnsValue(state.raw, child.fields[field] ?? []),
+              value: theirs ? null : value,
             },
             // A row without a tombstone (a run) is named with who created it.
             theirs && child.column === null ? state.createdSeq : versionOf(state, field),
@@ -692,6 +784,11 @@ function takenBy(
       machine: raw["machine_id"] as string,
       id: raw["id"] as string,
     });
+  } else if (entity === "areas" || entity === "projects") {
+    // A slug is unique among live areas, and among live projects (A1 3.3).
+    found = conn
+      .prepare(entity === "areas" ? SQL.areaTaken : SQL.projectTaken)
+      .get({ slug: raw["slug"] as string, id: raw["id"] as string });
   }
   if (found === undefined) return undefined;
   const r = new RowReader(entity, found);
@@ -832,7 +929,9 @@ function readRow(conn: Connection, entity: InvertibleEntity, id: string): RowSta
 
 /** `UPDATE <entity> SET <columns> WHERE <its key>`, for the columns of its fields only. */
 function updateSql(entity: InvertibleEntity, columns: readonly string[]): string {
-  const known = new Set(Object.values(TABLES[entity].fields).flat());
+  const known = new Set<string>(Object.values(TABLES[entity].fields).flat());
+  // An `ext.<key>` field is written through the whole `ext` column (A1 3.4).
+  if (EXT_TABLES.has(entity)) known.add("ext");
   if (columns.length === 0 || columns.some((c) => !known.has(c))) {
     throw misuse("An inversion names only the columns of its fields");
   }
@@ -1102,11 +1201,14 @@ function writeInversions(
     const values: Record<string, SqlValue> = {};
     const fv = { ...row.fv };
     const fp = { ...row.fp };
+    /** The row's `ext` map as the group's `ext.<key>` inversions leave it. */
+    let ext: Record<string, unknown> | undefined;
     for (const inversion of group) {
       const { field } = inversion;
-      const columns = table.fields[field];
-      if (columns === undefined) throw misuse("An inversion names a field its row does not have");
-      const before = fieldJson(columnsValue(row.raw, columns));
+      if (!hasField(entity, field)) {
+        throw misuse("An inversion names a field its row does not have");
+      }
+      const before = fieldJson(valueIn(entity, row.raw, field));
       const after =
         inversion.kind === "restore"
           ? inversion.value
@@ -1115,7 +1217,23 @@ function writeInversions(
       if (before === after) {
         throw new StorageError("SPACE_INVALID", "A field does not hold the write it names");
       }
-      Object.assign(values, columnValues(columns, after));
+      const columns = table.fields[field];
+      if (columns === undefined) {
+        // `ext.<key>`: the key set back in the row's map, null removing it (A1 3.4).
+        const map = (ext ??= JSON.parse(String(row.raw["ext"] ?? "{}")) as Record<string, unknown>);
+        const key = field.slice("ext.".length);
+        const value = parsed(after);
+        if (value === null) Reflect.deleteProperty(map, key);
+        else {
+          Object.defineProperty(map, key, {
+            value,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        }
+        values["ext"] = canonicalJson(map);
+      } else Object.assign(values, columnValues(columns, after));
       const prov = inversion.kind === "restore" ? inversion.prov : commit.seq;
       changes.push({
         op: commit.op,

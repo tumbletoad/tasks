@@ -71,6 +71,19 @@ export const WRITE_LIMITS = {
   /** UTF-8 bytes of a learning, and the live learnings a task holds (A1 3.7, 3.11.2). */
   learning: 1_024,
   learnings: 20,
+  /**
+   * An import's one commit (A1 3.7, 3.14; A7 3.15.5): operations and bytes of JSON. They follow
+   * from the importer's input bounds (A7 3.15.2: 100,000 task lines, a few operations and one
+   * exchange item each), so an import the dry run accepts is never refused for its size.
+   */
+  importOps: 1_000_000,
+  importBytes: 512 * 1024 * 1024,
+  /** Characters of a legacy ID kept as an alias: the prototype's marker grammar (A7 3.15.2). */
+  alias: 1_024,
+  /** UTF-8 bytes of a JSON `ext` value of a row, and of an exchange item's base (A1 3.4, 3.14). */
+  ext: 256 * 1024,
+  /** Characters of a slug of an area or a project (A7 3.15.3: at most 48). */
+  slug: 64,
 } as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -102,6 +115,11 @@ export const WRITE_ERROR_CODES = [
   "UNDO_BEFORE_FLOOR",
   /** A preference whose declaration does not list the actor as a writer (A1 3.16, A3 3.8.3). */
   "PREFERENCE_FORBIDDEN",
+  /**
+   * An import whose preview token, recomputed in its transaction from the rows the plan meets,
+   * differs from the token the person applied: the space changed since the dry run (A7 3.15.5).
+   */
+  "PREVIEW_STALE",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
@@ -147,7 +165,9 @@ export type ConflictEntity =
   | "attachments"
   | "task_labels"
   | "preferences"
-  | "runs";
+  | "runs"
+  | "areas"
+  | "projects";
 
 /**
  * One field that changed after the caller's base, or the link version the caller named (A1 3.5).
@@ -299,7 +319,22 @@ export interface TaskValues {
   source_at?: number | null;
   reviewed_at?: number | null;
   due?: Due | null;
+  /**
+   * Keys of the task's `ext` map, each one logical field `ext.<key>` (A1 3.4): a JSON value, or
+   * null to remove the key. An import's only (isImportRequest): the importer keeps what the
+   * prototype holds beyond the space's fields in `ext.planning` (A7 3.15.3).
+   */
+  ext?: Record<string, JsonValue | null>;
 }
+
+/** Plain JSON data, as `ext` values and an exchange item's base hold it. */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 /** Where a task goes: a group and, optionally, a sibling to stand next to. */
 export interface Placement {
@@ -340,6 +375,11 @@ export interface TaskCreate extends TaskValues, Placement {
    * Without it a matched draft takes only its entries there (A1 3.6). Only with `source_key`.
    */
   link_sources?: boolean;
+  /**
+   * The creation instant, which an import takes from the prototype (A7 3.15.3: 09:00 on the
+   * `(added …)` day). Absent: the commit's instant. An import's only.
+   */
+  created_at?: number;
 }
 
 export interface TaskPatch {
@@ -376,6 +416,11 @@ export interface TaskComplete {
    * INVALID_TRANSITION: complete_task's way to finish a task whatever the user did first (A3 3.4.8).
    */
   if_active?: boolean;
+  /**
+   * `completed_at`, which an import takes from the prototype (A7 3.15.3: a check event's time, or
+   * 09:00 on a `(done …)` day). Absent: the commit's instant. An import's only.
+   */
+  at?: number;
 }
 
 export interface TaskReopen {
@@ -471,6 +516,11 @@ export interface LogAdd {
   body: string;
   /** Default `progress`. */
   log_kind?: LogKind;
+  /**
+   * The entry's instant, which an import takes from the prototype (A7 3.15.3: 09:00 on an
+   * evidence's `source_date`). Absent: the commit's instant. An import's only.
+   */
+  at?: number;
 }
 
 /** A source's own fields (A1 3.4). `key` is `<namespace>:<id>` (A1 3.6). */
@@ -483,6 +533,12 @@ export interface SourceFields {
   url?: string;
   /** When it was sent, in milliseconds. */
   at?: number;
+  /**
+   * The `ext` map of a source this operation creates (A1 3.4), such as the importer's
+   * `ext.planning.generic_title` (A7 3.15.3). A source found by its key keeps its own. An import's
+   * only.
+   */
+  ext?: Record<string, JsonValue>;
 }
 
 /**
@@ -697,7 +753,98 @@ export interface Redo {
   commit?: Id<"op">;
 }
 
+/**
+ * `alias.add` (A1 3.3, A7 3.15.3): a legacy ID of the earlier prototype as an alias of a task, in
+ * namespace `planning`, so `tasks show <legacy id>` resolves it. An alias the task holds already
+ * is unchanged. An alias of another task moves to this one only when that task is deleted: its
+ * import was undone (A7 3.15.6), so the legacy ID names the task a re-import makes for it. An alias
+ * never leaves a live task. An import's only.
+ */
+export interface AliasAdd {
+  kind: "alias.add";
+  task: string;
+  namespace: "planning";
+  alias: string;
+}
+
+/**
+ * `area.upsert` (A7 3.15.3): the live area with this slug, or a new one with this slug and title
+ * (and the client's ID, when given). A found area keeps its own title. An import's only.
+ */
+export interface AreaUpsert {
+  kind: "area.upsert";
+  slug: string;
+  title: string;
+  id?: Id<"a">;
+}
+
+/**
+ * `project.upsert` (A7 3.15.3): the live project with this slug in this area, or a new one. A slug
+ * that a project of another area holds is refused: the importer gives such a project the next free
+ * number (placeProjects) before it sends the request. An import's only.
+ */
+export interface ProjectUpsert {
+  kind: "project.upsert";
+  slug: string;
+  title: string;
+  /** The area: an ID or a slug, also of an area an earlier operation of the request upserts. */
+  area: string;
+  id?: Id<"p">;
+}
+
+/** One task of an exchange: its file, or the prototype's marker, and its base (A1 3.14). */
+export interface ExchangeItem {
+  task: string;
+  file: string;
+  base: JsonValue;
+}
+
+/**
+ * `exchange.create` (A1 3.14, A7 3.15.5): an exchange row and one item per task. `dir` names its
+ * folder inside the space (A1 3.4: the space holds no absolute path). `applied`: the exchange is
+ * applied in this commit, as an import's is. Never on an undo stack (A1 3.6). An import's only.
+ */
+export interface ExchangeCreate {
+  kind: "exchange.create";
+  id: Id<"ex">;
+  dir: string;
+  applied?: boolean;
+  items: ExchangeItem[];
+}
+
+/**
+ * `import.undo` (A7 3.15.5): reverts an import's commit under A1 3.10's revert guards, as a partial
+ * revert: a task the import created or changed that someone changed since stays as it is, with its
+ * notes, entries, sources and place, and is listed. Areas and projects that keep a task stay. The
+ * import's aliases and exchange stay, so a re-import knows what it made. A request holds it alone,
+ * from a human, with no base; it is never on an undo stack.
+ */
+export interface ImportUndo {
+  kind: "import.undo";
+  commit: Id<"op">;
+}
+
+/**
+ * What an import's preview pinned (A7 3.15.4, 3.15.5): the token, everything it hashes that the
+ * run folder holds (`pinned`), and the names whose rows the writer reads in the request's
+ * transaction to hash them again: the plan's legacy IDs, source keys, area slugs and the project
+ * slugs its placement looked at. The token the writer recomputes must be `token`.
+ */
+export interface PreviewGuard {
+  token: string;
+  pinned: { [key: string]: JsonValue };
+  aliases: string[];
+  keys: string[];
+  areas: string[];
+  projects: string[];
+}
+
 export type Operation =
+  | AliasAdd
+  | AreaUpsert
+  | ProjectUpsert
+  | ExchangeCreate
+  | ImportUndo
   | TaskCreate
   | TaskPatch
   | TaskContextAppend
@@ -745,7 +892,29 @@ export const OPERATION_KINDS = [
   "pref.set",
   "undo",
   "redo",
+  "alias.add",
+  "area.upsert",
+  "project.upsert",
+  "exchange.create",
+  "import.undo",
 ] as const satisfies readonly OperationKind[];
+
+/** The operations only an import request carries (isImportRequest). */
+export const IMPORT_OPERATIONS: ReadonlySet<OperationKind> = new Set([
+  "alias.add",
+  "area.upsert",
+  "project.upsert",
+  "exchange.create",
+]);
+
+/**
+ * An import's request (A1 3.14, 3.21; A7 3.15.5): origin `import`, the user as the principal and
+ * the import actor as the author, which the writer checks in its transaction. Only such a request
+ * holds the import's operations and fields (creation and completion instants, `ext`) and may go
+ * above the request limits.
+ */
+export const isImportRequest = (request: { actor: { origin: string } }): boolean =>
+  request.actor.origin === "import";
 
 /** The operations that invert history (A1 3.10). */
 export type HistoryOperation = Undo | Redo;
@@ -791,6 +960,8 @@ export interface WriteRequest {
    * operation) of at most 500 characters, without controls; never task text.
    */
   warnings?: string[];
+  /** An import's preview, checked in the transaction before anything is staged (PreviewGuard). */
+  preview?: PreviewGuard;
   ops: Operation[];
 }
 
@@ -1090,6 +1261,13 @@ class Fields {
     return value;
   }
 
+  instant(key: string): number {
+    const value = this.raw(key);
+    if (!inRange(value, "instant"))
+      return this.fail("VALIDATION_FAILED", "Expected an instant", key);
+    return value;
+  }
+
   dateOrNull(key: string): string | null {
     const value = this.raw(key);
     if (value === null) return null;
@@ -1152,8 +1330,46 @@ function taskValues(f: Fields): TaskValues {
   if (f.has("source_at")) values.source_at = f.instantOrNull("source_at");
   if (f.has("reviewed_at")) values.reviewed_at = f.instantOrNull("reviewed_at");
   if (f.has("due")) values.due = f.due("due");
+  if (f.has("ext")) values.ext = extMap(f, "ext", true);
   return values;
 }
+
+/** A key of a row's `ext` map: one logical field `ext.<key>` (A1 3.4). */
+export const EXT_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+
+/**
+ * An `ext` map: each key one logical field, each value plain JSON data normalised as stored text
+ * (A1 3.7), or null to remove the key when `nullable`. The problem names the map, never a key.
+ */
+function extMap(
+  f: Fields,
+  key: string,
+  nullable: boolean,
+): Record<string, JsonValue | null> {
+  const value = f.raw(key);
+  if (!isRecord(value) || Object.keys(value).length === 0) {
+    return f.fail("VALIDATION_FAILED", "Expected a map of ext keys", key);
+  }
+  const out: Record<string, JsonValue | null> = {};
+  for (const [name, item] of Object.entries(value)) {
+    if (!EXT_KEY.test(name)) f.fail("VALIDATION_FAILED", "Expected ext keys of a-z, 0-9 and _", key);
+    if (item === null) {
+      if (!nullable) f.fail("VALIDATION_FAILED", "A new row's ext holds no null", key);
+      out[name] = null;
+      continue;
+    }
+    if (!isJsonData(item)) f.fail("VALIDATION_FAILED", "Expected plain JSON data", key);
+    const clean = normaliseJson(item) as JsonValue;
+    if (utf8Bytes(canonicalJson(clean)) > WRITE_LIMITS.ext) {
+      f.fail("TOO_LARGE", "An ext value is larger than its limit", key);
+    }
+    out[name] = clean;
+  }
+  return out;
+}
+
+/** A slug of an area or a project (A7 3.15.3): lower-case ASCII letters and digits, `-` between. */
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function placement(f: Fields): Placement {
   const where: Placement = {};
@@ -1177,8 +1393,12 @@ function checkOperation(value: unknown, i: number): Operation {
     case "task.create": {
       if (!f.has("title")) f.fail("VALIDATION_FAILED", "A new task needs a title", "title");
       const values = taskValues(f);
+      if (values.ext !== undefined && Object.values(values.ext).includes(null)) {
+        f.fail("VALIDATION_FAILED", "A new row's ext holds no null", "ext");
+      }
       const create: TaskCreate = { kind, title: values.title ?? "", ...values, ...placement(f) };
       if (f.has("id")) create.id = f.id("id", "t");
+      if (f.has("created_at")) create.created_at = f.instant("created_at");
       if (f.has("dedupe")) create.dedupe = f.oneOf("dedupe", DEDUPE_MODES);
       if (f.has("link_sources")) {
         create.link_sources = f.boolean("link_sources");
@@ -1248,6 +1468,7 @@ function checkOperation(value: unknown, i: number): Operation {
       const outcome = f.optText("outcome", { bytes: WRITE_LIMITS.outcome });
       if (outcome !== undefined) complete.outcome = outcome;
       if (f.has("if_active")) complete.if_active = f.boolean("if_active");
+      if (f.has("at")) complete.at = f.instant("at");
       op = complete;
       break;
     }
@@ -1298,6 +1519,7 @@ function checkOperation(value: unknown, i: number): Operation {
         body: f.text("body", { bytes: WRITE_LIMITS.log }),
       };
       if (f.has("log_kind")) log.log_kind = f.oneOf("log_kind", LOG_KINDS);
+      if (f.has("at")) log.at = f.instant("at");
       op = log;
       break;
     }
@@ -1484,9 +1706,92 @@ function checkOperation(value: unknown, i: number): Operation {
       op = redo;
       break;
     }
+    case "alias.add": {
+      const alias = f.raw("alias");
+      if (typeof alias !== "string" || alias.length > WRITE_LIMITS.alias || !ALIAS.test(alias)) {
+        f.fail("VALIDATION_FAILED", "Expected a legacy ID of a-z, 0-9, _ and -", "alias");
+      }
+      op = {
+        kind,
+        task: f.reference("task"),
+        namespace: f.oneOf("namespace", ["planning"] as const),
+        alias: alias as string,
+      };
+      break;
+    }
+    case "area.upsert":
+    case "project.upsert": {
+      const slug = f.raw("slug");
+      if (typeof slug !== "string" || slug.length > WRITE_LIMITS.slug || !SLUG.test(slug)) {
+        f.fail("VALIDATION_FAILED", "Expected a slug of a-z, 0-9 and -", "slug");
+      }
+      const title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
+      if (kind === "area.upsert") {
+        const area: AreaUpsert = { kind, slug: slug as string, title };
+        if (f.has("id")) {
+          const id = f.raw("id");
+          if (!isId(id, "a")) f.fail("VALIDATION_FAILED", "Expected an ID", "id");
+          area.id = id as Id<"a">;
+        }
+        op = area;
+      } else {
+        const area = f.group("area");
+        if (area === null) return f.fail("VALIDATION_FAILED", "A project is in an area", "area");
+        const project: ProjectUpsert = { kind, slug: slug as string, title, area };
+        if (f.has("id")) {
+          const id = f.raw("id");
+          if (!isId(id, "p")) f.fail("VALIDATION_FAILED", "Expected an ID", "id");
+          project.id = id as Id<"p">;
+        }
+        op = project;
+      }
+      break;
+    }
+    case "exchange.create": {
+      const id = f.raw("id");
+      if (!isId(id, "ex")) f.fail("VALIDATION_FAILED", "Expected an ID", "id");
+      const dir = f.text("dir", { chars: WRITE_LIMITS.path, line: true });
+      if (!isRelPath(dir) || dir === "") {
+        f.fail("VALIDATION_FAILED", "Expected a folder inside the space", "dir");
+      }
+      const items = f.raw("items");
+      if (!Array.isArray(items)) f.fail("VALIDATION_FAILED", "Expected a list of items", "items");
+      const create: ExchangeCreate = {
+        kind,
+        id: id as Id<"ex">,
+        dir,
+        items: (items as unknown[]).map((item, k) => exchangeItem(item, i, k)),
+      };
+      if (f.has("applied")) create.applied = f.boolean("applied");
+      op = create;
+      break;
+    }
+    case "import.undo": {
+      op = { kind, commit: f.id("commit", "op") };
+      break;
+    }
   }
   f.done();
   return op;
+}
+
+/** A legacy ID: the prototype's marker grammar (A7 3.15.2), which holds every fallback ID. */
+const ALIAS = /^[a-z0-9_-]+$/;
+
+/** One item of `exchange.create`: a task ID, its file or marker, and its base (A1 3.14). */
+function exchangeItem(value: unknown, i: number, k: number): ExchangeItem {
+  const f = fields(value, `ops[${String(i)}].items[${String(k)}]`, i);
+  const task = f.raw("task");
+  if (!isId(task, "t")) f.fail("VALIDATION_FAILED", "Expected a task ID", "task");
+  const file = f.text("file", { chars: WRITE_LIMITS.alias, line: true });
+  const base = f.raw("base");
+  if (!isJsonData(base)) f.fail("VALIDATION_FAILED", "Expected plain JSON data", "base");
+  const clean = normaliseJson(base) as JsonValue;
+  if (utf8Bytes(canonicalJson(clean)) > WRITE_LIMITS.ext) {
+    f.fail("TOO_LARGE", "An item's base is larger than its limit", "base");
+  }
+  f.done();
+  return { task: task as string, file, base: clean };
 }
 
 /**
@@ -1741,6 +2046,7 @@ function sourceFields(f: Fields): SourceFields {
     if (!inRange(at, "instant")) f.fail("VALIDATION_FAILED", "Expected an instant", "at");
     source.at = at;
   }
+  if (f.has("ext")) source.ext = extMap(f, "ext", false) as Record<string, JsonValue>;
   f.done();
   return source;
 }
@@ -1816,8 +2122,13 @@ export function checkRequest(value: unknown): CheckedRequest {
   } catch {
     return fail("VALIDATION_FAILED", "The request is not JSON data", "");
   }
-  if (utf8Bytes(json ?? "") > WRITE_LIMITS.requestBytes) {
-    fail("TOO_LARGE", "The request is larger than 512 KiB", "");
+  // An import's one commit may be larger (WRITE_LIMITS.importOps): which limits apply follows
+  // from the origin, which the credential's check below confirms.
+  const importing =
+    isRecord(value) && isRecord(value["actor"]) && value["actor"]["origin"] === "import";
+  const maxBytes = importing ? WRITE_LIMITS.importBytes : WRITE_LIMITS.requestBytes;
+  if (utf8Bytes(json ?? "") > maxBytes) {
+    fail("TOO_LARGE", importing ? "The import is larger than 512 MiB" : "The request is larger than 512 KiB", "");
   }
   const f = fields(value, "");
   const requestId = f.raw("request_id");
@@ -1836,8 +2147,8 @@ export function checkRequest(value: unknown): CheckedRequest {
     return fail("VALIDATION_FAILED", "A request has at least one operation", "ops");
   }
   const list = ops as unknown[];
-  if (list.length > WRITE_LIMITS.ops) {
-    fail("TOO_LARGE", "A request has at most 50 operations", "ops");
+  if (list.length > (importing ? WRITE_LIMITS.importOps : WRITE_LIMITS.ops)) {
+    fail("TOO_LARGE", `A request has at most ${importing ? "1,000,000" : "50"} operations`, "ops");
   }
   const request: CheckedRequest = {
     space_id: spaceId,
@@ -1857,8 +2168,10 @@ export function checkRequest(value: unknown): CheckedRequest {
   }
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
+  if (f.has("preview")) request.preview = checkPreview(f.sub("preview"));
   if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
+  checkImportRequest(f, request);
   // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,
   // as the request starts, so no other operation may share a request with a change of them.
   const prefs = request.ops.filter((op) => op.kind === "pref.set").length;
@@ -1926,6 +2239,107 @@ function checkMatchableDrafts(ops: readonly Operation[]): void {
       }
     }
   });
+}
+
+/** The token of an import's preview (A7 3.15.4): `pv1_` and a base64url SHA-256. */
+const PREVIEW_TOKEN = /^pv1_[A-Za-z0-9_-]{43}$/;
+
+/** An import's preview guard (PreviewGuard): the token, what it pins, and the names it reads. */
+function checkPreview(f: Fields): PreviewGuard {
+  const token = f.raw("token");
+  if (typeof token !== "string" || !PREVIEW_TOKEN.test(token)) {
+    f.fail("VALIDATION_FAILED", "Expected a preview token", "token");
+  }
+  const pinned = f.raw("pinned");
+  if (!isRecord(pinned) || !isJsonData(pinned)) {
+    f.fail("VALIDATION_FAILED", "Expected what the preview pinned", "pinned");
+  }
+  const names = (key: string): string[] => {
+    const list = f.raw(key);
+    if (
+      !Array.isArray(list) ||
+      list.length > WRITE_LIMITS.importOps ||
+      !list.every((n) => typeof n === "string" && n !== "" && n.length <= WRITE_LIMITS.sourceKey)
+    ) {
+      return f.fail("VALIDATION_FAILED", "Expected a list of names", key);
+    }
+    return [...(list as string[])];
+  };
+  const guard: PreviewGuard = {
+    token: token as string,
+    pinned: pinned as PreviewGuard["pinned"],
+    aliases: names("aliases"),
+    keys: names("keys"),
+    areas: names("areas"),
+    projects: names("projects"),
+  };
+  f.done();
+  return guard;
+}
+
+/** The fields of the operations that only an import request may carry (isImportRequest). */
+function importFields(op: Operation): boolean {
+  switch (op.kind) {
+    case "task.create":
+      return op.created_at !== undefined || op.ext !== undefined;
+    case "task.patch":
+      return op.set?.ext !== undefined;
+    case "task.complete":
+    case "log.add":
+      return op.at !== undefined;
+    case "source.add":
+      return op.source.ext !== undefined;
+    default:
+      return IMPORT_OPERATIONS.has(op.kind);
+  }
+}
+
+/**
+ * An import's request and the undo of one (A7 3.15.5). Only an import request (origin `import`)
+ * holds the import's operations and fields, and a preview; it comes from the user as the principal
+ * with the import actor as the author (the writer checks the author's kind), and never joins an
+ * undo stack, because its exchange is never undone by one (A1 3.6). An `import.undo` is a request
+ * of its own, from a human, with no base, never undoable.
+ */
+function checkImportRequest(f: Fields, request: CheckedRequest): void {
+  const importing = isImportRequest(request);
+  if (!importing) {
+    const at = request.ops.findIndex(importFields);
+    if (at >= 0) {
+      fail("VALIDATION_FAILED", "Only an import writes this", `ops[${String(at)}]`, at);
+    }
+    if (request.preview !== undefined) {
+      f.fail("VALIDATION_FAILED", "Only an import carries a preview", "preview");
+    }
+  } else {
+    if (request.actor.actor_kind !== "human" || request.actor.author_id === undefined) {
+      f.fail(
+        "VALIDATION_FAILED",
+        "An import is the user's, written by the import actor",
+        "actor.author_id",
+      );
+    }
+    if (request.undoable === true) {
+      f.fail("VALIDATION_FAILED", "An import is undone with import.undo", "undoable");
+    }
+  }
+  const undo = request.ops.findIndex((op) => op.kind === "import.undo");
+  if (undo < 0) return;
+  if (request.ops.length !== 1) {
+    f.fail("VALIDATION_FAILED", "An import's undo is a request of its own", "ops");
+  }
+  if (importing || request.actor.actor_kind !== "human") {
+    f.fail("VALIDATION_FAILED", "Only the user undoes an import", "actor.actor_kind");
+  }
+  if (request.undoable === true) {
+    f.fail("VALIDATION_FAILED", "An import's undo does not join the undo stack", "undoable");
+  }
+  if (request.base !== undefined) {
+    f.fail("VALIDATION_FAILED", "An import's undo is guarded by provenance, not a base", "base");
+  }
+  if (request.active !== undefined) {
+    f.fail("VALIDATION_FAILED", "An import's undo takes no active", "active");
+  }
 }
 
 /**
