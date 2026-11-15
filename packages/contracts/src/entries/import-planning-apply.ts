@@ -87,11 +87,17 @@ export const ImportPlanningApplyResult = z.strictObject({
           .optional(),
       }),
     )
-    .describe("Each task created, changed, deleted or in conflict, up to 2,000"),
+    .describe("Each task created, changed, deleted or in conflict, conflicts first, up to 2,000"),
   tasks_more: Count.describe("Tasks beyond those, in the run's apply.json"),
   gone: z.array(LegacyId).max(PREVIEW_ROWS).describe("Legacy IDs gone from the prototype"),
   as_of: AsOf.optional(),
   replayed: Replayed.optional(),
+  // A replay whose apply.json was not saved: created, updated and unchanged come from the commit;
+  // conflicts, deleted and gone are not known, and the next import lists the conflicts again.
+  incomplete: z
+    .literal(true)
+    .describe("A replay without apply.json: counts from the commit, conflicts unknown")
+    .optional(),
 });
 export type ImportPlanningApplyResult = z.infer<typeof ImportPlanningApplyResult>;
 

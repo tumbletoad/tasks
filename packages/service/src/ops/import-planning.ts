@@ -76,6 +76,7 @@ import {
   readApplyRows,
   readCommitFields,
   readImportCommit,
+  readImportOutcome,
   readImportRows,
   type ApplyRows,
   type ImportRows,
@@ -648,7 +649,10 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
   return matched;
 }
 
-/** One row per task of an apply's result, and the counts. */
+/**
+ * One row per task of an apply's result, and the counts: every row, conflicts first, so a cut
+ * answer (capped) never drops a conflict before a task that only changed.
+ */
 function applyResult(
   run: string,
   decision: ReturnType<typeof decideApply>,
@@ -664,7 +668,10 @@ function applyResult(
       ...(t.conflicts.length === 0 ? {} : { conflicts: [...t.conflicts] }),
     };
   });
-  const listed = rows.filter((r) => r.outcome !== "unchanged" || r.conflicts !== undefined);
+  const listed = [
+    ...rows.filter((r) => r.conflicts !== undefined),
+    ...rows.filter((r) => r.conflicts === undefined && r.outcome !== "unchanged"),
+  ];
   return {
     run,
     counts: {
@@ -675,9 +682,22 @@ function applyResult(
       conflicts: rows.filter((r) => r.conflicts !== undefined).length,
       gone: decision.gone.length,
     },
-    tasks: listed.slice(0, PREVIEW_ROWS),
-    tasks_more: Math.max(0, listed.length - PREVIEW_ROWS),
-    gone: decision.gone.slice(0, PREVIEW_ROWS),
+    tasks: listed,
+    tasks_more: 0,
+    gone: [...decision.gone],
+  };
+}
+
+/**
+ * The answer as the entry returns it: at most PREVIEW_ROWS tasks and gone IDs. The run's
+ * apply.json keeps every one (A7 3.15.5).
+ */
+function capped<T extends Omit<ImportPlanningApplyResult, "status" | "as_of">>(full: T): T {
+  return {
+    ...full,
+    tasks: full.tasks.slice(0, PREVIEW_ROWS),
+    tasks_more: full.tasks_more + Math.max(0, full.tasks.length - PREVIEW_ROWS),
+    gone: full.gone.slice(0, PREVIEW_ROWS),
   };
 }
 
@@ -688,10 +708,54 @@ function replayOf(folder: string, result: WriteResult): ImportPlanningApplyResul
     const stored = JSON.parse(
       readFileSync(join(folder, "apply.json"), "utf8"),
     ) as ImportPlanningApplyResult;
-    return { ...stored, replayed: true };
+    return { ...capped(stored), replayed: true };
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A replay's answer when the run's apply.json is gone (a crash between the commit and the file, or
+ * no room for it): what the commit did to each task of its exchange, read from the space, marked
+ * `incomplete`, because which fields conflicted is in no record. They stay conflicts, so the next
+ * dry run and apply list them again (A7 3.15.6).
+ */
+async function replayFromSpace(
+  reader: WorkerConnection,
+  run: string,
+  result: WriteResult,
+): Promise<ImportPlanningApplyResult> {
+  let outcome: Awaited<ReturnType<typeof readImportOutcome>>;
+  try {
+    outcome = await readImportOutcome(reader, run);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  const count = (o: string) => outcome.filter((t) => t.outcome === o).length;
+  const listed = outcome
+    .filter((t) => t.outcome !== "unchanged")
+    .map((t) => ({ legacy_id: t.legacy, ref: t.ref, outcome: t.outcome }));
+  return {
+    ...capped({
+      run,
+      counts: {
+        created: count("created"),
+        updated: count("updated"),
+        unchanged: count("unchanged"),
+        deleted: 0,
+        conflicts: 0,
+        gone: 0,
+      },
+      tasks: listed,
+      tasks_more: 0,
+      gone: [],
+    }),
+    status: "applied",
+    ...(result.commit === undefined ? {} : { commit: result.commit }),
+    as_of: result.as_of,
+    replayed: true,
+    incomplete: true,
+  };
 }
 
 export async function planningApply(call: PlanningApplyCall): Promise<ImportPlanningApplyResult> {
@@ -723,17 +787,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
       });
     }
     return (
-      replayOf(folder, receipt.result) ?? {
-        run,
-        status: "applied",
-        ...(receipt.result.commit === undefined ? {} : { commit: receipt.result.commit }),
-        counts: { created: 0, updated: 0, unchanged: 0, deleted: 0, conflicts: 0, gone: 0 },
-        tasks: [],
-        tasks_more: 0,
-        gone: [],
-        as_of: receipt.result.as_of,
-        replayed: true,
-      }
+      replayOf(folder, receipt.result) ?? (await replayFromSpace(call.reader, run, receipt.result))
     );
   }
   const report = readReport(folder);
@@ -798,7 +852,11 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
       importedAt: now,
     });
     if (decision.ops.length === 0) {
-      return { ...applyResult(run, decision, new Map()), status: "unchanged", as_of: rows.asOf };
+      return {
+        ...capped(applyResult(run, decision, new Map())),
+        status: "unchanged",
+        as_of: rows.asOf,
+      };
     }
 
     // The import actor joins the space on the first import that writes (A1 3.6, 3.21).
@@ -870,14 +928,15 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
     ...(submitted.backup === undefined ? {} : { backup: submitted.backup.name }),
     as_of: result.as_of,
   };
-  // The whole answer beside the run's report, for the person and for a retry's replay. The
-  // commit stands whether or not this file can be written.
+  // The whole answer beside the run's report, every task and gone ID, for the person and for a
+  // retry's replay; the entry returns the first 2,000. The commit stands whether or not this file
+  // can be written.
   try {
     writeNew(join(folder, "apply.json"), `${JSON.stringify(answer, null, 2)}\n`);
   } catch {
     // A file there already, or no room: the answer still goes back.
   }
-  return answer;
+  return capped(answer);
 }
 
 /** The hints of an apply's and an undo's refusals. */

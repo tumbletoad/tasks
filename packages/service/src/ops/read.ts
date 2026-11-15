@@ -288,6 +288,38 @@ export async function readImportCommit(
   };
 }
 
+/**
+ * What an applied run's commit did to each task of its exchange, from the space alone: created
+ * there, changed by it, or neither. A replay answers with it when the run's apply.json is gone.
+ */
+export async function readImportOutcome(
+  reader: WorkerConnection,
+  run: string,
+): Promise<{ legacy: string; ref: string; outcome: "created" | "updated" | "unchanged" }[]> {
+  const [rows] = await snapshot(
+    reader,
+    [
+      {
+        sql:
+          "SELECT ei.file AS legacy, t.ref AS ref, " +
+          "(SELECT ref_prefix FROM space WHERE one = 1) AS prefix, " +
+          "t.created_seq = x.applied_seq AS created, " +
+          "EXISTS (SELECT 1 FROM changes c WHERE c.seq = x.applied_seq AND c.task_id = t.id) " +
+          "AS changed FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
+          "JOIN tasks t ON t.id = ei.task_id WHERE x.id = $run AND x.state = 'applied' " +
+          "ORDER BY ei.rowid",
+        mode: "all",
+      },
+    ],
+    { run },
+  );
+  return ((rows as Row[] | undefined) ?? []).map((r) => ({
+    legacy: String(r["legacy"]),
+    ref: formatTaskRef(String(r["prefix"]), Number(r["ref"])),
+    outcome: r["created"] === 1 ? "created" : r["changed"] === 1 ? "updated" : "unchanged",
+  }));
+}
+
 /** The tasks a commit changed and the fields: what an import's undo removed and set back. */
 export async function readCommitFields(
   reader: WorkerConnection,

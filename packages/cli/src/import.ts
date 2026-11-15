@@ -250,6 +250,18 @@ function applied(r: ImportPlanningApplyResult): string {
       add(`  ${t.ref ?? t.legacy_id}  ${(t.conflicts ?? []).join(", ")}`);
     }
   }
+  const unlisted = c.conflicts - conflicts.length;
+  if (unlisted > 0) {
+    add(`  and ${String(unlisted)} more tasks with conflicts, listed in the run's apply.json`);
+  }
+  if (r.tasks_more > 0 && unlisted <= 0) {
+    add(`${String(r.tasks_more)} more tasks are listed in the run's apply.json.`);
+  }
+  if (r.incomplete === true) {
+    add();
+    add("The full answer of this apply was not saved: the counts come from its change, and the");
+    add("next import of the prototype lists its conflicts again.");
+  }
   if (r.status === "applied") {
     add();
     add(`Undo it with: tasks import planning --undo ${r.run}`);

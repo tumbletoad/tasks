@@ -813,6 +813,11 @@
             "maxItems": 2000,
             "type": "array"
           },
+          "incomplete": {
+            "const": true,
+            "description": "A replay without apply.json: counts from the commit, conflicts unknown",
+            "type": "boolean"
+          },
           "replayed": {
             "description": "True when a retry returned the stored result",
             "type": "boolean"
@@ -831,7 +836,7 @@
             "type": "string"
           },
           "tasks": {
-            "description": "Each task created, changed, deleted or in conflict, up to 2,000",
+            "description": "Each task created, changed, deleted or in conflict, conflicts first, up to 2,000",
             "items": {
               "additionalProperties": false,
               "properties": {

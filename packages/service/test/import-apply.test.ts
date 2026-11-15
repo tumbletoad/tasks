@@ -45,6 +45,7 @@ import {
   writePrototype,
   ZONE,
   type ImportWorld,
+  type ProtoTask,
   type WorldOptions,
 } from "./import-harness.ts";
 
@@ -377,6 +378,53 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       world.close();
     }
   }, 120_000);
+
+  test("apply.json holds every task, the answer the first 2,000 with conflicts first, and a replay without it says so", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      const tasks = (edit: (i: number) => Partial<ProtoTask>) =>
+        Array.from({ length: 2_001 }, (_, i) => ({
+          id: `p-${String(i)}`,
+          title: `Task ${String(i)}`,
+          ...edit(i),
+        }));
+      writePrototype(prototype, { tasks: tasks(() => ({})) });
+      const first = await importedSynthetic(world, prototype);
+      expect(first.result).toMatchObject({ counts: { created: 2_001 }, tasks_more: 1 });
+      expect(first.result.tasks).toHaveLength(2_000);
+      const stored = (run: string) =>
+        JSON.parse(
+          readFileSync(join(world.folder, "exchange", "planning", run, "apply.json"), "utf8"),
+        ) as ImportPlanningApplyResult;
+      expect(stored(first.preview.run).tasks).toHaveLength(2_001);
+
+      // The last task conflicts, every other one changes: the conflict leads the answer.
+      const last = taskOf(world, "p-2000");
+      world.edit([{ kind: "task.patch", task: last, set: { title: "Mine" } }]);
+      writePrototype(prototype, {
+        tasks: tasks((i) =>
+          i === 2_000 ? { title: "In the prototype" } : { meta: { next: "Changed" } },
+        ),
+      });
+      const second = await importedSynthetic(world, prototype);
+      expect(second.result.counts).toMatchObject({ updated: 2_000, conflicts: 1 });
+      expect(second.result.tasks[0]).toMatchObject({ legacy_id: "p-2000", conflicts: ["title"] });
+      expect(stored(second.preview.run).tasks).toHaveLength(2_001);
+
+      // A replay whose apply.json is gone counts from the commit and says what it cannot know.
+      rmSync(join(world.folder, "exchange", "planning", second.preview.run, "apply.json"));
+      const replay = await world.apply(second.preview.run, second.preview.token ?? "");
+      expect(ImportPlanningApplyResult.safeParse(replay).success).toBe(true);
+      expect(replay).toMatchObject({
+        replayed: true,
+        incomplete: true,
+        counts: { created: 0, updated: 2_000, unchanged: 1 },
+        tasks_more: 0,
+      });
+    } finally {
+      world.close();
+    }
+  }, 300_000);
 
   test("a write between the apply's read and its barrier makes it decide again, on what the person did", async () => {
     n += 1;

@@ -493,7 +493,7 @@ Apply a dry run of the Planning prototype import, behind a verified backup.
 | `counts.deleted` | integer, 0 to 1000000000 | yes | Tasks a person deleted since: not brought back |
 | `counts.conflicts` | integer, 0 to 1000000000 | yes | Tasks with fields both the prototype and the space changed |
 | `counts.gone` | integer, 0 to 1000000000 | yes | Legacy IDs no longer in the prototype: nothing is deleted |
-| `tasks` | object[] | yes | Each task created, changed, deleted or in conflict, up to 2,000 |
+| `tasks` | object[] | yes | Each task created, changed, deleted or in conflict, conflicts first, up to 2,000 |
 | `tasks[].legacy_id` | string, max 1024 | yes | The prototype's ID |
 | `tasks[].ref` | string | no | Its task |
 | `tasks[].outcome` | "created" \| "updated" \| "unchanged" \| "deleted" | yes | What happened |
@@ -503,6 +503,7 @@ Apply a dry run of the Planning prototype import, behind a verified backup.
 | `gone` | (string, max 1024)[], max 2000 items | yes | Legacy IDs gone from the prototype |
 | `as_of` | string | no | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `incomplete` | true | no | A replay without apply.json: counts from the commit, conflicts unknown |
 
 ### Examples
 
