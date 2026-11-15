@@ -136,6 +136,12 @@ export const CLOSED_ENUMS: Readonly<
     state: ["pending", "accepted", "rejected", "superseded"],
   },
   exchanges: { state: ["open", "applied", "abandoned"] },
+  // Schema 0.3 (M6.01): A4 3.10's session kinds and states.
+  sessions: {
+    kind: ["interactive", "run"],
+    state: ["opening", "live", "ended", "unknown"],
+    bound: [0, 1],
+  },
 };
 
 /**
@@ -193,10 +199,32 @@ export const OPEN_SETS = {
     "attachments",
     "proposals",
     "exchanges",
+    // Schema 0.3 (M6.01).
+    "sessions",
+    "runs",
   ],
   "outbox.topic": ["projection", "redact"],
   // A4 3.1's routes. Later targets may add one (remote launches, A1 3.4's open-set rule).
   "launches.route": ["terminal", "link", "t3-mcp", "t3-cli", "clipboard"],
+  // A4 3.11.1's run adapters, and A4 3.11.2's run states: A1 3.4 gives `runs.state` no CHECK, so
+  // a later adapter's state needs no table rebuild (packages/contracts: RUN_ADAPTERS, RUN_STATES).
+  "runs.adapter": ["claude-print", "codex-exec"],
+  "runs.state": [
+    "queued",
+    "starting",
+    "running",
+    "waiting_for_input",
+    "cancelling",
+    "reconciling",
+    "succeeded",
+    "failed",
+    "timed_out",
+    "cancelled",
+    "unknown",
+  ],
+  // A4 3.10's native ID sources and end reasons, which M4.06's session operations write.
+  "sessions.native_id_source": ["preset", "returned", "bridge", "reference-match"],
+  "sessions.end_reason": ["exit", "error", "terminal-closed", "lost", "stale"],
 } as const;
 
 /** The JSON columns of each table. Each one is TEXT with a json_valid CHECK (A1 3.4). */
@@ -223,6 +251,8 @@ export const JSON_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   proposals: ["ops", "alternatives", "fv", "fp"],
   exchanges: ["fv", "fp"],
   exchange_items: ["base"],
+  sessions: ["detail", "fv", "fp"],
+  runs: ["spec", "detail", "result", "fv", "fp"],
 };
 
 /**

@@ -422,7 +422,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `unresolved[].entity` | string, max 20 | yes | Table of the row: tasks, or a child such as notes or log_entries |
 | `unresolved[].id` | string, max 60 | no | A row other than the task: its ID, or task_id\|source_id for a link |
 | `unresolved[].task` | string | no | Task reference |
-| `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row |
+| `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row, state for a run |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |
 | `unresolved[].at` | string | yes | When |
 
@@ -852,7 +852,7 @@ MCP tool `preferences`, "Read or change settings": Use when the user asks to see
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
-| `set[].value` | string, max 40 \| integer, -1000000 to 1000000 \| boolean \| (string, max 40)[], max 20 items \| null | yes | The new value; null resets it to its default |
+| `set[].value` | string, max 64 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value; null resets it to its default |
 | `base` | string, max 40 | no | as_of from your last read, verbatim |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 | `mode` | "apply" \| "propose" | no, default `"apply"` | propose: ask the user to decide |
@@ -867,16 +867,16 @@ MCP tool `preferences`, "Read or change settings": Use when the user asks to see
 | `prefs[].key` | string | yes | The key |
 | `prefs[].summary` | string | no | What it sets (describe) |
 | `prefs[].shape` | string | no | Its values, in words (describe) |
-| `prefs[].value` | string \| integer, -1000000 to 1000000 \| boolean \| string[] | no | Its value now (get) |
-| `prefs[].default` | string \| integer, -1000000 to 1000000 \| boolean \| string[] | yes | Its default |
+| `prefs[].value` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | Its value now (get) |
+| `prefs[].default` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its default |
 | `prefs[].is_default` | boolean | no | The value is the default (get) |
 | `prefs[].writable` | boolean | yes | Whether this caller may set it |
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
 | `result` | "updated" \| "no_change" \| "proposed" | no | set: what happened |
 | `changed` | object[] | no | set: the keys it changed |
 | `changed[].key` | string | yes | The key |
-| `changed[].from` | string \| integer, -1000000 to 1000000 \| boolean \| string[] | yes | Its value before |
-| `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] | yes | Its value now |
+| `changed[].from` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its value before |
+| `changed[].to` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | yes | Its value now |
 | `proposal` | string | no | Proposal ID |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
@@ -1050,8 +1050,8 @@ When `found` is `true`:
 | `results[].ambiguous` | string[] | no | Several active tasks matched, the named one first |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 49 | yes | Index of the operation in the request |
-| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" | yes | Table of the row |
-| `conflicts[].id` | string, max 60 | yes | The row, or task_id\|source_id (task_id\|label_id) for a link |
+| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" \| "runs" | yes | Table of the row |
+| `conflicts[].id` | string, max 60 \| string, max 64 | yes | The row, task_id\|source_id (task_id\|label_id) for a link, or a preference's key |
 | `conflicts[].task` | string | no | Task ID |
 | `conflicts[].ref` | string | no | Task reference |
 | `conflicts[].field` | string, max 40 | yes | Logical field |

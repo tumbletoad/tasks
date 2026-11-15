@@ -133,6 +133,7 @@ Code: `packages/service/src/hub/paths.ts` (`resolveLayout`, pure over host facts
 | `t3/` | A4's T3 pairing, answers and launch plans, written only by the service |
 | `env-snapshot.json` | A4's login-shell environment snapshot |
 | `service-entry.json` | What `tasks service install` created (3.3.5) |
+| `instances.json` | The `[[instance]]` entries `tasks setup instances` wrote, so its removal takes back only those (A4 3.2). Written only by the service |
 | `install.json` | The install record: method, channel, root, install ID, versions, `previous`, `last_update`, and what the installer `created`, so an uninstall removes only that |
 | `update.lock`, `update.json` | The update lock, which also covers `install --finish`, and the update journal (3.12.6) |
 | `workdirs/`, `logs/`, `crash/`, `tmp/` | A4's work folders, 3.13 |
@@ -142,13 +143,13 @@ Code: `packages/service/src/hub/paths.ts` (`resolveLayout`, pure over host facts
 
 #### 3.2.4 `machine.toml`
 
-One machine-local file, `<config>/machine.toml`, never synced or exported. This appendix owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]` and `[[spaces]]`. A4 owns `[terminal]`, `[[instance]]`, `[[custom_target]]`, `[approvals]`, `[override.*]` and the run caps. A1 and A4 own `[roots]`. A3 owns `[setup]` (3.12). A6 owns `[remote]` and `[security]`. Code: `packages/service/src/config/` (`machine-toml.ts`, whose header states the rules; `toml.ts`, `edit.ts`). Tests: `A2.3.2.4.config.golden`, `.edit`, `A2.3.13.cli.doctor` (`doctor-config.test.ts`).
+One machine-local file, `<config>/machine.toml`, never synced or exported. This appendix owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]` and `[[spaces]]`. A4 owns `[terminal]`, `[[instance]]`, `[[custom_target]]`, `[approvals]`, `[override.*]` and the run caps. A1 and A4 own `[roots]`. A1 owns `[preferences]`, this machine's preferences by their whole name (A1 3.16). A3 owns `[setup]` (3.12). A6 owns `[remote]` and `[security]`. Code: `packages/service/src/config/` (`machine-toml.ts`, whose header states the rules; `toml.ts`, `edit.ts`). Tests: `A2.3.2.4.config.golden`, `.edit`, `A2.3.13.cli.doctor` (`doctor-config.test.ts`).
 
 - The keys of this appendix: `[service] default_space`; `[http] port`; `[ui] open_mode` (`tab` or `app`); `[updates] channel`, `check`, `auto` (`auto = true` installs only while no run or launched session is active); `[log] level`; `[[spaces]]` with `id`, `path` and `enabled`.
 - **Reading is strict and content-free** (the key and a fixed code, never the value). A bad entry is dropped, so a half-understood instance is never offered and an approval that is not exactly `allow` approves nothing. A problem in the file itself or in `[[spaces]]` refuses the start, because hosting another set of spaces than the person wrote is worse than not starting.
 - The file names commands that run as this user, so its folder and the file follow 3.2.2 rule 5, and **a configuration file or folder that is a link is refused**: it would take the file out of the folder whose owner and mode are checked.
-- **Reload** is not built: the file is read once per start, except that `tasks roots add` replaces the service's roots at once. The planned rule: watch, reload changed sections after 500 ms of quiet, keep the last good version.
-- **Editing never rewrites the file**: `editMachineToml` splices one change into the file's own text and refuses what it cannot place exactly.
+- **Reload** is not built: the file is read once per start, except that `tasks roots add` replaces the service's roots at once, and every `tasks setup instances` write or removal, succeeded or failed, ends by setting its instances to those the file holds then (A4 3.2). The planned rule: watch, reload changed sections after 500 ms of quiet, keep the last good version.
+- **Editing never rewrites the file**: `editMachineToml` splices one change into the file's own text and refuses what it cannot place exactly. Its `remove` takes an `[[instance]]` element out only while it is byte for byte what `append` wrote, with the blank line `append` put beside it, so an append and its removal give the file back (`A2.3.2.4.config.edit-remove`); an element the person changed is never removed. An element appended at the end of a file without a final line break ends without one too, so that file comes back as well. A comment line right above or below the element, with no blank line between, is the person's note on it: the element counts as changed and stays with its note. A comment a blank line away is not the element's and stays where it is when the element goes. It refuses a config folder that is a link on every OS (`unsafe`), a junction on Windows included, where the reader has no owner to judge the link by.
 - **The product never writes `machine.toml` on its own**, apart from the UI port the first start persists (3.8.2). Every other edit is a user-only operation that runs in the service under `service.lock`.
 
 #### 3.2.5 The `grants` table
@@ -214,7 +215,7 @@ One table in `service.sqlite` for every credential and registration on this mach
 - The bridge answers offline (3.7.4) and reconnects in the background.
 - The shim retries for 30 s, then waits for Enter (A4 3.6.3).
 - A browser tab keeps its page and drafts, shows that the service is not running and retries every 5 s.
-- `tasks open` will start the service as `tasks service start` does (not built).
+- `tasks open` starts the service as `tasks service start` does (3.9 step 1).
 
 ### 3.4 Single instance and locks
 
@@ -432,7 +433,7 @@ One pure function (`http/checks.ts`, whose header gives the order) runs before a
 ### 3.9 Opening the UI
 
 **`tasks open [--space <id>] [--task <ref>] [--tab | --app] [--print-url]`** (`packages/cli/src/open.ts`, `A2.3.9.cli.open`)
-1. If no service answers, start it as `tasks service start` does and wait (not built).
+1. If the service is not running (`not_running`: no `service.json`, or nothing at its endpoint), start it with `tasks service start`'s own start (`startService`: through the OS, only a ready service counts), say so in one line on stderr, then go on. A service that is starting, stopping, unreachable or untrusted is reported as every command reports it, never started a second time. A start that fails says why and names the command to look further (exit 6). An agent's shell never starts it: it is told to ask the user, as when the service runs (S6). Code: `packages/cli/src/open.ts`, test `A2.3.9.cli.open-start`.
 2. Mint a code and prove the listener (3.8.4). `--space` and `--task` become the page's route.
 3. Open the URL with the OS's own opener. In a packaged context Windows uses `explorer.exe "<url>"`, so the browser does not start inside the container. `--app` or `ui.open_mode = "app"` starts a Chromium-family browser with `--app=<url>`, else the default browser (not built; A4's opener module takes it over).
 4. `--print-url` prints the URL and warns that it holds a one-time sign-in code.
@@ -448,7 +449,7 @@ Code: `packages/cli/src/` (`main.ts`, `args.ts`, `verbs.ts`, `output.ts`, `conne
 
 #### 3.10.1 Entry point
 
-One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `roots`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden) and `setup t3`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
+One command, `tasks`, at the stable path. **Operation verbs** are generated from A3's registry (`cli-spec.json`). **Local commands** are owned here: `service`, `serve` (hidden), `open`, `mcp`, `doctor`, `space`, `roots`, `version`, `install --finish` (hidden), `update`, and, not built yet, `ui sessions` and `uninstall`. A4 adds `shim` (hidden), `setup t3` and `setup instances`, A3 `setup agents`, A6 `machine show` and `policy show`. `help`, `version`, `doctor` and `serve` work without the service; everything else goes through it.
 
 **`tasks space`** verbs are rpc methods `space/*`, not registry entries, because a backup, restore or claim is no A1 operation. Only `space list` is open to scripts and agents. The CLI never opens a space database: create, backup and restore run in a worker of their own in the service.
 - A new space goes under the install's own data folder, so a test install never writes into the daily folder.
@@ -665,7 +666,7 @@ GitHub Actions in `.github/workflows/`, third-party actions pinned by commit SHA
 
 ### 3.13 Diagnostics
 
-Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/doctor.ts` (its header lists the rows), `doctor-http.ts`, `accounts.ts`. Tests: `A2.3.13.hub.logs-content-free`, `A2.3.13.hub.crash-files`, `A2.3.13.cli.doctor`, `.doctor-http`, `.doctor-version`.
+Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/doctor.ts` (its header lists the rows), `doctor-http.ts`, `accounts.ts`. Tests: `A2.3.13.hub.logs-content-free`, `A2.3.13.hub.crash-files`, `A2.3.13.cli.doctor`, `.doctor-http`, `.doctor-page`, `.doctor-version`, `A2.3.8.http.tags`.
 
 **Logs** are local and **content-free by construction**: every event is an entry of one catalogue (`EVENTS`) with typed fields, no field takes a path or a message string, and the log drops anything else again at run time. Never logged: operation inputs and outputs, task text, context, prompts, briefs, tokens, codes, keys, HTTP bodies, environment values. Only the `service.lock` holder rotates the file. Bridges log only to stderr (3.7.2). Planned: `TASKS_BRIDGE_LOG=1` writes `<state>/logs/bridge-<pid>.log` for one session.
 
@@ -675,6 +676,7 @@ Code: `packages/service/src/hub/log.ts`, `hub/crash.ts`, `packages/cli/src/docto
 - `paths` says where the hidden data folder is. `config` reads `machine.toml` as the service does, with the same rule and words.
 - `runtime` is loaded by a dynamic import only doctor reaches, so no other command loads storage.
 - `accounts` counts other interactive accounts, never names them, and leaves out an agent app's sandbox accounts. v1 assumes one user per machine (3.8.6), so the row warns on every run and cannot be acknowledged.
+- `http` self-tests the live listener: `Host: evil.example` gets 421, and `index.html` carries a fresh nonce that its `<meta name="csp-nonce">` repeats. The page's tags are read as a browser reads them (any attribute order, case, quoting, a self-closed tag), by `http/tags.ts`, the same reader `loadUiFolder` checks a built page with, so the build's spelling and doctor's reading cannot drift apart. `A2.3.13.cli.doctor-page` runs the check against the web build's own output.
 - **Not built:** Windows ACLs in `paths` (3.2.2 rule 5); lock holder, file system and free disk in `spaces`; autostart (unit, Run value, Startup apps, LaunchAgent, linger, a moved separate install's old entries), packaged context, Smart App Control and updates.
 - `--bundle` (not built) zips the output, logs and crash files after showing the list, with `--redact-paths` (home as `~`, space paths as IDs). The person attaches it by hand.
 

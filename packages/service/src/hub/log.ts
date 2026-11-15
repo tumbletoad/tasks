@@ -237,6 +237,8 @@ export const EVENTS = {
   "config.roots_failed": { lvl: "warn", c: "hub", fields: { code: "error_code" } },
   // `tasks roots add` (M2.07): a root added to machine.toml, with its revision. No ID, no path.
   "config.root_added": { lvl: "info", c: "hub", fields: { rev: "int", runs: "bool" } },
+  // `tasks setup instances`: [[instance]] entries written or taken out. Counts only, never an ID.
+  "config.instances_changed": { lvl: "info", c: "hub", fields: { added: "int", removed: "int" } },
   // Make default or `tasks space use` (M5.01): the machine's default space changed. No ID.
   "config.default_space_set": { lvl: "info", c: "hub", fields: { source: ["ui", "cli"] } },
   // `tasks setup t3` (M2.11): a pairing kept, or why it was not. Never a token, URL or ID.

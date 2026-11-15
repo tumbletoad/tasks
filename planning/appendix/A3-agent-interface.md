@@ -307,10 +307,10 @@ Read and change the space's non-policy preferences, so a user can ask any agent 
   mode?: "apply" | "propose" }
 ```
 
-- **The keys** are contracts' declarations (`preferences.ts`, A1 3.16): each with its value schema, default, writers and policy flag. `describe` lists them with their values in words and whether the caller may set each; `get` gives the stored value or the default. A stored value its schema refuses reads as the default; a list is read in either stored form first (keys, or objects with a `key`). Until M3.11 puts every reader on one rule, A1's writer still checks statuses and efforts against a stored list this refuses.
-- **`set` is a list of pairs**, because the grammar has no records (3.2.1). Its `value` is a union with one option per declared value kind (a string for an enum, an integer, a boolean, a list of keys) and `null`, which resets the key to its default. The grammar allows `null` only as a union option, never as a field of its own. The request path then checks each value against its own key's schema, so no value is an unrestricted `unknown`, and the tool's definition stays the same when keys are added.
+- **The keys** are the registry's space keys (`preferences.ts`, A1 3.16) whose value is one of the tool's kinds: a word, a whole number, true or false, or a list of keys. An object or a map (`grouping.names`, `autonomy.overrides`, `autonomy.areas`) has no output form in the grammar yet (3.2.1), and a machine key lives in `machine.toml`, so neither is shown. `describe` lists the keys, sorted, with their values in words (`shapeText`) and whether the caller may set each. `get` gives the value as A1's one reading rule gives it (`preferenceValue`): a stored value that does not fit its shape reads as the default. A list of `{key}` objects (`tasks.effort_scale`) is shown and set as its keys, and a default of none is `null`.
+- **`set` is a list of pairs**, because the grammar has no records (3.2.1). Its `value` is a union with one option per declared value kind (a string for an enum, an integer, a boolean, a list of keys) and `null`, which resets the key to its default. The grammar allows `null` only as a union option, never as a field of its own. The request path then checks each value against its own key's shape in the registry (`fitsShape`), so no value is an unrestricted `unknown`, and the tool's definition stays the same when keys are added.
 - A key must be declared and named once. A policy key (autonomy, targets, instances, routines, Brief templates, roots, setup) returns `forbidden` with `rule: "policy"` to every actor here: policy changes only in the user's own settings (3.8.2). A key whose writers leave the caller out returns `forbidden` with `rule: "user_only"`.
-- `set` writes through A1's `pref.set`, which arrives with the rest of the registry in M3.11; until then a `set` that passes every input rule is refused naming that step. Its result lines read `tasks.statuses: [...] -> [...]`. Values are data, so the lines sit inside a data block. Sizes: 600, 2,000 at most.
+- `set` will write through A1's `pref.set` (A1 3.16). That operation exists, but no step submits it from this tool yet: a `set` that passes every input rule is refused with `invalid_input` naming that step. The step submits `pref.set` with `undoable: false`, since undo does not invert a preference (A1 3.16), and applies 3.8's autonomy rows for `pref.set`. Its result lines read `tasks.statuses: [...] -> [...]`. Values are data, so the lines sit inside a data block. Sizes: 600, 2,000 at most.
 
 #### 3.4.12 `run_report` (runs and routines only)
 
@@ -405,7 +405,7 @@ Still to build:
 - **An explicit `task`** on any call applies to that call only. Once an output schema carries it (M4.06), the result adds "this session is bound to M-14".
 - **Routine sessions** (M6) bind to the space, not a task (A4's binding kind `routine`). Task tools then need an explicit `task`. Every tool works unbound with an explicit `task` or when it needs none, except `run_report`.
 - **A lost binding.** Calls that relied on the bound task return `unbound` with the hint "Your session ended. Pass task, or ask the user." Search cursors of that connection are invalidated (3.9.5).
-- **Session records move into the space** when a schema step adds A1's `sessions` table with its `session.*` operations. Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
+- **Session records move into the space** with the `session.*` operations (M4.06): the `sessions` table exists (schema 0.3, A4 3.10). Until then they live in machine state (`<state>/sessions.json`). The handles stay in machine state.
 
 #### 3.7.4 Credentials and actors
 
@@ -856,6 +856,8 @@ Built for Claude Code's user scope, every Codex home, Claude Desktop, and the ho
 
 **print.** `tasks setup agents print --app <name>` prints an entry and the file it belongs in, and reads no home and writes nothing: for `claude-code` (the command that adds it), `codex` and `claude-desktop`, for a home whose file is managed (3.12), and for the apps of 3.13.7 (`cursor`, `gemini`, `opencode`, `zed`, `vscode`). The printed entry is a hand-made one (3.7.4): `<tasks> mcp --app <name>`, with no `--instance` and no `--space`. Setup keeps no agent-home row for a file it does not write, and the grant gate refuses an instance without its row (3.7.8), so a printed instance would fail at every call. A hand-made entry uses the machine's default space, so `print` takes no `--space`. The formats follow each app's current public documentation, and a printed command line is quoted for the shell it names (3.13.7).
 
+**Instances.** An agent home is two things to the product: a home with its tools registered (this command), and an instance Open starts the agent in (`[[instance]]` in `machine.toml`, which `tasks setup instances` writes, A4 3.2). Neither writes the other's part, and a person who installs runs both. They meet at the instance ID: a home that a `machine.toml` instance names gets that ID in its entry, and an instance `tasks setup instances` writes for a home registered here keeps the ID its entry names.
+
 **Guarantees.** The preview writes nothing, and apply does exactly what the preview showed or refuses with `conflict`. Setup uses the app's own `mcp add` and `mcp remove` where one exists and changes only the server's own entry. Removal takes back only an entry that is provably setup's. Apply and remove run only for a person at a terminal: the CLI refuses a script or an agent before it reads or writes anything, and the service refuses the row changes for any other class.
 
 **Why it is built this way:**
@@ -968,6 +970,7 @@ Doctor reads and probes. It never launches an interactive agent app, opens a dee
 | Check | Fails or warns when |
 |---|---|
 | `agents` | No home is registered yet (warn), or setup's record cannot be read (fail) |
+| `instances` | `machine.toml` names no enabled instance, so Open offers only Copy (warn: run `tasks setup instances`), or a Claude Code or Codex instance runs in a home without setup's entry (warn: run `tasks setup agents`). It reads `machine.toml` and setup's record only (A4 3.2) |
 | `mcp.<instance>` | The entry is not there by setup's reader or by the app's own `mcp get` (Claude Desktop: the parsed file), runs a missing `tasks` or another one than this install's stable command, or its `--space` or `--instance` differs from its row in the `grants` table. Doctor reads setup's record and `setup/homes`. |
 | `bridge.<instance>` | Doctor runs the entry's command with a synthetic stdio client: `initialize`, `tools/list` with exactly this build's tool names, a `status` round trip to the service in under 2 seconds, and `server/discover` in a second process |
 | `codex.engines.<instance>` | An engine that reads the home (the CLI, the Codex app's bundled engine) does not name the entry in its own `mcp get --json` |

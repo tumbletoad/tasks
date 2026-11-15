@@ -281,6 +281,7 @@ export {
   LINK_ROLES,
   LOG_KINDS,
   normaliseSourceKey,
+  normaliseStored,
   OPERATION_KINDS,
   parseAsOf,
   PLACE_KINDS,
@@ -313,6 +314,9 @@ export {
   type PlaceKind,
   type PlaceSet,
   type Placement,
+  type PrefSet,
+  type RunCreate,
+  type RunTransition,
   type SourceAdd,
   type SourceFields,
   type SourceKind,
@@ -331,6 +335,7 @@ export {
   type WriteStatus,
 } from "./write/request.ts";
 export { canonicalJson, isJsonData } from "./write/canonical.ts";
+export { readSpacePreference, readSpacePreferences, storedPreference } from "./preferences.ts";
 export {
   FOCUS_MS,
   isLaunchRef,
@@ -342,6 +347,29 @@ export {
   type LaunchRecord,
 } from "./write/launches.ts";
 export {
+  FINAL_RUN_STATES,
+  OPEN_RUN_STATES,
+  RUN_APP_TOOLS,
+  RUN_EDGES,
+  RUN_EVIDENCE_FIELDS,
+  RUN_EVIDENCE_ID,
+  RUN_LIMIT_BOUNDS,
+  RUN_OUTCOMES,
+  RUN_PERMISSIONS,
+  RUN_REASONS,
+  RUN_REQUEST_MAX_BYTES,
+  RUN_STATES,
+  RUN_TEXT_MAX_BYTES,
+  RUN_USAGE_KEYS,
+  type RunDetail,
+  type RunEvidence,
+  type RunLimitsRow,
+  type RunResultRow,
+  type RunRow,
+  type RunSpec,
+  type RunState,
+} from "./write/runs.ts";
+export {
   decodeReceipt,
   intentFingerprint,
   readReceipt,
@@ -352,8 +380,6 @@ export {
   type ReceiptLookup,
 } from "./write/receipts.ts";
 export {
-  DEFAULT_EFFORTS,
-  DEFAULT_STATUSES,
   MACHINE_OS,
   readAsOf,
   SpaceWriter,

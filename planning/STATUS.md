@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 61 of 104, and M2.04b and M4.05b outside the base count.
+**Done so far:** 63 of 104, and M2.04b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 8 · M5 13 · M6 15 · M7 10 · total 104. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -120,7 +120,7 @@ M2.04b is not in the base count.
 | M3.08 | Authority, transfer and claim | M3.07 | M | ready |
 | M3.09 | Synced and network folder detection, read-only modes | M1.08 | S | done |
 | M3.10 | Projection | M3.01 | M | doing |
-| M3.11 | Preferences and feature flags | M3.01 | S | doing |
+| M3.11 | Preferences and feature flags | M3.01 | S | done |
 | M3.12 | Hooks for later phases | M3.08, M2.12, M2.05 | S | todo |
 | M3.13 | Fallback driver | M1.02 | S | ready |
 | M3.14 | Redaction | M3.04, M3.05, M3.10 | S | todo |
@@ -137,7 +137,7 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | M4.01b | What M4.01 left: area and project operations in the writer, and organize's create, rename, move and archive | M4.01 | M | ready |
 | M4.02 | Autonomy and proposals | M3.01 | M | ready |
 | M4.03 | Digest v1 and framing | M3.01, M3.05 | M | ready |
-| M4.04 | Final server instructions | M4.01 | S | ready |
+| M4.04 | Final server instructions | M4.01 | S | doing |
 | M4.05 | Setup for remaining apps, doctor | M2.14 | M | done |
 | M4.05b | What M4.05 left: doctor's launch rows and sessions row, a free instance ID in setup | M4.05, M2.04b | S | done |
 | M4.06 | Binding complete | M2.04, M2.04b | M | doing |
@@ -160,7 +160,7 @@ M4.05b and M4.01b are not in the base count.
 | M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | doing |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | ready |
-| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | todo |
+| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | ready |
 | M5.12 | First-run setup | M5.11, M4.05 | S | todo |
 | M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
 
@@ -178,7 +178,7 @@ M4.05b and M4.01b are not in the base count.
 | M6.08 | The Tasks work folder | M6.06, M2.11 | S | todo |
 | M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | todo |
 | M6.10 | T3 CLI fallback route | M2.11 | S | done |
-| M6.11 | Best-effort targets, context pack | M2.10 | S | ready |
+| M6.11 | Best-effort targets, context pack | M2.10 | S | doing |
 | M6.12 | Update from a local archive | M1.14 | M | done |
 | M6.13 | Stable Windows launchers | M6.12 | S | done |
 | M6.14 | Real-run contract evals | M6.07, M4.08 | S RM | todo |
@@ -191,7 +191,7 @@ M4.05b and M4.01b are not in the base count.
 | M7.01 | Synthetic prototype fixture | M1.03 | S | done |
 | M7.02 | Pure parsers | M7.01 | S | done |
 | M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | done |
-| M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | doing |
+| M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | done |
 | M7.05 | Apply, undo, idempotent re-import | M7.04 | M | todo |
 | M7.06 | Export to the prototype format | M7.03 | M | todo |
 | M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |

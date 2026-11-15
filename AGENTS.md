@@ -47,7 +47,8 @@ and workflow.
 - Shapes live only in `packages/contracts`. After changing an entry, run `pnpm gen` and commit the
   output. Keep contract changes additive: other open pull requests may touch contracts too.
 - Only one open pull request may touch `packages/storage/migrations` at a time. Released schemas
-  (0.1, 0.2) are frozen: a schema change is a new migration step.
+  (0.1, 0.2, and 0.3 once a build with it opens a real space) are frozen: a schema change is a new
+  migration step.
 - Create files and folders through `packages/files` (in storage, its own helpers): each new object
   gets its exact mode whatever the umask. Never call `process.umask()`.
 - Every change to a space goes through an operation (A1 3.7). There is no other write path.

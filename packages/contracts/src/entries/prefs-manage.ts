@@ -4,9 +4,34 @@
 // are contracts' declarations (preferences.ts).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
-import { PrefValue, PrefValueOutput } from "../preferences.ts";
 import { AsOf, Base, Mode, ProposalId, Replayed, RequestId } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
+
+/** The longest string and the longest list a value the tool shows has. */
+const STRING_MAX = 64;
+const LIST_MAX = 20;
+
+/**
+ * A preference value in the tool's input: one option per JSON type the tool's keys take, and
+ * null, as the schema grammar requires of an input union (A3 3.2.1). The handler then checks the
+ * value against its key's own shape in the registry (preferences.ts), never an unrestricted value.
+ */
+const PrefValue = z.union([
+  z.string().max(STRING_MAX),
+  z.int().min(-1_000_000).max(1_000_000),
+  z.boolean(),
+  z.array(z.string().max(STRING_MAX)).max(LIST_MAX),
+  z.null(),
+]);
+
+/** A stored or default value in a result: null is a default of none. */
+const PrefValueOutput = z.union([
+  z.string(),
+  z.int().min(-1_000_000).max(1_000_000),
+  z.boolean(),
+  z.array(z.string()),
+  z.null(),
+]);
 
 export const PREFS_ACTIONS = ["describe", "get", "set"] as const;
 

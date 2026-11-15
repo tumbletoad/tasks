@@ -8,11 +8,36 @@
 // Text is normalised as A1 3.7 asks (NFC, LF line endings, NUL and the other C0 controls except tab
 // and newline removed) before any limit is checked, so the limit holds for the stored text. The
 // registry's SafeText (A3 3.10) normalises more at the boundary, and normalising again is harmless.
+import {
+  fitsShape,
+  PREFERENCE_KEY,
+  PREFERENCE_KEY_MAX,
+  PREFERENCE_VALUE_BYTES,
+  preferenceSpec,
+  readPreference,
+  type PrefValue,
+} from "@tasks/contracts/preferences";
 import { isId, type Id } from "../ids.ts";
 import { inRange, RANGES } from "../rows.ts";
 import { OPEN_SETS } from "../schema.ts";
-import { isJsonData } from "./canonical.ts";
+import { canonicalJson, isJsonData } from "./canonical.ts";
 import { PATCHABLE_FIELDS, type PatchableField } from "./fields.ts";
+import {
+  RUN_APP_TOOLS,
+  RUN_EVIDENCE_FIELDS,
+  RUN_EVIDENCE_ID,
+  RUN_LIMIT_BOUNDS,
+  RUN_OUTCOMES,
+  RUN_PERMISSIONS,
+  RUN_REQUEST_MAX_BYTES,
+  RUN_STATES,
+  RUN_TEXT_MAX_BYTES,
+  RUN_USAGE_KEYS,
+  type RunEvidence,
+  type RunLimitsRow,
+  type RunResultRow,
+  type RunState,
+} from "./runs.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Limits (A1 3.7)
@@ -75,6 +100,8 @@ export const WRITE_ERROR_CODES = [
   "NOTHING_TO_UNDO",
   "NOTHING_TO_REDO",
   "UNDO_BEFORE_FLOOR",
+  /** A preference whose declaration does not list the actor as a writer (A1 3.16, A3 3.8.3). */
+  "PREFERENCE_FORBIDDEN",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
@@ -105,8 +132,9 @@ export interface AsOf {
 
 /**
  * The tables whose existing rows a request can change, and so conflict on: a wrap-up's removal of
- * a learning among them. Undo and redo also name the child rows that block a create's inversion
- * (A1 3.10): notes, log entries, sources, learnings, attachments and label links.
+ * a learning and a preference's value among them. Undo and redo also name the child rows that
+ * block a create's inversion (A1 3.10): notes, log entries, sources, learnings, attachments, label
+ * links and runs.
  */
 export type ConflictEntity =
   | "tasks"
@@ -117,7 +145,9 @@ export type ConflictEntity =
   | "sources"
   | "learnings"
   | "attachments"
-  | "task_labels";
+  | "task_labels"
+  | "preferences"
+  | "runs";
 
 /**
  * One field that changed after the caller's base, or the link version the caller named (A1 3.5).
@@ -295,7 +325,8 @@ export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
 export type DedupeMode = (typeof DEDUPE_MODES)[number];
 
 /** Days a finished task still matches a draft's key: `tasks.dedupe_window_days`'s default. */
-export const DEDUPE_WINDOW_DAYS = 30;
+export const DEDUPE_WINDOW_DAYS = readPreference("tasks.dedupe_window_days", undefined)
+  .value as number;
 
 export interface TaskCreate extends TaskValues, Placement {
   kind: "task.create";
@@ -592,6 +623,58 @@ export interface LaunchTransition {
 }
 
 /**
+ * `run.create` (A4 3.11.2 `queued`): a run, written before anything spawns. The machine is the
+ * request's. Exactly one of `task` and `routine`. The writer gives it its `ru_` ID. `request` is
+ * the person's instruction, the one text a run takes when it is queued.
+ */
+export interface RunCreate {
+  kind: "run.create";
+  task?: Id<"t">;
+  routine?: Id<"ro">;
+  /** The instance's key in the machine's `machine.toml`. */
+  instance: string;
+  adapter: string;
+  /** The place the folder resolved from, or null for a Tasks work folder. */
+  place: Id<"pl"> | null;
+  session?: Id<"se">;
+  request?: string;
+  /** SHA-256 of the brief, lower-case hex. */
+  brief_hash: string;
+  permission: string;
+  limits: RunLimitsRow;
+}
+
+/**
+ * `run.transition` (A4 3.11.2, 3.16.1): one compare-and-set step of a run. The run must be in
+ * `expect` and at `expect_version`, both required; `expect → next` must be an edge of A4's machine;
+ * evidence only grows; a result goes in once, entering a final state.
+ */
+export interface RunTransition {
+  kind: "run.transition";
+  run: Id<"ru">;
+  expect: RunState;
+  expect_version: number;
+  next: RunState;
+  /** The reason code of `failed`, `timed_out` and `unknown`. */
+  reason?: string;
+  evidence?: RunEvidence;
+  result?: RunResultRow;
+}
+
+/**
+ * `pref.set` (A1 3.16): sets a space preference the registry declares, or resets it with null.
+ * The value is checked against the key's declared shape before the transaction; whether the actor
+ * may write the key is decided in it, so a refusal has its receipt (A3 3.8.3). A reset keeps the
+ * row with the value null, so history and the base work as for any other value. It is not undoable
+ * until undo inverts preferences (A1 3.16).
+ */
+export interface PrefSet {
+  kind: "pref.set";
+  key: string;
+  value: PrefValue | null;
+}
+
+/**
  * `undo` (A1 3.10.1): inverts the principal's newest commit on its undo stack. It is guarded by
  * each field's provenance, never by a base, and is all or nothing unless `partial` asks for the
  * fields nobody changed since: then the rest stays as others set it, and the commit leaves the
@@ -632,6 +715,9 @@ export type Operation =
   | PlaceClear
   | LaunchCreate
   | LaunchTransition
+  | RunCreate
+  | RunTransition
+  | PrefSet
   | Undo
   | Redo;
 export type OperationKind = Operation["kind"];
@@ -654,6 +740,9 @@ export const OPERATION_KINDS = [
   "place.clear",
   "launch.create",
   "launch.transition",
+  "run.create",
+  "run.transition",
+  "pref.set",
   "undo",
   "redo",
 ] as const satisfies readonly OperationKind[];
@@ -896,6 +985,11 @@ class Fields {
     return Object.hasOwn(this.#value, key) && this.#value[key] !== undefined;
   }
 
+  /** The fields of the object at `key`, refused under its path as this object's are. */
+  sub(key: string): Fields {
+    return new Fields(this.raw(key), this.#at(key), this.#op);
+  }
+
   raw(key: string): unknown {
     this.#seen.add(key);
     return Object.hasOwn(this.#value, key) ? this.#value[key] : undefined;
@@ -939,7 +1033,10 @@ class Fields {
     return value;
   }
 
-  id<P extends "t" | "ac" | "m" | "se" | "ru" | "sp" | "la" | "op">(key: string, prefix: P): Id<P> {
+  id<P extends "t" | "ac" | "m" | "se" | "ru" | "ro" | "sp" | "la" | "op">(
+    key: string,
+    prefix: P,
+  ): Id<P> {
     const value = this.raw(key);
     if (!isId(value, prefix)) return this.fail("VALIDATION_FAILED", "Expected an ID", key);
     return value;
@@ -1312,6 +1409,68 @@ function checkOperation(value: unknown, i: number): Operation {
       op = transition;
       break;
     }
+    case "run.create": {
+      const instance = f.raw("instance");
+      if (typeof instance !== "string" || !INSTANCE_KEY.test(instance)) {
+        f.fail("VALIDATION_FAILED", "Expected an instance key", "instance");
+      }
+      const place = f.raw("place");
+      if (place !== null && !isId(place, "pl")) {
+        f.fail("VALIDATION_FAILED", "Expected a place ID or null", "place");
+      }
+      const hash = f.raw("brief_hash");
+      if (typeof hash !== "string" || !SHA256_HEX.test(hash)) {
+        f.fail("VALIDATION_FAILED", "Expected a SHA-256 in lower-case hex", "brief_hash");
+      }
+      if (f.has("task") === f.has("routine")) {
+        f.fail("VALIDATION_FAILED", "A run belongs to a task or a routine, exactly one", "task");
+      }
+      const create: RunCreate = {
+        kind,
+        instance: instance as string,
+        adapter: f.oneOf("adapter", OPEN_SETS["runs.adapter"]),
+        place: place as Id<"pl"> | null,
+        brief_hash: hash as string,
+        permission: f.oneOf("permission", RUN_PERMISSIONS),
+        limits: runLimits(f.sub("limits")),
+      };
+      if (f.has("task")) create.task = f.id("task", "t");
+      if (f.has("routine")) create.routine = f.id("routine", "ro");
+      if (f.has("session")) create.session = f.id("session", "se");
+      // A task's run takes the person's instruction (A4 3.11.7); a routine's takes its template.
+      if (create.task !== undefined) {
+        create.request = f.text("request", { bytes: RUN_REQUEST_MAX_BYTES });
+      } else if (f.has("request")) {
+        f.fail("VALIDATION_FAILED", "A routine's run takes no instruction", "request");
+      }
+      op = create;
+      break;
+    }
+    case "run.transition": {
+      // The version is required: a claim moves a run's version and keeps its state, so a decision
+      // made on the state alone could cancel a run whose shim may already start its agent.
+      const transition: RunTransition = {
+        kind,
+        run: f.id("run", "ru"),
+        expect: f.oneOf("expect", RUN_STATES),
+        expect_version: f.int("expect_version", RANGES.seq.min, RANGES.seq.max),
+        next: f.oneOf("next", RUN_STATES),
+      };
+      if (f.has("reason")) {
+        const reason = f.raw("reason");
+        if (typeof reason !== "string" || !CODE.test(reason)) {
+          f.fail("VALIDATION_FAILED", "Expected a reason code", "reason");
+        }
+        transition.reason = reason as string;
+      }
+      if (f.has("evidence")) transition.evidence = runEvidence(f, "evidence");
+      if (f.has("result")) transition.result = runResult(f.sub("result"));
+      op = transition;
+      break;
+    }
+    case "pref.set":
+      op = prefSet(f);
+      break;
     case "undo": {
       const undo: Undo = { kind };
       if (f.has("commit")) undo.commit = f.id("commit", "op");
@@ -1328,6 +1487,155 @@ function checkOperation(value: unknown, i: number): Operation {
   }
   f.done();
   return op;
+}
+
+/**
+ * A run's evidence (A4 3.16): A4's keys only, each with a value of its kind, refused under the
+ * object's name as a launch's is.
+ */
+function runEvidence(f: Fields, key: string): RunEvidence {
+  const value = f.raw(key);
+  if (!isRecord(value)) {
+    return f.fail("VALIDATION_FAILED", "Expected evidence: A4's keys with their values", key);
+  }
+  const evidence: RunEvidence = {};
+  for (const [name, item] of Object.entries(value)) {
+    if (item === undefined) continue;
+    if (!Object.hasOwn(RUN_EVIDENCE_FIELDS, name)) {
+      f.fail("VALIDATION_FAILED", "Expected evidence: A4's keys with their values", key);
+    }
+    const kind = RUN_EVIDENCE_FIELDS[name as keyof typeof RUN_EVIDENCE_FIELDS];
+    const fits =
+      kind === "flag"
+        ? typeof item === "boolean"
+        : kind === "id"
+          ? typeof item === "string" && RUN_EVIDENCE_ID.test(item)
+          : inRange(item, kind);
+    if (!fits) f.fail("VALIDATION_FAILED", "Expected an ID, an instant, a count or a flag", key);
+    evidence[name] = item as string | number | boolean;
+  }
+  return evidence;
+}
+
+/** A run's limits (A4 3.11.3, 3.11.7): whole numbers within their bounds, a budget in dollars. */
+function runLimits(f: Fields): RunLimitsRow {
+  const b = RUN_LIMIT_BOUNDS;
+  const limits: RunLimitsRow = {
+    max_turns: f.int("max_turns", b.maxTurns.min, b.maxTurns.max),
+    wall_ms: f.int("wall_ms", b.wallMs.min, b.wallMs.max),
+    idle_ms: f.int("idle_ms", b.idleMs.min, b.idleMs.max),
+  };
+  if (f.has("budget_usd")) {
+    const budget = f.raw("budget_usd");
+    if (
+      typeof budget !== "number" ||
+      !Number.isFinite(budget) ||
+      budget < b.budgetUsd.min ||
+      budget > b.budgetUsd.max
+    ) {
+      f.fail("VALIDATION_FAILED", "Expected a budget in dollars", "budget_usd");
+    }
+    limits.budget_usd = budget;
+  }
+  f.done();
+  return limits;
+}
+
+/** A signal's name as Node reports it. */
+const SIGNAL = /^SIG[A-Z0-9]{1,12}$/;
+
+/**
+ * A run's final outcome (A4 3.11.5): the verdict, codes, counts, the native ID, usage, and the
+ * agent's final result and error as text of at most 8 KiB each, normalised like every text the
+ * writer stores. Never a folder.
+ */
+function runResult(f: Fields): RunResultRow {
+  const count = (key: string): number => f.int(key, RANGES.count.min, RANGES.count.max);
+  const nullable = <T>(key: string, read: () => T): T | null =>
+    f.raw(key) === null ? null : read();
+  const text = (key: string): string | null =>
+    nullable(key, () => f.text(key, { bytes: RUN_TEXT_MAX_BYTES, empty: true }));
+  const result: RunResultRow = {
+    ok: f.boolean("ok"),
+    outcome: f.oneOf("outcome", RUN_OUTCOMES),
+    exit_code: nullable("exit_code", () => f.int("exit_code", -2_147_483_648, 4_294_967_295)),
+    signal: nullable("signal", () => {
+      const signal = f.raw("signal");
+      if (typeof signal !== "string" || !SIGNAL.test(signal)) {
+        f.fail("VALIDATION_FAILED", "Expected a signal's name", "signal");
+      }
+      return signal;
+    }),
+    native_id: nullable("native_id", () => {
+      const id = f.raw("native_id");
+      if (typeof id !== "string" || !RUN_EVIDENCE_ID.test(id)) {
+        f.fail("VALIDATION_FAILED", "Expected a native ID", "native_id");
+      }
+      return id;
+    }),
+    text: text("text"),
+    error: text("error"),
+    usage: nullable("usage", () => {
+      const usage = f.sub("usage");
+      const out: Record<string, number> = {};
+      for (const key of RUN_USAGE_KEYS) {
+        if (!usage.has(key)) continue;
+        const n = usage.raw(key);
+        if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > Number.MAX_SAFE_INTEGER) {
+          usage.fail("VALIDATION_FAILED", "Expected a count or a cost", key);
+        }
+        out[key] = n as number;
+      }
+      usage.done();
+      return out;
+    }),
+    app_tools: nullable("app_tools", () => f.oneOf("app_tools", RUN_APP_TOOLS)),
+    declined: count("declined"),
+    permission_denials: count("permission_denials"),
+    duration_ms: nullable("duration_ms", () => f.int("duration_ms", 0, RANGES.instant.max)),
+  };
+  f.done();
+  return result;
+}
+
+/** Every string of plain JSON data, normalised as the writer stores text (A1 3.7). */
+function normaliseJson(value: unknown): unknown {
+  if (typeof value === "string") return normaliseStored(value);
+  if (Array.isArray(value)) return value.map(normaliseJson);
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normaliseJson(v)]));
+  }
+  return value;
+}
+
+/**
+ * `pref.set`'s fields (A1 3.16): a key this build declares for the space, and a value of its
+ * declared shape, or null to reset it. The problem never quotes the key or the value.
+ */
+function prefSet(f: Fields): PrefSet {
+  const key = f.raw("key");
+  if (typeof key !== "string" || key.length > PREFERENCE_KEY_MAX || !PREFERENCE_KEY.test(key)) {
+    return f.fail("VALIDATION_FAILED", "Expected a preference name", "key");
+  }
+  const spec = preferenceSpec(key);
+  if (spec === undefined)
+    return f.fail("VALIDATION_FAILED", "Not a preference of this build", "key");
+  if (spec.scope !== "space") {
+    return f.fail("VALIDATION_FAILED", "A machine preference lives in machine.toml", "key");
+  }
+  if (!f.has("value")) {
+    return f.fail("VALIDATION_FAILED", "Give the value, or null to reset it", "value");
+  }
+  const raw = f.raw("value");
+  if (raw === null) return { kind: "pref.set", key, value: null };
+  const value = isJsonData(raw) ? normaliseJson(raw) : undefined;
+  if (value !== undefined && utf8Bytes(canonicalJson(value)) > PREFERENCE_VALUE_BYTES) {
+    return f.fail("TOO_LARGE", "The value is larger than a preference may hold", "value");
+  }
+  if (value === undefined || !fitsShape(spec.shape, value)) {
+    return f.fail("VALIDATION_FAILED", "The value does not fit the preference", "value");
+  }
+  return { kind: "pref.set", key, value: value as PrefValue };
 }
 
 /** An instance's key in machine.toml (A4 3.2). */
@@ -1549,9 +1857,19 @@ export function checkRequest(value: unknown): CheckedRequest {
   }
   if (f.has("active")) request.active = f.boolean("active");
   if (f.has("warnings")) request.warnings = checkWarnings(f.raw("warnings"));
-  const launches = request.ops.some((op) => op.kind.startsWith("launch."));
-  if (launches) checkLaunchRequest(f, request);
+  if (request.ops.some(isExecutionOp)) checkExecutionRequest(f, request);
   if (request.ops.some(isHistoryOperation)) checkHistoryRequest(f, request);
+  // A1 3.16: the writer reads the space's preferences (statuses, efforts, dedupe's window) once,
+  // as the request starts, so no other operation may share a request with a change of them.
+  const prefs = request.ops.filter((op) => op.kind === "pref.set").length;
+  if (prefs > 0 && prefs < request.ops.length) {
+    f.fail("VALIDATION_FAILED", "A preference request holds pref.set operations only", "ops");
+  }
+  // Undo never inverts a preference (history.ts), so a change of one never joins the undo stack,
+  // where it would block every undo behind it. Setting the earlier value again changes it back.
+  if (prefs > 0 && request.undoable === true) {
+    f.fail("VALIDATION_FAILED", "A preference change is not undoable: set it again", "undoable");
+  }
   checkMatchableDrafts(request.ops);
   f.done();
   return request;
@@ -1652,20 +1970,24 @@ function checkWarnings(value: unknown): string[] {
   return [...(value as string[])];
 }
 
+/** Launch and run operations: A4's execution records (A4 3.16.1). */
+const isExecutionOp = (op: Operation): boolean =>
+  op.kind.startsWith("launch.") || op.kind.startsWith("run.");
+
 /** A writer scope as a launch request carries it: an ID's characters, never a sentence. */
 const LAUNCH_SCOPE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 /**
- * A request with launch operations (A4 3.9, 3.16): it stores IDs, states, instants, counts, flags
- * and fixed codes only, in every row it writes (the commit, its changes, the receipt), so the
- * envelope may hold no text either. It carries launch operations alone, no reason (a launch's
- * reason is the record's code), no registry intent (whose input the receipt's fingerprint would
- * cover), no `active` mark (a launch changes no task), and a writer scope of an ID's characters.
+ * A request with launch or run operations (A4 3.9, 3.11, 3.16): it stores IDs, states, instants,
+ * counts, flags and fixed codes, and a run's request and result texts in their own fields only, so
+ * the envelope may hold no text. It carries execution operations alone, no reason (a record's
+ * reason is its code), no registry intent (whose input the receipt's fingerprint would cover), no
+ * `active` mark (a launch or a run changes no task), and a writer scope of an ID's characters.
  * Each field is refused under its own name.
  */
-function checkLaunchRequest(f: Fields, request: CheckedRequest): void {
+function checkExecutionRequest(f: Fields, request: CheckedRequest): void {
   const { actor } = request;
-  if (!request.ops.every((op) => op.kind.startsWith("launch."))) {
+  if (!request.ops.every(isExecutionOp)) {
     f.fail("VALIDATION_FAILED", "A launch request holds launch operations only", "ops");
   }
   // R7: launches are the user's. The service writes them for the person who clicked, or as the

@@ -13,7 +13,7 @@ import {
   type Observation,
   type RecoverySteps,
 } from "../src/machine.ts";
-import type { ExecutionStore, LaunchIntent } from "../src/store.ts";
+import type { LaunchStore, LaunchIntent } from "../src/store.ts";
 import { DEADLINES, settle, Time } from "./machine-model.ts";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE, spaceBackend, spaceStore } from "./stores.ts";
@@ -22,9 +22,9 @@ import { MACHINE, spaceBackend, spaceStore } from "./stores.ts";
 interface Bench {
   machine: string;
   /** The store on the durable state as it is now. */
-  durable(): ExecutionStore;
+  durable(): LaunchStore;
   /** Drops the store, as a crash would, and returns a new one on the same state. */
-  restart(): Promise<ExecutionStore>;
+  restart(): Promise<LaunchStore>;
   task(): Promise<string>;
   close(): Promise<void>;
 }
@@ -76,7 +76,7 @@ interface Hooks {
   after?: (call: Call) => Promise<void> | void;
 }
 
-function hooked(store: () => ExecutionStore, hooks: Hooks): ExecutionStore {
+function hooked(store: () => LaunchStore, hooks: Hooks): LaunchStore {
   const around = async <T>(call: Call, run: () => Promise<T>): Promise<T> => {
     await hooks.before?.(call);
     const answer = await run();
@@ -145,7 +145,7 @@ describe.each(BENCHES)(
 
     /** A machine over `store` with the test's clocks, timers and deadlines. */
     function machine(
-      store: ExecutionStore,
+      store: LaunchStore,
       steps: Partial<LaunchSteps & RecoverySteps> = {},
     ): LaunchMachine {
       return new LaunchMachine({

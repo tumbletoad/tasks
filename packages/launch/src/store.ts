@@ -1,16 +1,49 @@
-// The execution store (A4 3.16.1, X7): the one interface through which launch intents are written.
-// Launch code never writes a record any other way. v1's backend is the space database, where each
-// call is one A1 operation in one transaction (space-store.ts). From L1 a machine without authority
-// writes the same interface to a machine-local journal (A6). One contract suite runs against every
-// backend (test/execution-store-contract.ts).
+// The execution store (A4 3.16.1, X7): the one interface through which launch intents and runs are
+// written. Launch and run code never write a record any other way. v1's backend is the space
+// database, where each call is one A1 operation in one transaction (space-store.ts). From L1 a
+// machine without authority writes the same interface to a machine-local journal (A6). One contract
+// suite per part runs against every backend (test/execution-store-contract.ts,
+// test/run-store-contract.ts).
 //
-// This step brings the launch part of A4's interface. Sessions (`upsertSession`), runs
-// (`createRun`, `transitionRun`, M6.01) and occurrences (`decideOccurrence`, M9) join it with the
-// steps that write those records, and `openWork` then returns runs beside intents.
+// The interface has a launch part (M2.05) and a run part (M6.01), and `openWork` returns runs beside
+// intents. Each state machine takes only its part: LaunchMachine a LaunchStore, the run machine
+// (@tasks/runs) a RunStore. Sessions (`upsertSession`, with the session move of A4 3.10) and
+// occurrences (`decideOccurrence`, M9) join it with the steps that write those records.
+import {
+  cutRunText,
+  FINAL_RUN_STATES,
+  isRunEdge,
+  normaliseRunText,
+  isRunReason,
+  OUTCOME_REASONS,
+  APP_TOOLS_STATES,
+  RUN_ADAPTERS,
+  RUN_EVIDENCE_FIELDS,
+  RUN_EVIDENCE_ID,
+  RUN_LIMIT_BOUNDS,
+  RUN_PERMISSIONS,
+  RUN_REQUEST_MAX_BYTES,
+  RUN_STATES,
+  SIGNAL_NAME,
+  takesReason,
+  TEXT_CAP_BYTES,
+  type NewRun,
+  type RunEvidence,
+  type RunEvidenceKey,
+  type RunLimits,
+  type RunPatch,
+  type RunReason,
+  type RunRecord,
+  type RunResult,
+  type RunState,
+  type Usage,
+} from "@tasks/contracts/runs";
 import {
   cleanEvidence,
   evidenceProblem,
   isEdge,
+  isEvidenceValue,
+  MAX_COUNT,
   isFailReason,
   isIntentState,
   isRoute,
@@ -89,7 +122,8 @@ export const seen = (intent: LaunchIntent): Expected => ({
   version: intent.version,
 });
 
-export interface ExecutionStore {
+/** The launch part of the execution store: what LaunchMachine needs. */
+export interface LaunchStore {
   /**
    * Records a click as a Prepared intent: the record, its history and the request's receipt in one
    * atomic step. The same request ID with the same input returns the same intent; with another
@@ -114,6 +148,55 @@ export interface ExecutionStore {
   readIntent(id: string): Promise<LaunchIntent | undefined>;
   /** Every intent of that machine that is not final: Prepared, Dispatching and Dispatched. */
   openWork(machine: string): Promise<{ intents: LaunchIntent[] }>;
+}
+
+/**
+ * What a run transition expects of the record: its state at one version, the record the caller
+ * read and decided on (A4 3.16.1). Any change since makes the call `stale`.
+ */
+export interface RunExpected {
+  state: RunState;
+  version: number;
+}
+
+/** The run a decision was made on, as a transition's expectation. */
+export const seenRun = (run: RunRecord): RunExpected => ({
+  state: run.state,
+  version: run.version,
+});
+
+/** The run part of the execution store (A4 3.16.1): what the run machine needs. */
+export interface RunStore {
+  /**
+   * Records a run in `queued` before anything spawns (A4 3.11.2): the record, its history and the
+   * request's receipt in one atomic step. The same request ID with the same input returns the same
+   * run; with another input it is refused (`request_id_reused`).
+   */
+  createRun(input: NewRun, requestId: string): Promise<RunRecord>;
+  /**
+   * One atomic compare-and-set transition: the record must be at `expect`, or the call is refused
+   * with `stale` and the current record, and moves nothing. `expect.state → next` must be an edge
+   * of A4's machine. Evidence only grows, and a result goes in once, entering a final state.
+   * Returns the record as it is after the call.
+   */
+  transitionRun(
+    id: string,
+    expect: RunExpected,
+    next: RunState,
+    patch?: RunPatch,
+  ): Promise<RunRecord>;
+  /** The run as it is now, or undefined. */
+  readRun(id: string): Promise<RunRecord | undefined>;
+  /**
+   * Every run of that machine that is not final (OPEN_RUN_STATES), and every `unknown` one that
+   * awaits its exit (`awaitsExit`), oldest first.
+   */
+  openWork(machine: string): Promise<{ runs: RunRecord[] }>;
+}
+
+/** A4 3.16.1's execution store: both parts, and `openWork` with intents and runs. */
+export interface ExecutionStore extends LaunchStore, RunStore {
+  openWork(machine: string): Promise<{ intents: LaunchIntent[]; runs: RunRecord[] }>;
 }
 
 export type RefusalCode =
@@ -149,8 +232,26 @@ export class ExecutionRefused extends Error {
   }
 }
 
+/** A call on a run the store refused: nothing changed. As ExecutionRefused, for a run record. */
+export class RunRefused extends Error {
+  override readonly name = "RunRefused";
+  readonly code: RefusalCode;
+  /** The input path that broke a rule, such as `next` or `patch.evidence.claim`. Never a value. */
+  readonly field: string | undefined;
+  /** The record as it is now, for `stale` and `evidence`. */
+  readonly current: RunRecord | undefined;
+  constructor(code: RefusalCode, message: string, field?: string, current?: RunRecord) {
+    super(message);
+    this.code = code;
+    this.field = field;
+    this.current = current;
+  }
+}
+
 const ID = (prefix: string): RegExp => new RegExp(`^${prefix}_[0-7][0-9a-hjkmnp-tv-z]{25}$`);
 export const TASK_ID = ID("t");
+export const RUN_ID = ID("ru");
+export const ROUTINE_ID = ID("ro");
 export const MACHINE_ID = ID("m");
 export const PLACE_ID = ID("pl");
 export const SESSION_ID = ID("se");
@@ -301,4 +402,321 @@ export interface CheckedTransition {
   next: IntentState;
   reason?: Reason;
   evidence: Evidence;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Runs (A4 3.11.2, 3.16.1)
+
+function refuseRun(field: string, message: string): never {
+  throw new RunRefused("invalid", message, field === "" ? undefined : field);
+}
+
+const utf8 = (text: string): number => new TextEncoder().encode(text).length;
+
+/** A whole number within `bounds`. */
+const within = (value: unknown, bounds: { min: number; max: number }): value is number =>
+  typeof value === "number" &&
+  Number.isSafeInteger(value) &&
+  value >= bounds.min &&
+  value <= bounds.max;
+
+/** The limits, checked against their bounds, without unknown keys. */
+function checkLimits(value: unknown): RunLimits {
+  if (typeof value !== "object" || value === null) return refuseRun("limits", "Expected limits");
+  const { maxTurns, wallMs, idleMs, budgetUsd, ...more } = value as Record<string, unknown>;
+  if (Object.values(more).some((v) => v !== undefined)) {
+    return refuseRun("limits", "The limits have a field they do not take");
+  }
+  const b = RUN_LIMIT_BOUNDS;
+  if (!within(maxTurns, b.maxTurns)) return refuseRun("limits.maxTurns", "Expected a turn limit");
+  if (!within(wallMs, b.wallMs)) return refuseRun("limits.wallMs", "Expected a wall time");
+  if (!within(idleMs, b.idleMs)) return refuseRun("limits.idleMs", "Expected an idle time");
+  if (
+    budgetUsd !== undefined &&
+    (typeof budgetUsd !== "number" ||
+      !Number.isFinite(budgetUsd) ||
+      budgetUsd < b.budgetUsd.min ||
+      budgetUsd > b.budgetUsd.max)
+  ) {
+    return refuseRun("limits.budgetUsd", "Expected a budget in dollars");
+  }
+  return { maxTurns, wallMs, idleMs, ...(budgetUsd === undefined ? {} : { budgetUsd }) };
+}
+
+/**
+ * Checks a run's input, as every backend does before it writes: IDs by their pattern, exactly one
+ * of task and routine, the adapter, the permission (never `inherit`, A4 3.11.6), the limits and the
+ * request text's size. Returns it without undefined values or unknown keys.
+ */
+export function checkNewRun(value: unknown): NewRun {
+  if (typeof value !== "object" || value === null) return refuseRun("", "Expected a run");
+  const input = value as Record<string, unknown>;
+  const { task, routine, machine, instance, adapter, place, session, request, briefHash } = input;
+  const { permission, limits, ...more } = input;
+  const known = new Set([
+    "task",
+    "routine",
+    "machine",
+    "instance",
+    "adapter",
+    "place",
+    "session",
+    "request",
+    "briefHash",
+  ]);
+  if (Object.entries(more).some(([key, v]) => !known.has(key) && v !== undefined)) {
+    return refuseRun("", "The run has a field it does not take");
+  }
+  if (task !== null && !matches(TASK_ID, task)) return refuseRun("task", "Expected a task ID");
+  if (routine !== null && !matches(ROUTINE_ID, routine)) {
+    return refuseRun("routine", "Expected a routine ID");
+  }
+  if ((task === null) === (routine === null)) {
+    return refuseRun("task", "A run belongs to a task or a routine, exactly one");
+  }
+  if (!matches(MACHINE_ID, machine)) return refuseRun("machine", "Expected a machine ID");
+  if (!matches(INSTANCE_KEY, instance)) return refuseRun("instance", "Expected an instance key");
+  if (!(RUN_ADAPTERS as readonly unknown[]).includes(adapter)) {
+    return refuseRun("adapter", "Expected a run adapter");
+  }
+  if (place !== null && !matches(PLACE_ID, place)) {
+    return refuseRun("place", "Expected a place ID or null");
+  }
+  if (session !== undefined && !matches(SESSION_ID, session)) {
+    return refuseRun("session", "Expected a session ID");
+  }
+  // A task's run needs the person's instruction (A4 3.11.7); a routine's takes its template. The
+  // instruction is judged as the space stores it, so every backend keeps and refuses the same text.
+  const stored = typeof request === "string" ? normaliseRunText(request) : request;
+  if (routine !== null ? stored !== null : typeof stored !== "string" || stored.trim() === "") {
+    return refuseRun("request", "A task's run takes an instruction, a routine's none");
+  }
+  if (typeof stored === "string" && utf8(stored) > RUN_REQUEST_MAX_BYTES) {
+    return refuseRun("request", "The instruction is larger than its limit");
+  }
+  if (!matches(SHA256, briefHash)) {
+    return refuseRun("briefHash", "Expected a SHA-256 in lower-case hex");
+  }
+  if (!(RUN_PERMISSIONS as readonly unknown[]).includes(permission)) {
+    return refuseRun("permission", "A run takes a permission mode of its own, never inherit");
+  }
+  return {
+    task,
+    routine,
+    machine,
+    instance,
+    adapter: adapter as NewRun["adapter"],
+    place,
+    ...(session === undefined ? {} : { session }),
+    request: stored as string | null,
+    briefHash,
+    permission: permission as NewRun["permission"],
+    limits: checkLimits(limits),
+  };
+}
+
+/** The problem with run evidence as a path such as `patch.evidence.pid`, or undefined. */
+export function runEvidenceProblem(evidence: unknown): string | undefined {
+  if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
+    return "patch.evidence";
+  }
+  for (const [key, value] of Object.entries(evidence)) {
+    if (value === undefined) continue;
+    if (!Object.hasOwn(RUN_EVIDENCE_FIELDS, key)) return "patch.evidence";
+    const kind = RUN_EVIDENCE_FIELDS[key as RunEvidenceKey];
+    const fits =
+      kind === "id"
+        ? typeof value === "string" && RUN_EVIDENCE_ID.test(value)
+        : kind === "flag"
+          ? typeof value === "boolean"
+          : isEvidenceValue(kind, value);
+    if (!fits) return `patch.evidence.${key}`;
+  }
+  return undefined;
+}
+
+const isText = (value: unknown): value is string | null =>
+  value === null || (typeof value === "string" && utf8(value) <= TEXT_CAP_BYTES);
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_COUNT;
+
+/**
+ * The problem with a run result as a path, or undefined. Texts within TEXT_CAP_BYTES. Every object
+ * it reads is a plain object, never a list, as the writer reads it: a list is an object with no
+ * keys to refuse, which one store would keep as a list and another as an empty object.
+ */
+export function runResultProblem(result: unknown): string | undefined {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return "patch.result";
+  }
+  const r = result as Record<string, unknown>;
+  const keys = [
+    "ok",
+    "outcome",
+    "exitCode",
+    "signal",
+    "nativeId",
+    "text",
+    "error",
+    "usage",
+    "appTools",
+    "declined",
+    "permissionDenials",
+    "durationMs",
+  ];
+  if (Object.keys(r).some((key) => !keys.includes(key) && r[key] !== undefined)) {
+    return "patch.result";
+  }
+  if (typeof r["ok"] !== "boolean") return "patch.result.ok";
+  if (!(OUTCOME_REASONS as readonly unknown[]).includes(r["outcome"]))
+    return "patch.result.outcome";
+  // A signed or an unsigned 32-bit status (Windows reports NTSTATUS codes unsigned), as the writer.
+  const code = r["exitCode"];
+  if (
+    code !== null &&
+    (typeof code !== "number" ||
+      !Number.isSafeInteger(code) ||
+      code < -2_147_483_648 ||
+      code > 4_294_967_295)
+  ) {
+    return "patch.result.exitCode";
+  }
+  const signal = r["signal"];
+  if (signal !== null && (typeof signal !== "string" || !SIGNAL_NAME.test(signal))) {
+    return "patch.result.signal";
+  }
+  const nativeId = r["nativeId"];
+  if (nativeId !== null && (typeof nativeId !== "string" || !RUN_EVIDENCE_ID.test(nativeId))) {
+    return "patch.result.nativeId";
+  }
+  if (!isText(r["text"])) return "patch.result.text";
+  if (!isText(r["error"])) return "patch.result.error";
+  const usage = r["usage"];
+  if (usage !== null) {
+    if (typeof usage !== "object" || Array.isArray(usage)) return "patch.result.usage";
+    const fields = [
+      "inputTokens",
+      "cachedInputTokens",
+      "outputTokens",
+      "reasoningOutputTokens",
+      "costUsd",
+    ];
+    // Each a count or a cost the writer stores: finite, from 0 to the largest safe integer.
+    for (const [key, n] of Object.entries(usage as Usage)) {
+      if (n === undefined) continue;
+      if (
+        !fields.includes(key) ||
+        typeof n !== "number" ||
+        !Number.isFinite(n) ||
+        n < 0 ||
+        n > Number.MAX_SAFE_INTEGER
+      ) {
+        return "patch.result.usage";
+      }
+    }
+  }
+  const appTools = r["appTools"];
+  if (appTools !== null && !(APP_TOOLS_STATES as readonly unknown[]).includes(appTools)) {
+    return "patch.result.appTools";
+  }
+  if (!isCount(r["declined"])) return "patch.result.declined";
+  if (!isCount(r["permissionDenials"])) return "patch.result.permissionDenials";
+  const duration = r["durationMs"];
+  if (duration !== null && !isEvidenceValue("instant", duration)) return "patch.result.durationMs";
+  return undefined;
+}
+
+/** A run transition that passed `checkRunTransition`. */
+export interface CheckedRunTransition {
+  id: string;
+  expect: RunExpected;
+  next: RunState;
+  reason?: RunReason;
+  evidence: RunEvidence;
+  result?: RunResult;
+}
+
+const isRunState = (value: unknown): value is RunState =>
+  (RUN_STATES as readonly unknown[]).includes(value);
+
+/**
+ * Checks a run transition before any backend reads the record: a run ID, an expectation with a
+ * version, an edge of A4's machine, a reason exactly when entering a state that takes one, valid
+ * evidence, and a result only entering a final state. The compare-and-set, the evidence's growth
+ * and the result's once-only rule are the backend's, inside its atomic step.
+ */
+export function checkRunTransition(
+  id: unknown,
+  expected: unknown,
+  next: unknown,
+  patch: unknown = {},
+): CheckedRunTransition {
+  if (!matches(RUN_ID, id)) return refuseRun("id", "Expected a run ID");
+  if (typeof expected !== "object" || expected === null) {
+    return refuseRun("expect", "Expected a state and a version");
+  }
+  const { state, version, ...more } = expected as Record<string, unknown>;
+  if (Object.values(more).some((x) => x !== undefined)) {
+    return refuseRun("expect", "Expected a state and a version");
+  }
+  if (!isRunState(state)) return refuseRun("expect.state", "Expected a state");
+  if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 0) {
+    return refuseRun("expect.version", "Expected a record version");
+  }
+  if (!isRunState(next)) return refuseRun("next", "Expected a state");
+  if (!isRunEdge(state, next))
+    return refuseRun("next", "Not a transition of the run state machine");
+  if (typeof patch !== "object" || patch === null) return refuseRun("patch", "Expected a patch");
+  const { reason, evidence = {}, result, ...rest } = patch as Record<string, unknown>;
+  if (Object.values(rest).some((v) => v !== undefined)) {
+    return refuseRun("patch", "The patch has a field it does not take");
+  }
+  const entering = next !== state;
+  if (entering && takesReason(next)) {
+    if (!isRunReason(next, reason)) {
+      return refuseRun("patch.reason", "This state takes a reason code of its own");
+    }
+  } else if (reason !== undefined) {
+    return refuseRun("patch.reason", "Only entering failed, timed_out or unknown takes a reason");
+  }
+  const problem = runEvidenceProblem(evidence);
+  if (problem !== undefined)
+    return refuseRun(problem, "Evidence holds IDs, instants, counts and flags only");
+  const final = (FINAL_RUN_STATES as readonly RunState[]).includes(next);
+  let kept: RunResult | undefined;
+  if (result !== undefined) {
+    if (!entering || !final)
+      return refuseRun("patch.result", "A result goes in entering a final state");
+    // The agent's texts are cut, never refused, in the form the space stores them: what an agent
+    // wrote must not keep its run from settling, and normalising can lengthen a text (A4 3.11.5).
+    kept = cutResultTexts(result);
+    const resultProblem = runResultProblem(kept);
+    if (resultProblem !== undefined) return refuseRun(resultProblem, "Not a run result");
+  }
+  const clean: Record<string, unknown> = {};
+  for (const key of Object.keys(evidence as object).sort()) {
+    const v = (evidence as Record<string, unknown>)[key];
+    if (v !== undefined) clean[key] = v;
+  }
+  if (!entering && Object.keys(clean).length === 0) {
+    return refuseRun("patch.evidence", "A transition that keeps its state records evidence");
+  }
+  return {
+    id,
+    expect: { state, version },
+    next,
+    evidence: clean,
+    ...(reason === undefined ? {} : { reason: reason }),
+    ...(kept === undefined ? {} : { result: kept }),
+  };
+}
+
+/** A result with its text and error normalised and cut to TEXT_CAP_BYTES (`cutRunText`). */
+function cutResultTexts(result: unknown): RunResult {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return result as RunResult;
+  }
+  const r = result as Record<string, unknown>;
+  const cut = (value: unknown): unknown => (typeof value === "string" ? cutRunText(value) : value);
+  return { ...r, text: cut(r["text"]), error: cut(r["error"]) } as unknown as RunResult;
 }

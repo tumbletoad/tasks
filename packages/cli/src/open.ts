@@ -12,16 +12,22 @@
 //      browser never sends, and the page removes it at once. `--print-url` prints the link
 //      instead, with a warning that it holds a one-time sign-in code.
 //
-// The service is started by `tasks service start` (M1.12); until that step is wired, `tasks open`
-// reports a stopped service like every other command. The browser is opened with the OS's own
-// opener (A2 3.9: rundll32's FileProtocolHandler, explorer.exe in a packaged context, `gio open`
-// then `xdg-open`, `open`); A4's opener module takes this over when it exists.
+// A service that is not running is started first (A2 3.3.6, 3.9 step 1), the same way `tasks
+// service start` starts it (`startService` of @tasks/service/install: through the OS, and only a
+// ready service counts), with one line on stderr that says so. Only `not_running` starts it: a
+// service that is starting, stopping, unreachable or untrusted is reported as every command
+// reports it. An agent's shell never starts it: it is told to ask the user, as when the service
+// runs (A2 S6, 3.6.5). A start that fails says why and names the command to look further.
+//
+// The browser is opened with the OS's own opener (A2 3.9: rundll32's FileProtocolHandler,
+// explorer.exe in a packaged context, `gio open` then `xdg-open`, `open`); A4's opener module
+// takes this over when it exists.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, win32 } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { parseKey } from "@tasks/bridge/protocol";
+import { isAgentMarker, parseKey, rpcContextEnv } from "@tasks/bridge/protocol";
 import { IPC_KEY } from "@tasks/service/paths";
 import { movedMessage, PROBE_PATH, verifyProbe } from "@tasks/service/http/shared";
 import type { Globals } from "./args.ts";
@@ -43,9 +49,53 @@ function hasControl(text: string): boolean {
 /** Opens a URL in the user's browser; false when no opener could. */
 export type OpenUrl = (url: string, io: Io) => Promise<boolean>;
 
+/** A start of the service that did not end with a ready service: a person's words and a command. */
+export class StartFailed extends Error {
+  override readonly name = "StartFailed";
+  readonly hint: string | undefined;
+  constructor(message: string, hint: string | undefined) {
+    super(message);
+    this.hint = hint;
+  }
+}
+
+/**
+ * Starts this install's service as `tasks service start` does, and resolves once it is ready:
+ * `started`, or `already_running` when another start got there first. Throws StartFailed.
+ */
+export type StartService = (io: Io) => Promise<"started" | "already_running">;
+
+/** `tasks service start`'s own start, loaded only when the service is not running. */
+const startAsServiceStart: StartService = async (io) => {
+  const install = await import("@tasks/service/install");
+  try {
+    const outcome = await install.startService(install.defaultServiceContext({ env: io.env }));
+    return outcome.outcome === "started" ? "started" : "already_running";
+  } catch (error) {
+    // Its messages are for a person: fixed text and the install's own entries, never task data.
+    if (error instanceof install.ServiceCommandError)
+      throw new StartFailed(error.message, error.hint);
+    throw new StartFailed(
+      `${CLI_NAME} service start failed unexpectedly.`,
+      `${CLI_NAME} service status`,
+    );
+  }
+};
+
+/** An agent's shell (A2 3.6.5's `cli-agent`): a marker the service would read in the bind. */
+const agentShell = (io: Io): boolean => Object.keys(rpcContextEnv(io.env)).some(isAgentMarker);
+
+const askTheUser = () => ({
+  code: "forbidden" as const,
+  message: `Ask the user to open ${PRODUCT_NAME}.`,
+  data: { reason: "connection_class" },
+});
+
 export interface OpenOptions extends ConnectOptions {
   /** Tests record the URL instead of opening a browser. */
   readonly openUrl?: OpenUrl;
+  /** Tests start their own service. The default is `tasks service start`'s (startAsServiceStart). */
+  readonly startService?: StartService;
   /**
    * Asks the person a yes-or-no question (`tasks service port --reuse`). The default asks in the
    * terminal when stdin and stdout are one; tests answer it.
@@ -233,7 +283,29 @@ export async function openCommand(
   try {
     session = await connectService(io, options);
   } catch (error) {
-    return printError(io, globals.json, bodyOf(asAppError(error)));
+    const body = bodyOf(asAppError(error));
+    if (body.code !== "service_unavailable" || body.data?.["reason"] !== "not_running") {
+      return printError(io, globals.json, body);
+    }
+    // Not running: started as `tasks service start` starts it, never from an agent's shell.
+    if (agentShell(io)) return printError(io, globals.json, askTheUser());
+    try {
+      const outcome = await (options.startService ?? startAsServiceStart)(io);
+      if (outcome === "started") io.stderr(`Started ${PRODUCT_NAME}'s service.\n`);
+    } catch (failure) {
+      const why = failure instanceof StartFailed ? failure : undefined;
+      return printError(io, globals.json, {
+        code: "service_unavailable",
+        message: `${PRODUCT_NAME}'s service is not running, and it could not be started: ${why?.message ?? "the start failed."}`,
+        hint: `Run: ${why?.hint ?? `${CLI_NAME} service status`}`,
+        data: { reason: "not_running", retryable: false },
+      });
+    }
+    try {
+      session = await connectService(io, options);
+    } catch (again) {
+      return printError(io, globals.json, bodyOf(asAppError(again)));
+    }
   }
   try {
     let minted: Minted | undefined;
@@ -241,13 +313,7 @@ export async function openCommand(
       minted = mintedOf(await session.call("ui/mint_code", {}, { timeoutMs: 10_000 }));
     } catch (error) {
       const body = bodyOf(asAppError(error));
-      if (body.code === "forbidden") {
-        return printError(io, globals.json, {
-          code: "forbidden",
-          message: `Ask the user to open ${PRODUCT_NAME}.`,
-          data: { reason: "connection_class" },
-        });
-      }
+      if (body.code === "forbidden") return printError(io, globals.json, askTheUser());
       return printError(io, globals.json, body);
     }
     if (minted === undefined) {

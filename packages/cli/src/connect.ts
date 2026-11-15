@@ -1,7 +1,8 @@
 // Finding the service (A2 3.6.1, 3.10.4, 3.3.6): `<state>/service.json` names the endpoint, the
 // key is `<state>/ipc.key`, read for every connection. One attempt with a 2 s connect timeout,
 // except while service.json says `starting` for a live PID: then the CLI waits up to 10 s. The CLI
-// never starts the service. Every failure is A3's `service_unavailable` with its reason.
+// never starts the service here: only `tasks service start` and `tasks open` do (A2 S6). Every
+// failure is A3's `service_unavailable` with its reason.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
