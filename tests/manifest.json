@@ -3235,7 +3235,7 @@
     },
     {
       "id": "A1.5.projection.service",
-      "title": "The service keeps each space open as this machine's projected into its view/ in a worker of its own, with the trusted record beside the space's settings: the first render of the sample space, a task added through the request path in its file and the catalogue, tasks view rebuild bringing back a deleted file and moving an edited one aside, for the user only, and a restore in place projected anew",
+      "title": "The service keeps each space open as this machine's projected into its view/ in a worker of its own, with the trusted record beside the space's settings: the first render of the sample space, a task added through the request path in its file and the catalogue, tasks view rebuild bringing back a deleted file and moving an edited one aside, for the user only, a rescue whose save failed told again at the next start, with a settings file that does not read back never written over, and a restore in place projected anew",
       "source": "A1 3.9, A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -3251,7 +3251,7 @@
     },
     {
       "id": "A1.5.projection.recovery",
-      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing or unreadable reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; one of another incarnation in the same folder keeps its files, proved by their bytes, and queues every task; a temporary file a kill left that a person typed into is kept; a batch's rescues are reported once, also when the batch failed or was killed; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing or unreadable reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; one of another incarnation in the same folder keeps its files, proved by their bytes, and queues every task; a journal that is there and does not read back (cut short, of another format) rebuilds every task, so a task its batch found gone leaves the catalogue, also after a short write and a full volume; a temporary file a kill left that a person typed into is kept; a batch's rescues are told from their folders, also when the batch failed or was killed, and again at the next batch and the next start while the receiver cannot save them, never again once saved; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",

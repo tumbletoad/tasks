@@ -40,7 +40,7 @@ export type ProjectionMessage =
       readonly method: "queue";
       readonly keys?: readonly string[];
     }
-  /** A batch moved entries aside: answered once it is recorded, so the worker drops its journal. */
+  /** A batch moved entries aside: answered ok once it is saved, so the worker keeps it told. */
   | {
       readonly kind: "call";
       readonly id: number;
@@ -65,7 +65,7 @@ export interface ProjectionEvents {
   readonly reconciled: (reconciled: Reconciled) => void;
   /**
    * A batch moved entries aside: also one that failed or was killed, at least once (the same stem
-   * may come again after a kill). Recorded when it returns.
+   * may come again). Saved when it returns; it throws when it could not save, and is told again.
    */
   readonly rescued: (rescued: Rescued) => void;
   readonly failed: (code: string | undefined) => void;
@@ -120,10 +120,13 @@ export class ProjectionRunner {
       switch (message.kind) {
         case "call": {
           if (message.method === "rescued") {
+            // Answered ok only once it is saved: a failure leaves the stem untold, and the worker
+            // tells it again from its rescue folders (A1 3.13 rule 3).
             try {
               events.rescued(message.rescued);
-            } catch {
-              // The rescue folders hold the entries either way.
+            } catch (error) {
+              reply({ kind: "reply", id: message.id, ok: false, code: codeOf(error) });
+              return;
             }
             reply({ kind: "reply", id: message.id, ok: true, value: 0 });
             return;

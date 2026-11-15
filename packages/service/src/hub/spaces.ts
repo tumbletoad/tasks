@@ -974,13 +974,22 @@ export class SpaceManager {
     // The record is per folder: two folders that hold one space never share one (space-settings.ts).
     const state = projectionStateOf(this.#options.settingsDir, spaceId, space.folder);
     space.projection = new ProjectionRunner({ folder: space.folder, ...state }, writer, {
-      // Each batch that moved entries aside, once, also one that failed or was killed (A1 3.13).
+      // Each batch that moved entries aside, at least once, also one that failed or was killed
+      // (A1 3.13 rule 3). Saved before it returns: a failure throws, so the worker keeps the stem
+      // untold and tells it again. One small file read and written on this thread, only at a start
+      // and after a batch that rescued.
       rescued: ({ stem, files }) => {
         log.log("space.projection_rescued", { entry, space: spaceId, files });
         try {
           recordProjectionRescue(this.#options.settingsDir, spaceId, { stem, files });
-        } catch {
-          // The log has it; the UI does not show this one.
+        } catch (error) {
+          const code = (error as { code?: unknown } | null)?.code;
+          log.log("space.projection_failed", {
+            entry,
+            space: spaceId,
+            ...(typeof code === "string" ? { code } : {}),
+          });
+          throw error;
         }
       },
       reconciled: (r: Reconciled) => {

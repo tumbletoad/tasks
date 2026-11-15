@@ -7,17 +7,19 @@
 // - **The record**: for every file the projection placed and still holds as its own, its path in
 //   the tree, its SHA-256, its size and the task it belongs to (none for a root file); for every
 //   task with a file, its catalogue line as rendered (the catalogue is assembled from these); the
-//   space it was made for; and the watermark last published. A file whose task no longer names it
-//   (the task moved or is gone) is retired: removed after the next publish, when it is still ours.
+//   space it was made for; the watermark last published; and the rescue stems told (rule 3). A
+//   file whose task no longer names it (the task moved or is gone) is retired: removed after the
+//   next publish, when it is still ours.
 // - **The journal** names, before a batch acts, the temporary files it may create, every file it
-//   is about to place with its hash, the tasks it found gone, and the stem of its rescue folders. A kill leaves it; the
-//   next start plays it forward against the disk (projector.ts) and removes the temporary files it
-//   names.
+//   is about to place with its hash, and the tasks it found gone. A kill leaves it; the next start
+//   plays it forward against the disk (projector.ts) and removes the temporary files it names.
 //
-// A record or a journal that is missing or does not read back whole is no record: the tree is then
-// reconciled from scratch, and nothing is deleted on its word. Every path in it is checked against
-// the tree's grammar before it is used. Both are written atomically, flushed, with mode 0600,
-// through @tasks/files.
+// **Only a file that is not there is no state** (A1 3.13 rule 1). A record or a journal that is
+// there and does not read back whole (cut short, of another format, failing its own checks, not a
+// file) is `unreadable`, never `none`: nobody knows what it would have said, so the start rebuilds
+// every task (projector.ts). Each is one JSON object, so one cut short does not parse. Every path
+// in them is checked against the tree's grammar before it is used. Both are written atomically,
+// whole (writeAll) and flushed, with mode 0600, through @tasks/files.
 import { lstatSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { atomicWrite, makeDir, removeStaleTemps } from "@tasks/files";
@@ -28,7 +30,7 @@ import {
   type Lifecycle,
   type SpaceIdentity,
 } from "./render.ts";
-import { isTempPath, isTreePath, TASK_FILE, type Hook } from "./tree.ts";
+import { isTempPath, isTreePath, STEM, TASK_FILE, type Hook } from "./tree.ts";
 
 /** A file the projection placed: what it holds, and the task it belongs to (none: a root file). */
 export interface FileRecord {
@@ -45,6 +47,12 @@ export interface TrustedRecord {
   readonly files: Map<string, FileRecord>;
   /** Each task with a file: its catalogue line as rendered, whose `path` is in `files`. */
   readonly entries: Map<string, CatalogEntry>;
+  /**
+   * The stems of the rescue folders on disk whose rescues were told (rule 3): a stem leaves it
+   * when its folders are gone. A rescue folder whose stem is not here is told at the next start or
+   * batch, so a record lost tells again, never less.
+   */
+  readonly told: Set<string>;
 }
 
 /** One file a batch is about to place. */
@@ -53,8 +61,6 @@ export interface Placing extends FileRecord {
 }
 
 export interface Journal {
-  /** Rescue folders of this batch are `exchange/rescued/<stem>-<n>`. */
-  readonly stem: string;
   /** Temporary files this batch may create, by their path in the tree. */
   readonly temps: readonly string[];
   readonly placing: ReadonlyMap<string, Placing>;
@@ -64,18 +70,29 @@ export interface Journal {
   readonly watermark?: number;
 }
 
+/**
+ * A file of the trusted state read back: `none` only when it is not there; `unreadable` when it is
+ * there and does not read back whole, which means "unknown", never "nothing".
+ */
+export type Read<T> =
+  | { readonly kind: "none" }
+  | { readonly kind: "unreadable" }
+  | { readonly kind: "read"; readonly value: T };
+
+const NONE = { kind: "none" } as const;
+const UNREADABLE = { kind: "unreadable" } as const;
+
 export const newRecord = (identity: SpaceIdentity): TrustedRecord => ({
   identity,
   watermark: 0,
   files: new Map(),
   entries: new Map(),
+  told: new Set(),
 });
 
 const SHA256 = /^[0-9a-f]{64}$/;
 /** A task's ID (A1 3.3). */
 const TASK_ID = /^t_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
-/** A rescue stem as the projector makes it: a time stamp and 16 random bits. */
-export const STEM = /^[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
 /** A record larger than this is not read (a design-scale record is about 30 MB). */
 const MAX_BYTES = 256 * 1024 * 1024;
 
@@ -173,35 +190,48 @@ export class TrustedState {
     removeStaleTemps(folder, [basename(this.#record), basename(this.#journal)]);
   }
 
-  #read(path: string): unknown {
+  /**
+   * The JSON object at `path`: none only when nothing is there (ENOENT); unreadable when what is
+   * there is not a file, too large, does not parse or is not an object of this format. Any other
+   * error of the look (a folder that cannot be read) throws: that is not knowing either.
+   */
+  #read(path: string): Read<Record<string, unknown>> {
     const stats = lstatSync(path, { throwIfNoEntry: false });
-    if (stats === undefined || !stats.isFile() || stats.size > MAX_BYTES) return undefined;
+    if (stats === undefined) return NONE;
+    if (!stats.isFile() || stats.size > MAX_BYTES) return UNREADABLE;
+    let value: unknown;
     try {
-      return JSON.parse(readFileSync(path, "utf8")) as unknown;
-    } catch {
-      return undefined;
+      value = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    } catch (error) {
+      // Gone between the look and the read: nothing is there.
+      if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") return NONE;
+      return UNREADABLE;
     }
+    return isObject(value) && value["format"] === FORMAT ? { kind: "read", value } : UNREADABLE;
   }
 
-  /** The record, or undefined when there is none or it does not read back whole. */
-  readRecord(): TrustedRecord | undefined {
-    const value = this.#read(this.#record);
-    if (!isObject(value) || value["format"] !== FORMAT) return undefined;
-    const { space_id, epoch, incarnation, watermark } = value;
+  /** The record (see the header: `unreadable` is never `none`). */
+  readRecord(): Read<TrustedRecord> {
+    const read = this.#read(this.#record);
+    if (read.kind !== "read") return read;
+    const value = read.value;
+    const { space_id, epoch, incarnation, watermark, told } = value;
     if (
       typeof space_id !== "string" ||
       !isCount(epoch) ||
       typeof incarnation !== "string" ||
       !isCount(watermark) ||
       !isObject(value["files"]) ||
-      !isObject(value["entries"])
+      !isObject(value["entries"]) ||
+      !Array.isArray(told) ||
+      !told.every((stem) => typeof stem === "string" && STEM.test(stem))
     ) {
-      return undefined;
+      return UNREADABLE;
     }
     const files = new Map<string, FileRecord>();
     for (const [path, item] of Object.entries(value["files"])) {
       const file = fileOf(path, item);
-      if (file === undefined) return undefined;
+      if (file === undefined) return UNREADABLE;
       files.set(path, file);
     }
     const entries = new Map<string, CatalogEntry>();
@@ -209,11 +239,20 @@ export class TrustedState {
       const entry = entryOf(item);
       // A task's line names a file of the record that belongs to that task.
       if (entry === undefined || entry.id !== id || files.get(entry.path)?.task !== id) {
-        return undefined;
+        return UNREADABLE;
       }
       entries.set(id, entry);
     }
-    return { identity: { spaceId: space_id, epoch, incarnation }, watermark, files, entries };
+    return {
+      kind: "read",
+      value: {
+        identity: { spaceId: space_id, epoch, incarnation },
+        watermark,
+        files,
+        entries,
+        told: new Set(told as string[]),
+      },
+    };
   }
 
   writeRecord(record: TrustedRecord): void {
@@ -225,19 +264,19 @@ export class TrustedState {
       watermark: record.watermark,
       files: sorted(record.files),
       entries: sorted(record.entries),
+      told: [...record.told].sort(),
     };
     this.#at?.("record", "");
     atomicWrite(this.#record, `${JSON.stringify(value)}\n`, 0o600);
   }
 
-  /** The journal a kill left, or undefined when there is none or it does not read back whole. */
-  readJournal(): Journal | undefined {
-    const value = this.#read(this.#journal);
-    if (!isObject(value) || value["format"] !== FORMAT) return undefined;
-    const { stem, temps, watermark, gone } = value;
+  /** The journal a kill left (see the header: `unreadable` is never `none`). */
+  readJournal(): Read<Journal> {
+    const read = this.#read(this.#journal);
+    if (read.kind !== "read") return read;
+    const value = read.value;
+    const { temps, watermark, gone } = value;
     if (
-      typeof stem !== "string" ||
-      !STEM.test(stem) ||
       !Array.isArray(temps) ||
       !Array.isArray(gone) ||
       !gone.every((id) => typeof id === "string" && TASK_ID.test(id)) ||
@@ -245,33 +284,34 @@ export class TrustedState {
       (watermark !== undefined && !isCount(watermark)) ||
       !isObject(value["placing"])
     ) {
-      return undefined;
+      return UNREADABLE;
     }
     const placing = new Map<string, Placing>();
     for (const [path, item] of Object.entries(value["placing"])) {
       const file = fileOf(path, item);
-      if (file === undefined || !isObject(item)) return undefined;
+      if (file === undefined || !isObject(item)) return UNREADABLE;
       if (file.task === undefined) {
         placing.set(path, file);
         continue;
       }
       const entry = entryOf(item["entry"]);
-      if (entry === undefined || entry.id !== file.task || entry.path !== path) return undefined;
+      if (entry === undefined || entry.id !== file.task || entry.path !== path) return UNREADABLE;
       placing.set(path, { ...file, entry });
     }
     return {
-      stem,
-      temps: temps as string[],
-      gone: gone as string[],
-      placing,
-      ...(watermark === undefined ? {} : { watermark }),
+      kind: "read",
+      value: {
+        temps: temps as string[],
+        gone: gone as string[],
+        placing,
+        ...(watermark === undefined ? {} : { watermark }),
+      },
     };
   }
 
   writeJournal(journal: Journal): void {
     const value = {
       format: FORMAT,
-      stem: journal.stem,
       temps: journal.temps,
       gone: journal.gone,
       placing: sorted(journal.placing),

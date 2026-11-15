@@ -58,7 +58,7 @@ function shortWrites(most: number): { calls: () => number } {
 }
 
 /** Text of more than one write's worth of bytes, with characters of more than one byte. */
-const TEXT = `${"Fixture line with a multi-byte character: é中.\n".repeat(40)}`;
+const TEXT = "Fixture line with a multi-byte character: é中.\n".repeat(40);
 
 describe("[A2.3.2.2.files.whole-write] a write of durable state writes every byte or throws", () => {
   test("atomicWrite: writes that each take a few bytes still leave the whole text", () => {

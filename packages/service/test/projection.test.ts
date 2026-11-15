@@ -237,6 +237,68 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     ]);
   });
 
+  test("a rescue is answered only once it is saved: one whose save failed is told again at the next start, and a settings file that does not read back is never written over", async () => {
+    const { home, folder, spaceId } = await setUp("projsave");
+    const first = await start(home, folder);
+    const view = join(folder, "view");
+    await waitFor(
+      () => (existsSync(join(view, ".projection.json")) ? true : undefined),
+      30_000,
+      "the first render",
+    );
+    // The space's settings stop reading back (a tool wrote over them, a cut copy): saving the
+    // rescue must fail rather than write over what they held.
+    const settings = join(stateOf(home), "spaces", `${spaceId}.json`);
+    writeFileSync(settings, '{"backup": {"dir": ', { mode: 0o600 });
+    const [line] = catalog(view);
+    const edited = join(view, ...(line?.path ?? "").split("/"));
+    chmodSync(edited, 0o600);
+    writeFileSync(edited, "A person's edit while the settings are broken.\n");
+    const user = await classSession(home, first.endpoint.path, "cli-interactive");
+    try {
+      await user.call("view/rebuild", { space: folder }, { timeoutMs: 30_000 });
+    } finally {
+      user.close();
+    }
+    await waitFor(
+      () =>
+        readLog(home).some((e) => e["ev"] === "space.projection_failed" && e["code"] === "EIO")
+          ? true
+          : undefined,
+      30_000,
+      "the failed save",
+    );
+    expect(readFileSync(settings, "utf8")).toBe('{"backup": {"dir": ');
+    const rescued = join(folder, "exchange", "rescued");
+    const [box] = readdirSync(rescued);
+    expect(
+      readFileSync(join(rescued, box ?? "", "view", ...(line?.path ?? "").split("/")), "utf8"),
+    ).toBe("A person's edit while the settings are broken.\n");
+    await first.stop();
+    removeRuntimeDir(first);
+    running.splice(running.indexOf(first), 1);
+    // The person repairs the settings; the next start tells the rescue its folders still show.
+    rmSync(settings);
+    await start(home, folder);
+    const listed = await waitFor(
+      () => {
+        if (!existsSync(settings)) return undefined;
+        const value = JSON.parse(readFileSync(settings, "utf8")) as {
+          projection_rescues?: { stem: string; files: number }[];
+        };
+        return value.projection_rescues?.length === 1 ? value.projection_rescues : undefined;
+      },
+      30_000,
+      "the rescue told again",
+    );
+    expect(listed).toEqual([
+      expect.objectContaining({
+        stem: `exchange/rescued/${(box ?? "").replace(/-1$/, "")}`,
+        files: 1,
+      }),
+    ]);
+  }, 120_000);
+
   test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {
     const { home, folder } = await setUp("projrip");
     const backup = await backupSpace(await checkedDriver(), folder, { kind: "manual" });

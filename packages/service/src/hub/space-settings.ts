@@ -263,10 +263,37 @@ export const MAX_RESCUES = 20;
 const RESCUE_STEM = /^exchange\/rescued\/[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
 
 /**
+ * The file's object for a change that must keep every other field: an empty one only when the file
+ * is not there. One that is there and does not read back whole throws (`EIO`), so nothing written
+ * over it can lose what it held (A1 3.13 rule 1): the caller tries again later.
+ */
+function readForChange(path: string): Record<string, unknown> {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") return {};
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = text.length > MAX_BYTES ? undefined : (JSON.parse(text) as unknown);
+  } catch {
+    value = undefined;
+  }
+  if (!isRecord(value)) {
+    throw Object.assign(new Error("The space's settings do not read back whole"), { code: "EIO" });
+  }
+  return value;
+}
+
+/**
  * Records that a batch of the projection moved `files` entries a person made or edited into the
  * folders `<stem>-<n>` (relative to the space's folder), for the UI to show once (A1 3.13 rule 3).
  * One entry per stem: the projection tells a batch's rescues at least once, so a stem listed
- * already is not listed again. Other fields are kept.
+ * already is not listed again. Other fields are kept. Returns once the file is written, and throws
+ * when it could not be (a full volume, a file locked by another program, one that does not read
+ * back whole): the projection then tells the rescue again.
  */
 export function recordProjectionRescue(
   state: string,
@@ -276,7 +303,7 @@ export function recordProjectionRescue(
 ): void {
   if (!RESCUE_STEM.test(rescue.stem) || !isCount(rescue.files)) return;
   const path = fileOf(state, spaceId);
-  const record = readRecord(path);
+  const record = readForChange(path);
   const listed: unknown = record["projection_rescues"];
   const kept = (Array.isArray(listed) ? (listed as unknown[]) : []).filter(
     (entry) =>

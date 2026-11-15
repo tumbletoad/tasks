@@ -45,7 +45,13 @@ export {
   type TaskInput,
   type Watermark,
 } from "./render.ts";
-export { STEM, TrustedState, type FileRecord, type Journal, type TrustedRecord } from "./state.ts";
+export {
+  TrustedState,
+  type FileRecord,
+  type Journal,
+  type Read,
+  type TrustedRecord,
+} from "./state.ts";
 export {
   codeOf,
   isTempPath,
@@ -53,6 +59,7 @@ export {
   ProjectionError,
   ROOT_FILES,
   sha256,
+  STEM,
   Tree,
   type Act,
   type Hook,

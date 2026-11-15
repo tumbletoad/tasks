@@ -1,11 +1,12 @@
 // The trusted state and the tree's folders (A1 3.13 rules 1 to 5): the record lives in machine
 // state; one the projection could not write holds back the next batch; one that is missing or
-// unreadable starts a reconciliation from scratch that deletes nothing on its word; one of another
-// identity in the same folder keeps its files, proved by their bytes, and queues every task; a
-// temporary file proves itself by its bytes, never by its name alone; what a batch moved aside is
-// reported once; a retired file that could not go is tried again; and a folder of the tree that went
-// missing or became a link is never followed, its link moved aside as it is, and what the record
-// had below it rendered again. Fixture text only.
+// unreadable starts a reconciliation from scratch that deletes nothing on its word, and so does a
+// journal that is there and does not read back; one of another identity in the same folder keeps
+// its files, proved by their bytes, and queues every task; a temporary file proves itself by its
+// bytes, never by its name alone; what a batch moved aside is told from its rescue folders until a
+// telling succeeds; a retired file that could not go is tried again; and a folder of the tree that
+// went missing or became a link is never followed, its link moved aside as it is, and what the
+// record had below it rendered again. Fixture text only.
 import {
   chmodSync,
   existsSync,
@@ -28,6 +29,7 @@ import {
   checkWatermark,
   expectClean,
   expectSameTree,
+  faultState,
   filesOf,
   inTree,
   settle,
@@ -94,7 +96,7 @@ const activeIds = (): string[] =>
     .all<{ id: string }>()
     .map((row) => row.id);
 
-describe("[A1.5.projection.recovery] the trusted state: an unwritten record holds back the next batch; a record missing or unreadable reconciles from scratch and deletes nothing on its word, one of another identity in the same folder queues every task; a leftover a person typed into is kept; rescues are reported once; a retired file that could not go is tried again", () => {
+describe("[A1.5.projection.recovery] the trusted state: an unwritten record holds back the next batch; a record missing or unreadable reconciles from scratch and deletes nothing on its word, and so does a journal that does not read back; one of another identity in the same folder queues every task; a leftover a person typed into is kept; rescues are told from their folders until saved; a retired file that could not go is tried again", () => {
   test("a record that could not be written is written before the next batch, and a kill then loses nothing", async () => {
     const first = w.projector();
     await first.start();
@@ -158,6 +160,67 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
       expect(readFileSync(stray, "utf8")).toBe("---\ngenerated: true\n---\n");
       expect(filesOf(w.dir).size).toBe(before);
       checkWatermark(w.dir, w.reader);
+    });
+  }
+
+  test("a short write of the trusted state, then a full volume, while a task is deleted: after the restart the task is gone from the catalogue and the tree", async () => {
+    const first = w.projector();
+    await first.start();
+    await settle(first);
+    const [a] = activeIds();
+    const path = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
+    w.submit([{ kind: "task.delete", task: a ?? "" }]);
+    // The volume of the machine state fills: its first write takes half its bytes, every later
+    // one fails. The space's database, elsewhere, keeps working.
+    const end = faultState(w.state, (k) => (k === 1 ? "short" : "enospc"));
+    try {
+      await expect(first.step()).rejects.toMatchObject({ code: "ENOSPC" });
+    } finally {
+      end();
+    }
+    // Space is freed and the service starts again.
+    const after = w.projector();
+    await after.start();
+    await settle(after);
+    expect(catalogOf(w.dir).map((line) => line.id)).not.toContain(a);
+    expect(existsSync(join(w.dir, ...path.split("/")))).toBe(false);
+    expectCatalogInTree(w.dir);
+    checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  for (const torn of ["cut short", "of another format", "not an object"] as const) {
+    test(`a journal ${torn} is no "nothing pending": the start rebuilds every task, and a task its batch found gone leaves the catalogue`, async () => {
+      const first = w.projector();
+      await first.start();
+      await settle(first);
+      const [a] = activeIds();
+      const path = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
+      w.submit([{ kind: "task.delete", task: a ?? "" }]);
+      // The batch that found it gone was marked rendered by the writer; only its journal says
+      // so, and that journal does not read back.
+      w.writer.projected({ seq: w.writer.asOf().seq, keys: [a ?? ""] });
+      const whole = { format: 1, temps: [], gone: [a], placing: {} };
+      const text = JSON.stringify(whole);
+      writeFileSync(
+        w.journal,
+        torn === "cut short"
+          ? text.slice(0, -9)
+          : torn === "of another format"
+            ? JSON.stringify({ ...whole, format: 2 })
+            : "[]",
+      );
+      const after = w.projector();
+      const start = await after.start();
+      expect(start.rebuild).toBe(true);
+      expect(existsSync(w.journal)).toBe(false);
+      const reports = await settle(after);
+      expect(reports.reduce((sum, r) => sum + r.rescued, 0)).toBe(0);
+      expect(catalogOf(w.dir).map((line) => line.id)).not.toContain(a);
+      expect(existsSync(join(w.dir, ...path.split("/")))).toBe(false);
+      expectCatalogInTree(w.dir);
+      checkWatermark(w.dir, w.reader);
+      expectSameTree(treeOf(w.dir), await freshRender());
     });
   }
 
@@ -257,66 +320,87 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     expectSameTree(treeOf(w.dir), await freshRender());
   });
 
-  test("what a batch moved aside is reported before its journal goes: also when its record then could not be written, and after a kill at the next start", async () => {
-    const reported: Rescued[] = [];
-    const onRescued = (r: Rescued): void => {
-      reported.push(r);
+  test("what a batch moved aside is told from its rescue folders: also when its record could not be written, again after a kill before the record kept it, and again at the next batch and the next start while the receiver cannot record it; never again once recorded", async () => {
+    const told: Rescued[] = [];
+    let refuse = false;
+    const onRescued = (r: Rescued): Promise<void> => {
+      if (refuse) return Promise.reject(Object.assign(new Error("fixture"), { code: "EBUSY" }));
+      told.push(r);
+      return Promise.resolve();
     };
+    const one = { stem: expect.stringMatching(STEM_PATH) as string, files: 1 };
     const first = w.projector({ onRescued });
     await first.start();
     await settle(first);
-    const [a, b] = catalogOf(w.dir);
-    const edit = (path: string, text: string): void => {
-      const abs = join(w.dir, ...path.split("/"));
+    const [a, b, c, d, e] = catalogOf(w.dir);
+    const edit = (line: { id: string; path: string } | undefined, text: string): void => {
+      const abs = join(w.dir, ...(line?.path ?? "").split("/"));
       chmodSync(abs, 0o600);
       writeFileSync(abs, text);
+      w.submit([{ kind: "task.patch", task: line?.id ?? "", set: { summary: text.trim() } }]);
     };
-    edit(a?.path ?? "", "A person's edit before a failed batch.\n");
-    w.submit([{ kind: "task.patch", task: a?.id ?? "", set: { summary: "Rescue fixture" } }]);
+    // A batch whose record then could not be written tells once.
+    edit(a, "A person's edit before a failed batch.\n");
     vi.spyOn(TrustedState.prototype, "writeRecord").mockImplementationOnce(() => {
       throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
     });
     await expect(first.step()).rejects.toMatchObject({ code: "ENOSPC" });
     vi.restoreAllMocks();
-    expect(reported).toEqual([{ stem: expect.stringMatching(STEM_PATH) as string, files: 1 }]);
+    expect(told).toEqual([one]);
     await settle(first);
-    expect(reported).toHaveLength(1);
-    // A batch killed right after its rescue: the next start reports it, once.
-    edit(b?.path ?? "", "A person's edit before a kill.\n");
-    w.submit([{ kind: "task.patch", task: b?.id ?? "", set: { summary: "Kill fixture" } }]);
-    let dead = false;
+    expect(told).toHaveLength(1);
+    // Told, then killed before the record kept it: the next start tells it again (at least once;
+    // the service keeps one entry per stem).
+    edit(b, "A person's edit before a kill.\n");
+    let armed = false;
     const doomed = w.projector({
       onRescued,
       at: (act) => {
-        if (dead || act === "rename") {
-          dead = true;
-          throw new Error("fixture kill");
-        }
+        if (armed && act === "record") throw new Error("fixture kill");
       },
     });
     await doomed.start();
-    await doomed.step().catch(() => undefined);
-    expect(dead).toBe(true);
-    // What the doomed batch still reported does not count: a killed process reports nothing.
-    reported.length = 0;
-    // A start that reports them and is killed before its journal goes: the next start reports
-    // them again (at least once; the service keeps one entry per stem).
-    const cut = w.projector({
-      onRescued,
-      at: (act) => {
-        if (act === "journal-drop") throw new Error("fixture kill");
-      },
-    });
-    await expect(cut.start()).rejects.toThrow("fixture kill");
-    expect(reported).toEqual([{ stem: expect.stringMatching(STEM_PATH) as string, files: 1 }]);
+    armed = true;
+    await expect(doomed.step()).rejects.toThrow();
+    expect(told).toHaveLength(2);
+    const again = w.projector({ onRescued });
+    expect((await again.start()).rescued).toBe(1);
+    expect(told).toHaveLength(3);
+    expect(told[2]).toEqual(told[1]);
+    await settle(again);
+    // The receiver cannot record it: the stem stays untold; the next batch tells again.
+    refuse = true;
+    edit(c, "A person's edit while the settings are locked.\n");
+    await settle(again);
+    w.submit([{ kind: "task.patch", task: d?.id ?? "", set: { summary: "Still locked" } }]);
+    await settle(again);
+    expect(told).toHaveLength(3);
+    refuse = false;
+    w.submit([{ kind: "task.patch", task: d?.id ?? "", set: { summary: "Unlocked" } }]);
+    await settle(again);
+    expect(told).toHaveLength(4);
+    expect(told[3]).toEqual(one);
+    expect(told[3]?.stem).not.toBe(told[0]?.stem);
+    // And the next start tells one its batch could not.
+    refuse = true;
+    edit(e, "A person's edit before a restart.\n");
+    await settle(again);
+    expect(told).toHaveLength(4);
+    refuse = false;
     const after = w.projector({ onRescued });
     expect((await after.start()).rescued).toBe(1);
-    await settle(after);
-    expect(reported).toHaveLength(2);
-    expect(reported[1]).toEqual(reported[0]);
+    expect(told).toHaveLength(5);
+    // Never again once recorded.
+    const last = w.projector({ onRescued });
+    expect((await last.start()).rescued).toBe(0);
+    await settle(last);
+    expect(told).toHaveLength(5);
+    expect(new Set(told.map((r) => r.stem)).size).toBe(4);
     expect([...rescuedOf().values()].sort()).toEqual([
       "A person's edit before a failed batch.\n",
       "A person's edit before a kill.\n",
+      "A person's edit before a restart.\n",
+      "A person's edit while the settings are locked.\n",
     ]);
   });
 

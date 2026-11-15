@@ -19,7 +19,17 @@
 //    the watermark last published, so it never moves backwards. The journal names them first. Only
 //    once all four are placed do the retired files go, each only by the proof of ownership: the
 //    catalogue that no longer names them is in place.
-// 5. The record is written, then the journal dropped; then `*` is reported, when it was dirty.
+// 5. The rescues not told yet are told (rule 3), the record is written, then the journal dropped;
+//    then `*` is reported, when it was dirty.
+//
+// **Unknown is never nothing** (rule 1): a record or a journal that is there and does not read back
+// whole starts like a missing record, with every task queued: only a file that is not there means
+// that nothing is pending.
+//
+// **Rescues are told from their folders**: every real `exchange/rescued/<stem>-<n>` with a `view`
+// in it is a rescue, whatever the trusted state says. The record keeps the stems told; a stem not
+// in it is told at the next start and after every batch that rescued or could not tell, until the
+// receiver returns. So a failure tells again, never less.
 //
 // **Reconciliation** (rule 5), file by file: at start, after a batch with a failure or one that
 // found a folder of the tree missing or not real, and when asked (`tasks view rebuild`, which also
@@ -31,7 +41,7 @@
 //
 // **Evidence goes last** (A1 3.13): the journal is dropped, and a record that no longer says why
 // something must still happen is written, only once what depends on it is durable elsewhere: the
-// writer's outbox for tasks to render again, the service's answer for a batch's rescues. A kill in
+// writer's outbox for tasks to render again, the receiver's answer for a stem told. A kill in
 // between finds the evidence and does the work again; each is safe to repeat.
 //
 // **A kill** leaves temporary files and the journal. The next start plays the journal forward: a
@@ -98,10 +108,11 @@ export interface ProjectorOptions {
   /** Each reconciliation, as soon as it has run: `tasks view rebuild` is answered by a full one. */
   readonly onReconciled?: (reconciled: Reconciled) => void;
   /**
-   * Each batch that moved entries aside (rule 3), also when the batch then failed; and at a start,
-   * a killed batch's. For the record of rescues the UI shows (A1 3.13). At least once: it is told
-   * before the journal that names the batch's stem is dropped, and waited for, so a kill in between
-   * tells it again at the next start. The receiver keeps one entry per stem.
+   * Each batch's rescues (rule 3), for the record of rescues the UI shows (A1 3.13): once per stem
+   * of the rescue folders on disk, told at least once. The rescue folders are the evidence: a stem
+   * whose telling throws or rejects stays untold and is told again at the next batch and the next
+   * start, and one told is kept in the record only once the receiver returned, so the receiver
+   * returns only once the rescue is saved, and keeps one entry per stem.
    */
   readonly onRescued?: (rescue: Rescued) => void | Promise<void>;
 }
@@ -158,9 +169,8 @@ export interface StartReport {
   readonly temps: number;
   /** A journal a kill left was played forward. */
   readonly recovered: boolean;
-  /** Entries the killed batch rescued before it could report them. */
+  /** Entries of rescue folders this start told: rescues a batch made and had not told (rule 3). */
   readonly rescued: number;
-  readonly rescueStem?: string;
   readonly reconciled: Reconciled;
 }
 
@@ -207,6 +217,8 @@ export class Projector {
   #republish = false;
   /** Files of the record that no task's line and no root file names any more. */
   #retired = new Set<string>();
+  /** A telling of rescues failed: the next batch tells again, rescued or not (rule 3). */
+  #untold = false;
   /** Tasks whose file could not be placed: read again once `until` has passed (rule 7). */
   readonly #waiting = new Map<string, { until: number; pause: number }>();
 
@@ -252,8 +264,10 @@ export class Projector {
    */
   async start(): Promise<StartReport> {
     this.#state.prepare();
-    const journal = this.#state.readJournal();
-    const found = this.#state.readRecord();
+    const journalRead = this.#state.readJournal();
+    const recordRead = this.#state.readRecord();
+    const journal = journalRead.kind === "read" ? journalRead.value : undefined;
+    const found = recordRead.kind === "read" ? recordRead.value : undefined;
     const pending = readPending(this.#conn);
     const record = found ?? newRecord(identityOf(pending));
     let recovered = false;
@@ -287,40 +301,33 @@ export class Projector {
       for (const id of journal.gone) unverified.add(id);
       recovered = true;
     }
-    const rescued = journal === undefined ? [] : this.#tree.rescuedBy(journal.stem);
     const temps = this.#tree.cleanTemps(journal?.temps ?? []);
-    let full = found === undefined;
-    if (!sameIdentity(record.identity, pending) || record.watermark > pending.lastSeq) {
-      full = true;
-    }
+    // Unknown is never nothing (rule 1): a record or a journal that is there and does not read
+    // back whole may hide what a batch did (a task it found gone, a file it placed), so every task
+    // is rendered again, and the record's files still prove nothing but by their bytes.
+    let full = found === undefined || journalRead.kind === "unreadable";
+    const other = !sameIdentity(record.identity, pending) || record.watermark > pending.lastSeq;
+    if (other) full = true;
     // Before the record that no longer says why: a kill after it must find every task queued.
     if (full) await this.#queueAll(record);
     record.identity = identityOf(pending);
-    if (full) record.watermark = 0;
+    // The writer's W holds back until every queued task is rendered; the claim last published
+    // stays the record's, which has none without a record of this identity.
+    if (other) record.watermark = 0;
     this.#record = record;
     this.#republish = false;
+    // Rescues a batch made and could not tell (a kill, a failed telling): before the record that
+    // keeps the stems told, so a kill in between tells them again (rule 3).
+    const rescued = await this.#tell();
     this.#save();
     // The writer may have marked them rendered before the kill: they are queued again, so the
     // watermark never covers a task whose file is not on disk and in the record (rule 7).
     await this.#queue([...unverified]);
-    // Told before the journal that names them goes: a kill in between tells it again.
-    if (journal !== undefined) {
-      await this.#rescued(`exchange/rescued/${journal.stem}`, rescued.length);
-    }
-    // Only now: until the record is written, they are queued and the rescues told, the journal is
-    // what a next start plays.
+    // Only now: until the record is written and they are queued, the journal is what a next start
+    // plays.
     this.#state.dropJournal();
     const reconciled = await this.#reconcileNow(full);
-    return {
-      rebuild: full,
-      temps,
-      recovered,
-      rescued: rescued.length,
-      ...(rescued.length === 0 || journal === undefined
-        ? {}
-        : { rescueStem: `exchange/rescued/${journal.stem}` }),
-      reconciled,
-    };
+    return { rebuild: full, temps, recovered, rescued, reconciled };
   }
 
   /**
@@ -492,7 +499,7 @@ export class Projector {
       placing.set(plan.next.path, plan.next);
       temps.push(tempPathOf(plan.next.path, plan.next.sha256, tag));
     }
-    this.#state.writeJournal({ stem: rescues.stem, temps, placing, gone });
+    this.#state.writeJournal({ temps, placing, gone });
     const counts = { written: 0, removed: 0, failed: 0, blocked: 0 };
     let code: string | undefined;
     let published = false;
@@ -552,6 +559,9 @@ export class Projector {
         published = outcome.published;
       }
     } finally {
+      // What the batch moved aside, also when it failed: its rescue folders hold it either way.
+      // Before the record, which keeps the stems told (rule 3).
+      if (rescues.made.length > 0 || this.#untold) await this.#tell();
       // Whatever happened is what the record says now. A kill skips this: start() plays the journal.
       try {
         this.#save();
@@ -559,9 +569,6 @@ export class Projector {
         // The journal stays, and the next batch writes the record before anything else.
         unsaved = new ProjectionError(codeOf(error), "The projection's record was not written");
       }
-      // Also when the batch failed, and before the journal that names its stem goes: what it
-      // moved aside is in its rescue folders either way.
-      await this.#rescued(`exchange/rescued/${rescues.stem}`, rescues.made.length);
       if (unsaved === undefined) {
         try {
           this.#state.dropJournal();
@@ -594,14 +601,37 @@ export class Projector {
     this.#waiting.set(key, { until: this.#now() + pause, pause });
   }
 
-  /** Tells onRescued of `files` entries moved aside into `<stem>-<n>`, when there are any. */
-  async #rescued(stem: string, files: number): Promise<void> {
-    if (files === 0) return;
+  /**
+   * Tells onRescued of each rescue folder's stem on disk that the record has not told (rule 3),
+   * oldest first, and forgets the told stems whose folders are gone. The folders are the evidence:
+   * a stem is told until a telling succeeds, and one that fails is told again at the next batch and
+   * the next start. Never throws. Returns how many entries it told.
+   */
+  async #tell(): Promise<number> {
+    const record = this.#rec;
+    let found: Map<string, number>;
     try {
-      await this.#onRescued?.({ stem, files });
+      found = this.#tree.rescueFolders();
     } catch {
-      // The receiver's: the rescue folders hold the entries either way.
+      this.#untold = true;
+      return 0;
     }
+    for (const stem of record.told) if (!found.has(stem)) record.told.delete(stem);
+    let told = 0;
+    for (const [stem, files] of found) {
+      if (record.told.has(stem)) continue;
+      try {
+        await this.#onRescued?.({ stem: `exchange/rescued/${stem}`, files });
+      } catch {
+        // Not recorded: the folders stay the evidence, and the next batch or start tells again.
+        this.#untold = true;
+        return told;
+      }
+      record.told.add(stem);
+      told += files;
+    }
+    this.#untold = false;
+    return told;
   }
 
   /** A task's line goes or moves: the file its old line named is retired, if no root file. */
@@ -696,7 +726,6 @@ export class Projector {
       temps.push(tempPathOf(path, file.sha256, batch.tag));
     }
     this.#state.writeJournal({
-      stem: batch.rescues.stem,
       temps,
       placing,
       gone: batch.gone,

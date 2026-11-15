@@ -1,8 +1,9 @@
 // Shared set-up for the projection's tests: the Mira sample space with its writer in this thread,
 // a reader for the projector, a machine-state folder of its own for the trusted record and journal,
 // and the checks every test runs on a tree. Fixture text only.
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import fs, { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { join, relative, resolve, sep } from "node:path";
 import { expect } from "vitest";
 import {
   formatAsOf,
@@ -271,6 +272,64 @@ export function inTree(dir: string, path: string): boolean {
 /** No temporary file in the tree. */
 export function expectClean(dir: string): void {
   for (const path of filesOf(dir).keys()) expect(path, "no temporary file").not.toMatch(/\.tmp$/);
+}
+
+/** What one write to the trusted state does under a fault: all of it, half of it, or ENOSPC. */
+export type Fault = "whole" | "short" | "enospc";
+
+type FsCall = (...args: unknown[]) => unknown;
+
+/**
+ * Faults in the writes of the trusted state, as a full or failing volume gives them: node:fs's
+ * openSync, closeSync and writeSync are wrapped for every importer (module's
+ * syncBuiltinESMExports), and the n-th write call (from 1) to a file opened in `state` does what
+ * `plan(n)` says. A short write takes half the bytes it was given, at least one, and returns that
+ * count, as a write on a filling volume does. Returns the function that ends the faults.
+ */
+export function faultState(state: string, plan: (n: number) => Fault): () => void {
+  const table = fs as unknown as Record<string, FsCall>;
+  const real = {
+    openSync: table["openSync"] as FsCall,
+    closeSync: table["closeSync"] as FsCall,
+    writeSync: table["writeSync"] as FsCall,
+  };
+  const inside = `${resolve(state)}${sep}`;
+  const fds = new Set<unknown>();
+  let n = 0;
+  table["openSync"] = (...args) => {
+    const fd = real.openSync(...args);
+    if (typeof args[0] === "string" && resolve(args[0]).startsWith(inside)) fds.add(fd);
+    return fd;
+  };
+  table["closeSync"] = (...args) => {
+    fds.delete(args[0]);
+    return real.closeSync(...args);
+  };
+  table["writeSync"] = (fd, data, ...rest) => {
+    if (!fds.has(fd)) return real.writeSync(fd, data, ...rest);
+    n += 1;
+    const what = plan(n);
+    if (what === "enospc") {
+      throw Object.assign(new Error("fixture: no space left on the volume"), { code: "ENOSPC" });
+    }
+    if (what === "whole") return real.writeSync(fd, data, ...rest);
+    const offset = typeof rest[0] === "number" ? rest[0] : 0;
+    const bytes =
+      typeof data === "string"
+        ? Buffer.from(data, "utf8")
+        : Buffer.from(
+            (data as Uint8Array).subarray(
+              offset,
+              typeof rest[1] === "number" ? offset + rest[1] : undefined,
+            ),
+          );
+    return real.writeSync(fd, bytes, 0, Math.max(1, Math.floor(bytes.length / 2)));
+  };
+  syncBuiltinESMExports();
+  return () => {
+    Object.assign(table, real);
+    syncBuiltinESMExports();
+  };
 }
 
 /** The end of a process: thrown at the kill and at every act after it. */

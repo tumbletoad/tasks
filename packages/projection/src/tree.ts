@@ -202,6 +202,11 @@ export class Rescues {
   }
 }
 
+/** A rescue stem as the projector makes it: a time stamp and 16 random bits. */
+export const STEM = /^[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
+/** One rescue folder: `<stem>-<n>`. */
+const RESCUE_FOLDER = /^([0-9]{8}T[0-9]{9}Z-[0-9a-f]{4})-[1-9][0-9]{0,5}$/;
+
 /** A new batch's rescue stem: the time, and 16 random bits so two batches in one millisecond differ. */
 export const newStem = (now: number): string =>
   `${new Date(now).toISOString().replace(/[-:.]/g, "")}-${randomBytes(2).toString("hex")}`;
@@ -661,19 +666,28 @@ export class Tree {
   }
 
   /**
-   * The rescue folders of the batch `stem` that hold what it rescued, relative to the space's
-   * folder: what a killed batch rescued before it could report it.
+   * The projection's rescue folders on disk (rule 3), by their batch's stem, oldest first, with
+   * how many each stem has: every real folder `exchange/rescued/<stem>-<n>` with a `view` in it,
+   * reached through real folders. They are the evidence of what was rescued, whatever the trusted
+   * state says, so a rescue is told until it is (projector.ts). Read only, nothing followed.
    */
-  rescuedBy(stem: string): string[] {
-    const rescued = join(this.#space, "exchange", "rescued");
-    if (lstatSync(rescued, { throwIfNoEntry: false })?.isDirectory() !== true) return [];
-    return readdirSync(rescued)
-      .filter(
-        (name) =>
-          name.startsWith(`${stem}-`) &&
-          /^[0-9]{1,6}$/.test(name.slice(stem.length + 1)) &&
-          lstatSync(join(rescued, name, "view"), { throwIfNoEntry: false }) !== undefined,
-      )
-      .map((name) => `exchange/rescued/${name}`);
+  rescueFolders(): Map<string, number> {
+    const found = new Map<string, number>();
+    const exchange = join(this.#space, "exchange");
+    const rescued = join(exchange, "rescued");
+    for (const folder of [exchange, rescued]) {
+      if (lstatSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) return found;
+    }
+    for (const name of readdirSync(rescued).sort()) {
+      const match = RESCUE_FOLDER.exec(name);
+      const stem = match?.[1];
+      if (stem === undefined) continue;
+      if (lstatSync(join(rescued, name), { throwIfNoEntry: false })?.isDirectory() !== true) {
+        continue;
+      }
+      if (lstatSync(join(rescued, name, "view"), { throwIfNoEntry: false }) === undefined) continue;
+      found.set(stem, (found.get(stem) ?? 0) + 1);
+    }
+    return found;
   }
 }
