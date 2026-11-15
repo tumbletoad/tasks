@@ -19,6 +19,8 @@ const SLOW = 180_000;
 const SENTINEL = "TASKS_PRINT_SENTINEL";
 /** The variable a line sets for its command. */
 const SET = "TASKS_LINE_TEST";
+/** The byte order mark that makes Windows PowerShell 5.1 read a script as UTF-8. */
+const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 let base = "";
 /** Folders that hold a stub named `claude`, by how the shell reaches it. */
@@ -84,11 +86,20 @@ function shells(): Shell[] {
       },
     ];
   }
+  let scripts = 0;
   const powershell = (name: string, exe: string): Shell => ({
     name,
     run: (line, path) => {
-      // The line as typed: -EncodedCommand takes it as UTF-16, with no file or code page between.
-      const encoded = Buffer.from(line, "utf16le").toString("base64");
+      // The line as typed, in a script of this test's own folder. UTF-8 with a byte order mark is
+      // the one encoding both PowerShell 7 and Windows PowerShell 5.1 read as written (5.1 reads a
+      // file without one in the ANSI code page), so the line reaches the parser byte-exact,
+      // non-ASCII words too, with no code page and no command-line quoting between. Standard input
+      // would pass the console's code page; an encoded command line looks like an attack to
+      // antivirus heuristics. RemoteSigned runs this local script and the `.ps1` shim, as npm's
+      // shims need on any machine that uses them.
+      scripts += 1;
+      const script = join(base, `line-${String(scripts)}.ps1`);
+      writeFileSync(script, Buffer.concat([UTF8_BOM, Buffer.from(line, "utf8")]));
       const ran = spawnSync(
         exe,
         [
@@ -96,12 +107,13 @@ function shells(): Shell[] {
           "-NoProfile",
           "-NonInteractive",
           "-ExecutionPolicy",
-          "Bypass",
-          "-EncodedCommand",
-          encoded,
+          "RemoteSigned",
+          "-File",
+          script,
         ],
         { env: env(path), encoding: "utf8", windowsHide: true, timeout: 120_000 },
       );
+      rmSync(script, { force: true });
       return answer(ran.stdout);
     },
   });
@@ -229,7 +241,22 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
     () => {
       expect(MAX_LINE_BYTES).toBe(4095);
       const head = "claude ";
-      const at = ["claude", "x".repeat(MAX_LINE_BYTES - head.length)];
+      // A realistic line at the bound: ordinary words that need no quoting, the last one cut to
+      // fill the line to the exact byte.
+      const vocabulary =
+        "review the open tasks of this week and update each one with its next step";
+      const words = vocabulary.split(" ");
+      const at = ["claude"];
+      for (let i = 0; ; i += 1) {
+        const word = words[i % words.length] ?? "task";
+        const room = MAX_LINE_BYTES - Buffer.byteLength(at.join(" "), "utf8") - 1;
+        if (room <= word.length + 1 + "notes".length) {
+          at.push("notes".repeat(room).slice(0, room));
+          break;
+        }
+        at.push(word);
+      }
+      expect(at.length).toBeGreaterThan(500);
       const line = shellLine(process.platform, at);
       expect(line === undefined ? -1 : Buffer.byteLength(line, "utf8")).toBe(MAX_LINE_BYTES);
       for (const shell of shells()) {
