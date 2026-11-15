@@ -2,8 +2,8 @@
 // Linux and macOS only: on Windows the profile's ACL is
 // doctor's to check.
 //
-// The rule: a file or folder Tasks trusts must belong to this user, and every user may not write
-// it. Its group may write it only when that group is the person's own private group: the object's
+// The rule: a file or folder Tasks trusts must belong to this user and may not be writable by every
+// user. Its group may write it only when that group is the person's own private group: the object's
 // group ID is the person's primary group ID, and that group's name is the person's user name (the
 // user private groups of distributions whose umask is 002). Any other group's write is refused,
 // because whether a group has members besides the person cannot be known for certain (a directory
