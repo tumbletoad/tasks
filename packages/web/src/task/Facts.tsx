@@ -4,7 +4,7 @@
 // under the control (edit/Unsaved.tsx). A fact without a value is an empty control a person can
 // fill. Editable values sit in outlined controls; that outline is the only hint that a value can be
 // changed by hand. A finished task's facts are read-only text.
-import { useContext, useEffect, useRef, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ToggleButton, ToggleButtonGroup, type Key } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -17,7 +17,7 @@ import {
 } from "../edit/change.ts";
 import { whoOf } from "../edit/edits.ts";
 import { Unsaved } from "../edit/Unsaved.tsx";
-import { useEdits } from "../edit/useEdits.ts";
+import { useEditState, useEdits } from "../edit/useEdits.ts";
 import { areaSlots } from "../groups.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { formatDay, formatInstant, localDate, type Clock } from "../row/dates.ts";
@@ -158,10 +158,18 @@ function Segmented({
 /**
  * Who the task waits on: a text field that saves on Enter or when focus leaves it, with the people
  * the space's tasks wait on as suggestions. Escape puts the saved value back. Its base is taken
- * when the person starts to type, and a change by someone else meanwhile shows under it while
- * the typed text stays.
+ * when the person starts to type (again, after an Enter), and a change by someone else meanwhile
+ * shows under it while the typed text stays. A field that goes away while the person edits it
+ * (the card collapses, the task leaves the view) saves what was typed, as leaving it does.
  */
-function WaitingOn({ task }: { readonly task: TaskRow }) {
+function WaitingOn({
+  task,
+  onEditing,
+}: {
+  readonly task: TaskRow;
+  /** The person is in the field: the fact stays shown while they are, whatever the status. */
+  readonly onEditing: (editing: boolean) => void;
+}) {
   const t = useT();
   const edits = useEdits();
   const { live } = useContext(Session);
@@ -171,6 +179,10 @@ function WaitingOn({ task }: { readonly task: TaskRow }) {
   const opened = useRef<{ base: string | undefined; mark: number; value: string } | undefined>(
     undefined,
   );
+  /** What the person typed, for a save when the field goes away under them. */
+  const typed = useRef<string | undefined>(undefined);
+  const latest = useRef(task);
+  latest.current = task;
   const saved = task.waiting_on ?? "";
   // A new saved value shows in the field only while the person is not editing it.
   useEffect(() => {
@@ -179,17 +191,33 @@ function WaitingOn({ task }: { readonly task: TaskRow }) {
   const people = [...new Set([...state.tasks.values()].map((r) => r.waiting_on ?? ""))]
     .filter((p) => p !== "")
     .sort((a, b) => a.localeCompare(b));
-  const save = () => {
+  const begin = () => {
+    opened.current ??= { base: live.store.asOf, mark: edits.mark(), value: saved };
+  };
+  const send = (value: string | undefined) => {
     const was = opened.current;
     opened.current = undefined;
-    const value = (field.current?.value ?? "").trim();
-    if (was === undefined || value === was.value) return;
+    typed.current = undefined;
+    const text = (value ?? "").trim();
+    if (was === undefined || value === undefined || text === was.value) return;
     edits.edit(
-      task,
-      waitingChange(value === "" ? undefined : value),
+      latest.current,
+      waitingChange(text === "" ? undefined : text),
       was.base === undefined ? {} : { base: was.base },
     );
   };
+  const save = () => {
+    send(field.current?.value);
+  };
+  // Gone under the person: what they typed is saved, never dropped. `send` reads only refs.
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  useEffect(
+    () => () => {
+      sendRef.current(typed.current);
+    },
+    [],
+  );
   const list = `waiting-people-${task.id}`;
   // Someone else changed it while the person edits: the typed text stays (A5 3.15 item 9).
   const changed =
@@ -209,7 +237,13 @@ function WaitingOn({ task }: { readonly task: TaskRow }) {
         maxLength={80}
         dir="auto"
         onFocus={() => {
-          opened.current ??= { base: live.store.asOf, mark: edits.mark(), value: saved };
+          begin();
+          onEditing(true);
+        }}
+        onInput={(event) => {
+          // Typing again after an Enter is a new edit, with its own base.
+          begin();
+          typed.current = event.currentTarget.value;
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
@@ -224,12 +258,14 @@ function WaitingOn({ task }: { readonly task: TaskRow }) {
               field.current.value = saved;
             }
             opened.current = undefined;
+            typed.current = undefined;
           }
         }}
         onBlur={() => {
           // Leaving the window is not leaving the field: what was typed stays for the return.
           if (!document.hasFocus()) return;
           save();
+          onEditing(false);
         }}
       />
       <datalist id={list}>
@@ -249,6 +285,10 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const t = useT();
   const state = useLive();
   const edits = useEdits();
+  // Re-rendered when an unsaved value comes or goes.
+  useEditState();
+  // Who it waits on stays shown while the person is in it, even when the status moves on.
+  const [waitingOpen, setWaitingOpen] = useState(false);
   const area = task.area_id === undefined ? undefined : state.areas.get(task.area_id);
   const project = task.project_id === undefined ? undefined : state.projects.get(task.project_id);
   const slot = area === undefined ? undefined : areaSlots(state.areas.values()).get(area.id);
@@ -331,9 +371,11 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         ) : null}
         <Unsaved task={task.id} field="status" />
       </Fact>
-      {task.status === "waiting" ? (
+      {task.status === "waiting" ||
+      waitingOpen ||
+      edits.unsaved(task.id, "waiting_on") !== undefined ? (
         <Fact label={t("fact.waitingOn")}>
-          <WaitingOn task={task} />
+          <WaitingOn task={task} onEditing={setWaitingOpen} />
           <Unsaved task={task.id} field="waiting_on" />
         </Fact>
       ) : null}

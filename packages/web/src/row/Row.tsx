@@ -271,10 +271,30 @@ function TitleEditor({
     title: task.title,
   }));
   const before = opened.title;
+  /** What the person typed, for a save when the editor goes away under them. */
+  const typed = useRef<string | undefined>(undefined);
+  const latest = useRef(task);
+  latest.current = task;
   useEffect(() => {
     field.current?.focus();
     field.current?.select();
   }, []);
+  // The row goes away while the person types (the task leaves the view, the card collapses): what
+  // they typed is saved, as leaving the field does, never dropped.
+  useEffect(
+    () => () => {
+      const title = (typed.current ?? "").trim();
+      if (done.current || title === "" || title === before) return;
+      done.current = true;
+      edits.edit(
+        latest.current,
+        titleChange(title),
+        opened.base === undefined ? {} : { base: opened.base },
+      );
+    },
+    // The editor's own values, fixed while it is open.
+    [edits, before, opened],
+  );
   const finish = (keep: boolean) => {
     if (done.current) return;
     done.current = true;
@@ -301,6 +321,9 @@ function TitleEditor({
         defaultValue={before}
         maxLength={500}
         dir="auto"
+        onInput={(event) => {
+          typed.current = event.currentTarget.value;
+        }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter") {
