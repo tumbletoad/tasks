@@ -488,3 +488,100 @@ describe("[A2.3.2.4.config.edit-remove] taking out an element exactly as it was 
     });
   });
 });
+
+describe("[A2.3.2.4.config.edit-element] setting a key in one element of an array of tables", () => {
+  const ID = "sp_43f0gjcvzgaa1gh5my6qxwcj7m";
+  const byPath =
+    (path: string) =>
+    (element: Readonly<Record<string, unknown>>): boolean =>
+      element["path"] === path;
+  const FILE = [
+    "# My spaces.",
+    "[[spaces]]",
+    `id = "${ID}"   # the work space`,
+    'path = "/home/mira/Tasks/work"',
+    "",
+    "# Home, kept closed.",
+    "[[spaces]]",
+    `id = "sp_3z8sm956jp8dajmtsar5kx026c"`,
+    'path = "/home/mira/Tasks/home"',
+    "enabled = false # for now",
+    "",
+    "[spaces.notes]",
+    'colour = "green"',
+    "",
+    "[log]",
+    'level = "info"',
+    "",
+  ].join("\n");
+
+  test("a key is added after the element's last key, or its value replaced in place; every other byte stays", () => {
+    const added = applied(FILE, [
+      {
+        op: "set_in_element",
+        array: "spaces",
+        select: byPath("/home/mira/Tasks/work"),
+        key: "enabled",
+        value: false,
+      },
+    ]);
+    expect(added).toBe(
+      FILE.replace(
+        'path = "/home/mira/Tasks/work"\n',
+        'path = "/home/mira/Tasks/work"\nenabled = false\n',
+      ),
+    );
+    // A value already written is replaced in place, and its comment stays. The sub-table after
+    // the element stays the element's.
+    const replaced = applied(FILE, [
+      {
+        op: "set_in_element",
+        array: "spaces",
+        select: byPath("/home/mira/Tasks/home"),
+        key: "enabled",
+        value: true,
+      },
+    ]);
+    expect(replaced).toBe(FILE.replace("enabled = false # for now", "enabled = true # for now"));
+    // CRLF files get CRLF lines.
+    const crlf = FILE.replaceAll("\n", "\r\n");
+    expect(
+      applied(crlf, [
+        {
+          op: "set_in_element",
+          array: "spaces",
+          select: byPath("/home/mira/Tasks/work"),
+          key: "id",
+          value: "sp_0123456789abcdefghjkmnpqrs",
+        },
+      ]),
+    ).toBe(crlf.replace(`id = "${ID}"`, 'id = "sp_0123456789abcdefghjkmnpqrs"'));
+  });
+
+  test("no element picked is absent; two picked, or an inline array, is refused; nothing changes", () => {
+    const edit = (select: (e: Readonly<Record<string, unknown>>) => boolean): Edit => ({
+      op: "set_in_element",
+      array: "spaces",
+      select,
+      key: "enabled",
+      value: false,
+    });
+    expect(applyEdits(FILE, [edit(byPath("/elsewhere"))])).toEqual({
+      ok: false,
+      reason: "absent",
+    });
+    expect(applyEdits('[log]\nlevel = "info"\n', [edit(() => true)])).toEqual({
+      ok: false,
+      reason: "absent",
+    });
+    expect(applyEdits(FILE, [edit(() => true)])).toEqual({
+      ok: false,
+      reason: "unsupported_layout",
+    });
+    const inline = `spaces = [{ id = "${ID}", path = "/w" }]\n`;
+    expect(applyEdits(inline, [edit(byPath("/w"))])).toEqual({
+      ok: false,
+      reason: "unsupported_layout",
+    });
+  });
+});
