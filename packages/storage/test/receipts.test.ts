@@ -597,6 +597,34 @@ describe("[A1.5.write.receipts] the intent, the writer scope and receipt.get", (
     expect(none).toEqual({ found: false });
   });
 
+  test("an undo conflict's receipt names the commit it met, so a caller whose reply was lost can name it next", () => {
+    const task = create();
+    const mine = fx.writer.submit(
+      fx.request(fx.human, [{ kind: "task.patch", task, set: { title: "Review" } }], {
+        base: fx.base(),
+        undoable: true,
+      }),
+    );
+    expectStatus(mine, "applied");
+    expectStatus(
+      fx.writer.submit(
+        fx.request(fx.codex, [{ kind: "task.patch", task, set: { title: "Plan" } }], {
+          base: fx.base(),
+        }),
+      ),
+      "applied",
+    );
+    const undo = fx.request(fx.human, [{ kind: "undo" }]);
+    const refused = fx.writer.submit(undo);
+    expectStatus(refused, "conflict");
+    expect(refused.target).toBe(mine.commit);
+    const output = receiptResult(
+      fx.writer.receipt({ scope_id: undo.actor.scope_id, request_id: undo.request_id }),
+    );
+    expect(ReceiptGetResult.safeParse(output).error).toBeUndefined();
+    expect(output).toMatchObject({ found: true, status: "conflict", target: mine.commit });
+  });
+
   test("receipt.get through the writer worker returns the stored result, or nothing", async () => {
     const request = fx.request(fx.human, [{ kind: "task.create", title: "Fix the export" }]);
     const first = fx.writer.submit(request);
