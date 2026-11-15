@@ -7,10 +7,6 @@
 //   aside (A1 3.13 rule 3): when, how many, and the stem of its rescue folders relative to the
 //   space's folder (`exchange/rescued/<stem>`, each rescue in `<stem>-<n>`: a time stamp, never a
 //   task's name). The UI shows each once and removes it (A5). The newest MAX_RESCUES are kept.
-//
-// Beside this file, in the same folder, the projection keeps its trusted state for the space
-// (`<space_id>.projection.json` and `….projection-journal.json`, A1 3.13 rule 1;
-// projectionStateOf): the projection's worker writes them, nothing else.
 // - `seen`: A6 3.5's `spaces_seen` entry, `{epoch, incarnation}`: the highest epoch this machine
 //   has seen for the space. A claim and a restore in place go above it (A1 3.18,
 //   `knownEpochs`). The service records it when a writer opens the space as its authority and
@@ -27,9 +23,16 @@
 //   MAX_FAILED_MIGRATIONS of the current build are kept. An entry that does not read back whole is
 //   no entry: the open then tries again, behind a new barrier backup, which is the safe direction.
 //
+// Beside this file, in the same folder, the projection keeps its trusted state for each folder
+// that holds the space (`<space_id>.<folder key>.projection.json` and
+// `….projection-journal.json`, A1 3.13 rule 1; projectionStateOf): the projection's worker of
+// that folder writes them, nothing else. Per folder, because the record says what was placed in
+// one folder's `view/`: two folders that hold one space (a restored copy, claimed) never share one.
+//
 // Fields this module does not know are kept when it writes the file.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { isId, type Id, type MigrationAttempt } from "@tasks/storage";
 import { atomicWrite, makeDir } from "./files.ts";
 
@@ -89,14 +92,32 @@ export interface SpaceSettings {
 const fileOf = (state: string, spaceId: Id<"sp">): string =>
   join(state, SPACES_FOLDER, `${spaceId}.json`);
 
-/** The projection's trusted state for a space (A1 3.13 rule 1): its record and its journal. */
+/**
+ * The key of a space's folder for its projection's state: the start of the SHA-256 of its full
+ * path, compared as the service compares folders (without case on Windows and macOS). No path is
+ * stored, so the state folder never holds one.
+ */
+export function folderKey(folder: string, platform: NodeJS.Platform = process.platform): string {
+  const full = resolve(folder);
+  const text = platform === "win32" || platform === "darwin" ? full.toLowerCase() : full;
+  return createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * The projection's trusted state for the space in `folder` (A1 3.13 rule 1): its record and its
+ * journal, one pair per folder that holds the space.
+ */
 export const projectionStateOf = (
   state: string,
   spaceId: Id<"sp">,
-): { readonly record: string; readonly journal: string } => ({
-  record: join(state, SPACES_FOLDER, `${spaceId}.projection.json`),
-  journal: join(state, SPACES_FOLDER, `${spaceId}.projection-journal.json`),
-});
+  folder: string,
+): { readonly record: string; readonly journal: string } => {
+  const stem = `${spaceId}.${folderKey(folder)}`;
+  return {
+    record: join(state, SPACES_FOLDER, `${stem}.projection.json`),
+    journal: join(state, SPACES_FOLDER, `${stem}.projection-journal.json`),
+  };
+};
 
 /** The file's object, or an empty one when it is missing, too large or not an object. */
 function readRecord(path: string): Record<string, unknown> {

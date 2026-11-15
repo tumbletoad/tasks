@@ -32,10 +32,11 @@
 // not there as the journal meant it, or that the batch found gone, is queued again, since the writer
 // may have marked it rendered.
 // Then it removes the temporary files (tree.ts, rule 4), writes the record, drops the journal and
-// reconciles. A record
-// that is missing or does not read back whole, or that was made for another identity of the space
-// (a restore, a claim) or another format, starts the reconciliation from scratch with every task
-// queued: nothing is deleted on its word.
+// reconciles. A record that is missing or does not read back whole, or of another format, starts
+// the reconciliation from scratch with every task queued: nothing is deleted on its word. The
+// record and journal are this folder's alone (the service keys them by folder), so one made for
+// another identity of the space (a restore in place, a claim) still says what was placed in this
+// `view/`: its files stay the proof, by their bytes, and every task is queued with W from 0.
 import type { Connection, ProjectedBatch } from "@tasks/storage";
 import { PROJECTION_ALL, PROJECTION_BATCH, PROJECTION_QUEUE_KEYS } from "@tasks/storage";
 import { missingTasks, readBatch, readPending, type BatchRead } from "./read.ts";
@@ -89,6 +90,17 @@ export interface ProjectorOptions {
   readonly platform?: NodeJS.Platform;
   /** Each reconciliation, as soon as it has run: `tasks view rebuild` is answered by a full one. */
   readonly onReconciled?: (reconciled: Reconciled) => void;
+  /**
+   * Each batch that moved entries aside (rule 3), once, also when the batch then failed; and at a
+   * start, a killed batch's. For the record of rescues the UI shows (A1 3.13).
+   */
+  readonly onRescued?: (rescue: Rescued) => void;
+}
+
+/** Entries one batch moved aside: each in a folder `<stem>-<n>` (relative to the space's folder). */
+export interface Rescued {
+  readonly stem: string;
+  readonly files: number;
 }
 
 /** What one reconciliation found. Counts only. */
@@ -163,6 +175,7 @@ export class Projector {
   readonly #now: () => number;
   readonly #batch: number;
   readonly #onReconciled: ProjectorOptions["onReconciled"];
+  readonly #onRescued: ProjectorOptions["onRescued"];
   #record: TrustedRecord | undefined;
   /** The record on disk is behind this one: it is written before anything else. */
   #unsaved = false;
@@ -180,6 +193,7 @@ export class Projector {
     this.#now = options.now ?? Date.now;
     this.#batch = options.batch ?? PROJECTION_BATCH;
     this.#onReconciled = options.onReconciled;
+    this.#onRescued = options.onRescued;
     if (!Number.isSafeInteger(this.#batch) || this.#batch < 1 || this.#batch > PROJECTION_BATCH) {
       throw new ProjectionError("EINVAL", "A batch holds 1 to 200 tasks");
     }
@@ -261,6 +275,8 @@ export class Projector {
     // Only now: until the record is written and they are queued, the journal is what a next start
     // plays.
     this.#state.dropJournal();
+    // Once: a start that failed before this finds them again through the journal it kept.
+    if (journal !== undefined) this.#rescued(`exchange/rescued/${journal.stem}`, rescued.length);
     const reconciled = await this.#reconcileNow(full);
     return {
       rebuild: full,
@@ -494,6 +510,8 @@ export class Projector {
           // The record holds what it says: the next batch's journal replaces this one.
         }
       }
+      // Also when the batch failed: what it moved aside is in its rescue folders either way.
+      this.#rescued(`exchange/rescued/${rescues.stem}`, rescues.made.length);
     }
     if (unsaved !== undefined) throw unsaved;
     // Never over a rebuild asked for while the batch waited on the writer: it stays a full one.
@@ -504,6 +522,16 @@ export class Projector {
       await this.#writer.projected({ seq: read.seq, keys: [PROJECTION_ALL] });
     }
     return this.#report(read.seq, watermark, counts, rescues, published, reconciled, code);
+  }
+
+  /** Tells onRescued of `files` entries moved aside into `<stem>-<n>`, when there are any. */
+  #rescued(stem: string, files: number): void {
+    if (files === 0) return;
+    try {
+      this.#onRescued?.({ stem, files });
+    } catch {
+      // The caller's: the rescue folders hold the entries either way.
+    }
   }
 
   /** A task's line goes or moves: the file its old line named is retired, if no root file. */

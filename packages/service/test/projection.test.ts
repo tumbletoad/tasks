@@ -18,6 +18,7 @@ import { backupSpace, newId, type Id } from "@tasks/storage";
 import { checkedDriver, seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService } from "../src/hub/service.ts";
+import { projectionStateOf } from "../src/hub/space-settings.ts";
 import {
   readLog,
   registerSpaces,
@@ -94,8 +95,11 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       "the first render",
     );
     expect(catalog(view)).toHaveLength(12);
-    // The record that authorizes the projection's acts is the product's state, not the tree's.
-    expect(existsSync(join(stateOf(home), "spaces", `${spaceId}.projection.json`))).toBe(true);
+    // The record that authorizes the projection's acts is the product's state, not the tree's,
+    // and the space's folder's own: two folders that hold one space never share one.
+    const state = projectionStateOf(stateOf(home), spaceId, folder);
+    expect(existsSync(state.record)).toBe(true);
+    expect(state.record).not.toBe(projectionStateOf(stateOf(home), spaceId, `${folder}-copy`).record);
     expect(readdirSync(view).filter((name) => name.startsWith(".projection-"))).toEqual([]);
     const s = await classSession(home, service.endpoint.path, "cli-script");
     try {
@@ -135,7 +139,7 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
   }, 120_000);
 
   test("tasks view rebuild: a deleted file comes back and an edited one is moved aside and rendered again; only the user may ask", async () => {
-    const { home, folder } = await setUp("projreb");
+    const { home, folder, spaceId } = await setUp("projreb");
     const service = await start(home, folder);
     const view = join(folder, "view");
     await waitFor(
@@ -189,6 +193,22 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     expect(
       readFileSync(join(rescued, box ?? "", "view", ...(second?.path ?? "").split("/")), "utf8"),
     ).toBe("A person's edit.\n");
+    // The rescue is in the space's settings for the UI to show once, by its batch's stem.
+    const settings = join(stateOf(home), "spaces", `${spaceId}.json`);
+    const listed = await waitFor(
+      () => {
+        if (!existsSync(settings)) return undefined;
+        const value = JSON.parse(readFileSync(settings, "utf8")) as {
+          projection_rescues?: { stem: string; files: number }[];
+        };
+        return value.projection_rescues?.length === 1 ? value.projection_rescues : undefined;
+      },
+      30_000,
+      "the record of the rescue",
+    );
+    expect(listed).toEqual([
+      expect.objectContaining({ stem: `exchange/rescued/${(box ?? "").replace(/-1$/, "")}`, files: 1 }),
+    ]);
   }, 120_000);
 
   test("a restore in place stops the projection before the swap, and the restored space is projected anew", async () => {

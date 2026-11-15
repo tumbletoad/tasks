@@ -3115,7 +3115,7 @@
     },
     {
       "id": "A1.5.projection.recovery",
-      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing, unreadable or of another incarnation reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
+      "title": "The projection's trusted state lives in machine state: a record that could not be written fails its batch, keeps the journal and is written before the next batch, so a kill after it loses nothing; a record missing or unreadable reconciles from scratch, keeps files that hold what would be written and deletes nothing on its word; one of another incarnation in the same folder keeps its files, proved by their bytes, and queues every task; a temporary file a kill left that a person typed into is kept; a batch's rescues are reported once, also when the batch failed or was killed; a retired file that could not be removed is a failure and is tried again, after a restart too, until it goes",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",

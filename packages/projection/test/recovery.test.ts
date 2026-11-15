@@ -1,7 +1,9 @@
-// The trusted state and the tree's folders (A1 3.13 rules 1, 2, 3 and 5): the record lives in
-// machine state; one the projection could not write holds back the next batch; one that is missing,
-// unreadable or of another identity starts a reconciliation from scratch that deletes nothing on
-// its word; a retired file that could not go is tried again; and a folder of the tree that went
+// The trusted state and the tree's folders (A1 3.13 rules 1 to 5): the record lives in machine
+// state; one the projection could not write holds back the next batch; one that is missing or
+// unreadable starts a reconciliation from scratch that deletes nothing on its word; one of another
+// identity in the same folder keeps its files, proved by their bytes, and queues every task; a
+// temporary file proves itself by its bytes, never by its name alone; what a batch moved aside is
+// reported once; a retired file that could not go is tried again; and a folder of the tree that went
 // missing or became a link is never followed, its link moved aside as it is, and what the record
 // had below it rendered again. Fixture text only.
 import {
@@ -20,7 +22,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { Tree, TrustedState } from "../src/index.ts";
+import { Tree, TrustedState, type Rescued } from "../src/index.ts";
 import {
   catalogOf,
   checkWatermark,
@@ -83,13 +85,16 @@ const freshRender = (): Promise<Map<string, string>> => w.fresh(join(root, `fres
 
 const rescuedOf = (): Map<string, string> => filesOf(join(w.folder, "exchange", "rescued"));
 
+/** A batch's rescue stem as onRescued names it. */
+const STEM_PATH = /^exchange\/rescued\/[0-9]{8}T[0-9]{9}Z-[0-9a-f]{4}$/;
+
 const activeIds = (): string[] =>
   w.reader
     .prepare("SELECT id FROM tasks WHERE lifecycle = 'active' ORDER BY ref")
     .all<{ id: string }>()
     .map((row) => row.id);
 
-describe("[A1.5.projection.recovery] the trusted state: an unwritten record holds back the next batch; a record missing, unreadable or of another identity reconciles from scratch and deletes nothing on its word; a retired file that could not go is tried again", () => {
+describe("[A1.5.projection.recovery] the trusted state: an unwritten record holds back the next batch; a record missing or unreadable reconciles from scratch and deletes nothing on its word, one of another identity in the same folder queues every task; a leftover a person typed into is kept; rescues are reported once; a retired file that could not go is tried again", () => {
   test("a record that could not be written is written before the next batch, and a kill then loses nothing", async () => {
     const first = w.projector();
     await first.start();
@@ -212,6 +217,58 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     rmSync(temp);
     checkWatermark(w.dir, w.reader);
     expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  test("what a batch moved aside is reported once, also when its record then could not be written, and after a kill at the next start", async () => {
+    const reported: Rescued[] = [];
+    const onRescued = (r: Rescued): void => {
+      reported.push(r);
+    };
+    const first = w.projector({ onRescued });
+    await first.start();
+    await settle(first);
+    const [a, b] = catalogOf(w.dir);
+    const edit = (path: string, text: string): void => {
+      const abs = join(w.dir, ...path.split("/"));
+      chmodSync(abs, 0o600);
+      writeFileSync(abs, text);
+    };
+    edit(a?.path ?? "", "A person's edit before a failed batch.\n");
+    w.submit([{ kind: "task.patch", task: a?.id ?? "", set: { summary: "Rescue fixture" } }]);
+    vi.spyOn(TrustedState.prototype, "writeRecord").mockImplementationOnce(() => {
+      throw Object.assign(new Error("fixture"), { code: "ENOSPC" });
+    });
+    await expect(first.step()).rejects.toMatchObject({ code: "ENOSPC" });
+    vi.restoreAllMocks();
+    expect(reported).toEqual([{ stem: expect.stringMatching(STEM_PATH) as string, files: 1 }]);
+    await settle(first);
+    expect(reported).toHaveLength(1);
+    // A batch killed right after its rescue: the next start reports it, once.
+    edit(b?.path ?? "", "A person's edit before a kill.\n");
+    w.submit([{ kind: "task.patch", task: b?.id ?? "", set: { summary: "Kill fixture" } }]);
+    let dead = false;
+    const doomed = w.projector({
+      onRescued,
+      at: (act) => {
+        if (dead || act === "rename") {
+          dead = true;
+          throw new Error("fixture kill");
+        }
+      },
+    });
+    await doomed.start();
+    await doomed.step().catch(() => undefined);
+    expect(dead).toBe(true);
+    // What the doomed batch still reported does not count: a killed process reports nothing.
+    reported.length = 0;
+    const after = w.projector({ onRescued });
+    expect((await after.start()).rescued).toBe(1);
+    await settle(after);
+    expect(reported).toEqual([{ stem: expect.stringMatching(STEM_PATH) as string, files: 1 }]);
+    expect([...rescuedOf().values()].sort()).toEqual([
+      "A person's edit before a failed batch.\n",
+      "A person's edit before a kill.\n",
+    ]);
   });
 
   test("a retired file that could not be removed is a failure, and is tried again until it goes", async () => {

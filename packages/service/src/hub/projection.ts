@@ -6,13 +6,14 @@
 // crosses is counts, codes and task IDs, never a task's text.
 //
 // `tasks view rebuild` asks the worker for a full reconciliation (rebuild): the answer is what the
-// reconciliation found, as soon as it ran (before the worker's next batch), whatever that batch\n// does next.
+// reconciliation found, as soon as it ran (before the worker's next batch), whatever that batch
+// does next.
 //
 // Stopping asks the worker to end after the batch in progress, and stops the thread when it has
 // not ended within the bound: a batch cut off is a kill, which the next start recovers from
 // (@tasks/projection). A rebuild still waiting then fails with `STORAGE_WORKER_FAILED`.
 import { Worker } from "node:worker_threads";
-import type { Reconciled, StartReport, StepReport } from "@tasks/projection";
+import type { Reconciled, Rescued, StartReport, StepReport } from "@tasks/projection";
 import type { ProjectedBatch, SpaceWriterHandle } from "@tasks/storage";
 import { within } from "./wait.ts";
 
@@ -42,6 +43,7 @@ export type ProjectionMessage =
   | { readonly kind: "started"; readonly report: StartReport }
   | { readonly kind: "step"; readonly report: StepReport; readonly ms: number }
   | { readonly kind: "reconciled"; readonly reconciled: Reconciled }
+  | { readonly kind: "rescued"; readonly rescued: Rescued }
   | { readonly kind: "error"; readonly code: string };
 
 /** This thread to the worker. */
@@ -55,6 +57,8 @@ export interface ProjectionEvents {
   readonly started: (report: StartReport) => void;
   readonly step: (report: StepReport, ms: number) => void;
   readonly reconciled: (reconciled: Reconciled) => void;
+  /** A batch moved entries aside: once per batch, also one that failed or was killed. */
+  readonly rescued: (rescued: Rescued) => void;
   readonly failed: (code: string | undefined) => void;
 }
 
@@ -131,6 +135,9 @@ export class ProjectionRunner {
             for (const waiting of this.#rebuilds.splice(0)) waiting.resolve(message.reconciled);
           }
           events.reconciled(message.reconciled);
+          return;
+        case "rescued":
+          events.rescued(message.rescued);
           return;
         case "error":
           events.failed(message.code);

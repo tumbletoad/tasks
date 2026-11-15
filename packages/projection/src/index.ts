@@ -17,6 +17,7 @@ export {
   type ProjectionWriter,
   type ProjectorOptions,
   type Reconciled,
+  type Rescued,
   type StartReport,
   type StepReport,
 } from "./projector.ts";

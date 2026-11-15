@@ -78,6 +78,9 @@ try {
       onReconciled: (reconciled) => {
         send({ kind: "reconciled", reconciled });
       },
+      onRescued: (rescued) => {
+        send({ kind: "rescued", rescued });
+      },
     });
     if (asked.rebuild) projector.rebuild();
     await runProjection(projector, {

@@ -970,17 +970,18 @@ export class SpaceManager {
     const writer = space.writer;
     if (this.#options.projection !== true || spaceId === undefined || writer === undefined) return;
     const entry = space.index;
-    const rescued = (files: number, stem: string | undefined): void => {
-      if (files === 0 || stem === undefined) return;
-      log.log("space.projection_rescued", { entry, space: spaceId, files });
-      try {
-        recordProjectionRescue(this.#options.settingsDir, spaceId, { stem, files });
-      } catch {
-        // The log has it; the UI does not show this one.
-      }
-    };
-    const state = projectionStateOf(this.#options.settingsDir, spaceId);
+    // The record is per folder: two folders that hold one space never share one (space-settings.ts).
+    const state = projectionStateOf(this.#options.settingsDir, spaceId, space.folder);
     space.projection = new ProjectionRunner({ folder: space.folder, ...state }, writer, {
+      // Each batch that moved entries aside, once, also one that failed or was killed (A1 3.13).
+      rescued: ({ stem, files }) => {
+        log.log("space.projection_rescued", { entry, space: spaceId, files });
+        try {
+          recordProjectionRescue(this.#options.settingsDir, spaceId, { stem, files });
+        } catch {
+          // The log has it; the UI does not show this one.
+        }
+      },
       reconciled: (r: Reconciled) => {
         log.log("space.projection_reconciled", {
           entry,
@@ -999,7 +1000,6 @@ export class SpaceManager {
           recovered: report.recovered,
           temps: report.temps,
         });
-        rescued(report.rescued, report.rescueStem);
       },
       step: (report, ms) => {
         log.log("space.projected", {
@@ -1012,7 +1012,6 @@ export class SpaceManager {
           backlog: report.backlog,
           ms,
         });
-        rescued(report.rescued, report.rescueStem);
         if (report.code !== undefined) {
           log.log("space.projection_failed", { entry, space: spaceId, code: report.code });
         }
