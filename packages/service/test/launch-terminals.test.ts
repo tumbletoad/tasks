@@ -237,6 +237,13 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       // Dispatched at once: the client exited 0 long before its shim's claim.
       expect(dispatched?.state).toBe("dispatched");
       expect(performance.now() - t0).toBeLessThan(5_000);
+      // The receipt's words (A4 3.6.1): this fake machine has no default set, so Windows decides
+      // (Windows Terminal), and on Linux the first installed is GNOME Terminal.
+      expect(dispatched?.evidence).toMatchObject(
+        WINDOWS
+          ? { terminal: "wt", terminal_source: "windows" }
+          : { terminal: "gnome-terminal", terminal_source: "installed" },
+      );
 
       const confirmed = await lab.waitIntent(
         intent.id,

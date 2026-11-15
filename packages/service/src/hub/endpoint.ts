@@ -191,6 +191,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
       (await hub.launches?.doctor?.(params["take"] === true)) ?? {
         scopes: null,
         environment: null,
+        terminal: null,
       },
     "doctor/sessions": () => (hub.bindings === undefined ? null : sessionFacts(hub.bindings)),
     "service/status": () => hub.status(),

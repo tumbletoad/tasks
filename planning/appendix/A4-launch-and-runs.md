@@ -293,7 +293,31 @@ They ship as documented examples labelled "not tested by Tasks".
 
 #### 3.6.1 Terminal settings (machine-local)
 
-**Built:** `[terminal]` is read by `readTerminal` (`packages/launch/src/sections.ts`), and the chain of terminals a launch tries is `packages/launch/src/terminals/detect.ts`. A bad key falls back to its default with a problem for doctor, because a launch with the default terminal is better than none. A custom line holds exactly one whole `{shim}`. One that names `{cwd}` or `{title}` is refused at launch (`placeholder`). To build: the reader reports such a line as a problem, so doctor shows it before a launch fails.
+**Built:** `[terminal]` is read by `readTerminal` (`packages/launch/src/sections.ts`), and the chain of terminals a launch tries is `packages/launch/src/terminals/detect.ts`, with Windows' setting read by `windows-default.ts`. A bad key falls back to its default with a problem for doctor, because a launch with the default terminal is better than none. A custom line holds exactly one whole `{shim}`. One that names `{cwd}` or `{title}` is refused at launch (`placeholder`). To build: the reader reports such a line as a problem, so doctor shows it before a launch fails. Tests: `[A4.5.terminal.chain]`, `[A4.5.terminal.default]`, `[A4.5.terminal.windows-default]`.
+
+**Which terminal.** After installation Tasks opens the operating system's default terminal, or the one the person set as default there. `[terminal] app` (with `path`, or `custom`) chooses another by hand and wins over everything below. Nothing else picks a terminal for the person. The choice is made at each launch from what is found then, and starts nothing.
+
+`auto` on Linux takes the first of these that names an installed terminal Tasks has an adapter for (Ghostty, GNOME Terminal, kitty, WezTerm, Konsole, x-terminal-emulator):
+1. `$TERMINAL` from the session (a name or an absolute path).
+2. The desktop's default. On KDE Plasma (`kde` in `$XDG_CURRENT_DESKTOP`), first its own setting: `[General]` in the first `kdeglobals` of `$XDG_CONFIG_HOME` and `$XDG_CONFIG_DIRS` that sets it, `TerminalService` (a desktop entry ID) over `TerminalApplication` (a command line), because KDE's own launcher reads only these. Then the xdg-terminals lists, as the Default Terminal Execution Specification (xdg-terminal-exec) orders them: in each folder of `$XDG_CONFIG_HOME` (default `~/.config`), `$XDG_CONFIG_DIRS` (default `/etc/xdg`), then `xdg-terminal-exec` under each of `$XDG_DATA_DIRS` (default `/usr/local/share:/usr/share`), the list `<desktop>-xdg-terminals.list` for each desktop of `$XDG_CURRENT_DESKTOP` (lowercased, in its order), then `xdg-terminals.list`. The entries of all lists form one list, each ID once, in that order. A line `id.desktop` or `id.desktop:action` selects an entry. Lines starting with `#`, `-`, `+` or `/` select nothing (comments, the specification's own fallback exclusions, and directives). A relative folder in an XDG variable is ignored.
+3. The distribution's default: `x-terminal-emulator` on PATH (Debian's alternatives), its link target classified as A4 3.6.2 says.
+4. Only when none of these gives a terminal: the first installed of Ghostty, kitty, WezTerm, GNOME Terminal, Konsole.
+
+GNOME's `org.gnome.desktop.default-applications.terminal` key is not read: GLib no longer honours it (it asks xdg-terminal-exec, then a fixed list), so it no longer says what the person chose. Tasks never runs xdg-terminal-exec to find out, because it would open a terminal. The session's variables come from the user manager (A4 3.8 layer 1), else the service's own.
+
+`auto` on Windows follows the person's "Default terminal application" (Settings, For developers, Terminal), the values `DelegationTerminal` and `DelegationConsole` under `HKCU\Console\%%Startup`, as Microsoft documents them ("Group Policy for Windows Terminal", "Default terminal application"). `DelegationTerminal` decides, and `DelegationConsole` only when the other is absent.
+- Let Windows decide (the zero GUID, or no value): Windows Terminal when its `wt.exe` app execution alias exists, else a console, as Windows itself does.
+- Windows Terminal or Windows Terminal Preview: Windows Terminal through the alias, else a console.
+- Windows Console Host: a console, even when Windows Terminal is installed.
+- Another terminal that registered itself: Tasks has no adapter for it, so Windows Terminal when installed, else a console, and doctor says so.
+
+The values are read at each launch with `reg.exe` by its full path, never a PowerShell cmdlet (a cmdlet makes Windows PowerShell search its module path, which takes seconds on a slow machine), within 3 s. No answer counts as no setting.
+
+`auto` on macOS chooses nothing: no adapter exists yet (A4 3.6.2), so a terminal route is not offered there.
+
+**The chain.** The chosen terminal, then the configured `fallbacks`; with none configured, the other installed terminals in the auto order. On Windows the console is always last. A fallback runs only after a definite error before activation (A4 3.6.2).
+
+**What the person sees.** A launch records the terminal that was Dispatched and why it was in the chain as launch evidence (`terminal`, `terminal_source`: `configured`, `terminal_var`, `desktop`, `distribution`, `windows`, `installed`, `fallback`). The receipt names both in a few words ("Opening in Ghostty, the desktop's default…"), and doctor's `launch.terminal` row (A3 3.14) names the terminal a launch now would open first and why. When the default the person set is one Tasks cannot open, doctor warns and names it by its desktop entry ID or program name, never a path.
 
 #### 3.6.2 Terminal command lines
 

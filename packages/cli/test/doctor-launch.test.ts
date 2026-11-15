@@ -10,6 +10,7 @@ import {
   sessionsCheck,
   t3PairingCheck,
   T3_WARN_MS,
+  terminalCheck,
 } from "../src/doctor-launch.ts";
 
 const NOW = Date.UTC(2026, 10, 14, 12);
@@ -25,6 +26,41 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(none.detail).toContain("may end the agent sessions");
     expect(none.detail).toContain("service restart");
     expect(scopesCheck(null).status).toBe("skip");
+  });
+
+  test("launch.terminal: names the terminal and its source; a missing one or a default without an adapter warns", () => {
+    const row = (terminal: unknown) => terminalCheck(terminal);
+    expect(row({ app: "ghostty", source: "desktop", found: true, unsupported: null })).toEqual({
+      id: "launch.terminal",
+      status: "ok",
+      detail: "Terminals open in Ghostty: the desktop's default.",
+    });
+    expect(row({ app: "kitty", source: "configured", found: true }).detail).toContain(
+      "set in machine.toml",
+    );
+    expect(row({ app: "console", source: "windows", found: true }).detail).toContain(
+      "Windows' default terminal",
+    );
+    const ptyxis = row({
+      app: "gnome-terminal",
+      source: "installed",
+      found: true,
+      unsupported: "org.gnome.Ptyxis.desktop",
+    });
+    expect(ptyxis.status).toBe("warn");
+    expect(ptyxis.detail).toContain("(org.gnome.Ptyxis.desktop)");
+    expect(ptyxis.detail).toContain("GNOME Terminal (the first installed)");
+    expect(ptyxis.detail).toContain("[terminal] app");
+    expect(
+      row({ app: "wt", source: "installed", found: true, unsupported: "other" }).detail,
+    ).toContain("in Windows' settings");
+    // A name that is not plain characters is never shown.
+    expect(
+      row({ app: "kitty", source: "installed", found: true, unsupported: "/home/x/../y" }).detail,
+    ).not.toContain("/home");
+    expect(row({ app: "wezterm", source: "configured", found: false }).status).toBe("warn");
+    expect(row({ app: null, source: null, found: false }).detail).toContain("No terminal");
+    expect(row(null).status).toBe("skip");
   });
 
   test("launch.env: a snapshot that succeeded passes; a failed one warns with what launches get", () => {
@@ -136,6 +172,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     const answers = {
       "doctor/launch": {
         scopes: false,
+        terminal: { app: "wt", source: "windows", found: true, unsupported: null },
         environment: {
           kind: "snapshot",
           outcome: "ok",
@@ -149,6 +186,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     const rows = await launchChecks(session(answers), false, NOW);
     expect(rows.map((r) => [r.id, r.status])).toEqual([
       ["launch.scopes", "warn"],
+      ["launch.terminal", "ok"],
       ["launch.env", "ok"],
       ["launch.t3", "skip"],
       ["sessions", "ok"],
@@ -163,7 +201,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     await launchChecks(session(answers), true, NOW);
     expect(asked.find(([method]) => method === "doctor/launch")?.[1]).toEqual({ take: true });
     const older = await launchChecks(session({}), false, NOW);
-    expect(older.map((r) => r.status)).toEqual(["skip", "skip", "skip", "skip"]);
+    expect(older.map((r) => r.status)).toEqual(["skip", "skip", "skip", "skip", "skip"]);
   });
 });
 

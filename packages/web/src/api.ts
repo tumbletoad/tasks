@@ -34,6 +34,8 @@ export interface Receipt {
   readonly state: ReceiptState;
   readonly reason: string | null;
   readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
+  /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
+  readonly terminal?: { readonly app: string; readonly source: string };
 }
 
 /** The service refused the token: it expired or was revoked. */

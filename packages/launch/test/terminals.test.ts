@@ -1,7 +1,7 @@
 // Terminal command lines, the chain and the acceptance rule of each adapter (A4 3.6.1, 3.6.2, 3.7;
 // A7 3.9 M2.09; SL-09). Pure functions and a recording spawner: no terminal starts.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -13,20 +13,31 @@ import {
   CONSOLE_PROGRAM,
   CONSOLE_SCRIPT,
   DEFAULT_TERMINAL,
+  delegationChoice,
   linkKindOf,
+  listedIds,
+  osTerminalHost,
+  parseDelegation,
+  readDelegation,
+  regPath,
   scopeCommand,
   scopeProbe,
   scopeUnit,
   terminalChain,
+  terminalChoice,
   terminalCommand,
   TerminalLauncher,
   windowsCommandLine,
+  xdgListFiles,
   type AdapterApp,
   type BuiltCommand,
+  type CaptureRequest,
+  type CaptureResult,
   type ChainEntry,
   type SpawnRequest,
   type TerminalHost,
   type TerminalSettings,
+  type XdgVars,
 } from "../src/index.ts";
 
 const TICKET = "0123456789ABCDEFGHJKMNPQ";
@@ -128,12 +139,14 @@ describe("[A4.5.terminal.command-lines] every terminal runs the product's shim a
     });
     expect(CONSOLE_SCRIPT).toBe(
       "$ErrorActionPreference='Stop';" +
-        "$s=New-Object System.Diagnostics.ProcessStartInfo;" +
+        "$s=[System.Diagnostics.ProcessStartInfo]::new();" +
         `$s.FileName=$env:${CONSOLE_PROGRAM};` +
         `$s.Arguments=$env:${CONSOLE_ARGUMENTS};` +
         "$s.UseShellExecute=$true;" +
         "[void][System.Diagnostics.Process]::Start($s)",
     );
+    // No cmdlet (Verb-Noun): Windows PowerShell would search its module path for it first.
+    expect(CONSOLE_SCRIPT).not.toMatch(/\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/);
     expect(win("console", undefined)).toEqual({ refused: "no_program" });
     // A product run from source: Node and its entry come first, as elements.
     expect(
@@ -387,6 +400,8 @@ function fakeHost(
     home: extra.home ?? (platform === "win32" ? "C:\\Users\\Mira" : "/home/mira"),
     windowsApps: extra.windowsApps,
     powershell: extra.powershell,
+    xdg: extra.xdg,
+    delegation: extra.delegation,
     executable: (path) => programs.includes(path),
     readText: (path) => extra.files?.[path],
     realpath: (path) => extra.links?.[path] ?? path,
@@ -400,43 +415,6 @@ const settings = (over: Partial<TerminalSettings> = {}): TerminalSettings => ({
 const apps = (chain: readonly ChainEntry[]): string[] => chain.map((e) => e.app);
 
 describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
-  test("auto on Linux: the session's TERMINAL, the xdg-terminals lists, then A4's order; only installed ones", () => {
-    const host = fakeHost(
-      "linux",
-      [
-        "/usr/bin/gnome-terminal",
-        "/usr/bin/kitty",
-        "/home/mira/.local/bin/ghostty",
-        "/usr/bin/x-terminal-emulator",
-      ],
-      {
-        path: ["/home/mira/.local/bin", "/usr/bin"],
-        links: { "/usr/bin/x-terminal-emulator": "/usr/bin/gnome-terminal.wrapper" },
-      },
-    );
-    const chain = terminalChain(settings(), host);
-    expect(apps(chain)).toEqual(["ghostty", "kitty", "gnome-terminal", "x-terminal-emulator"]);
-    expect(chain[0]).toEqual({ app: "ghostty", program: "/home/mira/.local/bin/ghostty" });
-    expect(chain[3]).toMatchObject({ linkKind: "handoff" });
-
-    const withVar = fakeHost("linux", ["/usr/bin/gnome-terminal", "/usr/bin/kitty"], {
-      terminalVar: "gnome-terminal",
-    });
-    expect(apps(terminalChain(settings(), withVar))).toEqual(["gnome-terminal", "kitty"]);
-
-    const listed = fakeHost(
-      "linux",
-      ["/usr/bin/gnome-terminal", "/usr/bin/kitty", "/usr/bin/konsole"],
-      {
-        files: {
-          "/home/mira/.config/ubuntu-xdg-terminals.list":
-            "# fixture\n-kitty.desktop\n+org.kde.konsole.desktop\norg.gnome.Terminal.desktop\n",
-        },
-      },
-    );
-    expect(apps(terminalChain(settings(), listed))).toEqual(["konsole", "gnome-terminal", "kitty"]);
-  });
-
   test("a chosen terminal with its configured fallbacks; with none configured, the other installed ones", () => {
     const host = fakeHost("linux", ["/usr/bin/gnome-terminal", "/usr/bin/kitty"]);
     expect(
@@ -445,8 +423,8 @@ describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
         host,
       ),
     ).toEqual([
-      { app: "ghostty", program: "/opt/ghostty/ghostty" },
-      { app: "gnome-terminal", program: "/usr/bin/gnome-terminal" },
+      { app: "ghostty", program: "/opt/ghostty/ghostty", source: "configured" },
+      { app: "gnome-terminal", program: "/usr/bin/gnome-terminal", source: "fallback" },
     ]);
     expect(apps(terminalChain(settings({ app: "kitty" }), host))).toEqual([
       "kitty",
@@ -456,10 +434,21 @@ describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
     expect(terminalChain(settings({ app: "wezterm" }), host)[0]).toEqual({
       app: "wezterm",
       program: undefined,
+      source: "configured",
+    });
+    // An explicit app wins over every default, and a default it skipped is not reported.
+    const withDefault = fakeHost("linux", ["/usr/bin/gnome-terminal", "/usr/bin/kitty"], {
+      terminalVar: "foot",
+    });
+    expect(terminalChoice(settings({ app: "kitty" }), withDefault)).toEqual({
+      chain: [
+        { app: "kitty", program: "/usr/bin/kitty", source: "configured" },
+        { app: "gnome-terminal", program: "/usr/bin/gnome-terminal", source: "fallback" },
+      ],
     });
   });
 
-  test("Windows: Windows Terminal when its app execution alias exists, the console always last", () => {
+  test("Windows: the chosen terminal first, the console always last", () => {
     const windowsApps = "C:\\Users\\Mira\\Local\\Microsoft\\WindowsApps";
     const alias = `${windowsApps}\\wt.exe`;
     expect(
@@ -468,17 +457,486 @@ describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
         fakeHost("win32", [alias], { windowsApps, powershell: POWERSHELL }),
       ),
     ).toEqual([
-      { app: "wt", program: alias },
-      { app: "console", program: POWERSHELL },
+      { app: "wt", program: alias, source: "windows" },
+      { app: "console", program: POWERSHELL, source: "fallback" },
     ]);
     expect(terminalChain(settings(), fakeHost("win32", [], { windowsApps }))).toEqual([
-      { app: "console", program: undefined },
+      { app: "console", program: undefined, source: "windows" },
     ]);
     expect(
       apps(
         terminalChain(settings({ app: "console" }), fakeHost("win32", [alias], { windowsApps })),
       ),
     ).toEqual(["console", "wt"]);
+    expect(
+      apps(
+        terminalChain(
+          settings({ app: "custom", custom: ["C:\\t\\t.exe", "{shim}"] }),
+          fakeHost("win32", [alias], { windowsApps }),
+        ),
+      ),
+    ).toEqual(["custom", "wt", "console"]);
+  });
+});
+
+const GNOME = "/usr/bin/gnome-terminal";
+const KITTY = "/usr/bin/kitty";
+const GHOSTTY = "/usr/bin/ghostty";
+const KONSOLE = "/usr/bin/konsole";
+const XTE = "/usr/bin/x-terminal-emulator";
+
+describe("[A4.5.terminal.default] auto opens the operating system's default terminal first", () => {
+  interface Row {
+    readonly name: string;
+    readonly programs: readonly string[];
+    readonly terminalVar?: string;
+    readonly xdg?: XdgVars;
+    readonly files?: Record<string, string>;
+    readonly links?: Record<string, string>;
+    /** The chain's apps, and the first one's source. */
+    readonly apps: readonly string[];
+    readonly source: string | undefined;
+    readonly unsupported?: string;
+  }
+  const UBUNTU = { currentDesktop: "ubuntu:GNOME" } as const;
+  const rows: Row[] = [
+    {
+      name: "the distribution's default beats an installed Ghostty and kitty",
+      programs: [GNOME, KITTY, GHOSTTY, XTE],
+      links: { [XTE]: "/usr/bin/gnome-terminal.wrapper" },
+      apps: ["x-terminal-emulator", "ghostty", "kitty", "gnome-terminal"],
+      source: "distribution",
+    },
+    {
+      name: "$TERMINAL first, when it names a terminal with an adapter",
+      programs: [GNOME, KITTY, XTE],
+      terminalVar: "kitty",
+      apps: ["kitty", "x-terminal-emulator", "gnome-terminal"],
+      source: "terminal_var",
+    },
+    {
+      name: "$TERMINAL without an adapter is skipped and named",
+      programs: [GNOME, XTE],
+      terminalVar: "/opt/foot/bin/foot",
+      apps: ["x-terminal-emulator", "gnome-terminal"],
+      source: "distribution",
+      unsupported: "foot",
+    },
+    {
+      name: "the person's list for the desktop beats the system's and the distribution's",
+      programs: [GNOME, KITTY, KONSOLE, XTE],
+      xdg: UBUNTU,
+      files: {
+        "/home/mira/.config/ubuntu-xdg-terminals.list": "# mine\nkitty.desktop\n",
+        "/etc/xdg/ubuntu-xdg-terminals.list": "org.kde.konsole.desktop\n",
+      },
+      apps: ["kitty", "konsole", "x-terminal-emulator", "gnome-terminal"],
+      source: "desktop",
+    },
+    {
+      name: "in one folder the desktop's list comes before the generic one, in the desktops' order",
+      programs: [GNOME, KITTY, KONSOLE],
+      xdg: UBUNTU,
+      files: {
+        "/home/mira/.config/xdg-terminals.list": "kitty.desktop\n",
+        "/home/mira/.config/gnome-xdg-terminals.list": "org.kde.konsole.desktop\n",
+        "/home/mira/.config/ubuntu-xdg-terminals.list": "org.gnome.Terminal.desktop\n",
+      },
+      apps: ["gnome-terminal", "konsole", "kitty"],
+      source: "desktop",
+    },
+    {
+      name: "a desktop's list is read only on that desktop",
+      programs: [GNOME, KITTY],
+      xdg: { currentDesktop: "GNOME" },
+      files: { "/home/mira/.config/ubuntu-xdg-terminals.list": "kitty.desktop\n" },
+      apps: ["kitty", "gnome-terminal"],
+      source: "installed",
+    },
+    {
+      name: "the user's folder before /etc/xdg, then the data folders' xdg-terminal-exec",
+      programs: [GNOME, KITTY, KONSOLE],
+      xdg: { currentDesktop: "GNOME" },
+      files: {
+        "/usr/share/xdg-terminal-exec/gnome-xdg-terminals.list": "kitty.desktop\n",
+        "/etc/xdg/xdg-terminals.list": "org.kde.konsole.desktop\n",
+      },
+      apps: ["konsole", "kitty", "gnome-terminal"],
+      source: "desktop",
+    },
+    {
+      name: "the XDG variables move the folders; a relative one is ignored",
+      programs: [GNOME, KITTY, KONSOLE],
+      xdg: {
+        configHome: "/srv/mira-config",
+        configDirs: "relative:/opt/xdg",
+        dataDirs: "/opt/share",
+      },
+      files: {
+        "/home/mira/.config/xdg-terminals.list": "kitty.desktop\n",
+        "/opt/xdg/xdg-terminals.list": "org.kde.konsole.desktop\n",
+        "/opt/share/xdg-terminal-exec/xdg-terminals.list": "kitty.desktop\n",
+      },
+      apps: ["konsole", "kitty", "gnome-terminal"],
+      source: "desktop",
+    },
+    {
+      name: "-, + and directives select nothing; an action is the entry; one not installed is skipped",
+      programs: [GNOME, KITTY],
+      files: {
+        "/home/mira/.config/xdg-terminals.list":
+          "-kitty.desktop\n+org.kde.konsole.desktop\n/execarg_default:-e\n" +
+          "com.mitchellh.ghostty.desktop\n  org.gnome.Terminal.desktop:new-window  \n",
+      },
+      apps: ["gnome-terminal", "kitty"],
+      source: "desktop",
+    },
+    {
+      name: "an installed default without an adapter is named; the next one is used",
+      programs: [GNOME, XTE],
+      files: {
+        "/home/mira/.config/xdg-terminals.list": "org.gnome.Ptyxis.desktop\n",
+        "/usr/share/applications/org.gnome.Ptyxis.desktop": "[Desktop Entry]\n",
+      },
+      apps: ["x-terminal-emulator", "gnome-terminal"],
+      source: "distribution",
+      unsupported: "org.gnome.Ptyxis.desktop",
+    },
+    {
+      name: "an entry without an adapter that is not installed is skipped silently",
+      programs: [GNOME],
+      files: { "/home/mira/.config/xdg-terminals.list": "org.gnome.Ptyxis.desktop\n" },
+      apps: ["gnome-terminal"],
+      source: "installed",
+    },
+    {
+      name: "KDE: its own setting before the lists, TerminalService over TerminalApplication",
+      programs: [KONSOLE, KITTY, GHOSTTY],
+      xdg: { currentDesktop: "KDE" },
+      files: {
+        "/home/mira/.config/kdeglobals":
+          "[General]\nTerminalApplication=ghostty\nTerminalService=kitty.desktop\n[KDE]\nx=1\n",
+        "/home/mira/.config/xdg-terminals.list": "org.kde.konsole.desktop\n",
+      },
+      apps: ["kitty", "konsole", "ghostty"],
+      source: "desktop",
+    },
+    {
+      name: "KDE: a service ID without .desktop",
+      programs: [KONSOLE, KITTY],
+      xdg: { currentDesktop: "KDE" },
+      files: { "/home/mira/.config/kdeglobals": "[General]\nTerminalService=org.kde.konsole\n" },
+      apps: ["konsole", "kitty"],
+      source: "desktop",
+    },
+    {
+      name: "KDE: TerminalApplication's command",
+      programs: [KONSOLE, GHOSTTY],
+      xdg: { currentDesktop: "KDE" },
+      files: {
+        "/etc/xdg/kdeglobals":
+          "[General]\nTerminalApplication=ghostty --gtk-single-instance=false\n",
+      },
+      apps: ["ghostty", "konsole"],
+      source: "desktop",
+    },
+    {
+      name: "KDE's setting is read only on KDE",
+      programs: [KONSOLE, KITTY],
+      xdg: { currentDesktop: "GNOME" },
+      files: { "/home/mira/.config/kdeglobals": "[General]\nTerminalService=org.kde.konsole\n" },
+      apps: ["kitty", "konsole"],
+      source: "installed",
+    },
+    {
+      name: "only the fixed order when no default names a terminal",
+      programs: [GNOME, KITTY, KONSOLE],
+      apps: ["kitty", "gnome-terminal", "konsole"],
+      source: "installed",
+    },
+    {
+      name: "no terminal at all",
+      programs: [],
+      apps: [],
+      source: undefined,
+    },
+  ];
+  test.each(rows)("Linux: $name", (row) => {
+    const host = fakeHost("linux", row.programs, {
+      ...(row.terminalVar === undefined ? {} : { terminalVar: row.terminalVar }),
+      ...(row.xdg === undefined ? {} : { xdg: row.xdg }),
+      ...(row.files === undefined ? {} : { files: row.files }),
+      ...(row.links === undefined ? {} : { links: row.links }),
+    });
+    const choice = terminalChoice(settings(), host);
+    expect(apps(choice.chain)).toEqual(row.apps);
+    expect(choice.chain[0]?.source).toBe(row.source);
+    expect(choice.chain.slice(1).every((e) => e.source === "fallback")).toBe(true);
+    expect(choice.unsupported).toBe(row.unsupported);
+  });
+
+  test("the list files in the specification's order", () => {
+    const host = fakeHost("linux", [], {
+      xdg: { currentDesktop: "ubuntu:GNOME:ubuntu:../x" },
+    });
+    expect(xdgListFiles(host)).toEqual([
+      "/home/mira/.config/ubuntu-xdg-terminals.list",
+      "/home/mira/.config/gnome-xdg-terminals.list",
+      "/home/mira/.config/xdg-terminals.list",
+      "/etc/xdg/ubuntu-xdg-terminals.list",
+      "/etc/xdg/gnome-xdg-terminals.list",
+      "/etc/xdg/xdg-terminals.list",
+      "/usr/local/share/xdg-terminal-exec/ubuntu-xdg-terminals.list",
+      "/usr/local/share/xdg-terminal-exec/gnome-xdg-terminals.list",
+      "/usr/local/share/xdg-terminal-exec/xdg-terminals.list",
+      "/usr/share/xdg-terminal-exec/ubuntu-xdg-terminals.list",
+      "/usr/share/xdg-terminal-exec/gnome-xdg-terminals.list",
+      "/usr/share/xdg-terminal-exec/xdg-terminals.list",
+    ]);
+  });
+
+  const AUTO = "{00000000-0000-0000-0000-000000000000}";
+  const CONHOST = "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}";
+  const WT_CONSOLE = "{2EACA947-7F5F-4CFA-BA87-8F7FBEEFBE69}";
+  const WT_TERMINAL = "{E12CFF52-A866-4C77-9A90-F570A7AA2C6B}";
+  const PREVIEW_TERMINAL = "{86633F1F-6454-40EC-89CE-DA4EBA977EE2}";
+  const OTHER = "{11111111-2222-3333-4444-555555555555}";
+  const windowsApps = "C:\\Users\\Mira\\AppData\\Local\\Microsoft\\WindowsApps";
+  const alias = `${windowsApps}\\wt.exe`;
+  test.each([
+    [
+      "Let Windows decide, Windows Terminal installed",
+      AUTO,
+      AUTO,
+      true,
+      ["wt", "console"],
+      "windows",
+      undefined,
+    ],
+    ["Let Windows decide, none installed", AUTO, AUTO, false, ["console"], "windows", undefined],
+    ["no setting at all", undefined, undefined, true, ["wt", "console"], "windows", undefined],
+    [
+      "Windows Console Host, Windows Terminal installed",
+      CONHOST,
+      CONHOST,
+      true,
+      ["console", "wt"],
+      "windows",
+      undefined,
+    ],
+    ["Windows Terminal", WT_CONSOLE, WT_TERMINAL, true, ["wt", "console"], "windows", undefined],
+    [
+      "Windows Terminal chosen but removed",
+      WT_CONSOLE,
+      WT_TERMINAL,
+      false,
+      ["console"],
+      "windows",
+      undefined,
+    ],
+    [
+      "Windows Terminal Preview",
+      undefined,
+      PREVIEW_TERMINAL,
+      true,
+      ["wt", "console"],
+      "windows",
+      undefined,
+    ],
+    [
+      "only DelegationConsole says Console Host",
+      CONHOST,
+      undefined,
+      true,
+      ["console", "wt"],
+      "windows",
+      undefined,
+    ],
+    [
+      "another terminal Tasks has no adapter for",
+      OTHER,
+      OTHER,
+      true,
+      ["wt", "console"],
+      "installed",
+      "other",
+    ],
+    ["another terminal, none installed", OTHER, OTHER, false, ["console"], "installed", "other"],
+  ] as const)(
+    "Windows: %s",
+    (_name, console, terminal, installed, expected, source, unsupported) => {
+      const host = fakeHost("win32", installed ? [alias] : [], {
+        windowsApps,
+        powershell: POWERSHELL,
+        ...(console === undefined && terminal === undefined
+          ? {}
+          : { delegation: { console, terminal } }),
+      });
+      const choice = terminalChoice(settings(), host);
+      expect(apps(choice.chain)).toEqual(expected);
+      expect(choice.chain[0]?.source).toBe(source);
+      expect(choice.unsupported).toBe(unsupported);
+    },
+  );
+
+  test("macOS: no adapter yet, so auto chooses nothing", () => {
+    expect(terminalChoice(settings(), fakeHost("darwin", ["/usr/bin/true"]))).toEqual({
+      chain: [],
+    });
+  });
+
+  test("the real file reader over fixture folders: the lists, kdeglobals and desktop entries", () => {
+    const root = mkdtempSync(join(tmpdir(), "tasks-term-default-"));
+    try {
+      const at = (...parts: string[]) => join(root, ...parts);
+      mkdirSync(at("config"), { recursive: true });
+      mkdirSync(at("etc"), { recursive: true });
+      mkdirSync(at("share", "xdg-terminal-exec"), { recursive: true });
+      mkdirSync(at("share", "applications"), { recursive: true });
+      writeFileSync(at("config", "gnome-xdg-terminals.list"), "org.gnome.Ptyxis.desktop\n");
+      writeFileSync(at("share", "applications", "org.gnome.Ptyxis.desktop"), "[Desktop Entry]\n");
+      writeFileSync(at("etc", "xdg-terminals.list"), "kitty.desktop\n");
+      writeFileSync(
+        at("share", "xdg-terminal-exec", "xdg-terminals.list"),
+        "org.gnome.Terminal.desktop\n",
+      );
+      // A folder where a list would be is no list.
+      mkdirSync(at("config", "xdg-terminals.list"));
+      // Paths as POSIX strings, since the Linux rules join with posix. On Windows the drive is
+      // dropped: Node reads `/Users/…` on the current drive, where the temporary folder is.
+      const posixOf = (path: string) => path.replace(/^[A-Za-z]:/, "").replaceAll("\\", "/");
+      const real = osTerminalHost({
+        platform: "linux",
+        path: ["/usr/bin"],
+        terminalVar: undefined,
+        xdg: {
+          configHome: posixOf(at("config")),
+          configDirs: posixOf(at("etc")),
+          dataDirs: posixOf(at("share")),
+          currentDesktop: "GNOME",
+        },
+        home: posixOf(at("home")),
+        windowsApps: undefined,
+      });
+      // Programs are the fixture's, never this machine's.
+      const host: TerminalHost = { ...real, executable: (p) => [GNOME, KITTY].includes(p) };
+      expect(listedIds(host)).toEqual([
+        "org.gnome.Ptyxis.desktop",
+        "kitty.desktop",
+        "org.gnome.Terminal.desktop",
+      ]);
+      expect(terminalChoice(settings(), host)).toEqual({
+        chain: [
+          { app: "kitty", program: KITTY, source: "desktop" },
+          { app: "gnome-terminal", program: GNOME, source: "fallback" },
+        ],
+        unsupported: "org.gnome.Ptyxis.desktop",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("[A4.5.terminal.windows-default] Windows' Default terminal application, read with reg.exe", () => {
+  const OUTPUT = [
+    "",
+    "HKEY_CURRENT_USER\\Console\\%%Startup",
+    "    DelegationConsole    REG_SZ    {2eaca947-7f5f-4cfa-ba87-8f7fbeefbe69}",
+    "    DelegationTerminal    REG_SZ    {E12CFF52-A866-4C77-9A90-F570A7AA2C6B}",
+    "    Other    REG_SZ    text",
+    "",
+  ].join("\r\n");
+
+  test("the two values, uppercased; anything but a GUID is no value", () => {
+    expect(parseDelegation(OUTPUT)).toEqual({
+      console: "{2EACA947-7F5F-4CFA-BA87-8F7FBEEFBE69}",
+      terminal: "{E12CFF52-A866-4C77-9A90-F570A7AA2C6B}",
+    });
+    expect(
+      parseDelegation("    DelegationTerminal    REG_SZ    C:\\Program Files\\x.exe\r\n"),
+    ).toEqual({ console: undefined, terminal: undefined });
+    expect(delegationChoice(parseDelegation(OUTPUT))).toBe("wt");
+    expect(delegationChoice(undefined)).toBe("auto");
+  });
+
+  test("reg.exe by its full path with the key, a short deadline; no answer is no setting, a missing key is Windows deciding", async () => {
+    const requests: CaptureRequest[] = [];
+    const answer =
+      (result: CaptureResult) =>
+      (request: CaptureRequest): Promise<CaptureResult> => {
+        requests.push(request);
+        return Promise.resolve(result);
+      };
+    const reg = regPath({ SystemRoot: "D:\\Win" });
+    expect(reg).toBe("D:\\Win\\System32\\reg.exe");
+    expect(regPath({ SYSTEMROOT: "relative" })).toBe("C:\\Windows\\System32\\reg.exe");
+    const output = Buffer.from(OUTPUT, "latin1");
+    expect(
+      await readDelegation({
+        reg,
+        env: {},
+        capture: answer({ kind: "done", output, code: 0, ms: 5 }),
+      }),
+    ).toMatchObject({ terminal: "{E12CFF52-A866-4C77-9A90-F570A7AA2C6B}" });
+    expect(requests[0]?.argv).toEqual([reg, "query", "HKCU\\Console\\%%Startup"]);
+    expect(requests[0]?.timeoutMs).toBeLessThanOrEqual(5_000);
+    const missing = { kind: "done", output: Buffer.alloc(0), code: 1, ms: 5 } as const;
+    expect(await readDelegation({ reg, env: {}, capture: answer(missing) })).toEqual({
+      console: undefined,
+      terminal: undefined,
+    });
+    for (const result of [
+      { kind: "timeout", ms: 3000 },
+      { kind: "failed", ms: 0 },
+      { kind: "done", output, code: 5, ms: 1 },
+    ] as const) {
+      expect(await readDelegation({ reg, env: {}, capture: answer(result) })).toBeUndefined();
+    }
+    expect(
+      await readDelegation({ reg, env: {}, capture: () => Promise.reject(new Error("x")) }),
+    ).toBeUndefined();
+  });
+
+  test("the launcher reads the host for each launch and names the Dispatched terminal's source", async () => {
+    let reads = 0;
+    const launcher = new TerminalLauncher({
+      platform: "win32",
+      settings: settings(),
+      install: "0123456789",
+      shimCommand: [WIN_TASKS],
+      host: () => {
+        reads += 1;
+        return Promise.resolve(
+          fakeHost("win32", [`C:\\Apps\\wt.exe`, POWERSHELL], {
+            windowsApps: "C:\\Apps",
+            powershell: POWERSHELL,
+            delegation: {
+              console: "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}",
+              terminal: "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}",
+            },
+          }),
+        );
+      },
+      systemdRun: undefined,
+      spawn: recorder({ [POWERSHELL]: { exit: 0 } }).spawn,
+      sleep: instant,
+    });
+    expect(await launcher.choose({})).toMatchObject({
+      chain: [
+        { app: "console", source: "windows" },
+        { app: "wt", source: "fallback" },
+      ],
+    });
+    const started = await launcher.start({
+      launch: LAUNCH,
+      folder: "C:\\work",
+      tickets: tickets().control,
+      env: {},
+      session: {},
+    });
+    expect(started.terminal).toEqual({ app: "console", source: "windows" });
+    expect(reads).toBe(2);
   });
 });
 
@@ -552,7 +1010,11 @@ const instant = () => Promise.resolve();
 
 describe("[A4.5.terminal.acceptance] acceptance per adapter: Dispatched, or the next terminal only on a definite error before activation", () => {
   const chain = (...entries: [AdapterApp, string | undefined][]): ChainEntry[] =>
-    entries.map(([app, program]) => ({ app, program }));
+    entries.map(([app, program], i) => ({
+      app,
+      program,
+      source: i === 0 ? ("configured" as const) : ("fallback" as const),
+    }));
 
   test("a handoff client is Dispatched once spawned, whatever its exit code: one window, never a fallback", async () => {
     for (const exit of [0, 1, 255, null]) {
@@ -743,6 +1205,8 @@ describe("[A4.5.terminal.acceptance] acceptance per adapter: Dispatched, or the 
       });
       expect(started.scoped).toBe(false);
       expect(started.outcome.kind).toBe("accepted");
+      // The receipt's words: the terminal Dispatched and why it was chosen.
+      expect(started.terminal).toEqual({ app: "gnome-terminal", source: "configured" });
       // One probe per start, then the terminal on its own, detached, outside any scope.
       expect(probes.map((p) => [p.argv[0], p.detached])).toEqual([
         ["/usr/bin/systemd-run", true],
