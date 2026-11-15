@@ -802,24 +802,32 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       );
       // A folder where a list would be is no list.
       mkdirSync(at("config", "xdg-terminals.list"));
-      // Paths as POSIX strings, since the Linux rules join with posix. On Windows the drive is
-      // dropped: Node reads `/Users/…` on the current drive, where the temporary folder is.
-      const posixOf = (path: string) => path.replace(/^[A-Za-z]:/, "").replaceAll("\\", "/");
+      // The Linux rules join POSIX paths: the fixture's folders are named `/fixture/…`, and each
+      // read goes to the same place in the temporary folder through the real reader, so this runs
+      // the same on every OS and drive.
       const real = osTerminalHost({
         platform: "linux",
         path: ["/usr/bin"],
         terminalVar: undefined,
         xdg: {
-          configHome: posixOf(at("config")),
-          configDirs: posixOf(at("etc")),
-          dataDirs: posixOf(at("share")),
+          configHome: "/fixture/config",
+          configDirs: "/fixture/etc",
+          dataDirs: "/fixture/share",
           currentDesktop: "GNOME",
         },
-        home: posixOf(at("home")),
+        home: "/fixture/home",
         windowsApps: undefined,
       });
+      const inRoot = (path: string): string =>
+        path.startsWith("/fixture/")
+          ? at(...path.slice("/fixture/".length).split("/"))
+          : at("none");
       // Programs are the fixture's, never this machine's.
-      const host: TerminalHost = { ...real, executable: (p) => [GNOME, KITTY].includes(p) };
+      const host: TerminalHost = {
+        ...real,
+        readText: (path) => real.readText(inRoot(path)),
+        executable: (p) => [GNOME, KITTY].includes(p),
+      };
       expect(listedIds(host)).toEqual([
         "org.gnome.Ptyxis.desktop",
         "kitty.desktop",

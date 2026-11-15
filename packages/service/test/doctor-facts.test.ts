@@ -80,10 +80,37 @@ function launches(
     log,
     environment: env,
     shimCommand: ["/opt/tasks/bin/tasks"],
-    terminals: { spawn, systemdRun: "/usr/bin/systemd-run", trueProgram: "/usr/bin/true" },
+    terminals: {
+      spawn,
+      systemdRun: "/usr/bin/systemd-run",
+      trueProgram: "/usr/bin/true",
+      // A fake machine: GNOME Terminal on Linux; on Windows, Windows Terminal installed and the
+      // person's default set to Windows Console Host. Nothing of this machine is read.
+      host: (_session, path) => ({
+        platform,
+        path: platform === "win32" ? path : ["/usr/bin"],
+        terminalVar: undefined,
+        home: "/home/mira",
+        windowsApps: "C:\\Local\\Microsoft\\WindowsApps",
+        powershell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        delegation: { console: CONHOST, terminal: CONHOST },
+        executable: (p) =>
+          p === "/usr/bin/gnome-terminal" || p === "C:\\Local\\Microsoft\\WindowsApps\\wt.exe",
+        readText: () => undefined,
+        realpath: (p) => p,
+      }),
+    },
   });
   return { service, probes };
 }
+
+const CONHOST = "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}";
+const GNOME_INSTALLED = {
+  app: "gnome-terminal",
+  source: "installed",
+  found: true,
+  unsupported: null,
+};
 
 describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows", () => {
   test("doctor/launch: the launch's own scope probe, once per start, and the environment's check", async () => {
@@ -103,6 +130,8 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
         attempted_at: "2026-11-14T00:00:00.000Z",
         taken_at: "2026-11-13T00:00:00.000Z",
       },
+      // The terminal a launch now opens first, and why (A4 3.6.1).
+      terminal: GNOME_INSTALLED,
     });
     // The probe a launch runs: systemd-run's scope around `true`, with the terminal's environment.
     expect(scoped.probes).toHaveLength(1);
@@ -121,13 +150,19 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     });
 
     const unscoped = launches("linux", 1, environment());
-    expect(await unscoped.service.doctor(false)).toEqual({ scopes: false, environment: null });
+    expect(await unscoped.service.doctor(false)).toEqual({
+      scopes: false,
+      environment: null,
+      terminal: GNOME_INSTALLED,
+    });
 
-    // Windows: no scopes, and the registry's answer.
+    // Windows: no scopes, the registry's answer, and the person's Console Host over Windows
+    // Terminal.
     const windows = launches("win32", 0, environment({ kind: "registry", read: false }));
     expect(await windows.service.doctor(false)).toEqual({
       scopes: null,
       environment: { kind: "registry", read: false },
+      terminal: { app: "console", source: "windows", found: true, unsupported: null },
     });
     expect(windows.probes).toEqual([]);
   });

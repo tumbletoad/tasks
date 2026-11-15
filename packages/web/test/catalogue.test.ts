@@ -66,6 +66,9 @@ const SAMPLE = {
   area: "Client work",
   project: "Lumen Health",
   age: "3d",
+  where: "Ghostty, the desktop's default",
+  terminal: "ghostty",
+  source: "desktop",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
