@@ -672,7 +672,7 @@ Long text such as Context is compared as a whole, never merged line by line. Unp
 **The stored form** is made by the service before the operation goes to the writer, from the path as given (an absolute path, a `~` path, or `"cwd"`, the caller's own working folder):
 1. Expand a leading `~` with this machine's home folder, and refuse anything else that is not absolute (`not_absolute`). The CLI makes a relative argument absolute against its own working folder before it sends it (A2 3.10.1), so nothing relative reaches the service.
 2. Normalise the text: no `.` or `..` segment, no doubled or trailing separator, `\` on Windows with an upper-case drive letter. The result is the path checked below, so what is stored is what was checked.
-3. Write a path at or below this machine's home folder from `~`, the home matched by whole segments, without case on Windows and macOS. A path that reaches the home through a link stays as given.
+3. Write this machine's home folder as `~` when the path is the home or below it, the home matched by whole segments, without case on Windows and macOS. A path that reaches the home through a link stays as given.
 4. Keep the spelling as given, never the link's target or the real path, so retargeting a link moves the folder, as it would for T3 Code.
 
 The writer checks only the form (a `~` path or an absolute path of the request machine's OS, at most 4,096 characters, no control character) and does no file I/O.
