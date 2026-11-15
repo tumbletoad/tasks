@@ -3083,7 +3083,7 @@
     },
     {
       "id": "A1.5.projection.rescue",
-      "title": "What is not the projection's is never written through, overwritten, deleted or changed in mode: an edited file, a person's file at a task's path, a link where a folder goes and a hard link to a file outside are moved by one rename to a folder made for that rescue under exchange/rescued/, keeping their mode; files with temporary-looking names and text where the old control files were are kept; a rescue that cannot happen leaves the person's file in place and the task queued; a task whose file cannot be placed holds the watermark below it and never stops the tasks after it",
+      "title": "What is not the projection's is never written through, overwritten, deleted or changed in mode: an edited file, a person's file at a task's path, a link where a folder goes and a hard link to a file outside are moved by one rename to a folder made for that rescue under exchange/rescued/, keeping their mode; files with temporary-looking names and text where the old control files were are kept; a rescue that cannot happen leaves the person's file in place and the task queued; a task whose file cannot be placed holds the watermark below it and never stops the tasks after it, a full batch of them included: each waits a pause of its own, doubling up to 30 s",
       "source": "A1 3.13, A1 3.1, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -3147,7 +3147,7 @@
     },
     {
       "id": "A1.5.projection.reconcile",
-      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on tasks view rebuild; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
+      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on tasks view rebuild; a rebuild asked for while a failing batch runs stays a full one; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",

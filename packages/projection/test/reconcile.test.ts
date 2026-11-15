@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { TrustedState, type Reconciled } from "../src/index.ts";
+import { RETRY_MAX_MS, TrustedState, type Reconciled } from "../src/index.ts";
 import {
   catalogOf,
   checkWatermark,
@@ -81,7 +81,8 @@ describe("[A1.5.projection.reconcile] reconciliation file by file: what is missi
   });
 
   test("a batch that failed reconciles before the next one: a file deleted meanwhile comes back without a restart", async () => {
-    const projector = w.projector();
+    let clock = Date.now();
+    const projector = w.projector({ now: () => clock });
     await projector.start();
     await settle(projector);
     const [a, b] = catalogOf(w.dir);
@@ -95,6 +96,8 @@ describe("[A1.5.projection.reconcile] reconciliation file by file: what is missi
     expect(next.reconciled).toMatchObject({ full: false });
     expect(inTree(w.dir, a?.path ?? "")).toBe(true);
     rmSync(join(w.folder, "exchange"));
+    // The blocked task waits its pause (rule 7), then goes through.
+    clock += RETRY_MAX_MS;
     await settle(projector);
     expect([...rescuedOf().values()]).toEqual(["A person's edit.\n"]);
     checkWatermark(w.dir, w.reader);

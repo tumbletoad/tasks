@@ -20,15 +20,21 @@ import {
 } from "./render.ts";
 
 const IDS = "(SELECT value FROM json_each($ids))";
+/** Tasks whose file could not be placed, each waiting its pause (projector.ts): not read yet. */
+const WAITING = "key NOT IN (SELECT value FROM json_each($waiting))";
 
 const SQL = {
   space: "SELECT * FROM space WHERE one = 1",
   dirty:
-    "SELECT key, first_seq FROM outbox WHERE topic = 'projection' AND key <> '*' " +
+    `SELECT key, first_seq FROM outbox WHERE topic = 'projection' AND key <> '*' AND ${WAITING} ` +
     "ORDER BY first_seq, key LIMIT $limit",
   all: "SELECT 1 AS dirty FROM outbox WHERE topic = 'projection' AND key = '*'",
   pending:
-    "SELECT count(*) AS n, coalesce(max(seq), 0) AS newest FROM outbox WHERE topic = 'projection'",
+    "SELECT count(*) AS n, coalesce(max(seq), 0) AS newest FROM outbox " +
+    `WHERE topic = 'projection' AND ${WAITING}`,
+  held:
+    "SELECT count(*) AS n FROM outbox WHERE topic = 'projection' " +
+    "AND key IN (SELECT value FROM json_each($waiting))",
   tasks:
     "SELECT t.id, t.ref, t.title, t.summary, t.context, t.lifecycle, t.status, t.priority, " +
     "t.effort, t.due_date, t.due_at, t.completed_at, t.created_at, t.outcome, t.deleted_at, " +
@@ -89,10 +95,12 @@ export interface Pending {
   readonly epoch: number;
   readonly incarnation: string;
   readonly lastSeq: number;
-  /** Projection rows waiting, `*` included. */
+  /** Projection rows to render, `*` included, those of tasks waiting their pause left out. */
   readonly rows: number;
   /** The newest commit a waiting row stands for. */
   readonly newest: number;
+  /** Rows of tasks waiting their pause: they hold the watermark below them. */
+  readonly held: number;
 }
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -128,11 +136,13 @@ function spaceOf(conn: Connection): SpaceIdentity & { refPrefix: string; lastSeq
   };
 }
 
-/** The outbox's state, in one read transaction. */
-export function readPending(conn: Connection): Pending {
+/** The outbox's state, in one read transaction, without the rows of the `waiting` tasks. */
+export function readPending(conn: Connection, waiting: readonly string[] = []): Pending {
   return conn.transaction("deferred", () => {
     const space = spaceOf(conn);
-    const row = conn.prepare(SQL.pending).get();
+    const params = { waiting: JSON.stringify(waiting) };
+    const row = conn.prepare(SQL.pending).get(params);
+    const held = waiting.length === 0 ? undefined : conn.prepare(SQL.held).get(params);
     return {
       spaceId: space.spaceId,
       epoch: space.epoch,
@@ -140,6 +150,7 @@ export function readPending(conn: Connection): Pending {
       lastSeq: space.lastSeq,
       rows: num(row?.["n"]),
       newest: num(row?.["newest"]),
+      held: num(held?.["n"]),
     };
   });
 }
@@ -156,13 +167,20 @@ export function missingTasks(conn: Connection, ids: readonly string[]): string[]
     .map((row) => str(row["id"]));
 }
 
-/** One batch at one snapshot: at most `limit` dirty tasks, oldest first (A1 3.13 step 2). */
-export function readBatch(conn: Connection, limit: number): BatchRead {
+/**
+ * One batch at one snapshot: at most `limit` dirty tasks, oldest first (A1 3.13 step 2), none of
+ * the `waiting` tasks, so tasks that cannot be placed never fill every batch.
+ */
+export function readBatch(
+  conn: Connection,
+  limit: number,
+  waiting: readonly string[] = [],
+): BatchRead {
   return conn.transaction("deferred", () => {
     const space = spaceOf(conn);
     const keys = conn
       .prepare(SQL.dirty)
-      .all({ limit })
+      .all({ limit, waiting: JSON.stringify(waiting) })
       .map((row) => str(row["key"]));
     const all = conn.prepare(SQL.all).get() !== undefined;
     const params = { ids: JSON.stringify(keys) };

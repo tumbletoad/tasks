@@ -5,16 +5,18 @@
 //
 // A batch, in this order:
 // 1. One read transaction at snapshot T (read.ts): up to 200 dirty tasks, oldest `first_seq`
-//    first, with what the projection shows of each. Each is rendered (render.ts).
+//    first, none that waits its pause, with what the projection shows of each. Each is rendered
+//    (render.ts).
 // 2. The journal names every temporary file and every file the batch is about to place. Then each
 //    task's file is placed (tree.ts, rule 6). A task whose file could not be placed keeps its old
-//    file and line, and stays queued; it never stops the tasks after it.
+//    file and line, stays queued and waits a pause of its own (RETRY_FIRST_MS doubling up to
+//    RETRY_MAX_MS) before a batch reads it again: it never stops the tasks after it.
 // 3. The writer marks the tasks whose files are in place (write/outbox.ts) and answers the
 //    watermark W: only through a fully rendered prefix (rule 7).
-// 4. When the batch took every dirty task (fewer than 200), or W moved: the root files, from the
-//    record's catalogue lines, which are exactly what was placed: README.md, index.md,
-//    catalog.jsonl and, last, .projection.json, both headers with the larger of W and the
-//    watermark last published, so it never moves backwards. The journal names them first. Only
+// 4. When the batch took every dirty task it could read (fewer than 200), or W moved: the root
+//    files, from the record's catalogue lines, which are exactly what was placed: README.md,
+//    index.md, catalog.jsonl and, last, .projection.json, both headers with the larger of W and
+//    the watermark last published, so it never moves backwards. The journal names them first. Only
 //    once all four are placed do the retired files go, each only by the proof of ownership: the
 //    catalogue that no longer names them is in place.
 // 5. The record is written, then the journal dropped; then `*` is reported, when it was dirty.
@@ -150,6 +152,14 @@ export interface StartReport {
   readonly reconciled: Reconciled;
 }
 
+/**
+ * A1 3.13 rule 7: a task whose file could not be placed waits a pause of its own before it is read
+ * again, doubling from this up to RETRY_MAX_MS, so tasks that cannot be placed never fill every
+ * batch. A full reconciliation (`tasks view rebuild`) ends every pause.
+ */
+export const RETRY_FIRST_MS = 500;
+export const RETRY_MAX_MS = 30_000;
+
 const sameIdentity = (a: SpaceIdentity, b: SpaceIdentity): boolean =>
   a.spaceId === b.spaceId && a.epoch === b.epoch && a.incarnation === b.incarnation;
 
@@ -185,6 +195,8 @@ export class Projector {
   #republish = false;
   /** Files of the record that no task's line and no root file names any more. */
   #retired = new Set<string>();
+  /** Tasks whose file could not be placed: read again once `until` has passed (rule 7). */
+  readonly #waiting = new Map<string, { until: number; pause: number }>();
 
   constructor(options: ProjectorOptions) {
     this.#conn = options.conn;
@@ -324,6 +336,8 @@ export class Projector {
     if (forgotten > 0) this.#save();
     let queued = 0;
     if (full) {
+      // Every task again, now: a person who fixed what blocked a task need not wait its pause.
+      this.#waiting.clear();
       queued += await this.#writer.queueProjection();
       queue.clear();
       for (const id of missingTasks(this.#conn, [...record.entries.keys()])) queue.add(id);
@@ -368,7 +382,7 @@ export class Projector {
    * retired file still there.
    */
   pending(): { dirty: boolean; mark: string } {
-    const p = readPending(this.#conn);
+    const p = readPending(this.#conn, this.#waitingNow());
     const record = this.#rec;
     const dirty =
       this.#unsaved ||
@@ -376,7 +390,8 @@ export class Projector {
       this.#republish ||
       !sameIdentity(record.identity, p) ||
       p.rows > 0 ||
-      p.lastSeq > record.watermark ||
+      // A task waiting its pause holds W below it: no batch could move it until the pause ends.
+      (p.held === 0 && p.lastSeq > record.watermark) ||
       this.#retired.size > 0;
     return { dirty, mark: `${String(p.rows)}:${String(p.newest)}:${String(p.lastSeq)}` };
   }
@@ -408,7 +423,7 @@ export class Projector {
       // ran stays asked for.
       if (this.#reconcile === asked) this.#reconcile = "none";
     }
-    const read = readBatch(this.#conn, this.#batch);
+    const read = readBatch(this.#conn, this.#batch, this.#waitingNow());
     const record = this.#rec;
     const rescues = new Rescues(newStem(this.#now()));
     if (!sameIdentity(record.identity, read.space)) {
@@ -474,8 +489,10 @@ export class Projector {
         } catch (error) {
           counts.failed += 1;
           code ??= codeOf(error);
+          this.#wait(plan.key);
         }
       }
+      for (const key of done) this.#waiting.delete(key);
       watermark = await this.#writer.projected({ seq: read.seq, keys: done });
       const drained = read.keys.length < this.#batch;
       const moved = watermark > record.watermark;
@@ -522,6 +539,19 @@ export class Projector {
       await this.#writer.projected({ seq: read.seq, keys: [PROJECTION_ALL] });
     }
     return this.#report(read.seq, watermark, counts, rescues, published, reconciled, code);
+  }
+
+  /** The tasks still waiting their pause now. */
+  #waitingNow(): string[] {
+    const now = this.#now();
+    return [...this.#waiting].filter(([, wait]) => wait.until > now).map(([key]) => key);
+  }
+
+  /** `key`'s file could not be placed: it waits a pause twice its last, from RETRY_FIRST_MS. */
+  #wait(key: string): void {
+    const before = this.#waiting.get(key);
+    const pause = before === undefined ? RETRY_FIRST_MS : Math.min(RETRY_MAX_MS, before.pause * 2);
+    this.#waiting.set(key, { until: this.#now() + pause, pause });
   }
 
   /** Tells onRescued of `files` entries moved aside into `<stem>-<n>`, when there are any. */

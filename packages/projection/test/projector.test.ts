@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Id } from "@tasks/storage";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { RETRY_FIRST_MS, RETRY_MAX_MS } from "../src/index.ts";
 import {
   catalogOf,
   checkWatermark,
@@ -312,7 +313,8 @@ describe("[A1.5.projection.rescue] what is not the projection's is never written
     // The space's exchange/ is a file: no rescue folder can be made, so nothing is moved.
     writeFileSync(join(w.folder, "exchange"), "Not a folder.\n");
     w.submit([{ kind: "task.patch", task: first?.id ?? "", set: { summary: "Rendered later" } }]);
-    const projector = w.projector();
+    let clock = Date.now();
+    const projector = w.projector({ now: () => clock });
     await projector.start();
     const report = await projector.step();
     expect(report.failed).toBe(1);
@@ -322,16 +324,57 @@ describe("[A1.5.projection.rescue] what is not the projection's is never written
     // The watermark stays below the task, which waits.
     expect(report.watermark).toBeLessThan(report.seq);
     expect(projector.pending().dirty).toBe(true);
-    // Once exchange/ is a folder, it goes through.
+    // Once exchange/ is a folder, it goes through, after the task's pause.
     rmSync(join(w.folder, "exchange"));
+    clock += RETRY_MAX_MS;
     await settle(projector);
     expect(readFileSync(abs, "utf8")).toContain("Rendered later");
     expect([...rescuedOf(w).values()]).toContain("Edited by a person.\n");
     checkWatermark(w.dir, w.reader);
   });
 
+  test("a full batch of tasks that cannot be placed never stops the tasks after it: each waits its own pause, doubling up to 30 s", async () => {
+    let clock = Date.parse("2026-11-14T08:00:00.000Z");
+    const projector = w.projector({ batch: 2, now: () => clock });
+    await projector.start();
+    await settle(projector);
+    const [first, second, third] = catalogOf(w.dir);
+    for (const line of [first, second]) {
+      personWrites(join(w.dir, ...(line?.path ?? "").split("/")), "Blocking edit.\n");
+    }
+    writeFileSync(join(w.folder, "exchange"), "Not a folder.\n");
+    // Two blocked tasks fill a batch of two; the third commit comes after them.
+    for (const line of [first, second]) {
+      w.submit([{ kind: "task.patch", task: line?.id ?? "", set: { summary: "Blocked" } }]);
+    }
+    w.submit([{ kind: "task.patch", task: third?.id ?? "", set: { summary: "Free" } }]);
+    const blocked = await projector.step();
+    expect(blocked.failed).toBe(2);
+    // The next batch takes the third task, which nothing blocks: the blocked two wait their pause.
+    const reports = await settle(projector);
+    expect(reports.reduce((sum, r) => sum + r.failed, 0)).toBe(0);
+    expect(readFileSync(join(w.dir, ...(third?.path ?? "").split("/")), "utf8")).toContain("Free");
+    expect(projector.pending().dirty).toBe(false);
+    // Their pause over, they are tried again; still blocked, they wait twice as long.
+    clock += RETRY_FIRST_MS;
+    expect(projector.pending().dirty).toBe(true);
+    expect((await projector.step()).failed).toBe(2);
+    clock += RETRY_FIRST_MS;
+    await settle(projector);
+    expect(projector.pending().dirty).toBe(false);
+    clock += RETRY_FIRST_MS;
+    expect(projector.pending().dirty).toBe(true);
+    // Once a rescue can happen, they go through.
+    rmSync(join(w.folder, "exchange"));
+    await settle(projector);
+    expect([...rescuedOf(w).values()]).toEqual(["Blocking edit.\n", "Blocking edit.\n"]);
+    checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
   test("a task whose file cannot be placed holds the watermark below it, never stops the tasks after it, and the catalogue names only files that are there", async () => {
-    const projector = w.projector();
+    let clock = Date.now();
+    const projector = w.projector({ now: () => clock });
     await projector.start();
     await settle(projector);
     const [first, second] = catalogOf(w.dir);
@@ -356,6 +399,7 @@ describe("[A1.5.projection.rescue] what is not the projection's is never written
     // The person's edit stands where the first task's file was: only that task's claim is theirs.
     expect(checkWatermark(w.dir, w.reader, new Set([first?.id ?? ""]))).toBeLessThan(blockedAt);
     rmSync(join(w.folder, "exchange"));
+    clock += RETRY_MAX_MS;
     await settle(projector);
     checkWatermark(w.dir, w.reader);
     expectSameTree(treeOf(w.dir), await freshRender());

@@ -14,6 +14,8 @@
 export { runProjection, MAX_WAIT_MS, POLL_MS, QUIET_MS, type LoopOptions } from "./loop.ts";
 export {
   Projector,
+  RETRY_FIRST_MS,
+  RETRY_MAX_MS,
   type ProjectionWriter,
   type ProjectorOptions,
   type Reconciled,

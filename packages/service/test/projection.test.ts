@@ -99,7 +99,9 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     // and the space's folder's own: two folders that hold one space never share one.
     const state = projectionStateOf(stateOf(home), spaceId, folder);
     expect(existsSync(state.record)).toBe(true);
-    expect(state.record).not.toBe(projectionStateOf(stateOf(home), spaceId, `${folder}-copy`).record);
+    expect(state.record).not.toBe(
+      projectionStateOf(stateOf(home), spaceId, `${folder}-copy`).record,
+    );
     expect(readdirSync(view).filter((name) => name.startsWith(".projection-"))).toEqual([]);
     const s = await classSession(home, service.endpoint.path, "cli-script");
     try {
@@ -207,7 +209,10 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
       "the record of the rescue",
     );
     expect(listed).toEqual([
-      expect.objectContaining({ stem: `exchange/rescued/${(box ?? "").replace(/-1$/, "")}`, files: 1 }),
+      expect.objectContaining({
+        stem: `exchange/rescued/${(box ?? "").replace(/-1$/, "")}`,
+        files: 1,
+      }),
     ]);
   }, 120_000);
 
