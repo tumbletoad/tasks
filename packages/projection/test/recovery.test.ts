@@ -161,6 +161,44 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     });
   }
 
+  for (const lost of ["missing", "of another incarnation"] as const) {
+    test(`a record ${lost}, and a kill right after the start wrote its new one: the next start still renders every task`, async () => {
+      const first = w.projector();
+      await first.start();
+      await settle(first);
+      if (lost === "missing") rmSync(w.record);
+      else {
+        const record = JSON.parse(readFileSync(w.record, "utf8")) as Record<string, unknown>;
+        writeFileSync(w.record, JSON.stringify({ ...record, incarnation: "ai_other" }));
+      }
+      // A task that differs from its file with no outbox row for it, as after a restore: only
+      // the full rebuild renders it again.
+      const [line, other] = catalogOf(w.dir);
+      w.submit([{ kind: "task.patch", task: other?.id ?? "", set: { summary: "Restored state" } }]);
+      w.writer.projected({ seq: w.writer.asOf().seq, keys: [other?.id ?? ""] });
+      // And a file a person removed meanwhile.
+      const abs = join(w.dir, ...(line?.path ?? "").split("/"));
+      chmodSync(abs, 0o600);
+      rmSync(abs);
+      // The start writes its new record, then is killed at its next act.
+      let saved = false;
+      const doomed = w.projector({
+        at: (act) => {
+          if (saved) throw new Error("fixture kill");
+          if (act === "record") saved = true;
+        },
+      });
+      await expect(doomed.start()).rejects.toThrow("fixture kill");
+      const after = w.projector();
+      await after.start();
+      await settle(after);
+      expect(catalogOf(w.dir)).toHaveLength(12);
+      expectCatalogInTree(w.dir);
+      checkWatermark(w.dir, w.reader);
+      expectSameTree(treeOf(w.dir), await freshRender());
+    });
+  }
+
   test("a record of another incarnation (a restore): every task again, the record's own unchanged files replaced or removed, an edited one moved aside", async () => {
     const first = w.projector();
     await first.start();

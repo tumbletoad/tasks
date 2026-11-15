@@ -274,10 +274,12 @@ export class Projector {
     const temps = this.#tree.cleanTemps(journal?.temps ?? []);
     let full = found === undefined;
     if (!sameIdentity(record.identity, pending) || record.watermark > pending.lastSeq) {
-      record.identity = identityOf(pending);
-      record.watermark = 0;
       full = true;
     }
+    // Before the record that no longer says why: a kill after it must find every task queued.
+    if (full) await this.#queueAll(record);
+    record.identity = identityOf(pending);
+    if (full) record.watermark = 0;
     this.#record = record;
     this.#republish = false;
     this.#save();
@@ -336,16 +338,26 @@ export class Projector {
     if (forgotten > 0) this.#save();
     let queued = 0;
     if (full) {
-      // Every task again, now: a person who fixed what blocked a task need not wait its pause.
-      this.#waiting.clear();
-      queued += await this.#writer.queueProjection();
+      queued += await this.#queueAll(record);
       queue.clear();
-      for (const id of missingTasks(this.#conn, [...record.entries.keys()])) queue.add(id);
     }
     queued += await this.#queue([...queue]);
     const reconciled = { full, checked, queued, forgotten };
     this.#onReconciled?.(reconciled);
     return reconciled;
+  }
+
+  /**
+   * A full rebuild's queue, through the writer, whose outbox is durable: every task, and the tasks
+   * `record` names that the space no longer has, so their files retire. It goes before any record
+   * that would no longer say why (a new one, another identity's), so a kill in between finds every
+   * task still queued. Every task's pause ends too: a person who fixed what blocked a task need not
+   * wait for it.
+   */
+  async #queueAll(record: TrustedRecord): Promise<number> {
+    this.#waiting.clear();
+    const all = await this.#writer.queueProjection();
+    return all + (await this.#queue(missingTasks(this.#conn, [...record.entries.keys()])));
   }
 
   /** Queues `ids` for rendering again through the writer, in parts. Returns how many it queued. */
@@ -427,7 +439,9 @@ export class Projector {
     const record = this.#rec;
     const rescues = new Rescues(newStem(this.#now()));
     if (!sameIdentity(record.identity, read.space)) {
-      // Another identity of the space (a restore, a claim): every task again, nothing removed.
+      // Another identity of the space (a restore, a claim): every task again, queued before the
+      // record that no longer says why. Nothing is removed on its word.
+      await this.#queueAll(record);
       record.identity = identityOf(read.space);
       record.watermark = 0;
       this.#save();
