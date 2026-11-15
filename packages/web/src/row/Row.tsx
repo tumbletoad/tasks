@@ -244,7 +244,8 @@ function Slots({
 
 /**
  * The title's editor (A5 3.7, 3.11): Enter or leaving the field saves a changed title, Escape keeps
- * the old one. Either way focus goes back to the title, so the keyboard stays on the row. The save
+ * the old one. Enter and Escape put focus back on the title, so the keyboard stays on the row;
+ * leaving for another control keeps focus there. The save
  * is the person's edit like any other (edits.ts), with the base taken when the editor opened: a
  * title someone else changed while the person typed is a conflict, never overwritten, and the
  * field says so while the person types. Leaving the window is not leaving the field: the editor
@@ -295,7 +296,8 @@ function TitleEditor({
     // The editor's own values, fixed while it is open.
     [edits, before, opened],
   );
-  const finish = (keep: boolean) => {
+  /** `refocus`: Enter or Escape put focus back on the title; leaving the field keeps its target. */
+  const finish = (keep: boolean, refocus: boolean) => {
     if (done.current) return;
     done.current = true;
     const title = (field.current?.value ?? "").trim();
@@ -304,6 +306,7 @@ function TitleEditor({
     if (keep && title !== "" && title !== before) {
       edits.edit(task, titleChange(title), opened.base === undefined ? {} : { base: opened.base });
     }
+    if (!refocus) return;
     // After React has put the title back.
     requestAnimationFrame(() => {
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
@@ -328,18 +331,19 @@ function TitleEditor({
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter") {
             event.preventDefault();
-            finish(true);
+            finish(true, true);
           } else if (event.key === "Escape") {
             // Escape leaves the editor only: the list must not collapse the row.
             event.preventDefault();
             event.stopPropagation();
-            finish(false);
+            finish(false, true);
           }
         }}
-        onBlur={() => {
+        onBlur={(event) => {
           // The window lost focus (another app, another tab): the field keeps it for its return.
           if (!document.hasFocus()) return;
-          finish(true);
+          // Focus went to another control: it stays there. Nowhere: back to the title.
+          finish(true, event.relatedTarget === null);
         }}
       />
       {task.title === before ? null : (

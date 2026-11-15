@@ -14,6 +14,7 @@ import {
   statusChange,
   triageChange,
   waitingChange,
+  type Field,
 } from "../edit/change.ts";
 import { whoOf } from "../edit/edits.ts";
 import { Unsaved } from "../edit/Unsaved.tsx";
@@ -40,6 +41,16 @@ const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
 
 /** The space's statuses (`tasks.statuses`): the defaults until the snapshot carries the preference. */
 const STATUSES = ["open", "waiting", "review", "backlog"] as const;
+/** The facts whose unsaved value a finished task still shows, with their labels. */
+const UNSAVED_FACTS: readonly (readonly [Field, MessageId])[] = [
+  ["status", "fact.status"],
+  ["waiting_on", "fact.waitingOn"],
+  ["priority", "fact.priority"],
+  ["effort", "fact.effort"],
+  ["due", "fact.due"],
+  ["grouping", "fact.area"],
+];
+
 /** The space's effort scale (`tasks.effort_scale`): the default until the snapshot carries it. */
 const EFFORTS = ["S", "M", "L"] as const;
 
@@ -331,6 +342,21 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           </Fact>
         )}
         <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+        {/* A value the person chose before the task was finished stays readable here, with its
+            choice, until they choose: it is never dropped because someone checked the task off. */}
+        {UNSAVED_FACTS.map(([field, label]) => {
+          const unsaved = edits.unsaved(task.id, field);
+          if (unsaved === undefined) return null;
+          const shown = unsaved.change.shown;
+          return (
+            <Fact key={field} label={t(label)}>
+              <span dir="auto" data-part="unsaved-value">
+                {typeof shown === "string" ? shown : sayMsg(t, shown)}
+              </span>
+              <Unsaved task={task.id} field={field} />
+            </Fact>
+          );
+        })}
       </dl>
     );
   }

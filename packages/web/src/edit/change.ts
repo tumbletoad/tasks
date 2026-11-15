@@ -41,6 +41,11 @@ export interface Change {
   readonly said: Msg;
   /** The person's value as words ("P1"), for "Apply mine" while it is not saved. */
   readonly shown: Words;
+  /**
+   * A change of several fields, as its one-field changes: a refusal keeps each, and a newer edit
+   * of one field replaces only that one (A5 3.11).
+   */
+  readonly parts?: readonly Change[];
 }
 
 /** Words for a value: a message, or the person's own text. */
@@ -152,13 +157,15 @@ export function statusChange(status: string): Change {
 
 /** Out of the Inbox, into Open (A5 3.7 "Move to Open"). */
 export function triageChange(): Change {
-  return {
-    fields: ["inbox", "status"],
-    set: { inbox: false, status: "open" },
-    overlay: { set: { inbox: false, status: "open" } },
+  const out: Change = {
+    fields: ["inbox"],
+    set: { inbox: false },
+    overlay: { set: { inbox: false } },
     said: { id: "toast.triaged" },
-    shown: { id: "status.open" },
+    shown: { id: "edit.outOfInbox" },
   };
+  const joined = joinChanges([out, statusChange("open")]);
+  return { ...(joined ?? out), said: { id: "toast.triaged" }, shown: { id: "status.open" } };
 }
 
 export function waitingChange(person: string | undefined): Change {
@@ -284,5 +291,6 @@ export function joinChanges(changes: readonly Change[]): Change | undefined {
     },
     said: { id: "toast.restored" },
     shown: { id: "edit.restoredMany", values: { count: changes.length } },
+    parts: changes.flatMap((c) => c.parts ?? [c]),
   };
 }

@@ -320,12 +320,12 @@ export class Edits {
         if ((result as { result?: unknown }).result === "no_change") this.#untoast(toast);
       },
       (error: unknown) => {
-        // The person edited a field of it again since: that newer choice stands, and this one is
-        // not offered again over it.
-        const superseded = change.fields.some(
-          (field) => this.#latest.get(keyOf(task.id, field)) !== number,
+        // Kept part by part: a part whose field the person edited again since gives way to that
+        // newer choice, and the others still wait for the person.
+        const kept = (change.parts ?? [change]).filter((part) =>
+          part.fields.every((field) => this.#latest.get(keyOf(task.id, field)) === number),
         );
-        if (!superseded) this.#refused(task, change, error);
+        if (kept.length > 0) this.#refused(task, kept, error);
       },
     );
   }
@@ -471,6 +471,9 @@ export class Edits {
   // -------------------------------------------------------------------------------------------
 
   async #history(kind: "undo" | "redo", commit: string | undefined, partial: boolean) {
+    // After the person's edits on their way: Ctrl+Z takes back the newest of them, never one
+    // before it while the newest is still to be sent.
+    await Promise.all(this.#chains.values());
     const request = this.#deps.newRequest();
     this.#mine.add(request);
     const input = {
@@ -677,28 +680,35 @@ export class Edits {
     return sent;
   }
 
-  #refused(task: TaskRow, change: Change, error: unknown): void {
+  #refused(task: TaskRow, parts: readonly Change[], error: unknown): void {
     const signedOut = this.#deps.failed(error);
     const problem = problemOf(error);
-    const conflict =
+    const conflictOf = (change: Change) =>
       problem?.code === "conflict"
         ? (problem.conflicts.find((c) => change.fields.some((f) => f === c.field)) ??
           problem.conflicts[0])
         : undefined;
-    const field = change.fields[0] ?? "title";
-    const unsaved: Unsaved = {
-      task: task.id,
-      ref: task.ref,
-      field,
-      change,
-      reason: conflict === undefined ? "failed" : "conflict",
-      ...(conflict === undefined ? {} : { by: conflict.by, at: Date.parse(conflict.at) }),
-    };
-    // Under each field it writes: the control of any of them shows it.
+    // Each part under each field it writes: the control of any of them shows it, and a newer edit
+    // of one field drops only its own part.
     const next = new Map(this.#state.unsaved);
-    for (const each of change.fields) next.set(keyOf(task.id, each), unsaved);
+    for (const change of parts) {
+      const conflict = conflictOf(change);
+      const unsaved: Unsaved = {
+        task: task.id,
+        ref: task.ref,
+        field: change.fields[0] ?? "title",
+        change,
+        reason: conflict === undefined ? "failed" : "conflict",
+        ...(conflict === undefined ? {} : { by: conflict.by, at: Date.parse(conflict.at) }),
+      };
+      for (const each of change.fields) next.set(keyOf(task.id, each), unsaved);
+    }
     this.#set({ ...this.#state, unsaved: next });
     if (signedOut) return;
+    const first = parts[0];
+    if (first === undefined) return;
+    const conflict = conflictOf(first);
+    const field = first.fields[0] ?? "title";
     const words = FIELD_WORDS[field];
     this.#toast({
       kind: "error",
@@ -712,7 +722,14 @@ export class Edits {
       action: {
         label: { id: conflict === undefined ? "toast.tryAgain" : "toast.applyMine" },
         run: () => {
-          this.apply(task.id, field);
+          // Every part that still waits, as one edit again.
+          const waiting = parts
+            .map((part) => this.unsaved(task.id, part.fields[0] ?? "title")?.change)
+            .filter((change): change is Change => change !== undefined);
+          const again = joinChanges(waiting);
+          if (again === undefined) return;
+          const row = this.#deps.rowOf(task.ref);
+          this.edit(row ?? task, again);
         },
       },
     });

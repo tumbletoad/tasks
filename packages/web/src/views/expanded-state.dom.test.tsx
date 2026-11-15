@@ -409,6 +409,61 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     ]);
   });
 
+  test("who it waits on, typed while an agent checks the task off, stays readable with its choice", async () => {
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return Promise.reject(
+        Object.assign(new Error("not active"), { code: "invalid_state", data: {} }),
+      );
+    };
+    const tasks = [task(1, { status: "waiting" }), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    expand("t_00001");
+    const field = waitingField("t_00001");
+    act(() => {
+      field?.focus();
+    });
+    type(field, "Ana Reyes");
+    apply(
+      batch(
+        11,
+        [task(1, { status: "waiting", lifecycle: "completed", version: 2 })],
+        ["lifecycle"],
+      ),
+    );
+    await settle();
+    const card = container.querySelector('li[data-key="t_00001"]');
+    expect(card?.querySelector('[data-part="unsaved-value"]')?.textContent).toBe("Ana Reyes");
+    expect(card?.querySelector('[data-part="unsaved"]')).not.toBeNull();
+  });
+
+  test("leaving the title editor for another control keeps focus there", async () => {
+    const tasks = [task(1), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    const id = "t_00001";
+    act(() => {
+      titleOf(id)?.focus();
+    });
+    press(titleOf(id), "F2");
+    const field = container.querySelector<HTMLInputElement>(
+      `li[data-key="${id}"] [data-part="title-edit"]`,
+    );
+    type(field, "Task 1, fixed");
+    const other = titleOf("t_00002");
+    act(() => {
+      other?.focus();
+    });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(document.activeElement).toBe(other);
+    expect(updates).toEqual([
+      expect.objectContaining({ task: id, set: { title: "Task 1, fixed" } }),
+    ]);
+  });
+
   test("a title being typed is saved when the view changes under the person", () => {
     const tasks = [task(1), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);

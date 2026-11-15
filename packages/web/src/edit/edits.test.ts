@@ -5,7 +5,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LiveStore } from "../store/store.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { FakeFrames } from "../../test/fake-frames.ts";
-import { dueChange, effortChange, priorityChange, restoreChange, titleChange } from "./change.ts";
+import {
+  dueChange,
+  effortChange,
+  joinChanges,
+  priorityChange,
+  restoreChange,
+  titleChange,
+} from "./change.ts";
 import { Edits, HOLD_MS, COLLAPSE_MS, type Toast } from "./edits.ts";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
@@ -286,6 +293,76 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
     expect(w.toasts.slice(toasts).some((t) => t?.kind === "error")).toBe(false);
     expect(w.calls[1]?.input).toMatchObject({ set: { priority: 2 } });
+  });
+
+  test("a refused change of several fields is kept field by field: a newer edit of one leaves the others waiting", async () => {
+    const w = new World([task(1)]);
+    let failFirst!: (error: Error) => void;
+    w.answer(
+      "task.update",
+      () => new Promise((_resolve, reject: (error: Error) => void) => (failFirst = reject)),
+    );
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    }));
+    const both = joinChanges([titleChange("My title"), priorityChange(1)]);
+    if (both === undefined) throw new Error("no change");
+    w.edits.edit(task(1), both);
+    // The person picks another priority while the first edit is on its way; then it fails.
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    failFirst(new Error("network"));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.edits.unsaved("t_00001", "title")?.change.set).toEqual({ title: "My title" });
+    // A later edit of the priority leaves the title's value waiting too.
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    w.edits.edit(task(1), priorityChange(3));
+    expect(w.edits.unsaved("t_00001", "title")).toBeDefined();
+  });
+
+  test("Ctrl+Z waits for the person's edits on their way, so it takes back the newest", async () => {
+    const w = new World([task(1)]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["effort"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_e",
+      tasks: ["M-1"],
+      task_count: 1,
+      as_of: w.asOf(13),
+    }));
+    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), effortChange("M"));
+    const undone = w.edits.undo();
+    await flush();
+    expect(w.calls.map((c) => c.name)).toEqual(["task.update"]);
+    answerFirst({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    });
+    await undone;
+    expect(w.calls.map((c) => c.name)).toEqual(["task.update", "task.update", "history.undo"]);
   });
 
   test("an editor's base is the one it opened with: a conflict keeps the person's value with who changed it, and Apply mine sends it again with a fresh base", async () => {

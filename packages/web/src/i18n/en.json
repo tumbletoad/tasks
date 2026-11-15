@@ -206,6 +206,7 @@
   "edit.none": "None",
   "edit.starOn": "Starred",
   "edit.starOff": "Not starred",
+  "edit.outOfInbox": "Out of the Inbox",
   "edit.restoredGroup": "Your area and project",
   "edit.restoredMany": "Your {count} values",
   "edit.changedBy": "{who, select, user {Changed elsewhere just now} import {Changed by the import just now} other {Changed by {by} just now}}",
