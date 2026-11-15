@@ -67,6 +67,9 @@ const SAMPLE = {
   project: "Lumen Health",
   age: "3d",
   value: "P1",
+  wrote: "P1",
+  now: "P2",
+  restore: "P3",
   field: "the due date",
   at: Date.UTC(2026, 10, 12, 9, 40),
 };
