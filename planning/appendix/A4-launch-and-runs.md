@@ -2,9 +2,9 @@
 
 Appendix of the TT Tasks plan. It owns targets and instances, launch routes, terminals and the launch shim, process scopes and the agent's environment, launch intents and receipts, the execution store, sessions and resume, background runs, routines and the scheduler, the Tasks work folder, pre-trust, and the brief text.
 
-It relies on A1 (records, places, operations in one transaction), A2 (the service, the local socket or pipe, the `tasks` binary and CLI, `machine.toml`, the folders `<config>`, `<state>` and `<cache>` under `~/.tasks`, packaging) and A3 (the bridge, binding, agent tools, proposals). 3.17 lists what it assumes from each.
+It relies on A1 (records, folders, operations in one transaction), A2 (the service, the local socket or pipe, the `tasks` binary and CLI, `machine.toml`, the folders `<config>`, `<state>` and `<cache>` under `~/.tasks`, packaging) and A3 (the bridge, binding, agent tools, proposals). 3.17 lists what it assumes from each.
 
-**Built:** machine configuration and detection (3.2), places and the Tasks work folder for terminal launches (3.3), the Claude Code and Codex terminal routes, Claude Code's link route, the Claude Desktop and Codex app links, Copy, Shift+Copy and `tasks brief --copy` (3.4.2 to 3.4.6), T3's primary route and pairing against a fake server (3.4.1, not yet reachable from Open), terminals, the shim, the URL opener, process scopes for terminals and the agent's environment (3.6 to 3.8), launch records, their state machine and `launch.open` (3.9), session records in machine state (3.10), the stream parsers (3.11.4), the brief, its sanitiser and the context pack (3.15), and the launch part of the execution store (3.16.1). For these the code and its tests carry the detail, and this appendix keeps only the guarantees, the reasons and where they live. Everything else is to build, and its sections hold every rule needed to build it.
+**Built:** machine configuration and detection (3.2), exact folders through roots and places, which M6.16 converts to A1 3.15's folders, and the Tasks work folder for terminal launches (3.3), the Claude Code and Codex terminal routes, Claude Code's link route, the Claude Desktop and Codex app links, Copy, Shift+Copy and `tasks brief --copy` (3.4.2 to 3.4.6), T3's primary route and pairing against a fake server (3.4.1, not yet reachable from Open), terminals, the shim, the URL opener, process scopes for terminals and the agent's environment (3.6 to 3.8), launch records, their state machine and `launch.open` (3.9), session records in machine state (3.10), the stream parsers (3.11.4), the brief, its sanitiser and the context pack (3.15), and the launch part of the execution store (3.16.1). For these the code and its tests carry the detail, and this appendix keeps only the guarantees, the reasons and where they live. Everything else is to build, and its sections hold every rule needed to build it.
 
 **Facts about other apps** hold for Claude Code 2.1.322, codex-cli 0.167, `t3` 0.1.7 and the T3 Code source at commit `322f6544`. T3's provider instances, its default models and its command line's verbs were checked again at commit `f82162f` (A3 3.13.6, 3.2, 3.4.1). The catalogue's `testedVersions` bounds them. The lab rows of 5.3 observe each route before product code relies on it (R17).
 
@@ -13,7 +13,7 @@ It relies on A1 (records, places, operations in one transaction), A2 (the servic
 ## 1. Summary
 
 1. **Targets are reviewed code, instances are machine-local data.** An instance binds one target to one account or config home ("Codex · work"). Anything executable that arrives with space data is disabled until approved on that machine by content hash.
-2. **The folder is exact or the target is unavailable.** Every route opens the task's place itself. T3 gets an exact project root or an existing worktree, or a one-click registration. A task without a place uses the space's **Tasks work folder**, never a project folder.
+2. **The folder is exact or the target is unavailable.** Every route opens the folder A1 3.15 resolves: the task's own, else its project's. T3 gets an exact project root or an existing worktree, or a one-click registration. A task with no folder of its own or its project's anywhere uses the space's **Tasks work folder**, never another folder.
 3. **One launch shim.** Terminal routes run `tasks shim <ticket>`, which fetches argv, folder and environment over the user-only socket and stays the agent's parent. No prompt text passes through a shell or terminal argv. After a service restart the shim re-attaches with a credential that can report and stop, never start.
 4. **Own process scopes.** Terminals and runs live outside the service's process group, so a restart or update never kills them.
 5. **Honest receipts.** Every launch writes an intent before dispatch and ends Dispatched, Confirmed, Failed or Unknown on route evidence. Nothing is retried automatically, except T3's idempotent idle create under the same grant. Resume needs a known native session ID. Execution records go through one `ExecutionStore`.
@@ -27,11 +27,11 @@ It relies on A1 (records, places, operations in one transaction), A2 (the servic
 
 | # | Choice | Why |
 |---|---|---|
-| L1 | The target catalogue is code. Instances, terminals, roots and custom targets are in `machine.toml`. Space data holds only references | R10: a synced or imported space cannot plant a command |
+| L1 | The target catalogue is code. Instances, terminals and custom targets are in `machine.toml`. Space data holds only references, and folders (A1 3.15) | R10: a synced or imported space cannot plant a command |
 | L2 | A definition that arrives with data is disabled on each machine until the user approves the exact argv shown, pinned by hash | One changed byte re-disables it |
 | L3 | App targets (Claude Desktop, Codex app) have one instance each, bound to the home the app uses | A deep link cannot choose an account |
 | L4 | One T3 instance per T3 provider instance, passed as `modelSelection.instanceId` | T3 already separates provider homes |
-| L5 | A place must equal the target's working folder. T3 uses an exact root or an existing worktree | R11 |
+| L5 | The resolved folder must equal the target's working folder. T3 uses an exact root or an existing worktree | R11 |
 | L6 | T3 primary: Tasks as a paired MCP client creates an idle thread with `clientRequestId`, then opens the thread link with `?prompt=` as an unsent draft. Fallback: `t3 thread start <projectId>` | The only route with exact project, idle creation, account choice and idempotent create |
 | L7 | CLI primary: a visible terminal runs the shim, which sends the brief ending "Read the task, then wait for my instructions". Composer text replaces that line. `prompt = "prefill"` per instance switches to the prefill fallback | Preset session ID, the user's terminal, Tasks' process scope |
 | L8 | Claude Code fallback: `claude-cli://open?cwd=&q=` | Documented prefill |
@@ -46,12 +46,12 @@ It relies on A1 (records, places, operations in one transaction), A2 (the servic
 | L17 | A run's exit records a result and never moves the task | R9 |
 | L18 | 3 runs per machine, 2 per instance, 1 per task, 1 per folder. Interactive opens are not limited | |
 | L19 | Run permission comes from the instance. Nothing waits on a prompt | Unattended runs cannot answer prompts |
-| L20 | Runs start only under roots marked `runs = true` and in Tasks' own work folders | `claude -p` skips the trust dialog |
+| L20 | A run starts in the folder its task resolves to, or a routine's work folder. Tasks sets no limit on where agents work: only the person's own setup of the agent app does (D28). The first Run per instance and machine names its folder and asks once (A5 3.8) | `claude -p` skips the trust dialog, so the confirmation says where the agent will work |
 | L21 | Routines are space records started by the user. Agents cannot create, edit or start them | D6, D8, R7 |
 | L22 | The scheduler ships in M9. v1 stores and validates the schedule field only | D8 |
 | L23 | Pre-trust is a user-confirmed step per folder and app, with preview and exact undo. After v1 | R16 |
 | L24 | A brief holds task ID, sanitised title and launch reference. No task content | R14 |
-| L25 | A task without a place opens and runs in the space's Tasks work folder (M6.08) | Every task can be opened without substituting a project folder |
+| L25 | A task with no folder of its own or its project's anywhere opens and runs in the space's Tasks work folder (M6.08) | Every task can be opened without substituting another folder |
 | L26 | Execution records are written only through `ExecutionStore`. v1: the space database. From L1: a machine-local journal on a machine without authority (A6) | A machine that executes must persist its intent even when it cannot write the space |
 | L27 | The claim reply carries an attachment credential that lets the shim re-attach. It never grants a claim | Tickets are one-use. A long session must survive a service restart |
 
@@ -78,7 +78,9 @@ It relies on A1 (records, places, operations in one transaction), A2 (the servic
 
 ### 3.2 Targets, instances and approval (R10)
 
-**Built** in `packages/launch/src`: the catalogue (`catalogue.ts`: targets, routes, budgets, permission flags, tested versions), the `machine.toml` sections A4 owns (`sections.ts`: `[roots]`, `[terminal]`, `[[instance]]`, `[approvals]`), detection (`detect.ts`) and approval hashes (`approval.ts`). `root_rev` is in `packages/service/src/config/root-revs.ts`. Tests: `[A4.3.2.catalogue.invariants]`, `[A4.3.2.detect.golden]`, `[A4.3.2.detect.real]`, `[A4.3.2.approval.hash]`, `[A4.3.2.root-rev]`.
+**Built** in `packages/launch/src`: the catalogue (`catalogue.ts`: targets, routes, budgets, permission flags, tested versions), the `machine.toml` sections A4 owns (`sections.ts`: `[terminal]`, `[[instance]]`, `[approvals]`), detection (`detect.ts`) and approval hashes (`approval.ts`). Tests: `[A4.3.2.catalogue.invariants]`, `[A4.3.2.detect.golden]`, `[A4.3.2.detect.real]`, `[A4.3.2.approval.hash]`.
+
+- **`[roots]` and `[roots.*]` are no longer used** (A1 3.15). The reader still accepts a file that holds them and ignores them, `tasks doctor` names them once as no longer used, and Tasks never edits them away: the file is the person's. Until M6.16 the reader parses them and `root_rev` (`packages/service/src/config/root-revs.ts`, `<state>/roots.json`, `[A4.3.2.root-rev]`) is kept; M6.16 retires both and leaves an existing `roots.json` where it is.
 
 - **The catalogue is code**, so the user never types bypass flags. Custom targets are `custom:<slug>`. `[[custom_target]]` and `[override.*]` are passed by unread until the route steps read them.
 - **Instances** live only in `machine.toml`, never synced or exported. A bad entry is dropped, never guessed, so a half-understood instance is never launched.
@@ -99,7 +101,7 @@ It relies on A1 (records, places, operations in one transaction), A2 (the servic
 - The action strip shows the first 14 characters of a label (1 to 40). The permission shows on hover and in the accessible name: "Open in Codex · work (full access)".
 - **Account check.** When the task's space is not in the instance's `spaces`, or its area's allowed accounts exclude the instance's `account`, Open asks "This task is in Work. Codex · personal is for personal work. Open anyway?" A strict area blocks it.
 - Two enabled instances never share glyph and colour ring (A5), and the label always names the account.
-- **Reserved for L1.** A6 lets a remote command use only an instance with `remote_allowed = true`. Each root's `root_rev` is kept current at each start and otherwise ignored in v1.
+- **Reserved for L1.** A6 lets a remote command use only an instance with `remote_allowed = true`.
 
 **Space references** (A1 preferences) hold only the default instance per space and area, pinned instances and their order, hidden targets and the brief template choice. An instance ID unknown on this machine shows "Not set up on this machine" and offers Copy.
 
@@ -116,26 +118,23 @@ Custom targets in `machine.toml` need no approval: the user wrote them. Their te
 
 ### 3.3 Exact folders (R11)
 
-A place is a root, a relative path and a kind (A1 3.15). **Built:** `resolvePlace` and `checkWorkingFolder` in `packages/launch/src/places.ts`, whose header states the guarantee and its residual, and `packages/launch/src/shim/folder.ts`. Tests: `[A1.3.15.places.*]`, `[A4.5.shim.folder]`, `[A4.5.shim.work-folder]`, `[A4.5.launch.open-replay]`.
+A launch's folder is the one A1 3.15's `resolve` gives on this machine: the task's own folder, else its project's, else none here because one of them lives on another machine, else the space's Tasks work folder. **Built** on the old model, a root and a relative path: `resolvePlace` and `checkWorkingFolder` in `packages/launch/src/places.ts`, whose header states the guarantee and its residual, and `packages/launch/src/shim/folder.ts`. Tests: `[A1.3.15.places.*]`, `[A4.5.shim.folder]`, `[A4.5.shim.work-folder]`, `[A4.5.launch.open-replay]`. M6.16 replaces the place resolution with `resolve` and keeps the in-folder check.
 
 Before any route runs:
-1. The place's machine is this machine. Otherwise the slot shows "Opens on <machine>" and only Copy works (`other_machine`).
-2. The path text is valid (`isPlacePath`).
-3. `resolvePlace` reads the tree once, with no retries. Inside the root is decided by directory identity, not spelling, and a volume without file numbers resolves nothing, by design.
-4. The route lands in exactly this folder.
-   - **`cwd` routes** (the shim). A plan names a place, never an absolute folder. The folder resolves at the click and again right after Dispatching commits. The real path and its check reach the process only in the claim reply, never in argv (a process listing shows it) or the environment (the agent inherits it). The process enters the folder itself, because terminals and their profiles may override a start folder, runs `checkWorkingFolder` before anything else, and starts the agent without a working-directory option. Never resolve the path again after the check: it may name another directory by then.
-   - **`param` routes** and T3 get step 3 plus their own checks (T3 compares the thread's folder by identity, 3.4.1). `claude-cli` rejects UNC paths, so a UNC place disables that route.
-5. If no route of the instance can land in the exact folder, the instance is disabled for this task with a one-line reason. Other instances and Copy stay. Tasks never substitutes a parent, a sibling clone, another clone of the repository, a scratch folder or the home folder.
+1. `resolve` names a folder on this machine. When the task's or its project's folder lives only on another machine, the slot shows "Opens on <machine>" and only Copy works (`other_machine`).
+2. **The launch check**, at the click and again right after Dispatching commits: the path, `~` expanded with this machine's home, exists and is a directory. Otherwise the instance is unavailable with "Folder not found on this computer" (`folder_missing`, `not_a_directory`), and the expanded task offers Choose folder. Nothing else is checked: Tasks uses whatever folder is at the path, as T3 Code does, and keeps no record of which folder was there before.
+3. The route lands in exactly this folder.
+   - **`cwd` routes** (the shim). The plan names the folder row (or the work folder) and its path. The path and the identity the launch check saw reach the process in the claim reply, never in argv, where Windows Terminal splits on `;` (L10), or the environment, which the agent inherits. The process enters the folder itself, because terminals and their profiles may override a start folder, runs `checkWorkingFolder` before anything else (the folder it entered is the directory the launch check saw a moment before), and starts the agent without a working-directory option. Never resolve the path again after that check: it may name another directory by then. The check is about that moment, not a record kept with the folder.
+   - **`param` routes** and T3 get step 2 plus their own checks (T3 compares the thread's folder by identity, 3.4.1). `claude-cli` rejects UNC paths, so a UNC folder disables that route.
+4. If no route of the instance can land in the exact folder, the instance is disabled for this task with a one-line reason. Other instances and Copy stay. Tasks never substitutes a parent, a sibling clone, another clone of the repository, a scratch folder, the home folder, the current folder or the last folder used, and never the project's folder for a task's own that is missing.
 
-The Git remote is an observation, not an identity.
-
-**Tasks without a place** (`none`, decided by the caller like `other_machine`) use the space's Tasks work folder on this machine.
-- It is never inside a space, a root or a project. `ensureWorkFolder` checks it more strictly than the state folder, because an agent works there with the person's rights, and makes nothing through a link. Then it resolves like a place with `<state>` as the root.
+**Tasks without a folder** (`none`, decided by `resolve` like `other_machine`) use the space's Tasks work folder on this machine.
+- It is never inside a space or a project folder: it lives under `<state>`, inside the Tasks home, where no folder binds (A1 3.15). `ensureWorkFolder` checks it more strictly than the state folder, because an agent works there with the person's rights, and makes nothing through a link. Then it takes the launch check like any folder.
 - Tasks never empties or removes a work folder or a routine's work folder. What an agent made there stays until the person removes it.
 - Every route treats it as the task's folder. T3 asks "Register Tasks work folder in T3?" once (3.4.1). Steps 2 to 4 apply.
-- Allowed for runs by default (3.11.7). No folder lease. Per-task and machine caps apply.
-- The resolution's `kind` is `place` or `work_folder`. A5 and the pointer brief call the second "Tasks work folder".
-- A task with a place uses exactly that place. A place that is missing, outside its root or on another machine stays unavailable with its reason and never falls back to the work folder.
+- No folder lease. Per-task and machine caps apply (3.11.7).
+- The resolution's `kind` is `task`, `project` or `work_folder`. A5 and the pointer brief call the last "Tasks work folder".
+- A task whose resolution names a folder uses exactly it. A folder that is missing or on another machine stays unavailable with its reason and never falls back to the work folder.
 - Agents still cannot launch (R7).
 
 ### 3.4 Launch routes per target
@@ -161,7 +160,7 @@ The UI uses the primary route. A fallback runs when the user picks it, or automa
 1. List all projects, all pages, without archived and deleted ones.
 2. **Exact root:** a project whose root has `P`'s identity binds as `root`.
 3. **Existing worktree:** `P` is a linked worktree that a project's repository lists. Git is read from its files, never started. A main checkout with a `.git` file and a bare repository are never bound as an existing worktree, so their cases ask.
-4. **Otherwise** (a plain subfolder, an unregistered clone, a new folder) the Prepared step asks once: **"Register tidy-logs › docs as a T3 project?"** with Register and Not now. Register calls `t3_project_create {workspaceRoot: P, title: <place display name>}` and binds again. A folder that still binds nothing is unavailable, never bound elsewhere. Not now makes the instance unavailable for this task ("T3 opens only registered folders"), remembered per place for 30 days.
+4. **Otherwise** (a plain subfolder, an unregistered clone, a new folder) the Prepared step asks once: **"Register tidy-logs › docs as a T3 project?"** with Register and Not now. Register calls `t3_project_create {workspaceRoot: P, title: <the Tasks project's name, else the folder's last name>}` and binds again. A folder that still binds nothing is unavailable, never bound elsewhere. Not now makes the instance unavailable for this task ("T3 opens only registered folders"), remembered per folder for 30 days.
 5. There is no binding cache: every Prepared step lists the projects again.
 
 Tasks never registers a project without asking, never uses a containing project, and never uses T3's undocumented WebSocket launch route, which skips the worktree check. Step 4's question goes once T3 offers a per-thread working folder (6.1).
@@ -481,7 +480,7 @@ The receipt shows in the task's session list and briefly beside the launch butto
 
 A **session** groups the launches of one agent conversation.
 
-**Built: session records in machine state** (`packages/service/src/binding/sessions.ts`, A3 3.7, tests `[A3.3.7.binding.*]`), and the space's `sessions` table (schema 0.3), which nothing writes yet. Until binding writes the table, it keeps session records and binding handles in `<state>/sessions.json`. The file holds no task text, ticket, handle or path. Everything a session does in a space still goes through the write path, under its actor `agent:<instance>:<session>`.
+**Built: session records in machine state** (`packages/service/src/binding/sessions.ts`, A3 3.7, tests `[A3.3.7.binding.*]`), and the space's `sessions` table (schema 0.3), which nothing writes yet. Until binding writes the table, it keeps session records and binding handles in `<state>/sessions.json`. The file holds no task text, ticket or handle. Everything a session does in a space still goes through the write path, under its actor `agent:<instance>:<session>`.
 - A launch's session is made at its first binding, not with the launch intent (A3 3.7.7).
 - **Live:** an open connection bound to it, or its launch's agent running. **Ended:** none of these and no call for 24 hours. Its record stays 30 days (`bindings.ts`).
 - Until binding writes the table, a session record lost with the state folder leaves its launch's `bound_at` in the space, so its reference answers `launch_used`.
@@ -507,7 +506,7 @@ type Session = {
 };
 ```
 
-A session has no folder field: its folder is the place of its launches, because the space holds no absolute path (A1 3.15).
+A session has no folder field: its folder is its launches', each of which records the folder it opened in (A1 3.15).
 - **Live** comes from the shim's connection, the bridge's connection or T3's thread state. Link and clipboard sessions show only "opened" until an agent binds.
 - Once sessions are made with the launch intent, one that never bound and saw no activity for 7 days ends `stale`.
 - **Resume** is offered only with a `native_id` and an existing instance. It creates a new intent in the same session and never replays the original brief. Otherwise the button reads "Open".
@@ -639,7 +638,7 @@ The first Run in an instance with `inherit` asks for a mode: "Runs in Codex · w
 
 - **User only.** Run, routine runs, Stop and Continue are user operations (R7), never agent tools. Tasks that agents create never trigger runs.
 - **An instruction is required.** Run with an empty composer focuses the composer and asks what the agent should do.
-- **Allowed folders.** A place under a root with `runs = true`, the Tasks work folder for a task without a place, or a routine's work folder.
+- **Folders.** A task's run starts in the folder its task resolves to (3.3), the Tasks work folder included, and a routine's run in its routine's work folder. Tasks sets no limit on where agents work (L20).
 - **Caps,** machine-local settings in `machine.toml`: `runs.max_concurrent` (default 3), `runs.max_per_instance` (default 2), and one per task. Extra runs wait in `queued`, first in first out.
 - **Folder lease** on the folder's real path: a second run waits. A live interactive session there asks "Codex · work is open in this folder. Run anyway?" The hover says a lease cannot stop agents Tasks does not know about. Work folders take no lease.
 - **Timeouts**, enforced by the shim so they hold while the service is down: 30 min wall time for task runs, 60 min for routines, 10 min idle without a stdout line. A timeout runs 3.11.8 and ends `timed_out`. A run stuck on a login or trust prompt shows as idle, and the message says so.
@@ -743,9 +742,9 @@ Each connector's read tools must run under `codex exec` without an approval requ
 Check-off completes a task at once (D12). Wrap-up writes the outcome and learnings later.
 - **Input:** the selected completed tasks, or all completed tasks without an outcome, at most 10 per run, fixed at the start and passed as IDs.
 - **Instance:** the space's default routine instance. No connectors.
-- **Per task:** read the task, log, notes and sessions through A3, look at the place folder read-only if useful (for example `git log`), write outcome and learnings through A3's wrap-up operation.
+- **Per task:** read the task, log, notes and sessions through A3, look at the task's folder read-only if useful (for example `git log`), write outcome and learnings through A3's wrap-up operation.
 - **Safety:** the wrap-up operation keeps every original text (D12). The routine never reopens, deletes or moves a task. Each task is its own operation.
-- **Folder:** the routine's work folder. Reading a task's place folder is allowed, without a lease.
+- **Folder:** the routine's work folder. Reading a task's folder is allowed, without a lease.
 
 #### 3.12.4 Custom routines
 
@@ -812,9 +811,9 @@ Tasks never writes another app's trust settings silently. Every change is a user
 | Codex CLI and app | Onboarding or `/permissions`. `exec` never asks | `[projects.'<path>'] trust_level = "trusted"` in `$CODEX_HOME/config.toml` | **Trust in Codex · work** |
 | T3 Code | Never. Registering a project is the trust step | T3's project list | "Register this folder in T3" (3.4.1) |
 | Claude Desktop | Every link launch | none | Nothing. The hover says it asks each time |
-| Tasks runs | Tasks' own rule | `runs = true` on a root | Preferences › Roots: "Allow background runs under work", with the warning that runs skip the apps' trust dialogs |
 
-- The offer appears in the Prepared step of the first Open in a folder whose trust reads as missing, and in Preferences › Roots for a whole root. Doctor lists the entries Tasks wrote and can remove them. A declined or failed trust check never starts another target.
+- Runs have no trust rule of Tasks' own: the first Run per instance and machine names its folder and asks once (A5 3.8), and the person's setup of the agent app decides what the agent may do.
+- The offer appears in the Prepared step of the first Open in a folder whose trust reads as missing. Doctor lists the entries Tasks wrote and can remove them. A declined or failed trust check never starts another target.
 - **Key spelling.** Claude Code: the launch working folder with `/` separators and its case kept exactly. Codex: the folder as the OS spells it, matched without case on Windows, so a table in another case is the same folder. In a git repository both key the repository root, and outside one a parent's key does not trust a child. On Linux both look up a symlinked folder's real path and keys are case-sensitive, so Tasks resolves links first. Whether each CLI's own dialog writes the same spelling is open (M0-L02, L04, L18). Tasks can read trust read-only from the same keys.
 - **A text-level patch.** A scanner finds the key's span and one splice writes it in the file's own style (line endings, indentation, spacing). No parse and re-serialise (it loses comments, key order and spacing) and no whole-file backup (it copies unrelated configuration). The whole file is validated with a real parser for its format (JSON for Claude Code, TOML for Codex) before the splice.
 - **The scanner refuses what it cannot account for**, because a misread string or bracket misplaces every later table: a string that does not end on its line, unmatched brackets, anything but a comment after a complete top-level value, a top-level bare value outside TOML 1.0 (booleans, the integer and float forms, `inf`/`nan`, dates and times), a value-less key, a CR not before an LF, and a table or key twice (a table under an array of tables counts per element). It honours escapes in a multi-line basic string. An unsupported layout is refused untouched. It is a locator, not a validator: `[1 2]` passes but cannot move a table or key.
@@ -912,7 +911,7 @@ Built (`packages/launch/src/brief/pack.ts`, read by `packOf` in `packages/servic
   ```
   ````
 
-  The pack asks for it (built). To build, with the composer (M5.07) and A3's proposals: pasted into the task's composer, such a block offers **Apply as proposal**. It is parsed as a small YAML subset (scalars, lists, one level of maps, at most 16 KB). Policy-bearing keys (place, instance, autonomy, routines) are refused. It always becomes a proposal (A3), whatever the autonomy. A block for another task shows a warning.
+  The pack asks for it (built). To build, with the composer (M5.07) and A3's proposals: pasted into the task's composer, such a block offers **Apply as proposal**. It is parsed as a small YAML subset (scalars, lists, one level of maps, at most 16 KB). Policy-bearing keys (instance, autonomy, routines) and a folder are refused: a folder binds only where its machine's service can check it. It always becomes a proposal (A3), whatever the autonomy. A block for another task shows a warning.
 
 #### 3.15.6 Sanitising
 
@@ -920,24 +919,24 @@ Built (`sanitise.ts`, whose header lists what each value may hold). A title beco
 
 ### 3.16 Records and the execution store
 
-A1 owns the schema. Space records change only through operations (R1). Machine records live in `<state>`, are never exported, and hold anything secret, executable or machine-local such as an absolute path.
+A1 owns the schema. Space records change only through operations (R1). Machine records live in `<state>`, are never exported, and hold anything secret or executable, and what only this machine needs (a launch's plan, a run's journal).
 
 Code never deletes a person's data or a backup as a side effect of another operation. It reuses, retires, keeps and reports. The service removes only its own records under the retention stated here (launch folders 3.6.3, run logs 3.11.5, plans and sessions below). Any other removal, a work folder's content included, is the person's explicit act.
 
 | Record | Where | Key fields |
 |---|---|---|
-| `launches` | Space (built) | `packages/storage/migrations/0001-schema-0.1.ts` |
+| `launches` | Space (built) | `packages/storage/migrations/0001-schema-0.1.ts`, and the folder it opened in (`detail.folder`, A1 3.15) |
 | `session` | Machine (built, `<state>/sessions.json`) until binding writes the space's table (schema 0.3, built) | 3.10 |
-| `run` | Space (built, schema 0.3) | id, task or routine, session, instance, adapter, place ID or work folder, request text, brief hash, permission, limits, state, version, reason, queued/started/ended times and each state's, evidence (claim, PID, native ID), result (8 KiB texts, exit code, usage, native ID), request ID (the receipt). Still to add as evidence or spec keys: the lease key (M6.02), the occurrence (M9) |
+| `run` | Space (built, schema 0.3) | id, task or routine, session, instance, adapter, its folder (`detail.folder`: the folder row and its path, or the work folder, A1 3.15), request text, brief hash, permission, limits, state, version, reason, queued/started/ended times and each state's, evidence (claim, PID, native ID), result (8 KiB texts, exit code, usage, native ID), request ID (the receipt). Still to add as evidence or spec keys: the lease key (M6.02), the occurrence (M9) |
 | `routine` | Space | 3.12.1 |
 | `routine_occurrence`, `next_due_at` | Space, from M9 | 3.13.2 |
-| Launch machine state | Machine (built) | `launch.json` per intent (3.6.3). Never an absolute folder in the plan. A link's brief stays in memory, and the composer text is never stored |
+| Launch machine state | Machine (built) | `launch.json` per intent (3.6.3). The plan names the folder row and its path; the folder is resolved again at dispatch (3.3). A link's brief stays in memory, and the composer text is never stored |
 | Tickets, attachment credentials | Machine (built) | Hashes only, bound to their launch or run |
 | Run files | Machine | `runs/<run-ref>/` (3.11.5), the last applied `seq` |
 | Launch folders, work folders | Machine | 3.6.3, 3.3, 3.12.1 |
 | T3 state | Machine (built) | `<state>/t3/`: the pairing, each T3 launch's plan (kept 7 days), the "Not now" answers (`t3-state.ts`) |
-| `env-snapshot.json`, `roots.json` | Machine (built) | 3.8, 3.2 |
-| Instances, terminal, roots, approvals, custom targets | Machine | `machine.toml` |
+| `env-snapshot.json` | Machine (built) | 3.8. A `roots.json` from before M6.16 stays where it is, unread |
+| Instances, terminal, approvals, custom targets | Machine | `machine.toml` |
 
 - Only state transitions are operations. Progress and journal positions are machine state, so a chatty run does not flood history.
 - A launch's time of each state is the writer's wall clock. `created_at` and `updated_at` stay commit instants.
@@ -965,7 +964,7 @@ interface ExecutionStore extends LaunchStore, RunStore {
 
 | From | A4 assumes |
 |---|---|
-| A1 | Exact place resolution (3.3), `none` and `other_machine`. One-transaction operations with request IDs behind the v1 store, non-undoable. M9's migration for occurrences and `next_due_at`. A note with addressee `agents`. A wrap-up operation that keeps all original text |
+| A1 | Folder resolution (A1 3.15's `resolve`): a folder of kind `task` or `project`, `none` and `other_machine`. One-transaction operations with request IDs behind the v1 store, non-undoable. M9's migration for occurrences and `next_due_at`. A note with addressee `agents`. A wrap-up operation that keeps all original text |
 | A2 | `tasks-local/1` over the user-only socket or pipe with `launch.claim`, `launch.attach`, `launch.started`, `launch.settled`, `launch.exited`, `launch.failed`, `run.attach`, `run.event`, `run.exited` and the message `cancel`. The `shim` class admits an unredeemed ticket (claim only) or a credential (attach and reports only), sent only after the service's proof is verified. A per-install ID for the runtime folder and unit names. A clean stop that removes the launch root and runtime folder only when empty. `machine.toml` with reader, typed problems and splice editor. The service lock. Starts outside kill-on-close jobs. A launcher that removes `NODE_*` and OpenSSL's loader settings. A stable launcher in the command folder that follows `current`, `home.marker` for a `TASKS_HOME` install, old version folders kept while their shims run, an updater that defers restarts. The CLI verbs `tasks shim` (hidden), `tasks setup t3`, `tasks setup agents`, `tasks doctor`, `tasks brief` (`launch.open`'s face) |
 | A3 | The bridge redeems `TASKS_TICKET` (role `bridge`) in its bind and reports `CLAUDE_CODE_SESSION_ID` or another native ID. A3 decides how a bridge restarted mid-session binds again (a resume handle). The task read tool accepts a launch reference, and its binding confirms the launch with `bound_at`. A connection that cannot hold a binding (the CLI, the UI) resolves a reference for that call only and uses nothing up. The grant gate (A3 3.7.8): a registered agent home reaches only the spaces its registration names, and a ticket or launch reference of another space binds nothing. `run_report`, advertised everywhere and permitted only for run and routine bindings. Binding kind `routine`. Codex entries with `env_vars = ["TASKS_TICKET"]`, not `required`. No launch, run, routine, approval or trust tool for agents (R7). Proposals for `tasks-update` blocks |
 | A5 | Draws slot, strip, receipts, run status and Refresh from the states and texts here. Labels `work_folder` "Tasks work folder" |
@@ -975,8 +974,8 @@ interface ExecutionStore extends LaunchStore, RunStore {
 
 | Failure | Detected by | Message | Offered |
 |---|---|---|---|
-| Place on another machine | 3.3 | Slot dimmed, hover "Opens on mira-laptop" | Copy |
-| Folder missing or outside its root | 3.3 | "This task's folder does not exist on this machine." / "…is outside work." | Fix the place |
+| Folder on another machine | 3.3 | Slot dimmed, hover "Opens on mira-laptop" | Copy, Add folder on this computer |
+| Folder missing | 3.3 | "Folder not found on this computer: ~/work/lumen/portal" | Choose folder |
 | No route lands in the exact folder | 3.3, 3.4.1 | "T3 opens only registered folders." | Register (T3), other instances, Copy |
 | Instance not allowed for the space or area | 3.2 | "This task is in Work. Codex · personal is for personal work. Open anyway?" (blocked when strict) | Default instance |
 | Definition or routine not approved here | 3.2 | "Defined by this space. Approve it on this machine first." | Preferences › Targets |
@@ -990,7 +989,6 @@ interface ExecutionStore extends LaunchStore, RunStore {
 | T3 not running or not paired | Origin unreachable, HTTP 401 | "Start T3 Code" / "Reconnect T3" | T3 CLI route, Copy |
 | T3 re-paired before a launch settled | Unknown `regranted` | "Tasks re-paired with T3 before this launch settled. Check T3 for a thread named M-14 Fix appointment time zones." | Check, Open again, Copy |
 | Session without Tasks tools | Claude `init`, or no binding within 10 min | "Started without Tasks tools. The brief also names the tasks CLI." | Bind instructions |
-| Run outside allowed roots | 3.11.7 | "Background runs only start under roots you allowed." | Open instead |
 | Run idle or stuck on a prompt | Idle timeout | "The run stopped after 10 minutes without output. It may be waiting for a login or trust prompt." | Continue in terminal |
 | Routine changed since approval | Hash check | "Refresh from sources changed since you approved it." | Review and approve |
 
@@ -1011,7 +1009,7 @@ To build:
 | Event journal | The service stops, the agent writes past the raw cap and emits native ID, usage and result: after restart the record holds all three and every `seq` applies once. Past the journal cap, `finished` and the outcome still arrive |
 | Scheduler (M9, fake clock) | DST both ways, a 3-day sleep, a clock set back, overlap, the 08:30 deferral with a restart at 08:45, a crash just before the run's transaction commits. At most one run per decision and one catch-up run |
 
-A test file creates nothing at module level: homes, roots, fake agents and temporary folders are made inside a test or its hooks, with explicit modes (0700, 0600) as the product uses, so a filter, a skipped test or the person's umask changes nothing another test sees.
+A test file creates nothing at module level: homes, folders, fake agents and temporary folders are made inside a test or its hooks, with explicit modes (0700, 0600) as the product uses, so a filter, a skipped test or the person's umask changes nothing another test sees.
 
 ### 5.2 Crash injection
 
