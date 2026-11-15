@@ -5,10 +5,20 @@ export * from "./agents.ts";
 export {
   claudeDesktopFolders,
   codexAppEngines,
+  codexSharedHome,
   hasT3,
+  T3_AGENT_DRIVERS,
   t3Folder,
+  t3Homes,
+  t3ProviderInstances,
+  t3Proposals,
   t3SettingsFile,
+  type HostsInput,
+  type T3AgentDriver,
   type T3Home,
+  type T3ProviderInstance,
+  type T3Settings,
+  type T3Skip,
 } from "./hosts.ts";
 export { addEntry, removeEntry, type JsonEdit } from "./json-edit.ts";
 export { parseStrictJson, type StrictJson } from "./json.ts";

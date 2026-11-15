@@ -339,6 +339,30 @@ export function identityOf(found: Pick<BigIntStats, "dev" | "ino">): FolderIdent
   return { dev: found.dev, ino: found.ino };
 }
 
+/** A folder's identity as one evidence ID, `<volume>:<file number>` (A4 3.9's `folder_id`). */
+export const identityKey = (identity: FolderIdentity): string =>
+  `${identity.dev.toString()}:${identity.ino.toString()}`;
+
+/**
+ * The identity key of a folder now, by one stat: undefined when the path is not absolute, not a
+ * directory, cannot be read, or its volume gives no identity. A best-effort app's binding compares
+ * the bridge's working folder with the launch's this way (A4 3.4.4), never by spelling.
+ */
+export async function folderKeyOf(
+  folder: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | undefined> {
+  if (!pathOf(platform).isAbsolute(folder)) return undefined;
+  try {
+    const found = await bigStat(folder);
+    if (!found.isDirectory()) return undefined;
+    const identity = identityOf(found);
+    return identity === undefined ? undefined : identityKey(identity);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Whether two stats are one file: both have an identity, and it is the same. */
 export function sameIdentity(
   a: Pick<BigIntStats, "dev" | "ino">,

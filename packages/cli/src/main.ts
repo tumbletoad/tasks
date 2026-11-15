@@ -21,6 +21,7 @@ import {
   type Globals,
   type VerbSpec,
 } from "./args.ts";
+import { briefCommand, type BriefOptions } from "./brief.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
 import { IMPORT_HELP, importCommand } from "./import.ts";
@@ -37,7 +38,7 @@ import { VIEW_HELP, viewCommand } from "./view.ts";
 
 export type { Io } from "./io.ts";
 
-export interface MainOptions extends DoctorOptions, OpenOptions, SetupOptions {
+export interface MainOptions extends DoctorOptions, OpenOptions, SetupOptions, BriefOptions {
   /** Runs `tasks serve`. The default loads the hub's entry (`@tasks/service/hub`). */
   readonly serve?: () => Promise<number>;
   /**
@@ -132,6 +133,10 @@ function verbHelp(verb: VerbSpec): string {
     lines.push(
       `  ${f.short === undefined ? "" : `${f.short}, `}${f.flag}${f.repeat ? " (repeatable)" : ""}  ${f.help}${values}`,
     );
+  }
+  // `tasks brief --copy` is the CLI's own: the OS's clipboard tool, else the text printed.
+  if (verb.entry === "launch.open") {
+    lines.push("  --copy  Put the text on the clipboard instead of printing it");
   }
   lines.push(
     "  --input <file or ->  The whole input as JSON",
@@ -241,6 +246,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
             globals.json,
             `tasks has no command ${/^[a-z][a-z0-9-]{0,30}$/.test(command) ? command : "like that"}`,
           );
+        }
+        if (verb.entry === "launch.open") {
+          return await briefCommand(io, globals, verb, args, options);
         }
         return await runVerb(io, globals, verb, args, options);
       }

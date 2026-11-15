@@ -18,6 +18,7 @@ export { Rng } from "./rng.ts";
 export {
   FAKE_AGENT,
   FAKE_CLI_AGENT,
+  FAKE_CLIPBOARD,
   FAKE_SHELL,
   FAKE_SYSTEMD_RUN,
   FAKE_TERMINAL,
