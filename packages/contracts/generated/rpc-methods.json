@@ -2477,6 +2477,11 @@
                 ],
                 "type": "string"
               },
+              "target": {
+                "description": "An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo",
+                "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
               "warnings": {
                 "description": "Warnings, one sentence each",
                 "items": {

@@ -99,6 +99,48 @@
   cursor: default;
 }
 
+/* Checked: the box fills and the title is struck through at once (A5 3.12). */
+.box:checked {
+  background: radial-gradient(circle, var(--k-accent) 8px, transparent 8.25px);
+}
+
+.box:checked::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 9px;
+  margin: 6px auto 0;
+  border: solid var(--k-accent-ink);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.row[data-done="true"] .title,
+.row[data-done="true"] .summary {
+  color: var(--k-muted);
+  text-decoration: line-through;
+}
+
+/* After the hold the row leaves: it fades in 180 ms, at once under reduced motion (A5 3.12). */
+.row[data-leaving="out"] {
+  opacity: 0;
+  transition: opacity 180ms var(--k-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row[data-leaving="out"] {
+    transition: none;
+  }
+}
+
+/* Someone else changed the title while it is being edited (A5 3.15 item 9). */
+.remote {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: var(--k-late);
+}
+
 .main {
   min-width: 0;
   padding-inline-end: 12px;
@@ -250,7 +292,13 @@
 
 /* The title, edited in place (F2 or a double-click): the title's own size and place. */
 .edit {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.edit > input {
   min-width: 0;
   margin: -3px 0 -3px -6px;
   padding: 2px 6px;

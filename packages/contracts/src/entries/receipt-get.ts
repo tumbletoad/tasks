@@ -118,6 +118,11 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("ai"))
       .describe("The authority incarnation it was decided under"),
     commit: z.string().regex(idPattern("op")).describe("The commit it wrote").optional(),
+    target: z
+      .string()
+      .regex(idPattern("op"))
+      .describe("An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo")
+      .optional(),
     results: z.array(ReceiptOpResult).max(50).describe("One result per operation"),
     conflicts: z
       .array(ReceiptConflict)
@@ -145,6 +150,7 @@ export interface StoredReceiptLike {
     status: string;
     as_of: string;
     commit?: string;
+    target?: string;
     results: readonly object[];
     conflicts: readonly { at: number }[];
     error?: { code: string; message: string; op?: number; field?: string };
@@ -172,6 +178,7 @@ export function receiptResult(
     as_of: result.as_of,
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
+    ...(result.target === undefined ? {} : { target: result.target }),
     results: result.results as z.input<typeof ReceiptOpResult>[],
     ...(result.conflicts.length === 0
       ? {}

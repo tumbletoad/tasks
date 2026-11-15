@@ -110,23 +110,6 @@
   cursor: pointer;
 }
 
-.toast {
-  position: fixed;
-  inset-block-end: 24px;
-  inset-inline-start: 50%;
-  z-index: 30;
-  padding: 8px 16px;
-  border: 1px solid var(--k-line-strong);
-  border-radius: 8px;
-  background: var(--k-raised);
-  color: var(--k-text);
-  transform: translateX(-50%);
-}
-
-.toast:empty {
-  display: none;
-}
-
 /* Narrow (600 to 1,023 px, and below): the sidebar is a drawer (A5 3.3 "Widths"). */
 .overlay {
   position: fixed;

@@ -184,6 +184,9 @@ export function resultFailure(
       ...base.data,
       ...(wrapped ? { reason: ALREADY_WRAPPED } : {}),
       as_of: result.as_of,
+      // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
+      // passes it to Undo the rest or Restore mine, so they never reach a newer change instead.
+      ...(result.target === undefined ? {} : { commit: result.target }),
       conflicts,
       ...(result.replayed === true ? { replayed: true } : {}),
     },
