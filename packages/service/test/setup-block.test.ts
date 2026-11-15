@@ -452,6 +452,28 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     expect(readBlockRecords(w.state)).toEqual([]);
   });
 
+  test("an override file Codex starts reading between the preview and its apply voids the plan", async () => {
+    const w = world();
+    const input = w.input();
+    const home = w.home("codex", ".codex");
+    const file = join(home.home, "AGENTS.md");
+    writeFileSync(file, "mine\n");
+    const [first] = await plan(input, [home]);
+    if (first === undefined) throw new Error("no item");
+    applyBlock(input, first);
+    // The person takes the block out: the preview offers to add it to AGENTS.md again.
+    writeFileSync(file, "mine\n");
+    const items = await plan(input, [home]);
+    expect(items[0]?.view.state).toBe("missing");
+    const token = JSON.stringify(blockCanonical(items));
+    // Codex now reads an override file instead: the same AGENTS.md, unchanged, is no longer read.
+    writeFileSync(join(home.home, "AGENTS.override.md"), "override\n");
+    const now = await plan(input, [home]);
+    expect(now[0]?.view.file).toBe(file);
+    expect(now[0]?.view.shadowed).toBe(true);
+    expect(JSON.stringify(blockCanonical(now))).not.toBe(token);
+  });
+
   test("an apply cut between its record and the file is read correctly next time", async () => {
     const w = world();
     const input = w.input();

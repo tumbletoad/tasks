@@ -574,14 +574,15 @@ export const planBlocks = (views: readonly BlockView[]): BlockItem[] =>
 const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /**
- * The block part of the plan's token (agents.ts `planToken`): each file, its state and hash, and
- * the change, so apply does exactly what the preview showed or refuses.
+ * The block part of the plan's token (agents.ts `planToken`): each file, whether Codex still reads
+ * it, its state and hash, and the change, so apply does exactly what the preview showed or refuses.
  */
 export function blockCanonical(items: readonly BlockItem[]): unknown {
   return items.map(({ view, change }) => [
     view.home.app,
     view.home.home,
     view.file,
+    view.shadowed === true,
     view.state,
     view.refusal ?? null,
     view.sha256,
