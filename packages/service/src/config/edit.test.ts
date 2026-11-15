@@ -408,6 +408,64 @@ describe("[A2.3.2.4.config.edit-remove] taking out an element exactly as it was 
     expect(last).toEqual({ ok: true, text: "" });
   });
 
+  test("a file without a final line break: the element ends without one too, and its removal gives the file back", () => {
+    const files = [
+      "[http]\nport = 7713",
+      "[http]\r\nport = 7713",
+      "# only a comment",
+      '[[instance]]\nid = "claude"\ntarget = "claude-cli"\nlabel = "Claude Code"',
+      '[[instance]]\r\nid = "claude"\r\ntarget = "claude-cli"\r\nlabel = "Claude Code"',
+    ];
+    const other = new Map(entry).set("id", "claude-b").set("target", "claude-cli");
+    const appendOther: Edit = { op: "append", array: "instance", entries: other };
+    for (const text of files) {
+      const added = applyEdits(text, [append]);
+      expect(added.ok, text).toBe(true);
+      const written = added.ok ? added.text : "";
+      expect(written.endsWith("\n"), text).toBe(false);
+      expect(applyEdits(written, [remove]), text).toEqual({ ok: true, text });
+      // Two appended, taken out in either order: the file comes back.
+      const both = applyEdits(text, [append, appendOther]);
+      const two = both.ok ? both.text : "";
+      expect(two.endsWith("\n"), text).toBe(false);
+      expect(
+        applyEdits(two, [remove, { op: "remove", array: "instance", entries: other }]),
+      ).toEqual({ ok: true, text });
+      expect(
+        applyEdits(two, [{ op: "remove", array: "instance", entries: other }, remove]),
+      ).toEqual({ ok: true, text });
+    }
+  });
+
+  test("a comment the person wrote directly above or below the element makes it theirs; one a blank line away stays when it goes", () => {
+    const base = "[http]\nport = 7713\n";
+    const added = applyEdits(base, [append]);
+    const text = added.ok ? added.text : "";
+    const header = "[[instance]]\n";
+    const touching = [
+      `${text}# about codex\n`,
+      `${text}# about codex`,
+      text.replace(header, `# about codex\n${header}`),
+      text.replace("\n\n[[instance]]", "\n# about codex\n[[instance]]"),
+    ];
+    for (const other of touching) {
+      expect(applyEdits(other, [remove]), other).toEqual({ ok: false, reason: "absent" });
+    }
+    // A blank line away, the comment is not the element's: it stays where the person wrote it.
+    expect(applyEdits(`${text}\n# later\n`, [remove])).toEqual({
+      ok: true,
+      text: `${base}\n# later\n`,
+    });
+    expect(applyEdits(text.replace(base, `${base}# http end\n`), [remove])).toEqual({
+      ok: true,
+      text: `${base}# http end\n`,
+    });
+    expect(applyEdits(`# top\n\n${text}`, [remove])).toEqual({
+      ok: true,
+      text: `# top\n\n${base}`,
+    });
+  });
+
   test("an element the person changed, or one with more in it, is never taken out", () => {
     const added = applyEdits("", [append]);
     const text = added.ok ? added.text : "";

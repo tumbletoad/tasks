@@ -46,9 +46,10 @@ export type Edit =
   | { readonly op: "add_table"; readonly table: readonly string[]; readonly entries: Entries }
   /**
    * Takes out the one element `[[array]]` that is still exactly as `append` wrote `entries` in
-   * this file's line breaks: its header and key lines byte for byte, nothing added to it, with the
-   * blank line `append` put before it. Refused `absent` when no element is, so an element the
-   * person changed is never removed; `unsupported_layout` when more than one is.
+   * this file's line breaks: its header and key lines byte for byte, nothing added to it and no
+   * comment line right above or below it, with the blank line `append` put before it. Refused
+   * `absent` when no element is, so an element the person changed or annotated is never removed;
+   * `unsupported_layout` when more than one is.
    */
   | { readonly op: "remove"; readonly array: string; readonly entries: Entries };
 
@@ -205,6 +206,18 @@ function tableLines(lines: readonly ScannedLine[], header: ScannedHeader): Scann
   return out;
 }
 
+/**
+ * An appended element between `before` and `after`: on a line of its own after one blank line
+ * (none at the very start of a file). At the end of a file without a final line break the element
+ * ends without one too, so the file keeps its ending and `remove` can give it back byte for byte.
+ */
+function elementAt(before: string, after: string, eol: string, block: string): string {
+  if (before === "") return `${block}${after}`;
+  const lead = before.endsWith("\n") ? "" : eol;
+  const ending = after === "" && lead !== "" ? block.slice(0, block.length - eol.length) : block;
+  return `${before}${lead}${eol}${ending}${after}`;
+}
+
 function blockOf(header: string, entries: [string, EditValue][], eol: string): string {
   return `${header}${eol}${entries.map(([k, v]) => `${keyText(k)} = ${valueText(v)}${eol}`).join("")}`;
 }
@@ -246,7 +259,7 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const block = blockOf(`[[${keyText(edit.array)}]]`, entriesOf(edit.entries), eol);
       const lastElement = elements.at(-1);
       // No element yet: at the end. An array written inline fails the check of the result.
-      if (lastElement === undefined) return appendAtEnd(text, eol, block);
+      if (lastElement === undefined) return elementAt(text, "", eol, block);
       // After the element's last line, its sub-tables included, before what documents the next.
       const from = lines.indexOf(lastElement);
       let end = lastElement.end;
@@ -255,10 +268,7 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
         if (line.kind === "header" && samePath(line.path, [edit.array])) break;
         end = line.end;
       }
-      const before = text.slice(0, end);
-      const lead = before.endsWith("\n") ? "" : eol;
-      const after = text.slice(end);
-      return `${before}${lead}${eol}${block}${after}`;
+      return elementAt(text.slice(0, end), text.slice(end), eol, block);
     }
     case "add_table": {
       const block = blockOf(`[${edit.table.map(keyText).join(".")}]`, entriesOf(edit.entries), eol);
@@ -287,9 +297,16 @@ function removal(
   const elements = lines.filter(
     (l): l is ScannedHeader => l.kind === "header" && l.array && samePath(l.path, [edit.array]),
   );
-  const matches: { header: ScannedHeader; index: number }[] = [];
+  // The element ends the file without a final line break when append wrote it so (elementAt).
+  const short = block.slice(0, block.length - eol.length);
+  const matches: { header: ScannedHeader; index: number; length: number }[] = [];
   elements.forEach((header, index) => {
-    if (!text.startsWith(block, header.start)) return;
+    const length = text.startsWith(block, header.start)
+      ? block.length
+      : header.start + short.length === text.length && text.startsWith(short, header.start)
+        ? short.length
+        : undefined;
+    if (length === undefined) return;
     const at = lines.indexOf(header);
     const body = lines.slice(at + 1, at + 1 + keys);
     const next = lines[at + 1 + keys];
@@ -298,14 +315,18 @@ function removal(
       body.every((l) => l.kind === "keyval") &&
       (next === undefined ||
         (next.kind === "header" && !startsWithPath(next.path, [edit.array])) ||
-        (next.kind === "header" && samePath(next.path, [edit.array])));
-    if (own) matches.push({ header, index });
+        (next.kind === "header" && samePath(next.path, [edit.array]))) &&
+      // A comment on the line right above or below, with no blank line between, is the person's
+      // note on this element: the element is theirs now, and is left whole with it.
+      !isComment(lastLine(text.slice(0, header.start))) &&
+      !isComment(firstLine(text.slice(header.start + length)));
+    if (own) matches.push({ header, index, length });
   });
   const [match, other] = matches;
   if (match === undefined) return { refused: "absent" };
   if (other !== undefined) return { refused: "unsupported_layout" };
   let before = text.slice(0, match.header.start);
-  let after = text.slice(match.header.start + block.length);
+  let after = text.slice(match.header.start + match.length);
   // The blank line append put before the element; for the first element of a file, which append
   // wrote without one, the blank line that the next append put after it.
   const lineStart = (s: string) => s === "" || s.endsWith("\n");
@@ -314,8 +335,26 @@ function removal(
   } else if (before === "" && after.startsWith(eol)) {
     after = after.slice(eol.length);
   }
+  // An element that ended the file without a final line break: so does the file again.
+  if (match.length === short.length && before.endsWith(eol)) {
+    before = before.slice(0, before.length - eol.length);
+  }
   return { text: before + after, index: match.index };
 }
+
+/** The last line of `text` that ends with its line break, without it; "" when none. */
+function lastLine(text: string): string {
+  const body = text.endsWith("\n") ? text.slice(0, -1) : "";
+  return body.slice(body.lastIndexOf("\n") + 1);
+}
+
+/** The first line of `text`, without its line break. */
+const firstLine = (text: string): string => {
+  const end = text.indexOf("\n");
+  return end < 0 ? text : text.slice(0, end);
+};
+
+const isComment = (line: string): boolean => line.trim().startsWith("#");
 
 function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | EditRefusal {
   switch (edit.op) {

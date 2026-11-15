@@ -2115,7 +2115,7 @@
     },
     {
       "id": "A2.3.2.4.config.edit-remove",
-      "title": "The editor's remove takes out an [[instance]] element only while it is byte for byte as append wrote it, with the blank line before it, so append then remove gives the file back; a changed value, an added key, a comment, a sub-table or two identical elements are refused and nothing changes",
+      "title": "The editor's remove takes out an [[instance]] element only while it is byte for byte as append wrote it, with the blank line before it, so append then remove gives the file back, also a file without a final line break (LF and CRLF); a changed value, an added key, a comment inside or on the line right above or below, a sub-table or two identical elements are refused and nothing changes; a comment a blank line away stays when the element goes",
       "source": "A2 3.2.4, A4 3.2",
       "owner": "M2",
       "kind": "ci",
