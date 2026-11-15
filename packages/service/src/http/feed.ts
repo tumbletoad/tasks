@@ -19,9 +19,11 @@
 //   (`sources_more`), and its place's state on this machine (`place`). A commit that changes a
 //   source, a link or a place of a task therefore carries the task's row too, as an entity of
 //   its own, so the row the client holds never shows a source or a place the space no longer has.
+import type { PreferenceRead } from "@tasks/contracts";
 import type { Row, WorkerConnection } from "@tasks/storage";
 import type { Root } from "@tasks/launch";
 import { placeState } from "../ops/here.ts";
+import { PREFERENCE_ROWS, spacePreferencesOf } from "../ops/preferences.ts";
 
 /** The applied-through cursor (A1 3.7). */
 export interface Cursor {
@@ -94,6 +96,12 @@ export interface SnapshotMessage {
   readonly tasks: readonly CompactRow[];
   readonly areas: readonly CompactRow[];
   readonly projects: readonly CompactRow[];
+  /**
+   * Every space preference and flag the registry declares, with its value as readers take it and
+   * its state (A1 3.16, A5 3.15 step 1). A batch names a changed preference as an entity of type
+   * `preference` without a row: the page takes a snapshot for its new value.
+   */
+  readonly preferences: readonly PreferenceRead[];
   /** Why a subscriber with a cursor got a snapshot instead of batches. */
   readonly reason?: "epoch" | "cursor_ahead";
 }
@@ -195,6 +203,7 @@ export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   launches: "launch",
   machines: "machine",
   learnings: "learning",
+  preferences: "preference",
 };
 
 /** A row without its nulls, booleans as booleans. */
@@ -357,11 +366,12 @@ export async function readSnapshot(
   reader: WorkerConnection,
   here?: FeedHere,
 ): Promise<SnapshotMessage> {
-  const [space, tasks, areas, projects] = await reader.transaction("deferred", [
+  const [space, tasks, areas, projects, preferences] = await reader.transaction("deferred", [
     { sql: SPACE_SQL, mode: "get" },
     { sql: OPEN_TASKS, mode: "all", params: { machine: machineOf(here) } },
     { sql: LIVE_AREAS, mode: "all" },
     { sql: LIVE_PROJECTS, mode: "all" },
+    { sql: PREFERENCE_ROWS, mode: "all" },
   ]);
   const head = headOf(space);
   return {
@@ -371,6 +381,7 @@ export async function readSnapshot(
     tasks: await taskRows(tasks as Row[], head.ref_prefix, here),
     areas: (areas as Row[]).map((row) => compact(row)),
     projects: (projects as Row[]).map((row) => compact(row)),
+    preferences: spacePreferencesOf(preferences as Row[]),
   };
 }
 
