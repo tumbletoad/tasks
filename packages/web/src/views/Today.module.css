@@ -1,0 +1,141 @@
+/*
+ * Today's week strip (A5 3.4, the mockup's `.week`): seven cells, today first, each the weekday and
+ * the day, today's with its month, in text colour and a 2 px accent underline. Under each day up
+ * to four 6 px marks coloured by area, a hollow ring for a waiting task's follow-up day, and a small
+ * plus beyond four. No numbers. Tokens only.
+ */
+
+.strip {
+  display: grid;
+  /* Today's cell is wider than the rest at a narrow width rather than cut. */
+  grid-template-columns: repeat(7, minmax(min-content, 1fr));
+  margin: 8px 0 20px;
+  border-bottom: 1px solid var(--k-line);
+}
+
+.day {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 4px;
+  min-width: 24px;
+  padding: 8px 10px 10px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: none;
+  color: var(--k-muted);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.day:hover {
+  background: var(--k-hover);
+}
+
+.day[aria-pressed="true"] {
+  background: var(--k-selected);
+}
+
+.weekday {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.date {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--k-text-2);
+  white-space: nowrap;
+}
+
+.day[aria-current="date"] .weekday,
+.day[aria-current="date"] .date {
+  color: var(--k-text);
+}
+
+.day[aria-current="date"] .date {
+  font-weight: 600;
+}
+
+.day[aria-current="date"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--k-accent);
+}
+
+.marks {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 4px;
+  height: 6px;
+  margin-top: 8px;
+}
+
+.mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--k-muted);
+}
+
+.mark[class*="slot-"] {
+  background: var(--k-slot);
+}
+
+.mark[data-ring="true"] {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--k-waiting);
+}
+
+.plus {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  color: var(--k-muted);
+}
+
+/* Narrow: the weekday above the day, so seven cells fit without a horizontal scroll. */
+@media (max-width: 599px) {
+  .day {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 6px 4px 8px;
+  }
+
+  .day[aria-current="date"]::after {
+    inset-inline: 4px;
+  }
+
+  .marks {
+    flex-basis: auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .mark,
+  .mark[class*="slot-"] {
+    background: CanvasText;
+  }
+
+  .mark[data-ring="true"] {
+    background: none;
+    box-shadow: inset 0 0 0 1.5px CanvasText;
+  }
+
+  .day[aria-current="date"]::after {
+    background: Highlight;
+  }
+
+  .day[aria-pressed="true"] {
+    outline: 1px solid Highlight;
+  }
+}

@@ -18,6 +18,11 @@ import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 const THEME_KEY = `${PRODUCT_ID}.theme`;
+/**
+ * At least this many rows in the scroll test's area view, whichever area it is: three of every six
+ * bulk tasks are in Lumen's projects and two in Home's (bulk.ts `PLACES`).
+ */
+const AREA_ROWS = BULK_TASKS / 3;
 
 interface Sweep {
   readonly frames: number;
@@ -128,12 +133,12 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
   }) => {
     await watchViolations(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/today`));
+    // An area view lists every status of its area: about half of the 5,000 are in this one.
+    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/area/${bulk.task.area}`));
     await showsSpace(page, bulk.mira.name);
     const list = page.locator("[data-list]");
     await expect(list).toHaveAttribute("data-virtual", "true", { timeout: SLOW_MS });
-    // Every open task is in Today until M5.04: the fixture's and the 5,000. Rows say their place
-    // in their list and its true size, mounted or not.
+    // Rows say their place in their list and its true size, mounted or not.
     const rows = page.locator("[data-list] li[data-key]");
     const largest = await page.evaluate(() =>
       Math.max(
@@ -164,7 +169,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
       expect(run.blank, `frames with an uncovered gap (worst ${String(run.worstGap)} px)`).toBe(0);
       expect(run.lostFocus).toBe(0);
     }
-    expect(atBottom).toBeGreaterThan(BULK_TASKS * 50);
+    expect(atBottom).toBeGreaterThan(AREA_ROWS * 50);
     // The focused row left the window and came back: it still holds focus, at the top again.
     expect(await focusedKey(page)).toBe(firstKey);
 
@@ -173,7 +178,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     const lastKey = await focusedKey(page);
     expect(lastKey).not.toBe(firstKey);
     await expect(page.locator(`[data-list] li[data-key="${lastKey ?? ""}"]`)).toBeInViewport();
-    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(BULK_TASKS * 50);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(AREA_ROWS * 50);
     await page.keyboard.press("Home");
     expect(await focusedKey(page)).toBe(firstKey);
     await expect(first).toBeInViewport();
@@ -209,20 +214,19 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     const after = (await topOf(page, middle?.key ?? "")) ?? Number.NaN;
     expect(Math.abs(after - before)).toBeLessThan(2);
 
-    // Rows above the viewport keep the scroll anchored: an agent adds a task at the top (the
-    // Inbox), and the first visible row stays where it was.
+    // Rows above the viewport keep the scroll anchored: a task is added at the top (the area's
+    // tasks without a project come before its projects), and the first visible row stays where
+    // it was.
     await page.getByRole("textbox", { name: "New task" }).focus();
     const anchor = await firstVisible(page);
-    const inbox = page.getByRole("link", { name: /^Inbox, / });
-    const counted = (await inbox.getAttribute("aria-label")) ?? (await inbox.textContent()) ?? "";
+    const height = () => list.evaluate((element) => element.style.getPropertyValue("--k-h"));
+    const tall = await height();
     await bulk.op(bulk.mira.id, "task.add", {
-      tasks: [{ title: `Captured while scrolled (${test.info().project.name})`, inbox: true }],
+      tasks: [
+        { title: `Captured while scrolled (${test.info().project.name})`, area: bulk.task.area },
+      ],
     });
-    await expect
-      .poll(async () => (await inbox.getAttribute("aria-label")) ?? (await inbox.textContent()), {
-        timeout: SLOW_MS,
-      })
-      .not.toBe(counted);
+    await expect.poll(height, { timeout: SLOW_MS }).not.toBe(tall);
     await page.waitForTimeout(300);
     expect(
       Math.abs(((await topOf(page, anchor?.key ?? "")) ?? 0) - (anchor?.top ?? 0)),
@@ -240,7 +244,8 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
     bulk,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/today`));
+    // The Inbox, newest first, so every status chip is on the first screens.
+    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/inbox`));
     await showsSpace(page, bulk.mira.name);
     const rows = page.locator("[data-list] li[data-key]");
     await expect(rows.first()).toBeVisible({ timeout: SLOW_MS });
