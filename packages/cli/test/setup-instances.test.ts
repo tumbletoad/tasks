@@ -285,7 +285,8 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       const text = await run(["setup", "instances"], false);
       expect(text.stdout).toContain("change t3_model in machine.toml");
 
-      // One of them, applied as the preview showed it.
+      // One of them, applied as the preview showed it. machine.toml holds the world's space.
+      const tomlBefore = readFileSync(machineToml(), "utf8");
       const one = await run(
         ["setup", "instances", "--instance", "t3-claude-personal", "--json"],
         false,
@@ -308,7 +309,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
         "t3-claude-personal",
       ]);
       expect(removed.code, removed.stdout).toBe(0);
-      expect(readFileSync(machineToml(), "utf8")).toBe("");
+      expect(readFileSync(machineToml(), "utf8")).toBe(tomlBefore);
       // T3's settings were only read.
       expect(readFileSync(settings, "utf8")).toBe(before);
 
