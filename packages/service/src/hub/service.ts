@@ -625,10 +625,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         bridgeTicket: (ticket) => launching.service?.host.bridgeTicket(ticket),
         redeemBridge: (ticket) => launching.service?.host.redeemBridge(ticket),
         agentRuns: (launch) => launching.service?.host.agentRuns(launch) ?? false,
-        confirm: (space, launch, at) => {
+        confirm: (space, launch, at, folder) => {
           const service = launching.service;
           if (service === undefined) return Promise.reject(new Error("Launching is not ready"));
-          return service.confirmBinding(space, launch, at);
+          return service.confirmBinding(space, launch, at, folder);
         },
       },
       log: (event: BindingEvent) => {

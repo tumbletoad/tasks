@@ -425,8 +425,10 @@ function Strip({ task, receipts, instances, actions }: ExpandedProps) {
         type="button"
         className={styles.button}
         aria-label={t("row.copyFor", { title: task.title })}
-        onClick={() => {
-          actions.copy(task);
+        data-tip={t("row.copyTip")}
+        title={t("row.copyTip")}
+        onClick={(event) => {
+          actions.copy(task, event.shiftKey);
         }}
       >
         <CopyIcon />

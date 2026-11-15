@@ -53,12 +53,20 @@ import {
   type Principal,
 } from "./caller.ts";
 import { createHash } from "node:crypto";
-import { apart, ExecutionRefused, isLaunchRef, type LaunchIntent, type Root } from "@tasks/launch";
+import {
+  apart,
+  ExecutionRefused,
+  isLaunchRef,
+  PACK_LOG,
+  type LaunchIntent,
+  type Root,
+} from "@tasks/launch";
 import {
   LaunchFolderUnavailable,
   LaunchUnavailable,
   type OpenTaskRequest,
   type OpenTaskResult,
+  type PackContent,
 } from "../launch/open.ts";
 import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
@@ -96,8 +104,13 @@ import {
   readStatus,
   readTask,
   readTaskRef,
+  logOf,
+  noteOf,
+  sourceOf,
   taskRow,
+  text,
   type CommitFacts,
+  type TaskRead,
   type Destination,
   type GroupNames,
 } from "./read.ts";
@@ -1721,14 +1734,36 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     const requestId = String(input["request_id"]);
     const text = typeof input["text"] === "string" ? input["text"] : undefined;
+    const instance = typeof input["instance"] === "string" ? input["instance"] : undefined;
+    // Shift+Copy (A4 3.15.5): the context pack is a Copy, so it takes no instance.
+    let pack: PackContent | undefined;
+    if (input["pack"] === true) {
+      if (instance !== undefined) {
+        throw invalid("pack", "The context pack is a Copy", "Leave out instance.");
+      }
+      try {
+        pack = packOf(
+          await readTask(readerOf(call.space), read.id, {
+            machine: host.machine.id,
+            instructions: { upto: null, limit: PACK_NOTES },
+            notes: { upto: null, limit: 0 },
+            log: { upto: null, limit: PACK_LOG },
+          }),
+        );
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw storageFailure(error);
+      }
+    }
     let opened: OpenTaskResult;
     try {
       opened = await launches.openTask({
         space,
         task: read,
-        instance: typeof input["instance"] === "string" ? input["instance"] : undefined,
+        instance,
         composer: text,
         requestId,
+        ...(pack === undefined ? {} : { pack }),
         // Over budget, the person's words become a note addressed to agents (A4 3.15.3): the
         // note entry's own request path, under a request ID the click's derives, so a repeated
         // click replays the note instead of adding a second one.
@@ -2182,6 +2217,55 @@ function launchReceipt(intent: LaunchIntent): Record<string, unknown> {
 }
 
 /** Why a click opened nothing, as A3's error: a fixed reason word, never a path or a command. */
+/** At most this many notes the user addressed to agents are read for a pack; it counts the rest. */
+const PACK_NOTES = 200;
+
+/**
+ * What the context pack takes of a task (A4 3.15.5), from one read: its row, the notes the user
+ * addressed to agents (oldest first), its sources and its newest log entries. Related learnings
+ * come with A3's retrieval (M4.03): until then the pack has none.
+ */
+function packOf(read: TaskRead): PackContent {
+  const row = taskRow(read.row, read.space.refPrefix);
+  const due = row["due"];
+  const day = (at: string): string => at.slice(0, 10);
+  const optional = (value: unknown): string | undefined =>
+    typeof value === "string" && value !== "" ? value : undefined;
+  return {
+    status: String(row["status"]),
+    priority: Number(row["priority"]),
+    area: optional(row["area"]),
+    project: optional(row["project"]),
+    due:
+      typeof due === "string"
+        ? due
+        : typeof due === "object" && due !== null
+          ? `${String((due as { at: unknown }).at)} ${String((due as { tz: unknown }).tz)}`
+          : undefined,
+    summary: optional(text(read.row["summary"])),
+    context: optional(text(read.row["context"])),
+    instructions: read.instructions
+      .map(noteOf)
+      .reverse()
+      .map((note) => ({ day: day(note.at), text: note.text })),
+    instructionsTotal: read.counts.instructions,
+    sources: read.sources.map(sourceOf).map((s) => ({
+      kind: s.kind,
+      title: s.title,
+      key: s.key,
+      who: s.who,
+    })),
+    learnings: [],
+    log: read.log.map(logOf).map((e) => ({
+      day: day(e.at),
+      kind: e.kind,
+      author: e.author,
+      text: e.text,
+    })),
+    logTotal: read.counts.log,
+  };
+}
+
 function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
     return new AppError({

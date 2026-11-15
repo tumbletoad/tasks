@@ -25,7 +25,10 @@ import {
   ExecutionRefused,
   expandUrl,
   findOnPosixPath,
+  folderKeyOf,
   FolderRecords,
+  identityKey,
+  isBuiltInTarget,
   isUncPath,
   LaunchMachine,
   MATCH_POLL_MS,
@@ -39,8 +42,10 @@ import {
   ReferenceMatch,
   REFUSED,
   renderBrief,
+  renderContextPack,
   resolveLaunchFolder,
   routeOf,
+  sanitiseComposer,
   sanitiseTitle,
   SHIM_METHODS,
   ShimHost,
@@ -67,6 +72,7 @@ import {
   type HostRefusal,
   type LaunchIntent,
   type NewIntent,
+  type Observation,
   type ProcessProbe,
   type RecordStore,
   type ReportMethod,
@@ -284,6 +290,10 @@ export class LaunchService {
       readonly brief: string;
       readonly place: PlanPlace | null;
       readonly at: number;
+      /** The instance's link template (A4 3.4.2, 3.4.4, 3.4.5). */
+      readonly url: string;
+      /** A best-effort app's link: the folder's identity is recorded for the binding's check. */
+      readonly confirmFolder: boolean;
     }
   >();
   /**
@@ -587,7 +597,20 @@ export class LaunchService {
     const text = brief(intent.reference);
     if (text.status !== "ok") throw this.#unavailable("too_long");
     if (choice.route === "link" && intent.state === "prepared" && !this.#links.has(intent.id)) {
-      this.#links.set(intent.id, { space, brief: text.text, place, at: performance.now() });
+      const link =
+        instance !== undefined && isBuiltInTarget(instance.target)
+          ? routeOf(instance.target, "link")
+          : undefined;
+      if (link?.url !== undefined) {
+        this.#links.set(intent.id, {
+          space,
+          brief: text.text,
+          place,
+          at: performance.now(),
+          url: link.url,
+          confirmFolder: link.confirmFolder === true,
+        });
+      }
     }
     this.#changed(space);
     if (intent.state === "prepared") {
@@ -646,6 +669,32 @@ export class LaunchService {
       }
     }
     const names = briefNames();
+    const pack = request.pack;
+    if (choice.route === "clipboard" && pack !== undefined && folder !== undefined) {
+      // Shift+Copy (A4 3.15.5): the context pack in place of the pointer brief. The person's words
+      // are part of it, whole, so they never become a note.
+      const shown = folder;
+      const words = request.composer === undefined ? undefined : sanitiseComposer(request.composer);
+      const given = words !== undefined && words.text.trim() !== "";
+      return (reference) => {
+        const made = renderContextPack({
+          ...pack,
+          task: task.ref,
+          title: task.title,
+          reference,
+          folder: shown,
+          ...(given ? { composer: words.text } : {}),
+        });
+        return {
+          status: "ok",
+          text: made.text,
+          hash: made.hash,
+          composer: given ? "inline" : "none",
+          composerText: undefined,
+          removed: words?.removed === true,
+        };
+      };
+    }
     return (reference) =>
       renderBrief({
         kind: choice.kind,
@@ -855,9 +904,11 @@ export class LaunchService {
     space: string,
     launch: string,
     at: number,
+    folder?: string,
   ): Promise<LaunchIntent | undefined> {
-    const machine = await this.machine(space).catch(() => undefined);
-    if (machine === undefined) {
+    const hosted = await this.#space(space).catch(() => undefined);
+    const machine = hosted?.machine;
+    if (hosted === undefined || machine === undefined) {
       throw new AppError({
         code: "space_unavailable",
         message: "The space cannot record this launch's binding now.",
@@ -866,10 +917,10 @@ export class LaunchService {
       });
     }
     try {
-      const after = await machine.report(launch, {
-        kind: "confirmed",
-        evidence: { bound_at: at },
-      });
+      const after = await machine.report(
+        launch,
+        await this.#bindingObservation(hosted.store, launch, at, folder),
+      );
       // The page's receipts follow at once, as for the shim's reports.
       this.#changed(space);
       return after;
@@ -881,6 +932,40 @@ export class LaunchService {
         data: { reason: "busy", retryable: true },
       });
     }
+  }
+
+  /**
+   * What the bridge's binding tells about a launch (A4 3.9.2): Confirmed, except for a best-effort
+   * app's link (A4 3.4.4, 3.4.5), whose session may have started in another folder than the link
+   * named. That one is Confirmed only when the bridge's working folder has the identity the link's
+   * folder had at its dispatch; otherwise the binding is recorded as evidence and the launch stays
+   * Dispatched ("Opened · not confirmed"). The route and the instance of an intent never change and
+   * its evidence only grows, so they may be read before the report's section: a launch whose
+   * folder is not recorded yet is not confirmed. An instance no longer in machine.toml is checked.
+   */
+  async #bindingObservation(
+    store: SpaceExecutionStore,
+    launch: string,
+    at: number,
+    folder: string | undefined,
+  ): Promise<Observation> {
+    const confirmed: Observation = { kind: "confirmed", evidence: { bound_at: at } };
+    const intent = await store.readIntent(launch);
+    if (intent?.route !== "link") return confirmed;
+    const instance = (this.#options.instances ?? []).find((i) => i.id === intent.instance);
+    const checks =
+      instance === undefined ||
+      !isBuiltInTarget(instance.target) ||
+      routeOf(instance.target, "link")?.confirmFolder === true;
+    if (!checks) return confirmed;
+    const recorded = intent.evidence.folder_id;
+    const here =
+      folder === undefined ? undefined : await folderKeyOf(folder, this.#options.platform);
+    const same = recorded !== undefined && here !== undefined && here === recorded;
+    this.#options.log.log("launch.folder_check", {
+      result: same ? "same" : recorded === undefined || here === undefined ? "unknown" : "other",
+    });
+    return same ? confirmed : { kind: "evidence", evidence: { bound_at: at } };
   }
 
   /** The rpc methods of the shim class (A2 3.6.4): the hub registers these in its handler table. */
@@ -1122,9 +1207,7 @@ export class LaunchService {
       this.#log("launch.unavailable", "unc");
       return { kind: "refused", reason: "cancelled" };
     }
-    const template = routeOf("claude-cli", "link")?.url;
-    if (template === undefined) return { kind: "refused" };
-    const url = expandUrl(template, { cwd: where.folder, brief: pending.brief });
+    const url = expandUrl(pending.url, { cwd: where.folder, brief: pending.brief });
     const { platform } = this.#options;
     const session = await this.environment.session().catch(() => ({}));
     const env = terminalEnvironment(this.#options.env, session, platform);
@@ -1142,7 +1225,11 @@ export class LaunchService {
     this.#options.log.log("launch.opener", { opener: opened.opener, result: opened.result });
     switch (opened.result) {
       case "opened":
-        return { kind: "accepted" };
+        // A best-effort app's link records the identity of the folder it named: the bridge's
+        // binding confirms the launch only from that folder (A4 3.4.4, 3.4.5).
+        return pending.confirmFolder
+          ? { kind: "accepted", evidence: { folder_id: identityKey(where.identity) } }
+          : { kind: "accepted" };
       case "unknown":
         return { kind: "unknown" };
       default:
