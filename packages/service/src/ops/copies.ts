@@ -147,8 +147,8 @@ export function ambiguousError<S extends Copy>(found: Ambiguity<S>, hint?: strin
     code: "ambiguous",
     message:
       folders.length === 0
-        ? "Several copies of this space are served, and none of them takes writes."
-        : `Several copies of this space are served, and none of them takes writes: ${folders.join(", ")}.`,
+        ? "Several copies of this space are listed, and none of them takes writes."
+        : `Several copies of this space are listed, and none of them takes writes: ${folders.join(", ")}.`,
     hint: hint ?? "Name the copy by its folder: --space <folder>.",
     ...(folders.length === 0 ? {} : { data: { folders } }),
   });
