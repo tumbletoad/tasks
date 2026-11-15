@@ -166,13 +166,17 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("completed");
     await expect(row).toBeVisible();
 
-    // Ctrl+Z undoes it: the row is open again where it was, and leaves no trace.
-    await page.keyboard.press("Control+z");
+    // F6 reaches the toast's Undo at once: the row is open again where it was, and leaves no trace.
+    await page.keyboard.press("F6");
+    await expect(toastAction(page)).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText("Undone");
     await expect(toastAction(page)).toHaveText("Redo");
     await expect(check).not.toBeChecked();
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("active");
     await expect(row).not.toHaveAttribute("data-done", "true");
+    // Focus went back to where F6 took it from.
+    await expect(page.locator("[data-list] [data-part='title']:focus")).toHaveCount(1);
 
     // Ctrl+Shift+Z redoes it; after the hold the row leaves the view.
     await page.keyboard.press("Control+Shift+z");
@@ -180,13 +184,10 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("completed");
     await expect(rowOf(page, ref)).toHaveCount(0, { timeout: SLOW_MS });
 
-    // F6 reaches the toast's action: Undo brings the row back.
-    await page.keyboard.press("F6");
-    await expect(toastAction(page)).toBeFocused();
-    await page.keyboard.press("Enter");
+    // Ctrl+Z undoes it again: the row comes back.
+    await page.keyboard.press("Control+z");
     await expect(rowOf(page, ref)).toBeVisible({ timeout: SLOW_MS });
     await expect.poll(async () => (await read(world, ref)).task.lifecycle).toBe("active");
-
     // Checking off the next row and clicking its box again during the hold undoes it too.
     const other = rowOf(page, next);
     await other.locator('[data-part="check"]').click();
