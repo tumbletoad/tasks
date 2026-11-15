@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
@@ -241,7 +242,8 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     expect(readFileSync(join(spaces, aside ?? "", "notes.txt"), "utf8")).toBe(
       "A person's notes.\n",
     );
-    expect(existsSync(state.journal)).toBe(false);
+    // The projector may already have written a new journal file there for its next batch.
+    expect(statSync(state.journal, { throwIfNoEntry: false })?.isDirectory() ?? false).toBe(false);
     const logged = readLog(home).filter((e) => e["ev"] === "space.projection_state_moved_aside");
     expect(logged).toEqual([expect.objectContaining({ file: "journal" })]);
     expect(readLog(home).some((e) => e["ev"] === "space.projection_failed")).toBe(false);
