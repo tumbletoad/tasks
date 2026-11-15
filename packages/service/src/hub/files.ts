@@ -6,7 +6,7 @@
 // or folder that was already there keeps its mode (A2 3.2.2 rule 5). This module adds the service's
 // rule for who else may change a folder it writes in (permissions.ts).
 import { makeDir } from "@tasks/files";
-import { factsOf, judgePath, problemOf, type Judged } from "./permissions.ts";
+import { currentPerson, factsOf, judgePath, problemOf, type Judged } from "./permissions.ts";
 
 export {
   appendPrivate,
@@ -44,10 +44,13 @@ export function ensurePrivateDir(
   return judged;
 }
 
-/** Whether `dir` is a real folder of this user that no one else can write (POSIX only). */
+/**
+ * Whether `dir` is a real folder of this user that no one else can write, the person's own private
+ * group aside (POSIX only, permissions.ts).
+ */
 export function isPrivateDir(dir: string): boolean {
-  const uid = process.getuid?.();
-  if (process.platform === "win32" || uid === undefined) return false;
+  const person = currentPerson();
+  if (person === undefined) return false;
   const facts = factsOf(dir, "folder", { followLink: false });
-  return typeof facts === "object" && problemOf(facts, uid) === undefined;
+  return typeof facts === "object" && problemOf(facts, person) === undefined;
 }
