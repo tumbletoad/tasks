@@ -5,7 +5,7 @@
 // tab on its space, and a new tab opens the default space. (The contrast and the lint are unit
 // tests: packages/web/src/theme/contrast.test.ts, scripts/lint-rules.test.ts.)
 import { expect, type Page } from "@playwright/test";
-import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -389,5 +389,35 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
     await expect(page).toHaveURL(hostOf(world, world.task.ref));
     await expect(first).toHaveAttribute("data-expanded", "true");
     await expect(second).not.toHaveAttribute("data-expanded", "true");
+  });
+});
+
+test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what to run", () => {
+  test("a computer whose only space needs recovery names the command, never space create", async ({
+    page,
+    world,
+  }) => {
+    // The service's answer for a space whose open was refused before it learned its ID.
+    await page.route("**/api/v1/space/list", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { result: Record<string, unknown> };
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          result: {
+            spaces: [],
+            unopened: [{ state: "unavailable", reason: "needs_recovery" }],
+            default: null,
+          },
+        },
+      });
+    });
+    await page.goto(await world.signInUrl("/"));
+    const note = page.locator('[data-part="not-open"]');
+    await expect(note).toHaveAttribute("data-why", "needs_recovery");
+    await expect(note).toContainText(`${CLI_NAME} space recover`);
+    await expect(page.getByText(`${CLI_NAME} space create`)).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath("landing-needs-recovery.png") });
   });
 });
