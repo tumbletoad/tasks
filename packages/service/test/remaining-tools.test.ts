@@ -440,9 +440,7 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["autonomy.areas", "space", "map"],
       ["projection.dir", "machine", "path"],
     ]);
-    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual([
-      "tasks.statuses",
-    ]);
+    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual(["tasks.statuses"]);
     expect(described.prefs.find((p) => p.key === "targets.default")).toMatchObject({
       policy: true,
       writable: false,

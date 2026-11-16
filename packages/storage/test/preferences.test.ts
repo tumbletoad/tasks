@@ -96,7 +96,12 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
     const conflict = submit([set("tasks.statuses", ["open", "later"])], { base: stale });
     expectStatus(conflict, "conflict");
     expect(conflict.conflicts).toEqual([
-      expect.objectContaining({ op: 0, entity: "preferences", id: "tasks.statuses", field: "value" }),
+      expect.objectContaining({
+        op: 0,
+        entity: "preferences",
+        id: "tasks.statuses",
+        field: "value",
+      }),
     ]);
     const changed = submit([set("tasks.statuses", ["open", "later"])]);
     expectStatus(changed, "applied");
@@ -141,7 +146,10 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("two sets of one key in a request fold into one create with the last value", () => {
-    const result = submit([set("tasks.statuses", ["open", "doing"]), set("tasks.statuses", ["open", "later"])]);
+    const result = submit([
+      set("tasks.statuses", ["open", "doing"]),
+      set("tasks.statuses", ["open", "later"]),
+    ]);
     expectStatus(result, "applied");
     expect(result.results.map((r) => r.status)).toEqual(["created", "updated"]);
     expect(changesAt(result.seq)).toHaveLength(1);
@@ -222,7 +230,10 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("an agent writes only keys that list it; a policy key refuses it, decided with a receipt", () => {
-    expectStatus(submit([set("tasks.statuses", ["open", "doing"])], { actor: "codex", base: null }), "applied");
+    expectStatus(
+      submit([set("tasks.statuses", ["open", "doing"])], { actor: "codex", base: null }),
+      "applied",
+    );
     for (const [key, value] of [
       ["autonomy.level", "full"],
       ["autonomy.overrides", { "task.patch.due": "apply" }],
@@ -247,7 +258,11 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
 
   test("a value outside its shape, an unknown key, a machine key and a missing value are refused before the transaction", () => {
     const cases: [Record<string, unknown>, string, string][] = [
-      [{ kind: "pref.set", key: "tasks.statuses", value: "purple" }, "VALIDATION_FAILED", "ops[0].value"],
+      [
+        { kind: "pref.set", key: "tasks.statuses", value: "purple" },
+        "VALIDATION_FAILED",
+        "ops[0].value",
+      ],
       [
         { kind: "pref.set", key: "tasks.dedupe_window_days", value: 3_651 },
         "VALIDATION_FAILED",
@@ -271,7 +286,7 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
         "ops[0].key",
       ],
       [{ kind: "pref.set", key: "ui.theme", value: "washi" }, "VALIDATION_FAILED", "ops[0].key"],
-      [{ kind: "pref.set", key: "tasks.statuses" },"VALIDATION_FAILED", "ops[0].value"],
+      [{ kind: "pref.set", key: "tasks.statuses" }, "VALIDATION_FAILED", "ops[0].value"],
       [
         { kind: "pref.set", key: "tasks.statuses", value: ["open"], extra: 1 },
         "VALIDATION_FAILED",
@@ -321,7 +336,9 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
       const refused = submit([set("tasks.statuses", ["open", "later"])]);
       expectStatus(refused, "rejected");
       expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", op: 0, field: "key" });
-      expect(one("SELECT value FROM preferences WHERE key = 'tasks.statuses'")).toBe('["open","doing"]');
+      expect(one("SELECT value FROM preferences WHERE key = 'tasks.statuses'")).toBe(
+        '["open","doing"]',
+      );
     } finally {
       // Back as the history holds it, for the history check after the test.
       version(1);
