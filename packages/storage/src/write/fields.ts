@@ -69,7 +69,40 @@ export const CHILD_FIELDS = {
   sources: { deleted: ["deleted_at"] },
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },
+  // An area's and a project's tombstone, which undo writes when it inverts an import's upsert
+  // (A1 3.10, A7 3.15.5). The `area.*` and `project.*` operations add the rest (A1 3.6).
+  areas: { deleted: ["deleted_at"] },
+  projects: { deleted: ["deleted_at"] },
+  // An alias's target, which `alias.add` moves from a task whose import was undone (A7 3.15.6). An
+  // alias row has no versions: its last change row is its version and its provenance.
+  aliases: { entity: ["entity_kind", "entity_id"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
+
+/**
+ * The tables whose rows hold an `ext` map: each key of it is one logical field `ext.<key>` (A1
+ * 3.4), whose value lives in the `ext` column, and whose versions sit in `fv` and `fp` like any
+ * field's.
+ */
+export const EXT_TABLES: ReadonlySet<string> = new Set(["tasks", "areas", "projects", "sources"]);
+
+/** Whether `field` is a logical field `ext.<key>` of an `ext` map. */
+export const isExtField = (field: string): boolean =>
+  field.startsWith("ext.") && /^ext\.[a-z][a-z0-9_]{0,39}$/.test(field);
+
+/** The value of `ext.<key>` in a row: the key's value in its `ext` map, or null without it. */
+export function extValue(row: Readonly<Record<string, unknown>>, field: string): unknown {
+  const text = row["ext"];
+  if (typeof text !== "string") return null;
+  let map: unknown;
+  try {
+    map = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof map !== "object" || map === null || Array.isArray(map)) return null;
+  const key = field.slice("ext.".length);
+  return Object.hasOwn(map, key) ? (map as Record<string, unknown>)[key] : null;
+}
 
 export type ChildEntity = keyof typeof CHILD_FIELDS;
 
