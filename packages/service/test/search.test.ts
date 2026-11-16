@@ -1,7 +1,7 @@
 // Search against a real space (A3 3.9; A7 3.10 M3.05 Verify): random query strings never raise an
 // SQLite error, the ranking and filters of A3 3.9.2–3.9.4, and cursor pages under random writes,
-// deletions and redactions with no gaps or duplicates and no old text. The fixture space gets the
-// search tables before its writer opens, as the schema step that adds them will do; tombstones,
+// deletions and redactions with no gaps or duplicates and no old text. The fixture space is created
+// with schema 0.4, which holds the index, and a 0.3 space stands for one without it; tombstones,
 // redaction and authority changes are played directly on the database (storage's
 // search-helpers.ts), since their operations arrive in later steps. In-thread, through a reader
 // connection shaped like the service's. Fixture text only.
@@ -27,6 +27,7 @@ import {
   redactText,
   tombstone,
 } from "@tasks/storage/search-helpers";
+import { STEPS_0_3 } from "@tasks/storage/revisions";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
 import type { WorkerConnection } from "@tasks/storage";
 import type { Caller } from "../src/ops/caller.ts";
@@ -54,8 +55,8 @@ beforeAll(async () => {
   const unindexed = join(temp.root, "plain");
   mkdirSync(indexed);
   mkdirSync(unindexed);
-  fx = await writeFixture(indexed, { search: true });
-  plain = await writeFixture(unindexed);
+  fx = await writeFixture(indexed);
+  plain = await writeFixture(unindexed, { steps: STEPS_0_3 });
 }, 60_000);
 
 afterAll(() => {

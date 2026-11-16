@@ -120,8 +120,8 @@ export {
   type SpaceActors,
 } from "./space.ts";
 export { checkSpacePath, isSpaceSlug, SLUG_MAX, slugFromName } from "./space-path.ts";
-// The search index (A1 3.12): its tables, kept current by the writer once a space holds them, the
-// rebuild, and the pages by frozen IDs that A3's cursors read.
+// The search index: its tables, which schema 0.4 adds and the writer keeps current, the rebuild,
+// and the pages by frozen IDs that search cursors read.
 export {
   expectedDocuments,
   indexChanges,
@@ -140,8 +140,8 @@ export {
 export {
   HAS_SEARCH_TABLES_SQL,
   hasSearchTables,
+  isSearchObject,
   SEARCH_DOC_KINDS,
-  SEARCH_TABLE_STATEMENTS,
   type SearchDocKind,
 } from "./search/tables.ts";
 export { SCHEMA_STEPS } from "../migrations/index.ts";

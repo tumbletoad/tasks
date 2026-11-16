@@ -3,9 +3,10 @@
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
+import type { SchemaStep } from "../src/schema.ts";
 import { rebuildSearchIndex } from "../src/search/documents.ts";
-import { SEARCH_TABLE_STATEMENTS } from "../src/search/tables.ts";
-import { openSpace } from "../src/space.ts";
+import { hasSearchTables } from "../src/search/tables.ts";
+import { openSpace, type OpenedSpace, type OpenSpaceOptions } from "../src/space.ts";
 import { CHILD_FIELDS, TASK_FIELDS, type TaskField } from "../src/write/fields.ts";
 import { isPosition } from "../src/write/positions.ts";
 import {
@@ -16,6 +17,7 @@ import {
   type WriteResult,
 } from "../src/write/request.ts";
 import { SpaceWriter, type MachineInfo, type WriterOptions } from "../src/write/writer.ts";
+import { openSpaceAt } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE } from "./space-helpers.ts";
 
 export const MACHINE: MachineInfo = { id: TEST_MACHINE, name: "mira-desktop", os: "linux" };
@@ -53,9 +55,10 @@ export function steppingClock(): () => number {
 
 /**
  * Creates the fixture space in `parent`, with the writer open on it. The areas and the project are
- * fixture rows written before the writer opens: their operations arrive in later steps. With
- * `search`, the space also gets the search tables, filled by a rebuild, as the schema step that
- * adds them will do (A1 3.12), so the writer keeps the index.
+ * fixture rows written before the writer opens: their operations arrive in later steps.
+ *
+ * `steps`: the chain the space is built and written with, as a build with that chain does: this
+ * build's by default. `STEPS_0_3` gives a space without the search index, as a 0.3 build kept it.
  *
  * `flush: false`: the writer's connection commits without a flush (`synchronous=OFF`), for a test
  * whose subject is which writes apply, not what survives a power cut, and that commits thousands
@@ -64,11 +67,15 @@ export function steppingClock(): () => number {
  */
 export async function writeFixture(
   parent: string,
-  options: { search?: boolean; flush?: boolean } = {},
+  options: { steps?: readonly SchemaStep[]; flush?: boolean } = {},
 ): Promise<Fixture> {
-  const created = await createFixtureSpace(parent);
+  const created = await createFixtureSpace(parent, "mira", {}, options.steps);
   const checked = await checkedDriver();
-  const opened = openSpace(checked, created.folder, { role: "writer" });
+  const openAt = (folder: string, open: OpenSpaceOptions): OpenedSpace =>
+    options.steps === undefined
+      ? openSpace(checked, folder, open)
+      : openSpaceAt(checked, folder, open, options.steps);
+  const opened = openAt(created.folder, { role: "writer" });
   const conn = opened.conn;
   if (options.flush === false) conn.pragma("synchronous", "OFF");
   const ids = {
@@ -116,10 +123,9 @@ export async function writeFixture(
     alias.run({ namespace: "planning", alias: LEGACY.alias, kind: "task", id: LEGACY.task });
     alias.run({ namespace: "ref_prefix", alias: "MI", kind: "space", id: created.space.spaceId });
     alias.run({ namespace: "slug", alias: "old-portal", kind: "project", id: ids.project });
-    if (options.search === true) {
-      for (const statement of SEARCH_TABLE_STATEMENTS) conn.exec(statement);
-      rebuildSearchIndex(conn);
-    }
+    // The rows above went in beside the writer, so the index learns of them as a migration's
+    // rebuild would.
+    if (hasSearchTables(conn)) rebuildSearchIndex(conn);
   });
   let writer = SpaceWriter.open(opened, { machine: MACHINE, now: steppingClock() });
   const reader = openSpace(checked, created.folder, { role: "reader" }).conn;
@@ -137,7 +143,7 @@ export async function writeFixture(
     writer,
     reopen: (writerOptions = {}) => {
       fixture.writer.close();
-      const again = openSpace(checked, created.folder, { role: "writer" });
+      const again = openAt(created.folder, { role: "writer" });
       if (options.flush === false) again.conn.pragma("synchronous", "OFF");
       writer = SpaceWriter.open(again, {
         machine: MACHINE,

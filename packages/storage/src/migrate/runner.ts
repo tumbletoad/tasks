@@ -20,7 +20,7 @@
 //    origin `migration`, written by the writer's writeSystemCommit), the space row's format,
 //    undo_floor_seq when the step sets `undoFloor`, and user_version. A step's `verify` runs right
 //    after its own `up`, because it checks the schema that step promises, which a later step may
-//    extend.
+//    extend. Then, when the schema holds the search index, the index is rebuilt from the tasks.
 // 4. PRAGMA foreign_key_check (no row), integrity_check ("ok") and the domain invariants (the space
 //    row decodes, its format is the last step's, last_seq is the newest commit). Any failure rolls
 //    the whole transaction back: the space stays at its revision, MIGRATION_FAILED.
@@ -52,6 +52,8 @@ import {
 } from "../schema.ts";
 import { openSpaceWith, SOURCE_APP_VERSION, type OpenedSpace } from "../space.ts";
 import type { CheckedDriver } from "../startup-check.ts";
+import { rebuildSearchIndex } from "../search/documents.ts";
+import { hasSearchTables } from "../search/tables.ts";
 import { writeSystemCommit } from "../write/writer.ts";
 import { stepPosition } from "./steps.ts";
 
@@ -334,6 +336,10 @@ function runSteps(conn: Connection, pending: readonly SchemaStep[], run: StepRun
         seqs.push(seq);
         run.at?.("step-applied", step);
       }
+      // The search index is derived from the tasks, so it is filled here, once the schema is this
+      // build's, by this build's documents, and never by a step: a frozen step cannot know what a
+      // later build's documents hold, and a later step may change what they read.
+      if (hasSearchTables(conn)) rebuildSearchIndex(conn);
       checkAfter(conn, pending, seqs);
       run.at?.("checked");
       return seqs;

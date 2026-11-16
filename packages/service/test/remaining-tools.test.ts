@@ -28,6 +28,7 @@ import type {
   WriteRequest,
 } from "@tasks/storage";
 import { openSpaceConnection } from "@tasks/storage";
+import { STEPS_0_3 } from "@tasks/storage/revisions";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
 import { checkedDriver } from "@tasks/testkit";
 import { bridgePrincipal, renderError, renderResult, TOOLS } from "../src/mcp/index.ts";
@@ -47,8 +48,8 @@ beforeAll(async () => {
   temp = tempRoot("m401");
   for (const name of ["fx", "indexed", "plain", "edited"]) mkdirSync(join(temp.root, name));
   fx = await writeFixture(join(temp.root, "fx"));
-  indexed = await writeFixture(join(temp.root, "indexed"), { search: true });
-  plain = await writeFixture(join(temp.root, "plain"));
+  indexed = await writeFixture(join(temp.root, "indexed"));
+  plain = await writeFixture(join(temp.root, "plain"), { steps: STEPS_0_3 });
   edited = await writeFixture(join(temp.root, "edited"));
 }, 60_000);
 
