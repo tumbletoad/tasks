@@ -240,7 +240,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
             space,
             op,
             // Reads take no request ID; every write gets a fresh one.
-            input: op.endsWith(".get")
+            input: op.endsWith(".get") || op === "task.search"
               ? input
               : { ...input, request_id: `e2e-world-op-${String(ops).padStart(4, "0")}` },
           },

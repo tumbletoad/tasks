@@ -26,7 +26,7 @@ import {
 import css from "./Search.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
-const styles = classes(css, ["line", "changed", "action", "foot", "announce"]);
+const styles = classes(css, ["line", "status", "action", "foot"]);
 
 /** Spaces this tab found without the word index: their searches leave the words out at once. */
 const unindexedSpaces = new Set<string>();
@@ -132,16 +132,27 @@ function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
       ? (failed.error as { message?: unknown; hint?: unknown })
       : undefined;
 
+  const nothing = open.state.rows.length + done.state.rows.length === 0;
+
   return (
     <>
-      {changed ? (
-        <p className={styles.changed} role="status">
-          {t("search.changed")}
-          <button type="button" className={styles.action} onClick={refresh}>
-            {t("search.refresh")}
-          </button>
-        </p>
-      ) : null}
+      {/* One line that is always there, so "Results changed" never moves the rows under it. */}
+      <p className={styles.status} role="status">
+        {changed ? (
+          <>
+            {t("search.changed")}
+            <button type="button" className={styles.action} onClick={refresh}>
+              {t("search.refresh")}
+            </button>
+          </>
+        ) : ready && !nothing ? (
+          t("search.count", {
+            open: open.state.rows.length,
+            done: done.state.rows.length,
+            more: done.state.more ? "yes" : "no",
+          })
+        ) : null}
+      </p>
       {failed !== undefined && !noIndex ? (
         <p className={styles.line} role="status">
           {invalid === undefined ? (
@@ -160,7 +171,7 @@ function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
           )}
         </p>
       ) : null}
-      {failed !== undefined ? null : (
+      {failed !== undefined && nothing ? null : (
         <TaskList
           key="search"
           view="today"
@@ -173,7 +184,7 @@ function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
           onExpand={onExpand}
         />
       )}
-      {done.state.more && failed === undefined ? (
+      {done.state.more && done.state.phase !== "failed" ? (
         <p className={styles.foot}>
           <button
             type="button"
@@ -187,11 +198,6 @@ function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
           </button>
         </p>
       ) : null}
-      <div className={styles.announce} role="status" aria-live="polite">
-        {ready
-          ? t("search.count", { open: open.state.rows.length, done: done.state.rows.length })
-          : ""}
-      </div>
     </>
   );
 }

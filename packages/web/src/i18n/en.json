@@ -71,7 +71,7 @@
   "search.noIndex": "This space has no word index yet, so words cannot be searched here. Filters such as status:open or p<=2 still work.",
   "search.noIndexFilters": "This space has no word index yet, so the words were left out: these are the tasks that match {filters}.",
   "search.addInstead": "Add “{text}” as a task",
-  "search.count": "Found {open, plural, one {# open task} other {# open tasks}} and {done} completed.",
+  "search.count": "{open} to do, {done}{more, select, yes {+} other {}} completed",
 
   "view.empty": "Nothing here.",
 

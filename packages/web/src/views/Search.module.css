@@ -5,12 +5,16 @@
   color: var(--k-muted);
 }
 
-/* "Results changed · Refresh": muted, above the results, never moving them. */
-.changed {
+/*
+ * What the results hold, or "Results changed · Refresh": muted, above the results, and always
+ * the same height, so neither moves a row.
+ */
+.status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-height: 28px;
   margin: 12px 0 0;
   color: var(--k-muted);
   font-size: 0.875rem;
@@ -38,13 +42,4 @@
 
 .line .action {
   margin-inline-start: 8px;
-}
-
-.announce {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
