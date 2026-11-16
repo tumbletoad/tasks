@@ -1186,6 +1186,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.1.hub.space-retry",
+      "title": "space open of an unavailable space (its folder missing, its open failed) tries it again in one step, after what the failed open held was released. A space whose worker or open did not end within the close's bound is never opened beside it: space open is refused while it runs and opens the space once it has ended",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.13.hub.logs-content-free",
       "title": "The log takes only catalogue events and typed fields, drops free text cast past the types, takes error codes and classes from closed lists only, rotates at the file's real size only in the lock holder, stays bounded while the holder is idle, takes tasks-local/1's events whole with only their listed words, and a grep of a service's logs and crash files for fixture strings finds nothing",
       "source": "A2 3.13, A2 S27, A7 3.8 M1.08",
