@@ -4,7 +4,10 @@
 //
 //   launch.scopes   Linux: terminals start without a systemd scope, so a restart or update of the
 //                   service may end the sessions in them (warn)
-//   launch.env      the person's environment as a launch reads it: on Linux and macOS the last
+//   launch.terminal the terminal a launch opens first and why: warn when it was not
+//                   found, when the default the person set is one Tasks cannot open, or when
+//                   the operating system's setting could not be read
+//   launch.env     the person's environment as a launch reads it: on Linux and macOS the last
 //                   login-shell snapshot the service attempted did not succeed, with the age of the
 //                   one in use or none (warn); `--live` takes one now first, so plain doctor never
 //                   runs the person's profile. On Windows a registry read that failed (warn)
@@ -74,6 +77,86 @@ export function scopesCheck(scopes: unknown): Check {
     status: "skip",
     detail: "Only Linux puts terminals in scopes; elsewhere they start outside the service.",
   };
+}
+
+/** A terminal adapter's name for people. */
+export const TERMINAL_NAMES: Readonly<Record<string, string>> = {
+  wt: "Windows Terminal",
+  console: "a console window",
+  ghostty: "Ghostty",
+  "gnome-terminal": "GNOME Terminal",
+  kitty: "kitty",
+  wezterm: "WezTerm",
+  konsole: "Konsole",
+  "x-terminal-emulator": "x-terminal-emulator",
+  custom: "your custom terminal command",
+};
+
+/** Why a terminal was chosen, in a few words. */
+export const TERMINAL_SOURCE_WORDS: Readonly<Record<string, string>> = {
+  configured: "set in machine.toml",
+  fallback: "a fallback",
+  terminal_var: "$TERMINAL",
+  desktop: "the desktop's default",
+  distribution: "the distribution's default",
+  windows: "Windows' default terminal",
+  installed: "the first installed",
+};
+
+/** A name the service gave for a default Tasks cannot open: plain characters only. */
+const SHOWN_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/;
+
+/** `launch.terminal`: `doctor/launch`'s `terminal`. */
+export function terminalCheck(terminal: unknown): Check {
+  const id = "launch.terminal";
+  if (!isObject(terminal)) {
+    return {
+      id,
+      status: "skip",
+      detail: "This service opens no terminals on this operating system.",
+    };
+  }
+  const app = typeof terminal["app"] === "string" ? TERMINAL_NAMES[terminal["app"]] : undefined;
+  const source =
+    typeof terminal["source"] === "string" ? TERMINAL_SOURCE_WORDS[terminal["source"]] : undefined;
+  const set = "To choose one, set [terminal] app in machine.toml.";
+  if (app === undefined || source === undefined || terminal["found"] !== true) {
+    return {
+      id,
+      status: "warn",
+      detail:
+        app === undefined
+          ? `No terminal ${PRODUCT_NAME} can open was found, so Open in a terminal app fails. Install one, or set [terminal] app in machine.toml.`
+          : `${app} (${source ?? "chosen"}) was not found, so Open tries the next terminal. Install it, or change [terminal] in machine.toml.`,
+    };
+  }
+  const unread = terminal["unread"];
+  if (unread === "windows" || unread === "desktop") {
+    const what =
+      unread === "windows"
+        ? "your default terminal in Windows' settings"
+        : "your desktop's default terminal in time";
+    return {
+      id,
+      status: "warn",
+      detail: `${PRODUCT_NAME} could not read ${what}, so terminals open in ${app}, its fallback. ${set}`,
+    };
+  }
+  const unsupported = terminal["unsupported"];
+  if (typeof unsupported === "string") {
+    const which =
+      unsupported === "other"
+        ? "Your default terminal in Windows' settings"
+        : SHOWN_NAME.test(unsupported) && unsupported !== "unnamed"
+          ? `Your default terminal (${unsupported})`
+          : "Your default terminal";
+    return {
+      id,
+      status: "warn",
+      detail: `${which} is one ${PRODUCT_NAME} cannot open yet, so terminals open in ${app} (${source}). ${set}`,
+    };
+  }
+  return { id, status: "ok", detail: `Terminals open in ${app}: ${source}.` };
 }
 
 const SNAPSHOT_WHY: Readonly<Record<string, string>> = {
@@ -266,6 +349,7 @@ export function sessionsCheck(facts: unknown): Check {
 /** The rows when no service answers. */
 export const LAUNCH_ROWS_WITHOUT_SERVICE: readonly Check[] = [
   { id: "launch.scopes", status: "skip", detail: "No service to ask." },
+  { id: "launch.terminal", status: "skip", detail: "No service to ask." },
   { id: "launch.env", status: "skip", detail: "No service to ask." },
   { id: "launch.t3", status: "skip", detail: "No service to ask." },
   { id: "sessions", status: "skip", detail: "No service to ask." },
@@ -294,6 +378,9 @@ export async function launchChecks(
     facts === undefined
       ? { id: "launch.scopes", status: "skip", detail: "The service did not answer." }
       : scopesCheck(facts["scopes"]),
+    facts === undefined
+      ? { id: "launch.terminal", status: "skip", detail: "The service did not answer." }
+      : terminalCheck(facts["terminal"]),
     facts === undefined
       ? { id: "launch.env", status: "skip", detail: "The service did not answer." }
       : environmentCheck(facts["environment"], now),

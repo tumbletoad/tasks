@@ -130,6 +130,12 @@ export const EVIDENCE_FIELDS = {
   exit_code: "count",
   /** The bridge redeemed the ticket or the launch reference (A3). */
   bound_at: "instant",
+  /**
+   * Terminal: the adapter that was Dispatched (`[terminal] app`'s names), and why it was in the
+   * chain (TERMINAL_SOURCES), for the receipt.
+   */
+  terminal: "id",
+  terminal_source: "id",
 } as const satisfies Record<string, EvidenceKind>;
 
 export type EvidenceKey = keyof typeof EVIDENCE_FIELDS;
