@@ -11,7 +11,7 @@ name: build
 # only (A7 3.8).
 #
 # The archives and SHA256SUMS are kept for three days. The test signatures are not uploaded: a
-# release is signed by hand by the owner (pnpm release sign, A2 3.12.8 "sign").
+# release is built, checked and signed by release.yml.
 on:
   push:
     branches: [main]

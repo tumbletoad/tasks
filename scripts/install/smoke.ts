@@ -15,34 +15,23 @@
 // It must lie below folders that no other account can rename (the install script refuses a root
 // otherwise): a folder in the home or profile folder, not one in a shared temporary folder.
 // Nothing outside <work> is written: no PATH, profile, start-up entry or registry value.
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import {
-  canonicalStatePath,
-  hostFacts,
-  installId,
-  resolveLayout,
-} from "../../packages/service/src/hub/paths.ts";
-import {
+  checkInstalled,
   downloadCases,
   fired,
   HOME_VAR,
   installerIn,
-  linkTarget,
   listing,
   prepareCanary,
   releaseOfDist,
   restrictToMe,
   runInstaller,
-  runProgram,
-  stableCommand,
   unpackRelease,
   VERIFIERS,
-  windows,
   type Ran,
-  type Release,
 } from "./test/kit.ts";
 
 const USAGE = "usage: pnpm smoke --dist <folder of a pnpm build --sign test> --work <new folder>";
@@ -53,35 +42,6 @@ function check(ok: boolean, what: string, ran?: Ran): void {
       `${what}${ran === undefined ? "" : `\n  exit ${String(ran.status)}\n${ran.stdout}\n${ran.stderr}`}`,
     );
   }
-}
-
-function checkInstalled(root: string, release: Release, ran: Ran): void {
-  check(ran.status === 0, `the install into ${root} failed`, ran);
-  const current = join(root, "current");
-  check(
-    windows
-      ? readFileSync(current, "utf8") === release.version
-      : linkTarget(current) === `versions/${release.version}`,
-    "current does not name the version",
-  );
-  check(existsSync(stableCommand(root)), "no stable command");
-  // The install's state folder by the layout: `<root>/state` of a TASKS_HOME root.
-  const state = resolveLayout(hostFacts({ TASKS_HOME: root })).state;
-  const record = JSON.parse(readFileSync(join(state, "install.json"), "utf8")) as {
-    install_id?: string;
-  };
-  const id = installId(canonicalStatePath(realpathSync.native(state), process.platform));
-  check(record.install_id === id, "install.json does not name the install's own ID");
-  const version = runProgram(stableCommand(root), ["version"]);
-  check(
-    version.stdout.trim() === `${PRODUCT_NAME} ${release.version} (${release.build})`,
-    "the stable command does not run the version",
-    version,
-  );
-  check(
-    listing(join(root, "versions")).every((path) => !path.startsWith(".")),
-    "a download or staging folder was left",
-  );
 }
 
 function main(argv: readonly string[]): number {

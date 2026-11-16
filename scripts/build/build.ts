@@ -11,7 +11,7 @@
 //   7. when the platform is this machine's, the runtime gate inside the folder (gate.ts),
 //   8. on request, everything from step 2 again in another work folder, and the two version
 //      folders and archives compared byte for byte (A7 3.8 M1.13: reproducible builds).
-// The release signature is never made here: scripts/release/ does that, run by hand by the owner.
+// The release signature is never made here: scripts/release/ makes it, from release.yml or by hand.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
