@@ -1111,39 +1111,33 @@ const quietRun = {
   fault: null,
 } as const;
 
-/** Sequences random runs once failed, kept as they shrank: each runs first, every time. */
-const COUNTEREXAMPLES: [Action[]][] = [
+/** Sequences random runs once failed, kept as they shrank: each runs on every check. */
+const COUNTEREXAMPLES: (readonly Action[])[] = [
   // Windows: a task renamed, its old file held open while the batch retires it; once let go, it
   // was left in the folder for good.
   [
-    [
-      { kind: "rename", pick: 1437316263 },
-      { ...quietRun, steps: 2, hold: 1919241737 },
-      { kind: "elsewhere", which: 0 },
-      { kind: "create", squat: false },
-      { kind: "edit", pick: 0, how: "write" },
-      { kind: "create", squat: false },
-    ],
+    { kind: "rename", pick: 1437316263 },
+    { ...quietRun, steps: 2, hold: 1919241737 },
+    { kind: "elsewhere", which: 0 },
+    { kind: "create", squat: false },
+    { kind: "edit", pick: 0, how: "write" },
+    { kind: "create", squat: false },
   ],
   // Windows: the same with a completed task reopened, so its file moves to open/.
   [
-    [
-      { kind: "reopen", pick: 9 },
-      { ...quietRun, steps: 2, hold: 786592087 },
-      quietRun,
-      { kind: "create", squat: false },
-      { kind: "rename", pick: 0 },
-      { kind: "restart", killAt: null },
-    ],
+    { kind: "reopen", pick: 9 },
+    { ...quietRun, steps: 2, hold: 786592087 },
+    quietRun,
+    { kind: "create", squat: false },
+    { kind: "rename", pick: 0 },
+    { kind: "restart", killAt: null },
   ],
   // Linux: a file where completed/ was, then the person's look at completed/2026 below it.
   [
-    [
-      { kind: "folder-file", which: 1 },
-      { kind: "folder-file", which: 2 },
-      { kind: "rest" },
-      { kind: "create", squat: false },
-    ],
+    { kind: "folder-file", which: 1 },
+    { kind: "folder-file", which: 2 },
+    { kind: "rest" },
+    { kind: "create", squat: false },
   ],
 ];
 
@@ -1165,12 +1159,14 @@ describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at
         return;
       }
       // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
-      await fc.assert(property, { numRuns: 80, seed: 20261114, examples: COUNTEREXAMPLES });
+      await fc.assert(property, { numRuns: 80, seed: 20261114 });
       for (const [what, least] of Object.entries(LEAST)) {
         expect(seen[what as keyof typeof seen], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(
           least,
         );
       }
+      // Apart from both, so a seed and path from either replay the same runs.
+      for (const actions of COUNTEREXAMPLES) await run(actions);
       await fc.assert(property, { numRuns: RUNS });
     },
     600_000 + RUNS * 2_000,

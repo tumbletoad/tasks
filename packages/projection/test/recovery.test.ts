@@ -551,6 +551,49 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     expect(again.pending().dirty).toBe(false);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
+
+  test("a file a killed batch placed, held open at the restart while its task moves again, stays its own: it goes once it is let go, and nothing is rescued", async () => {
+    const told: Rescued[] = [];
+    const onRescued = (r: Rescued): Promise<void> => {
+      told.push(r);
+      return Promise.resolve();
+    };
+    const first = w.projector({ onRescued });
+    await first.start();
+    await settle(first);
+    const [a] = activeIds();
+    w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Placed before a kill" } }]);
+    // Killed once the batch placed its files, before its record kept them: the journal names them.
+    let armed = false;
+    const doomed = w.projector({
+      onRescued,
+      at: (act) => {
+        if (armed && act === "record") throw new Error("fixture kill");
+      },
+    });
+    await doomed.start();
+    armed = true;
+    await expect(doomed.step()).rejects.toThrow();
+    const placed = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
+    expect(placed).toContain("placed-before-a-kill");
+    const placedAbs = join(w.dir, ...placed.split("/"));
+    // Held open through the restart, while the task moves on.
+    const release = holdOpen(placedAbs);
+    const after = w.projector({ onRescued });
+    try {
+      await after.start();
+      w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Moved while held" } }]);
+      await after.step();
+    } finally {
+      release();
+    }
+    await settle(after);
+    expect(existsSync(placedAbs)).toBe(false);
+    expect(told).toEqual([]);
+    expect(existsSync(join(w.folder, "exchange", "rescued"))).toBe(false);
+    checkWatermark(w.dir, w.reader);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
 });
 
 describe("[A1.5.projection.folders] a folder of the tree that went missing or became a link is never followed: its link is moved aside as it is, and what the record had below it is rendered again", () => {

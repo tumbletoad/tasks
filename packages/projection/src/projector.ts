@@ -289,14 +289,17 @@ export class Projector {
     if (found !== undefined && journal !== undefined) {
       for (const [path, placing] of journal.placing) {
         const look = this.#tree.look(path, undefined, placing.size);
-        if (
-          look.kind !== "file" ||
-          look.links !== 1 ||
-          look.size !== placing.size ||
-          look.sha256 !== placing.sha256
-        ) {
-          if (placing.task !== undefined) unverified.add(placing.task);
-          continue;
+        const proved =
+          look.kind === "file" &&
+          look.links === 1 &&
+          look.size === placing.size &&
+          look.sha256 === placing.sha256;
+        if (!proved) {
+          if (placing.task === undefined) continue;
+          unverified.add(placing.task);
+          // A new path of a task held open now: once the journal goes, nothing else would name it,
+          // so the record keeps it. Every later act proves it ours by its bytes again.
+          if (look.kind !== "busy" || record.files.has(path)) continue;
         }
         record.files.set(path, {
           sha256: placing.sha256,
