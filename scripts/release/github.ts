@@ -22,7 +22,7 @@ import {
 import { INSTALLER_KINDS, installerName } from "../install/render.ts";
 import { repoRoot } from "../run.ts";
 import { RELEASE_PLATFORMS } from "./gather.ts";
-import { isOnMain } from "./plan.ts";
+import { isOnMain, keysAt } from "./plan.ts";
 import { keyLinesIn, Refusal } from "./release.ts";
 import {
   checkPublishCommit,
@@ -199,6 +199,8 @@ export function checkReleaseFolder(
   dist: string,
   version: string,
   pinned: readonly string[] = RELEASE_PUBLIC_KEYS,
+  /** The keys the install scripts pin: the release keys of the commit the release was built from. */
+  installerKeys: readonly string[] = pinned,
 ): void {
   if (existsSync(join(dist, TEST_KEY_FILE))) {
     throw new Refusal("A test key or a rehearsal signed these files: they are never published.");
@@ -238,8 +240,11 @@ export function checkReleaseFolder(
   if (extra.length > 0)
     throw new Refusal(`The release holds files it should not: ${extra.join(", ")}.`);
   // The install scripts are what a person runs first and are not covered by the signature: each
-  // must name this version and pin exactly the pinned release keys.
-  const keys = [...new Set(pinned.map((line) => line.trim().split(/\s+/).slice(0, 2).join(" ")))];
+  // must name this version and pin exactly the release keys of the commit it was built from (a
+  // key added on main since is not in them).
+  const keys = [
+    ...new Set(installerKeys.map((line) => line.trim().split(/\s+/).slice(0, 2).join(" "))),
+  ];
   for (const kind of INSTALLER_KINDS) {
     const name = installerName(kind, version, "release");
     if (!existsSync(join(dist, name))) throw new Refusal(`The release has no ${name}.`);
@@ -286,7 +291,7 @@ export function publishRelease(options: {
       throw new Refusal(`An asset has an odd name: ${asset.name}.`);
     writeFileSync(join(work, asset.name), assetBytes(repo, asset.id));
   }
-  checkReleaseFolder(work, version);
+  checkReleaseFolder(work, version, RELEASE_PUBLIC_KEYS, keysAt(repoRoot, found.target_commitish));
   log(`${tag}: every file verifies with the pinned release keys`);
   if (!found.draft) {
     log(`${tag} is published already. Nothing was changed.`);

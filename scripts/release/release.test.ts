@@ -229,9 +229,10 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
   }, 60_000);
 
   test("without a terminal the command asks nothing and signs nothing", () => {
+    const unsigned = folderOf("no-terminal", "0.1.0", ["linux-x64"]);
     const ran = spawnSync(
       process.execPath,
-      [MAIN, "sign", "--key", join(keys, KEY_FILE), "--dist", dist],
+      [MAIN, "sign", "--key", join(keys, KEY_FILE), "--dist", unsigned],
       {
         env: without(["CI", "GITHUB_ACTIONS"]),
         input: `${PASSPHRASE}\n`,
@@ -240,11 +241,10 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
         timeout: 60_000,
       },
     );
+    // Refused before any question, by whichever check comes first for the committed keys.
     expect(ran.status).toBe(2);
-    // While the release key is not pinned, that refusal comes first, also before any question.
-    expect(ran.stderr).toMatch(
-      RELEASE_PUBLIC_KEYS.includes(RELEASE_KEY_PLACEHOLDER) ? /not pinned yet/ : /terminal/,
-    );
+    expect(ran.stderr).not.toMatch(/Passphrase/);
+    expect(readdirSync(unsigned)).toEqual(["tasks-0.1.0-linux-x64.tar.gz"]);
     // keygen asks first, so it shows the question's own refusal whatever is pinned.
     const out = join(work, "keygen-no-terminal");
     mkdirSync(out);
@@ -708,19 +708,18 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
     );
     expect(() => planRun({ root: repo, mode: "release", ref: "--help", run: 7 })).toThrow(Refusal);
 
-    // A version that a tag gives to another commit is refused before anything is built; the
-    // tagged commit itself may run again (a rerun of its release).
+    // A version with a tag (published, so built and signed once) is refused before anything is
+    // built: from another commit, and from its own commit too.
     git("tag", "v0.2.0", second);
     git("checkout", "-q", "main");
     writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "0.2.0" }));
     git("commit", "-q", "-am", "0.2.0 again");
     const again = git("rev-parse", "HEAD");
-    expect(() =>
-      planRun({ root: repo, mode: "release", ref: again, run: 7, main: "main" }),
-    ).toThrow(/v0.2.0 already names commit/);
-    expect(planRun({ root: repo, mode: "release", ref: second, run: 7, main: "main" }).commit).toBe(
-      second,
-    );
+    for (const ref of [again, second]) {
+      expect(() => planRun({ root: repo, mode: "release", ref, run: 7, main: "main" })).toThrow(
+        /v0.2.0 exists already/,
+      );
+    }
 
     // Publishing: the release's commit must be a full commit on main, and its tag, if there is
     // one, must name that commit.
@@ -816,6 +815,10 @@ describe("[A2.3.12.8.build.release-files] the signing job signs exactly the arch
       }, what).toThrow(/install-0.2.0.sh is not this release's install script/);
     }
     writeFileSync(sh, rendered);
+    // A key added on main since the release was built (a rotation) does not block it.
+    expect(() => {
+      checkReleaseFolder(folder, "0.2.0", [pinned, other], [pinned]);
+    }).not.toThrow();
     const archivePath = join(folder, archiveName("0.2.0", "win-x64"));
     writeFileSync(archivePath, Buffer.concat([readFileSync(archivePath), Buffer.from("x")]));
     expect(() => {

@@ -3,7 +3,7 @@
 // rule is applied once, before anything is built.
 import { spawnSync } from "node:child_process";
 import { RELEASE_PLATFORMS } from "./gather.ts";
-import { Refusal } from "./release.ts";
+import { keyLinesIn, Refusal } from "./release.ts";
 import { rehearsalVersion, releaseTag, releaseVersionProblem } from "./version.ts";
 
 /** The runner each released platform builds on: its own, so the runtime gate runs there. */
@@ -47,6 +47,17 @@ function mustGit(root: string, args: readonly string[], what: string): string {
 /** Whether `commit` is `main` or an ancestor of it, in the clone at `root`. */
 export const isOnMain = (root: string, commit: string, main = "origin/main"): boolean =>
   !commit.startsWith("-") && git(root, ["merge-base", "--is-ancestor", commit, main]).ok;
+
+/** The release keys committed at `commit`: the key lines of its release-keys.ts. */
+export function keysAt(root: string, commit: string): string[] {
+  if (commit.startsWith("-")) throw new Refusal(`${commit} is not a commit.`);
+  const text = mustGit(
+    root,
+    ["show", `${commit}:packages/service/src/version/release-keys.ts`],
+    `The release keys at ${commit} cannot be read.`,
+  );
+  return keyLinesIn(text);
+}
 
 function packageVersion(root: string, commit: string): string {
   const text = mustGit(root, ["show", `${commit}:package.json`], `${commit} has no package.json`);
@@ -111,17 +122,18 @@ export function planRun(options: {
     const version = packageVersion(root, commit);
     const problem = releaseVersionProblem(version);
     if (problem !== undefined) throw new Refusal(problem);
-    // Before anything is built or signed: a signed build of a version that is released already
-    // from another commit would be a second set of bytes under its name.
+    // Before anything is built or signed: a draft has no tag yet, so a tag means the version is
+    // published (or claimed by hand), and a new build of it would be a second set of bytes under
+    // its name, even from the same commit on a newer runner.
     const tagged = git(root, [
       "rev-parse",
       "--verify",
       "-q",
       `refs/tags/${releaseTag(version)}^{commit}`,
     ]);
-    if (tagged.ok && tagged.out !== commit) {
+    if (tagged.ok) {
       throw new Refusal(
-        `${releaseTag(version)} already names commit ${tagged.out}, not ${commit}. A version is released from one commit only: raise the version in package.json.`,
+        `${releaseTag(version)} exists already (commit ${tagged.out}). A version is built and signed once: raise the version in package.json.`,
       );
     }
     return {

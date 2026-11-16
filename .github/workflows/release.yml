@@ -78,7 +78,7 @@ jobs:
         with:
           persist-credentials: false
           # The plan reads package.json at the commit and at the build it upgrades from, checks
-          # that a release's commit is on main, and that no tag gives its version to another commit.
+          # that a release's commit is on main, and that its version has no tag yet.
           fetch-depth: 0
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1

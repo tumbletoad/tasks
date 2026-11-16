@@ -12,7 +12,6 @@
 //   check-install --dist <signed folder> [--from <previous signed folder>] --work <new folder>
 //   draft --dist <signed folder> --version <v> --commit <sha> [--repo <owner/name>]
 //   publish --version <v> --work <new folder> [--repo <owner/name>]
-import { spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -21,11 +20,10 @@ import { repoRoot } from "../run.ts";
 import { gatherArchives } from "./gather.ts";
 import { draftRelease, publishRelease } from "./github.ts";
 import { installCheck } from "./install-check.ts";
-import { planOutputs, planRun } from "./plan.ts";
+import { keysAt, planOutputs, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
   createReleaseKey,
-  keyLinesIn,
   MIN_PASSPHRASE,
   redact,
   Refusal,
@@ -120,20 +118,6 @@ const repository = (given: string | undefined): string => {
   return repo;
 };
 
-/** The release keys committed at `commit`: the key lines of its release-keys.ts. */
-function keysAt(commit: string): string[] {
-  if (commit.startsWith("-")) throw new Refusal(`${commit} is not a commit.`);
-  const ran = spawnSync("git", ["show", `${commit}:packages/service/src/version/release-keys.ts`], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    windowsHide: true,
-  });
-  if (ran.status !== 0) {
-    throw new Refusal(`The release keys at ${commit} cannot be read.`);
-  }
-  return keyLinesIn(ran.stdout);
-}
-
 async function main(
   argv: readonly string[],
   secrets: ReturnType<typeof takeSecrets>,
@@ -186,7 +170,7 @@ async function main(
       printSigned(
         rehearsalSign(
           resolve(values.dist ?? ""),
-          from === undefined ? RELEASE_PUBLIC_KEYS : keysAt(from),
+          from === undefined ? RELEASE_PUBLIC_KEYS : keysAt(repoRoot, from),
         ),
       );
       console.log("A rehearsal: no product trusts this key, and nothing here is ever released.");
