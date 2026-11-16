@@ -1,17 +1,18 @@
-// Completed: finished tasks, read in pages because the live store never holds them. Pure parts, so the order and the groups are unit tests: the page source over `task.search`
-// and the grouping into "Checked off" and one group per completion month.
+// Completed: finished tasks, read in pages because the live store never holds them. Pure parts, so
+// the order and the groups are unit tests: the page source over `task.search` and the grouping
+// into "Checked off" and one group per completion month.
 //
-// The source reads whole windows, so a window's order is the completion date's, newest first,
-// whatever order the search returns them in (it orders without words by due date):
-//
-// 1. "Checked off": completed tasks whose outcome is still missing (`is:unwrapped`).
-// 2. Then one window per completion month, newest first: this month from its first day on, then
-//    each month before it. Before it steps back a month it asks whether anything was completed
-//    earlier at all, so it ends after the oldest month, and empty months cost one read each.
+// The search orders a query without words by due date, and one search holds at most 1,000 tasks.
+// So the source reads month windows and orders each by completion day, newest first, keeping the
+// search's order among equal days. First the checked-off tasks (completed, wrap-up still pending:
+// `is:unwrapped`), month by month, then every other finished task, month by month. Each run of
+// months starts at this month, open-ended so a task completed by another clock's tomorrow still
+// shows, and steps back only while something of its kind was completed earlier, so it ends after
+// its oldest month and an empty month costs one read.
 //
 // A page is one or more whole windows: at least as many rows as the page asked for, unless the
-// windows ran out. The cursor names the next month to read. A window holds at most the 1,000 tasks
-// a search freezes; more than that in one month is a limit.
+// windows ran out. The cursor names the next window. A window shows at most the 1,000 tasks one
+// search holds: more of one kind completed in one month is the limit.
 import type { Client } from "@tasks/contracts/generated/client.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { Group } from "../groups.ts";
@@ -29,13 +30,19 @@ export type Search = (input: SearchInput) => Promise<SearchResult>;
 
 /** The most rows one search call returns. */
 const SEARCH_PAGE = 50;
-/** How far back the source steps at most: a guard, never reached by a real space. */
-const MAX_MONTHS = 1_200;
+/** How many windows one page reads at most: a guard, never reached by a real space. */
+const MAX_WINDOWS = 2_400;
 
-/** Completed tasks whose outcome is still missing: the checked-off list. */
+/** Completed tasks whose wrap-up is still pending: the checked-off list. */
 export const CHECKED_OFF_QUERY = "is:unwrapped";
-/** Every other finished task: the month windows. */
-const NOT_CHECKED_OFF = `-${CHECKED_OFF_QUERY}`;
+
+/** The two runs of windows, in the order the list shows them. */
+export type WindowKind = "checked" | "done";
+
+const KIND_TERM: Readonly<Record<WindowKind, string>> = {
+  checked: CHECKED_OFF_QUERY,
+  done: `-${CHECKED_OFF_QUERY}`,
+};
 
 const MONTH = /^(\d{4})-(\d{2})$/;
 
@@ -60,32 +67,39 @@ export function monthAfter(month: string): string {
 }
 
 /**
- * A month's window. The newest one (`open`) has no end, so a task completed later than the
- * page's today (another clock) still shows.
+ * A month's window of one kind. The newest one (`open`) has no end, so a task completed later than
+ * the page's today (another clock) still shows.
  */
-export function monthQuery(month: string, open: boolean): string {
-  const terms = [NOT_CHECKED_OFF, `completed>=${month}-01`];
+export function monthQuery(kind: WindowKind, month: string, open: boolean): string {
+  const terms = [KIND_TERM[kind], `completed>=${month}-01`];
   if (!open) terms.push(`completed<${monthAfter(month)}-01`);
   return terms.join(" ");
 }
 
-/** Whether a finished task was completed before `month` began, outside the checked-off list. */
-export const earlierQuery = (month: string): string =>
-  [NOT_CHECKED_OFF, `completed<${month}-01`].join(" ");
+/** Whether a finished task of this kind was completed before `month` began. */
+export const earlierQuery = (kind: WindowKind, month: string): string =>
+  [KIND_TERM[kind], `completed<${month}-01`].join(" ");
 
-/** Where the next page starts: a month, and whether it is the newest (open-ended) one. */
+/** Where the next page starts: a kind, a month, and whether it is the newest (open-ended) one. */
 interface Cursor {
+  readonly kind: WindowKind;
   readonly month: string;
   readonly open: boolean;
 }
 
-const CURSOR = /^(\d{4}-\d{2})(\+?)$/;
+const CURSOR = /^([cd])(\d{4}-\d{2})(\+?)$/;
 
-const cursorText = (at: Cursor): string => `${at.month}${at.open ? "+" : ""}`;
+const cursorText = (at: Cursor): string =>
+  `${at.kind === "checked" ? "c" : "d"}${at.month}${at.open ? "+" : ""}`;
 
 function cursorOf(text: string): Cursor | undefined {
   const match = CURSOR.exec(text);
-  return match === null ? undefined : { month: match[1] ?? "", open: match[2] === "+" };
+  if (match === null) return undefined;
+  return {
+    kind: match[1] === "c" ? "checked" : "done",
+    month: match[2] ?? "",
+    open: match[3] === "+",
+  };
 }
 
 /**
@@ -170,18 +184,22 @@ export function completedSource(options: CompletedSourceOptions): PageSource<Tas
 
   return async ({ after, limit }): Promise<Page<TaskRow>> => {
     const { today, timeZone } = options.clock();
+    const thisMonth = today.slice(0, 7);
     const rows: TaskRow[] = [];
-    let at: Cursor | undefined = after === undefined ? undefined : cursorOf(after);
-    if (after !== undefined && at === undefined) return { rows };
-    if (at === undefined) {
-      rows.push(...(await window(CHECKED_OFF_QUERY, true, timeZone)));
-      at = { month: today.slice(0, 7), open: true };
-    }
-    for (let step = 0; step < MAX_MONTHS; step += 1) {
-      rows.push(...(await window(monthQuery(at.month, at.open), false, timeZone)));
-      const earlier = await search({ q: earlierQuery(at.month), scope: "finished", limit: 1 });
-      if (earlier.total === 0) return { rows };
-      at = { month: monthBefore(at.month), open: false };
+    let at: Cursor | undefined =
+      after === undefined ? { kind: "checked", month: thisMonth, open: true } : cursorOf(after);
+    if (at === undefined) return { rows };
+    for (let step = 0; step < MAX_WINDOWS; step += 1) {
+      const checked = at.kind === "checked";
+      rows.push(...(await window(monthQuery(at.kind, at.month, at.open), checked, timeZone)));
+      const earlier = await search({
+        q: earlierQuery(at.kind, at.month),
+        scope: "finished",
+        limit: 1,
+      });
+      if (earlier.total !== 0) at = { kind: at.kind, month: monthBefore(at.month), open: false };
+      else if (checked) at = { kind: "done", month: thisMonth, open: true };
+      else return { rows };
       if (rows.length >= limit) return { rows, next: cursorText(at) };
     }
     return { rows };
