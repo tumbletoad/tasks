@@ -9,6 +9,7 @@
 //   space/open      serve a space folder while the service runs; `retry_migration` tries a failed
 //                   migration again (A1 3.17)
 //   space/close     close one space while the service keeps running (A1 3.1)
+//   space/forget    take a closed space off the list and out of machine.toml; no file is touched
 //   space/backup    a manual backup                           (backupSpace, kind manual)
 //   space/backups   the backups and leftovers of a space      (listBackups)
 //   space/export    an export bundle in `<space>/exports`     (exportBundle, backup or fork mode;
@@ -58,6 +59,8 @@ import { isUserClass } from "../ops/index.ts";
 import { storageFailureBody } from "./space-errors.ts";
 import { AdminFailed, runAdmin, type AdminResult } from "./space-admin.ts";
 import {
+  because,
+  forgetSpaceRecord,
   notRememberedLine,
   recordSpace,
   type SpaceChange,
@@ -80,6 +83,7 @@ export interface SpaceVerbsHost {
     | "list"
     | "open"
     | "close"
+    | "forget"
     | "claim"
     | "restoreInPlace"
     | "recover"
@@ -93,6 +97,8 @@ export interface SpaceVerbsHost {
   readonly settingsDir: string;
   /** The machine's default space (A2 3.1), which `space/list` names. */
   readonly defaultSpace?: () => string | undefined;
+  /** Unsets the default when it names this space, which `space/forget` took off the list. */
+  readonly clearDefault?: (id: string) => Promise<void>;
   /** Where the verbs record what they did (machine.toml, space-records.ts). None: no record. */
   readonly records?: SpaceRecordsHost;
 }
@@ -304,6 +310,9 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
     return run;
   };
 
+  /** The spaces a person sees and names: every entry but those they forgot. */
+  const listed = (): SpaceView[] => manager.list().filter((view) => view.forgotten !== true);
+
   const describe = (view: SpaceView) => {
     const folder = manager.folderOf(view.entry);
     const leftovers = leftoversOf(folder);
@@ -318,7 +327,7 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
    * yet is found by the ID its entry names; it has no name until it is served.
    */
   const find = (wanted: string): SpaceView => {
-    const copies = manager.list().map((view) => ({
+    const copies = listed().map((view) => ({
       view,
       id: view.id ?? view.registered,
       name: view.name,
@@ -379,7 +388,7 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
   return {
     "space/list": () =>
       Promise.resolve({
-        spaces: manager.list().map(describe),
+        spaces: listed().map(describe),
         default: host.defaultSpace?.() ?? null,
       }),
 
@@ -461,6 +470,40 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       // Closed also after a restart: the entry stays, `enabled = false`, and is listed closed.
       const closed = viewOf(view.entry);
       return { space: describe(closed), ...remember(closed, false) };
+    },
+
+    "space/forget": async (params, cls) => {
+      userOnly(cls);
+      const view = find(required(params, "space"));
+      const folder = manager.folderOf(view.entry);
+      if (view.state !== "closed" && view.state !== "unavailable") {
+        throw new AppError({
+          code: "invalid_input",
+          message: "Only a closed space is forgotten, and this one is open.",
+          hint: `Close it first: ${command(["space", "close", folder], "space close <folder>")}`,
+          data: { issues: [{ path: "space", message: "Open" }] },
+        });
+      }
+      // machine.toml first: when the entry cannot be taken out, the space would come back at the
+      // next start, so nothing is forgotten and the answer says why.
+      if (host.records !== undefined) {
+        const done = forgetSpaceRecord(host.records, folder);
+        if (!done.remembered) {
+          throw new AppError({
+            code: "invalid_input",
+            message: `${because(done.why)}, so the space was not forgotten.`,
+            hint: "Take its [[spaces]] entry out of machine.toml by hand, or run tasks doctor.",
+            data: { issues: [{ path: "space", message: "machine.toml not changed" }] },
+          });
+        }
+      }
+      manager.forget(view.entry);
+      const id = view.id ?? view.registered;
+      // The default names a space by its ID: it goes only when no listed copy of it is left.
+      if (id !== undefined && !listed().some((other) => (other.id ?? other.registered) === id)) {
+        await host.clearDefault?.(id);
+      }
+      return { space: { ...describe(view), forgotten: true }, forgotten: true };
     },
 
     "space/backup": async (params, cls) => {

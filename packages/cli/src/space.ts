@@ -6,6 +6,7 @@
 //   tasks space create <name> [--path <folder>] [--prefix <P>]
 //   tasks space open <folder> [--excluded] [--retry-migration]
 //   tasks space close [<space>]
+//   tasks space forget <space>                       a closed space off the list; its folder stays
 //   tasks space backup [<space>]
 //   tasks space backups [list] [<space>]
 //   tasks space export [<space>] [--mode backup|fork] [--with-jsonl]
@@ -43,6 +44,8 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
        [--retry-migration]                 is excluded from sync, so it opens for writing;
                                            --retry-migration: try a migration that failed again
   close [<space>]                          Close a space while the service keeps running
+  forget <space>                           Take a closed space off the list. Its folder and files
+                                           stay; space open <folder> lists it again
   backup [<space>]                         Take a backup now
   backups [list] [<space>]                 The backups of a space
   export [<space>] [--mode backup|fork]    Write an export bundle into the space's exports folder,
@@ -362,6 +365,20 @@ export async function spaceCommand(
         });
         return 0;
       }
+      case "forget": {
+        const o = options(rest, [], []);
+        const wanted = o.positional[0];
+        if (wanted === undefined || o.positional.length > 1)
+          throw new UsageError(`${CLI_NAME} space forget takes one <space>`);
+        const result = await call("space/forget", { space: await which(wanted) });
+        out(result, () => {
+          const row = result["space"] as SpaceRow;
+          io.stdout(
+            `Forgot ${row.name ?? "the space"}${row.folder === undefined ? "" : ` in ${row.folder}`}. Its folder and files are kept: ${CLI_NAME} space open <folder> lists it again.\n`,
+          );
+        });
+        return 0;
+      }
       case "backups": {
         const o = options(rest[0] === "list" ? rest.slice(1) : rest, [], []);
         if (o.positional.length > 1) throw new UsageError("tasks space backups takes one <space>");
@@ -493,7 +510,7 @@ export async function spaceCommand(
       }
       default:
         throw new UsageError(
-          `${CLI_NAME} space has list, create, open, close, backup, backups, export, restore, rescue, claim, recover and use`,
+          `${CLI_NAME} space has list, create, open, close, forget, backup, backups, export, restore, rescue, claim, recover and use`,
         );
     }
   } catch (error) {

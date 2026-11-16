@@ -3,9 +3,11 @@
 //
 //   create, open, restore --to, restore latest     the folder's entry: added with `enabled = true`,
 //   restore in place, recover                      or set to `enabled = true` (opened again)
-//   close                                          the folder's entry: `enabled = false`. An entry is
-//                                                  never removed: closed, it is listed, and
-//                                                  `tasks space open <folder>` opens it again
+//   close                                          the folder's entry: `enabled = false`. Closed, it is
+//                                                  listed, and `tasks space open <folder>` opens it
+//                                                  again
+//   forget                                         the folder's entry taken out, of a closed or
+//                                                  unavailable space only; no file of it is touched
 //   claim                                          the copy's entry enabled, and every other entry
 //                                                  of the same space that serves nothing now
 //                                                  (closed or unavailable) disabled, so the list
@@ -200,8 +202,53 @@ export function recordSpace(host: SpaceRecordsHost, change: SpaceChange): Record
   return { remembered: false, why };
 }
 
+/**
+ * Takes the entry of `folder` out of machine.toml's `[[spaces]]` (`tasks space forget`): the space
+ * is no longer listed or opened at a start. No entry for the folder is nothing to do. Never throws.
+ */
+export function forgetSpaceRecord(host: SpaceRecordsHost, folder: string): Recorded {
+  const key = fold(host.platform);
+  const target = key(resolve(folder));
+  const at = (element: Readonly<Record<string, unknown>>) =>
+    typeof element["path"] === "string" && key(resolve(element["path"])) === target;
+  let why: NotRecorded = "changed_meanwhile";
+  for (let attempt = 1; attempt <= TRIES; attempt += 1) {
+    let listed = false;
+    try {
+      const prepared = prepareEditOf(host.configDir, (doc) => {
+        const current = doc[ARRAY];
+        if (current === undefined) return [];
+        if (!Array.isArray(current)) return "unsupported_layout";
+        listed = current.some((element) => isTable(element) && at(element));
+        return listed ? [{ op: "remove_element", array: ARRAY, select: at }] : [];
+      });
+      if (!prepared.ok) {
+        why = prepared.reason;
+        break;
+      }
+      if (!listed) return { remembered: true };
+      const written = commitEdit(prepared.edit);
+      if (written.ok) {
+        host.log.log("config.space_forgotten", {});
+        return { remembered: true };
+      }
+      why = written.reason;
+      if (why !== "changed_meanwhile") break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | null)?.code;
+      why = { code: typeof code === "string" ? code : "EIO" };
+      break;
+    }
+  }
+  host.log.log("config.spaces_failed", {
+    reason: typeof why === "string" ? why : "write_failed",
+    ...(typeof why === "string" ? {} : { code: why.code }),
+  });
+  return { remembered: false, why };
+}
+
 /** Why machine.toml could not take the record, in the words a person reads. No path, no value. */
-function because(why: NotRecorded): string {
+export function because(why: NotRecorded): string {
   if (typeof why !== "string") return `machine.toml could not be written (${why.code})`;
   switch (why) {
     case "invalid_file":

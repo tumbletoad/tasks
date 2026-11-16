@@ -409,7 +409,10 @@ async function serviceChecks(
     });
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
-    const bad = spaces.filter((s) => s.state !== "open" && s.state !== "read_only");
+    // A space the person closed is as they left it, not a problem.
+    const bad = spaces.filter(
+      (s) => s.state !== "open" && s.state !== "read_only" && s.state !== "closed",
+    );
     checks.push({
       id: "spaces",
       status: bad.length > 0 ? "warn" : "ok",

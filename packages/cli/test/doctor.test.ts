@@ -111,6 +111,18 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
     expect(report.checks.find((c) => c.id === "spaces")?.detail).toContain("Mira: open");
     expect(status(report, "requests")).toBe("ok");
     expect(report.checks.find((c) => c.id === "requests")?.detail).toContain("for 1 space(s)");
+    // A space the person closed is as they left it: listed, not warned about.
+    const person = (argv: string[]) =>
+      runMain(argv, { home: world.home, cwd: world.root, tty: true });
+    expect(
+      (await person(["space", "create", "Shelved", "--path", join("s", "shelved")])).code,
+    ).toBe(0);
+    expect((await person(["space", "close", "Shelved"])).code).toBe(0);
+    const shelved = JSON.parse(
+      (await runMain(["doctor", "--self-test", "--json"], { home: world.home })).stdout,
+    ) as Report;
+    expect(status(shelved, "spaces")).toBe("ok");
+    expect(shelved.checks.find((c) => c.id === "spaces")?.detail).toContain("Shelved: closed");
     // The launch rows and the sessions row come from the running service (A3 3.14); none fails
     // the report, and a service with no agent connection has nothing shared or dropped.
     for (const id of ["launch.scopes", "launch.env", "launch.t3", "sessions"]) {

@@ -197,6 +197,25 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     expect(parsed(reopened.stdout)["space"]).toMatchObject({ name: "Life", state: "open" });
   }, 300_000);
 
+  test("forget takes a closed space off the list and keeps its folder; an open one is closed first", async () => {
+    const folder = join(world.root, "s", "forgotten");
+    expect((await user(["space", "create", "Forgotten", "--path", folder])).code).toBe(0);
+    const open = await user(["space", "forget", "Forgotten"]);
+    expect(open.code).toBe(2);
+    expect(open.stderr).toContain(`Close it first: ${CLI_NAME} space close `);
+    expect((await user(["space", "close", "Forgotten"])).code).toBe(0);
+    const forgot = await user(["space", "forget", folder]);
+    expect(forgot.code, forgot.stdout + forgot.stderr).toBe(0);
+    expect(forgot.stdout).toBe(
+      `Forgot Forgotten in ${folder}. Its folder and files are kept: ${CLI_NAME} space open <folder> lists it again.\n`,
+    );
+    expect((await user(["space", "list"])).stdout).not.toContain("Forgotten");
+    expect(existsSync(join(folder, "space.db"))).toBe(true);
+    // Only by name: forget never takes the default or the one space.
+    expect((await user(["space", "forget"])).code).toBe(2);
+    expect((await world.tasks(["space", "forget", folder])).code).toBe(5);
+  }, 180_000);
+
   test("recover of a space that needs none says so and changes nothing", async () => {
     const ran = await user(["space", "recover", "Life"]);
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);
