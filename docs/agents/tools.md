@@ -1227,7 +1227,7 @@ When `found` is `true`:
 | `results_more` | integer, 1 to 1000000 | no | An import's results beyond those 50 |
 | `conflicts` | object[] | no | Every conflicting field, without its value: read again |
 | `conflicts[].op` | integer, 0 to 999999 | yes | Index of the operation in the request |
-| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" \| "runs" \| "areas" \| "projects" | yes | Table of the row |
+| `conflicts[].entity` | "tasks" \| "task_sources" \| "places" \| "notes" \| "log_entries" \| "sources" \| "learnings" \| "attachments" \| "task_labels" \| "preferences" \| "runs" \| "areas" \| "projects" \| "folders" | yes | Table of the row |
 | `conflicts[].id` | string, max 60 \| string, max 64 | yes | The row, task_id\|source_id (task_id\|label_id) for a link, or a preference's key |
 | `conflicts[].task` | string | no | Task ID |
 | `conflicts[].ref` | string | no | Task reference |

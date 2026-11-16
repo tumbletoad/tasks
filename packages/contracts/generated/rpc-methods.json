@@ -2665,7 +2665,8 @@
                         "preferences",
                         "runs",
                         "areas",
-                        "projects"
+                        "projects",
+                        "folders"
                       ],
                       "type": "string"
                     },
