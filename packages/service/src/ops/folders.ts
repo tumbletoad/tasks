@@ -23,6 +23,7 @@
 // answers keeps busy until the OS gives up.
 import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
+import { PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import { FOLDER_PATH_MAX, folderKey, type FolderOs } from "@tasks/storage";
 
@@ -46,7 +47,7 @@ const SENTENCES: Readonly<Record<FolderReason, string>> = {
   folder_missing: "The folder is not there",
   not_a_directory: "Not a folder",
   folder_unreadable: "The folder could not be read",
-  folder_reserved: "A folder inside Tasks' own data: an agent working there would change it",
+  folder_reserved: `A folder inside ${PRODUCT_NAME}'s own data: an agent working there would change it`,
   folder_taken: "Another project has this folder on this machine",
   not_answering: "The folder did not answer in time",
 };
@@ -54,7 +55,7 @@ const SENTENCES: Readonly<Record<FolderReason, string>> = {
 const HINTS: Partial<Record<FolderReason, string>> = {
   not_absolute: "Give an absolute path, or one that starts with ~.",
   folder_missing: "Make the folder first, then set it.",
-  folder_reserved: "Choose a folder outside the Tasks home and the space folders.",
+  folder_reserved: `Choose a folder outside the ${PRODUCT_NAME} home and the space folders.`,
   folder_taken: "Open that project, or choose another folder.",
   not_answering: "Check that its drive or share is connected, then try again.",
 };
