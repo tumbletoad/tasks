@@ -256,11 +256,13 @@ export const waitReady = (home: string, pid: number, ms = READY_MS): Promise<Ser
     `service ${String(pid)} ready`,
   );
 
-/** The log's events, parsed. */
+/** The log's events, parsed. A line the service is still writing has no line end yet: it is left out. */
 export function readLog(home: string): Record<string, unknown>[] {
   const path = join(stateOf(home), "logs", "service.log");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
+  const text = readFileSync(path, "utf8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
     .filter((line) => line !== "")
     .map((line) => JSON.parse(line) as Record<string, unknown>);
