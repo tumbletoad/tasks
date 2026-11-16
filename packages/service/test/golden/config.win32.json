@@ -48,18 +48,18 @@
     },
     "instances": [
       {
-        "id": "codex-personal",
+        "id": "codex-second",
         "target": "codex-cli",
-        "label": "Codex · personal",
-        "account": "personal",
+        "label": "Codex · second",
+        "account": "second",
         "spaces": [],
         "exec": "C:\\Program Files\\nodejs\\node.exe",
         "argsPrefix": [
           "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js"
         ],
-        "configHome": "C:\\Users\\mira\\.codex-personal",
+        "configHome": "C:\\Users\\mira\\.codex-second",
         "env": {
-          "CODEX_HOME": "C:\\Users\\mira\\.codex-personal"
+          "CODEX_HOME": "C:\\Users\\mira\\.codex-second"
         },
         "openPermission": "full-access",
         "runPermission": "full-access",
@@ -73,7 +73,7 @@
         "id": "claude",
         "target": "claude-cli",
         "label": "Claude Code",
-        "account": "personal",
+        "account": "second",
         "spaces": [],
         "exec": "C:/Users/mira/.local/bin/claude.exe",
         "argsPrefix": [],

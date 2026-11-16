@@ -18,6 +18,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.3.no-machine-facts",
+      "title": "No file in the repository names a machine's role, a path under a real home or an OS build number, also when the phrase is split over a comment's lines, while product language about a Linux desktop and fixture homes pass",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.2.dependency-rules",
       "title": "Every dependency rule fires on a fixture tree with violations, and tests are exempt only from the production layering rules",
       "source": "A7 3.2",

@@ -64,12 +64,12 @@ via_login_shell = false
 remote_allowed = false
 
 [[instance]]
-id = "codex-personal"
+id = "codex-second"
 target = "codex-cli"
-label = "Codex · personal"
-account = "personal"
-exec = "/home/mira/.local/bin/codex-personal"
-config_home = "/home/mira/.codex-personal"
+label = "Codex · second"
+account = "second"
+exec = "/home/mira/.local/bin/codex-second"
+config_home = "/home/mira/.codex-second"
 run_permission = "full-access"
 prompt = "prefill"            # A4 L7: the assisted open, the person sends the first message
 enabled = false
