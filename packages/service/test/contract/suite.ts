@@ -284,9 +284,11 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "not_permitted" },
   },
   "task.search 0": {
-    owner: "the schema step that adds the search tables (A1 3.12)",
-    why: "words need the search index, which schema 0.2 does not hold",
-    now: { error: "space_unavailable" },
+    owner: "M4.01b (A1's area and project operations) and the query design for word forms",
+    why:
+      "the rows need areas and projects, an earlier example reopens M-3, and the phrase " +
+      '"time zone" does not find "time zones"',
+    now: { result: "schema" },
   },
   "task.search 1": {
     owner:

@@ -27,7 +27,8 @@ import { backupName, parseBackupName, parseUtcStamp, utcStamp } from "../src/bac
 import { StorageError } from "../src/errors.ts";
 import { NODE_IO, type FileIo } from "../src/files.ts";
 import { restoreBackup, restoreBackupWith } from "../src/restore/restore.ts";
-import { openSpace } from "../src/space.ts";
+import { encodeRevision } from "../src/schema.ts";
+import { LATEST_REVISION, openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import type { ConcurrentWriterData } from "./concurrent-writer.ts";
 import { checkedDriver, createFixtureSpace, tempFolders } from "./space-helpers.ts";
@@ -231,7 +232,7 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
       epoch: 1,
       incarnation: space.authority.incarnation,
       seq: 3,
-      user_version: 3,
+      user_version: encodeRevision(LATEST_REVISION),
       written_by: "0.0.0",
     });
     expect(sidecar.counts["commits"]).toBe(3);
