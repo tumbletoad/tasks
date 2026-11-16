@@ -69,6 +69,7 @@ import {
   runKeys,
   startupApproved,
   unitNotOurs,
+  withDelegate,
   type NotOurs,
 } from "./render.ts";
 
@@ -840,6 +841,36 @@ export async function planInstall(ctx: ServiceContext): Promise<Plan> {
       ? { entry: seen.entry }
       : { entry: seen.entry, dropIns: seen.dropIns };
   return { verb: "install", entry: wanted.info, steps, notes, observed };
+}
+
+/**
+ * Linux: this install's unit as an earlier version wrote it, without `Delegate=yes`, gets that
+ * line, and systemd reads it again; the service's next start runs with it, and background runs can
+ * be contained. A unit that is not this install's, that says something about delegation, or that
+ * drop-ins change is left as it is. True when it changed. `tasks update` calls it right before it
+ * restarts the service.
+ */
+export async function delegateUnit(ctx: ServiceContext): Promise<boolean> {
+  if (ctx.platform !== "linux") return false;
+  const wanted = await readEntry(ctx);
+  if (wanted.info.state !== "ours" || wanted.info.current) return false;
+  const found = readFound(wanted.info.where);
+  const text = found.kind === "file" ? strictText(found.bytes) : undefined;
+  const next = text === undefined ? undefined : withDelegate(text);
+  if (next === undefined || unitNotOurs(next) !== undefined) return false;
+  if (!(await userManager(ctx))) return false;
+  const plan: Plan = {
+    verb: "install",
+    entry: wanted.info,
+    steps: [
+      { do: "write-file", path: wanted.info.where, text: next, existing: "different" },
+      systemctl("daemon-reload"),
+    ],
+    notes: [],
+    observed: wanted.observed,
+  };
+  await applyPlan(ctx, plan);
+  return true;
 }
 
 /**
@@ -1714,6 +1745,8 @@ export type ServiceAnswer =
       readonly spaces: ServiceStatus["spaces"];
       /** The UI's listener (A2 3.8.2): its port, whether it moved or is blocked; null: none. */
       readonly http: NonNullable<ServiceStatus["http"]> | null;
+      /** Whether background runs can be contained, and why not; null from a service that hosts none. */
+      readonly runs: NonNullable<ServiceStatus["runs"]> | null;
     }
   | { readonly answers: false; readonly reason: ProbeReason };
 
@@ -1743,6 +1776,7 @@ const answer = (probe: Probe): ServiceAnswer =>
         endpoint: probe.status.endpoint?.kind ?? null,
         spaces: probe.status.spaces,
         http: probe.status.http ?? null,
+        runs: probe.status.runs ?? null,
       }
     : { answers: false, reason: probe.reason };
 

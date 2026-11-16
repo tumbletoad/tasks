@@ -3760,6 +3760,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.3.3.service-install.delegate",
+      "title": "Linux: a unit an earlier version wrote without Delegate=yes gets that line at the end of its [Service] section with every other byte kept, and systemd reads it again; a unit that sets Delegate itself, or is not this install's, is left as it is",
+      "source": "A2 3.3.3, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.12.6.update.runs",
       "title": "Before anything changes an update holds new background runs back and names the runs a restart would cut short; runs that finish during the wait let it go on without a question; still running after the wait, the person's answer decides: giving up changes nothing, stopping them goes on, with the hold kept until the restart and let go after it",
       "source": "A2 3.12.6, A7 3.13 M6.03",

@@ -217,6 +217,9 @@ export class FakeControl implements ServiceControl {
   /** The service's background runs, when a test gives it some. */
   runs: FakeRuns | undefined;
 
+  /** Linux: the unit's Delegate=yes added, when a test gives the service a unit to change. */
+  delegateUnit?: () => Promise<boolean>;
+
   holdRuns(): Promise<RunsHold | undefined> {
     const runs = this.runs;
     if (runs === undefined || this.version === undefined) return Promise.resolve(undefined);

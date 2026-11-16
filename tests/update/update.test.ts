@@ -494,16 +494,29 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
 
     w.control.calls.length = 0;
     runs.stubborn = [{ space_name: "Work", task: null, state: "unknown" }];
+    // A unit an earlier version wrote gets Delegate=yes before the restart, and the person hears.
+    w.control.delegateUnit = () => {
+      w.control.calls.push("delegate");
+      return Promise.resolve(true);
+    };
     const result = await updateFromArchive(r2.archive, {
       ...w.options,
       runs: { waitMs: 30, decide: () => Promise.resolve("stop") },
     });
     expect(result).toMatchObject({ outcome: "updated", to: "0.2.0" });
     const restart = windows ? "restart supervisor" : "restart";
-    expect(w.control.calls).toEqual(["hold", "stop runs", restart, "wait 0.2.0", "release"]);
+    expect(w.control.calls).toEqual([
+      "hold",
+      "stop runs",
+      "delegate",
+      restart,
+      "wait 0.2.0",
+      "release",
+    ]);
     expect(w.said).toEqual(
       expect.arrayContaining([
         "Stopping the runs. Each keeps its answer so far.",
+        "The service's systemd unit now has Delegate=yes, which background runs need.",
         "The restart ends what did not stop in time: 1 run.",
       ]),
     );

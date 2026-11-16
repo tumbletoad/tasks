@@ -58,7 +58,7 @@ import {
   type HostFacts,
   type Layout,
 } from "../hub/paths.ts";
-import { startService, stopService } from "../install/commands.ts";
+import { delegateUnit, startService, stopService } from "../install/commands.ts";
 import {
   holdRuns,
   requestRestart,
@@ -185,6 +185,11 @@ export interface ServiceControl {
    * cut short. Undefined when no service runs, or one that hosts no runs.
    */
   holdRuns?(): Promise<RunsHold | undefined>;
+  /**
+   * Linux: adds `Delegate=yes`, which background runs need, to the service's unit when an earlier
+   * version wrote it without; the restart then runs the service with it. True when it changed.
+   */
+  delegateUnit?(): Promise<boolean>;
 }
 
 const pause = (ms: number) =>
@@ -232,6 +237,7 @@ export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl 
       }
     },
     holdRuns: () => holdRuns(ctx.layout.state, ctx.installId, env),
+    delegateUnit: () => delegateUnit(ctx),
   };
 }
 
@@ -821,6 +827,12 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     await at(options, "recorded");
     const control = options.control;
     if (control !== undefined && (run.journal.service || (await control.running()) !== undefined)) {
+      // A unit an earlier version wrote gets what background runs need, so a person never meets
+      // Run turned off for a line only a reinstall would have added. Not a reason to stop the
+      // update: `service status` and doctor say what is missing.
+      if (await control.delegateUnit?.().catch(() => false)) {
+        say(options, "The service's systemd unit now has Delegate=yes, which background runs need.");
+      }
       write({ ...run.journal, phase: "restarted" });
       restarted = true;
       say(options, `Restarting the service on ${to}. Sessions keep running and reconnect.`);
