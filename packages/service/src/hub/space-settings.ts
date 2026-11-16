@@ -27,6 +27,9 @@
 //   restored copy, claimed), and each state that failed is remembered on its own. Only the newest
 //   MAX_FAILED_MIGRATIONS of the current build are kept. An entry that does not read back whole is
 //   no entry: the open then tries again, behind a new barrier backup, which is the safe direction.
+// - `last_migration`: the newest migration that succeeded here: its revisions, when, and its
+//   barrier backup's name. The space list and doctor show it, so a person who misses something
+//   after an update knows what changed and which backup is from just before.
 //
 // Beside this file, in the same folder, the projection keeps its trusted state for each folder
 // that holds the space (`<space_id>.<folder key>.projection.json` and
@@ -94,6 +97,19 @@ export interface SpaceSettings {
   readonly writerFolder?: string;
   /** The migrations that failed here and read back whole, oldest first. */
   readonly failedMigrations?: readonly FailedMigration[];
+  /** The newest migration this machine ran on the space. */
+  readonly lastMigration?: LastMigration;
+}
+
+/**
+ * A migration that succeeded here: the revisions (`major.minor`), when, and the barrier backup
+ * taken just before it, by name, so a person who misses something knows there is one to go back to.
+ */
+export interface LastMigration {
+  readonly from: string;
+  readonly to: string;
+  readonly at: string;
+  readonly backup?: string;
 }
 
 const fileOf = (state: string, spaceId: Id<"sp">): string =>
@@ -203,6 +219,58 @@ function failedMigrationOf(value: unknown): FailedMigration | undefined {
   };
 }
 
+/** `last_migration`, or undefined when any part of it is missing or wrong. */
+function lastMigrationOf(value: unknown): LastMigration | undefined {
+  if (!isRecord(value)) return undefined;
+  const { from, to, at, backup } = value;
+  const fromRevision = revisionOf(from);
+  const toRevision = revisionOf(to);
+  if (
+    typeof from !== "string" ||
+    typeof to !== "string" ||
+    fromRevision === undefined ||
+    toRevision === undefined ||
+    toRevision <= fromRevision ||
+    typeof at !== "string" ||
+    !Number.isFinite(Date.parse(at)) ||
+    (backup !== undefined && (typeof backup !== "string" || !BACKUP_NAME.test(backup)))
+  ) {
+    return undefined;
+  }
+  return {
+    from,
+    to,
+    at: new Date(Date.parse(at)).toISOString(),
+    ...(backup === undefined ? {} : { backup }),
+  };
+}
+
+/**
+ * Records a migration that succeeded on this machine: from and to (user_version values), and its
+ * barrier backup's name. Other fields are kept.
+ */
+export function recordMigration(
+  state: string,
+  spaceId: Id<"sp">,
+  migration: { readonly from: number; readonly to: number; readonly backup?: string },
+  now: Date = new Date(),
+): void {
+  const path = fileOf(state, spaceId);
+  const record = readRecord(path);
+  makeDir(join(state, SPACES_FOLDER), 0o700);
+  const next = {
+    format: 1,
+    ...record,
+    last_migration: {
+      from: revisionText(migration.from),
+      to: revisionText(migration.to),
+      at: now.toISOString(),
+      ...(migration.backup === undefined ? {} : { backup: migration.backup }),
+    },
+  };
+  atomicWrite(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
 /** The entries of `failed_migrations` that read back whole, at most MAX_FAILED_MIGRATIONS. */
 function failedMigrationsOf(value: unknown): FailedMigration[] {
   if (!Array.isArray(value)) return [];
@@ -225,6 +293,7 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
   const writer = record["writer_folder"];
   const writerPath = isRecord(writer) ? writer["path"] : undefined;
   const failed = failedMigrationsOf(record["failed_migrations"]);
+  const migrated = lastMigrationOf(record["last_migration"]);
   return {
     ...(typeof dir === "string" && dir.length <= MAX_PATH && isAbsolute(dir)
       ? { backupDir: dir }
@@ -244,6 +313,7 @@ export function readSpaceSettings(state: string, spaceId: Id<"sp">): SpaceSettin
       ? { writerFolder: writerPath }
       : {}),
     ...(failed.length === 0 ? {} : { failedMigrations: failed }),
+    ...(migrated === undefined ? {} : { lastMigration: migrated }),
   };
 }
 

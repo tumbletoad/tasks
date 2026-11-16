@@ -61,7 +61,12 @@ export interface AdminExport {
 
 export type AdminResult =
   | { readonly kind: "create"; readonly spaceId: Id<"sp">; readonly refPrefix: string }
-  | { readonly kind: "backup"; readonly backup: AdminBackup }
+  | {
+      readonly kind: "backup";
+      readonly backup: AdminBackup;
+      /** The backup found the space's search index damaged (BackupRecord.searchIndexRemade). */
+      readonly searchIndexDamaged?: true;
+    }
   | { readonly kind: "export"; readonly export: AdminExport }
   | { readonly kind: "restore"; readonly spaceId: Id<"sp">; readonly backup?: string }
   | {

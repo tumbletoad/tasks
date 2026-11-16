@@ -60,7 +60,13 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
     expect(plan("linux-x64")).toEqual([...common, "bin/tasks", "runtime/node"].sort());
     expect(plan("linux-arm64")).toEqual(plan("linux-x64"));
     expect(plan("win-x64")).toEqual(
-      [...common, "bin/tasks.exe", "bin/tasksw.exe", "runtime/node.exe"].sort(),
+      [
+        ...common,
+        "bin/tasks-run.exe",
+        "bin/tasks.exe",
+        "bin/tasksw.exe",
+        "runtime/node.exe",
+      ].sort(),
     );
     // The launchd wrapper (M1.12's text) is macOS's only.
     expect(plan("darwin-arm64")).toEqual(

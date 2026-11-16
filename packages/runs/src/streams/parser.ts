@@ -8,6 +8,7 @@
 // defect never ends a run. Nothing of a skipped line is kept or logged: only its count.
 import { createHash } from "node:crypto";
 import {
+  ANSWER_CAP_BYTES,
   LINE_CAP_BYTES,
   emptyCounts,
   type AppToolsState,
@@ -28,6 +29,9 @@ export class ReadContext {
   readonly counts: StreamCounts = emptyCounts();
   nativeId: string | null = null;
   lastMessage: string | null = null;
+  answerSeen: { text: string; final: boolean; cut: boolean } | null = null;
+  /** A line too long to read came after the last answer: it may have been a later one. */
+  answerUnsure = false;
   lastError: string | null = null;
   usage: Usage | null = null;
   session: { cwd: string | null; appTools: AppToolsState } | null = null;
@@ -60,12 +64,35 @@ export class ReadContext {
     this.out.push({ kind: "progress", label });
   }
 
+  /** An assistant message: a message event (TEXT_CAP_BYTES) and the answer so far. */
   message(text: string): void {
     if (text === "") return;
     const capped = this.cap(text);
     this.lastMessage = capped;
     this.counts.messages += 1;
     this.out.push({ kind: "message", text: capped });
+    this.answer(text, false);
+  }
+
+  /**
+   * The agent's answer (ANSWER_CAP_BYTES), as an answer event. A message never replaces an answer
+   * the agent finished its turn with.
+   */
+  answer(text: string, final: boolean): void {
+    if (text === "" || (!final && this.answerSeen?.final === true)) return;
+    const r = capText(text, ANSWER_CAP_BYTES);
+    if (r.capped) this.counts.cappedTexts += 1;
+    this.answerSeen = { text: r.text, final, cut: r.capped };
+    this.answerUnsure = false;
+    this.out.push({ kind: "answer", ...this.answerSeen });
+  }
+
+  /** The agent finished its turn with the answer it gave last, if any. */
+  answerFinished(): void {
+    const seen = this.answerSeen;
+    if (seen === null || seen.final || this.answerUnsure) return;
+    this.answerSeen = { ...seen, final: true };
+    this.out.push({ kind: "answer", ...this.answerSeen });
   }
 
   error(text: string): void {
@@ -91,8 +118,6 @@ export interface CliReader {
   read(event: Json, ctx: ReadContext): boolean;
   /** Judges the run from what was read and how the process ended. */
   judge(exit: ProcessExit, ctx: ReadContext): { ok: boolean; reason: OutcomeReason };
-  /** Final text: the CLI's own result where it has one, else null. */
-  result(ctx: ReadContext): string | null;
   /** Keys the reader keeps for deduplication, for the bounded-memory test. */
   retained(): { keys: number; chars: number };
 }
@@ -160,6 +185,7 @@ export function createParser(kind: StreamKind, reader: CliReader): StreamParser 
       if (r.kind === "oversized") {
         ctx.counts.oversized += 1;
         ctx.counts.lines += 1;
+        ctx.answerUnsure = true;
       } else {
         readLine(r.line);
       }
@@ -206,7 +232,9 @@ export function createParser(kind: StreamKind, reader: CliReader): StreamParser 
         reason: verdict.reason,
         exit: clean,
         nativeId: ctx.nativeId,
-        result: reader.result(ctx) ?? ctx.lastMessage,
+        result: ctx.answerSeen?.text ?? null,
+        resultCut: ctx.answerSeen?.cut ?? false,
+        resultFinal: ctx.answerSeen?.final ?? false,
         error: verdict.ok ? null : ctx.lastError,
         usage: ctx.usage,
         session: ctx.session,

@@ -7,6 +7,7 @@ import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import {
   assertReleaseBinary,
   buildLaunchers,
+  buildRunHelper,
   type Launchers,
 } from "../../packages/launcher-win/src/build.ts";
 
@@ -67,19 +68,24 @@ exec "$root/runtime/node" --report-exclude-env "$root/lib/${PRODUCT_ID}.mjs" "$@
  */
 export { LAUNCHD_WRAPPER } from "../../packages/service/src/install/render.ts";
 
+/** The Windows binaries of a version folder: the two launchers and the holder of a run's job. */
+export interface WindowsLaunchers extends Launchers {
+  readonly run: string;
+}
+
 /**
- * Compiles the Windows release launchers into `dir` (never with test hooks) and checks both for
- * test hooks again, as A2 3.12.8 asks of the binaries the build ships.
+ * Compiles the Windows release launchers and tasks-run.exe into `dir` (never with test hooks) and
+ * checks each for test hooks again, as A2 3.12.8 asks of the binaries the build ships.
  */
-export function windowsLaunchers(dir: string): Launchers {
+export function windowsLaunchers(dir: string): WindowsLaunchers {
   if (process.platform !== "win32") {
     throw new Error("win-x64 builds on Windows: its launchers are compiled with MSVC");
   }
   mkdirSync(dir, { recursive: true });
   const built = buildLaunchers(join(dir, "launchers"));
-  assertReleaseBinary(built.tasks);
-  assertReleaseBinary(built.tasksw);
-  return built;
+  const run = buildRunHelper(join(dir, "launchers"));
+  for (const exe of [built.tasks, built.tasksw, run]) assertReleaseBinary(exe);
+  return { ...built, run };
 }
 
 export { assertReleaseBinary };

@@ -18,6 +18,13 @@
 //                Windows: prints the process that started it ("parent <pid>"). Then waits.
 //   argv         prints the arguments after `--` as JSON and exits 0
 //   nest         Linux: moves itself into a new cgroup below its own, prints "ready", waits
+// Modes that talk Claude's stream (`claude -p --output-format stream-json`), for the run host:
+//   talk         prints a message, and on an interrupt prints its result and exits 0
+//   detach-stay  like talk, after it started a detached idle child and a daemonised grandchild
+//   flood-answer prints 50 MB of other events, then a 1 MiB answer that escaping makes far longer,
+//                and exits 0
+//   huge-answer  prints an answer of 1.5 MiB and exits 0
+//   answers      prints a new 256 KiB message every 10 ms without end
 // Child roles: idle (waits), daemonize (starts a detached idle child, exits once it runs).
 //
 // Every process of a stand-in tree carries the token in its arguments, and on Windows also
@@ -100,7 +107,56 @@ const ignoreStops = () => {
   }
 };
 
+/** One event of Claude's stream. */
+const event = (value: unknown): void => {
+  say(`${JSON.stringify(value)}\n`);
+};
+const message = (text: string): void => {
+  event({ type: "assistant", message: { content: [{ type: "text", text }] } });
+};
+const result = (text: string): void => {
+  event({ type: "result", subtype: "success", is_error: false, result: text });
+};
+
+/** The answer of the flood-answer mode: 1 MiB, every byte of it a character JSON escapes. */
+const FLOOD_ANSWER_UNIT = '"\\\n\t';
+
+/** Talks, and answers an interrupt with its result. */
+function talk(): void {
+  process.on("SIGINT", () => {
+    result("Stopped, with what was found so far.");
+    process.exit(0);
+  });
+  message("Working on it.");
+}
+
 switch (mode) {
+  case "talk":
+    talk();
+    break;
+  case "detach-stay":
+    child("idle", { detached: true });
+    child("daemonize", { detached: true }).once("exit", talk);
+    break;
+  case "flood-answer": {
+    const pad = `{"type":"user","pad":"${"o".repeat(1024 * 1024 - 25)}"}\n`;
+    for (let i = 0; i < 50; i += 1) say(pad);
+    result(FLOOD_ANSWER_UNIT.repeat((1024 * 1024) / FLOOD_ANSWER_UNIT.length));
+    process.exit(0);
+    break;
+  }
+  case "huge-answer":
+    result("€".repeat(512 * 1024));
+    process.exit(0);
+    break;
+  case "answers": {
+    let n = 0;
+    setInterval(() => {
+      n += 1;
+      message(`${String(n).padStart(8, "0")}${"a".repeat(256 * 1024 - 8)}`);
+    }, 10);
+    break;
+  }
   case "behave":
     process.on("SIGINT", () => {
       say("interrupted\n");

@@ -1,6 +1,6 @@
 // Fuzzing the stream parsers over mutated recordings (A4 5.1 "Parsers (fuzzing)", A7 3.18.1).
 // Each case takes a recording of lab run N, mutates its lines and bytes (cut, drop, repeat, swap,
-// insert noise, unknown events, retyped fields, invalid UTF-8, lines around 1 MB), feeds it in
+// insert noise, unknown events, retyped fields, invalid UTF-8, lines around the cap), feeds it in
 // random chunks and ends it with a random exit. The parser must never throw, never log, keep its
 // memory bounded and give the same events however the bytes were chunked.
 //
@@ -10,6 +10,7 @@ import fc from "fast-check";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { fixtureBytes, fixtureEntry, fixtureFiles } from "../../test/fixtures.ts";
 import {
+  ANSWER_CAP_BYTES,
   APP_TOOLS_STATES,
   LINE_CAP_BYTES,
   OUTCOME_REASONS,
@@ -247,7 +248,8 @@ function check(name: string, holds: boolean): void {
 }
 
 const byteLength = (s: string): number => encoder.encode(s).length;
-const textOk = (s: string): boolean => s.isWellFormed() && byteLength(s) <= TEXT_CAP_BYTES;
+const textOk = (s: string, cap = TEXT_CAP_BYTES): boolean =>
+  s.isWellFormed() && byteLength(s) <= cap;
 
 function checkEvents(events: readonly RunEvent[]): void {
   check(
@@ -270,6 +272,9 @@ function checkEvents(events: readonly RunEvent[]): void {
         break;
       case "message":
         check("message text", e.text !== "" && textOk(e.text));
+        break;
+      case "answer":
+        check("answer text", e.text !== "" && textOk(e.text, ANSWER_CAP_BYTES));
         break;
       case "usage":
         for (const v of [
@@ -338,7 +343,13 @@ describe("[A4.5.parsers.fuzz] stream parsers over mutated recordings", () => {
       );
       check("ok only on success", o.ok === (o.reason === "success"));
       check("no error on success", !o.ok || o.error === null);
-      check("result text", o.result === null || textOk(o.result));
+      check("result text", o.result === null || textOk(o.result, ANSWER_CAP_BYTES));
+      const last = whole.events.filter((e) => e.kind === "answer").at(-1);
+      check("result is the last answer", (last?.text ?? null) === o.result);
+      check(
+        "result flags",
+        o.resultCut === (last?.cut ?? false) && o.resultFinal === (last?.final ?? false),
+      );
       check("error text", o.error === null || textOk(o.error));
       check("no_output only without events", (o.reason === "no_output") === (n.events === 0));
       check(

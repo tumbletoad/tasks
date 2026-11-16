@@ -67,6 +67,7 @@ import {
 import { readAccounts, type AccountFacts } from "./accounts.ts";
 import { accountsCheck, httpCheck, type HttpStatusView } from "./doctor-http.ts";
 import type { Io } from "./io.ts";
+import { migratedLine, migratedSince, type Migrated } from "./migrations.ts";
 import { bodyOf, printUsage } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
@@ -314,6 +315,7 @@ interface Status {
     holder?: unknown;
     /** What happened and what to run, when the space is not open for writing. */
     message?: string;
+    migrated?: Migrated;
   }[];
 }
 
@@ -419,6 +421,8 @@ async function serviceChecks(
     const folders = spaces.some((s) => s.message?.includes("<folder>") === true)
       ? " Run tasks space list to see each space's folder."
       : "";
+    // What this run of the service migrated: an update shows here until the next restart.
+    const started = Date.now() - (status.uptime_ms ?? 0);
     checks.push({
       id: "spaces",
       status: bad.length > 0 ? "warn" : "ok",
@@ -430,7 +434,11 @@ async function serviceChecks(
                 const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
                 const reason = s.reason === undefined ? "" : ` (${s.reason})`;
                 const message = s.message === undefined ? "" : `. ${s.message}`;
-                return `${name}: ${s.state}${reason}${message}`;
+                const migrated =
+                  s.migrated !== undefined && migratedSince(s.migrated, started)
+                    ? `. ${migratedLine(s.migrated)}`
+                    : "";
+                return `${name}: ${s.state}${reason}${message}${migrated}`;
               })
               .join("; ") + folders,
     });
