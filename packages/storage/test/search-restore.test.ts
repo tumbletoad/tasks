@@ -11,7 +11,11 @@ import type { Connection } from "../src/driver.ts";
 import { DATABASE_FILE } from "../src/manifest.ts";
 import { migrateSpace } from "../src/migrate/runner.ts";
 import { restoreBackup, restoreInPlace } from "../src/restore/restore.ts";
-import { expectedDocuments, storedDocuments } from "../src/search/documents.ts";
+import {
+  expectedDocuments,
+  storedDocuments,
+  type SearchDocument,
+} from "../src/search/documents.ts";
 import { hasSearchTables } from "../src/search/tables.ts";
 import { openSpace } from "../src/space.ts";
 import { rawWriter, writeCommits } from "./backup-helpers.ts";
@@ -45,14 +49,19 @@ function titled(conn: Connection, word: string): string[] {
 
 /** The index equals a fresh rebuild of the space's tasks, document numbers and seqs aside. */
 function expectIndexOfTasks(conn: Connection): void {
-  const strip = (docs: Iterable<object>): unknown[] =>
+  const strip = (docs: Iterable<SearchDocument>): SearchDocument[] =>
     [...docs]
-      .map((doc) => ({ ...doc, doc: undefined, seq: undefined }))
-      .sort((a, b) =>
-        String((a as { entityId: string }).entityId).localeCompare(
-          String((b as { entityId: string }).entityId),
-        ),
-      );
+      .map(({ kind, entityId, taskId, lifecycle, audience, title, body, extra }) => ({
+        kind,
+        entityId,
+        taskId,
+        lifecycle,
+        audience,
+        title,
+        body,
+        extra,
+      }))
+      .sort((a, b) => a.entityId.localeCompare(b.entityId));
   const stored = storedDocuments(conn);
   expect(stored.stray).toBe(0);
   expect(strip(stored.docs.values())).toEqual(strip(expectedDocuments(conn).values()));

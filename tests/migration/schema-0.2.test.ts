@@ -20,10 +20,7 @@ import { readManifest } from "../../packages/storage/src/manifest.ts";
 import { migrateSpaceWith } from "../../packages/storage/src/migrate/runner.ts";
 import { nodeSqliteDriver } from "../../packages/storage/src/node-sqlite.ts";
 import { restoreBackup, restoreBackupWith } from "../../packages/storage/src/restore/restore.ts";
-import {
-  expectedDocuments,
-  storedDocuments,
-} from "../../packages/storage/src/search/documents.ts";
+import { expectedDocuments, storedDocuments } from "../../packages/storage/src/search/documents.ts";
 import { openSpace } from "../../packages/storage/src/space.ts";
 import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
 import { StorageWorker } from "../../packages/storage/src/worker/client.ts";

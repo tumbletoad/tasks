@@ -627,7 +627,7 @@
     },
     {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2 and 0.3: a populated 0.1 fixture space, a fault planted in its migration' last step, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
+      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task tasks find finds by a word",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",
@@ -1165,6 +1165,14 @@
       "id": "A2.3.1.hub.failed-migration",
       "title": "A failed migration is not tried again by itself: ten opens of a space whose migration fails leave one barrier backup and one failure record, and the nine later opens write nothing (backups folder, settings file and database byte for byte) and serve it read-only with a message that names the retry; the record survives a restart; another build, another state of the database (a restore in place, another writer) and the person's explicit retry each try again behind a new barrier backup; the retry is refused for a caller that is not the user; a successful retry migrates and forgets the record; a damaged or unreadable record is no record",
       "source": "A1 3.17, A1 3.18, A2 3.1, A2 3.6.5, A7 3.10 M3.01, MIL-02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.search-after-migration",
+      "title": "Through a running service's request path: a 0.3 space migrates on open and its words are found, and the index follows an add, a title change, a note and a completion; a space the build creates answers words from its first task; a space whose update failed answers filters and refuses words with not_indexed and a line that says the update failed and where to see why",
+      "source": "A1 3.12, A1 3.17, A3 3.9",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

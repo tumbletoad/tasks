@@ -198,7 +198,7 @@ describe("[A3.5.search.query] random query strings never raise an SQLite error",
     expect(withRows).toBeGreaterThan(10);
   }, 120_000);
 
-  test("a space without the search index answers filters, and refuses words with not_indexed", async () => {
+  test("a 0.3 space answers filters, and refuses words with not_indexed and the space's schema", async () => {
     created(
       submit(plain, [{ kind: "task.create", title: "Plain waiting task", status: "waiting" }]),
     );
@@ -207,6 +207,9 @@ describe("[A3.5.search.query] random query strings never raise an SQLite error",
     for (const q of ["plain", "-plain", "status:waiting plain"]) {
       const error = await refusal(search({ q }, {}, plain));
       expect(error.code).toBe("space_unavailable");
+      expect(error.message).toBe(
+        "This space is at schema 0.3, from before word search, so words cannot be searched yet.",
+      );
       expect(error.data).toMatchObject({ reason: "not_indexed", retryable: false });
     }
   });

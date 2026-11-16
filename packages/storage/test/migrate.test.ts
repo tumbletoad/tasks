@@ -358,9 +358,7 @@ describe("[A1.5.migration.stand-in-steps] the runner from 0.1 through the real 0
         },
       ]);
       // The index holds the two tasks, filled after the last step on the final schema.
-      expect(
-        conn.prepare("SELECT kind, seq FROM search_docs ORDER BY entity_id").all(),
-      ).toEqual([
+      expect(conn.prepare("SELECT kind, seq FROM search_docs ORDER BY entity_id").all()).toEqual([
         { kind: "task", seq: 7 },
         { kind: "task", seq: 7 },
       ]);

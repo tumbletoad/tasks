@@ -21,6 +21,7 @@ import { restoreBackup, restoreBackupWith } from "../../packages/storage/src/res
 import {
   expectedDocuments,
   storedDocuments,
+  type SearchDocument,
 } from "../../packages/storage/src/search/documents.ts";
 import { openSpace } from "../../packages/storage/src/space.ts";
 import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
@@ -179,15 +180,23 @@ function copyOf(sample: { folder: string } = fixture): string {
 }
 
 /** The documents as the index holds them and as a rebuild would make them, numbers aside. */
-function indexAndRebuild(conn: Connection): { stored: unknown[]; expected: unknown[] } {
-  const plain = (docs: Iterable<object>): unknown[] =>
+function indexAndRebuild(conn: Connection): {
+  stored: SearchDocument[];
+  expected: SearchDocument[];
+} {
+  const plain = (docs: Iterable<SearchDocument>): SearchDocument[] =>
     [...docs]
-      .map((doc) => ({ ...doc, doc: undefined, seq: undefined }))
-      .sort((a, b) =>
-        String((a as { entityId: string }).entityId).localeCompare(
-          String((b as { entityId: string }).entityId),
-        ),
-      );
+      .map(({ kind, entityId, taskId, lifecycle, audience, title, body, extra }) => ({
+        kind,
+        entityId,
+        taskId,
+        lifecycle,
+        audience,
+        title,
+        body,
+        extra,
+      }))
+      .sort((a, b) => a.entityId.localeCompare(b.entityId));
   const stored = storedDocuments(conn);
   expect(stored.stray).toBe(0);
   return { stored: plain(stored.docs.values()), expected: plain(expectedDocuments(conn).values()) };
@@ -259,7 +268,7 @@ describe("[A1.5.migration.from-0.3] the 0.3 fixture migrates to 0.4 behind its v
       // project, and a word of a task's title finds that task.
       const { stored, expected } = indexAndRebuild(conn);
       expect(stored).toEqual(expected);
-      const kinds = new Set(stored.map((doc) => (doc as { kind: string }).kind));
+      const kinds = new Set(stored.map((doc) => doc.kind));
       expect([...kinds].sort()).toEqual(["area", "learning", "log", "note", "project", "task"]);
       const task = conn
         .prepare("SELECT id, title FROM tasks WHERE deleted_at IS NULL ORDER BY ref LIMIT 1")
