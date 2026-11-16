@@ -338,6 +338,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.history.across-restart",
+      "title": "Through the service, a change made at the command line is undone from the page after the service restarted, and redone at the command line: the undo history is the space's, shared by every client",
+      "source": "A1 3.10.1, A5 3.12",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.refs.copies",
       "title": "Through the service, a claim of a restored copy goes on from its original's task references, and a restore in place goes on from the claimed copy's",
       "source": "A1 3.3, A1 3.18, A6 3.5",
