@@ -4,7 +4,7 @@
 //   build-helper   compile the console-ctrl helper into <scratch>/bin (Windows)
 //   n01            claude -p stream-json cases (Windows)
 //   n02            codex exec --json cases with full access (Windows)
-//   n02-laptop     codex exec --json, reduced: default sandbox and approve mode (Linux)
+//   n02-linux     codex exec --json, reduced: default sandbox and approve mode (Linux)
 //   n03            taskkill /T without /F on both CLIs (Windows)
 //   n03-detached   Ctrl+C under a detached parent, plain and through console-ctrl run (Windows)
 //   repeats        repeats of the console events and early cancels (Windows)
@@ -67,7 +67,7 @@ const RUNS = dirname(fileURLToPath(import.meta.url));
 const AGENTS = join(RUNS, "..", "agents");
 const NODE = process.execPath;
 const WIN = process.platform === "win32";
-const machine = WIN ? "desktop" : "laptop";
+const machine = WIN ? "windows" : "linux";
 const args = process.argv.slice(2);
 const command = args[0] ?? "help";
 const scratchArg = option(args, "--scratch");
@@ -75,7 +75,7 @@ if (scratchArg === undefined) {
   process.stderr.write("Usage: lab <command> --scratch <folder> [--results <folder>]\n");
   process.exit(64);
 }
-// Finding 4 of the review: the machine rule is code, checked before any folder or process.
+// The machine rule is code, checked before any folder or process.
 try {
   guardCommand(command, WIN);
 } catch (error) {
@@ -819,7 +819,7 @@ async function n02(): Promise<void> {
   });
 }
 
-async function n02Laptop(): Promise<void> {
+async function n02Linux(): Promise<void> {
   const runs: JsonObject[] = [];
   const base = { approve: true, skipGitCheck: true } as const;
   runs.push(
@@ -1320,7 +1320,7 @@ const commands: Record<string, () => Promise<void>> = {
   "build-helper": buildHelperCommand,
   n01,
   n02,
-  "n02-laptop": n02Laptop,
+  "n02-linux": n02Linux,
   n03,
   "n03-detached": n03Detached,
   repeats,

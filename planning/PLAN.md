@@ -31,7 +31,7 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | D15 | Agent instructions | The MCP server carries its own instructions. A block in `CLAUDE.md` or `AGENTS.md` is optional and previewed. Managed instruction sources get the text to add by hand. |
 | D16 | Data location | Spaces live under `~/.tasks/spaces/` by default, outside project folders, or anywhere through `machine.toml`. One machine owns each space. Work and personal spaces stay separate. Sync comes later. |
 | D17 | Licence and theme | **Apache-2.0.** A calm Zen theme, **dark by default**. |
-| D18 | Testing | Tested regularly on **Windows and Linux**, on real machines as well as in CI. On the Linux reference machine (Ubuntu 24.04, no sudo rights), test builds are user-level `TASKS_HOME` installs: no sudo, nothing outside the home folder. No test creates a user account on a real machine: second-user tests run only in CI, on throwaway runners. |
+| D18 | Testing | Tested regularly on **Windows and Linux**, on real machines as well as in CI. On a real Linux machine (Ubuntu 24.04 without sudo rights), test builds are user-level `TASKS_HOME` installs: no sudo, nothing outside the home folder. No test creates a user account on a real machine: second-user tests run only in CI, on throwaway runners. |
 | D19 | Real work use | Once Tasks is **mature enough** (a durable space with verified backups, the importer, Today and the lists with the expanded task, editing and check-off with undo, agents updating tasks through MCP, Open in T3 Code and Codex), the first user uses it for real work, before v1. From then on **every build must keep working for real spaces**: migrations run only after a verified backup, and a break is fixed before anything else. Real work data never enters the repository, fixtures, screenshots or logs. |
 | D21 | Direction | The plan is **a guide, not a contract**. When something blocks, another solution faithful to the vision is found and written into the specification. A decision changes the specification it belongs to, in the same pull request as the code. Work goes on improving after the milestones. The core stays lean, and code is rewritten when a better solution appears. |
 | D22 | Order, not dates | No calendar estimates. Milestones are ordered by dependencies. |
@@ -62,7 +62,7 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | R14 | Brief | The text an agent session starts with is **short and points to the task**. It never embeds the task's content. |
 | R15 | Multiple machines | **One authority per space** for now, with replicas and authority epochs later. An open sync protocol keeps self-hosting free. |
 | R16 | Trust | Tasks never writes another app's trust settings silently. |
-| R17 | Real machines first | Every launch route and the packaging are qualified **on the real machines** (the M0 lab). Code that depends on them is built to the lab's findings, and is not accepted as done on real machines until the lab has qualified them (O). |
+| R17 | Real machines first | Every launch route and the packaging are qualified **on real machines** (the M0 lab). Code that depends on them is built to the lab's findings, and is not accepted as done on real machines until the lab has qualified them (O). |
 | R18 | Single-user machines (v1) | v1 assumes **one interactive user per machine**: a 127.0.0.1 origin cannot be authenticated against another local user who takes the port while Tasks is stopped. v1 ships no service worker, serves no UI and revokes UI tokens while another user holds its port (agents and the CLI keep working), expires UI tokens after 7 days unused and 30 days at most, and `tasks doctor` warns on multi-user machines. An **authenticated UI origin is a hard gate for the public release** (M10). |
 | R19 | Staged requests | Inside the writer transaction a request is first resolved into a staged plan (references, actual targets, dedupe, every operation). Preconditions are checked against the state at its start, and autonomy against the actual targets. Every outcome, no-ops included, gets a durable receipt. |
 | R20 | Authority incarnation | Each space carries an **authority incarnation ID** next to its epoch. Reads, writes, cursors and receipts carry both, so two offline claims of one backup are detected, never silently merged. |
@@ -217,7 +217,7 @@ v1 is 110 steps across eight milestones (A7). A step starts when the code it bui
 | **M3 Durable space** | History, undo, revert, projection, backups, migrations, authority hooks | M2 (with M4) | A restore drill |
 | **M4 Agent interface** | All tools, binding, autonomy and proposals, setup per app | M2 (with M3) | Setup previews, an eval report |
 | **M5 Planner UI** | Today, the views, the expanded task, the composer, themes | M3, M4 (with M6) | Review every screen, use it daily |
-| **M6 Runs and routines** | Runs, Refresh and Wrap-up, the Tasks work folder, every v1 target | M3, M4 (with M5) | Refresh on the Linux reference machine |
+| **M6 Runs and routines** | Runs, Refresh and Wrap-up, the Tasks work folder, every v1 target | M3, M4 (with M5) | Refresh on a real Linux machine |
 | **M7 Switch-over = v1** | Import, rollback, a 10-working-day trial with the prototype read-only, retirement gate | M5, M6 | Rehearsal, cutover, the trial, the gate review |
 
 - **Gates.** G1 has passed. G2 stays open until the lab sessions with the owner have run (the open sessions are listed in `planning/STATUS.md`). Steps behind a G2 predicate are built meanwhile, to the lab's findings, and list in their pull request what waits for a session. M1.15 and M2.15 are not claimed before the sessions. If a session contradicts what was built, the fix comes first.
@@ -233,7 +233,7 @@ v1 is 110 steps across eight milestones (A7). A step starts when the code it bui
 
 ## P. Risks and settled questions
 
-Risks (full register in A7 3.19): a required route fails on the Linux reference machine (fix and re-test through the same path, else another route faithful to the vision); agent apps change (receipts per app version, isolated adapters, `doctor --live`); `node:sqlite` defects (driver interface, fallback tested in CI, exact pin); a heavy bridge (native forwarder through the same protocol); connector approvals block unattended Refresh (closest alternative, such as Refresh in a visible session); real work data leaking (repository rules, content-free logs, fixture checks).
+Risks (full register in A7 3.19): a required route fails on a real Linux machine (fix and re-test through the same path, else another route faithful to the vision); agent apps change (receipts per app version, isolated adapters, `doctor --live`); `node:sqlite` defects (driver interface, fallback tested in CI, exact pin); a heavy bridge (native forwarder through the same protocol); connector approvals block unattended Refresh (closest alternative, such as Refresh in a visible session); real work data leaking (repository rules, content-free logs, fixture checks).
 
 | # | Question | Decision |
 |---|---|---|
