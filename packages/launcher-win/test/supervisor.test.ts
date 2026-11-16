@@ -217,7 +217,7 @@ describe.runIf(windows)(
       for (const f of record?.failures ?? [])
         expect(f.t).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
       expect(Date.parse(record?.t ?? "")).toBeGreaterThan(Date.now() - 60_000);
-    }, 60_000);
+    });
 
     test("the daily install's supervisor writes its record to %USERPROFILE%\\.tasks, the service's state", () => {
       // The daily layout: <base>\share\tasks with the stable launchers in <base>\bin, and a
@@ -259,7 +259,7 @@ describe.runIf(windows)(
       }
       expect(existsSync(join(profile, ".tasks"))).toBe(false);
       expect(existsSync(join(root, "state"))).toBe(false);
-    }, 60_000);
+    });
 
     test("stops on 0, 64 and 73 and exits with that code", () => {
       const root = install();
@@ -275,7 +275,7 @@ describe.runIf(windows)(
         expect(s.starts).toHaveLength(2);
         expect(s.gaveUp).toBeUndefined();
       }
-    }, 60_000);
+    });
 
     test("restarts at once on 75, re-reading current", () => {
       // A long unit: any wait at all would show in the gap.
@@ -289,7 +289,7 @@ describe.runIf(windows)(
         samePath(s.starts[1]?.execPath, join(root, "versions", NEW, "runtime", "node.exe")),
       ).toBe(true);
       expect(s.gaps[0]).toBeLessThan(unit);
-    }, 60_000);
+    });
 
     test("more than 5 restart requests in the window count as failures, so the loop cannot spin", () => {
       const root = install();
@@ -306,7 +306,7 @@ describe.runIf(windows)(
         "stop 0",
       ]);
       expect(s.status).toBe(0);
-    }, 60_000);
+    });
 
     test("failures older than the window no longer count", () => {
       // Unit 5 ms: the window is 3 s. The 5th failure comes 3.5 s after the 4th, so it is the only
@@ -339,7 +339,7 @@ describe.runIf(windows)(
         "stop 0",
       ]);
       expect(s.gaveUp).toBeUndefined();
-    }, 60_000);
+    });
 
     test("a start that fails counts as a failure, and the record says so", () => {
       const root = install();
@@ -362,7 +362,7 @@ describe.runIf(windows)(
       expect(s.gaveUp?.failures.map((f) => [f.exit, f.start])).toEqual(
         Array.from({ length: 5 }, () => [null, "failed"]),
       );
-    }, 60_000);
+    });
 
     /** Five failures in a row: the supervisor gives up after 150 units. */
     const FAILING: Step[] = Array.from({ length: 5 }, () => ({ exit: 70 }));
@@ -390,7 +390,7 @@ describe.runIf(windows)(
         "supervisor-gave-up.json",
         "supervisor-gave-up.json.tmp",
       ]);
-    }, 60_000);
+    });
 
     test("a state or crash folder that is a junction is refused: nothing is written outside the install", () => {
       const cases: [label: string, setUp: (root: string, outside: string) => void][] = [
@@ -420,7 +420,7 @@ describe.runIf(windows)(
         expect(readdirSync(outside, { recursive: true }), label).toEqual([]);
         expect(s.stderr, label).toMatch(/is a link or junction/);
       }
-    }, 60_000);
+    });
 
     test("a record that cannot be renamed into place warns and exits 70, leaving what stands there and no temporary file", () => {
       /** libuv's flag for an open without any sharing, so the file cannot be deleted or replaced. */
@@ -481,14 +481,14 @@ describe.runIf(windows)(
         // The temporary file the supervisor made is gone.
         expect(readdirSync(dirname(record)), label).toEqual(["supervisor-gave-up.json"]);
       }
-    }, 60_000);
+    });
 
     test("tasksw.exe in a version folder does not supervise", () => {
       const root = install();
       const s = supervise(root, [{ exit: 0 }], 10, versionLocal(root, NEW, true));
       expect(s.status).toBe(64);
       expect(s.starts).toHaveLength(0);
-    }, 60_000);
+    });
 
     test("the service is not in a job: it survives the supervisor", async () => {
       const root = install();
@@ -514,7 +514,7 @@ describe.runIf(windows)(
         child.kill();
         killQuietly(pid);
       }
-    }, 60_000);
+    });
 
     test("[A2.3.3.2.launcher-win.handover] a supervisor whose bin\\tasksw.exe was replaced while it ran hands the service over to the new one; one that cannot start leaves it supervising", async () => {
       const root = install();
@@ -560,7 +560,7 @@ describe.runIf(windows)(
       expect(kept.trace).toEqual(["exit 75", "hand-over-failed", "restart", "exit 0", "stop 0"]);
       expect(kept.starts.map((x) => x.ppid)).toEqual([kept.starts[0]?.ppid, kept.starts[0]?.ppid]);
       expect(kept.stderr).toMatch(/cannot start the new supervisor/);
-    }, 90_000);
+    });
 
     test("[A2.3.3.2.launcher-win.handover] a replaced supervisor hands over before any restart of its service, also after a failure: a service that dies after its repair replaced tasksw.exe, before its exit 75, is not left to the old one", async () => {
       const root = install();
@@ -590,7 +590,7 @@ describe.runIf(windows)(
         starts[0]?.ppid,
       );
       expect(await waitUntil(() => !alive(starts[1]?.ppid ?? 0), 20_000)).toBe(true);
-    }, 90_000);
+    });
 
     test("a release build ignores the test hooks: it waits a real second and traces nothing", () => {
       const root = install(release);
@@ -599,6 +599,6 @@ describe.runIf(windows)(
       expect(s.starts).toHaveLength(2);
       expect(s.gaps[0]).toBeGreaterThanOrEqual(1000 - CLOCK_SLACK_MS);
       expect(s.trace).toEqual([]);
-    }, 60_000);
+    });
   },
 );

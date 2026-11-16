@@ -142,7 +142,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     );
     expect(ran.status).toBe(2);
     expect(ran.stderr).toMatch(/never in CI/);
-  }, 60_000);
+  });
 
   test("without a terminal the command asks nothing and signs nothing", () => {
     const env = Object.fromEntries(
@@ -165,7 +165,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     expect(ran.stderr).toMatch(
       RELEASE_PUBLIC_KEYS.includes(RELEASE_KEY_PLACEHOLDER) ? /not pinned yet/ : /terminal/,
     );
-  }, 60_000);
+  });
 
   test("writes the release's install scripts pinning the release keys, and signs nothing while they are not pinned or the key is not one of them", async () => {
     const asked = (): Promise<string> => Promise.reject(new Error("the passphrase was asked"));

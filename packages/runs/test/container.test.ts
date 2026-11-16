@@ -149,7 +149,7 @@ describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started
 
   beforeAll(async () => {
     if (place.ok) service = await startService(`kill-${newToken()}`);
-  }, 60_000);
+  });
 
   afterAll(async () => {
     await service?.close();
@@ -436,7 +436,7 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
     } finally {
       await service.close();
     }
-  }, 60_000);
+  });
 
   test("a name in use is refused, and the running container is untouched", async (ctx) => {
     need(ctx);

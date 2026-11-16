@@ -647,7 +647,7 @@ describe("[A4.5.run.machine] the run machine's rules", () => {
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
-  }, 60_000);
+  });
 
   test("finalFor: cancelled after a stop, timed out at a limit, succeeded on success, failed with the outcome", () => {
     const run = { at: {} } as RunRecord;

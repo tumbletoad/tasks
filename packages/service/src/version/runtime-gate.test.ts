@@ -108,5 +108,5 @@ describe("[A2.3.12.1.build.runtime-gate] the runtime gate", () => {
     };
     expect(run(["--report-exclude-env"])).toEqual([]);
     expect(run([])).toEqual(["launcher-flags"]);
-  }, 60_000);
+  });
 });
