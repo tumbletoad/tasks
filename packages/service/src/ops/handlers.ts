@@ -86,10 +86,11 @@ import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
-import { HERE_ROWS, hereOf, hereRows, placeState, type Match, type PlaceState } from "./here.ts";
+import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import { bindPlace, outsideWarning, placeRefused, remoteWarning } from "./places.ts";
 import {
   checkFolder,
+  folderState,
   expanded,
   folderRefused,
   osOf,
@@ -118,8 +119,8 @@ import {
   readGroupNames,
   readGroups,
   readLaunch,
-  readPlaced,
-  readPlacedAny,
+  readFoldersHere,
+  readHereTasks,
   readReceipt,
   readScriptChange,
   readUndoTarget,
@@ -136,13 +137,22 @@ import {
   taskRow,
   text,
   type CommitFacts,
+  type HereIds,
+  type TaskFolder,
   type TaskRead,
   type BindRead,
   type Destination,
   type GroupNames,
 } from "./read.ts";
 import { duplicateWarning } from "./similar.ts";
-import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
+import {
+  DIGEST_RANGES,
+  digestOf,
+  pagePlan,
+  pageRanges,
+  sectionsOf,
+  type DigestFolder,
+} from "./task-view.ts";
 import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
 import { readFinished } from "./task-rows.ts";
 
@@ -175,11 +185,12 @@ export interface OpsHost {
   /** This machine's ID: the writer scopes name it, and places belong to it. */
   readonly machine: { readonly id: string };
   spaces(): readonly ServedSpace[];
-  /** This machine's roots (machine.toml `[roots]`), as they are now. Default: none. */
-  readonly roots?: () => readonly Root[];
-  /** The OS whose path rules a place follows. Default: this process's. */
+  /** The OS whose path rules a folder follows. Default: this process's. */
   readonly platform?: NodeJS.Platform;
-  /** The person's home folder on this machine: what `~` in a folder means. None: no folder binds. */
+  /**
+   * The person's home folder on this machine: what `~` in a folder means. None: no folder binds,
+   * and a folder under `~` is not found here.
+   */
   readonly home?: string;
   /** Tasks' own data folder (the Tasks home): no folder is bound inside it. */
   readonly dataFolder?: string;
@@ -811,12 +822,10 @@ async function taskOf(call: Call): Promise<string> {
   const cwd = call.input["cwd"];
   let candidates: Record<string, unknown>[] = [];
   if (typeof cwd === "string") {
-    const platform = call.host.platform ?? process.platform;
-    const roots = call.host.roots?.() ?? [];
-    const here = await hereOf(cwd, roots, platform);
-    if (here !== undefined && here.roots.length > 0) {
-      const read = await readPlaced(readerOf(call.space), call.host.machine.id, here.roots);
-      candidates = (await hereRows(read.placed, here, roots, platform))
+    const here = await hereFor(call, cwd);
+    if (here !== undefined) {
+      const read = await readHereTasks(readerOf(call.space), here.ids);
+      candidates = hereRows(read.rows, here.found)
         .slice(0, CANDIDATES)
         .map(({ row }) => taskRow(row, read.space.refPrefix));
     }
@@ -944,19 +953,50 @@ async function bindWith(
   }
 }
 
-/** A task's place on this machine as it resolves now: its folder, or why not (R11). */
-async function placeStateOf(call: Call, place: Row | undefined): Promise<PlaceState | undefined> {
-  if (place === undefined) return undefined;
-  return placeState(
-    {
-      root: place["root_id"],
-      path: place["rel_path"],
-      kind: place["kind"],
-      identity: place["identity"],
-    },
-    call.host.roots?.() ?? [],
-    call.host.platform ?? process.platform,
-  );
+/**
+ * What relates to the working folder `cwd` on this machine (here.ts): undefined when `cwd` is no
+ * folder here or nothing relates to it, else the matches and the IDs the reads take.
+ */
+async function hereFor(
+  call: Call,
+  cwd: string,
+): Promise<{ found: Here; ids: HereIds } | undefined> {
+  const machine = call.host.machine.id;
+  const folders = await readFoldersHere(readerOf(call.space), machine);
+  const found = await hereOf(cwd, folders, {
+    home: call.host.home,
+    platform: call.host.platform ?? process.platform,
+  });
+  if (found === undefined || (found.tasks.size === 0 && found.projects.size === 0)) {
+    return undefined;
+  }
+  return {
+    found,
+    ids: { machine, tasks: [...found.tasks.keys()], projects: [...found.projects.keys()] },
+  };
+}
+
+/** Where a task opens on this machine, for the digest: its folder and whether it is there now. */
+async function digestFolder(call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> {
+  switch (folder.kind) {
+    case "task":
+    case "project": {
+      const state = await folderState(
+        folder.path,
+        call.host.home,
+        call.host.platform ?? process.platform,
+      );
+      return {
+        path: folder.path,
+        of: folder.kind,
+        ...(state === "missing" ? { missing: true } : {}),
+      };
+    }
+    case "other_machine":
+      return { machine: folder.machine };
+    case "none":
+      return undefined;
+  }
 }
 
 function due(value: unknown, today: string, path: string): { date: string } | undefined {
@@ -1042,7 +1082,8 @@ async function placeSets(
   // A request whose ID has a receipt is the writer's to replay: nothing of this machine's folders
   // is read for it, so no folder, remote or root changed since can refuse or reshape a replay.
   if (await applied(call)) return standIns();
-  const roots = call.host.roots?.() ?? [];
+  // Roots are retired: a folder binds to no root, and a root and path binds as given.
+  const roots: readonly Root[] = [];
   const ops: Operation[] = [];
   const warnings: string[] = [];
   for (const ask of asked) {
@@ -1398,27 +1439,19 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const include =
       guide === undefined && Array.isArray(input["include"]) ? (input["include"] as string[]) : [];
     const cwd = guide === undefined && typeof input["cwd"] === "string" ? input["cwd"] : undefined;
-    const platform = call.host.platform ?? process.platform;
-    const roots = call.host.roots?.() ?? [];
-    // Null: a cwd that is no folder here, so no task matches it.
-    const found = cwd === undefined ? undefined : ((await hereOf(cwd, roots, platform)) ?? null);
+    // Null: a cwd that relates to no folder here, so no task matches it.
+    const found = cwd === undefined ? undefined : ((await hereFor(call, cwd)) ?? null);
     const boundTask = call.caller.binding?.session?.task ?? undefined;
     const status = await readStatus(reader, {
       today: call.today,
       week: addDays(call.today, 7),
       since: sinceOf(input["since"], now),
       include,
-      ...(found === undefined || found === null || found.roots.length === 0
-        ? {}
-        : { placed: { machine: call.host.machine.id, roots: found.roots } }),
+      ...(found === undefined || found === null ? {} : { here: found.ids }),
       ...(boundTask === undefined ? {} : { bound: boundTask }),
     });
     const here =
-      found === undefined
-        ? undefined
-        : found === null
-          ? []
-          : await hereRows(status.placed, found, roots, platform);
+      found === undefined ? undefined : found === null ? [] : hereRows(status.here, found.found);
     // A bound session needs no way to bind: the hint is for one that has to choose a task.
     const hint =
       here === undefined || call.caller.binding?.session !== undefined ? undefined : hereHint(here);
@@ -1471,7 +1504,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         { checkedOff, limit, after },
         {
           machine: host.machine.id,
-          roots: host.roots ?? (() => []),
+          home: host.home,
           platform: host.platform ?? process.platform,
         },
       );
@@ -1536,7 +1569,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         view: "digest",
         as_of: read.space.asOf,
         bound,
-        task: digestOf(read, call.today, await placeStateOf(call, read.place)),
+        task: digestOf(read, call.today, await digestFolder(call, read.folder)),
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
@@ -1963,7 +1996,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         folder,
         reader,
         input: call.input,
-        roots: call.host.roots?.() ?? [],
+        roots: [],
         platform: call.host.platform ?? process.platform,
         timeZone: (call.host.timeZone ?? localTimeZone)(),
       });
@@ -1991,7 +2024,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         reader,
         writer,
         input: call.input,
-        roots: call.host.roots?.() ?? [],
+        roots: [],
         platform: call.host.platform ?? process.platform,
         principal,
         importer: () => writer.actor("import", "import"),
@@ -2097,7 +2130,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const reader = readerOf(call.space);
     const { host } = call;
     const space = call.space.id ?? "";
-    const platform = host.platform ?? process.platform;
     const boundTask = call.caller.binding?.session?.task ?? undefined;
     try {
       // The input passed the entry's schema (TaskSearchInput) and its SafeText.
@@ -2119,13 +2151,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
             .filter(([, count]) => count > 0)
             .map(([task]) => task),
         here: async (cwd) => {
-          const roots = host.roots?.() ?? [];
-          const found = await hereOf(cwd, roots, platform);
-          if (found === undefined || found.roots.length === 0) return [];
-          // Every lifecycle: the search's scope and filters at S choose among them.
-          const placed = await readPlacedAny(reader, host.machine.id, found.roots);
-          const rows = await hereRows(placed, found, roots, platform);
-          return rows.map(({ row }) => String(row["id"]));
+          const found = await hereFor(call, cwd);
+          return found === undefined ? { tasks: [], projects: [] } : found.ids;
         },
       });
     } catch (error) {
@@ -2990,10 +3017,19 @@ function launchError(error: unknown): unknown {
     });
   }
   if (error instanceof LaunchFolderUnavailable) {
+    const { reason, folder } = error;
     return new AppError({
       code: "invalid_input",
-      message: "This task's folder cannot be used on this machine.",
-      data: { field: "task", reason: error.reason },
+      message:
+        reason === "path_missing"
+          ? "Folder not found on this computer."
+          : reason === "not_a_directory"
+            ? "The task's folder is a file on this computer, not a folder."
+            : "This task's folder cannot be used on this computer.",
+      ...(folder === undefined
+        ? {}
+        : { hint: "Choose the folder again, or connect the drive it is on, then open the task." }),
+      data: { field: "task", reason, ...(folder === undefined ? {} : { folder }) },
     });
   }
   if (error instanceof ExecutionRefused) {

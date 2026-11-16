@@ -2,7 +2,15 @@
 // service in this process, `tasks shim <ticket>` as a real child process started the way a
 // terminal would, and a fake agent as the shim's child. Fixture data and temporary folders only.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { RpcError } from "@tasks/bridge/protocol";
@@ -11,15 +19,13 @@ import {
   CLAIM_WINDOW_MS,
   REFUSED,
   startTimes,
-  type PlanPlace,
+  type PlanFolder,
 } from "@tasks/launch";
 import type { FakeAgentReport } from "@tasks/runs/fake-agents";
 import { readLog, stateOf, waitFor } from "./harness.ts";
 import {
   CLI_BIN,
   FAILURE_FIXTURE,
-  LAB_PLACE,
-  LAB_ROOT,
   LONG_MS,
   ShimLab,
   shimEnv,
@@ -265,12 +271,12 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
       const shim = l.shims[0];
       if (shim === undefined) throw new Error("no shim was started");
       await l.waitIntent(intent.id, (i) => i.evidence.pid !== undefined, "the agent's start");
-      // The terminal started in the place's real path, as the service resolved it right before
+      // The terminal started in the folder's real path, as the service resolved it right before
       // the launch, and machine state keeps that folder with its check.
       expect(l.folders.get(intent.id)).toBe(l.folder);
       const held = l.running.launches.host.record(intent.id);
       expect(held?.folder?.path).toBe(l.folder);
-      expect(held?.folder?.check).toMatchObject({ depth: 1 });
+      expect(held?.folder?.check).toMatchObject({ depth: 0 });
       shim.endInput();
       expect(await l.shimExit(shim)).toEqual({ code: 0, signal: null });
       // The agent started in the very directory that was resolved: by identity, not by path.
@@ -283,7 +289,7 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
     { timeout: 300_000 },
     async () => {
       const l = await lab("folder-swap", {
-        // After the resolve, before the shim: the place's path now names another directory.
+        // After the resolve, before the shim: the folder's path now names another directory.
         beforeShim: (folder) => {
           renameSync(folder, `${folder}-before`);
           mkdirSync(folder);
@@ -318,20 +324,22 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
   );
 
   test(
-    "a place that does not resolve disables the route with its reason; one that stops resolving before the launch fails it before anything starts",
+    "a folder that is not there or is a file refuses the click with its reason; one removed before the launch fails it before anything starts",
     { timeout: 300_000 },
     async () => {
       const l = await lab("folder-gone");
-      const unavailable: [PlanPlace, string][] = [
-        [{ root: LAB_ROOT, path: "not-there" }, "path_missing"],
-        [{ root: "elsewhere", path: "portal" }, "root_missing"],
-        // The place recorded a repository; the folder holds none.
-        [{ ...LAB_PLACE, gitRemote: "git@example.test:lumen/portal.git" }, "identity_mismatch"],
+      const missing = join(l.work, "not-there");
+      const file = join(l.work, "notes.txt");
+      writeFileSync(file, "fixture\n");
+      const unavailable: [PlanFolder, string][] = [
+        [{ stored: missing, path: missing }, "path_missing"],
+        [{ stored: file, path: file }, "not_a_directory"],
       ];
-      for (const [place, reason] of unavailable) {
-        await expect(l.open(l.plan({ place })), reason).rejects.toMatchObject({
+      for (const [folder, reason] of unavailable) {
+        await expect(l.open(l.plan({ folder })), reason).rejects.toMatchObject({
           name: "LaunchFolderUnavailable",
           reason,
+          folder: folder.stored,
         });
       }
       // It resolves at the click; its folder goes before the person confirms.
@@ -346,27 +354,26 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
       const refused = readLog(l.home).filter((e) => e["ev"] === "launch.folder_refused");
       expect(refused.map((e) => [e["stage"], e["reason"]])).toEqual([
         ["open", "path_missing"],
-        ["open", "root_missing"],
-        ["open", "identity_mismatch"],
+        ["open", "not_a_directory"],
         ["dispatch", "path_missing"],
       ]);
     },
   );
 
   test(
-    "a task with no place works in the space's work folder, made user-only on first use and checked like a place",
+    "a task with no folder works in the space's work folder, made user-only on first use and checked",
     { timeout: 300_000 },
     async () => {
       const l = await lab("work-folder");
       const report = join(l.work, "agent-report.json");
-      const intent = await l.launch(l.plan({ report, place: null }));
+      const intent = await l.launch(l.plan({ report, folder: null }));
       const shim = l.shims[0];
       if (shim === undefined) throw new Error("no shim was started");
       await l.waitIntent(intent.id, (i) => i.evidence.pid !== undefined, "the agent's start");
       const workdirs = join(stateOf(l.home), "workdirs");
       const folder = realpathSync.native(join(workdirs, `space-${l.spaceId}`));
       expect(l.folders.get(intent.id)).toBe(folder);
-      // Below the machine state folder, which stands in for the root (A4 3.3).
+      // Below the machine state folder, by identity.
       expect(l.running.launches.host.record(intent.id)?.folder?.check).toMatchObject({ depth: 2 });
       if (process.platform !== "win32") {
         expect(statSync(workdirs).mode & 0o777).toBe(0o700);
@@ -400,7 +407,7 @@ describe("[A4.5.launch.open-replay] a repeated Open request returns its intent, 
       const again = await l.running.launches.open(l.spaceId, click, request, l.plan());
       expect(again.id).toBe(first.id);
       expect(again.state).toBe("prepared");
-      expect(l.running.launches.host.record(first.id)?.plan.place).toEqual(LAB_PLACE);
+      expect(l.running.launches.host.record(first.id)?.plan.folder).toEqual(l.labFolder());
       // The same request ID with another click is the store's refusal, not the folder's.
       await expect(
         l.running.launches.open(l.spaceId, { ...click, taskVersion: 2 }, request, l.plan()),

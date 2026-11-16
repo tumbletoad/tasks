@@ -2094,8 +2094,8 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].sources[].ref` | string | no | Its key in its own system |
 | `rows[].sources[].url` | string | no | Link |
 | `rows[].sources_more` | integer, 0 to 9007199254740991 | no | How many more sources it has |
-| `rows[].place` | object \| object | no | Its place's state on this machine |
-| `rows[].place.state` | "here" \| "missing" | yes | Its folder here, or missing |
+| `rows[].place` | object \| object | no | Where it opens on this machine: its folder there, or another machine |
+| `rows[].place.state` | "here" \| "missing" | yes | Its or its project's folder here, or missing |
 | `rows[].place.state` | "elsewhere" | yes | Only on another machine |
 | `rows[].place.machine` | string | yes | That machine's name |
 | `rows[].ending` | string, max 300 | no | How it ended, one line: why it was dropped, or its outcome once wrapped up |
@@ -2233,11 +2233,11 @@ When `view` is `"digest"`:
 | `task.waiting_on` | string | no | Who or what it waits on |
 | `task.focus` | boolean | yes | Starred for today |
 | `task.created` | string | no | When it was created |
-| `task.place` | object | no | Its place on this machine |
-| `task.place.root` | string | yes | Root name |
-| `task.place.path` | string | yes | Path inside the root |
-| `task.place.folder` | string | no | Its folder on this machine, resolved now |
-| `task.place.unresolved` | string | no | Why it resolves to no folder here now |
+| `task.folder` | object \| object | no | Where it opens on this machine; none: in the space's work folder |
+| `task.folder.path` | string | yes | The folder, the home written as ~ |
+| `task.folder.of` | "task" \| "project" | yes | The task's own folder or its project's |
+| `task.folder.missing` | true | no | Not found on this machine now |
+| `task.folder.machine` | string | yes | The machine its folder is on: it opens there |
 | `task.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `task.outcome` | string | no | Outcome of the last completion |
 | `task.learnings` | string[] | yes | Learnings |
@@ -2472,10 +2472,9 @@ Result:
     "summary": "Store UTC plus the clinic's zone ID, then convert once",
     "context": "Appointment times are stored without a zone and converted twice.",
     "focus": true,
-    "place": {
-      "root": "work",
-      "path": "lumen/portal",
-      "folder": "/home/mira/work/lumen/portal"
+    "folder": {
+      "path": "~/work/lumen/portal",
+      "of": "project"
     },
     "learnings": [],
     "instructions": [

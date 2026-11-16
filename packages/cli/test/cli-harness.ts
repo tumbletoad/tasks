@@ -92,7 +92,7 @@ export async function startWorld(
   const children = new Set<ReturnType<typeof spawn>>();
   let json: ServiceJson | undefined;
   try {
-    if (options.machineToml !== undefined) registerSpaces(home, [], {}, options.machineToml);
+    if (options.machineToml !== undefined) registerSpaces(home, [], options.machineToml);
     const install = INSTALLED === undefined ? undefined : layoutTestInstall(INSTALLED, home);
     const service = services.start(home, {
       ...(install === undefined ? {} : { command: [install.launcher, "serve"] as const }),

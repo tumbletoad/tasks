@@ -97,7 +97,7 @@ function envOf(f: Fixture, extra: Partial<SearchEnv> = {}): SearchEnv {
     timeZone: "Europe/Lisbon",
     machine: MACHINE.id,
     live: () => [],
-    here: () => Promise.resolve([]),
+    here: () => Promise.resolve({ tasks: [], projects: [] }),
     ...extra,
   };
 }
@@ -394,30 +394,30 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(busy.data).toMatchObject({ reason: "busy", retryable: true });
   });
 
-  test("on:cwd resolves places in the query's own snapshot too", async () => {
+  test("on:cwd reads the folders in the query's own snapshot too", async () => {
     const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Oldcwdword" }]));
-    submit(fx, [{ kind: "place.set", task, root: "probe", path: "here" }]);
-    const placedHere = () =>
+    submit(fx, [{ kind: "task.folder_set", task, path: "/fixture/here" }]);
+    const ownHere = () =>
       fx.reader
         .prepare(
-          "SELECT owner_id FROM places WHERE root_id = 'probe' AND rel_path = 'here' " +
+          "SELECT owner_id FROM folders WHERE owner_kind = 'task' AND path = '/fixture/here' " +
             "AND deleted_at IS NULL",
         )
         .all()
         .map((row) => String(row["owner_id"]));
     let calls = 0;
-    // The tasks placed here are read; then, before the query, one commit renames the task and
-    // moves its place: no state had it both here and named newcwdword.
+    // The tasks whose folder is here are read; then, before the query, one commit renames the
+    // task and moves its folder: no state had it both here and named newcwdword.
     const here = () => {
       calls += 1;
-      const placed = placedHere();
+      const tasks = ownHere();
       if (calls === 1) {
         submit(fx, [
           { kind: "task.patch", task, set: { title: "Newcwdword" } },
-          { kind: "place.set", task, root: "probe", path: "elsewhere" },
+          { kind: "task.folder_set", task, path: "/fixture/elsewhere" },
         ]);
       }
-      return Promise.resolve(placed);
+      return Promise.resolve({ tasks, projects: [] });
     };
     const found = await search({ q: "newcwdword on:cwd", cwd: "/" }, { here });
     expect(ids(found)).toEqual([]);
@@ -612,12 +612,12 @@ describe("[A3.5.search.find] task.search through the request path", () => {
     expect(error.data).toEqual({ reason: "restart" });
   });
 
-  test("on:cwd finds a completed task placed here, in the scope that holds it", async () => {
+  test("on:cwd finds a completed task whose folder is here, in the scope that holds it", async () => {
     const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Finishedcwdword" }]));
-    submit(fx, [{ kind: "place.set", task, root: "probe", path: "" }]);
+    // The home folder itself: `~` is a folder on every OS, and the host says what it means here.
+    submit(fx, [{ kind: "task.folder_set", task, path: "~" }]);
     submit(fx, [{ kind: "task.complete", task, outcome: "Completed." }]);
-    const root = { id: "probe", label: "Probe", path: temp.root, runs: false };
-    const h: OpsHost = { ...host(), roots: () => [root] };
+    const h: OpsHost = { ...host(), home: temp.root };
     const find = (q: string) => call(h, user, { q, scope: "finished", cwd: temp.root });
     expect(ids(await find("finishedcwdword on:this-machine"))).toEqual([task]);
     expect(ids(await find("finishedcwdword on:cwd"))).toEqual([task]);

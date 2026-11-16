@@ -21,7 +21,7 @@ import { briefNames } from "../src/launch/open.ts";
 import { instanceToml, readLog, tempRoot } from "./harness.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
-import { LAB_ROOT, ShimLab } from "./shim-harness.ts";
+import { ShimLab } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
 /** A folder name with what a URL or a shell would read. */
@@ -97,24 +97,30 @@ async function rig(label: string): Promise<Rig> {
 let requests = 0;
 const rid = (): string => `apps-request-${String((requests += 1)).padStart(6, "0")}`;
 
+/** Adds a task with its own folder `<work>/<folder>` (made first), and that folder as stored. */
 async function addTask(
   r: Rig,
   title: string,
   folder: string,
-): Promise<{ id: string; ref: string }> {
+): Promise<{ id: string; ref: string; folder: string }> {
   mkdirSync(join(r.lab.work, folder), { recursive: true });
-  const added = (await r.user.call(
-    "op/call",
-    {
-      space: r.lab.spaceId,
-      op: "task.add",
-      input: { tasks: [{ title, place: { root: LAB_ROOT, path: folder } }], request_id: rid() },
-    },
-    { timeoutMs: 60_000 },
-  )) as { tasks: { id: string; ref: string }[] };
+  const call = (op: string, input: Record<string, unknown>) =>
+    r.user.call(
+      "op/call",
+      { space: r.lab.spaceId, op, input: { ...input, request_id: rid() } },
+      { timeoutMs: 60_000 },
+    );
+  const added = (await call("task.add", { tasks: [{ title }] })) as {
+    tasks: { id: string; ref: string }[];
+  };
   const task = added.tasks[0];
   if (task === undefined) throw new Error("no task");
-  return task;
+  const set = (await call("folder.manage", {
+    action: "set",
+    task: task.ref,
+    folder: join(r.lab.work, folder),
+  })) as { folder: string };
+  return { ...task, folder: set.folder };
 }
 
 interface Opened {
@@ -349,7 +355,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       ).toBe(true);
       expect(pack).toContain("From the user, for agents:");
       expect(pack).toContain("Don't touch the reminders service.");
-      expect(pack).toContain(`Folder: ${LAB_ROOT} › ${FOLDER}`);
+      expect(pack).toContain(`Folder: ${task.folder}`);
       expect(pack).toContain(`launch: ${result.launch.reference}`);
       expect(pack.length).toBeLessThanOrEqual(8_000);
       let refused: unknown;

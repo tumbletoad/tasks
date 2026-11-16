@@ -272,25 +272,27 @@ function headerLine(
 type DigestTask = Extract<TaskGet, { view: "digest" }>["task"];
 
 /**
- * The header's place line: the folder Tasks resolved on this machine now (a path Tasks resolved,
- * which stands outside the data block, A3 3.9.6, 3.10), or why there is none (R11), as a code.
+ * The header's folder line, in fixed words: whose folder the task opens in on this machine and
+ * whether it is there now, or that it opens on another machine.
  */
-function placeLine(place: NonNullable<DigestTask["place"]>): string {
-  if (place.folder !== undefined) {
-    return `Place: ${place.root}:${place.path} -> ${place.folder} (this machine)`;
-  }
-  const reason = place.unresolved !== undefined && WORD.test(place.unresolved);
-  return `Place: unresolved here (${reason ? (place.unresolved ?? "") : "unknown"})`;
+function folderLine(folder: NonNullable<DigestTask["folder"]>): string {
+  if ("machine" in folder) return "Folder: on another machine, where it opens";
+  const whose = folder.of === "task" ? "its own folder" : "its project's folder";
+  return folder.missing === true
+    ? `Folder: ${whose}, not found on this machine`
+    : `Folder: ${whose} on this machine`;
 }
 
 /**
- * A place that resolves to nothing here: its stored root and path are text someone wrote, so they
- * stand inside the data block (A3 3.10: only paths Tasks resolved stand outside).
+ * The folder's path, or the machine it is on: text someone wrote, so it stands inside the data
+ * block (A3 3.10).
  */
-const storedPlace = (place: DigestTask["place"]): string[][] =>
-  place === undefined || place.folder !== undefined
+const storedFolder = (folder: DigestTask["folder"]): string[][] =>
+  folder === undefined
     ? []
-    : [[`Place: ${clip(`${place.root}:${place.path}`, 200)} (as stored)`]];
+    : "machine" in folder
+      ? [[`Opens on: ${clip(folder.machine, 80)}`]]
+      : [[`Folder: ${clip(folder.path, 200)}`]];
 
 const SECTION_NAMES = ["context", "notes", "log", "sources", "outcome", "history"];
 
@@ -301,7 +303,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
   const parts: Part[] = [
     fixed(
       headerLine(task, result.as_of),
-      task.place === undefined ? undefined : placeLine(task.place),
+      task.folder === undefined ? undefined : folderLine(task.folder),
       result.bound ? "Session: bound to this task by this call" : undefined,
     ),
     instructionsPart(
@@ -318,7 +320,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
         [
           `Status: ${join(task.status, task.effort !== undefined && `Effort: ${task.effort}`, group(task) !== undefined && `Group: ${group(task) ?? ""}`)}`,
         ],
-        ...storedPlace(task.place),
+        ...storedFolder(task.folder),
       ],
     },
     {

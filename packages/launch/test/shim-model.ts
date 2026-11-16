@@ -27,7 +27,7 @@ const SPACE = "sp_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 const BOOT = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const PLAN: SpawnPlan = {
   argv: ["/opt/agent/bin/agent", "--brief", "Read the task"],
-  place: { root: "work", path: "lumen/portal" },
+  folder: { stored: "~/work/lumen/portal", path: "/home/mira/work/lumen/portal" },
   env: { FIXTURE_INSTANCE: "1" },
   title: "Fixture launch",
   afterExit: "close",

@@ -27,6 +27,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, in-process", async () =
   const w = await contractWorld("ci");
   const transport: ContractTransport = {
     portal: w.portal,
+    folder: (task) => w.folder(task),
     binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {
@@ -61,6 +62,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", a
   const port = w.service.status().http?.port ?? 0;
   const transport: ContractTransport = {
     portal: w.portal,
+    folder: (task) => w.folder(task),
     binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input) => {
@@ -162,6 +164,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over tasks-local/1", as
   };
   const transport: ContractTransport = {
     portal: w.portal,
+    folder: (task) => w.folder(task),
     binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {

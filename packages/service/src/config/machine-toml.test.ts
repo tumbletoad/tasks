@@ -125,9 +125,8 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
       { key: "spaces[1].path", code: "not_absolute", severity: "error" },
     ]);
     const linux = parseMachineConfig(fixture("machine.linux.toml"), "win32");
-    expect(linux.config.roots).toEqual([]);
     expect(linux.problems.filter((p) => p.code === "not_absolute").map((p) => p.key)).toEqual(
-      expect.arrayContaining(["spaces[1].path", "roots.work.path", "instance[1].exec"]),
+      expect.arrayContaining(["spaces[1].path", "instance[1].exec"]),
     );
   });
 

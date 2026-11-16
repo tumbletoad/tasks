@@ -15,7 +15,7 @@ import {
   FixedEnvironment,
   startTimes,
   type LaunchIntent,
-  type PlanPlace,
+  type PlanFolder,
   type SpawnPlan,
 } from "@tasks/launch";
 import { fakeAgentCommand } from "@tasks/runs/fake-agents";
@@ -156,13 +156,9 @@ export interface LabOptions {
   readonly toml?: (root: string) => string;
 }
 
-/** The root the lab binds places under, and the place its plans name by default. */
-export const LAB_ROOT = "work";
-export const LAB_PLACE: PlanPlace = { root: LAB_ROOT, path: "portal" };
-
 /**
- * A service of a temporary home with one space, a task in it, a root (`work`) with a folder in it
- * (`work/portal`, the default place), and a terminal that starts each shim as a child of this test
+ * A service of a temporary home with one space, a task in it, a folder (`work/portal`, the one its
+ * plans name by default), and a terminal that starts each shim as a child of this test
  * in the folder the service resolved. The wall clock the service's launching reads is the real one
  * plus `skew`, which a test moves to pass a window.
  */
@@ -170,9 +166,9 @@ export class ShimLab {
   readonly root: string;
   readonly home: string;
   readonly spaceFolder: string;
-  /** The `work` root's folder. */
+  /** The folder that holds the default folder. */
   readonly work: string;
-  /** The default place's folder, `<work>/portal`, as its real path. */
+  /** The default folder, `<work>/portal`, as its real path. */
   readonly folder: string;
   /** The test install, when the lab runs a built version folder. */
   readonly install: TestInstall | undefined;
@@ -209,8 +205,12 @@ export class ShimLab {
     mkdirSync(join(this.work, "portal"), { recursive: true });
     this.work = realpathSync.native(this.work);
     this.folder = realpathSync.native(join(this.work, "portal"));
-    // The root is this machine's from the first start on.
-    registerSpaces(this.home, [], { [LAB_ROOT]: this.work }, options.toml?.(this.root));
+    registerSpaces(this.home, [], options.toml?.(this.root));
+  }
+
+  /** The lab's default plan folder: `<work>/portal`, stored as its absolute path. */
+  labFolder(): PlanFolder {
+    return { stored: this.folder, path: this.folder };
   }
 
   /** A lab with its service started, a space created and registered, and one task. */
@@ -239,12 +239,7 @@ export class ShimLab {
         user.close();
       }
       // The next start registers the space from machine.toml.
-      registerSpaces(
-        lab.home,
-        [lab.spaceFolder],
-        { [LAB_ROOT]: lab.work },
-        options.toml?.(lab.root),
-      );
+      registerSpaces(lab.home, [lab.spaceFolder], options.toml?.(lab.root));
       return lab;
     } catch (error) {
       await lab.cleanup();
@@ -332,14 +327,14 @@ export class ShimLab {
     return this.service;
   }
 
-  /** A fake agent's plan: the recording, its report file, the instance's env and the place. */
+  /** A fake agent's plan: the recording, its report file, the instance's env and the folder. */
   plan(
     options: {
       fixture?: string;
       report?: string;
       env?: Record<string, string>;
       afterExit?: SpawnPlan["afterExit"];
-      place?: PlanPlace | null;
+      folder?: PlanFolder | null;
     } = {},
   ): SpawnPlan {
     const { command, args } = fakeAgentCommand(options.fixture ?? SUCCESS_FIXTURE, {
@@ -348,7 +343,7 @@ export class ShimLab {
     });
     return {
       argv: [command, ...args],
-      place: options.place === undefined ? LAB_PLACE : options.place,
+      folder: options.folder === undefined ? this.labFolder() : options.folder,
       env: options.env ?? {},
       title: "Fixture launch",
       afterExit: options.afterExit ?? "close",

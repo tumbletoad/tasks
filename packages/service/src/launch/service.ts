@@ -72,9 +72,8 @@ import {
   type TicketControl,
   type WindowsDelegation,
   type Attachment,
-  type PlanPlace,
-  type Resolution,
-  type RootFolder,
+  type FolderResolution,
+  type PlanFolder,
   type ClaimReply,
   type DispatchOutcome,
   type Evidence,
@@ -92,6 +91,8 @@ import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
+import { openPath } from "../ops/folders.ts";
+import type { TaskFolder } from "../ops/read.ts";
 import {
   briefNames,
   chooseRoute,
@@ -122,16 +123,6 @@ export interface LaunchInstance {
 
 /** A reference of a launch reference's length, for deciding a brief's budget before the click. */
 const REFERENCE_LENGTH_STAND_IN = "L00000";
-
-/** A task's place on this machine as a spawn plan holds it, or null for its work folder. */
-const placeOf = (task: OpenTaskRequest["task"]): PlanPlace | null =>
-  task.place === null
-    ? null
-    : {
-        root: task.place.root,
-        path: task.place.path,
-        ...(task.place.gitRemote === undefined ? {} : { gitRemote: task.place.gitRemote }),
-      };
 
 /** A4 3.6.3: shims are checked by PID and start time every 30 s; the sweep runs with it. */
 export const CHECK_MS = 30_000;
@@ -215,8 +206,6 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly root: string;
   /** The install's machine state folder, which holds the spaces' work folders (A4 3.3). */
   readonly stateDir: string;
-  /** This machine's roots as they are now (`OpsHost.roots`): places resolve with them. */
-  readonly roots: () => readonly RootFolder[];
   readonly platform: NodeJS.Platform;
   readonly env: Env;
   readonly spaces: () => readonly ServedSpace[];
@@ -296,7 +285,7 @@ export class LaunchService {
     { readonly base: AgentBase | undefined; readonly at: number }
   >();
   /**
-   * A link launch's brief and place, from its click to its dispatch step, which builds the URL
+   * A link launch's brief and folder, from its click to its dispatch step, which builds the URL
    * with the folder resolved right then. In memory only: a click is dispatched in the same call,
    * and an intent whose service restarted before it was dispatched expires (A4 3.9.1).
    */
@@ -305,7 +294,7 @@ export class LaunchService {
     {
       readonly space: string;
       readonly brief: string;
-      readonly place: PlanPlace | null;
+      readonly folder: PlanFolder | null;
       readonly at: number;
       /** The instance's link template (A4 3.4.2, 3.4.4, 3.4.5). */
       readonly url: string;
@@ -587,17 +576,17 @@ export class LaunchService {
         throw error;
       }
     }
-    const place = placeOf(task);
-    // R11: a place on another machine never falls back to this machine's work folder.
-    if (choice.route !== "clipboard" && task.place === null && task.elsewhere) {
+    // A folder only on another machine opens there, never in this machine's work folder.
+    if (choice.route !== "clipboard" && task.folder.kind === "other_machine") {
       throw this.#unavailable("other_machine");
     }
+    const folder = this.#planFolder(task.folder);
     // A link opens the folder resolved now (and again at its dispatch); a UNC one cannot.
     if (choice.route === "link") {
-      const where = await this.resolveFolder(space, place);
+      const where = await this.resolveFolder(space, folder);
       if (where.status === "failed") {
         this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-        throw new LaunchFolderUnavailable(where.reason);
+        throw new LaunchFolderUnavailable(where.reason, folder?.stored);
       }
       if (isUncPath(where.folder)) throw this.#unavailable("unc");
     }
@@ -611,10 +600,10 @@ export class LaunchService {
       // The note is saved before the intent is recorded: a terminal click whose folder cannot be
       // used is refused first, so a refused click saves nothing (the link's was checked above).
       if (choice.route === "terminal") {
-        const where = await this.resolveFolder(space, place);
+        const where = await this.resolveFolder(space, folder);
         if (where.status === "failed") {
           this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-          throw new LaunchFolderUnavailable(where.reason);
+          throw new LaunchFolderUnavailable(where.reason, folder?.stored);
         }
       }
       await request.saveNote(probe.composerText);
@@ -647,7 +636,7 @@ export class LaunchService {
         });
         return {
           argv: built.argv,
-          place,
+          folder,
           env: chosen.env,
           title: `${task.ref} ${title}`,
           afterExit: (this.#options.terminalSettings ?? DEFAULT_TERMINAL).afterExit,
@@ -665,7 +654,7 @@ export class LaunchService {
       task: task.id,
       instance: instance?.id ?? COPY_INSTANCE,
       route: choice.route,
-      place: task.place?.id ?? null,
+      place: null,
       taskVersion: task.version,
       briefHash: probe.hash,
       ...(session === undefined ? {} : { evidence: { preset: session } }),
@@ -674,7 +663,9 @@ export class LaunchService {
     let intent =
       planned === undefined
         ? await hosted.machine.open(click, requestId)
-        : await this.#openWith(space, hosted, click, requestId, place, (i) => planned(i.reference));
+        : await this.#openWith(space, hosted, click, requestId, folder, (i) =>
+            planned(i.reference),
+          );
     const text = brief(intent.reference);
     if (text.status !== "ok") throw this.#unavailable("too_long");
     if (choice.route === "link" && intent.state === "prepared" && !this.#links.has(intent.id)) {
@@ -686,7 +677,7 @@ export class LaunchService {
         this.#links.set(intent.id, {
           space,
           brief: text.text,
-          place,
+          folder,
           at: performance.now(),
           url: link.url,
           confirmFolder: link.confirmFolder === true,
@@ -717,6 +708,18 @@ export class LaunchService {
     };
   }
 
+  /**
+   * The folder a plan of the task holds: its own folder or its project's here, `~` expanded with
+   * the account's home, or null for the work folder. Throws LaunchFolderUnavailable for a home
+   * path when the home is not known. A folder on another machine only has none here.
+   */
+  #planFolder(folder: TaskFolder): PlanFolder | null {
+    if (folder.kind !== "task" && folder.kind !== "project") return null;
+    const path = openPath(folder.path, this.#options.home, this.#options.platform);
+    if (path === undefined) throw new LaunchFolderUnavailable("path_missing", folder.path);
+    return { stored: folder.path, path };
+  }
+
   /** The route an instance takes here now (chooseRoute). Throws LaunchUnavailable. */
   #route(instance: Instance): Choice {
     return chooseRoute(instance, {
@@ -738,15 +741,23 @@ export class LaunchService {
     const { task } = request;
     let folder: BriefFolder | undefined;
     if (choice.route === "clipboard") {
-      const place = placeOf(task);
-      if (task.place === null && task.elsewhere) folder = { kind: "elsewhere" };
+      const own = task.folder;
+      if (own.kind === "other_machine") folder = { kind: "elsewhere", machine: own.machine };
       else {
-        const where = await this.resolveFolder(space, place).catch(() => undefined);
-        const absolute = where?.status === "ok" ? where.folder : undefined;
+        let planned: PlanFolder | null | undefined;
+        try {
+          planned = this.#planFolder(own);
+        } catch {
+          planned = undefined;
+        }
+        const where =
+          planned === undefined
+            ? undefined
+            : await this.resolveFolder(space, planned).catch(() => undefined);
         folder =
-          place === null
-            ? { kind: "work_folder", absolute }
-            : { kind: "place", root: place.root, path: place.path, absolute };
+          own.kind === "none"
+            ? { kind: "work_folder", absolute: where?.status === "ok" ? where.folder : undefined }
+            : { kind: "folder", path: own.path, found: where?.status === "ok" };
       }
     }
     const names = briefNames();
@@ -888,14 +899,11 @@ export class LaunchService {
   }
 
   /**
-   * The folder a terminal launch of `space` with this place would work in, resolved now (A4 3.3):
-   * the place through this machine's live roots, or for no place the space's work folder. M2.13's
-   * launch slot asks this to disable a route with its reason; `open` and the dispatch step ask it
-   * too.
+   * The folder a launch of `space` with this plan folder would work in, resolved now: the folder,
+   * or for none the space's work folder. `open` and the dispatch step ask it.
    */
-  resolveFolder(space: string, place: PlanPlace | null): Promise<Resolution> {
-    return resolveLaunchFolder(place, space, {
-      roots: this.#options.roots(),
+  resolveFolder(space: string, folder: PlanFolder | null): Promise<FolderResolution> {
+    return resolveLaunchFolder(folder, space, {
       stateDir: this.#options.stateDir,
       platform: this.#options.platform,
     });
@@ -928,7 +936,7 @@ export class LaunchService {
     if (checkPlan(plan) === undefined) {
       throw new Error("The spawn plan is not one the shim can start");
     }
-    return this.#openWith(space, hosted, click, requestId, plan.place, () => plan);
+    return this.#openWith(space, hosted, click, requestId, plan.folder, () => plan);
   }
 
   /**
@@ -941,14 +949,14 @@ export class LaunchService {
     hosted: { machine: LaunchMachine; store: SpaceExecutionStore },
     click: Omit<NewIntent, "machine">,
     requestId: string,
-    place: PlanPlace | null,
+    folder: PlanFolder | null,
     planFor: (intent: LaunchIntent) => SpawnPlan,
   ): Promise<LaunchIntent> {
     if (!(await hosted.store.decided(requestId))) {
-      const where = await this.resolveFolder(space, place);
+      const where = await this.resolveFolder(space, folder);
       if (where.status === "failed") {
         this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-        throw new LaunchFolderUnavailable(where.reason);
+        throw new LaunchFolderUnavailable(where.reason, folder?.stored);
       }
     }
     const intent = await hosted.machine.open(click, requestId);
@@ -1289,7 +1297,7 @@ export class LaunchService {
     this.#links.delete(intent.id);
     // The click's brief is gone (a restart between the click and its dispatch): nothing opens.
     if (pending === undefined) return { kind: "refused", reason: "cancelled" };
-    const where = await this.resolveFolder(pending.space, pending.place);
+    const where = await this.resolveFolder(pending.space, pending.folder);
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       return { kind: "refused", reason: "cancelled" };
@@ -1331,7 +1339,7 @@ export class LaunchService {
   async #dispatchTerminal(intent: LaunchIntent): Promise<DispatchOutcome> {
     const record = this.host.record(intent.id);
     if (record === undefined) return { kind: "refused" };
-    const where = await this.resolveFolder(record.space, record.plan.place);
+    const where = await this.resolveFolder(record.space, record.plan.folder);
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       // No ticket was issued and nothing started: nothing more can come from its machine state.

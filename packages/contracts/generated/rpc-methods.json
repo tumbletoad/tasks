@@ -4524,7 +4524,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "state": {
-                          "description": "Its folder here, or missing",
+                          "description": "Its or its project's folder here, or missing",
                           "enum": [
                             "here",
                             "missing"
@@ -4557,7 +4557,7 @@
                       "type": "object"
                     }
                   ],
-                  "description": "Its place's state on this machine"
+                  "description": "Where it opens on this machine: its folder there, or another machine"
                 },
                 "planned_for": {
                   "description": "Day planned for",
@@ -4865,6 +4865,51 @@
                     "description": "Starred for today",
                     "type": "boolean"
                   },
+                  "folder": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "missing": {
+                            "const": true,
+                            "description": "Not found on this machine now",
+                            "type": "boolean"
+                          },
+                          "of": {
+                            "description": "The task's own folder or its project's",
+                            "enum": [
+                              "task",
+                              "project"
+                            ],
+                            "type": "string"
+                          },
+                          "path": {
+                            "description": "The folder, the home written as ~",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "of"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "machine": {
+                            "description": "The machine its folder is on: it opens there",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "machine"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "description": "Where it opens on this machine; none: in the space's work folder"
+                  },
                   "id": {
                     "description": "Task ID",
                     "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
@@ -5163,33 +5208,6 @@
                   "outcome": {
                     "description": "Outcome of the last completion",
                     "type": "string"
-                  },
-                  "place": {
-                    "additionalProperties": false,
-                    "description": "Its place on this machine",
-                    "properties": {
-                      "folder": {
-                        "description": "Its folder on this machine, resolved now",
-                        "type": "string"
-                      },
-                      "path": {
-                        "description": "Path inside the root",
-                        "type": "string"
-                      },
-                      "root": {
-                        "description": "Root name",
-                        "type": "string"
-                      },
-                      "unresolved": {
-                        "description": "Why it resolves to no folder here now",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "root",
-                      "path"
-                    ],
-                    "type": "object"
                   },
                   "priority": {
                     "description": "1 highest, 4 none",

@@ -1,27 +1,24 @@
-// `status`'s `here` (A3 3.4.2): the active tasks whose place, on this machine, resolves to the
-// caller's working folder (`exact`), contains it (`inside`) or lies inside it (`below`), in that
-// order, "place resolution by A1, exact per R11".
+// `here`: the tasks that work in the caller's working folder on this machine, for `status`, the
+// candidates of a call that names no task, search's `on:cwd` and the boost of a text search.
 //
-// One rule decides where a place is: `resolvePlace` (launch, A1 3.15), the same that gives
-// the digest its folder. A place's stored path is text that a link inside its root can lead
-// elsewhere, so it is never compared with the working folder as text: the folder it resolves to
-// now is, as a real path, segment by segment, with the working folder's real path. A place that
-// resolves to no folder here (its folder is missing, its root is gone, another repository is
-// there) matches nothing, as the digest says it is unresolved.
+// A task works where it opens: its own folder here, else its project's folder here. Folders are
+// compared as real paths, segment by segment, with the working folder's real path, never as stored
+// text: a link or a short name spells one folder two ways. A folder relates to the working folder
+// as the same folder (`exact`), one that contains it (`inside`) or one inside it (`below`).
 //
-// Only the places under a root that can hold a match are resolved: a root the working folder lies
-// in, or one that lies inside the working folder. Every root is considered, not only the closest,
-// so a task placed through an outer root is found from inside a nested one. `here` orients an
-// agent: it names tasks and opens nothing; a launch resolves its place again, on its own.
+// Nested project folders: the working folder belongs to the deepest project folder that contains
+// it, so only that project's tasks are `exact` or `inside` through their project. Projects whose
+// folders lie inside the working folder are `below`. A task's own folder relates on its own.
+//
+// `here` orients: it names tasks and opens nothing, and a launch decides its folder again. A folder
+// that is not there or does not answer in time matches nothing.
 import { realpath } from "node:fs/promises";
 import { posix, win32 } from "node:path";
-import { absoluteFolder, resolvePlace, type Root } from "@tasks/launch";
+import { absoluteFolder } from "@tasks/launch";
 import type { Row } from "@tasks/storage";
+import { bounded, openPath } from "./folders.ts";
 
 export type Match = "exact" | "inside" | "below";
-
-/** A place's state on this machine now: its folder, or why it has none (R11, never a guess). */
-export type PlaceState = { readonly folder: string } | { readonly unresolved: string };
 
 const foldsCase = (platform: NodeJS.Platform): boolean =>
   platform === "win32" || platform === "darwin";
@@ -39,14 +36,18 @@ function segmentsOf(real: string, platform: NodeJS.Platform): { root: string; pa
   };
 }
 
+/** The real path of an absolute folder of this machine, or undefined when it is none now. */
 async function realFolder(given: string, platform: NodeJS.Platform): Promise<string | undefined> {
   const ready = absoluteFolder(given, platform);
   if (!ready.ok) return undefined;
-  try {
-    return await realpath(ready.path);
-  } catch {
-    return undefined;
-  }
+  const found = await bounded(async () => {
+    try {
+      return await realpath(ready.path);
+    } catch {
+      return undefined;
+    }
+  });
+  return found === "not_answering" ? undefined : found;
 }
 
 /**
@@ -66,132 +67,104 @@ function relate(folder: string, cwd: string, platform: NodeJS.Platform): Match |
   return a.parts.length < b.parts.length ? "inside" : "below";
 }
 
-/** The caller's working folder as a real path, and the roots whose places can match it. */
-export interface Here {
-  readonly folder: string;
-  readonly roots: readonly string[];
+/** The live folders on this machine `here` reads, in stored form. */
+export interface FoldersHere {
+  /** Live projects' folders: `project` and `path`. */
+  readonly projects: readonly Row[];
+  /** Live tasks' own folders: `task` and `path`. */
+  readonly tasks: readonly Row[];
 }
 
+/** The tasks and projects whose folder relates to a working folder, with how. */
+export interface Here {
+  /** Tasks by their own folder here. */
+  readonly tasks: ReadonlyMap<string, Match>;
+  /** Projects by their folder here: the deepest that contains the working folder, and those below. */
+  readonly projects: ReadonlyMap<string, Match>;
+}
+
+export interface HereFacts {
+  readonly home: string | undefined;
+  readonly platform: NodeJS.Platform;
+}
+
+/** At most this many folders are looked at at once. */
+const AT_ONCE = 16;
+
 /**
- * The working folder `cwd` and the roots of this machine that can hold a place matching it: the
- * roots it lies in and those that lie inside it. Undefined when `cwd` is not a folder here.
+ * What relates to `cwd` among `folders`: undefined when `cwd` is not a folder here. Each distinct
+ * folder is looked at once, a stored `~` expanded with the home.
  */
 export async function hereOf(
   cwd: string,
-  roots: readonly Root[],
-  platform: NodeJS.Platform,
+  folders: FoldersHere,
+  facts: HereFacts,
 ): Promise<Here | undefined> {
-  const folder = await realFolder(cwd, platform);
-  if (folder === undefined) return undefined;
-  const fold = (s: string) => (foldsCase(platform) ? s.toLowerCase() : s);
-  const at = segmentsOf(folder, platform);
-  const related: string[] = [];
-  for (const root of roots) {
-    const real = await realFolder(root.path, platform);
-    if (real === undefined) continue;
-    // A pre-filter only, so it may say yes too often: case-folded where the platform folds.
-    const base = segmentsOf(real, platform);
-    if (fold(base.root) !== fold(at.root)) continue;
-    const common = Math.min(base.parts.length, at.parts.length);
-    let same = true;
-    for (let i = 0; i < common && same; i += 1) {
-      same = fold(base.parts[i] ?? "") === fold(at.parts[i] ?? "");
+  const { platform, home } = facts;
+  const at = await realFolder(cwd, platform);
+  if (at === undefined) return undefined;
+  const paths = [...new Set([...folders.projects, ...folders.tasks].map((r) => String(r["path"])))];
+  const reals = new Map<string, string | undefined>();
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < paths.length) {
+      const stored = paths[next] ?? "";
+      next += 1;
+      const open = openPath(stored, home, platform);
+      reals.set(stored, open === undefined ? undefined : await realFolder(open, platform));
     }
-    if (same) related.push(root.id);
+  };
+  await Promise.all(Array.from({ length: Math.min(AT_ONCE, paths.length) }, worker));
+  const matchOf = (row: Row): { match: Match; depth: number } | undefined => {
+    const real = reals.get(String(row["path"]));
+    if (real === undefined) return undefined;
+    const match = relate(real, at, platform);
+    return match === undefined
+      ? undefined
+      : { match, depth: segmentsOf(real, platform).parts.length };
+  };
+  const tasks = new Map<string, Match>();
+  for (const row of folders.tasks) {
+    const found = matchOf(row);
+    if (found !== undefined) tasks.set(String(row["task"]), found.match);
   }
-  return { folder, roots: related };
+  const projects = new Map<string, Match>();
+  const around: { project: string; match: Match; depth: number }[] = [];
+  for (const row of folders.projects) {
+    const found = matchOf(row);
+    if (found === undefined) continue;
+    if (found.match === "below") projects.set(String(row["project"]), "below");
+    else around.push({ project: String(row["project"]), ...found });
+  }
+  const deepest = Math.max(...around.map((p) => p.depth));
+  for (const p of around) if (p.depth === deepest) projects.set(p.project, p.match);
+  return { tasks, projects };
 }
 
-/** The Git remote a place recorded (its `identity`), for `resolvePlace`'s check. */
-function remoteOf(identity: unknown): string | undefined {
-  try {
-    const parsed: unknown = typeof identity === "string" ? JSON.parse(identity) : null;
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
-    const remote = (parsed as Record<string, unknown>)["git_remote"];
-    return typeof remote === "string" ? remote : undefined;
-  } catch {
-    // An identity the reader cannot parse records no remote: the place resolves without one.
-    return undefined;
-  }
-}
-
-/**
- * A place (its row's `root_id`, `rel_path`, `kind` and `identity`) as it resolves on this machine
- * now: the digest's place and every `here` match read it the same way.
- */
-export async function placeState(
-  place: {
-    readonly root: unknown;
-    readonly path: unknown;
-    readonly kind: unknown;
-    readonly identity: unknown;
-  },
-  roots: readonly Root[],
-  platform: NodeJS.Platform,
-): Promise<PlaceState> {
-  const gitRemote = remoteOf(place.identity);
-  const found = await resolvePlace(
-    {
-      root: String(place.root),
-      path: String(place.path),
-      ...(place.kind === "file" ? { kind: "file" as const } : {}),
-      ...(gitRemote === undefined ? {} : { gitRemote }),
-    },
-    roots,
-    { platform },
-  );
-  return found.status === "ok" ? { folder: found.folder } : { unresolved: found.reason };
+/** How a task of `here` matches: by its own folder here, else by its project's. */
+export function matchOf(row: Row, here: Here): Match | undefined {
+  const id = String(row["id"]);
+  const own = here.tasks.get(id);
+  if (own !== undefined) return own;
+  if (row["x_own_here"] !== null && row["x_own_here"] !== undefined) return undefined;
+  const project = row["project_id"];
+  return typeof project === "string" ? here.projects.get(project) : undefined;
 }
 
 /** At most this many tasks in `here`, as in each of status's sections (A3 3.4.2). */
 export const HERE_ROWS = 8;
 
-/** At most this many places are resolved at once. */
-const AT_ONCE = 16;
-
 const RANK: Readonly<Record<Match, number>> = { exact: 0, inside: 1, below: 2 };
 
 /**
- * The tasks of `placed` (task rows with `place_root`, `place_path`, `place_kind` and
- * `place_identity`) whose place resolves to a folder that matches `here`, best first: exact,
- * inside, below, then by priority, due date and reference.
+ * The tasks of `rows` that match `here`, best first: exact, inside, below, then by priority, due
+ * date and reference. Each row holds `x_own_here` when the task has a folder of its own here.
  */
-export async function hereRows(
-  placed: readonly Row[],
-  here: Here,
-  roots: readonly Root[],
-  platform: NodeJS.Platform,
-): Promise<{ row: Row; match: Match }[]> {
-  const matches = new Array<{ row: Row; match: Match } | undefined>(placed.length);
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < placed.length) {
-      const i = next;
-      next += 1;
-      const row = placed[i];
-      if (row === undefined) continue;
-      const state = await placeState(
-        {
-          root: row["place_root"],
-          path: row["place_path"],
-          kind: row["place_kind"],
-          identity: row["place_identity"],
-        },
-        roots,
-        platform,
-      );
-      const match = "folder" in state ? relate(state.folder, here.folder, platform) : undefined;
-      if (match !== undefined) matches[i] = { row, match };
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(AT_ONCE, placed.length) }, worker));
-  const best = new Map<unknown, { row: Row; match: Match }>();
-  for (const found of matches) {
-    if (found === undefined) continue;
-    const known = best.get(found.row["id"]);
-    if (known === undefined || RANK[found.match] < RANK[known.match]) {
-      best.set(found.row["id"], found);
-    }
+export function hereRows(rows: readonly Row[], here: Here): { row: Row; match: Match }[] {
+  const found: { row: Row; match: Match }[] = [];
+  for (const row of rows) {
+    const match = matchOf(row, here);
+    if (match !== undefined) found.push({ row, match });
   }
   const due = (row: Row): string =>
     typeof row["due_date"] === "string"
@@ -199,7 +172,7 @@ export async function hereRows(
       : typeof row["due_at"] === "number"
         ? new Date(row["due_at"]).toISOString().slice(0, 10)
         : "9999-12-31";
-  return [...best.values()].sort(
+  return found.sort(
     (a, b) =>
       RANK[a.match] - RANK[b.match] ||
       Number(a.row["priority"]) - Number(b.row["priority"]) ||

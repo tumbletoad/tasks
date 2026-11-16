@@ -159,7 +159,10 @@ function keyRef(kind: string, key: string): string | undefined {
   return ref !== "" && ref.length <= 40 && !/\s/u.test(ref) ? ref : undefined;
 }
 
-/** The place's line: its folder here, a folder not found, another machine, or the work folder. */
+/**
+ * The folder's line: where the task opens here (its own folder or its project's, the home as `~`),
+ * a folder not found, another machine, or the work folder.
+ */
 function PlaceLine({
   task,
   detail,
@@ -169,7 +172,7 @@ function PlaceLine({
 }) {
   const t = useT();
   const say = useToast();
-  const place = detail?.task.place;
+  const folder = detail?.task.folder;
   const copy = (text: string) => {
     navigator.clipboard.writeText(text).then(
       () => {
@@ -180,25 +183,20 @@ function PlaceLine({
       },
     );
   };
-  if (place !== undefined) {
-    const found = place.folder;
-    const shown = found ?? (place.path === "" ? place.root : `${place.root}/${place.path}`);
+  if (folder !== undefined && "path" in folder) {
+    const missing = folder.missing === true;
     return (
-      <li
-        className={styles.link}
-        data-part="place"
-        data-state={found === undefined ? "missing" : "here"}
-      >
+      <li className={styles.link} data-part="place" data-state={missing ? "missing" : "here"}>
         <span className={styles.icon} aria-hidden="true">
           <FolderIcon />
         </span>
         <span data-fact="">
-          <span className={`${styles.mono} ${found === undefined ? styles.muted : ""}`} dir="ltr">
-            {shown}
+          <span className={`${styles.mono} ${missing ? styles.muted : ""}`} dir="ltr">
+            {folder.path}
           </span>
-          {found === undefined ? <span className={styles.muted}> {t("place.missing")}</span> : null}
+          {missing ? <span className={styles.muted}> {t("place.missing")}</span> : null}
         </span>
-        {found === undefined ? null : (
+        {missing ? null : (
           <span className={styles.acts}>
             <button
               type="button"
@@ -206,7 +204,7 @@ function PlaceLine({
               aria-label={t("place.copy")}
               data-tip={t("place.copy")}
               onClick={() => {
-                copy(found);
+                copy(folder.path);
               }}
             >
               <CopyIcon />
@@ -216,19 +214,25 @@ function PlaceLine({
       </li>
     );
   }
-  if (task.place?.state === "elsewhere") {
+  const elsewhere =
+    folder !== undefined && "machine" in folder
+      ? folder.machine
+      : task.place?.state === "elsewhere"
+        ? task.place.machine
+        : undefined;
+  if (elsewhere !== undefined) {
     return (
       <li className={styles.link} data-part="place" data-state="elsewhere">
         <span className={styles.icon} aria-hidden="true">
           <FolderElsewhereIcon />
         </span>
         <span className={styles.muted} data-fact="" dir="auto">
-          {t("place.elsewhere", { machine: task.place.machine })}
+          {t("place.elsewhere", { machine: elsewhere })}
         </span>
       </li>
     );
   }
-  // No place on this machine: Open and Run use the space's work folder (A5 3.7, U25).
+  // No folder for this task here: Open and Run use the space's work folder (A5 3.7, U25).
   if (detail === undefined || task.place !== undefined) return null;
   return (
     <li className={styles.link} data-part="place" data-state="work_folder">

@@ -8,8 +8,7 @@
 // The rpc methods the service answers are registered in one place, `handlerTable` below. The hub
 // owns two itself (A2 3.6.4): `service/status` and `service/shutdown`, which is how a stop reaches
 // the service on Windows (A2 3.3.5). M1.10 registers `op/call` and `op/list` (the request path for
-// operations, ops/) and the `space/*` verbs (space-verbs.ts, with M3.10's `view/rebuild`), M2.07
-// the `roots/*` verbs (roots.ts),
+// operations, ops/) and the `space/*` verbs (space-verbs.ts, with M3.10's `view/rebuild`),
 // M2.11 the `t3/*` verbs of `tasks setup t3` (t3.ts), M2.14 the `setup/*` verbs of `tasks setup
 // agents` (agent-homes.ts), `tasks setup instances` its `instances/*` (instances.ts); later steps
 // add theirs the same way.
@@ -33,7 +32,6 @@ import { mcpEndpoint } from "../mcp/index.ts";
 import { opCall, opList, type OpsHost } from "../ops/index.ts";
 import type { Logger } from "./log.ts";
 import { defaultSpaceVerbs, type DefaultSpace } from "./default-space.ts";
-import { rootVerbs, type RootsHost } from "./roots.ts";
 import { spaceVerbs, type SpaceVerbsHost } from "./space-verbs.ts";
 import { t3Verbs, type T3Host } from "./t3.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
@@ -87,8 +85,6 @@ export interface EndpointHub {
   readonly spaces?: SpaceVerbsHost;
   /** The UI's HTTP listener (M2.12), once it runs. */
   ui?: EndpointUi | undefined;
-  /** `tasks roots` (`roots/*`). */
-  readonly roots?: RootsHost;
   /** The machine's default space: `tasks space use` (`space/use`). */
   readonly defaults?: Pick<DefaultSpace, "make">;
   /**
@@ -154,7 +150,6 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     Record<string, (params: JsonObject, cls: ConnectionClass) => Promise<unknown>>
   > = {
     ...(hub.spaces === undefined ? {} : spaceVerbs(hub.spaces)),
-    ...(hub.roots === undefined ? {} : rootVerbs(hub.roots)),
     ...(hub.defaults === undefined ? {} : defaultSpaceVerbs(hub.defaults)),
     ...(hub.t3 === undefined ? {} : t3Verbs(hub.t3)),
     ...(hub.agentHomes === undefined ? {} : agentHomeVerbs(hub.agentHomes)),
@@ -252,7 +247,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
   };
 }
 
-/** The local command groups' methods: `tasks space`, `tasks roots` and `tasks setup`. */
+/** The local command groups' methods: `tasks space` and `tasks setup`. */
 const VERB_METHODS = [
   "space/list",
   "space/create",
@@ -268,8 +263,6 @@ const VERB_METHODS = [
   "space/recover",
   "space/use",
   "view/rebuild",
-  "roots/list",
-  "roots/add",
   "instances/add",
   "instances/remove",
   "t3/status",

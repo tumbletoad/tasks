@@ -152,12 +152,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       { mode: 0o600 },
     );
     // The fake agent is this machine's one instance: the page draws its tile (A5 3.6).
-    registerSpaces(
-      home,
-      [{ path: seeded.folder, id: opened.space.spaceId }],
-      {},
-      FAKE_INSTANCE_TOML,
-    );
+    registerSpaces(home, [{ path: seeded.folder, id: opened.space.spaceId }], FAKE_INSTANCE_TOML);
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");

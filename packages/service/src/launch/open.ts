@@ -20,6 +20,7 @@ import {
   type Route,
 } from "@tasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
+import type { TaskFolder } from "../ops/read.ts";
 
 /** Why an instance cannot open a task here: one word, which the page and the CLI word for people. */
 export const UNAVAILABLE_REASONS = [
@@ -29,7 +30,7 @@ export const UNAVAILABLE_REASONS = [
   "no_route",
   /** No product command or terminal for a terminal route. */
   "no_terminal",
-  /** The task's place is on another machine only (A4 3.3 step 1, R11). */
+  /** The task's folder, or its project's, is on another machine only: it opens there. */
   "other_machine",
   /** `claude-cli://` refuses a UNC folder (A4 3.3 step 4). */
   "unc",
@@ -39,15 +40,18 @@ export const UNAVAILABLE_REASONS = [
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
 
 /**
- * A click whose folder does not resolve on this machine (A4 3.3 step 5): the route is disabled for
- * this task with the reason, and no intent is made. The reason is a fixed word (places.ts).
+ * A click whose folder cannot be used on this machine now (it is not there, or not a folder): no
+ * intent is made and nothing starts. The reason is a fixed word (places.ts).
  */
 export class LaunchFolderUnavailable extends Error {
   override readonly name = "LaunchFolderUnavailable";
   readonly reason: ResolveReason;
-  constructor(reason: ResolveReason) {
+  /** The folder as the space stores it; none for the space's work folder. */
+  readonly folder: string | undefined;
+  constructor(reason: ResolveReason, folder?: string) {
     super(`The task's folder cannot be used on this machine: ${reason}`);
     this.reason = reason;
+    this.folder = folder;
   }
 }
 
@@ -69,15 +73,8 @@ export interface LaunchTask {
   /** Its title as the space holds it: the brief sanitises it. */
   readonly title: string;
   readonly version: number;
-  /** Its folder place on this machine, or null. */
-  readonly place: {
-    readonly id: string;
-    readonly root: string;
-    readonly path: string;
-    readonly gitRemote?: string;
-  } | null;
-  /** It has a place on another machine and none here (A4 3.3 step 1). */
-  readonly elsewhere: boolean;
+  /** Where it opens on this machine: its own folder, its project's, another machine or none. */
+  readonly folder: TaskFolder;
 }
 
 /** A click on Open or Copy (`launch.open`). */

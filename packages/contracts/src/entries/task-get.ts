@@ -6,7 +6,6 @@ import {
   AsOf,
   Cwd,
   LOG_KINDS,
-  PlaceOutput,
   SourceOutput,
   TaskRefInput,
   TaskRow,
@@ -14,7 +13,7 @@ import {
   patterns,
 } from "../schemas.ts";
 import { STATUS_COUNTS, SpaceStatusResult } from "./space-status.ts";
-import { AS_OF, M14, M3, PORTAL, SPACE_ID } from "./fixture.ts";
+import { AS_OF, M14, M3, SPACE_ID } from "./fixture.ts";
 
 /**
  * The sections whose payload A3 3.4.4 defines. `sessions` and `proposals` arrive with the steps
@@ -95,11 +94,17 @@ const LogOutput = z.strictObject({
 
 const DigestSource = SourceOutput.extend({ cut: Cut.optional() });
 
-/** A place of this machine, and the folder it resolves to now, or why not (R11). */
-const DigestPlace = PlaceOutput.extend({
-  folder: z.string().describe("Its folder on this machine, resolved now").optional(),
-  unresolved: z.string().describe("Why it resolves to no folder here now").optional(),
-});
+/** Where the task opens on this machine: a folder here, or the machine its folder is on. */
+const DigestFolder = z.union([
+  z.strictObject({
+    path: z.string().describe("The folder, the home written as ~"),
+    of: z.enum(["task", "project"]).describe("The task's own folder or its project's"),
+    missing: z.literal(true).describe("Not found on this machine now").optional(),
+  }),
+  z.strictObject({
+    machine: z.string().describe("The machine its folder is on: it opens there"),
+  }),
+]);
 
 /** One operation on the task: A3 3.4.4's seq, actor and what. */
 const HistoryRow = z.strictObject({
@@ -121,7 +126,9 @@ export const TaskDetail = TaskRow.extend({
   waiting_on: z.string().describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Starred for today"),
   created: z.string().regex(patterns.instant).describe("When it was created").optional(),
-  place: DigestPlace.describe("Its place on this machine").optional(),
+  folder: DigestFolder.describe(
+    "Where it opens on this machine; none: in the space's work folder",
+  ).optional(),
   wrap_state: WrapState.optional(),
   outcome: z.string().describe("Outcome of the last completion").optional(),
   learnings: Learnings,
@@ -293,7 +300,7 @@ export const taskGet = defineEntry({
           summary: "Store UTC plus the clinic's zone ID, then convert once",
           context: "Appointment times are stored without a zone and converted twice.",
           focus: true,
-          place: { root: "work", path: "lumen/portal", folder: PORTAL },
+          folder: { path: "~/work/lumen/portal", of: "project" },
           learnings: [],
           instructions: [noteForAgents],
           notes: [],

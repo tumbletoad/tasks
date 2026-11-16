@@ -41,7 +41,6 @@ import {
   type Visibility,
 } from "./feed.ts";
 import type { UiInstance } from "./launches.ts";
-import type { Root } from "@tasks/launch";
 import type { HttpLimits } from "./limits.ts";
 import type { HttpTimerKind, StartHttpTimer } from "./timers.ts";
 
@@ -55,10 +54,10 @@ export interface FeedHost {
   spaces(): readonly ServedSpace[];
   /** The machine's default space (A2 3.1): what a subscription that names none gets. */
   readonly defaultSpace?: () => string | undefined;
-  /** This machine: a task's row shows its place's state here (A5 3.6). None: no place shown. */
+  /** This machine: a task's row shows where it opens here (A5 3.6). None: nothing shown. */
   readonly machine?: { readonly id: string };
-  /** This machine's roots as they are now, for that state. Default: none. */
-  readonly roots?: () => readonly Root[];
+  /** The person's home here: what `~` in a folder means. None: a folder under `~` is missing. */
+  readonly home?: string;
   readonly platform?: NodeJS.Platform;
 }
 
@@ -572,13 +571,13 @@ export class FeedHub {
     }
   }
 
-  /** @internal The machine a task's row shows its place on, or none when the host names none. */
+  /** @internal The machine a task's row shows its folder on, or none when the host names none. */
   here(): FeedHere | undefined {
-    const { machine, roots, platform } = this.options.host;
+    const { machine, home, platform } = this.options.host;
     if (machine === undefined) return undefined;
     return {
       machine: machine.id,
-      roots: roots ?? (() => []),
+      home,
       platform: platform ?? process.platform,
     };
   }

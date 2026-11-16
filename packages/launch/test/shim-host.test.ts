@@ -46,7 +46,7 @@ import { MACHINE, tempFolder } from "./stores.ts";
 const SPACE = "sp_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 const PLAN: SpawnPlan = {
   argv: ["/opt/agent/bin/agent", "--brief", "Read the task"],
-  place: { root: "work", path: "lumen/portal", gitRemote: "git@example.test:lumen/portal.git" },
+  folder: { stored: "~/work/lumen/portal", path: "/home/mira/work/lumen/portal" },
   env: { CODEX_HOME: "/home/mira/.codex-work", FIXTURE_INSTANCE: "1" },
   title: "M-14 Fix appointment time zones",
   afterExit: "close-on-success",
@@ -823,8 +823,8 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
     const again = new FolderRecords(root);
     expect(again.list().map((r) => r.launch)).toEqual([id]);
     expect(again.get(id)?.attachment?.pid).toBe(SHIM_PID);
-    // The plan's place and the folder resolved at dispatch, with its check, come back as written.
-    expect(again.get(id)?.plan.place).toEqual(PLAN.place);
+    // The plan's folder and the folder resolved at dispatch, with its check, come back as written.
+    expect(again.get(id)?.plan.folder).toEqual(PLAN.folder);
     expect(again.get(id)?.folder).toEqual(FOLDER);
     // exit.json is read only when it names its own launch.
     writeFileSync(
@@ -869,28 +869,21 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
     expect(again.list()).toEqual([]);
   });
 
-  test("a plan names a folder place of root ID and relative path, or none; never an absolute folder", () => {
-    expect(checkPlan({ ...PLAN, place: null })?.place).toBeNull();
-    expect(checkPlan({ ...PLAN, place: { root: "work", path: "" } })?.place).toEqual({
-      root: "work",
-      path: "",
-    });
-    for (const place of [
+  test("a plan names its folder as stored and as this machine opens it, or none", () => {
+    expect(checkPlan({ ...PLAN, folder: null })?.folder).toBeNull();
+    const windows = { stored: "~\\code\\portal", path: "C:\\Users\\mira\\code\\portal" };
+    expect(checkPlan({ ...PLAN, folder: windows })?.folder).toEqual(windows);
+    for (const folder of [
       undefined,
       "/home/mira/work/lumen/portal",
-      { root: "Work Root", path: "lumen" },
-      { root: "work", path: "../lumen" },
-      { root: "work", path: "/lumen" },
-      { root: "work", path: "lumen\\portal" },
-      { root: "work", path: "lumen", gitRemote: "has a space" },
-      { root: "work", path: "lumen", gitRemote: 7 },
+      { stored: "~/work/portal" },
+      { stored: "", path: "/home/mira/work/portal" },
+      { stored: "~/work/portal", path: "/home/mira/work\u0007portal" },
+      { stored: "~/work/portal", path: "/home/mira/work/portal", extra: true },
+      { root: "work", path: "lumen" },
     ]) {
-      expect(checkPlan({ ...PLAN, place }), JSON.stringify(place)).toBeUndefined();
+      expect(checkPlan({ ...PLAN, folder }), JSON.stringify(folder)).toBeUndefined();
     }
-    // The old shape, an absolute folder as `cwd`, is no plan.
-    const old: Record<string, unknown> = { ...PLAN, cwd: "/home/mira/work/lumen/portal" };
-    delete old["place"];
-    expect(checkPlan(old)).toBeUndefined();
   });
 
   test("a plan too large for a launch file is refused at the click; every plan taken is read back after a restart", async () => {

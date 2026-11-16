@@ -528,6 +528,55 @@ export async function resolvePlace(
 const sameRemote = (found: GitRemote, recorded: string): boolean =>
   found.status === "remote" && found.url === recorded;
 
+/** A folder a launch works in, resolved now: where it starts and what the shim checks there. */
+export type FolderResolution =
+  | {
+      readonly status: "ok";
+      /** The folder's real path, read in the same pass. */
+      readonly folder: string;
+      readonly identity: FolderIdentity;
+      readonly check: FolderCheck;
+    }
+  | { readonly status: "failed"; readonly reason: ResolveReason };
+
+/**
+ * The folder at the absolute path `given` on this machine, read once as `resolvePlace` reads a
+ * place: it must be there and be a directory with an identity, a link to one included. The check
+ * the shim runs in it is the directory's identity alone, so the folder has no root to stay under.
+ */
+export async function resolveFolder(
+  given: string,
+  options: PlaceOptions = {},
+): Promise<FolderResolution> {
+  const platform = options.platform ?? process.platform;
+  const failed = (reason: ResolveReason): FolderResolution => ({ status: "failed", reason });
+  const ready = absoluteFolder(given, platform);
+  if (!ready.ok) return failed("invalid_path");
+  let found: BigIntStats;
+  try {
+    found = await bigStat(ready.path);
+  } catch {
+    return failed(await missingReason(ready.path, pathOf(platform)));
+  }
+  if (!found.isDirectory()) return failed("not_a_directory");
+  const identity = identityOf(found);
+  if (identity === undefined) return failed("identity_unavailable");
+  let real: string;
+  try {
+    real = await realpath(ready.path);
+  } catch {
+    return failed("path_missing");
+  }
+  const dev = identity.dev.toString();
+  const ino = identity.ino.toString();
+  return {
+    status: "ok",
+    folder: real,
+    identity,
+    check: { dev, ino, rootDev: dev, rootIno: ino, depth: 0 },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // The check in the folder
 

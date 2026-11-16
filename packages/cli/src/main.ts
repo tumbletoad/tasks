@@ -123,7 +123,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       case "recover":
         return await spaceCommand(io, globals, ["recover", ...args], options);
       case "roots":
-        return await rootsCommand(io, globals, args, options);
+        return rootsCommand(io, globals, args);
       case "view":
         return await viewCommand(io, globals, args, options);
       case "import":
