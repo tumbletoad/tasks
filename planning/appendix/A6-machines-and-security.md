@@ -8,7 +8,7 @@ This appendix covers PLAN.md sections K and L. Examples use the fixture user Mir
 
 1. **v1 is local only.** One machine is the **authority** for each space. Nothing listens beyond loopback. Spaces move by export and import.
 2. **v1 carries every hook later phases need** (3.3), so they add features without a rewrite. Most of this appendix specifies those later phases (3.14): linked machines, the phone, the open sync protocol with a self-hostable relay, the paid hosted service, and teams. Offline editing on replicas is optional, last, and never assumed.
-3. **Authority and execution are separate.** The authority commits changes. The machine named in a task's place runs its sessions and runs. The relay never holds authority and never sees plaintext.
+3. **Authority and execution are separate.** The authority commits changes. The machine named in a task's folder (its own or its project's) runs its sessions and runs. The relay never holds authority and never sees plaintext.
 4. **Security protects against parties outside the user's intent** (3.15, 3.16). Tasks accepts the user's own full-access agents and says so once. Autonomy is a guard rail, not a sandbox.
 
 ## 2. Decisions
@@ -23,7 +23,7 @@ This appendix covers PLAN.md sections K and L. Examples use the fixture user Mir
 | K6 | Routes | Ordered per machine, relay last. A descriptor check comes before any credential (3.6.4). |
 | K7 | Replicas | Snapshot plus change feed keyed by `(epoch, incarnation, seq)`, in batches with coverage intervals, applied with the cursor in one transaction. Replicas live in a machine-local cache, never among the spaces (3.7). |
 | K8 | Offline writes | None in L1 to L5. Offline, a replica is view-only. Unsent text stays a local draft that the user sends by hand. |
-| K9 | Remote commands | Signed by the device, countersigned by the authority with the place it derived, expiring within 300 s, single-use, never retried or queued (3.8). |
+| K9 | Remote commands | Signed by the device, countersigned by the authority with the folder it derived, expiring within 300 s, single-use, never retried or queued (3.8). |
 | K10 | Presence | Several facts, not one flag. Open needs an unlocked desktop. Run needs a ready executor (3.8.5). |
 | K11 | Agents and remote actions | Remote launches come only from a human UI on a paired device. Agents can never launch, run, pair or grant, locally or remotely (R7). Agent task updates from a non-authority machine are forwarded online (3.7.4). |
 | K12 | Open protocol | `tasks-sync/1` under Apache-2.0, with a reference relay and mailbox `tasks-relay` in the same repository, generated from the operation registry (3.9). |
@@ -52,7 +52,7 @@ Each hook is cheap in v1 and prevents a rewrite later. The owner implements it. 
 | Committed sequence | One monotonic `seq` per space that continues across transfers. `as_of`, `base` and cursors carry `(epoch, incarnation, seq)` | A1 | Yes |
 | Applicable operation records | Each operation stores after-values and field versions for every field it touches, so a replica applies it without business logic | A1 | Yes, `[A1.5.write.coalesce]` |
 | Actor model | Principal, author, writer scope, `machine_id` and actor kind on every operation, from the credential, never from client JSON. No connection can present `import` | A1, A3 | Yes, `packages/contracts/src/define.ts` |
-| Machines and places | A `machines` table. A place is `(machine_id, root_id, relative_path)`. Absolute root paths live only in machine-local configuration | A1, A4 | Yes |
+| Machines and folders | A `machines` table. A folder is `(owner, machine_id, path)`, an absolute path with the home as `~`, which only its own machine expands (A1 3.15). Paths travel with the space | A1, A4 | Machines yes, folders with M4.09 (today: places of a root and a relative path) |
 | Receipts | A durable receipt per terminal result, keyed by writer scope and `request_id`, storing the epoch and incarnation it was committed in. Uniqueness leaves both out, so a retry across a local claim finds its receipt (A1 3.8) | A1 | Yes, `[A1.5.write.receipts]` |
 | Grants | One `grants` table in `service.sqlite` for every credential, from L1 also `device` (A2 3.2.5) | A2 | Yes, for `ui` and `agent_home`. `packages/service/src/local/grants.ts`. The grant gate reads the `agent_home` rows at every agent home's call (3.16.3) |
 | Registry metadata | Per operation: required scope (3.6.3), allowed actor kinds, a `remote` class (`never`, `read`, `write`, `execute`) and an audience filter | A3 | Yes, `packages/contracts/src/define.ts` |
@@ -61,7 +61,6 @@ Each hook is cheap in v1 and prevents a rewrite later. The owner implements it. 
 | Note audience | D14's field: `all`, later `owner` and `members` | A1 | Yes |
 | Machine keys | Ed25519 and X25519 key pairs and a host fingerprint, created at the first start (3.4) | A2 | No |
 | Copy detection | Read-only copies, stale-restore and competing-branch detection, claim, fork and transfer states (3.5) | A1, A2 | Partly: a restored copy opens read-only until claimed |
-| Portable fields | Structured place fields reject absolute paths and `..`. Free text may mention paths | A1 | Yes |
 | Presence fields | `desktop` (`unlocked`, `locked`, `none`, `unknown`) and executor readiness, reported locally for the UI first | A2, A4 | No |
 | Remote envelope types | In the registry's type package, exposed by no transport | A3 | Yes, types only: `packages/contracts/src/remote.ts`, named by no entry or generated face (`[A6.3.3.remote-envelope]`) |
 
@@ -163,7 +162,7 @@ Linking pairs a **device** with a **machine**. Pairing establishes trust in keys
 |---|---|
 | `space:read` | Snapshot, changes, search on the replica |
 | `space:write` | Task operations the registry allows for a human actor |
-| `machine:read` | Presence, instance list (IDs and labels only), run status, place check |
+| `machine:read` | Presence, instance list (IDs and labels only), run status, folder check |
 | `launch:open` | Remote Open and Open folder on a machine of the same principal |
 | `launch:run` | Remote Run, routine runs, run log tail |
 | `admin` | Pairing, revocation, policy. **Never granted to a remote device in L1 to L5.** Only the local UI holds it |
@@ -215,19 +214,19 @@ A desktop replica is `<cache>/replicas/<space_id>.sqlite` (A2's `<cache>`): neve
 #### 3.7.4 Writes from a replica
 
 - **Human writes** go as `command.submit {space_id, epoch, incarnation, request_id, operation, args, base}` and return the local results (A1 3.7). The UI may show pending for up to 10 seconds, then an error. It never commits optimistically. Concurrency is decided only by the authority's field versions.
-- **Agent writes.** When a task's place is on machine B and its authority is A, the agent uses B's bridge and service. B forwards task operations to A over its device session (flag `agent_relay: true`, machine devices only), with the agent's binding as actor and its ceiling, which A can only narrow. A applies autonomy (D13), the agent ceiling and the burst brake (3.16.3) to its own staged plan, as for a local agent. `execute`-class operations are never forwarded for agents. Request IDs are namespaced by writer scope before they leave B.
+- **Agent writes.** When a task's folder is on machine B and its authority is A, the agent uses B's bridge and service. B forwards task operations to A over its device session (flag `agent_relay: true`, machine devices only), with the agent's binding as actor and its ceiling, which A can only narrow. A applies autonomy (D13), the agent ceiling and the burst brake (3.16.3) to its own staged plan, as for a local agent. `execute`-class operations are never forwarded for agents. Request IDs are namespaced by writer scope before they leave B.
 - **Authority unreachable:** every write fails with `authority_unreachable`, which A3 maps to a clear tool error. Nothing is queued.
 - **Offline text** stays a local draft, marked unsent.
 
 #### 3.7.5 A machine as a pure client
 
-A machine may hold only replicas. It still runs its service for its own places, targets and runs, recorded in its execution journal (3.8.6), never in the replica.
+A machine may hold only replicas. It still runs its service for its own folders, targets and runs, recorded in its execution journal (3.8.6), never in the replica.
 
 ### 3.8 Remote commands (phase L1)
 
 #### 3.8.1 Envelope
 
-The origin device signs the **request** (what the user asked). The authority signs the **authorization**, binding it to its own epoch, incarnation and effective place. A client never chooses the folder.
+The origin device signs the **request** (what the user asked). The authority signs the **authorization**, binding it to its own epoch, incarnation and the folder row `resolve` gives for the target machine (A1 3.15). A client never chooses the folder.
 
 ```json
 {
@@ -241,8 +240,7 @@ The origin device signs the **request** (what the user asked). The authority sig
     "target_machine": "m_3q7k…",
     "action": "open",
     "task_id": "t_7h2m…",
-    "seen_place_version": 38,
-    "seen_root_rev": 4,
+    "seen_folder": { "kind": "project", "folder_id": "fo_…", "version": 38 },
     "instance_id": "claude-code",
     "user_text": "Check whether the mobile app has the same bug.",
     "issued_at": "2026-11-12T10:00:00Z",
@@ -254,7 +252,7 @@ The origin device signs the **request** (what the user asked). The authority sig
     "epoch": 3,
     "incarnation": "ai_…",
     "as_of_seq": 412,
-    "place": { "place_id": "pl_…", "machine_id": "m_3q7k…", "root_id": "work", "rel_path": "lumen/portal", "version": 38 },
+    "folder": { "folder_id": "fo_…", "kind": "project", "machine_id": "m_3q7k…", "path": "~/work/lumen/portal", "version": 38 },
     "authorized_at": "2026-11-12T10:00:01Z"
   },
   "authority_sig": "ed25519:…"
@@ -262,19 +260,19 @@ The origin device signs the **request** (what the user asked). The authority sig
 ```
 
 - `action`: `open` and `open_folder` expire after 60 s, `run` and `routine_run` after 120 s. Receivers reject any envelope valid for more than 300 s.
-- **Never** an executable, argv, environment, permission flag or absolute path (R10). The target resolves `root_id` and `instance_id` from its own configuration. The instance must be one the target advertises in `machine.instances`, with A4's `remote_allowed` (default false).
-- `seen_place_version` is the place version the device showed. `seen_root_rev` is A4's `root_rev` (A4 3.2) from the target's last `place.check`. The target raises it whenever a root's machine-local mapping changes. `root_rev` is built.
-- `authorization.place` comes from the authority's state, never from the request. Its `version` is the newer of the task's place-field version and the place record's (A1). A task without a place gets `{"kind": "work_folder", "machine_id": …}`, the target's work folder for the space (A4).
+- **Never** an executable, argv, environment or permission flag (R10). The target resolves `instance_id` from its own configuration and launches in its own folder: it expands the path's `~` with its own home. The instance must be one the target advertises in `machine.instances`, with A4's `remote_allowed` (default false).
+- `seen_folder` is the whole selection the device showed: `kind` (`task`, `project` or `work_folder`), and for a folder row its `folder_id` and `version`. A version alone is not enough, because clearing a task's own folder makes its project's older row the selection.
+- `authorization.folder` comes from the authority's state, never from the request: the folder row `resolve` gives for `target_machine`, its path and its version (A1 3.15). A task that uses the work folder gets `{"kind": "work_folder", "machine_id": …}`, the target's work folder for the space (A4).
 - `user_text` (at most 4,000 characters) goes to the brief as data, never through a shell (A4).
 - Signatures are Ed25519 over the RFC 8785 canonical JSON of the signed part. The authority checks the device grant and signs `authorization` with `request_hash`, the SHA-256 of the request's RFC 8785 canonical JSON. The target checks `authority_sig` against its pin and `request_hash` against the request, so the command stays verifiable along any path.
 
 #### 3.8.2 Flow
 
 1. The phone signs the request and sends it to the authority.
-2. The authority checks `origin_sig`, a `launch:open` or `launch:run` grant for the space, that the target belongs to the same principal, and that the task exists and is not deleted. It derives the place. A place on another machine than `target_machine`, or a place version newer than `seen_place_version`, gives `place_changed`, and the phone shows the new place for a new command. Other task fields do not matter. It records `remote_launch.requested` with the authorization in history and countersigns.
+2. The authority checks `origin_sig`, a `launch:open` or `launch:run` grant for the space, that the target belongs to the same principal, and that the task exists and is not deleted. It derives the folder. A folder on another machine than `target_machine`, or a selection whose kind, row or version differs from `seen_folder`, gives `folder_changed`, and the phone shows the new folder for a new command. Other task fields do not matter. It records `remote_launch.requested` with the authorization in history and countersigns.
 3. It continues locally if it is the target, else forwards over its session with the target.
-4. The target validates (3.8.3), then in **one transaction** on its execution store inserts the replay row and A4's launch intent. The resolved folder and its file identity (device and inode, or the Windows file ID) go to machine state, never to a space (A4).
-5. **Immediately before dispatch** it resolves the place again and requires the same folder and file identity, the same root revision, the instance still allowed and presence still sufficient. A mismatch fails the intent (`place_changed`, `denied_by_policy`, `desktop_locked`, `executor_unavailable`) and nothing starts. Otherwise it commits Dispatching and dispatches (A4 3.9.1).
+4. The target validates (3.8.3), then in **one transaction** on its execution store inserts the replay row and A4's launch intent. The folder's file identity at that moment (device and inode, or the Windows file ID) goes to machine state, for the check before dispatch.
+5. **Immediately before dispatch** it runs A4's launch check again and requires the same file identity, the instance still allowed and presence still sufficient. A mismatch fails the intent (`folder_changed`, `denied_by_policy`, `desktop_locked`, `executor_unavailable`) and nothing starts. Otherwise it commits Dispatching and dispatches (A4 3.9.1).
 6. The target returns a receipt and publishes the transitions (3.8.6). The authority records `remote_launch.receipt` and relays it.
 
 #### 3.8.3 Target validation, in order
@@ -285,11 +283,10 @@ The origin device signs the **request** (what the user asked). The authority sig
 | `command_id` not in the replay table | The **stored receipt**, even after expiry. Same ID, different payload hash: `request_reused` |
 | `authority_sig` valid, `request_hash` matches, `epoch` and `incarnation` equal the target's known values | `epoch_mismatch` |
 | `issued_at - 30 s <= now <= expires_at + 30 s`, validity at most 300 s | `expired` or `clock_skew` |
-| `target_machine` and `authorization.place.machine_id` are this machine | `wrong_machine` |
+| `target_machine` and `authorization.folder.machine_id` are this machine | `wrong_machine` |
 | `remote.launch_from_remote`, instance `remote_allowed`, managed policy | `denied_by_policy` |
 | `open` needs `desktop = unlocked`, `run` needs `executor = ready` | `desktop_locked`, `no_desktop`, `executor_unavailable` |
-| `seen_root_rev` is the root's current revision | `place_changed` |
-| The place resolves exactly (R11). Repository identity never routes work | `place_unresolved` |
+| The folder passes A4's launch check (it exists and is a directory, A4 3.3). Repository identity never routes work | `folder_missing` |
 
 The replay table `remote_commands(command_id PK, payload_hash, received_at, receipt_json)` is in the target's execution store. Rows stay 24 hours after expiry, so a restart never reopens a replay window.
 
@@ -321,7 +318,7 @@ A receipt carries A4's outcome (`dispatched`, `confirmed`, `failed`, `unknown`) 
 - A Linux user service started at boot through lingering reports `service: true, desktop: none` until login. View and edit work then. Open does not.
 - A remote command never starts a service or wakes a machine, and is never held until one wakes. An unreachable machine is shown as offline.
 
-**Remote reads** are only `machine.presence`, `machine.instances`, `place.check` (resolves or not, and the root's revision), `run.status` and `run.log_tail` (at most 64 KiB, needs `launch:run`). No file browsing, no shell.
+**Remote reads** are only `machine.presence`, `machine.instances`, `folder.check` (whether a folder passes the launch check there), `run.status` and `run.log_tail` (at most 64 KiB, needs `launch:run`). No file browsing, no shell.
 
 **Phone guidance.** Remote Open puts a window on that machine's screen, so the phone offers Run first and "Open on mira-desktop" second. For T3 Code targets, T3's mobile app can follow the opened thread.
 
@@ -373,7 +370,7 @@ To be published as `docs/protocol/tasks-sync-1.md` with JSON Schemas generated f
 | `remote.execute` | device to authority to target | 3.8 |
 | `exec.observe`, `exec.snapshot` | execution machine to authority | 3.8.6 |
 | `receipt.get` | any | Result for a `request_id` or `command_id` |
-| `machine.presence`, `machine.instances`, `place.check`, `run.status`, `run.log_tail` | device to machine | Remote reads |
+| `machine.presence`, `machine.instances`, `folder.check`, `run.status`, `run.log_tail` | device to machine | Remote reads |
 | `handover` | authority to devices | Signed authority change |
 | `mailbox.put`, `mailbox.get` | authority or device to relay | Encrypted blobs (L3) |
 | `push.register`, `push.send` | device or authority to relay | Encrypted push (L4) |
@@ -436,7 +433,7 @@ To be published as `docs/protocol/tasks-sync-1.md` with JSON Schemas generated f
 |---|---|
 | Account email, passkey public keys, billing customer ID and plan | Task titles, summaries, context, notes, logs, sources |
 | IP addresses and connection times | Space, area, project and machine names |
-| Opaque device, machine and space IDs, and which device belongs to which account | Paths, places, instance labels |
+| Opaque device, machine and space IDs, and which device belongs to which account | Paths, folders, instance labels |
 | Blob sizes and upload timing, which reveal activity patterns | Search queries and results |
 | Push tokens, platform, notification timing | Notification text |
 | Whether machines are connected | Presence details |
@@ -477,7 +474,7 @@ Deleting a space removes its blobs within 24 hours and its backups within 30 day
 
 #### 3.11.6 Authority hosts
 
-An authority host is a Tasks service started with `--headless` on a NAS, VPS or home server, with no launch targets and no UI except to paired devices. Moving a space's authority there (an online transfer) makes it editable from the phone with the PC off, while the PC stays the execution host for its places. It is the free answer beyond view-only, and how teams work.
+An authority host is a Tasks service started with `--headless` on a NAS, VPS or home server, with no launch targets and no UI except to paired devices. Moving a space's authority there (an online transfer) makes it editable from the phone with the PC off, while the PC stays the execution host for its folders. It is the free answer beyond view-only, and how teams work.
 
 #### 3.11.7 Gate before the paid launch
 
@@ -495,7 +492,7 @@ Before the hosted service takes money: a published threat model, an independent 
 
 **Rules:**
 - A member launches only on their own machines. The authority rejects others (`not_your_machine`), and so does the target.
-- A place belongs to one member's machine. Others see where the task lives with folder actions disabled. Mapping a place to one's own checkout is a later per-member binding.
+- A folder belongs to one member's machine. Others see where the task lives with folder actions disabled. Adding a folder for one's own checkout is a folder row of one's own machine, a later per-member choice.
 - Other members' text is untrusted input for your agents and carries their member label (3.16.2).
 - Removing a member stops delivery, revokes their devices' grants and rotates the stream keys they could read. Their cached copy cannot be recalled. The invite and remove screens say so.
 - Invitations work like pairing: a one-time secret creates a member principal and pairs their first device.
@@ -547,7 +544,7 @@ Assets: space content (client names, people, links, private plans), the ability 
 | T4 | Prompt injection through task, note, source or imported text | Partly | 3.16.2 (A3) | Agents may still be steered by what they read. Tasks limits what that text can make Tasks do |
 | T5 | Agents with full OS access | No, by choice | History and undo for changes through Tasks, outside-write detection (3.16.3), backups | Such an agent can do anything the user can |
 | T6 | An agent using Tasks beyond its role | Yes | R7 in the registry, autonomy, credential-derived actors. Agents cannot change policy, grants, instances, routines, pairing, export, imports or updates. User-only operations need the user's UI or an interactive CLI (A2 3.6.5), also when an agent does operator work for the user. The burst brake (3.16.3) (A3) | Under Full, ordinary task changes apply at once and are undone afterwards. An agent with a shell can reach any space through the CLI as `agent:unknown`, which the grant gate does not cover (3.16.3) |
-| T7 | A space or bundle plants commands, links or paths | Yes | No executable definitions in space data (R10). Arriving instance or routine definitions stay disabled until approved per machine, pinned by content hash. Import rejects absolute paths, `..`, links and archives beyond A1's `BundlePolicy` limits (zip bombs). Links only navigate (A1, A4). Task text reaches an agent only through the brief's fences, and never through a terminal's argv or a shell string (3.16.2) | |
+| T7 | A space or bundle plants commands, links or paths | Partly | No executable definitions in space data (R10). Arriving instance or routine definitions stay disabled until approved per machine, pinned by content hash. Import rejects archive entries with absolute paths, `..` or links, and archives beyond A1's `BundlePolicy` limits (zip bombs). Links only navigate (A1, A4). Task text reaches an agent only through the brief's fences, and never through a terminal's argv or a shell string (3.16.2) | Folders are absolute paths that travel with the space (A1 3.15). A bundle crafted to name this machine could carry a folder row for any folder here, and Tasks uses whatever folder is at a path, as T3 Code does. A person who restores a bundle from someone else should look at its project folders first |
 | T8 | A stolen or lost device | Partly | Revocation, inactivity expiry, biometric lock and keystore on native apps | Data at rest relies on OS disk encryption (3.16.6) |
 | T9 | A network attacker on LAN or Wi-Fi | Yes | Noise on every route, descriptor and pin checks before sending, no discovery broadcast | Traffic timing and volume |
 | T10 | A compromised or curious relay | Content: yes | End-to-end encryption, the signed and hash-chained mailbox with checkpoints and high-water marks, no relay authority, published metadata (3.11) | Metadata, denial of service, withholding from a device without a freshness witness |
@@ -577,7 +574,7 @@ Code: the UI listener in `packages/service/src/http/`, the socket and pipe in `p
 6. `tasks://` links only navigate. They never change data or launch.
 7. The service refuses to run as root or as an elevated Administrator, because agents would inherit those rights.
 8. v1 opens no other listener, except T3 pairing's OAuth callback on 127.0.0.1 for one attempt at a time (`packages/launch/src/t3-oauth.ts`). The L1 remote listener is separate and off by default.
-9. The UI runs under a strict CSP: no inline scripts, no remote origins, no `unsafe-inline`, `worker-src 'none'`, no `wasm-unsafe-eval` in v1, runtime styles only through the per-response nonce. Every script and stylesheet carries its SRI hash, and the service refuses to serve a UI folder that breaks this, so the rule holds for what is served, not only for what was built (`packages/service/src/http/page.ts`, `[A7.3.9.m2-13.web.build]`, `[A2.3.8.http.csp]`). The page builds to one script because a lazy chunk would load without integrity: a lazy chunk needs its own integrity path (A5), and the served-folder check must cover it. Markdown renders without raw HTML and without remote images by default. Clickable links only for `https`, `http`, `mailto` and the app schemes of configured targets. `file:` links show as text with a Reveal action through place resolution (A5).
+9. The UI runs under a strict CSP: no inline scripts, no remote origins, no `unsafe-inline`, `worker-src 'none'`, no `wasm-unsafe-eval` in v1, runtime styles only through the per-response nonce. Every script and stylesheet carries its SRI hash, and the service refuses to serve a UI folder that breaks this, so the rule holds for what is served, not only for what was built (`packages/service/src/http/page.ts`, `[A7.3.9.m2-13.web.build]`, `[A2.3.8.http.csp]`). The page builds to one script because a lazy chunk would load without integrity: a lazy chunk needs its own integrity path (A5), and the served-folder check must cover it. Markdown renders without raw HTML and without remote images by default. Clickable links only for `https`, `http`, `mailto` and the app schemes of configured targets. `file:` links show as text with a Reveal action through `folder.reveal` (A5).
 10. **Another local app is trusted only on loopback.** T3's OAuth token and every pairing secret go only to loopback endpoints, and T3's runtime file must be this user's and writable by no one else. `packages/launch/src/t3-oauth.ts`, `t3-client.ts`, `[A4.3.4.1.t3.pairing]`, `[A4.3.4.1.t3.client]`.
 
 #### 3.16.2 Prompt injection (A3 frames it)
@@ -692,7 +689,7 @@ Read at start. The service refuses to start, naming the source and the problem, 
 - **Network calls.** The only unprompted call is one daily update check sending only the version, which `updates.check = false` turns off (A2 3.2.4). No other call until the user configures a route or relay.
 - **No remote fonts, images or scripts** in the UI. Source favicons and avatars are not fetched.
 - **Logs** hold no task text, prompts, briefs, tokens or source URLs, by construction: events from a fixed catalogue with fields from closed lists (`packages/service/src/hub/log.ts`).
-- **Diagnostics bundle** (`tasks doctor --bundle`) redacts task text, prompts, source URLs, home paths and tokens, and previews before writing.
+- **Diagnostics bundle** (`tasks doctor --bundle`) redacts task text, prompts, source URLs, home paths and tokens, and previews before writing: it is made to be shared with other people, in an issue report. Everything the person sees themselves (messages, the digest, the page) may name a folder (A1 3.15).
 - **Notifications** show no task content on the lock screen by default.
 - **Fixtures, demos and issue reports** use invented data only.
 
@@ -726,7 +723,7 @@ secret_scan = "warn"           # warn | block
 **Unit tests:**
 - Envelope validation: every 3.8.3 row, with boundary times at ±30 s and a validity of 301 s.
 - Signatures over RFC 8785 JSON with reordered fields and changed whitespace. A request whose hash does not match the authorization is rejected.
-- Place binding: a place changed after `seen_place_version` gives `place_changed`. A client's own place or path is ignored. A root remapped between the check and dispatch gives `place_changed`, and nothing starts.
+- Folder binding: a selection that differs from `seen_folder` in kind, row or version gives `folder_changed`, the clear of a task's own folder that leaves its project's included. A client's own folder or path is ignored. A folder replaced between the target's check and dispatch gives `folder_changed`, and nothing starts.
 - Lineage classification: same, ancestor, descendant and competing pairs, including two claims at the same and at different epochs.
 - Transfer binding: a bundle imported on another machine, or twice on its destination, opens as `read_only_copy`.
 - Feed coverage: duplicate, overlapping, empty and gapped batches.
