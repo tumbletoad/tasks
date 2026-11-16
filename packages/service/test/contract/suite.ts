@@ -257,7 +257,8 @@ const LATER: Readonly<Record<string, Later>> = {
     owner: "the step that makes Open use folders",
     why: "the brief's folder line names the task's place, and the world's tasks have folders",
     now: { result: "schema" },
-  },  "space.status 1": {
+  },
+  "space.status 1": {
     owner: "M6 (routines)",
     why: "a routine's session",
     now: { result: "schema" },

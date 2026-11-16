@@ -356,13 +356,19 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     );
     const folderOf = async () =>
       ((await call("task.get", { task: ref }))["task"] as Json)["folder"] as Json | undefined;
-    expect(await folderOf()).toEqual({ path: expect.stringMatching(/portal$/u) as unknown, of: "project" });
+    expect(await folderOf()).toEqual({
+      path: expect.stringMatching(/portal$/u) as unknown,
+      of: "project",
+    });
     await call(
       "task.update",
       { task: ref, set: { folder: api }, base: await asOf(), request_id: rid() },
       USER,
     );
-    expect(await folderOf()).toEqual({ path: expect.stringMatching(/api$/u) as unknown, of: "task" });
+    expect(await folderOf()).toEqual({
+      path: expect.stringMatching(/api$/u) as unknown,
+      of: "task",
+    });
     // A folder is text someone gave: in the text it stands inside the data block (A3 3.10).
     const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
     const text = (await mcp("get_task", { task: ref })).content[0].text;

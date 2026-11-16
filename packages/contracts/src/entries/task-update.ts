@@ -25,7 +25,15 @@ import {
 } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
-const CLEARABLE = ["summary", "priority", "effort", "due", "waiting_on", "folder", "focus"] as const;
+const CLEARABLE = [
+  "summary",
+  "priority",
+  "effort",
+  "due",
+  "waiting_on",
+  "folder",
+  "focus",
+] as const;
 
 export const TaskUpdateInput = z.strictObject({
   task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),

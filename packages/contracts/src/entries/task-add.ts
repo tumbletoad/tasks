@@ -70,7 +70,7 @@ export const taskAdd = defineEntry({
       tool: "add_tasks",
       title: "Add tasks",
       description:
-        'Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source\'s item its key (jira:KEY); a match answers exists. folder "cwd" files a task in your folder\'s project; with no area or project it goes to the Inbox.',
+        "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists. folder \"cwd\" files a task in your folder's project; with no area or project it goes to the Inbox.",
     },
   },
   // A3 3.2.5: 25 drafts' lines at their longest fit whole, with the counts.
