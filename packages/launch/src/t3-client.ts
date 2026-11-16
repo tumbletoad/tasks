@@ -12,6 +12,7 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 import { PRODUCT_ID } from "@tasks/brand";
+import { currentPerson, groupMayWrite } from "@tasks/files/person";
 
 /** How long one HTTP request to T3 may take, answer included. */
 export const T3_REQUEST_MS = 10_000;
@@ -99,12 +100,21 @@ export type T3Origin =
 /** Opens a file for reading without following a link at its path (POSIX). */
 const READ_NO_LINK = constants.O_RDONLY | ((constants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0);
 
-/** Whether facts of T3's folder or file fail the rule: a link, another owner, write for others. */
-const unsafe = (info: { isSymbolicLink(): boolean; uid: number; mode: number }): boolean => {
-  const uid = process.getuid?.();
-  return (
-    info.isSymbolicLink() || (uid !== undefined && info.uid !== uid) || (info.mode & 0o022) !== 0
-  );
+/**
+ * Whether facts of T3's folder or file fail the rule of A2 3.2.2 rule 5: a link, another owner,
+ * write for every user, or write for a group other than the person's own private group (which T3
+ * gives what it makes under umask 002).
+ */
+const unsafe = (info: {
+  isSymbolicLink(): boolean;
+  uid: number;
+  gid: number;
+  mode: number;
+}): boolean => {
+  if (info.isSymbolicLink() || (info.mode & 0o002) !== 0) return true;
+  const person = currentPerson();
+  if (person !== undefined && info.uid !== person.uid) return true;
+  return (info.mode & 0o020) !== 0 && (person === undefined || !groupMayWrite(info.gid, person));
 };
 
 /**

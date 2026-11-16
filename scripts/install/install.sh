@@ -17,7 +17,8 @@
 #                      later). Each accepts only a signature by a key pinned below.
 #
 # What it needs, all part of a usual Linux: a POSIX sh, uname, getconf, id, mkdir, mktemp, cp, mv
-# (GNU, for -T), rm, rmdir, cat, wc, cut, tail, tr, sed, awk, grep, find, cmp, readlink, flock
+# (GNU, for -T), rm, rmdir, cat, wc, cut, tail, tr, sed, awk, grep, find (GNU, for -printf), sort,
+# timeout, cmp, readlink, flock
 # (util-linux), sha256sum, base64, gzip and tar; and ssh-keygen or openssl. Each is checked first, with a message naming what is
 # missing.
 #
@@ -35,7 +36,7 @@
 # builtin (bash, which is sh on some systems, imports them even in POSIX mode), and no option or
 # loader variable may change what GNU tar, gzip, grep or OpenSSL read and write, or what cd prints.
 unset -f printf command cd pwd read test [ echo umask readlink uname getconf id mkdir mktemp cp \
-  mv rm rmdir cat wc cut tail tr sed awk grep find cmp flock sha256sum base64 gzip tar ssh \
+  mv rm rmdir cat wc cut tail tr sed awk grep find sort timeout cmp flock sha256sum base64 gzip tar ssh \
   ssh-keygen openssl 2> /dev/null || true
 unset TAR_OPTIONS GZIP GREP_OPTIONS GREP_COLOR GREP_COLORS POSIXLY_CORRECT CDPATH ENV BASH_ENV \
   OPENSSL_CONF OPENSSL_CONF_INCLUDE OPENSSL_MODULES OPENSSL_ENGINES 2> /dev/null || true
@@ -180,7 +181,7 @@ IFS=$saved_ifs
 [ "$keys" -ge 1 ] && [ "$keys" -le 2 ] || fail 'This install script pins no release key. Nothing was installed.'
 
 # ---- The machine -------------------------------------------------------------------------------
-need uname getconf id mkdir mktemp cp mv rm rmdir cat wc cut tail tr sed awk grep find cmp \
+need uname getconf id mkdir mktemp cp mv rm rmdir cat wc cut tail tr sed awk grep find sort timeout cmp \
   readlink flock sha256sum base64 gzip tar
 [ "$(uname -s)" = Linux ] || fail 'This installer is for Linux.'
 case $(uname -m) in
@@ -219,29 +220,119 @@ too_long "$root" &&
   fail "The install root is $length bytes long. At most $MAX_ROOT are allowed, so every path the launchers use below it stays short enough."
 
 # Safe for code (A2 3.2.2 rule 5, A2 3.12.4): nothing from the archive may run from, or write
-# to, a folder that another user can change. The root and the folders the install uses in it
-# (versions, bin, state, config, cache) must be this user's plain folders, writable by no one else;
-# every folder above the root must belong to this user or to root and be writable by no one else,
-# unless it is sticky (/tmp), where nobody can rename or remove what another user made. A version
-# folder that is already there is checked whole before it is used (step 5).
+# to, a folder that someone else can change. The root and the folders the install uses in it
+# (versions, bin with the stable command, state, config, cache) must be this user's plain folders;
+# every folder above the root must belong to this user or to root, because an account that can
+# change one could rename the root away after the checks. Neither every user nor a group may write
+# any of them, with two exceptions: the person's own private group (umask 002 under user private
+# groups), and a sticky folder above the root (/tmp), where nobody can rename or remove what
+# another user made. A version folder that is already there is checked whole before it is used
+# (step 5). The service holds the same rule (packages/service/src/hub/permissions.ts), and one
+# table of cases runs through both (packages/service/test/group-rule.test.ts).
+
+# rule: begin
+# own_group <user name> <primary group ID> <primary group's name>: the ID of the person's own
+# private group, the one group that may write what the install uses: the primary group, when its
+# name is the user's name. Nothing when the names differ or cannot be read.
+own_group() {
+  if [ -n "$1" ] && [ "$1" = "$3" ]; then printf '%s' "$2"; fi
+}
+# judge <whose> <owner UID> <group ID> <mode in octal>: what lets someone else change a folder with
+# these facts, and the chmod that takes it away: "other_owner -", "world_writable o-w" (go-w when a
+# group that is not the person's may write too) or "group_writable g-w"; nothing when no one else
+# can. <whose> is `mine`, a folder the install uses, which must be this user's, or `above`, a folder
+# above the root, which may be root's too and may be open to all when it is sticky. Reads $me and
+# $own_gid.
+judge() {
+  if [ "$2" != "$me" ] && { [ "$1" != above ] || [ "$2" != 0 ]; }; then
+    echo 'other_owner -'
+    return 0
+  fi
+  bits=$((0$4))
+  [ "$1" != above ] || [ $((bits & 01000)) -eq 0 ] || return 0
+  group=''
+  if [ $((bits & 020)) -ne 0 ] && [ "$3" != "$own_gid" ]; then group=g; fi
+  if [ $((bits & 02)) -ne 0 ]; then
+    echo "world_writable ${group}o-w"
+  elif [ -n "$group" ]; then
+    echo 'group_writable g-w'
+  fi
+  return 0
+}
+# rule: end
+
 me=$(id -u)
-unsafe_root() {
-  [ -z "$(find "$1" -prune ! -user "$me" -print)" ] || return 0
-  [ -z "$(find "$1" -prune -perm -0002 -print)" ] || return 0
-  [ -z "$(find "$1" -prune -perm -0020 -print)" ] || return 0
-  return 1
+# read_own_group: sets own_gid (own_group) once, and only when a folder's group may write it. The
+# person's private group is their account's primary group, asked by their user name: not this
+# shell's group, which newgrp or sg changes for a while. Each question may go to a directory
+# service, so each gets 5 s; one that fails leaves no group of the person's own.
+own_gid=''
+own_read=''
+read_own_group() {
+  [ -z "$own_read" ] || return 0
+  own_read=1
+  user_name=$(timeout -k 1 5 id -un 2> /dev/null) || user_name=''
+  [ -n "$user_name" ] || return 0
+  primary_gid=$(timeout -k 1 5 id -g -- "$user_name" 2> /dev/null) || primary_gid=''
+  case $primary_gid in '' | *[!0-9]*) return 0 ;; esac
+  primary_name=$(timeout -k 1 5 id -gn -- "$user_name" 2> /dev/null) || primary_name=''
+  own_gid=$(own_group "$user_name" "$primary_gid" "$primary_name")
 }
-unsafe_above() {
-  [ -z "$(find "$1" -prune ! -user "$me" ! -user 0 -print)" ] || return 0
-  [ -z "$(find "$1" -prune \( -perm -0002 -o -perm -0020 \) ! -perm -1000 -print)" ] || return 0
-  return 1
+
+# A path as a person pastes it into a shell: as it is when it holds only plain characters, else in
+# single quotes. A root holds no line break, so neither does a folder on its way.
+pasted() {
+  case $1 in
+    *[!A-Za-z0-9_./+-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    *) printf '%s' "$1" ;;
+  esac
 }
+
+# check_folder <path> <whose> <what>: fails when someone else could change the folder, naming it
+# (<what> says which folder it is), its group, and the one command that fixes it. Only the folder's
+# owner can run that command, so a folder of root's above the root gets none.
+check_folder() {
+  facts=$(find "$1" -prune -printf '%U %G %m\n' 2> /dev/null) || facts=''
+  case $facts in
+    '' | *[!0-9' ']*) fail "Cannot look at $1, $3. Nothing was installed." ;;
+  esac
+  owner=${facts%% *}
+  rest=${facts#* }
+  gid=${rest%% *}
+  [ $((0${rest#* } & 020)) -eq 0 ] || read_own_group
+  verdict=$(judge "$2" "$owner" "$gid" "${rest#* }")
+  [ -n "$verdict" ] || return 0
+  if [ "$owner" = "$me" ]; then
+    fix="To fix it, run: chmod ${verdict#* } $(pasted "$1")"
+  else
+    fix='Choose an install root among your own folders.'
+  fi
+  case ${verdict%% *} in
+    other_owner) fail "$1, $3, belongs to another user, so nothing was installed. $fix" ;;
+    world_writable) fail "Every user on this computer can change $1, $3, so nothing was installed. $fix" ;;
+    *)
+      name=$(timeout -k 1 5 find "$1" -prune -printf '%g\n' 2> /dev/null) || name=''
+      case $name in '' | *[!0-9]*) ;; *) name='' ;; esac
+      fail "The members of the group ${name:-with ID $gid} can change $1, $3, not only you, so nothing was installed. $fix"
+      ;;
+  esac
+}
+
+# tree_unsafe <folder>: what lets someone else change a file or folder in it, by the rule (a link
+# in it has every bit, so it counts too); nothing when no one else can.
+tree_unsafe() {
+  [ -z "$(find "$1" -perm -0020 -print -quit)" ] || read_own_group
+  find "$1" -printf '%U %G %m\n' | sort -u | while read -r owner gid mode; do
+    judge mine "$owner" "$gid" "$mode"
+  done
+}
+
 check_safe() {
-  unsafe_root "$1" && fail "Another user can change the install root $1. Use a folder that is yours alone (chmod 700)."
+  check_folder "$1" mine 'the install root'
   for inner in "$1/versions" "$1/bin" "$1/state" "$1/config" "$1/cache"; do
     if [ -e "$inner" ] || [ -L "$inner" ]; then
       [ -d "$inner" ] && [ ! -L "$inner" ] || fail "$inner is not a plain folder. Nothing was installed."
-      unsafe_root "$inner" && fail "Another user can change $inner. Make it yours alone (chmod 700)."
+      check_folder "$inner" mine 'a folder the install uses'
     fi
   done
   # What the new version writes while it installs, deeper down: the candidate's checks in
@@ -260,7 +351,7 @@ check_safe() {
   above=${1%/*}
   while :; do
     [ -n "$above" ] || above=/
-    unsafe_above "$above" && fail "Another user can change $above, a folder above the install root. Choose a root inside your own folders."
+    check_folder "$above" above 'a folder above the install root'
     [ "$above" != / ] || break
     above=${above%/*}
   done
@@ -451,7 +542,7 @@ if [ -e "$target" ] || [ -L "$target" ]; then
   # checked against that. Otherwise it is left as it is: a running Tasks may use it.
   if [ -L "$target" ] || [ ! -d "$target" ]; then
     problem='it is a link or not a folder'
-  elif [ -n "$(find "$target" \( ! -user "$me" -o -perm -0002 -o -perm -0020 \) -print)" ]; then
+  elif [ -n "$(tree_unsafe "$target")" ]; then
     problem='another user can change something in it'
   elif ! cmp -s "$staging/manifest.json" "$target/manifest.json" 2> /dev/null; then
     problem='its manifest.json is not the signed one'

@@ -178,22 +178,10 @@ const pause = (ms: number) =>
 
 /** The service control of the service install's context: systemd, tasksw.exe, launchd or none. */
 export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl {
+  // A service started by hand on Linux, where no unit of this install is installed, is started
+  // by hand again: `tasks service start` does that itself (A2 3.3.3).
   const start = async (): Promise<void> => {
-    try {
-      await startService(ctx);
-    } catch (error) {
-      // A service started by hand on Linux, where a user manager runs but no unit of this install
-      // is installed: started again by hand, as `tasks service start` does without a manager.
-      if (
-        ctx.platform === "linux" &&
-        error instanceof ServiceCommandError &&
-        error.code === "not_installed"
-      ) {
-        ctx.startDetached(ctx.program, ["serve"]);
-        return;
-      }
-      throw error;
-    }
+    await startService(ctx);
   };
   return {
     running: async () => {
