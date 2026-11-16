@@ -294,11 +294,15 @@ export class Supervisor {
       const seen = this.#rounds;
       const run = await lane.machine.read(id);
       if (run === undefined || FINAL.has(run.state) || this.#closed) return run;
-      if (lane.host.hosted().includes(id) || run.state !== "queued") return lane.host.ended(id);
+      if (lane.host.hosted().includes(id)) return lane.host.ended(id);
       if (this.#rounds !== seen) continue;
-      await new Promise<void>((resolve) => {
+      // A queued run waits for the round that starts or refuses it; one left `starting` with
+      // nothing behind it is settled by the next round, asked for now.
+      const next = new Promise<void>((resolve) => {
         this.#roundEnded.push(resolve);
       });
+      if (run.state !== "queued") void this.round();
+      await next;
     }
   }
 

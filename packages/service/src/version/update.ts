@@ -711,9 +711,13 @@ async function waitForRuns(options: UpdateOptions): Promise<RunsHold | undefined
       await Promise.race([hold.changed(), pause(Math.max(1, Math.min(5_000, end - Date.now())))]);
       blocking = hold.blocking();
     }
-    // A service that stopped meanwhile took its runs with it: nothing is left to wait for.
-    if (blocking.length === 0 || !hold.held) {
+    if (blocking.length === 0) {
       say(options, "The runs finished.");
+      return hold;
+    }
+    // A service that stopped meanwhile took its runs with it: nothing is left to wait for.
+    if (!hold.held) {
+      say(options, "The service stopped meanwhile, and its runs with it.");
       return hold;
     }
     if ((await runs.decide(blocking)) === "give_up") {
@@ -831,7 +835,10 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
       // Run turned off for a line only a reinstall would have added. Not a reason to stop the
       // update: `service status` and doctor say what is missing.
       if (await control.delegateUnit?.().catch(() => false)) {
-        say(options, "The service's systemd unit now has Delegate=yes, which background runs need.");
+        say(
+          options,
+          "The service's systemd unit now has Delegate=yes, which background runs need.",
+        );
       }
       write({ ...run.journal, phase: "restarted" });
       restarted = true;
