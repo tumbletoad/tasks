@@ -165,7 +165,7 @@ export async function startWorld(
       install,
       tasks,
       close: async () => {
-        reportEarlyExit(service, home);
+        await reportLostService(service, home, path);
         try {
           for (const child of children) child.kill("SIGKILL");
           if (install === undefined) service.send("stop");
@@ -202,20 +202,32 @@ export async function startWorld(
 }
 
 /**
- * A service that ended before its test stopped it fails the commands after it with an error that
- * says nothing about why: its exit, its stderr, the end of its log and its crash files go to this
- * test's stderr, so the failure carries its cause.
+ * A service that ended, or stopped answering, before its test stopped it fails the commands after
+ * it with an error that says nothing about why: its state, its stderr, the end of its log and its
+ * crash files go to this test's stderr, so the failure carries its cause.
  */
-function reportEarlyExit(service: Proc, home: string): void {
+async function reportLostService(service: Proc, home: string, path: string): Promise<void> {
   const { exitCode, signalCode } = service.child;
-  if (exitCode === null && signalCode === null) return;
+  const running = exitCode === null && signalCode === null;
+  const answers =
+    running &&
+    (await openSession(home, path, 10_000).then(
+      (session) => {
+        session.close();
+        return true;
+      },
+      () => false,
+    ));
+  if (answers) return;
   const files = diagnostics(home).map(({ file, text }) => {
     const lines = text.split("\n");
-    return `--- ${file} ---\n${lines.slice(-60).join("\n")}`;
+    return `--- ${file} ---\n${lines.slice(-80).join("\n")}`;
   });
   process.stderr.write(
     [
-      `The service ended before its test stopped it: exit ${String(exitCode)}, signal ${String(signalCode)}`,
+      running
+        ? `The service stopped answering before its test stopped it: service.json says ${String(readServiceJson(home)?.state)}`
+        : `The service ended before its test stopped it: exit ${String(exitCode)}, signal ${String(signalCode)}`,
       `--- its stderr ---\n${service.stderr()}`,
       ...files,
       "",
