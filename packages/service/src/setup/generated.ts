@@ -1,8 +1,10 @@
-// A3 3.12 rule 2: whether a file's first lines carry a generator's notice, a statement that the
-// file ITSELF is generated or managed by another tool. Only such a notice counts. A person's own
+// Rule 2 of setup's managed-file check: whether a file's first lines carry a generator's notice,
+// a statement that the file ITSELF is generated or managed by another tool. Only such a notice counts. A person's own
 // rule that mentions generated files, editing or "this file" is not one, because refusing a
 // person's own file is the frustration this rule must not cause in ordinary use. The check is a
-// best-effort reading of free text, and it errs both ways (A3 3.12 says what each error costs).
+// best-effort reading of free text, and it errs both ways. Both errors are cheap: a person's own
+// file refused by mistake costs one paste, because the refusal names the line and print-block; a
+// generated file that is missed loses the block at its tool's next run, which doctor reports.
 // The table in `generated.test.ts` is the rule: every alternative below has a row only it matches.
 //
 // The rule, in full:
@@ -213,6 +215,6 @@ function markdownNotice(text: string): number | undefined {
 export const generatorNotice = (text: string, format: "toml" | "markdown"): number | undefined =>
   format === "toml" ? tomlNotice(text) : markdownNotice(text);
 
-/** Whether the file carries a generator's notice (A3 3.12 rule 2). */
+/** Whether the file carries a generator's notice. */
 export const markedAsGenerated = (text: string, format: "toml" | "markdown"): boolean =>
   generatorNotice(text, format) !== undefined;
