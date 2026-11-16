@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./config": "./src/config/index.ts",
+    "./copies": "./src/ops/copies.ts",
     "./hub": "./src/hub/index.ts",
     "./http": "./src/http/index.ts",
     "./http/shared": "./src/http/shared.ts",
