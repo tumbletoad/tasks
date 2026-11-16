@@ -201,8 +201,8 @@ export const RUN_STATES = [
 export type RunState = (typeof RUN_STATES)[number];
 
 /**
- * The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run a shim may hold. It
- * also lists the `unknown` runs that still wait for an exit (`awaitsExit`).
+ * The states `openWork` lists (A4 3.11.9, 3.16.1): the queue and every run whose container may hold
+ * processes. It also lists the `unknown` runs not yet confirmed ended (`awaitsConfirmation`).
  */
 export const OPEN_RUN_STATES = [
   "queued",
@@ -223,16 +223,15 @@ export const FINAL_RUN_STATES = [
 ] as const satisfies readonly RunState[];
 
 /**
- * An `unknown` run whose stop timed out while its process may still run: a later exit settles it,
- * live or from `exit.json` after a restart, and recovery looks at it until it settles or its shim
- * is found gone (A4 3.11.2, 3.11.9).
+ * An `unknown` run whose container was not confirmed empty: processes of it may still live. End by
+ * force or the next start confirms the container and settles it, so `openWork` keeps listing it.
  */
-export const awaitsExit = (run: { state: RunState; reason: string | null }): boolean =>
+export const awaitsConfirmation = (run: { state: RunState; reason: string | null }): boolean =>
   run.state === "unknown" && run.reason === "stop_timed_out";
 
-/** Whether `openWork` lists the run: the open states, and an `unknown` run that awaits its exit. */
+/** Whether `openWork` lists the run: the open states, and an `unknown` run not yet confirmed. */
 export const isOpenRun = (run: { state: RunState; reason: string | null }): boolean =>
-  (OPEN_RUN_STATES as readonly RunState[]).includes(run.state) || awaitsExit(run);
+  (OPEN_RUN_STATES as readonly RunState[]).includes(run.state) || awaitsConfirmation(run);
 
 /**
  * The legal transitions (A4 3.11.2). A self edge records evidence and changes no state: the run
@@ -279,8 +278,15 @@ export const RUN_REASONS = {
     "not_claimed",
     /** The run shim's check of the folder or the executable failed (A4 3.3 step 4). */
     "verify_failed",
-    /** The run shim could not start the agent. */
+    /** The agent could not be started in its container. Nothing ran. */
     "spawn_failed",
+    /** The container gave no agent within its start time. Nothing of it is left. */
+    "start_timed_out",
+    /**
+     * Tasks restarted, crashed or was updated while the run was open: its processes ended with the
+     * service ("Interrupted because Tasks restarted"). The record keeps the last saved answer.
+     */
+    "service_ended",
     // The outcome's reasons other than `success` (OUTCOME_REASONS).
     "agent_error",
     "interrupted",
@@ -295,7 +301,10 @@ export const RUN_REASONS = {
   unknown: [
     /** The shim is gone and left no `exit.json`, or a claimed run never reported (A4 3.11.9). */
     "lost",
-    /** A stop that did not end the process in time (A4 3.11.2). */
+    /**
+     * The run's container could not be confirmed empty after it was ended: processes of the run may
+     * still live. End by force, or the next start, settles it.
+     */
     "stop_timed_out",
   ],
 } as const satisfies Partial<Record<RunState, readonly string[]>>;

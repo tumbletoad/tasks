@@ -66,6 +66,8 @@ export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>>
     "not_claimed",
     "verify_failed",
     "spawn_failed",
+    "start_timed_out",
+    "service_ended",
     "agent_error",
     "interrupted",
     "max_turns",

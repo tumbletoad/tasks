@@ -190,8 +190,8 @@ export interface RunStore {
   /** The run as it is now, or undefined. */
   readRun(id: string): Promise<RunRecord | undefined>;
   /**
-   * Every run of that machine that is not final (OPEN_RUN_STATES), and every `unknown` one that
-   * awaits its exit (`awaitsExit`), oldest first.
+   * Every run of that machine that is not final (OPEN_RUN_STATES), and every `unknown` one not yet
+   * confirmed ended (`awaitsConfirmation`), oldest first.
    */
   openWork(machine: string): Promise<{ runs: RunRecord[] }>;
 }
