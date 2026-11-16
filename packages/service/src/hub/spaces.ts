@@ -1663,7 +1663,8 @@ export class SpaceManager {
     const work = (async () => {
       // The projection first: its batch in progress asks the writer for its bookkeeping, and its
       // reader holds the database open (a restore in place swaps the folder after this).
-      await projection?.stop(Math.min(PROJECTION_STOP_MS, ms));
+      // A projection that fails to stop must not keep the worker below from closing.
+      await projection?.stop(Math.min(PROJECTION_STOP_MS, ms)).catch(() => undefined);
       for (const connection of [writer, reader]) {
         if (connection === undefined) continue;
         try {
@@ -1689,16 +1690,18 @@ export class SpaceManager {
     if (worker === undefined) return !timedOut;
     // The worker held the lock beside the writer. Once it closed, the lock is gone with it and its
     // file no longer this service's. A worker that did not close may still write under the lock,
-    // so its watch stays until it does: a lost writer.lock still ends the service (A2 3.4, review
-    // round two). The watch belongs to the worker, so no later close of the space ends it.
+    // so its watch stays until it does: a lost writer.lock still ends the service. The watch
+    // belongs to the worker, so no later close of the space ends it.
     if (!timedOut) {
       this.#unwatch(worker);
       return true;
     }
     space.hold(work);
-    void work.then(() => {
-      this.#unwatch(worker);
-    });
+    // A close that failed may have left the worker running: its watch then stays.
+    void work.then(
+      () => this.#unwatch(worker),
+      () => undefined,
+    );
     return false;
   }
 
