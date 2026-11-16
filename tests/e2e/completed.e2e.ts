@@ -233,9 +233,14 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     expect(pages).toBeGreaterThan(50);
     const monthSize = await largestSetSize(page);
     expect(monthSize).toBeGreaterThanOrEqual(FINISHED_TASKS.done + FINISHED_TASKS.dropped);
+    // Focus stayed on the button through the last page, which now says the list is whole; it goes
+    // when focus leaves it.
+    const whole = page.getByRole("button", { name: "Everything is shown", exact: true });
+    await expect(whole).toBeFocused();
 
     // End reaches the month's last row.
     await page.locator('main li[data-task] [data-part="title"]').last().focus();
+    await expect(whole).toHaveCount(0);
     await page.keyboard.press("End");
     const focused = page.locator("main li[data-task]:focus-within");
     await expect(focused).toBeInViewport();
