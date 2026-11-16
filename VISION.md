@@ -14,7 +14,7 @@ The reward is a little more attention for the work itself, and a little less att
 
 Calm comes from clarity. A quiet screen still tells the truth about a busy day. It shows what matters now, what changed while you were away, and what needs your judgement. Important work remains visible even when it is uncomfortable or overdue.
 
-Each fact has a home. Repetition falls away. The actions people use most stay in sight. Details become available where they are useful, without turning every task into a wall of information. The interface should feel settled beneath your hands: an update must not steal your place or interrupt a thought. It answers at once, and the keyboard reaches everything the pointer does. Waiting is a kind of noise.
+Each fact has a home. Repetition falls away. The actions people use most stay in sight. Details become available where they are useful, without turning every task into a wall of information. The interface should feel settled beneath your hands: an update must not steal your place or interrupt a thought. The ways around the app you use most keep a fixed place and never shift as their contents come and go, so your hand finds them without looking. It answers at once, and the keyboard reaches everything the pointer does. Waiting is a kind of noise.
 
 There is no performance to keep up. A long list is information, not a verdict. Returning after an interruption should feel welcoming. An empty day can simply be empty.
 

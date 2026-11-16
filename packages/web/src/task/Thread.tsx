@@ -53,14 +53,28 @@ export function actorOf(author: string, t: Translate): { who: string; mark: stri
   return { who, mark: mark === "" ? "?" : mark };
 }
 
-/** A4's receipt text for a state (A5 3.9). Prepared shows nothing yet. */
+/**
+ * A4's receipt text for a state (A5 3.9). Prepared shows nothing yet. A terminal launch names the
+ * terminal and why it was chosen once one was Dispatched.
+ */
 export function receiptText(receipt: Receipt, label: string, t: Translate): string | undefined {
+  // ICU select keys cannot hold `-`: the adapter's name goes in with `_`.
+  const where =
+    receipt.terminal === undefined
+      ? undefined
+      : t("receipt.terminal", {
+          terminal: receipt.terminal.app.replaceAll("-", "_"),
+          source: receipt.terminal.source,
+        });
   switch (receipt.state) {
     case "prepared":
       return undefined;
     case "dispatching":
       return t("receipt.dispatching", { label });
     case "dispatched":
+      if (receipt.route === "terminal" && where !== undefined) {
+        return t("receipt.dispatchedIn", { where });
+      }
       return t(
         receipt.route === "clipboard"
           ? "receipt.copied"
@@ -69,7 +83,9 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
             : "receipt.dispatchedTerminal",
       );
     case "confirmed":
-      return t("receipt.confirmed", { label });
+      return where === undefined
+        ? t("receipt.confirmed", { label })
+        : t("receipt.confirmedIn", { label, where });
     case "failed":
       return t("receipt.failed", { reason: (receipt.reason ?? "failed").replaceAll("_", " ") });
     case "unknown":

@@ -274,7 +274,7 @@ test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle
     await expect(doneRow.locator('[data-part="outcome"]')).toContainText(
       `Reports convert from UTC with the clinic's zone ID (${tag}).`,
     );
-    await expect(doneRow.locator("dd").first()).toHaveText("Checked off");
+    await expect(doneRow.locator('[data-part="lifecycle"]')).toHaveText("Checked off");
     // A reload keeps the host view and the expansion.
     await page.reload();
     await expect(doneRow.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {

@@ -22,6 +22,8 @@ import {
   cliArgv,
   codexToolEnv,
   DEFAULT_TERMINAL,
+  DESKTOP_READ_MS,
+  desktopReader,
   ExecutionRefused,
   expandUrl,
   findOnPosixPath,
@@ -33,14 +35,18 @@ import {
   LaunchMachine,
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
+  needsDefault,
   openUrl,
   osProbe,
   osSpawner,
   osTerminalHost,
   powershellPath,
   presetSession,
+  readDelegation,
+  readDesktopTexts,
   ReferenceMatch,
   REFUSED,
+  regPath,
   renderBrief,
   renderContextPack,
   resolveLaunchFolder,
@@ -62,6 +68,7 @@ import {
   type TerminalHost,
   type TerminalSettings,
   type TicketControl,
+  type WindowsDelegation,
   type Attachment,
   type PlanPlace,
   type Resolution,
@@ -163,6 +170,8 @@ export interface TerminalSeams {
     session: Readonly<Record<string, string>>,
     path: readonly string[],
   ) => TerminalHost;
+  /** Windows: reads the "Default terminal application" setting. Default: reg.exe. */
+  readonly delegation?: () => Promise<WindowsDelegation | undefined>;
   readonly watchMs?: number;
 }
 
@@ -210,7 +219,7 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly env: Env;
   readonly spaces: () => readonly ServedSpace[];
   readonly log: Logger;
-  /** machine.toml's `[terminal]` (A4 3.6.1). Default: DEFAULT_TERMINAL. */
+  /** machine.toml's `[terminal]`. Default: DEFAULT_TERMINAL. */
   readonly terminalSettings?: TerminalSettings;
   /** The install ID: scope unit names carry it (A4 3.7). */
   readonly install?: string;
@@ -335,25 +344,58 @@ export class LaunchService {
           ? findOnPosixPath("systemd-run", options.env["PATH"])
           : undefined;
     const home = options.home ?? "";
+    const delegation =
+      seams.delegation ??
+      (() =>
+        readDelegation({
+          reg: regPath(options.env),
+          env: helperEnv(options.env),
+        }));
+    const settings = options.terminalSettings ?? DEFAULT_TERMINAL;
+    const readDesktop = desktopReader();
     this.terminals = new TerminalLauncher({
       platform: options.platform,
-      settings: options.terminalSettings ?? DEFAULT_TERMINAL,
+      settings,
       install: options.install ?? "",
       shimCommand: options.shimCommand ?? defaultShimCommand(options),
-      host: (session) => {
+      host: async (session) => {
         // The person's PATH first, where `~/.local/bin` and the like are, then the service's.
         const person = pathEntries(this.#personEnv, options.platform);
         const path = [...person, ...servicePath.filter((p) => !person.includes(p))];
-        return seams.host !== undefined
-          ? seams.host(session, path)
-          : osTerminalHost({
-              platform: options.platform,
-              path,
-              terminalVar: session["TERMINAL"],
-              home,
-              windowsApps: windowsAppsOf(options.env),
-              ...(options.platform === "win32" ? { powershell: powershellPath(options.env) } : {}),
-            });
+        if (seams.host !== undefined) return seams.host(session, path);
+        // The session's variables first: a service started at boot may lack the desktop's.
+        const variable = (name: string): string | undefined => session[name] ?? options.env[name];
+        const input = {
+          platform: options.platform,
+          path,
+          terminalVar: session["TERMINAL"],
+          xdg: {
+            configHome: variable("XDG_CONFIG_HOME"),
+            configDirs: variable("XDG_CONFIG_DIRS"),
+            dataHome: variable("XDG_DATA_HOME"),
+            dataDirs: variable("XDG_DATA_DIRS"),
+            currentDesktop: variable("XDG_CURRENT_DESKTOP"),
+          },
+          home,
+          windowsApps: windowsAppsOf(options.env),
+        };
+        if (options.platform === "win32") {
+          return osTerminalHost({
+            ...input,
+            powershell: powershellPath(options.env),
+            // Read at each launch that needs it: the person may change it at any time.
+            delegation: needsDefault(settings)
+              ? await delegation().catch(() => undefined)
+              : undefined,
+          });
+        }
+        const desktop = await readDesktopTexts(
+          settings,
+          osTerminalHost(input),
+          readDesktop,
+          DESKTOP_READ_MS,
+        );
+        return osTerminalHost({ ...input, desktop });
       },
       systemdRun,
       ...(seams.trueProgram === undefined
@@ -411,12 +453,13 @@ export class LaunchService {
   async doctor(take: boolean): Promise<JsonObject> {
     const { platform } = this.#options;
     let scopes: boolean | null = null;
+    const session = await this.environment.session().catch(() => ({}));
     if (platform === "linux") {
-      const session = await this.environment.session().catch(() => ({}));
       scopes = await this.terminals.scopes(
         terminalEnvironment(this.#options.env, session, platform),
       );
     }
+    const terminal = this.terminals.ready() ? await this.#terminalFacts(session) : null;
     const checked = await this.environment.check?.(take).catch(() => undefined);
     const time = (at: number | undefined) => (at === undefined ? null : new Date(at).toISOString());
     const environment: JsonObject | null =
@@ -430,7 +473,25 @@ export class LaunchService {
               attempted_at: time(checked.attemptedAt),
               taken_at: time(checked.takenAt),
             };
-    return { scopes, environment };
+    return { scopes, environment, terminal };
+  }
+
+  /**
+   * The terminal a launch now would try first: its adapter, why, whether its program
+   * was found, a default the person set that Tasks cannot open, and whether the operating
+   * system's setting could not be read. Words only, never a path.
+   */
+  async #terminalFacts(session: Readonly<Record<string, string>>): Promise<JsonObject | null> {
+    const choice = await this.terminals.choose(session).catch(() => undefined);
+    if (choice === undefined) return null;
+    const first = choice.chain[0];
+    return {
+      app: first?.app ?? null,
+      source: first?.source ?? null,
+      found: first?.program !== undefined,
+      unsupported: choice.unsupported ?? null,
+      unread: choice.unread ?? null,
+    };
   }
 
   /** The instances now: machine.toml's as this start read them, or as setup last wrote them. */
@@ -1369,7 +1430,7 @@ export class LaunchService {
       if (base?.kind === "user") this.#personEnv = base.env;
     }
     const env = terminalEnvironment(this.#options.env, session, platform);
-    const { outcome, attempts, scoped } = await this.terminals.start({
+    const { outcome, attempts, scoped, terminal } = await this.terminals.start({
       launch: intent.id,
       folder,
       tickets,
@@ -1384,7 +1445,21 @@ export class LaunchService {
         ...(attempt.error === undefined ? {} : { error: attempt.error }),
         ...(typeof attempt.code === "number" ? { code: attempt.code } : {}),
         scoped,
+        ...(terminal === undefined || attempt.result !== "dispatched"
+          ? {}
+          : { source: terminal.source }),
       });
+    }
+    // The receipt names the terminal and why it was chosen.
+    if (outcome.kind === "accepted" && terminal !== undefined) {
+      return {
+        ...outcome,
+        evidence: {
+          ...outcome.evidence,
+          terminal: terminal.app,
+          terminal_source: terminal.source,
+        },
+      };
     }
     return outcome;
   }
@@ -1486,6 +1561,17 @@ function pathEntries(env: Env, platform: NodeJS.Platform): string[] {
   return (value ?? "")
     .split(platform === "win32" ? ";" : ":")
     .filter((entry) => entry !== "" && isAbsolute(entry));
+}
+
+/** Windows: the variables a system helper (reg.exe) needs, and nothing else of the service's. */
+function helperEnv(env: Env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && ["SYSTEMROOT", "WINDIR"].includes(key.toUpperCase())) {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 /**

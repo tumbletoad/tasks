@@ -1,5 +1,7 @@
 # A7. Milestones, quality and retirement
 
+> What is left in this document is the list of steps that are not built yet, with the background that was written for them before the code. The code and its tests are the source of truth for everything that is built, and `planning/STATUS.md` says which steps are done. Do not add to this document.
+
 This appendix owns the repository layout, the step mechanics, the M0 real-machine lab, the milestones from M0 to v1 with their steps and definitions of done, the Planning prototype importer, the retirement gate, the roadmap after v1, the test strategy, the delivery risks and the open items. The repository's `AGENTS.md` owns how agents work (3.5).
 
 It schedules what PLAN.md section A and A1 to A6 specify. Every step names the sections it implements. `planning/STATUS.md` tracks which steps are merged. A merged step keeps only its ID and title here, plus what a later step still needs from it: its code and tests are the reference. Step IDs are never reused.
@@ -8,148 +10,7 @@ Examples use the fixture world: Mira Okafor, space "Mira", reference prefix `M`.
 
 ---
 
-## 1. Summary
-
-1. **M0 is a real-machine lab** on a real Windows machine and a real Linux machine (Ubuntu 24.04, no sudo rights). Gate G1 (runtime, storage, bridge) has passed. Gate G2 (lifecycle, browser, agent apps, launch routes, runs, connectors) stays open until three lab sessions with the owner have run. Steps behind a G2 predicate are built meanwhile, and the gate decides whether they may be called done on real machines (3.7).
-2. **Seven milestones lead to v1.** M1 core slice, with a verified backup and restore before any real data. M2 walking skeleton: Open a task in T3 Code, Claude Code CLI and Codex CLI on Windows and Linux. M3 durable space. M4 agent interface. M5 planner UI. M6 runs and routines. M7 imports the prototype and runs the retirement trial. Milestones group steps. Their order is not a dependency: a step starts when the code it needs exists (3.6).
-3. **Open reaches the first user at the end of M2,** as the first usable result after the core. An early demo opens Claude Code on Windows once M2.08 to M2.10, M2.12 and M2.13 are merged.
-4. **v1 retires the earlier prototype for the first user** after a trial of 10 working days with the prototype frozen. v1 includes runs on tasks through the Claude Code and Codex CLI adapters, the Refresh and Wrap-up routines on request (D6, D8), and Open and Run for tasks without a folder through the Tasks work folder. Release archives are Ed25519-signed. Recurrence, reminders, scheduled routines, explicit file import, the T3 run adapter, pre-trust, the hosted public update channel, an authenticated UI origin and any desktop shell come after v1.
-5. **110 base steps to v1, each sized for one agent session.** No calendar estimates: order, dependencies and lanes only. Conditional work (a native forwarder, the fallback driver as primary) applies only when a measurement calls for it. The Windows cancel helper M6.04h applies.
-6. **The importer** is a pure TypeScript parser of a frozen copy. It never runs prototype code. It maps every field to A1's model, keeps distinct legacy tasks distinct even when they share a source, previews a report, writes one import commit and re-imports idempotently through A1's exchange bases. It is ready by the real-use point (3.6), so the first user has a real work space on the Linux reference machine that stays current with the prototype until the M7 switch-over.
-7. **Rollback** exports the space's current state into a new folder in the prototype's format, with check-offs and stars as fresh prototype events and without the frozen ones. The export is recorded as an exchange, so the return re-imports without duplicates. New work in Tasks is never thrown away.
-8. **Agents verify their own steps** with `pnpm verify`, the step's Verify line, CI on Ubuntu and Windows and, for platform code, a `TASKS_HOME` test install on the Linux reference machine. A v1 acceptance manifest names the tests each milestone owns. A pull request merges when its checks and its review pass. From the real-use point, every verified build also goes to the first user's daily install and is checked against the real work space.
-
----
-
-## 2. Decisions
-
-| # | Decision | Choice | Why |
-|---|---|---|---|
-| P1 | Milestone shape | M0 lab, then M1 core, M2 skeleton, M3 and M4, M5 and M6, M7 switch-over = v1 | Open early (D5). Each milestone has a hard definition of done and an acceptance script |
-| P2 | Walking skeleton | M2, on the real write path, with all three native targets and a bare page | A thin end-to-end slice on the production core (D5) |
-| P3 | Two M0 gates | G1 covers runtime, storage and bridge. G2 covers launch, binding, lifecycle and UI transport. A step behind a failing predicate is built, but not called done on real machines until a re-test passes | R17. A recorded failure is not a qualification |
-| P4 | v1 scope | In: A1 except explicit import, compaction and attachment ingestion. A2 except the hosted public update channel and the authenticated UI origin. A3 complete. A4 except scheduler evaluation, the T3 run adapter and pre-trust. A5's v1 scope. A6's local phase | D4, D6, D7, D8, R18 |
-| P5 | Scheduler | The `schedule` field ships in v1, stored and validated. Evaluation ships in M9 with M8's RRULE parser | D8 asks for the design now, scheduling later |
-| P6 | Explicit file import (A1 3.14) | M8, applied only by a human | Retirement needs no file edits, and the projection is read-only, so nothing is lost meanwhile |
-| P7 | Pre-trust offers (A4 3.14) | After v1 | Each app's own trust prompt appears once per folder |
-| P8 | Native forwarder | Steps F1–F4, built only if bridge rule 3 fires (A2 3.7.7), then before M7 | D9 |
-| P9 | Signing and updates in v1 | Release archives are Ed25519-signed with a key that only the owner holds, never in CI. The install bootstrap (M1.14) and `tasks update --from <archive>` (M6.12) verify the signature before running any candidate code (A2 3.12.4). The hosted public update channel comes at M10 | A candidate never vouches for itself, and updates are needed during the trial |
-| P10 | Repository | pnpm monorepo, one package per area, generated contracts checked in, dependency rules enforced | R5 and one owner per concern |
-| P11 | Step tracking | `planning/STATUS.md`, one row per step | Merge-friendly with several agents |
-| P12 | Merging | A pull request merges when its checks and its review pass. Review depth follows risk (3.18.5) | AGENTS.md |
-| P13 | Importer | Pure parser of a copy, one import commit applied by a human, distinct legacy tasks created with `dedupe: none`, idempotent re-import through A1's `exchanges` bases | A1 3.14 and 3.21. A shared source must not merge two legacy tasks |
-| P14 | Checked-off prototype items | Completed at once with wrap-up pending | D12. In the prototype a check-off is the user's completion signal |
-| P15 | Trial | 10 working days, prototype frozen, one writer. After a blocking fix, 5 clean consecutive days | Two weeks cover a weekly rhythm |
-| P16 | Rollback | Export to the prototype format into a new folder, as an exchange, with the space held read-only while the prototype is the writer (3.15.8, 3.16.4) | Never discard the trial's work. Frozen events must not override the export, and the return must not duplicate tasks |
-| P17 | Real data | Never in the repo, fixtures, PRs, screenshots or reports. The importer, Refresh and the deploy check touch real data only on the Linux reference machine (3.4) | AGENTS.md |
-| P18 | Test installs | `TASKS_HOME` installs on the Linux reference machine. From the real-use point it also has a daily install on the latest verified build (3.4, 3.6) | The install ID isolates runtime folder, socket, launch folders, unit and port (A2 S28) |
-| P19 | Real-agent tests | By hand on the real machines, never in CI | They cost tokens and need signed-in agent apps |
-| P20 | Backups before real data | The migration runner and A1's minimal backup set ship together (M1.06). An installed-build migration failure and restore drill passes in M1.15, before real tasks go into M2. Bundles, transfer and fork come in M3 | A1 requires a verified backup before every migration |
-| P21 | Acceptance manifest | One manifest names every test, the milestone that owns it and its kind (CI, installed build, manual). Cuts are named scope profiles | Milestones must not depend on later scope |
-| P22 | Scope and order | Base steps sized for one agent session each, conditional steps kept apart, a step started when its code dependencies exist, as many lanes as the dependencies allow. No calendar estimates | AI agents implement the product, so only order and dependencies matter |
-| P23 | Tasks without a folder | Open and Run use the space's Tasks work folder on that machine, from M6, for a task with no folder of its own or its project's anywhere | Copy alone left daily tasks without an agent path |
-| P24 | Browser origin in v1 | Single-user machines, no service worker, expiring UI tokens, a doctor warning about other accounts, and no UI while another user holds the UI port (A2 S15, S18). An authenticated UI origin is a hard gate at M10 | R18 |
-| P25 | Real work use | The product moves to real work tasks once enough of the core works, without waiting for M7 (3.6). The importer is ready by then. The M7 rehearsal, trial and gate stay the formal switch-over | Real use finds problems early, and the prototype stays the source of truth until M7 |
-
----
-
 ## 3. Specification
-
-### 3.1 Assumptions
-
-- AI agents implement the steps in parallel lanes, one agent session per step. Lab sessions and the trial, which need the owner at a machine, are the likely limit (D5).
-- Development happens on Windows. The second test machine runs Linux (Ubuntu 24.04, no sudo rights) (D18). Machine facts are kept outside the repository.
-- Agent app versions are recorded with each lab result and each qualification receipt, not here.
-
-### 3.2 Repository layout
-
-One package per area under `packages/`, named `@tasks/<name>`, private and never published. `spikes/m0/` holds lab code that is never shipped (3.7). `fixtures/` holds the signed Node release files, the synthetic prototype folder (3.14) and the recorded streams. `local/` is git-ignored (3.5).
-
-| Package | Holds | Specified in |
-|---|---|---|
-| `brand` | Every name: TT Tasks, the in-app name Tasks, the publisher, the identifier `tasks` with everything derived from it (command, `TASKS_` prefix, HTTP header names), and the MCP server name as its own constant, so it alone can change (`[A7.3.2.brand.names]`) | – |
-| `contracts` | Registry entries, Zod schemas, error codes, the checked-in `generated/` | A3 3.2 |
-| `files` | Creating files and folders with an exact mode | A2 3.2.2 |
-| `core` (planned) | Pure domain logic with no I/O: operation rules, validation, undo planning, the autonomy table, digest rendering, the write-time sanitiser | A1, A3 |
-| `storage` | The SQLite driver, schema, migrations, writer and readers, backups, restore, recovery, the `launches` table | A1 |
-| `projection` | The `view/` renderer and `catalog.jsonl`, the outbox's consumer | A1 3.13 |
-| `service` | The hub, the local protocol server, HTTP and WebSocket, the MCP endpoint, binding, `machine.toml`, the service install, the request path, the launch service, T3 pairing, agent setup, install and update | A2 |
-| `bridge` | The wire library and the `tasks mcp` forwarder | A2 3.7 |
-| `launch` | Launch states and routes, targets, folders, the shim's server side, terminals, the brief, the URL opener, the T3 client | A4 3.2–3.10, 3.15 |
-| `runs` | Stream parsers and fake agents. Later the run adapters, supervisor, routines and scheduler | A4 3.11–3.13 |
-| `cli` | The `tasks` entry and its commands, the shim client | A2 3.10 |
-| `web` | The page in Vite and React | A5 |
-| `importer-planning` | Prototype importer and exporter | 3.15 |
-| `launcher-win` | `tasks.exe` and `tasksw.exe` in C | A2 3.12.3 |
-| `testkit` | Seeded generators, the Mira sample, the synthetic prototype, test installs and the launch fakes | 3.18.1 |
-
-**Where code lives, and why.** Each placement keeps a dependency rule true.
-- **Wire protocol.** `packages/bridge/src/protocol/` holds the wire code that the CLI, the shim and the bridge share, with Node built-ins only, so the bridge bundle stays small (A2 3.7.1). The server side is `packages/service/src/local/`, which imports it. `docs/protocol/tasks-local-1.md` documents the protocol.
-- **Files.** `packages/files` is a package of its own because `launch` and the shim need it and may import neither `service` nor `storage`. Storage uses its own `files.ts`, built on it behind the `FileIo` seam its tests inject failures into. `packages/service/src/hub/permissions.ts` holds the one rule for who else may write what the product trusts.
-- **Projection.** `packages/projection` reads a space through a reader connection and writes its outbox only through the writer's two bookkeeping calls (`projected`, `queueProjection`), so it needs no operation. The service runs it in `hub/projection-entry.ts`, one worker per open space.
-- **Hub.** `serve.ts` is the only code that touches process-wide state (crash handlers, signals, fatal reports), so tests run the lifecycle (`service.ts`) in-process. `paths.ts` is pure over the host's facts, so every OS's layout is tested on every OS.
-- **HTTP.** The CLI imports only `@tasks/service/http/shared`, which loads no storage.
-- **Machine configuration.** `@tasks/launch` reads the plain values of the `machine.toml` sections A4 owns, with no TOML dependency. The file itself is A2's (`@tasks/service/config`).
-- **Launch records.** `launch` reaches the writer through a port, so it never imports storage. Its store contract suite (`@tasks/launch/execution-store-contract`) is what the later L1 journal must pass.
-- **Shim.** The shim client (`packages/cli/src/shim/`, built alone as `lib/shim.mjs`) loads only `@tasks/launch/shim-wire`, `/process` and `/places`, the bridge's protocol and discovery, and `brand`, so `tasks mcp` and the CLI load none of it. `[A4.5.shim.entry]` checks the list.
-- **Build and install.** `scripts/build/`, `scripts/install/` and `scripts/release/` are tooling. What the installed product runs is product code: the version folder's manifest format lives in one module (`packages/service/src/version/folder.ts`) that the build writes with and doctor, install and update check with, and the install scripts hand over to `tasks install --finish`, which the updater reuses.
-
-**Dependency rules.** `.dependency-cruiser.cjs` holds them with their reasons, and `pnpm verify` checks them. `[A7.3.2.dependency-rules]` proves on a fixture tree that each rule fires. In short: `brand`, `contracts` and `files` depend on nothing in the repository. `core` depends on `contracts` only and does no I/O. `web` imports only `contracts` and `brand`. Only `storage` imports a SQLite driver, and `launch`, `runs` and `importer-planning` change state only through operations sent to the writer. `bridge` uses a few Node built-ins only, so it cannot start the service. Production code never imports `testkit`, and nothing imports `spikes/`. Test files are exempt from the layering rules, but not from the storage, spikes and driver rules.
-
-### 3.3 Toolchain and commands
-
-`package.json`, `pnpm-workspace.yaml` and `.node-version` hold the pins and the supply-chain settings, `package.json`'s scripts the commands. What they do not say:
-- **Node** 26.13.1, the same build that ships (A2 S19), provided by pnpm through `devEngines.runtime`, so every `pnpm <script>` runs on it with no version manager and no machine-wide install. Run everything through pnpm. A pin change also updates `scripts/build/node-pin.json` and the offline fixtures in `fixtures/node-v<version>/`. The tests that verify Node's real signature from those fixtures need `gpgv` (present on Ubuntu and with Git for Windows).
-- **pnpm 12** reads only registry, auth, TLS and proxy settings from `.npmrc`, so install-script policy and supply-chain settings belong in `pnpm-workspace.yaml` (A6 L6).
-- **TypeScript 6**, not 7: typescript-eslint 8 needs the classic compiler API, which TypeScript 7's package no longer ships. Revisit when typescript-eslint supports it.
-- **Tests:** Vitest and fast-check. happy-dom for the page's component tests, with React's `act` and no Testing Library. Playwright with Chromium and Firefox from Playwright's own cache.
-- **Markdown is not formatted,** because Prettier would pad the plan's compact tables on every edit.
-- **Scripts are Node scripts** with no shell, because development happens on Windows too.
-- **Native code:** MSVC for `launcher-win`. Rust only if the native forwarder is needed (A2 S13).
-
-**Custom lint rules** (`eslint.config.js`, `scripts/eslint/no-shell-exec.js`, `[A7.3.3.lint.custom-rules]`) carry their reasons in their messages. Gaps they cannot see, covered by review: a single word kept in a variable, words split around a template's placeholders, a `.cmd` spawn through a variable, and `exec` reached through a value the rule cannot follow statically.
-
-**Lab tests in `pnpm verify`.** `vitest.config.ts` has a parallel `product` project and a serial `lab` project (`spikes/**`), because the lab self-tests start services, compile C and install archives, and under a parallel run they timed out on the Windows runner. Verify runs the lab tests only when asked, when the base commit is unknown, or when a lab file or a shared file changed (`decideLab` in `scripts/lab-tests.ts`, `[A7.3.3.verify.lab-selection]`). When `spikes/m0/` is removed (3.7), the `lab` project and this rule go with it.
-
-**Signing.** `pnpm release` generates the release key and signs, by the owner only and never in CI (A2 3.12.8).
-
-### 3.4 Rules for implementing agents
-
-The repository's `AGENTS.md` (3.5) owns how implementing agents work. This section holds only the step mechanics.
-
-**Steps.** Each step in 3.7 to 3.14 has an ID (`M2.10`), the work and the sections it implements, its dependencies, a Verify line and a size. **S** is one focused session, about 150 to 600 changed lines with tests. **M** is one long session, about 600 to 1,200 lines. A step that turns out larger is split before work starts, and the split is recorded in `STATUS.md`. A part that a merged step left unbuilt becomes a step of its own, with that step's ID and a letter (M2.04b), counted within its milestone. **RM** marks a step that ends with a check on a real machine. A step's dependencies name the code it builds on, never a milestone. An agent edits only its own row in `STATUS.md`, and a row becomes `done` when its pull request merges.
-
-**Stacked branches.** A step may start on top of the branch that holds the code it needs, before that branch merges. Its agent is told which branch it stands on, and the step is rebased or merged when its base changes in review. When several open pull requests change `packages/contracts`, the reviewing agent resolves the merge and runs `pnpm gen` again.
-
-**PR checklist.** Every pull request description ends with:
-
-```markdown
-### Done: M?.?? <title>
-- [ ] Matches <appendix §>. Deviation: none | the section is updated in this PR
-- [ ] Stacked on: main | <branch>
-- [ ] Verify line run on <Windows | Ubuntu | both>. Output below
-- [ ] pnpm verify green on Windows and Linux, on the branch merged with main
-- [ ] Tests added: unit | property | integration | crash. Fixture data only
-- [ ] Manifest IDs of new tests and their owner milestone (tests/manifest.json)
-- [ ] Contracts and generated files: unchanged | regenerated
-- [ ] Migration: none | <number>, with a fixture-database test
-- [ ] UI: none | Sumi and Washi screenshots at 1,440 px, axe clean, keyboard path tested
-- [ ] RM step: TASKS_HOME test install on <machine>, result below
-- [ ] Gate: none | what waits for a lab session (3.7)
-- [ ] Review: rounds and depth (3.18.5), every finding fixed or answered
-- [ ] Not tested, and why:
-- [ ] New dependencies: none | name, version, licence
-```
-
-**Real data.** Real work data is touched only on the Linux reference machine: the deploy check, the real-use import and its re-imports (3.6), and Refresh. Their reports stay in that space. Problems from real use are reported with `tasks doctor --bundle --redact-paths`, which holds no task text (A2 3.13).
-
-**Real-machine steps.** Build the archive on Windows, copy it to the Linux reference machine, and install it with the build's install script as a `TASKS_HOME` test install into a root that does not exist yet. Its install ID gives it its own runtime folder, socket, launch folders, unit and port (A2 S28), and it keeps program, command and data under its one root. Run the Verify line there. Afterwards remove the root only when its `install.json` says the installer made it. No sudo, nothing outside the home folder.
-
-**The daily install.** From the real-use point (3.6) the Linux reference machine also has a daily install (M1.15), kept on the latest verified build. After every merged batch that passes verification it is deployed: back up, upgrade (migrations run only after a verified backup), then check that the space opens, the main views load, search works and Open works. Before the first build with a new migration step is deployed, the installed-build migration drill (3.10) runs on the Linux reference machine against that build, because its first writer migrates the real spaces. A break is fixed before any other work.
-
-### 3.5 The repository's `AGENTS.md` and `CLAUDE.md`
-
-The repo-root `AGENTS.md` is the single source for how people and coding agents work on the repository. It wins over conflicting process rules in this plan, and this appendix does not copy it. `CLAUDE.md` imports it, and also the git-ignored `local/AGENTS.md` when that exists, so every agent app reads the same rules. A checkout's machine setup, workflow and real-machine notes live in `local/`, never in the repository.
 
 ### 3.6 Milestone map and order
 
@@ -371,15 +232,8 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
-| M3.02 | Undo and redo per actor with per-field provenance lineage, the field-version guard and the undo floor. Physical versions stay monotonic. `tasks undo\|redo` (A1 3.10.1, 3.10.4) | M3.01 | ABA property test: undo never changes a field whose version moved. Undo then redo restores the values the commit wrote. Consecutive same-field edits, overlapping field sets, undo and redo cycles and foreign edits each give A1's result | M |
 | M3.03 | Revert one commit and revert a session, both with preview (A1 3.10.2–3.10.3) | M3.02 | A 500-commit session revert takes under 500 ms. The preview equals the applied result. A session revert never removes a later human change | S |
-| M3.04 | Lifecycle: complete, reopen, archive, additive wrap-up, tombstone delete and restore (A1 3.11.1–3.11.3, 3.11.4 without `redact`) | M3.01 | Property test: wrap-up never changes context, notes, log or sources. Restore brings back a tombstoned task with its history | S |
-| M3.05 | Search: FTS5 table and `search_docs` written in the commit, query parser with escaping, ranking, compact rows, snapshot cursors that carry the incarnation, cursor entries that survive tombstones and redaction as placeholders, `tasks find` (A1 3.12; A3 3.9.1–3.9.5) | M3.01 | Random query strings never raise an SQLite error. Cursor pages under random writes, deletions and redactions have no gaps or duplicates, and a removed entry never shows its old text. Search rows equal a fresh rebuild | M |
-| M3.06 | Source keys and dedupe: unique keys, upsert against active tasks and tasks completed in the last 30 days, rebinding rules. Receipts are checked before dedupe (A1-11; A3 3.11.1) | M3.01 | Property test: overlapping keys from concurrent sessions leave at most one task per key. A request that returned `existing`, retried after the 30-day window, replays `existing` | S |
-| M3.07 | Export bundles and restore: backup rotation, export modes (backup, transfer, fork), zip hardening through M1.06's `BundlePolicy`, extended to bundles, which bounds expanded bytes, entry count and file sizes and is shared by the exporter, the backup writer, the restorer and the importer, the export secret scan (A1 3.18; A6 3.4, 5). The backup writer publishes its data file and its sidecar without replacing anything at their names (an exclusive create or a link in place of a rename), and leaves a published pair to the reader's checks instead of removing it when its last step fails. Stale-restore detection is M3.08's | M3.01 | Restore drill in CI. A pair planted under a backup's reserved names while the backup runs is never replaced. A zip with `..`, symlinks, too many entries, too many expanded bytes or an oversized file is refused. The largest stress-corpus bundle passes | M |
 | M3.08 | Authority: machine keys and host fingerprint, a new `ai_` incarnation and lineage entry on every claim, transfer import and restore-claim, a claim epoch of one more than the highest known locally, `tasks space export --mode transfer --to <machine>` with a `tr_` transfer ID, durable `preparing`, `published` and `finalized` states, restart reconciliation, `tasks space transfer --finish\|--cancel` and a `transfer_cancelled` incarnation, `transfers_imported`, two Claims of one backup detected as competing branches for the user to resolve with `tasks space resolve`, fork, and stale-restore detection with its three requirements: a freshness floor per copy, ancestry that is never cut off, and a claim intent that is durable before the claim commits and reconciled after a crash (A1 3.18; A6 3.5) | M3.07 | Random export, import, claim, fork and restore sequences: two Claims of one backup, at the same or at different epochs, are detected, never merged. A duplicate or misdirected transfer import never becomes authority. A crash at each transfer state reconciles on restart. A stale copy opens read-only: an older copy of a sibling after a later sibling was seen, an ancestor after any number of claims, and the ancestor's folder after a crash between a claim's commit and its record | M |
-| M3.10 | Projection: outbox consumer, `view/` Markdown, `catalog.jsonl`, read-only marking, its trusted record in machine state, rescue of what is not its own, reconciliation file by file and `tasks view rebuild`. The watermark moves only through a fully rendered prefix (A1 3.13; A3 3.9.8) | M3.01 | After quiescence the projection equals a fresh render. One task shows within 1 s. A kill during the rename leaves a valid tree, and the watermark never covers an unrendered task | M |
-| M3.11 | Preferences registry, feature flags, machine preferences (A1 3.16) | M3.01 | Policy keys refuse agent writers. Each flag has a default and a test | S |
 | M3.12 | Hooks for later phases: the `ExecutionStore` contract suite that a later machine-local journal must pass, incarnation checks on `as_of`, `base`, cursors and receipts, and the filtered change-feed batches tested with a synthetic audience filter, which needs a row-level visibility rule applied to the snapshot and to every row as well as the commit filter, because a row shows every change ever made to it. v1 still sends every operation (A6 3.3, 3.7; A1) | M3.08, M2.12, M2.05 | A long interleaving of hidden and visible operations, dropped batches and reconnects keeps coverage gapless through empty batches and never reveals a hidden operation. The filtered batches pass the page's `LiveCore` interleaving property (`packages/web/src/store/core.test.ts`). A base, cursor or receipt from another incarnation gives a resnapshot or a conflict, never a match | S |
 | M3.13 | Fallback driver: `better-sqlite3` in `loadDriver()` behind the same `driverContract()` suite, plus a CI job with the driver switched (A1 3.19). It needs `safeIntegers(true)` with the same exact-integer conversion, the same parameter check (`sql-text.ts`), the same fixed error messages, and the same file-name, backup-target and authorizer rules: opens through the literal path, backups into a new file only, `ATTACH` and `VACUUM INTO` of a named file refused, the folder pragmas refused. This step finds how `better-sqlite3` enforces the last | M1.02 | The full storage suite passes with the other driver on both runners | S |
 | M3.14 | Redaction: human-only `redact` in entity and text mode, through one traversal of every store: state, `changes`, `commits.ops`, `history_text`, proposals, exchanges, receipts, the search tables, the projection, the outbox and caches (A1 3.11.4) | M3.04, M3.05, M3.10 | Sentinel text redacted in each mode is absent from every store and every read path afterwards. An agent gets `forbidden` on `redact` | S |
@@ -410,12 +264,9 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
-| M4.01 | Remaining tools: `search`, `add_tasks` (upsert), `reopen_task`, `organize`, `preferences` (non-policy keys), and `run_report` in the list. Every connection, online or offline, now advertises the same eleven tools. `run_report` outside a run or routine binding returns `not_permitted`. The user-only class and R7 refusals. Remote envelope types in the registry's type package only. `search` and `add_tasks` join the server instructions and the renderers (every listed tool has one). `preferences` takes null to reset a key, added narrowly with declared preference-value schemas, never an unrestricted `unknown`. `organize` and `preferences` get a rule for mixed read and write actions and conditional request IDs (A3 3.2.3, 3.4; A6 3.3) | M3.05, M3.06, M2.03 | `mcp-tools.json` equals the agent-allowed class. `tools/list` is byte-identical on bound, unbound and offline-cache connections in both eras. `run_report` on an unbound or task-bound connection writes nothing. Every user-only entry returns `forbidden` to an agent actor | M |
 | M4.01b | What M4.01 left: A1's `area.*` and `project.*` operations in the writer (create, patch, move, archive, unarchive, with history, positions and `HAS_ACTIVE_TASKS`, and a task created in or moved to an archived group refused, since names resolve against archived groups too), `organize`'s write actions on them, a new area or project name in `add_tasks`, `update_task` and follow-ups created under autonomy, and the `organize` guide (A1 3.6; A3 3.4.2, 3.4.5, 3.4.10). The first step of the folder lane (3.6): nobody can create a project today | M4.01 | A rename or move keeps the group's ID and its tasks. Archiving a group with active tasks is `HAS_ACTIVE_TASKS`. Drafts that name one new area at once create it once | M |
 | M4.02 | Autonomy and proposals on the staged plan's actual targets: levels, per-action and per-area overrides, the stricter of source and destination for moves, the decision table, proposals with base versions, user-only accept and reject, the writer's `policy(plan, scope)`. The burst brake at 51 affected records, counted from `commits.affected` per writer scope from a writer's first call (A3 3.7.9: the session, else the agent home's grant, else `agent:unknown`, `script` or the user's scope). Defines the proposal section payload of `task.get` (A3 3.7.9, 3.8; A1 3.10.5; A6) | M3.01, M2.03, M2.04b | Exhaustive decision-table test over actual targets. Binding after 10 unbound completions does not reset the count. Accepting a proposal whose base field moved fails as stale | M |
 | M4.03 | Digest v1 and framing: provenance labels, nonce-delimited data block whose markers are drawn after checking the whole rendered payload, every user- or agent-editable name framed as data, up to three related learnings, notes from the user for agents never silently cut (an overflow line and paging through `get_task` sections), the sanitiser on write, the secret pattern warning (A3 3.9.6–3.9.7, 3.10; A6 3.16.2, L4) | M3.01, M3.05, M2.03 | Digest property test: never over the cap, `+N more` when cut, the marker never in content, a user note whole or behind the overflow line. An injection sentence as an area or label name appears only inside data blocks. Tag characters removed | M |
-| M4.04 | Final server instructions and the optional instruction block with preview and the managed-source overlay (A3 3.6, 3.12): `--parts block` and `print-block`, judged by M4.05's managed rules (`managed.ts`), and doctor's `block` row | M4.01 | About 2 KB, within 3,500 bytes, with the trigger and start rule self-contained in the first 240 characters, because Codex CLI shows its model only the first 246 to 295 (3.7 row A06). Every tool it names exists. `print-block` writes nothing | S |
-| M4.05b | What M4.05 left. Doctor's launch rows: the scope probe (`TerminalLauncher.scopes()`, a warning when terminals start without scopes), the login-shell snapshot's outcome and age (`UserEnvironment.take()`), and T3's pairing from `t3/status` with A4's warning five days before the token expires (A4 3.4.1, 3.7, 3.8). Doctor's `sessions` row on M2.04's records (A3 3.14). For the grant gate (A3 3.7.8): setup proposes for a detected home an instance ID that no configured instance and no other home holds and names the refusal of a taken one, doctor warns about an entry without `--instance`, and `foreign_entry` says how to take a hand-written entry out | M4.05, M2.04b | Each new row passes and fails against fakes. A detected home whose proposed instance another home holds is offered another one | S |
 | M4.06 | Binding complete, on M2.04's binding service, with every input from the authenticated bind frame: bind frame rule 3, native IDs alone, on the IDs M2.04 records (Claude preset, Codex reference match, T3 thread ID). Shared hosts beyond M2.04's guard: host detection from ancestors, Claude Desktop chat without a session ID, per-call binding by native ID, `durable: false` with its hint. User-only `session.unbind\|rebind\|end`, which end a session and its handles. The session list and Resume rules. The session record made with the launch intent before dispatch (A3 3.7.7), so a `cli-agent` call before any bridge bound maps to its session. The result says "this session is bound to M-14" for an explicit task on a bound connection. Defines the session section payload of `task.get` (A3 3.7; A4 3.10) | M2.04 | A3 section 5 binding tests. Resume is offered only with a trusted native ID | M |
 | M4.07 | Source ingestion: key namespaces, the refresh guide in `status`, coverage shapes for `run_report` (A3 3.11) | M4.01 | A refresh fixture run twice through fakes creates nothing the second time | S |
 | M4.08 | Interactive agent evals: a harness for headless Claude Code and Codex on temporary spaces, run by hand on Windows. A3 section 5 scenarios 1, 3, 4 and 5, and scenario 2 in its ingestion form: an interactive session ingests a fixture inbox twice through `add_tasks`, with no run adapter and no `run_report`. Scenario 2 as a real routine run is M6.14 | M4.01–M4.07 | Pass or fail per scenario and app, with the tokens used, recorded with the run | S RM |
@@ -446,11 +297,8 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
-| M5.04 | Today: week strip, Focus, This week, Next, Changes, with disjoint sets (A5 3.4). Its sections and membership replace `ViewPage`'s list through `contextFor(view, grouping)`, with the counts and disjoint membership in `src/app/views.ts` | M5.03 | Property test: no task in two sections. The date appears once | S |
 | M5.05 | Status views, area views, Completed and Agents, with grouping (A5 3.5): Inbox and Review flat, Waiting by person, the area view by project. Completed is built on `usePagedQuery`. The snapshot's compact row carries when a task's current wait began, so Waiting shows the time spent waiting (`RowInput.waitingSince`) instead of the task's age | M5.03 | Counts add up across disjoint views. No view has a heading element. End to end: a task that starts to match Completed appears or offers a refresh | S |
-| M5.06 | Expanded task: content without section labels, facts panel, sources with their own text, thread of notes, log, sessions and runs, learnings. It replaces `src/task/Expanded.tsx` and `Thread.tsx` and keeps their props, with the expanded row's header (collapse, title editing), the task route's host view and the URL while a task is expanded. The task route resolves a task in any lifecycle: active, completed, archived, Inbox without an area, and restorable deleted. The detail refetches on `onTouched`. The snapshot's compact row carries each task's source kinds with their text and URL, and its folder's state on this machine, which the row's columns also show (A5 3.7) | M5.03 | No fact string twice in one expanded task. A link to a task in each lifecycle opens it. Keyboard path passes | M |
 | M5.07 | Composer and action strip: Note, Open per instance, Run (shown, wired in M6.09), Copy and Shift+Copy (A5 3.8). The strip replaces the expanded row's toolbar of instances and Copy | M5.06 | Composer keys including IME composition. Open passes the composer text to A4 | S |
-| M5.08 | Field editing, check-off, toast, undo and redo, the "Restore mine" conflict (A5 3.11, 3.12). It enables the row's checkbox, drawn disabled until check-off has its hold, toast and undo, and the star's edit joins undo and conflicts | M5.06, M3.02 | Flow: edit due, priority and effort, check off, undo, redo. Agent-only fields start a composer request | M |
 | M5.09 | Receipts and run status, proposals and the review card, changed marker and digest. `ui.mark_seen` and `ui.clear_digest` as user-only calls outside history (A5 3.9, 3.10, 3.14, open item 6). The row's marker (`RowInput.marker`), receipts and run states on the tile. The snapshot carries each task's latest launch per instance, so a tile shows Connected after a reload, and the feed's launch entities carry their `task`, so the list refreshes only that task | M5.06, M4.02 | Each receipt and run state renders from fakes. Unknown never re-dispatches. Partial accept of a proposal | M |
 | M5.10 | Quick capture and search in the top bar, with the capture parser (A5 3.13). The top field becomes search-or-add. Search is built on `usePagedQuery` with its filter and sort fields as `QueryDef.fields`, and the service's expired cursor calls `refresh()` | M5.03, M3.05 | Parser tests for dates, `p1`–`p3`, `#area/project`, `@person` and `*`. End to end: a task that starts to match an open search offers a refresh | S |
 | M5.11 | Settings, feature flags, keyboard and the shortcut sheet (A5 3.18, 3.21). The other Settings sections beside Appearance, Folders without its project folders and Use the same folders here, which M5.14 adds. Single-letter keys behind `ui.keys.single`, and the sheet lists the list's keys. The tooltip component of A5 3.22, which reads the row's `data-tip`. Once `pref.set` exists the theme leaves `localStorage`. This step decides whether it becomes A1's per-space `ui.theme` or a machine-level choice: a per-space theme changes the colours when a tab switches space | M5.01, M3.11 | Each flag off removes its UI and keys without gaps. No keymap conflicts | M |
@@ -479,7 +327,6 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
-| M6.01 | Run records and states: `runs` migration, the state machine, transitions written through the `ExecutionStore`, restart recovery (A4 3.11.1–3.11.2, 3.11.9; A6 3.3) | M2.05 | Run state property test, including cancel in every state and a crash at each boundary | M |
 | M6.02 | Supervisor and limits: caps (3 per machine, 2 per instance, 1 per task), folder leases, executor presence, wall and idle timeouts that the shim enforces while the service is down (A4 3.11.7) | M6.01 | Random starts never exceed a cap or share a lease. A timeout fires with the service stopped | M |
 | M6.03 | Run shim: `run.attach` with the attachment credential of M2.08 and `run.event`, on M2.08's shim host and records, the service-to-shim `cancel`, a bounded normalized-event journal with sequence numbers and an atomic final outcome, independent of raw-log truncation, and replay from the journal cursor (A4 3.11.5, 3.11.9) | M6.01, M2.08 | Service lost before the 20 MB raw-output cap, agent finishing after it: the final outcome, native ID and usage survive the restart. Reattaching after both ticket windows never gives a second claim | M |
 | M6.04 | Cancellation: each run in its own Unix process group and session, the shim outside it, SIGINT, then a timeout, then SIGKILL against the group, descendant cleanup after the leader exits, on Linux of the whole run unit (cgroup), since an MCP server outlived a SIGTERM to the group. Windows cancel: Ctrl+C through the console-attach helper (M6.04h), then `taskkill /T /F` after 10 s, with no `taskkill /T` step without `/F` (A4 3.11.8). A fake agent that starts a grandchild joins the fakes for A4 5.1's cancellation tests | M6.03 | A run that starts a grandchild and ignores SIGINT ends with no process left on Linux and Windows, and the shim records the exit | M |
@@ -487,7 +334,6 @@ Go or no-go per required native target and machine is no-go until its route rows
 | M6.07 | Routines: record, approval hash, work folders, one at a time, `schedule` stored and validated but never evaluated. Refresh from sources (template, source list, watermark, coverage) and Wrap-up (up to 10 tasks) (A4 3.12, 3.13.1) | M6.06, M4.07 | A Refresh fixture run twice creates nothing the second time. The watermark moves only on full success. Wrap-up keeps every original text | M |
 | M6.08 | The Tasks work folder: one per space on each machine, `<machine state>/workdirs/space-<space-id>/`, never a project folder or inside a space. M2.08 built the folder with its checks, and a launch with no place already works in it. The resolution returns `{folder, kind}` with `kind` `task`, `project` or `work_folder` (A1 3.15's `resolve`, from M6.16; before it, today's places with `place`). Open and Run for a task with no folder of its own or its project's anywhere use it, along the routes L12 recorded. A task with a folder always uses exactly that folder (A4 3.3; A5; R11) | M6.06, M2.11 | A task without a folder opens in each native target and runs in its space's work folder. A task with a folder, its own or its project's, never uses it. An agent still cannot launch (R7) | S |
 | M6.09 | UI: Run from the composer, the message box, Continue interactively, Refresh in the top bar with routine status, run entries in the thread, "Tasks work folder" shown for tasks without a folder (A4 3.11.10–3.11.11; A5 3.8, 3.9) | M5.07, M6.07, M6.08 | Playwright with fakes: Run, Stop and Continue. Refresh shows "Refreshed 09:12 · Jira unreachable" from a fixture. Open on a task without a folder shows the work folder | M |
-| M6.11 | Best-effort targets and the context pack: Claude Desktop and Codex app links with the clipboard copy, receipts that wait for the bridge's folder check, Shift+Copy, and the clipboard tools of `tasks brief --copy` (`wl-copy`, `xclip`, `xsel`, `Set-Clipboard`; until then `tasks brief` prints) (A4 3.4.4–3.4.6, 3.15.5) | M2.10 | Golden URLs per OS. The context pack stays within budget | S |
 | M6.12r | Version retirement, the part of M6.12 not built (A2 3.12.6 step 14). Garbage collection keeps `current`, its two predecessors, `install.json`'s `previous` and every version a journal names, and retires a version only under exclusive version-use leases, because a process may still run from it. This step settles the lease's form per OS, who takes it at launch, how garbage collection acquires it exclusively and how a crashed holder's lease is released, and A2 3.12.6 states that rule before garbage collection is built. Retirement is journalled and resumes after a crash | M6.12 | On the Windows runner and on Linux: a version in use is never retired, a retirement killed between the move and the last delete, a partial deletion retried, and a held file in the garbage folder each end clean. The leases hold for the stable launchers of M6.13 | M |
 | M6.14 | Real-run contract, by hand on Windows: A3 eval scenario 2 as a real Refresh routine on a fixture inbox through both CLI adapters, and the routine whose MCP host initializes from the offline cache during a service restart, then calls `run_report` with full coverage (A3 5) | M6.07, M4.08 | Pass or fail per adapter, with the tokens used, recorded with the run | S RM |
 | M6.15 | Real machines: Refresh twice on Linux through Codex into a trial space, along the path N04 qualified, now through the product, a Wrap-up, cancel on both OSes, a task without a folder and a task in a project's folder opened and run, `tasks doctor --live` qualification receipts for every v1 target on Windows and Linux | M6.01–M6.14, M6.16, lab session 3 (N04) | Receipts and pass or fail only, no content, recorded with the session | S RM |
@@ -528,8 +374,6 @@ Go or no-go per required native target and machine is no-go until its route rows
 
 | Step | Work | Needs | Verify | Size |
 |---|---|---|---|---|
-| M7.03 | Mapping to internal operations from `PrototypeParse`: areas, projects, statuses, owners, sources and keys, roots and places, aliases. Every task create uses `dedupe: none`, and shared sources are upserted by key and linked (3.15.3). It decides the focus day, uses the body's `Next:` clause (`task.next`) when metadata has no `next`, and maps `extra` to `ext.planning.<key>`. The importer's shapes that cross the service boundary move to `packages/contracts` with this step and M7.04 | M3.01, M3.06, M7.02 | Each mapping row has a fixture case and an assertion. Two legacy tasks with one key become two tasks linked to one source row. The fixture task with the same key is untouched | M |
-| M7.04 | Dry-run report, preview token, first-run step 6 and Settings › Data import card (3.15.4). It decides which error codes block a preview, calls `verifySource` before it returns a token, and lists warnings under needs attention | M7.03. The UI parts also need M5.12 | `tasks import planning <fixture> --dry-run --json` counts equal the fixture index's `counts`, with zero source-hash changes | S |
 | M7.05 | Apply, undo of an import, idempotent re-import through `exchange_items` bases (3.15.5, 3.15.6). It calls `verifySource` again before the applying transaction. Built on today's roots and places, which M7.11 converts | M7.04 | Property test: random prototype edits between imports apply exactly the changed fields, conflict where the space changed the same field, and give zero operations for unchanged input. A failed pre-import backup aborts the apply before its transaction starts | M |
 | M7.06 | Export to the prototype format: ledgers, metadata, the canonical event set and the export exchange with its marker map and base values (3.15.8). An export folder outside the space is the exchange's `dir` as its absolute path (A1 3.14) | M7.03 | Round trip: import, export, import into a fresh space gives equal titles, statuses, areas, projects, aliases, folders, sources, due dates, check-offs and stars. An independent parser of the export gives the space's state at the export for every task | M |
 | M7.07 | Rollback tooling: `tasks space hold\|release` with the operations on 0.2's `space.hold` column, the `held` refusal and its decoding, `tasks export planning --hold --rollback-from`, and the return import through the export exchange (3.15.6, 3.16.4) | M7.05, M7.06 | Overlay test with the independent parser (3.15.8). Same-space return: create a task in the space, export, edit the copy in the prototype format, re-import: same task IDs, no duplicates, conflicts only for fields the space changed after the export | M |
@@ -854,196 +698,3 @@ The rollback loses only what the prototype format cannot hold. The export report
 **The T3 run adapter** comes in M8 or later. It first needs durable launch correlation, reconciliation before declaring a failure, a deadline owner independent of the hub, and a reservation kept while a start is uncertain. Its own lab rows cover a lost first reply and the service down past a deadline.
 
 Smaller items after v1, in no fixed order: pre-trust offers (A4 3.14), a UI for custom routines, a separate Ask verb (A5 open item 4), a Stop reminder hook (A3 open items), restrictions on agent homes (A3 open items), payload compaction (A1-18), attachments in the UI, importers from other task apps, saved views, slimmer agent-facing tool shapes.
-
-### 3.18 Test strategy
-
-#### 3.18.1 Kinds of tests
-
-| Kind | What it proves | Lives in | Runs |
-|---|---|---|---|
-| Unit | Pure logic, registry examples, golden argv and URLs | `*.test.ts` beside the code | Every PR |
-| Property (fast-check) | Field versions and no lost update. Undo, redo and revert guards, including change-away-and-back. Session revert. The import three-way merge, re-import and the return from rollback. Idempotent receipts for every outcome: same ID replays, a different intent is refused, across restarts, epoch and incarnation changes. Source-key upsert. Search cursors. Launch and run state machines. Live-store ordering over filtered batches. Sanitiser idempotence. Digest caps | `*.prop.test.ts` | 200 runs per PR. 20,000 runs nightly, plus a fixed seed corpus |
-| Model-based | The store against a plain TypeScript reference model with 3–12 actors (A1 5) | `packages/storage/test/model/` | Short per PR, long nightly |
-| Integration | Real temporary SQLite databases, sockets and pipes, a real service process | `tests/` and package `test/` folders | Every PR, both OSes |
-| Crash injection | Real processes killed at fault points and at random during a workload, then recovery invariants (A1 5, A2 5, A3 5, A4 5.2) | `tests/crash/`, `pnpm crash` | A slice in verify, 5 minutes per PR, 30 minutes per OS nightly |
-| Forwarder conformance | Any forwarder binary against the bridge contract (A2 3.7.6) | `tests/forwarder/` | Every PR |
-| Real agent CLIs | Headless Claude Code and Codex on temporary spaces: A3's evals, the real-run contract, the run adapters' stream formats, setup commands | `tests/evals/`, `pnpm evals` | By hand on Windows at M4 (M4.08), M6 (M6.14), before releases and after major agent updates |
-| Prototype format | The rollback copy and the importer against an independent parser of the prototype's rules (3.15.8). Never prototype code | `packages/importer-planning/` tests | Every PR touching the importer |
-| Real-machine qualification | `tasks doctor --live` routes and receipts per target | Windows and Linux | Each release, and after agent app updates |
-| UI end to end | Playwright with Firefox and Chromium against a real service and a seeded space, fakes for agents | `tests/e2e/` | PRs touching `web`, `service`, `launch` or `runs` |
-| Screenshots | Every screen in Sumi and Washi at 1,440, 1,280 and 390 px | `tests/e2e/screens/` | Diffs attached to PRs |
-| Accessibility | axe on every screen, keyboard-only flows, NVDA and Orca by hand | `tests/e2e/` | axe per PR, manual at M5 and before releases |
-| Security | HTTP checks, DNS rebinding, the XSS suite, injection fixtures, zip hardening, the export secret scan, root refusal, the burst brake, pre-authentication bytes, token expiry (7 days unused, 30 days old), no service worker, a port held by another account giving no UI and revoked tokens while the socket keeps working, the doctor's other-accounts warning (A6 5). The two-user port-squatting test joins at M10 | integration and e2e | Every PR |
-| Performance | The budgets in 3.18.3 | `tests/perf/`, `pnpm bench` | Relative nightly, absolute at milestone close on the real machines |
-
-**Conventions** that `pnpm verify` does not check:
-- A test that makes a state or config folder or a `machine.toml` gives it the product's mode (0700, 0600) explicitly: under umask 002 a default-mode folder is group-writable, and the service refuses it. A new product path that creates files joins `[A2.3.2.2.permissions.umask]`. The Linux reference machine runs the suite under its own umask, never one set for the run, because that is where a mode the product does not set shows.
-- A test starts storage workers only through the hub, as the service does. A plain `StorageWorker` handed to the hub crashed the Windows test process (heap corruption) in about one run in five, cause unknown.
-- The end-to-end tests of one Playwright worker share one world. A test that changes a task's launch state uses its own task.
-- Tests own their processes. Every child, detached agent and extra service a test starts is terminated and awaited in `finally` and in `afterAll`, before any files are deleted. Tests of environment handling or redaction run children with an explicit minimal environment.
-- A test of "a timer exists, is cleared or fires" observes the connection's own timers through the injected clock (`packages/service/test/clock.ts`), never wall-clock bounds or process-wide timer counts. Each behaviour keeps one test with real sockets and real time. "No timer keeps the process alive" is shown by a child process that must exit on its own.
-
-**The Mira sample** (`packages/testkit/src/mira.ts`) is built through the real write path, so a sample space is a real space. Record kinds without an operation yet go in through a narrowed `StandIn`. It commits without a flush per commit (`synchronous=OFF`) while it builds a folder nobody uses yet, and sets `FULL` again before its close, whose checkpoint flushes the finished sample once: the largest sample is about 3,600 commits, and on GitHub's Windows runner a flush costs about 4 ms alone and far more while other tests flush, which made it take minutes. The known sample's digest (`FIXED_SAMPLE` in `known.ts`) changes whenever the schema or the generator changes, and is updated in the same commit.
-
-**Fake agents** (`@tasks/runs/fake-agents`) replay a recorded stream from `fixtures/streams/` byte for byte and report argv, cwd, variable names and the brief's size and hash, never its text. Still to come:
-- M6.04 adds a fake that starts a grandchild.
-- A later testkit step moves `fake-agent*.ts` and `fixtures.ts` into `packages/testkit` beside the launch fakes of `src/fakes/`, and adds A4 5.1's argv and environment checks. No test starts a real terminal, agent or `systemd-run`.
-- The Linux `claude -p` and full-access Codex streams join `fixtures/streams/` after lab session 2, and the parser tests must pass on them.
-
-**The crash harness** (`tests/crash/`, `pnpm crash`) kills a real child process at storage's crash seams and at random during a workload, then checks the recovery invariants. A kill is a real kill of a real process, because mocking SQLite or the file system, or a self-kill, would test a different code path. The seams are set only by a worker entry module, never by a request, setting or environment variable of the product. A run is replayable from its seed and prints names, codes and numbers only. Tests `A1.5.crash.*`. **Still to add:**
-- Killing the real service process over the local protocol instead of `child.ts`.
-- The maintenance worker's daily backup, retention and cleanup in the workload, with kills during retention.
-- `tasks space recover` with an outside rollback-mode writer that dies, and recovery under `RecoverSeams.at`, checked by `old-folder-kept`.
-- The CLI's `--request-id` retry among the retries.
-- M3's fault hooks (projection rename, after a redact commit before its cleanup, transfer steps) and the invariant "the projection catches up".
-- `history_text` in the value comparison.
-- M8's barrier backup before an import.
-- `launches` among the history tables, and launch writes in the workload. `sessions` and `runs` are among them from 0.3, with no writes in the workload yet: run writes, and session writes once binding writes the table.
-
-**Installed-build acceptance.** `pnpm accept m<N> --installed <root or folder>` runs the `installed` entries against a real install root or a built version folder, which `layoutTestInstall` (`packages/testkit/src/install.ts`, a test layout, not an installer) lays out as a test install (`packages/cli/test/accept.test.ts`, `[A4.5.shim.installed]`).
-
-#### 3.18.2 Screenshot review against the mockup
-
-The first baselines come from the Mira sample space. In M5.13 they are compared side by side with `A5-mockup.html` at the same width and theme, approved and offered for the owner's review. From then on, a PR that changes a baseline attaches before and after images, and the change is checked before the merge. A diff above 0.1 % of pixels without an approved baseline fails CI. Agents open their own screenshots before handing back, because a passing test does not show clutter.
-
-#### 3.18.3 Performance budgets
-
-| Budget | Target | From |
-|---|---|---|
-| Today interactive with 5,000 open tasks | ≤ 800 ms on Linux in Firefox | A5 3.25 |
-| View switch | ≤ 100 ms | A5 3.25 |
-| Check-off, star, priority, input to paint | ≤ 50 ms p95 | A5 3.25 |
-| Burst of 100 events | ≤ 16 ms of main-thread work per frame | A5 3.25 |
-| Open-set snapshot | ≤ 300 KB compressed | A5 3.25 |
-| Commit latency, one-task patch | p95 ≤ 10 ms on Windows, ≤ 25 ms on Linux | A1 3.20 |
-| Raw FTS query inside the service, at the design scale (5,000 open, 50,000 completed) | p95 < 50 ms on Windows, < 100 ms on Linux. Unmet for broad queries until M3.16 | A1 3.20 |
-| `search` tool call end to end, on the stress corpus (10,000 open, 100,000 completed) | p95 < 150 ms on Windows, < 300 ms on Linux | A3 |
-| `get_task` tool call | p95 < 50 ms | A3 |
-| Service at idle | RSS ≤ 120 MB, ≤ 5 s CPU per hour | A2 3.14 |
-| Service start to ready (warm) | ≤ 1 s Linux, ≤ 2 s Windows | A2 3.14 |
-| CLI call end to end | p95 ≤ 250 ms Linux, ≤ 400 ms Windows | A2 3.14 |
-| Bridge | The thresholds of A2 3.7.7 | A2 |
-| Tool definitions | Measured in the generated definitions and reported, not capped | A3 3.2.5 |
-
-**These targets are guidelines until real use (PLAN D26).** A missed target is measured, reported and judged, and is by itself no reason to cut or rework a feature. They are set again when the product is close to maturity. The regression rule below stays: it guards against an accident, not against a design.
-
-CI runners are noisy. CI fails a build when a budget regresses by more than 50 % against the stored baseline of the same runner type (A1 5). Absolute targets are measured on the two real machines at each milestone close. Headless Firefox keeps a 1366x768 window whatever `--window-size` says and reports `performance.now()` in whole milliseconds, so performance tests that run headless in Firefox must account for both.
-
-#### 3.18.4 CI matrix
-
-Built: `check` (`pnpm verify` on Ubuntu, under umask 002, and Windows, then a 5-minute crash run), `build` (a test-signed, reproducible build per platform, with the build part of M2's acceptance on the two Linux runners; Windows runners are elevated and the service refuses to run elevated, so that acceptance runs on a real Windows machine; macOS is build only), `smoke` (the real install script through each verifier path, then M1's acceptance and M3.01's migration drill on Linux), `nightly` (the 30-minute crash run per OS) and `m0-packaging`. Still to add:
-
-| Job | Runners | Trigger | Contents |
-|---|---|---|---|
-| `smoke` | As now | As `build` | `pnpm accept m<latest> --installed` for the active profile |
-| `nightly` | As now | Nightly on main | Long property and model runs, the scale bench, relative performance, the fallback-driver suite |
-| `e2e` | ubuntu-24.04 with Firefox and Chromium, windows-2025 with Chromium and Firefox | Pull requests touching `web`, `service`, `launch`, `runs` | `pnpm e2e`: flows, later screenshots, axe and the security suites |
-| `release` | Manual | Tags | Archives, `SHA256SUMS`, SBOM. A version number is never built twice. In v1 the owner signs `SHA256SUMS`, outside CI, with the Ed25519 release key. Its public line replaces the placeholder in `RELEASE_PUBLIC_KEYS` in a reviewed commit. Signing in a release environment, signed channel manifests and Authenticode come with the hosted channel at M10 |
-
-The workflows in `.github/workflows/` carry the details and their reasons. Rules that bind every job:
-- `check` has no path filters: a filter would skip the whole job, so verify's own lab rule could not report what it skipped.
-- **Cross-user tests** run only on GitHub-hosted runners, where the test creates and removes its second account itself (`packages/service/test/http-cross-user.test.ts`, Linux, skipped everywhere else). Not written yet: the Windows runner's cases (B's pipe, B's listener seen without admin rights) and B redeeming a code read from A's process list.
-- **Elevated Windows runners.** GitHub's Windows runners run every step elevated, and the service refuses an elevated token (A2 3.3.1). Tests that run the service from source give it a non-elevated identity (`packages/service/test/serve-entry.ts`). A test that runs a real installed service cannot (`tests/update/installed.test.ts`, `tests/update/launchers.test.ts`, `scripts/install/side-by-side.test.ts`): it is skipped only when the service's own check (`windowsElevated()`) finds this process elevated, and it runs on the Windows reference machine, which is not elevated. An elevation the check cannot read is not skipped.
-- **When GitHub Actions cannot start jobs,** the same checks run locally on the branch merged into main, on Windows and on Linux, with the pinned pnpm and nothing else changed. A local run cannot replace the tests that need a throwaway runner (a second user, the M10 port test) or the CI-only jobs, so a change to `spikes/m0/packaging` waits for CI. When Actions works again, the check runs on main once.
-- Two full test runs never share one machine at the same time. After a batch of merges, the suite runs on main on Windows and Linux. Time limits stay generous for tests that open several spaces, because the Windows runner is slower than a development machine.
-
-#### 3.18.5 How an agent verifies its own work
-
-`AGENTS.md` lists the steps (failing test first, `pnpm verify`, the Verify line's output in the pull request, what was not tested). In addition:
-1. UI steps run `pnpm e2e`, and the agent looks at the screenshots in `tests/e2e/results/` (git-ignored). RM steps need the Linux test install.
-2. "Not run" is an acceptable answer. A configuration readback is never evidence of a launch.
-3. A flaky test is quarantined only with an issue and a recorded reason.
-4. **Review by risk.** An independent review checks the step against its sections before the merge. Storage, protocol, security and migration steps get two deep rounds. Every other substantial step (launch, or more than a few hundred lines) gets one round, and a second only when a high-severity finding changed the design. Every finding is fixed or answered.
-5. **Merge-ready hand-over.** The review agent ends by merging main into the branch and running both checks on the merged result, Windows first and Linux after it. The pull request merges on that evidence.
-
-#### 3.18.6 The v1 acceptance manifest
-
-Appendix sections 5 describe tests by area, and an area often spans several milestones. `tests/manifest.json` makes the split explicit, so no milestone depends on scope that comes later.
-
-- **Entries.** An entry names its test ID, title, plan source, owning milestone (`M0` to `M99`), kind and scope profiles. Entries arrive with their tests: an entry for a later milestone is added in the step that writes its test, never listed ahead. The check (`scripts/manifest.ts`, `[A7.3.18.6.manifest-check]`) states how a test carries its ID and what fails.
-- **Kinds.** `ci` runs on CI from source. `installed` also runs against an installed build (the `build` and `smoke` jobs). `manual` covers real-agent evals, `doctor --live` receipts, M0 rows, NVDA and Orca passes and the owner's reviews. Manual results are recorded per release, apart from the CI and installed-build results.
-- **Acceptance.** `pnpm accept m<N>` runs every `ci` and `installed` entry owned by M1 to M<N> in the profile (only the `installed` ones with `--installed`) and lists the open `manual` ones, so it never runs an entry owned by a later milestone. Each definition of done refers to its milestone's entries, never to a whole appendix section.
-
-**Owners where a section spans milestones.**
-
-| Tests | Owner |
-|---|---|
-| The repository bootstrap, the verify conventions and the M0 lab self-tests | M0 |
-| A1 §5: operations, receipts, staged plan, migrations runner, minimal backup set. A3 §5: the CLI retry with `--request-id` | M1 |
-| A1 §5: the 0.2 migration and its installed-build drill, undo, revert, lifecycle, redaction, search, dedupe, bundles, claim and transfer, projection, scale | M3 |
-| A1 §5: the three-way merge property test | M7 (its first user is the prototype importer) |
-| A1 §5: the explicit file import (working copies, preview, apply) | M8 |
-| A1 §5: attachment staging and ingestion | After v1, with attachments in the UI |
-| A2 §5: framing, handshake and pre-authentication bytes | M1 (transport), M2 (bridge) |
-| A2 §5: HTTP checks, the port held by another account | M2 |
-| A2 §5: launcher modes, install IDs, install bootstrap and its signature check, the `tasks-launchd` exit mapping with a stub service | M1 |
-| A2 §5: update journal, lock, startup repair, launcher crash windows | M6 |
-| A2 §5: the LaunchAgent under real launchd | `manual`, when a Mac is available |
-| A2 and A6: the two-user port-squatting test and the authenticated origin | M10 |
-| A3 §5: registry, parity, scope, eras, receipts, staged plan, framing, binding | M2 for the first five tools, M4 for the rest |
-| A3 §5: the routine that initializes offline and then calls `run_report` | M6 |
-| A3 evals 1, 3, 4, 5 and the ingestion form of 2 | M4 (`manual`) |
-| A3 eval 2 as a real routine run | M6 (`manual`) |
-| A4 §5.1 and §5.2: launch, shim, terminals, T3 Open, places (folders: M4, M6) | M2 |
-| A4 §5.1 and §5.2: runs, cancellation, routines, the work folder | M6 |
-| A4 §5.1: scheduler with a fake clock, occurrence states | M9 |
-| A4: T3 run adapter tests | With the adapter, after v1 |
-| A5 §5 | M2 (skeleton page), M5, M6 (run UI and the work folder) |
-| A6 §5: local-phase tests, including two Claims of one backup and duplicate or misdirected transfer imports (M3) and the doctor's other-accounts warning (M2) | The milestone of each feature, M1 to M7 |
-| A6 §5: mailbox audiences, recovery wrapping, remote execution, the L1 execution-journal crash tests | Their phase, M11 onwards |
-| A7: importer, export, rollback, trial tooling | M7 |
-
-**Scope profiles.** The default profile is `v1`. Each cut in 3.6 adds one profile, cumulative in the cut order. A profile moves its manifest entries to M8 and changes the definitions of done and the retirement criteria with them. `pnpm accept` and `tasks trial check` read the same profile.
-
-| Profile | Adds the cut | Changes |
-|---|---|---|
-| `v1-cut-1` | Claude Desktop and Codex app links | M6.11 moves to M8. M6 definition of done 6 covers T3, Claude Code and Codex only |
-| `v1-cut-2` | The Agents view and session revert in the UI | Their A5 entries move to M8. Retirement criterion 7 is met through the CLI |
-| `v1-cut-3` | First-run UI steps 2 to 5 | Their part of M5.12 moves to M8. The import card stays in Settings › Data |
-| `v1-cut-4` | The Washi theme | Screenshot baselines and contrast tests in Sumi only. M5 definition of done 2 in Sumi |
-| `v1-cut-5` | Projection files for completed tasks | Those projection entries move to M8. Under M3 definition of done 6, completed tasks appear only in `catalog.jsonl` |
-| `v1-cut-6` | The Wrap-up routine | Wrap-up's part of M6.07, M6 definition of done 5, the rehearsal's Wrap-up and retirement criterion 8 move to M8 |
-
-A required capability of D6, D7 or D8 has no profile. Changing that scope deviates from the owner's decisions and is recorded in the specification (3.7 gate rules).
-
-### 3.19 Delivery risks
-
-| # | Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|---|
-| D1 | A required route fails on Linux in M0 (T3 pairing, Codex environment, Claude terminal) | Medium | High | Fallback routes, remediation and a re-test through the same path. Until one route qualifies, that target blocks M2's definition of done. Copy does not count. Changing D7's scope is recorded in the specification. Upstream requests |
-| D2 | Agent apps change during the build (monthly releases, T3 before 1.0, Codex's rollout layout) | High | Medium | Qualification receipts per version. Adapters isolated in `launch`. The reference match fails safe. L rows re-run after updates |
-| D3 | `node:sqlite` defect or API change (release candidate) | Low to medium | High | Driver interface, an exact Node pin, the fallback driver in CI from M3 |
-| D4 | Bridge thresholds fail | Medium | Medium | Forwarder steps F1–F4: four conditional steps outside the base |
-| D5 | Lab sessions and the trial need the owner at a machine | Medium | Medium | Agents never wait: gated steps are built and independent steps go on. Batched lab sessions |
-| D6 | Scope pressure from a broad plan | High | High | The v1 scope in section 2, recorded deviations, the cut list in 3.6 |
-| D7 | Contract and migration churn with parallel agents | Medium | Medium | One open migration at a time, additive contract changes (3.4). Schema freeze at M3.01 |
-| D8 | Managed-machine changes: Firefox snap refreshes, the user-namespace restriction, app versions set by the machine's managers | Medium | Medium | Isolated test installs, doctor checks, M0 rows re-run on change |
-| D9 | Connector approvals block Refresh under `codex exec` | Medium | High | N04 early, through the real Refresh path and every read operation. Fallback: read overrides set by the user (agents never change approval settings), re-tested through the same path. A visible-session Refresh needs a recorded change of D8's scope |
-| D10 | The importer meets surprises in real data, which exists only on the Linux reference machine | Medium | Medium | A synthetic fixture with every edge case, the dry run, the real-use import and its re-imports long before M7, the rehearsal, the needs-attention list |
-| D11 | Imported source keys differ from the connectors' keys, so the first Refresh duplicates | Medium | Medium | `url:` keys plus A3 3.11.2's possible-duplicate attach. The rehearsal counts duplicates. Connector-style keys only when proven |
-| D12 | Real work data leaks into the repo, fixtures, screenshots or logs | Low | High | `AGENTS.md` rules, the content-free log test, a CI check that fixtures use only fixture names, reports kept in the space |
-| D13 | Windows-only or Linux-only bugs found late | Medium | Medium | Both OSes in CI from the first commit, RM steps on a real Linux machine |
-| D14 | The trial fails | Medium | Medium | Rollback without loss, rehearsed in M7.09: canonical events, a new folder path, the export exchange as the return base, the frozen prototype, a restart after the fix |
-| D15 | The owner's time for the M0 lab | Medium | Medium | Three batched sessions with prepared kits and plans |
-| D16 | Token cost of evals and runs | Low | Low | Evals by hand, small corpora, run limits (turns, wall time) |
-| D17 | UI speed on Linux in the Firefox snap | Low to medium | Medium | U07 in M0, M5.13, A5 3.25's fallbacks |
-| D18 | Agents colliding in UI files | Medium | Low | One UI lane in M5, the other agents on runs and the importer (3.6) |
-| D19 | A build breaks the real work space during early real use | Medium | High | A verified backup before every upgrade, the deploy check after every deploy, a break fixed before other work, the prototype as source of truth until M7 |
-| D20 | Antivirus software flags the unsigned Windows launchers. Microsoft Defender once quarantined a freshly built `tasksw.exe` as a machine-learning false positive, which failed every test that builds or installs the launchers | Medium | Medium | Authenticode signing at M10 (3.17). Before a public release the build is installed on a Windows machine with no Defender allowance and no exclusion, and must not be flagged. Until then a development machine may need an allowance, which only its owner sets |
-
----
-
-## 6. Open items
-
-Nothing decides these yet. Until a step takes one, read it as open, not as a rule.
-
-| # | Item | Default until decided |
-|---|---|---|
-| 3 | The reverse-DNS prefix and SignPath | Settled at the public release gate (M10) |
-| 27 | Moving a space to another folder | No move command. A later step builds one on export, restore, transfer and claim, under the rules in A1 3.18. Until then a backup restored into a new folder and claimed does it |
-| 29 | A folder binding refused by the request handler (`folder_missing`, `not_a_directory`, `folder_reserved`, `folder_taken`, A1 3.15) depends on this machine's folders and has no receipt, so a retry after a lost refusal is decided again and applies once the folder exists | Nothing is applied twice or lost. The direction: the handler's refusal travels in the write request, so the writer stores it as a rejected receipt that every retry replays. It changes the write protocol of every write entry and needs its own reviewed step |
-| 30 | Service parts that A2 and the merged steps leave "not built" and that no step above names: worker restart with backoff and `locked_elsewhere` recovery, the 500 ms configuration reload that keeps the last good version, `tasks space remove` (the space verbs keep `[[spaces]]` themselves, A2 3.1), `tasks space cleanup` for crash leftovers, `STORAGE_OVERLOADED`'s `retry_after_ms`, `tasks service restart` and `logs`, `tasks open` starting a stopped service, the Start menu shortcut and the Linux desktop entry, and `tasks ui sessions [--revoke <id>]`. Each, and the `secrets/` folder when a step adds it, creates its files through `packages/files` and judges a folder of its own before it first writes into it | Each joins the first step that needs it, at the latest the last step of the milestone whose definition of done depends on it, and that step names it in its Work column |
-| 31 | A space whose migration failed gets no retention, and a migration that always runs past the open's bound and then fails records nothing, so each open tries it again behind a new barrier backup | Backups pile up only in that case, and nothing is removed. Recording a late failure when it arrives would bound it. It needs its own reviewed step, because it touches the migration path |
-| 32 | Space folders, and the folder that holds them, are not judged by the ownership rule that guards the state and configuration folders: the product writes `writer.lock`, `writer.json` and its databases into a space folder without checking who else can write it (A6 T1 says they are checked and repaired at start) | Not judged. A step of its own adds the check, with a rule for spaces on removable or synced drives, where every file can show mode 0777 and another owner |
-
-**Decided by measurement, not by the owner:** A1 open items 2–4 (M3.16), A2 open items 1, 2 and 5 (U01, S05, untested macOS), A3's shared hosts (A03–A05), A4 open items 3–7 (N04, L07, L08, N03, L05, L04), and A6 open items 4–6 (at L1 and L4).

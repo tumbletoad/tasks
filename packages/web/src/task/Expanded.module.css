@@ -451,6 +451,11 @@ a + .muted,
   cursor: pointer;
 }
 
+/* Beside a finished task's status, on its line. */
+.reopen {
+  margin: 0 0 0 8px;
+}
+
 /* Who it waits on: an outlined text field. */
 .text {
   width: 100%;

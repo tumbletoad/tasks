@@ -82,7 +82,11 @@ class World {
       }
     };
     const client = {
-      task: { update: call("task.update"), finish: call("task.finish") },
+      task: {
+        update: call("task.update"),
+        finish: call("task.finish"),
+        reopen: call("task.reopen"),
+      },
       history: { undo: call("history.undo"), redo: call("history.redo") },
       receipt: { get: call("receipt.get") },
     } as unknown as ConstructorParameters<typeof Edits>[0]["client"];
@@ -664,6 +668,53 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     w.feed([task(2, { version: 3 })], String(w.calls[2]?.input["request_id"]), ["lifecycle"]);
     expect(w.edits.getState().leaving.has("t_00002")).toBe(false);
     expect(w.row("t_00002")?.lifecycle).toBe("active");
+  });
+
+  test("Reopen brings a finished task back with a base, and its toast's Undo finishes it again by its commit", async () => {
+    const w = new World([]);
+    const done = task(7, { lifecycle: "completed", completed_at: Date.UTC(2026, 10, 3) });
+    w.answer("task.reopen", () => ({
+      result: "reopened",
+      task: "M-7",
+      lifecycle: "active",
+      status: "open",
+      as_of: w.asOf(11),
+    }));
+    w.edits.reopen(done);
+    expect(w.calls[0]).toMatchObject({
+      name: "task.reopen",
+      input: { task: "t_00007", base: w.asOf(10) },
+    });
+    // A person's click has no reason to give, and sends none.
+    expect(w.calls[0]?.input).not.toHaveProperty("reason");
+    expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.reopened" } });
+    await flush();
+    w.feed([task(7, { version: 2 })], String(w.calls[0]?.input["request_id"]), ["lifecycle"]);
+    expect(w.row("t_00007")?.lifecycle).toBe("active");
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_r",
+      tasks: ["M-7"],
+      task_count: 1,
+      as_of: w.asOf(12),
+    }));
+    w.lastToast()?.action?.run();
+    await flush();
+    expect(w.calls[1]).toMatchObject({
+      name: "history.undo",
+      input: { commit: `op_${"11".padStart(26, "0")}` },
+    });
+
+    // A refusal says so, and offers nothing that would only fail again.
+    w.answer("task.reopen", () => {
+      throw appError("TASK_NOT_ACTIVE", {});
+    });
+    w.edits.reopen(task(8, { lifecycle: "archived" }));
+    await flush();
+    expect(w.lastToast()).toEqual(
+      expect.objectContaining({ kind: "error", text: { id: "toast.reopenFailed" } }),
+    );
+    expect(w.lastToast()?.action).toBeUndefined();
   });
 
   test("an undo whose every field an agent changed since offers Restore mine: a partial undo, then the person's value with a fresh base", async () => {
