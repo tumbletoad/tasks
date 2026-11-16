@@ -22,7 +22,12 @@ type RpcSession = Awaited<ReturnType<HttpWorld["user"]>>;
 /** A message as the page receives it: through JSON, checked by its shape. */
 function wire(message: unknown) {
   const parsed = parseMessage(JSON.stringify(message));
-  if (parsed === undefined || parsed.type === "hello" || parsed.type === "error") {
+  if (
+    parsed === undefined ||
+    parsed.type === "hello" ||
+    parsed.type === "error" ||
+    parsed.type === "machine"
+  ) {
     throw new Error("not a feed message");
   }
   return parsed;
