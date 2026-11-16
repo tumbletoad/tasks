@@ -3689,7 +3689,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.keys",
-      "title": "In Chromium and Firefox: n, / and Ctrl+K reach the top field and ? the sheet of the view's keys; none fires while typing, composing, with Alt or inside the sheet; with single-letter keys off none fires, Ctrl+K does, the hint and the sheet say so; the tooltip shows on hover and keyboard focus and Escape closes only it",
+      "title": "In Chromium and Firefox: n, / and Ctrl+K reach the top field and ? the sheet of the view's keys; none fires while typing, composing, with Alt or inside the sheet; with single-letter keys off none fires, Ctrl+K does, the hint and the sheet say so; the tooltip shows on hover and keyboard focus, Escape closes a hover label and nothing else, and on a focused control goes with what Escape closes there",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",

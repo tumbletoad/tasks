@@ -1,8 +1,10 @@
 // The page's one tooltip: the small label an element carries in `data-tip`, shown beside it after a
 // short rest of the mouse, and at once when the keyboard brings focus to it. It is never the only
 // way to learn what a control does: the element's accessible name or description says the same,
-// so the label itself is hidden from assistive technology. Escape closes it and nothing else
-// (WCAG 1.4.13); the pointer may move onto it, and it stays while the pointer is on either.
+// so the label itself is hidden from assistive technology. Escape closes it (WCAG 1.4.13): a label
+// the mouse brought, and nothing else; a label of the focused control goes with what Escape closes
+// there, so one press still closes the task or the editor. The pointer may move onto a label, and
+// it stays while the pointer is on either.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import css from "./Tips.module.css";
 import { classes } from "./css.ts";
@@ -39,9 +41,12 @@ export function Tips() {
     /** The element whose label shows, or is about to. */
     let current: HTMLElement | undefined;
     let visible = false;
-    const show = (element: HTMLElement, delay: number) => {
+    /** The label shows for keyboard focus, not for the mouse. */
+    let focused = false;
+    const show = (element: HTMLElement, delay: number, byFocus = false) => {
       clearTimeout(timer);
       current = element;
+      focused = byFocus;
       timer = setTimeout(() => {
         const text = element.dataset["tip"];
         if (!element.isConnected || text === undefined || text === "") return;
@@ -78,7 +83,7 @@ export function Tips() {
     const onFocus = (event: FocusEvent) => {
       const element = tipOf(event.target);
       if (element !== undefined && element === event.target && element.matches(":focus-visible")) {
-        show(element, 0);
+        show(element, 0, true);
       } else hide();
     };
     const onBlur = () => {
@@ -86,9 +91,10 @@ export function Tips() {
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !visible) return;
-      // The label is the innermost thing open: Escape closes it and nothing behind it.
-      event.preventDefault();
-      event.stopPropagation();
+      if (!focused) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       hide();
     };
     const onScroll = () => {

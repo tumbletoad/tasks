@@ -70,8 +70,8 @@ function Appearance() {
   const say = useToast();
   const machine = useMachine();
   return (
-    <section className={styles.section} aria-labelledby="settings-appearance">
-      <Heading level={2} id="settings-appearance" className={styles.heading}>
+    <section className={styles.section}>
+      <Heading level={2} className={styles.heading}>
         {t("settings.appearance")}
       </Heading>
       <RadioGroup
@@ -112,8 +112,8 @@ function Keyboard() {
   const sheet = useSheet();
   const label = useKeyLabel();
   return (
-    <section className={styles.section} aria-labelledby="settings-keyboard">
-      <Heading level={2} id="settings-keyboard" className={styles.heading}>
+    <section className={styles.section}>
+      <Heading level={2} className={styles.heading}>
         {t("settings.keyboard")}
       </Heading>
       <SwitchField
@@ -180,8 +180,8 @@ function Terminal() {
   // A terminal machine.toml names that is not found here stays visible, chosen.
   if (!options.includes(view.chosen)) options.push(view.chosen);
   return (
-    <section className={styles.section} aria-labelledby="settings-open">
-      <Heading level={2} id="settings-open" className={styles.heading}>
+    <section className={styles.section}>
+      <Heading level={2} className={styles.heading}>
         {t("settings.open")}
       </Heading>
       <RadioGroup

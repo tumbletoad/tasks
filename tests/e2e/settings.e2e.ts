@@ -258,7 +258,7 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     }
   });
 
-  test("the tooltip shows after the mouse rests and at once on keyboard focus, and Escape closes only it", async ({
+  test("the tooltip shows after the mouse rests and at once on keyboard focus, and Escape closes it", async ({
     page,
     world,
   }) => {
@@ -266,6 +266,13 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     await open(page, world, "/inbox");
     const gear = page.getByRole("link", { name: "Settings" });
     const tip = page.getByRole("tooltip", { includeHidden: true });
+    await gear.hover();
+    await expect(tip).toHaveText("Settings");
+    // Escape closes a label the mouse brought, and nothing else.
+    await page.keyboard.press("Escape");
+    await expect(tip).toHaveCount(0);
+    await expect(page).toHaveURL(/\/inbox$/u);
+    await page.mouse.move(600, 600);
     await gear.hover();
     await expect(tip).toHaveText("Settings");
     await page.mouse.move(600, 600);
@@ -277,7 +284,6 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     await expect(tip).toHaveText("Search instead");
     await page.keyboard.press("Escape");
     await expect(tip).toHaveCount(0);
-    // Escape closed the label only: focus and the page stay where they were.
     await expect(page.getByRole("button", { name: "Search instead" })).toBeFocused();
     await expect(page).toHaveURL(/\/inbox$/u);
     // The label is placed under the strict CSP without an inline style the policy blocks.
