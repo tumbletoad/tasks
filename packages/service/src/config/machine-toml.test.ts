@@ -71,6 +71,34 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     ]);
   });
 
+  test("[A2.3.2.4.config.space-copies] copies of one space share its ID in [[spaces]]; a folder named twice is refused", () => {
+    const id = "sp_43f0gjcvzgaa1gh5my6qxwcj7m";
+    const copies = [
+      "[[spaces]]",
+      `id = "${id}"`,
+      'path = "/home/mira/Tasks/mira"',
+      "enabled = false",
+      "",
+      "[[spaces]]",
+      `id = "${id}"`,
+      'path = "/home/mira/Tasks/mira-copy"',
+      "",
+    ].join("\n");
+    const read = parseMachineConfig(copies, "linux");
+    expect(read.problems).toEqual([]);
+    expect(read.config.spaces).toEqual([
+      { id, path: "/home/mira/Tasks/mira", enabled: false },
+      { id, path: "/home/mira/Tasks/mira-copy", enabled: true },
+    ]);
+    // One folder named twice, under any spelling Windows reads as the same: fatal for the start.
+    const twice = `${copies}\n[[spaces]]\nid = "sp_3z8sm956jp8dajmtsar5kx026c"\npath = "/home/mira/Tasks/mira"\n`;
+    expect(fatalProblems(parseMachineConfig(twice, "linux").problems)).toEqual([
+      { key: "spaces[3].path", code: "duplicate", severity: "error" },
+    ]);
+    const windows = `[[spaces]]\nid = "${id}"\npath = 'C:\\Tasks\\Mira'\n\n[[spaces]]\nid = "${id}"\npath = 'c:\\tasks\\mira'\n`;
+    expect(fatalProblems(parseMachineConfig(windows, "win32").problems)).toHaveLength(1);
+  });
+
   test("an instance may not be called manual: the word is the hand-made MCP entry's (A3 3.7.4)", () => {
     const text = (id: string) =>
       `[[instance]]\nid = "${id}"\ntarget = "codex-cli"\nlabel = "Codex"\n`;

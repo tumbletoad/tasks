@@ -116,6 +116,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
       }
       case "space":
         return await spaceCommand(io, globals, args, options);
+      // `tasks recover <space>` is `tasks space recover <space>` under a second name (A2 3.10.1).
+      case "recover":
+        return await spaceCommand(io, globals, ["recover", ...args], options);
       case "roots":
         return await rootsCommand(io, globals, args, options);
       case "view":

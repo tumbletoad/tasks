@@ -15,12 +15,18 @@
 //   tasks space restore latest [<space>] --to <folder>
 //   tasks space rescue [<space>]                     the readable rows into exchange/rescued
 //   tasks space claim [<space>]
-//   tasks space recover [<space>]
+//   tasks space recover [<space>]                    also as `tasks recover [<space>]`
 //   tasks space use <space>                          the machine's default space
 //
 // <space> is an ID, a name or a folder; without one, --space, else the one space the service has.
+// Which copy of a space an ID or a name means is the service's one rule (A2 3.10.5): the writable
+// copy, and a read-only copy by its folder.
+//
+// The service records what create, open, close, restore and claim do in machine.toml, so it holds
+// after a restart. When it cannot, the answer's `not_remembered` line says why, on stderr.
 import { isAbsolute, join, resolve } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
+import { isAmbiguity, onlySpace } from "@tasks/service/copies";
 import { hostFacts, resolveLayout } from "@tasks/service/paths";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
@@ -48,18 +54,23 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   restore <backup> --in-place [<space>]    Replace the space with the backup, keeping the old folder
   rescue [<space>]                         Write the rows that can still be read into the space's
                                            exchange/rescued folder
-  claim [<space>]                          Make a read-only copy this machine's
-  recover [<space>]                        Play back a space's rollback journal
+  claim [<space>]                          Make a restored copy this machine's
+  recover [<space>]                        Play back a space's rollback journal (also: tasks recover)
   use <space>                              Make it the default: what a new tab and a command
                                            without --space open
 
 <space> is an ID, a name or a folder. Without one, --space, else the one space the service serves.
+An ID or a name means the copy that takes writes; name a restored copy beside it by its folder.
+<backup> is a file, or a name tasks space backups prints. A space stays open or closed as you left
+it, also after a restart: the service records it in machine.toml.
 Only the user can run these, in an interactive terminal; list works everywhere.
 `;
 
 interface SpaceRow {
   entry: number;
   id?: string;
+  /** The ID the entry names, also before the space has been served (closed, unavailable). */
+  registered?: string;
   name?: string;
   ref_prefix?: string;
   state: string;
@@ -155,7 +166,7 @@ export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRo
     `  ${CLI_NAME} space claim <new folder>`,
     "<name> is the name the backup prints. <new folder> must not exist yet.",
     "The old folder stays where it is, read-only, and keeps all its files.",
-    "If machine.toml names the old folder, change that path to the new folder: the next start then opens the copy.",
+    `The copy opens at every start from now on. Close the old folder when you no longer need it: ${CLI_NAME} space close <folder>`,
   ];
   return row.reason === "network_filesystem"
     ? backup
@@ -166,20 +177,31 @@ export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRo
 }
 
 function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): void {
-  const name = row.name ?? "(unnamed)";
+  // A space not served since the start (closed, or unavailable) has no name read yet.
+  const name = row.name ?? (row.state === "closed" ? "(not open)" : "(unnamed)");
   const state = `${row.reason === undefined ? row.state : `${row.state}: ${row.reason}`}${isDefault ? ", default" : ""}`;
+  const id = row.id ?? row.registered;
   io.stdout(
-    `${verb}${name}${row.ref_prefix === undefined ? "" : ` (${row.ref_prefix})`}  ${state}${row.id === undefined ? "" : `  ${row.id}`}${row.folder === undefined ? "" : `  ${row.folder}`}\n`,
+    `${verb}${name}${row.ref_prefix === undefined ? "" : ` (${row.ref_prefix})`}  ${state}${id === undefined ? "" : `  ${id}`}${row.folder === undefined ? "" : `  ${row.folder}`}\n`,
   );
   if (row.message !== undefined) io.stdout(`  ${row.message}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 
 /**
+ * What the service could not record in machine.toml (A2 3.10.1): the verb was done for this run,
+ * and this line says what a restart does instead, and why. On stderr, beside the result.
+ */
+function printNotRemembered(io: Io, result: Record<string, unknown>): void {
+  const line = result["not_remembered"];
+  if (typeof line === "string") io.stderr(`${line}\n`);
+}
+
+/**
  * The space a command names, in A2 3.10.5's order as op/call takes it: its argument, --space,
- * TASKS_SPACE, else the one space the service has. That one is sent by its folder, never its ID: a
- * restored copy shares its original's ID, and the service must act on the space that was chosen
- * here. `tasks view` names its space the same way.
+ * TASKS_SPACE, else the one space the service has, whose copy is picked by the one rule for copies
+ * (the writable one). That one is sent by its folder, never its ID, so the service acts on the copy
+ * that was chosen here. `tasks view` names its space the same way.
  */
 export async function whichSpace(
   io: Io,
@@ -194,8 +216,10 @@ export async function whichSpace(
       ? absolute(io, named)
       : named;
   const listed = (await call("space/list", {}))["spaces"] as SpaceRow[];
-  const only = listed.filter((s) => s.state !== "closed");
-  const folder = only.length === 1 ? only[0]?.folder : undefined;
+  const only = onlySpace(
+    listed.filter((s) => s.state !== "closed").map((s) => ({ ...s, id: s.id ?? s.registered })),
+  );
+  const folder = only === "several" || isAmbiguity(only) ? undefined : only?.folder;
   if (folder !== undefined) return folder;
   throw new UsageError("Name the space: an ID, a name or a folder");
 }
@@ -252,6 +276,7 @@ export async function spaceCommand(
         });
         out(result, () => {
           printSpace(io, result["space"] as SpaceRow, "Created ");
+          printNotRemembered(io, result);
         });
         return 0;
       }
@@ -267,6 +292,7 @@ export async function spaceCommand(
         });
         out(result, () => {
           printSpace(io, result["space"] as SpaceRow, "Opened ");
+          printNotRemembered(io, result);
         });
         return 0;
       }
@@ -284,6 +310,9 @@ export async function spaceCommand(
           } else {
             const verb = { close: "Closed ", claim: "Claimed ", recover: "Recovered " }[sub];
             printSpace(io, result["space"] as SpaceRow, verb);
+            // A6 3.5's warning at a claim, in the service's words.
+            if (typeof result["warning"] === "string") io.stdout(`${result["warning"]}\n`);
+            printNotRemembered(io, result);
           }
         });
         return 0;
@@ -334,20 +363,22 @@ export async function spaceCommand(
         const inPlace = o.set.has("--in-place") || o.values.has("--in-place");
         if ((to === undefined) === !inPlace)
           throw new UsageError("tasks space restore takes --to <folder> or --in-place");
-        const file =
+        // A path is a file. A bare name is a backup's or a bundle's as `space backups` prints it,
+        // in the folders of the space named after it; with --to, a bare file name with its
+        // extension stays a file in the working folder.
+        const isFile =
           isAbsolute(backup) ||
           backup.includes("/") ||
           backup.includes("\\") ||
-          (/\.(?:db\.gz|zip)$/i.test(backup) && to !== undefined)
-            ? absolute(io, backup)
-            : backup;
+          (/\.(?:db\.gz|zip)$/i.test(backup) && to !== undefined);
         const result = await call("space/restore", {
-          backup: file,
+          backup: isFile ? absolute(io, backup) : backup,
           ...(to === undefined
             ? { space: await which(o.values.get("--in-place") ?? o.positional[1]) }
             : { to: absolute(io, to) }),
-          // `latest` names the space whose newest verified backup it restores (A1 3.2).
-          ...(backup === "latest" && to !== undefined ? { of: await which(o.positional[1]) } : {}),
+          // `latest` names the space whose newest verified backup it restores (A1 3.2), and a
+          // backup's name the space it is of.
+          ...(to !== undefined && !isFile ? { of: await which(o.positional[1]) } : {}),
         });
         out(result, () => {
           if (typeof result["backup"] === "string") {
@@ -356,9 +387,10 @@ export async function spaceCommand(
           printSpace(io, result["space"] as SpaceRow, "Restored ");
           if (result["read_only_copy"] === true) {
             io.stdout(
-              "This is a read-only copy. Claim it to write to it: tasks space claim <space>\n",
+              `This is a read-only copy. Claim it to write to it: ${CLI_NAME} space claim <folder>\n`,
             );
           }
+          printNotRemembered(io, result);
         });
         return 0;
       }
@@ -394,7 +426,9 @@ export async function spaceCommand(
         );
         const byId = matches.filter((row) => row.id === wanted);
         const chosen = byId.length > 0 ? byId : matches;
-        if (chosen.length > 1) throw new UsageError("Several spaces match: name it by its folder");
+        // Copies of one space share its ID, which is what the default names: they are one match.
+        if (new Set(chosen.map((row) => row.id)).size > 1)
+          throw new UsageError("Several spaces match: name it by its folder");
         const id = chosen[0]?.id;
         if (id === undefined) throw new UsageError("No space of the service matches");
         const result = await call("space/use", { space: id });

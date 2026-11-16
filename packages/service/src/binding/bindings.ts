@@ -477,20 +477,26 @@ export class Bindings implements BindingPort {
    */
   #pinAtBind(slot: Slot): void {
     const live = this.#options.spaces().filter((s) => s.state !== "closed" && s.id !== undefined);
+    // Copies of one space share its ID and name (A2 3.10.5): they count as one space here, and a
+    // pin is a space ID, whose copy every call then picks by the one rule.
+    const ids = (spaces: readonly { readonly id: string | undefined }[]) => [
+      ...new Set(spaces.map((s) => s.id)),
+    ];
     const named = slot.named;
     if (named !== undefined) {
       if (isId(named, "sp")) {
         slot.space = named;
         return;
       }
-      const byName = live.filter((s) => s.name?.toLowerCase() === named.toLowerCase());
-      if (byName.length === 1) slot.space = byName[0]?.id;
+      const byName = ids(live.filter((s) => s.name?.toLowerCase() === named.toLowerCase()));
+      if (byName.length === 1) slot.space = byName[0];
       return;
     }
     // Chosen for it, not named by it: only a space its home may use, so a connection refused the
     // one space served now pins nothing and follows the person's fix (a registration, another
     // space opened as the default) at its first allowed call (ops/grant.ts).
-    const only = live.length === 1 ? live[0]?.id : undefined;
+    const served = ids(live);
+    const only = served.length === 1 ? served[0] : undefined;
     if (only !== undefined && this.#options.homes.may(slot.instance, only)) slot.space = only;
   }
 

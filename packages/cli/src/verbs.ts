@@ -115,12 +115,19 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
 
 export async function runVerb(
   io: Io,
-  globals: Globals,
+  given: Globals,
   verb: VerbSpec,
   args: readonly string[],
   options: ConnectOptions,
   present?: (result: Record<string, unknown>, printed: string) => Promise<void>,
 ): Promise<number> {
+  // `--space` may name a folder, as the space verbs' <space> does: sent absolute, it names that
+  // copy of a space, a read-only copy beside its original too (A2 3.10.5).
+  const named = given.space;
+  const globals: Globals =
+    named !== undefined && (isAbsolute(named) || named.includes("/") || named.includes("\\"))
+      ? { ...given, space: resolve(io.cwd, named) }
+      : given;
   let input: Record<string, unknown>;
   try {
     const base = globals.input === undefined ? undefined : await readInput(io, globals.input);

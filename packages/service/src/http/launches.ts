@@ -19,6 +19,7 @@ import {
   type IntentState,
   type Route,
 } from "@tasks/launch";
+import { findSpace, isAmbiguity } from "../ops/copies.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
 import type { HttpLog } from "./events.ts";
 
@@ -176,13 +177,17 @@ export class UiLaunches {
     this.#unlisten?.();
   }
 
-  /** The served space a request names (its `Tasks-Space`): an ID or a name. */
+  /**
+   * The served space a request names (its `Tasks-Space`): an ID or a name, the copy of it that
+   * copies.ts's rule picks among the served copies (A2 3.10.5).
+   */
   #space(ref: string | undefined): ServedSpace {
     if (ref === undefined) throw invalid("Name the space of this tab.", "space");
-    const matches = this.#options.host
-      .spaces()
-      .filter((s) => s.id !== undefined && (s.id === ref || s.name === ref));
-    const space = matches.length === 1 ? matches[0] : undefined;
+    const found = findSpace(
+      this.#options.host.spaces().filter((s) => s.id !== undefined && s.reader !== undefined),
+      ref,
+    );
+    const space = isAmbiguity(found) ? undefined : found;
     if (space?.reader === undefined || space.id === undefined) {
       throw new AppError({
         code: "space_unavailable",

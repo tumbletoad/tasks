@@ -319,9 +319,9 @@ interface Status {
  * The request path, end to end: `op/list` names the entry of every verb this CLI has, and
  * `space.status` answers through `op/call` for each served space, so a service whose status
  * answers while its operations fail does not pass. A copy served beside its original shares its
- * ID and cannot be named, so it is not asked; when no space could be asked, the check says so as
- * a warning, never as a pass. With no space served, op/call must still answer with A3's body for
- * a space it does not serve. Only codes reach the detail, never a result.
+ * ID, which means one copy by A2 3.10.5's rule, so each space is asked once by its ID. With no
+ * space served, op/call must still answer with A3's body for a space it does not serve. Only codes
+ * reach the detail, never a result.
  */
 export async function requestCheck(session: Session, spaces: Status["spaces"]): Promise<Check> {
   const ask = (space: string | undefined): Promise<unknown> =>
@@ -355,21 +355,14 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
         ? { id: "requests", status: "ok", detail: "No space is served; op/call answered." }
         : { id: "requests", status: "fail", detail: `op/call failed: ${code}.` };
     }
-    const named = served.filter((space) => served.filter((s) => s.id === space.id).length === 1);
-    for (const space of named) await ask(space.id);
-    const skipped = served.length - named.length;
-    if (named.length === 0) {
-      return {
-        id: "requests",
-        status: "warn",
-        detail:
-          "Not tested: every served space shares its ID with another (a restored copy beside its original).",
-      };
-    }
+    // Copies of one space share its ID, which names the copy A2 3.10.5's rule picks: each space
+    // is asked once, by its ID.
+    const ids = [...new Set(served.map((space) => space.id))];
+    for (const id of ids) await ask(id);
     return {
       id: "requests",
       status: "ok",
-      detail: `Every verb has its operation; space.status answered for ${String(named.length)} space(s)${skipped === 0 ? "" : `, ${String(skipped)} sharing an ID not asked`}.`,
+      detail: `Every verb has its operation; space.status answered for ${String(ids.length)} space(s).`,
     };
   } catch (error) {
     return {
