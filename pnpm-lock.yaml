@@ -354,6 +354,9 @@ importers:
         specifier: workspace:*
         version: link:../launch
     devDependencies:
+      '@tasks/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@tasks/launcher-win':
         specifier: workspace:*
         version: link:../launcher-win

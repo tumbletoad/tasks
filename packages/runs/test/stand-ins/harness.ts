@@ -17,6 +17,9 @@
 //   {"op":"forget"}                                 -> {}: drops what it knows of its containers,
 //                                                      as a restarted service would have nothing
 // Every answer is {"ok":true,"result":…} or {"ok":false,"error":"…","code"?:"…"}.
+//
+// safe-exit comes first: this script loads the product's code and ends through process.exit.
+import "@tasks/bridge/safe-exit";
 import { createInterface } from "node:readline";
 import {
   ContainerError,
