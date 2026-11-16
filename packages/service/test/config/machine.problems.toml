@@ -21,8 +21,8 @@ path = "/home/mira/Tasks/b"
 colour = "SENTINEL-unknown-key"
 
 [[spaces]]
-id = "sp_43f0gjcvzgaa1gh5my6qxwcj7m"
-path = "/home/mira/Tasks/c"
+id = "sp_3z8sm956jp8dajmtsar5kx026c"
+path = "/home/mira/Tasks/b"
 
 [roots."Bad Root"]
 path = "/home/mira/x"

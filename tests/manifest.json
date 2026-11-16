@@ -2202,6 +2202,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.cli.space-words",
+      "title": "tasks space says what is so and the ways it names work: claim of another computer's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
+      "source": "A2 3.10.1, A2 3.10.5, A6 3.5, A1 3.18",
+      "owner": "M3",
+      "kind": "installed",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.1.recover.id-check",
+      "title": "space recover refuses a folder whose space.json names another space than its entry with SPACE_ID_MISMATCH and changes nothing; with the entry's own space.json it plays the journal back, keeps the old folder beside it, and the space is open and recorded",
+      "source": "A2 3.10.1, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.cli.space-export",
       "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title refuses the export with its kind and place and never the text",
       "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",
@@ -2278,6 +2294,22 @@
       "title": "The editor's remove takes out an [[instance]] element only while it is byte for byte as append wrote it, with the blank line before it, so append then remove gives the file back, also a file without a final line break (LF and CRLF); a changed value, an added key, a comment inside or on the line right above or below, a sub-table or two identical elements are refused and nothing changes; a comment a blank line away stays when the element goes",
       "source": "A2 3.2.4, A4 3.2",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.4.config.edit-element",
+      "title": "The editor's set_in_element sets a key in the one [[spaces]] element its selection picks: a key added after the element's last key or its value replaced in place, comments and CRLF kept; no element picked is absent, two picked or an inline array is refused and nothing changes",
+      "source": "A2 3.2.4, A2 3.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.2.4.config.space-copies",
+      "title": "Copies of one space share its ID in [[spaces]] without a problem; one folder named twice, also in two spellings Windows reads as one, refuses the start",
+      "source": "A2 3.2.4, A2 3.10.5",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -3158,6 +3190,46 @@
       "title": "Make default over the UI's route and space/use write [service] default_space to machine.toml; a new tab and an unbound call of the person use it, a tab that names its space and an agent's CLI never do, only the user changes it, and a default that is not served is space_unavailable, never another space",
       "source": "A2 3.1, A2 3.2.4, A2 3.10.5, A5 3.3, A7 3.12 M5.01",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.spaces-remembered",
+      "title": "space create, open and close record the space in machine.toml's [[spaces]] (enabled, or enabled = false), keeping the person's comments, order, hand edits made while the service runs and the file's mode; after a restart the open spaces open and the closed one is listed closed with its ID; a folder gone at the start leaves its entry unavailable(missing) and in the file while the others open, and space open serves it again once it is back; a create where a space is names tasks space open <folder>, and a create in a gone space's folder re-points the entry",
+      "source": "A2 3.1, A2 3.2.4, A2 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.spaces-not-remembered",
+      "title": "A machine.toml that cannot take the record (a syntax error from a hand edit, a file another user could change): the verb is done for this run, its answer says remembered false with a plain line that a restart will not keep it, why and the fix, nothing is written into the file, and the same verb once the file is fixed records it",
+      "source": "A2 3.1, A2 3.2.4, A2 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.rule",
+      "title": "The one rule for copies of a space: an ID, a name and the one space mean the writable copy, then one opening, then the space read-only for its own reason, then a restored copy, then an unavailable one, then a closed one, never the first listed; a folder names its own copy; two copies equally good are ambiguous with both folders named; a name of two spaces is ambiguous by name",
+      "source": "A2 3.10.5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.service",
+      "title": "A backup restored by its printed name beside its open original: no space, the name, the ID, the default and the folder of the original reach the original; the copy's folder reaches the copy, which answers reads and refuses writes as a read-only copy; after a restart both are served and the original, first in machine.toml, takes the writer",
+      "source": "A2 3.10.5, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.5.copies.feed",
+      "title": "After export, close, restore of the bundle into a new folder and claim, the claim answers with A6's warning, machine.toml holds the original disabled and the copy enabled, and the page's feed subscribed by the space's ID sends the next write as a batch, never space_unavailable for the closed original; after a restart only the copy opens and the feed follows it again",
+      "source": "A2 3.10.5, A6 3.5, A5 3.3",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },

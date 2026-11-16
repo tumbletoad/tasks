@@ -241,6 +241,27 @@ export const EVENTS = {
   "config.instances_changed": { lvl: "info", c: "hub", fields: { added: "int", removed: "int" } },
   // Make default or `tasks space use` (M5.01): the machine's default space changed. No ID.
   "config.default_space_set": { lvl: "info", c: "hub", fields: { source: ["ui", "cli"] } },
+  // A space verb recorded what it did in [[spaces]] (space-records.ts), or could not. No ID, no path.
+  "config.spaces_changed": { lvl: "info", c: "hub", fields: { enabled: "bool", edits: "int" } },
+  "config.spaces_failed": {
+    lvl: "warn",
+    c: "hub",
+    fields: {
+      reason: [
+        "invalid_file",
+        "unsupported_layout",
+        "exists",
+        "absent",
+        "invalid_value",
+        "changed_meanwhile",
+        "too_large",
+        "unsafe",
+        "other_space",
+        "write_failed",
+      ],
+      code: "error_code",
+    },
+  },
   // `tasks setup t3` (M2.11): a pairing kept, or why it was not. Never a token, URL or ID.
   "setup.paired": { lvl: "info", c: "hub", fields: { replaced: "bool" } },
   "setup.pair_failed": { lvl: "warn", c: "hub", fields: { reason: T3_PAIR_FAILURES } },

@@ -85,6 +85,13 @@ writes runs it. A person does not run it.
   --app <name>        The agent app
 `;
 
+const RECOVER_HELP = `Usage: ${CLI_NAME} recover [<space>]
+
+Plays back a space's rollback journal: the same command as ${CLI_NAME} space recover. <space> is an
+ID, a name or a folder; without one, --space, else the one space the service serves.
+Only the user can run this, in an interactive terminal.
+`;
+
 const HELP_HELP = `Usage: ${CLI_NAME} help [<command>]
 
 Shows the commands, or the help of one command. ${CLI_NAME} <command> --help shows the same.
@@ -121,6 +128,11 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
       "recover",
       "use",
     ],
+  },
+  {
+    name: "recover",
+    summary: "Play back a space's rollback journal: the same as tasks space recover",
+    help: RECOVER_HELP,
   },
   {
     name: "roots",

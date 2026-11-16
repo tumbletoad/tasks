@@ -131,13 +131,13 @@ describe("[A2.3.1.default-space] Make default and the machine's default space", 
       });
       expect((await list()).default).toBe(mira);
 
-      // After a restart the default is read from machine.toml. Both spaces were made for this run
-      // only (`space/create` writes no `[[spaces]]` entry yet), so a default that names one is
-      // not served: an unbound call and a new tab get space_unavailable, never another space.
+      // After a restart the default is read from machine.toml, and both spaces, which
+      // `space/create` recorded in [[spaces]], open again: an unbound call lands in the default.
       expect(await user.call("space/use", { space: studio }, { timeoutMs: 60_000 })).toEqual({
         default: studio,
       });
       await world.restart();
+      await world.service.spacesSettled;
       const again = await world.user();
       const { token: token2 } = await signIn(world);
       const relisted = (
@@ -148,8 +148,18 @@ describe("[A2.3.1.default-space] Make default and the machine's default space", 
         }
       ).result;
       expect(relisted.default).toBe(studio);
-      expect(relisted.spaces).toEqual([]);
-      expect(errorOf(await addUnbound(again, 4).catch((e: unknown) => e)).code).toBe(
+      expect(relisted.spaces.map((s) => s.name).sort()).toEqual(["Mira", "Studio"]);
+      const landed = (await addUnbound(again, 4)) as { tasks: { ref: string }[] };
+      expect(landed.tasks[0]?.ref).toMatch(/^S-\d+$/);
+
+      // A default that is set but not served (closed now) is space_unavailable for an unbound
+      // call and a new tab, never another space.
+      await again.call(
+        "space/close",
+        { space: join(world.root, "s", "studio") },
+        { timeoutMs: 60_000 },
+      );
+      expect(errorOf(await addUnbound(again, 5).catch((e: unknown) => e)).code).toBe(
         "space_unavailable",
       );
       const orphan = await openFeed(world.port(), token2);
