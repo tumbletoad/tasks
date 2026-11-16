@@ -7,13 +7,17 @@
 // agents are read apart from its other notes (A3 3.10: only those are instructions), each list
 // newest first from an ordinal down, so a page can start where the last one ended.
 import {
+  decideLaunchFolder,
   decodeReceipt,
   decodeSpaceRow,
+  folderView,
   formatAsOf,
   formatTaskRef,
   isId,
   RECEIPT_SQL,
   storedPreference,
+  type FolderView,
+  type LaunchFolder,
   type Receipt,
   type ReceiptLookup,
   type Row,
@@ -1446,6 +1450,144 @@ export async function readGroupNames(reader: WorkerConnection): Promise<GroupNam
       kind: text(row["entity_kind"]),
       id: text(row["entity_id"]),
     })),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Folders (schema 0.5)
+
+/** A live folder of an owner, with the name of the machine it is on. */
+export interface OwnerFolder extends FolderView {
+  readonly machineName: string;
+}
+
+const OWNER_FOLDERS: Statement = {
+  sql:
+    "SELECT f.*, m.name AS machine_name FROM folders f JOIN machines m ON m.id = f.machine_id " +
+    "WHERE f.owner_kind = $kind AND f.owner_id = $owner AND f.deleted_at IS NULL " +
+    "ORDER BY f.created_seq DESC, f.id",
+  mode: "all",
+};
+const TASK_PROJECT_FOLDERS: Statement = {
+  sql:
+    "SELECT f.*, m.name AS machine_name FROM folders f JOIN tasks t ON t.project_id = f.owner_id " +
+    "JOIN machines m ON m.id = f.machine_id WHERE t.id = $owner AND f.owner_kind = 'project' " +
+    "AND f.deleted_at IS NULL ORDER BY f.created_seq DESC, f.id",
+  mode: "all",
+};
+
+const ownerFolder = (row: Row): OwnerFolder => ({
+  ...folderView(row),
+  machineName: text(row["machine_name"]),
+});
+
+/** A project's or a task's live folders, one per machine, newest first. */
+export async function readFolders(
+  reader: WorkerConnection,
+  kind: "project" | "task",
+  owner: string,
+): Promise<OwnerFolder[]> {
+  const [rows] = await snapshot(reader, [OWNER_FOLDERS], { kind, owner });
+  return (rows as Row[]).map(ownerFolder);
+}
+
+/**
+ * The folder a launch of `task` uses on `machine` (storage's decideLaunchFolder): the task's own
+ * folder there, else its project's there, else the machine where one of them is, else none, when
+ * the launch uses the space's work folder. The one function the launch, the row, the digest and
+ * the remote checks call.
+ */
+export async function readLaunchFolder(
+  reader: WorkerConnection,
+  task: string,
+  machine: string,
+): Promise<LaunchFolder> {
+  const [own, project] = await snapshot(reader, [OWNER_FOLDERS, TASK_PROJECT_FOLDERS], {
+    kind: "task",
+    owner: task,
+  });
+  const ownRows = (own as Row[]).map(ownerFolder);
+  const projectRows = (project as Row[]).map(ownerFolder);
+  const names = new Map([...ownRows, ...projectRows].map((f) => [f.machine, f.machineName]));
+  return decideLaunchFolder(ownRows, projectRows, machine, (id) => names.get(id));
+}
+
+const FOLDER_OWNER: Statement = {
+  sql: "SELECT owner_id FROM folders WHERE id = $id",
+  mode: "get",
+};
+
+/** The owner of a folder row, by the row's ID. */
+export async function readFolderOwner(
+  reader: WorkerConnection,
+  id: string,
+): Promise<string | undefined> {
+  const [row] = await snapshot(reader, [FOLDER_OWNER], { id });
+  const owner = (row as Row | null | undefined)?.["owner_id"];
+  return typeof owner === "string" ? owner : undefined;
+}
+
+/** What binding a folder on this machine reads first (folders.ts in ops). */
+export interface BindRead {
+  readonly space: SpaceFacts;
+  /** The owner's live folder on this machine. */
+  readonly current: FolderView | undefined;
+  /** Every live project's live folder on this machine, with the project's name. */
+  readonly projects: readonly { project: string; name: string; stored: string }[];
+  /** A project's tasks' live folders on this machine, with each task's reference. */
+  readonly tasks: readonly { id: string; ref: string; path: string }[];
+}
+
+const FOLDER_HERE: Statement = {
+  sql:
+    "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
+    "AND machine_id = $machine AND deleted_at IS NULL",
+  mode: "get",
+};
+const PROJECT_FOLDERS_HERE: Statement = {
+  sql:
+    "SELECT f.owner_id AS project, p.title AS name, f.path AS path FROM folders f " +
+    "JOIN projects p ON p.id = f.owner_id WHERE f.machine_id = $machine " +
+    "AND f.owner_kind = 'project' AND f.deleted_at IS NULL AND p.deleted_at IS NULL " +
+    "ORDER BY f.created_seq, f.id",
+  mode: "all",
+};
+const TASK_FOLDERS_HERE: Statement = {
+  sql:
+    "SELECT t.id AS id, t.ref AS ref, f.path AS path FROM folders f JOIN tasks t " +
+    "ON t.id = f.owner_id WHERE f.machine_id = $machine AND f.owner_kind = 'task' " +
+    "AND f.deleted_at IS NULL AND t.project_id = $owner ORDER BY t.ref",
+  mode: "all",
+};
+
+/** One snapshot of what a folder's bind on `machine` checks (BindRead). */
+export async function readBind(
+  reader: WorkerConnection,
+  owner: { kind: "project" | "task"; id: string },
+  machine: string,
+): Promise<BindRead> {
+  const [space, current, projects, tasks] = await snapshot(
+    reader,
+    [SPACE, FOLDER_HERE, PROJECT_FOLDERS_HERE, TASK_FOLDERS_HERE],
+    { kind: owner.kind, owner: owner.id, machine },
+  );
+  const facts = spaceFacts(space);
+  return {
+    space: facts,
+    current: current === null || current === undefined ? undefined : folderView(current as Row),
+    projects: (projects as Row[]).map((r) => ({
+      project: text(r["project"]),
+      name: text(r["name"]),
+      stored: text(r["path"]),
+    })),
+    tasks:
+      owner.kind === "project"
+        ? (tasks as Row[]).map((r) => ({
+            id: text(r["id"]),
+            ref: formatTaskRef(facts.refPrefix, Number(r["ref"])),
+            path: text(r["path"]),
+          }))
+        : [],
   };
 }
 

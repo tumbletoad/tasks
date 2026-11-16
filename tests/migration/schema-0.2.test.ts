@@ -13,6 +13,7 @@ import {
   TABLES_0_2_NEW,
 } from "../../packages/storage/migrations/0002-schema-0.2.ts";
 import { TABLES_0_3_NEW } from "../../packages/storage/migrations/0003-schema-0.3.ts";
+import { TABLES_0_5_NEW } from "../../packages/storage/migrations/0005-schema-0.5.ts";
 import { backupSpace } from "../../packages/storage/src/backup/backup.ts";
 import type { Connection } from "../../packages/storage/src/driver.ts";
 import { StorageError } from "../../packages/storage/src/errors.ts";
@@ -30,7 +31,7 @@ import {
   openSpaceAt,
   STEPS_0_1,
   STEPS_0_2,
-  STEPS_0_4,
+  STEPS_0_5,
 } from "../../packages/storage/test/revisions.ts";
 import { rejection, workerWithSteps } from "../../packages/storage/test/worker-helpers.ts";
 import { digestSchema, digestSpace } from "../../packages/testkit/src/digest.ts";
@@ -132,19 +133,19 @@ function copyOfFixture(): string {
   return folder;
 }
 
-describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.4 behind its verified barrier backup", () => {
-  test("every 0.1 row stays, the new tables are empty, the search index holds the tasks, the schema is a new 0.4 space's, and the backup restores the fixture", async () => {
+describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.5 behind its verified barrier backup", () => {
+  test("every 0.1 row stays, the new tables are empty, the search index holds the tasks, the schema is a new 0.5 space's, and the backup restores the fixture", async () => {
     const before = fixture.facts;
     const folder = copyOfFixture();
     const worker = await StorageWorker.start({ driver: "node:sqlite" });
     try {
       // The storage worker's writer migrates on open, under the space's claim (A1 3.17).
       const writer = await worker.openSpaceWriter(folder, { machine: fixture.machine });
-      expect(writer.revision).toEqual({ major: 0, minor: 4 });
+      expect(writer.revision).toEqual({ major: 0, minor: 5 });
       expect(writer.migration).toMatchObject({
         from: { major: 0, minor: 1 },
-        to: { major: 0, minor: 4 },
-        seqs: [before.lastSeq + 1, before.lastSeq + 2, before.lastSeq + 3],
+        to: { major: 0, minor: 5 },
+        seqs: [before.lastSeq + 1, before.lastSeq + 2, before.lastSeq + 3, before.lastSeq + 4],
         manifestWritten: true,
       });
       // The barrier backup is the fixture: its revision, last_seq and every table's count.
@@ -164,9 +165,9 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.4
     let migratedSchema: unknown[];
     try {
       const { conn } = opened;
-      expect(opened.revision).toEqual({ major: 0, minor: 4 });
+      expect(opened.revision).toEqual({ major: 0, minor: 5 });
       expect(opened.readOnlyReasons).toEqual([]);
-      expect(conn.pragma("user_version")).toBe(4);
+      expect(conn.pragma("user_version")).toBe(5);
       expect(conn.pragma("integrity_check")).toBe("ok");
       expect(conn.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       // Every row of every 0.1 table is as it was, but the space row and the new commits.
@@ -178,20 +179,21 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.4
       expect(space).toEqual([
         {
           ...(before.rows["space"]?.[0] as object),
-          format_minor: 4,
-          last_seq: before.lastSeq + 3,
+          format_minor: 5,
+          last_seq: before.lastSeq + 4,
           hold: null,
         },
       ]);
       const commits = rowsOf(conn, "commits");
-      expect(commits.slice(0, -3)).toEqual(before.rows["commits"]);
+      expect(commits.slice(0, -4)).toEqual(before.rows["commits"]);
       const target = (space[0] as { space_id: string }).space_id;
       for (const [i, step] of [
         { step: 2, from: "0.1", to: "0.2" },
         { step: 3, from: "0.2", to: "0.3" },
         { step: 4, from: "0.3", to: "0.4" },
+        { step: 5, from: "0.4", to: "0.5" },
       ].entries()) {
-        const commit = commits.at(i - 3);
+        const commit = commits.at(i - 4);
         expect(commit).toMatchObject({
           seq: before.lastSeq + 1 + i,
           kind: "migration",
@@ -204,7 +206,7 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.4
           { v: 1, op: "schema.migrate", target, input: step },
         ]);
       }
-      for (const table of [...TABLES_0_2_NEW, ...TABLES_0_3_NEW]) {
+      for (const table of [...TABLES_0_2_NEW, ...TABLES_0_3_NEW, ...TABLES_0_5_NEW]) {
         expect(rowsOf(conn, table), table).toEqual([]);
       }
       // The search index holds the fixture's documents, as a rebuild makes them.
@@ -214,16 +216,16 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.4
       expect(expected.size).toBeGreaterThan(40);
       expect([...docs.keys()].sort()).toEqual([...expected.keys()].sort());
       migratedSchema = schemaOf(conn);
-      expect(digestSchema(conn)).toBe(RELEASED_SCHEMAS["0.4"]);
+      expect(digestSchema(conn)).toBe(RELEASED_SCHEMAS["0.5"]);
     } finally {
       opened.conn.close();
     }
-    // A new 0.4 space has the same schema, byte for byte: create runs the same steps.
+    // A new 0.5 space has the same schema, byte for byte: create runs the same steps.
     const fresh = createSpaceAt(
       checked,
       join(temp(), "fresh"),
       { name: "Fresh", ownerLabel: "Mira Okafor", machineId: fixture.machine.id },
-      STEPS_0_4,
+      STEPS_0_5,
     );
     const freshConn = openSpace(checked, fresh.folder, { role: "reader" }).conn;
     try {
@@ -231,10 +233,10 @@ describe("[A1.5.migration.from-0.1] the 0.1 fixture migrates to this build's 0.4
     } finally {
       freshConn.close();
     }
-    // space.json speaks for 0.4.
+    // space.json speaks for 0.5.
     const manifest = readManifest(folder);
     expect(manifest.state === "present" ? manifest.safety : undefined).toMatchObject({
-      format: { major: 0, minor: 4 },
+      format: { major: 0, minor: 5 },
       min_reader: "0.0.0",
       min_writer: "0.0.0",
     });

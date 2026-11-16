@@ -41,6 +41,7 @@ function group(kind: "area" | "project"): Record<string, OpSpec> {
     [`${kind}.patch`]: agent(true),
     [`${kind}.move`]: agent(true),
     [`${kind}.archive`]: agent(true),
+    [`${kind}.unarchive`]: agent(true),
     [`${kind}.delete`]: agent(true),
     [`${kind}.restore`]: agent(true),
   };
@@ -75,6 +76,11 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   // A base only when the owner already has a place on this machine.
   "place.set": agent(false),
   "place.clear": agent(false),
+  // A base only when the owner already has a folder on the request's machine.
+  "project.folder_set": agent(false),
+  "project.folder_clear": agent(false),
+  "task.folder_set": agent(false),
+  "task.folder_clear": agent(false),
   ...group("area"),
   ...group("project"),
   "label.patch": agent(true),
