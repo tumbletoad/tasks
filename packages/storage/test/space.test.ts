@@ -13,15 +13,19 @@ import { openSpaceConnection, openWriter } from "../src/open.ts";
 import {
   AUTO_VACUUM_INCREMENTAL,
   createSpaceWith,
+  LATEST_REVISION,
   openSpace,
   openSpaceWith,
   type OpenedSpace,
   type SpaceSeams,
 } from "../src/space.ts";
+import { encodeRevision } from "../src/schema.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
 
 const folders = tempFolders("space");
 const open: Connection[] = [];
+/** A schema revision one past this build's: a space a newer build wrote. */
+const NEWER = encodeRevision(LATEST_REVISION) + 1;
 
 afterEach(() => {
   for (const conn of open.splice(0)) conn.close();
@@ -220,12 +224,12 @@ describe("[A1.5.space.create-open] creating a space", () => {
     expect(readdirSync(created.folder).sort()).toEqual(["space.db", "space.json"]);
   });
 
-  test("the space row: schema 0.3, epoch 1, a random incarnation, an empty history", async () => {
+  test("the space row: the latest schema, epoch 1, a random incarnation, an empty history", async () => {
     const { space, actors, manifest } = await createFixtureSpace(folders.make());
     expect(isId(space.spaceId, "sp")).toBe(true);
     expect(space.name).toBe("Mira");
     expect(space.refPrefix).toBe("M");
-    expect(space.format).toEqual({ major: 0, minor: 3 });
+    expect(space.format).toEqual(LATEST_REVISION);
     expect(space.lastSeq).toBe(0);
     expect(space.nextRef).toBe(1);
     expect(space.authority.machineId).toBe(TEST_MACHINE);
@@ -258,7 +262,7 @@ describe("[A1.5.space.create-open] creating a space", () => {
       tasks_space: 1,
       space_id: space.spaceId,
       name: "Mira",
-      format: { major: 0, minor: 3 },
+      format: LATEST_REVISION,
       min_reader: "0.0.0",
       min_writer: "0.0.0",
       authority: {
@@ -362,7 +366,7 @@ describe("[A1.5.space.create-open] opening a space", () => {
     const before = readFileSync(join(folder, MANIFEST_FILE), "utf8");
     const opened = await openAs(folder, "writer");
     expect(opened.space).toEqual(space);
-    expect(opened.revision).toEqual({ major: 0, minor: 3 });
+    expect(opened.revision).toEqual(LATEST_REVISION);
     expect(opened.readOnlyReasons).toEqual([]);
     expect(opened.manifestRebuilt).toBe(false);
     expect(readFileSync(join(folder, MANIFEST_FILE), "utf8")).toBe(before);
@@ -466,7 +470,7 @@ describe("[A1.5.space.create-open] opening a space", () => {
   test("a newer schema revision: the writer refuses, a reader with a manifest reads", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const conn = await raw(folder);
-    conn.pragma("user_version", 4);
+    conn.pragma("user_version", NEWER);
     await expectCode(() => openAs(folder, "writer"), "SPACE_TOO_NEW");
     expect((await openAs(folder, "reader")).readOnlyReasons).toEqual(["newer_revision"]);
     rmSync(join(folder, MANIFEST_FILE));
@@ -531,7 +535,7 @@ describe("[A1.5.space.create-open] a refusal in phase 1 changes nothing in the d
     const damage: [string, string, (conn: Connection) => void][] = [
       ["foreign", "SPACE_INVALID", (c) => c.pragma("application_id", 0)],
       ["unknown revision", "SPACE_VERSION_UNKNOWN", (c) => c.pragma("user_version", 0)],
-      ["newer revision", "SPACE_TOO_NEW", (c) => c.pragma("user_version", 4)],
+      ["newer revision", "SPACE_TOO_NEW", (c) => c.pragma("user_version", NEWER)],
       [
         "format 99 under revision 0.1",
         "SPACE_INVALID",
@@ -802,7 +806,7 @@ describe("[A1.5.space.create-open] the writer's second phase", () => {
         () =>
           openWithSwap(folder, () => {
             const conn = checked.driver.open(db, { readOnly: false, busyTimeoutMs: 5000 });
-            conn.pragma("user_version", 4);
+            conn.pragma("user_version", NEWER);
             conn.close();
             bytes = readFileSync(db);
           }),
@@ -951,7 +955,7 @@ describe("[A1.5.space.manifest] open honours each safety field of space.json", (
   test("a newer revision is read only with a manifest that vouches for it", async () => {
     const { folder } = await createFixtureSpace(folders.make());
     const conn = await raw(folder);
-    conn.pragma("user_version", 4);
+    conn.pragma("user_version", NEWER);
     closeRaw(conn);
     expect((await openAs(folder, "reader")).readOnlyReasons).toEqual(["newer_revision"]);
     // A stale manifest that names another format speaks for that format, not for this one.
@@ -960,7 +964,7 @@ describe("[A1.5.space.manifest] open honours each safety field of space.json", (
     });
     await expectCode(() => openAs(folder, "reader"), "SPACE_TOO_NEW");
     rewriteManifest(folder, (json) => {
-      json["format"] = { major: 0, minor: 3 };
+      json["format"] = { ...LATEST_REVISION };
       json["min_writer"] = 5;
     });
     await expectCode(() => openAs(folder, "reader"), "SPACE_TOO_NEW");

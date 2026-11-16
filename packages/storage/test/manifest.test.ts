@@ -15,6 +15,7 @@ import {
   writeManifest,
   type SpaceManifest,
 } from "../src/manifest.ts";
+import { LATEST_REVISION } from "../src/space.ts";
 import { createFixtureSpace, tempFolders } from "./space-helpers.ts";
 
 const folders = tempFolders("manifest");
@@ -61,7 +62,7 @@ describe("[A1.5.space.manifest] reading space.json", () => {
       damaged: false,
       safety: {
         space_id: original["space_id"],
-        format: { major: 0, minor: 3 },
+        format: LATEST_REVISION,
         min_reader: "0.0.0",
         min_writer: "0.0.0",
       },
@@ -109,7 +110,7 @@ describe("[A1.5.space.manifest] reading space.json", () => {
       expect(safety[field], field).toBeUndefined();
       const expected = {
         space_id: original["space_id"],
-        format: { major: 0, minor: 3 },
+        format: LATEST_REVISION,
         min_reader: "0.0.1",
         min_writer: "7.0.0",
       };

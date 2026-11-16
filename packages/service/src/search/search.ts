@@ -13,6 +13,7 @@ import {
   decodeRowsByIds,
   decodeSpaceRow,
   formatAsOf,
+  formatRevision,
   formatTaskRef,
   HAS_SEARCH_TABLES_SQL,
   ROWS_BY_IDS_SQL,
@@ -70,6 +71,8 @@ export interface SearchEnv {
   readonly live: () => readonly string[];
   /** The tasks whose place here matches `cwd`; none when `cwd` is no folder here. */
   readonly here: (cwd: string) => Promise<readonly string[]>;
+  /** Whether this machine's update of the space failed: a refusal of words says so. */
+  readonly updateFailed?: boolean;
 }
 
 /** The structured result: `TaskSearchResult`. */
@@ -220,6 +223,10 @@ export async function runSearch(
     const plan = planSearch(query, {
       vocabulary: known.vocabulary,
       indexed: known.indexed,
+      unindexed: {
+        revision: formatRevision(known.space.format),
+        updateFailed: env.updateFailed === true,
+      },
       scope,
       audience: env.audience,
       today: env.today,

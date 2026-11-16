@@ -486,8 +486,8 @@ export function indexChanges(conn: Connection, seq: number, changes: readonly In
 
 /**
  * Empties both search tables and fills them from the current state, inside the caller's write
- * transaction: `tasks index rebuild`, and the schema step that adds the tables. Every document
- * gets the space's last seq. Returns the number of documents.
+ * transaction: after a migration, and when a restore or an export makes the index again. Every
+ * document gets the space's last seq. Returns the number of documents.
  */
 export function rebuildSearchIndex(conn: Connection): number {
   if (!conn.inTransaction) throw misuse("The search index is rebuilt inside a write transaction");
