@@ -9,6 +9,7 @@
 // that need a test hook (a lost reply, a newer protocol) still run the CLI from source, against the
 // built service; `runMain` runs the CLI in this process, as a person at a terminal, also against it.
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,6 +165,7 @@ export async function startWorld(
       install,
       tasks,
       close: async () => {
+        reportEarlyExit(service, home);
         try {
           for (const child of children) child.kill("SIGKILL");
           if (install === undefined) service.send("stop");
@@ -197,6 +199,29 @@ export async function startWorld(
     }
     throw error;
   }
+}
+
+/**
+ * A service that ended before its test stopped it fails the commands after it with an error that
+ * says nothing about why: its exit, its stderr (warnings, errors, an uncaught exception's stack) and
+ * the end of its log go to this test's stderr, so the failure carries its cause.
+ */
+function reportEarlyExit(service: Proc, home: string): void {
+  const { exitCode, signalCode } = service.child;
+  if (exitCode === null && signalCode === null) return;
+  let log = "";
+  try {
+    log = readFileSync(join(home, "state", "logs", "service.log"), "utf8")
+      .split("\n")
+      .slice(-60)
+      .join("\n");
+  } catch {
+    // No log: the stderr says what there is.
+  }
+  process.stderr.write(
+    `The service ended before its test stopped it: exit ${String(exitCode)}, signal ${String(signalCode)}\n` +
+      `--- its stderr ---\n${service.stderr()}\n--- the end of its log ---\n${log}\n`,
+  );
 }
 
 /**
