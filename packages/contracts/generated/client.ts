@@ -41,6 +41,10 @@ export function createClient(transport: ClientTransport) {
       /** Read and change the space's preferences that are not policy. */
       manage: (input: InputOf<"prefs.manage">): Promise<OutputOf<"prefs.manage">> => call("prefs.manage", input),
     },
+    receipt: {
+      /** The stored result of a write, by its request_id, in the caller's own writer scope. */
+      get: (input: InputOf<"receipt.get">): Promise<OutputOf<"receipt.get">> => call("receipt.get", input),
+    },
     space: {
       /** Orientation: date, autonomy, this session's binding, tasks for a folder and counts. */
       status: (input: InputOf<"space.status">): Promise<OutputOf<"space.status">> => call("space.status", input),
