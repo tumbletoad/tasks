@@ -12,7 +12,8 @@
 // The feed names a task's logical fields (A1 3.4: `lifecycle` holds the completion date, `wrap` the
 // wrap state and outcome, `deleted` the deletion), so the table is written in them too.
 //
-// A restart loads as many rows as were shown, and only the newest read applies. A row a query
+// A restart reads on to the last row shown, so a row that joins above pushes none of them out,
+// and only the newest read applies. A row a query
 // already shows takes the feed's row in place, without a restart, and so does a row a read brings
 // back after the feed changed it: a read that left before a change can answer after it. A snapshot
 // (after a gap) means the changes in between are unknown: every query counts as changed.
@@ -77,6 +78,12 @@ export interface Page<R> {
 export type PageSource<R> = (request: {
   readonly after: string | undefined;
   readonly limit: number;
+  /**
+   * A restart's end: the cursor after the last row shown, or null when every row was shown. A
+   * source that can place it reads on to it whatever `limit` says, so a row that joins above
+   * pushes none of the shown rows out of the list; another reads `limit` rows.
+   */
+  readonly through?: string | null;
 }) => Promise<Page<R>>;
 
 export interface QueryState<R> {
@@ -108,6 +115,8 @@ export class PagedQuery<R extends { readonly id: string }> {
   readonly #listeners = new Set<() => void>();
   #state: QueryState<R> = { rows: [], phase: "idle", changed: false, more: false };
   #next: string | undefined;
+  /** A read has answered: from then on a restart reads on to where the shown rows end. */
+  #answered = false;
   /** Only the newest read applies: an older one that answers late is dropped. */
   #generation = 0;
   /** A frozen query was invalidated while a read was on its way: that read may predate it. */
@@ -160,20 +169,28 @@ export class PagedQuery<R extends { readonly id: string }> {
   }
 
   /**
-   * Reads from page 1 again, as many rows as are shown (at least one page): the first read, a
+   * Reads from page 1 again, on to the last row shown (at least one page): the first read, a
    * restart, and the explicit Refresh of a frozen search.
    */
   refresh(): Promise<void> {
-    return this.#restart(Math.max(this.#pageSize, this.#state.rows.length));
+    return this.#restart(
+      Math.max(this.#pageSize, this.#state.rows.length),
+      this.#answered ? (this.#next ?? null) : undefined,
+    );
   }
 
-  #restart(limit: number): Promise<void> {
+  #restart(limit: number, through?: string | null): Promise<void> {
     const generation = this.#read();
     this.#stale = false;
     this.#set({ phase: "loading" });
-    return this.#source({ after: undefined, limit }).then(
+    return this.#source({
+      after: undefined,
+      limit,
+      ...(through === undefined ? {} : { through }),
+    }).then(
       (page) => {
         if (generation !== this.#generation) return;
+        this.#answered = true;
         this.#next = page.next;
         this.#set({
           rows: this.#current(page.rows),
@@ -198,6 +215,7 @@ export class PagedQuery<R extends { readonly id: string }> {
     return this.#source({ after, limit: this.#pageSize }).then(
       (page) => {
         if (generation !== this.#generation) return;
+        this.#answered = true;
         this.#next = page.next;
         const seen = new Set(this.#state.rows.map((r) => r.id));
         this.#set({

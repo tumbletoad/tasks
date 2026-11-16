@@ -411,6 +411,8 @@ function RowView({
     },
     ctx,
   );
+  // Completed's line says how the task ended; elsewhere, and without an ending, the summary.
+  const line = model.ending ?? model.summary;
   const tab = current ? 0 : -1;
   // Checked: completed, or checked off and in its hold. The box takes a check-off of an open task,
   // and during this tab's own hold, its undo.
@@ -556,19 +558,19 @@ function RowView({
               </button>
             )}
           </div>
-          {model.prefix === undefined && model.summary === undefined ? null : (
+          {model.prefix === undefined && line === undefined ? null : (
             // A click on the summary toggles the row like the title, whose button keyboard users reach.
             <div
               className={styles.summary}
-              data-part="summary"
+              data-part={model.ending === undefined ? "summary" : "ending"}
               data-tip={expanded ? t("ask.tip") : undefined}
               title={expanded ? t("ask.tip") : undefined}
               onClick={(event) => {
-                // Expanded, the summary is an agent's to change: a click asks one (A5 3.11), unless
+                // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
                 // it ends a selection of its text.
                 if (expanded) {
                   if (!(window.getSelection()?.isCollapsed ?? true)) return;
-                  actions.ask(task, "summary");
+                  actions.ask(task, model.ending === undefined ? "summary" : "outcome");
                   return;
                 }
                 // The row becomes current, as if its title had been clicked.
@@ -590,9 +592,9 @@ function RowView({
                   <span dir="auto">{model.prefix.text}</span>
                 </span>
               )}
-              {model.summary === undefined ? null : (
+              {line === undefined ? null : (
                 <span className={styles.text} dir="auto">
-                  {model.summary}
+                  {line}
                 </span>
               )}
             </div>
