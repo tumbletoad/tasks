@@ -289,14 +289,17 @@ export class Projector {
     if (found !== undefined && journal !== undefined) {
       for (const [path, placing] of journal.placing) {
         const look = this.#tree.look(path, undefined, placing.size);
-        if (
-          look.kind !== "file" ||
-          look.links !== 1 ||
-          look.size !== placing.size ||
-          look.sha256 !== placing.sha256
-        ) {
-          if (placing.task !== undefined) unverified.add(placing.task);
-          continue;
+        const proved =
+          look.kind === "file" &&
+          look.links === 1 &&
+          look.size === placing.size &&
+          look.sha256 === placing.sha256;
+        if (!proved) {
+          if (placing.task === undefined) continue;
+          unverified.add(placing.task);
+          // A new path of a task held open now: once the journal goes, nothing else would name it,
+          // so the record keeps it. Every later act proves it ours by its bytes again.
+          if (look.kind !== "busy" || record.files.has(path)) continue;
         }
         record.files.set(path, {
           sha256: placing.sha256,
@@ -367,7 +370,11 @@ export class Projector {
       }
       if (file.task === undefined) this.#republish = true;
       else if (record.entries.get(file.task)?.path === path) queue.add(file.task);
-      else {
+      else if (look.kind === "busy") {
+        // Retired and held open: likely still ours, so it stays retired and its removal is tried
+        // again. Forgotten, it would stay in the folder for good.
+        continue;
+      } else {
         // Retired, and gone or no longer ours: never touched again.
         record.files.delete(path);
         forgotten += 1;
