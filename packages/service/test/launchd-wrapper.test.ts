@@ -123,12 +123,12 @@ describe.skipIf(!posix)(
           expect(starts()).toHaveLength(count);
           expect(starts().every((line) => line.endsWith(" serve"))).toBe(true);
         }
-      }, 60_000);
+      });
 
       test(`${name}: more than 5 restarts on 75 in a row exit 75, so launchd's throttle bounds them`, async () => {
         expect(await wrapper(shell, ["75", "75", "75", "75", "75", "75", "0"]).exit).toBe(75);
         expect(starts()).toHaveLength(6);
-      }, 60_000);
+      });
 
       test(`${name}: SIGTERM reaches the service and a stop always ends in 0, also during a 75 restart`, async () => {
         for (const [plan, count] of [
@@ -146,7 +146,7 @@ describe.skipIf(!posix)(
           expect(readFileSync(join(dir, "events"), "utf8")).toBe("got TERM\n");
           expect(starts()).toHaveLength(count);
         }
-      }, 60_000);
+      });
     }
   },
 );

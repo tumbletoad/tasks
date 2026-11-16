@@ -226,7 +226,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     );
     expect(ran.status).toBe(2);
     expect(ran.stderr).toMatch(/owner's machine/);
-  }, 60_000);
+  });
 
   test("without a terminal the command asks nothing and signs nothing", () => {
     const unsigned = folderOf("no-terminal", "0.1.0", ["linux-x64"]);
@@ -258,7 +258,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     expect(keygen.status).toBe(2);
     expect(keygen.stderr).toMatch(/Run this in a terminal/);
     expect(readdirSync(out)).toEqual([]);
-  }, 120_000);
+  });
 
   test("writes the release's install scripts pinning the release keys, and signs nothing while they are not pinned or the key is not one of them", async () => {
     const asked = (): Promise<string> => Promise.reject(new Error("the passphrase was asked"));
@@ -460,7 +460,7 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
     );
     expect(ran.status).toBe(2);
     expect(ran.stderr).toMatch(/Unknown option '--key'/);
-  }, 60_000);
+  });
 
   test("the secrets leave the environment first, and no message prints them", () => {
     const env: Record<string, string | undefined> = {
@@ -492,7 +492,7 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
         expect(output).not.toContain(line);
       }
     }
-  }, 120_000);
+  });
 
   test.runIf(process.platform !== "win32")(
     "a program the signing starts (ssh-keygen) does not inherit the secrets",
@@ -561,7 +561,6 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
       expect(childEnv).not.toContain(KEY_SECRET);
       expect(childEnv).not.toContain(PASSPHRASE);
     },
-    60_000,
   );
 });
 

@@ -411,5 +411,5 @@ describe("[A2.3.12.6.install.finish] tasks install --finish switches current onl
     }
     await finishInstall({ versionFolder: folder, facts: facts(root) });
     expect(currentOf(root)).toBe(windows ? "0.1.0" : "versions/0.1.0");
-  }, 60_000);
+  });
 });
