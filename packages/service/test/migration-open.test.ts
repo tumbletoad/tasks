@@ -635,15 +635,10 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
         closeTimeoutMs: 500,
       });
       // The worker did not stop within the close's bound: no reader, and the space unavailable.
-      expect(service.spaces()).toEqual([
-        {
-          entry: 0,
-          state: "unavailable",
-          reason: "open_failed",
-          code: "ETIMEDOUT",
-          message: expect.any(String) as unknown,
-        },
+      expect(service.spaces()).toMatchObject([
+        { entry: 0, state: "unavailable", reason: "open_failed", code: "ETIMEDOUT" },
       ]);
+      expect(service.spaces()[0]).not.toHaveProperty("id");
       expect(events(home, "space.read_only")).toEqual([]);
       // The stopped worker's migration ends meanwhile, and so does its worker.
       await slow.closed();

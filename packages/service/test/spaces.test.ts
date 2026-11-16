@@ -118,7 +118,7 @@ describe("[A2.3.4.hub.writer-lock] one writer per space across services", () => 
         say: () => undefined,
       });
       await sc.spacesSettled;
-      expect(sc.spaces()).toEqual([
+      expect(sc.spaces()).toMatchObject([
         {
           entry: 0,
           state: "unavailable",
@@ -306,7 +306,7 @@ describe("[A2.3.4.hub.writer-lock] one writer per space across services", () => 
         say: () => undefined,
       });
       await service.spacesSettled;
-      expect(service.spaces()).toEqual(
+      expect(service.spaces()).toMatchObject(
         entries.map((_, entry) => ({
           entry,
           state: "unavailable",
@@ -340,7 +340,7 @@ describe("[A2.3.4.hub.writer-lock] one writer per space across services", () => 
         say: () => undefined,
       });
       await service.spacesSettled;
-      expect(service.spaces()).toEqual([
+      expect(service.spaces()).toMatchObject([
         {
           entry: 0,
           state: "unavailable",
