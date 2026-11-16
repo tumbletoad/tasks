@@ -44,13 +44,16 @@ let plain: Fixture;
 let edited: Fixture;
 /** A fixture organize's writes shape. */
 let organized: Fixture;
+/** A fixture whose groups one call's drafts make. */
+let drafted: Fixture;
 const clock = Date.UTC(2026, 10, 12, 9, 0, 0);
 
 beforeAll(async () => {
   temp = tempRoot("m401");
-  for (const name of ["fx", "indexed", "plain", "edited", "organized"]) {
+  for (const name of ["fx", "indexed", "plain", "edited", "organized", "drafted"]) {
     mkdirSync(join(temp.root, name));
   }
+  drafted = await writeFixture(join(temp.root, "drafted"));
   fx = await writeFixture(join(temp.root, "fx"));
   indexed = await writeFixture(join(temp.root, "indexed"));
   plain = await writeFixture(join(temp.root, "plain"), { steps: STEPS_0_3 });
@@ -64,6 +67,7 @@ afterAll(() => {
   plain.close();
   edited.close();
   organized.close();
+  drafted.close();
   temp.cleanup();
 });
 
@@ -249,6 +253,48 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
         }),
       ),
     ).toMatchObject({ code: "invalid_input", data: { suggestions: ["Gardening"] } });
+  });
+
+  test("a name an earlier draft of the call makes is resolved as an existing one: one of two is ambiguous, a close one is a typo", async () => {
+    const before = drafted.base();
+    const refused = (tasks: Record<string, unknown>[]) =>
+      refusal(call(drafted, script, "task.add", { tasks, request_id: rid() }));
+    expect(
+      await refused([
+        { title: "One", area: "Clients", project: "Website" },
+        { title: "Two", area: "Family", project: "Website" },
+        { title: "Three", project: "Website" },
+      ]),
+    ).toMatchObject({ code: "ambiguous", data: { issues: [{ path: "tasks.2.project" }] } });
+    expect(
+      await refused([
+        { title: "One", area: "Errands" },
+        { title: "Two", area: "Errnads" },
+      ]),
+    ).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "tasks.1.area" }], suggestions: ["Errands"] },
+    });
+    expect(
+      await refused([
+        { title: "One", area: "Garden", project: "Raised beds" },
+        { title: "Two", area: "Garden", project: "Raised bdes" },
+      ]),
+    ).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "tasks.1.project" }], suggestions: ["Raised beds"] },
+    });
+    expect(drafted.base()).toBe(before);
+    // Named once more, with or without its area, the new project is the one the call makes.
+    const added = await add(drafted, script, [
+      { title: "One", area: "Garden", project: "Raised beds" },
+      { title: "Two", project: "raised beds" },
+    ]);
+    const rows = await Promise.all(added.tasks.map((t) => rowOf(drafted, t.ref ?? "")));
+    expect(rows.map((r) => [r.area, r.project])).toEqual([
+      ["Garden", "Raised beds"],
+      ["Garden", "Raised beds"],
+    ]);
   });
 
   test("a project named beside an area it is not in is refused, and nothing is written", async () => {

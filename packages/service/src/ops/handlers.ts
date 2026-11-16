@@ -109,7 +109,7 @@ import {
 } from "./errors.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
-import { editDistance, fold, resolveGroup } from "./groups.ts";
+import { editDistance, resolveGroup } from "./groups.ts";
 import {
   readCommit,
   readCommitTasks,
@@ -1198,20 +1198,24 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
-  /** New areas by their folded name, and new projects by their area and folded name. */
-  const newAreas = new Map<string, Id<"a">>();
-  const newProjects = new Map<string, Id<"p">>();
+  // The groups an earlier draft makes join the names, so a later draft resolves them by the same
+  // rules as the space's own: one call answers as its drafts sent one by one would. A new group
+  // has no slug yet.
+  const areas = [...names.areas];
+  const projects = [...names.projects];
+  const working: GroupNames = { areas, projects, aliases: names.aliases };
+  const made = new Set<string>();
   try {
     const resolved = list.map((draft, k) => {
       const at = path(k);
       const out = { ...draft };
       const area = draft["area"];
       if (typeof area === "string") {
-        let id: string | undefined =
-          newAreas.get(fold(area)) ?? resolveGroup(names, "area", area, `${at}.area`);
+        let id = resolveGroup(working, "area", area, `${at}.area`);
         if (id === undefined) {
           const created = newId("a");
-          newAreas.set(fold(area), created);
+          made.add(created);
+          areas.push({ id: created, slug: "", title: area.trim(), area: null });
           groups.push({ kind: "area.create", id: created, title: area.trim() });
           id = created;
         }
@@ -1220,23 +1224,16 @@ async function resolvedDrafts(
       const project = draft["project"];
       if (typeof project === "string") {
         const within = typeof out["area"] === "string" ? out["area"] : undefined;
-        const key = `${within ?? ""}|${fold(project)}`;
-        // A project of a new area is new too: no project is in an area made by this call.
-        const fresh = within !== undefined && [...newAreas.values()].includes(within as Id<"a">);
-        // Named without an area, a project an earlier draft makes is that one, in whatever area.
-        const made =
-          within === undefined
-            ? [...newProjects].find(([k]) => k.slice(k.indexOf("|") + 1) === fold(project))?.[1]
-            : undefined;
-        let id: string | undefined =
-          newProjects.get(key) ??
-          made ??
-          (fresh
-            ? undefined
-            : resolveGroup(names, "project", project, `${at}.project`, { area: within }));
+        // An area the call makes holds only the projects the call makes there: a project of
+        // that name elsewhere is no reason to refuse, and no typo of one there.
+        const among =
+          within !== undefined && made.has(within)
+            ? { ...working, projects: projects.filter((p) => p.area === within) }
+            : working;
+        let id = resolveGroup(among, "project", project, `${at}.project`, { area: within });
         if (id === undefined) {
           const created = newId("p");
-          newProjects.set(key, created);
+          projects.push({ id: created, slug: "", title: project.trim(), area: within ?? null });
           groups.push({
             kind: "project.create",
             id: created,

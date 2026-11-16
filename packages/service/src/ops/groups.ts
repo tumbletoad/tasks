@@ -74,8 +74,11 @@ function elsewhere(names: GroupNames, found: readonly GroupName[], path: string)
   });
 }
 
+/** A group a call makes has no slug yet (`slug` empty): its title names it. */
 const exact = (group: GroupName, wanted: string): boolean =>
-  group.id === wanted || group.slug === fold(wanted) || fold(group.title) === fold(wanted);
+  group.id === wanted ||
+  (group.slug !== "" && group.slug === fold(wanted)) ||
+  fold(group.title) === fold(wanted);
 
 /**
  * The ID of the area or project `name` names, at input path `path`, or undefined for a new name:
@@ -120,7 +123,10 @@ export function resolveGroup(
       hint: "Name it by its slug: organize with action list shows each one's.",
       data: {
         issues: [{ path, message: "Several have this name" }],
-        suggestions: found.slice(0, SUGGESTIONS).map((group) => group.slug),
+        suggestions: found
+          .map((group) => group.slug)
+          .filter((slug) => slug !== "")
+          .slice(0, SUGGESTIONS),
       },
     });
   }
