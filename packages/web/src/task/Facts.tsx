@@ -30,7 +30,16 @@ import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
 import css from "./Expanded.module.css";
 
-const styles = classes(css, ["facts", "dot", "seg", "segButton", "move", "text", "plain"]);
+const styles = classes(css, [
+  "facts",
+  "dot",
+  "seg",
+  "segButton",
+  "move",
+  "reopen",
+  "text",
+  "plain",
+]);
 
 const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
   open: "status.open",
@@ -312,7 +321,22 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   if (task.lifecycle !== "active") {
     return (
       <dl className={styles.facts} aria-label={t("fact.label")}>
-        <Fact label={t("fact.status")}>{statusOf(task, t)}</Fact>
+        <Fact label={t("fact.status")}>
+          {statusOf(task, t)}
+          {task.deleted_at === undefined ? (
+            // Read-only, apart from this: the way back for a task finished by mistake or too soon.
+            <button
+              type="button"
+              className={`${styles.move} ${styles.reopen}`}
+              data-part="reopen"
+              onClick={() => {
+                edits.reopen(task);
+              }}
+            >
+              {t("fact.reopen")}
+            </button>
+          ) : null}
+        </Fact>
         {priority === undefined ? null : (
           <Fact label={t("fact.priority")}>{t("row.priority", { level: Number(priority) })}</Fact>
         )}

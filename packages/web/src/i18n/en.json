@@ -67,6 +67,7 @@
   "completed.more": "Show more",
   "completed.failed": "Completed tasks could not be read.",
   "row.backToOpen": "Back to open",
+  "fact.reopen": "Reopen",
   "row.completedTip": "Completed {date}",
   "row.desc.completed": "completed {date}",
 
@@ -287,6 +288,9 @@
   "toast.tryAgain": "Try again",
   "toast.checkFailed": "The task was not checked off. Try again.",
   "toast.checkConflict": "{who, select, user {You changed this task elsewhere} import {The import changed this task} other {{by} changed this task}} just now. It was not checked off.",
+  "toast.reopened": "Reopened",
+  "toast.reopenFailed": "The task was not reopened. Try again.",
+  "toast.reopenConflict": "{who, select, user {You changed this task elsewhere} import {The import changed this task} other {{by} changed this task}} just now. It was not reopened.",
   "toast.notSaved": "Your change to {field} was not saved",
   "toast.changedBy": "{who, select, user {You changed {field} elsewhere} import {The import changed {field}} other {{by} changed {field}}} just now",
 
