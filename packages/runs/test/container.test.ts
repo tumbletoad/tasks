@@ -31,6 +31,9 @@ const windows = process.platform === "win32";
 let work = "";
 let place: Where = { ok: false, reason: "not prepared" };
 let natives: Natives | undefined;
+/** Every service and unit this file started, so teardown ends each one even after a failure. */
+const services: Service[] = [];
+const units: string[] = [];
 
 beforeAll(() => {
   work = mkdtempSync(join(tmpdir(), "tasks-container-"));
@@ -44,19 +47,28 @@ beforeAll(() => {
   }
 }, 300_000);
 
-afterAll(() => {
-  if (process.platform === "linux" && place.ok) stopTestUnits();
+afterAll(async () => {
+  for (const service of services) await service.close();
+  if (process.platform === "linux" && place.ok) stopTestUnits(units);
   if (work !== "") rmSync(work, { recursive: true, force: true });
-});
+}, 120_000);
 
 function need(ctx: TestContext): void {
   if (!place.ok) ctx.skip(place.reason);
 }
 
 /** A new stand-in service: in its own user unit `tasks-test-container-<label>` on Linux. */
-function startService(label: string): Promise<Service> {
-  if (windows) return Service.plain(natives?.helper ?? "");
-  return Service.inUnit(`${UNIT_PREFIX}${label}.service`, work);
+async function startService(label: string): Promise<Service> {
+  let service: Service;
+  if (windows) {
+    service = await Service.plain(natives?.helper ?? "");
+  } else {
+    const unit = `${UNIT_PREFIX}${label}.service`;
+    if (!units.includes(unit)) units.push(unit);
+    service = await Service.inUnit(unit, work);
+  }
+  services.push(service);
+  return service;
 }
 
 interface Output {
@@ -86,6 +98,32 @@ async function start(service: Service, mode: StandInMode, args: string[] = []) {
 }
 
 const EMPTY: Confirmation = { state: "empty" };
+
+/** Windows: holds a handle to the run's job in another process until `release`. */
+async function holdJob(name: string) {
+  const hold = spawn(natives?.jobhold ?? "", [jobName(name)], {
+    stdio: ["pipe", "pipe", "ignore"],
+    windowsHide: true,
+  });
+  const release = () => {
+    hold.stdin.end();
+  };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      hold.stdout.on("data", (chunk: Buffer) => {
+        if (chunk.toString().includes("held")) resolve();
+        else reject(new Error(chunk.toString()));
+      });
+      hold.once("exit", () => {
+        reject(new Error("the job holder ended"));
+      });
+    });
+  } catch (error) {
+    release();
+    throw error;
+  }
+  return release;
+}
 
 /** Kills the container and proves it empty, by its own confirmation and by the census. */
 async function killAndConfirm(service: Service, name: string, token: string) {
@@ -140,6 +178,8 @@ describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started
     expect(await get().request<Confirmation>("confirm", { name })).toMatchObject({
       state: "occupied",
     });
+    // The agent's process ID is free for another program now: an interrupt is not sent.
+    expect(await get().request("interrupt", { name })).toEqual({ delivered: false });
     await killAndConfirm(get(), name, token);
   });
 
@@ -295,17 +335,8 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
     const service = await startService(`hold-${newToken()}`);
     const { token, name } = await start(service, "ignore-stop");
     await waitForCensus(token, (pids) => pids.length === 2);
-    const hold = spawn(natives?.jobhold ?? "", [jobName(name)], {
-      stdio: ["pipe", "pipe", "ignore"],
-      windowsHide: true,
-    });
+    const release = await holdJob(name);
     try {
-      await new Promise<void>((resolve, reject) => {
-        hold.stdout.on("data", (chunk: Buffer) => {
-          if (chunk.toString().includes("held")) resolve();
-          else reject(new Error(chunk.toString()));
-        });
-      });
       await service.crash();
       await sleep(500);
       expect(census(token)).toHaveLength(2);
@@ -314,7 +345,7 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
       expect(await fresh.recover(name)).toEqual(EMPTY);
       expect(census(token)).toEqual([]);
     } finally {
-      hold.stdin.end();
+      release();
     }
   });
 });
@@ -361,14 +392,35 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
       const said = await waitFor(
         "output",
         () => output(service, name),
-        (o) => o.head !== "",
+        (o) => o.head.includes("\n"),
       );
-      expect(said.head.trim()).toBe("leaked 0");
-      await killAndConfirm(service, name, token);
+      if (!windows) {
+        expect(said.head.trim()).toBe("leaked 0");
+        await killAndConfirm(service, name, token);
+        return;
+      }
+      // Windows has no list of a process's handles to read, so the test looks at their effect:
+      // with the job held elsewhere the agent outlives its helper, and the service sees the
+      // helper's event pipe close only if no process of the job holds a copy of it.
+      const helper = Number(/^parent (\d+)$/m.exec(said.head)?.[1]);
+      expect(helper).toBeGreaterThan(0);
+      const release = await holdJob(name);
+      try {
+        process.kill(helper, "SIGKILL");
+        expect(await service.request<AgentExit>("exited", { name }, 15_000)).toEqual({
+          code: null,
+          signal: null,
+        });
+        expect(census(token)).toHaveLength(1);
+        expect(await service.request("recover", { name })).toEqual(EMPTY);
+        expect(census(token)).toEqual([]);
+      } finally {
+        release();
+      }
     } finally {
       await service.close();
     }
-  });
+  }, 60_000);
 
   test("a name in use is refused, and the running container is untouched", async (ctx) => {
     need(ctx);

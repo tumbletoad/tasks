@@ -49,6 +49,8 @@ interface Live {
   /** The next answer line of each command, in order. */
   readonly waiting: ((line: string | undefined) => void)[];
   ended: boolean;
+  /** The agent itself exited: an interrupt would reach only what it left behind. */
+  agentExited: boolean;
   readonly helperEnded: Promise<void>;
 }
 
@@ -185,6 +187,7 @@ export class WindowsContainers implements Containers {
               pid,
               waiting: [],
               ended: false,
+              agentExited: false,
               helperEnded,
             };
             this.live.set(spec.name, live);
@@ -195,8 +198,10 @@ export class WindowsContainers implements Containers {
           }
           return;
         }
-        if (word === "exit") reportExit({ code: Number(rest[0]), signal: null });
-        else if (word === "interrupt" || word === "kill") live.waiting.shift()?.(line);
+        if (word === "exit") {
+          live.agentExited = true;
+          reportExit({ code: Number(rest[0]), signal: null });
+        } else if (word === "interrupt" || word === "kill") live.waiting.shift()?.(line);
       });
       void helperEnded.then(() => {
         if (live === undefined) {
@@ -226,7 +231,7 @@ export class WindowsContainers implements Containers {
 
   async interrupt(name: string): Promise<boolean> {
     const live = this.live.get(name);
-    return live === undefined ? false : this.command(live, "interrupt");
+    return live === undefined || live.agentExited ? false : this.command(live, "interrupt");
   }
 
   async kill(name: string): Promise<void> {

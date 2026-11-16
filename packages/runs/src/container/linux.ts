@@ -156,9 +156,15 @@ export class LinuxContainers implements Containers {
     return undefined;
   }
 
-  /** The unit's cgroup, once the service sits in its `main` child. Decided once per process. */
+  /**
+   * The unit's cgroup, once the service sits in its `main` child. Only success is kept: a busy
+   * user manager that did not answer in time must not keep runs unavailable until a restart.
+   */
   private ready(): Promise<Layout> {
-    this.layout ??= this.prepare();
+    this.layout ??= this.prepare().then((layout) => {
+      if (!layout.ok) this.layout = undefined;
+      return layout;
+    });
     return this.layout;
   }
 
@@ -256,7 +262,10 @@ export class LinuxContainers implements Containers {
 
   interrupt(name: string): Promise<boolean> {
     const live = this.live.get(name);
-    if (live === undefined) return Promise.resolve(false);
+    // Once the agent is reaped its PID, and with it the group ID, can belong to another program.
+    if (live === undefined || live.child.exitCode !== null || live.child.signalCode !== null) {
+      return Promise.resolve(false);
+    }
     try {
       process.kill(-live.pid, "SIGINT");
       return Promise.resolve(true);

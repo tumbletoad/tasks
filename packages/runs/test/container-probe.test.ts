@@ -61,7 +61,13 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
     /** A fake machine: which of systemd, cgroup2 and cgroup.kill exist, and the service's cgroup. */
     function machine(
       label: string,
-      facts: { systemd?: boolean; v2?: boolean; kill?: boolean; self?: string; delegate?: string },
+      facts: {
+        systemd?: boolean;
+        v2?: boolean;
+        kill?: boolean;
+        self?: string;
+        delegate?: string | (() => string | undefined);
+      },
     ) {
       const root = join(dir, label);
       const cgroups = join(root, "cgroup");
@@ -74,7 +80,8 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
         cgroupRoot: cgroups,
         selfCgroup: join(root, "self"),
         systemdRunDir: join(root, "systemd"),
-        unitDelegate: () => Promise.resolve(facts.delegate),
+        unitDelegate: () =>
+          Promise.resolve(typeof facts.delegate === "function" ? facts.delegate() : facts.delegate),
         uid: 1000,
       });
     }
@@ -98,6 +105,15 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
         ).rejects.toMatchObject({ code: "unavailable" });
       });
     }
+
+    test("a user manager that did not answer once is asked again", async () => {
+      const answers = [undefined, "yes"];
+      const box = machine("asked-again", { delegate: () => answers.shift() });
+      expect(await box.probe()).toMatchObject({ available: false, reason: "no_user_manager" });
+      // Asked again, it answers: the fake machine then fails at the next step, moving the service.
+      expect(await box.probe()).toMatchObject({ available: false, reason: "check_failed" });
+      expect(answers).toEqual([]);
+    });
   });
 
   test("Windows without tasks-run.exe, and other platforms", async () => {

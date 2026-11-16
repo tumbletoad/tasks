@@ -14,7 +14,8 @@
 //   hold-pipe    starts a detached idle child that shares its stdout and stderr, then exits 0
 //   flood        writes 64 KiB chunks to stdout without end
 //   die          prints "ready" and exits 3
-//   handles      prints how many of the service's control pipes it holds ("leaked <n>"), then waits
+//   handles      Linux: prints how many of the service's control pipes it holds ("leaked <n>").
+//                Windows: prints the process that started it ("parent <pid>"). Then waits.
 //   argv         prints the arguments after `--` as JSON and exits 0
 //   nest         Linux: moves itself into a new cgroup below its own, prints "ready", waits
 // Child roles: idle (waits), daemonize (starts a detached idle child, exits once it runs).
@@ -25,7 +26,6 @@
 // container cannot leave a stand-in running for long.
 import { spawn, type StdioOptions } from "node:child_process";
 import {
-  fstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -160,26 +160,19 @@ switch (mode) {
     process.exit(3);
     break;
   case "handles": {
-    // The service's control pipes would be fd 3 and 4. On Linux, Node itself reuses low numbers
-    // for its own files, but never for a socket, which is what the service's pipes are there.
+    if (process.platform === "win32") {
+      say(`parent ${String(process.ppid)}\n`);
+      break;
+    }
+    // Node itself reuses low numbers for its own files, but never for a socket, which is what the
+    // service's pipes are here.
     let leaked = 0;
-    if (process.platform === "linux") {
-      for (const fd of readdirSync("/proc/self/fd").map(Number)) {
-        if (fd <= 2) continue;
-        try {
-          if (readlinkSync(`/proc/self/fd/${String(fd)}`).startsWith("socket:")) leaked += 1;
-        } catch {
-          // The listing's own descriptor is gone by now.
-        }
-      }
-    } else {
-      for (const fd of [3, 4]) {
-        try {
-          fstatSync(fd);
-          leaked += 1;
-        } catch {
-          // Not open: as it should be.
-        }
+    for (const fd of readdirSync("/proc/self/fd").map(Number)) {
+      if (fd <= 2) continue;
+      try {
+        if (readlinkSync(`/proc/self/fd/${String(fd)}`).startsWith("socket:")) leaked += 1;
+      } catch {
+        // The listing's own descriptor is gone by now.
       }
     }
     say(`leaked ${String(leaked)}\n`);

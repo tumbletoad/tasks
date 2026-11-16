@@ -4,8 +4,8 @@
 // Linux: the main process of a transient systemd user unit with Delegate=yes, as the real
 // service runs. Such a unit is made only where the machine's user manager is disposable: CI says
 // so with TASKS_TEST_USER_UNITS=1 after it started one. A person's own session never gets a test
-// unit. Every unit is named `tasks-test-container-<token>.service`, so `systemctl --user stop
-// 'tasks-test-container-*'` removes any a broken run left.
+// unit. Every unit is named `tasks-test-container-<token>.service`: a test run stops its own by
+// full name, and `systemctl --user stop 'tasks-test-container-*'` removes any a killed run left.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -69,10 +69,11 @@ export function systemctl(...args: string[]): string {
   return result.stdout.trim();
 }
 
-/** Stops every unit the container tests made, by their name pattern. */
-export function stopTestUnits(): void {
-  systemctl("stop", `${UNIT_PREFIX}*`);
-  systemctl("reset-failed", `${UNIT_PREFIX}*`);
+/** Stops the units this test run made, by their full names: another run's units stay. */
+export function stopTestUnits(units: readonly string[]): void {
+  if (units.length === 0) return;
+  systemctl("stop", "--", ...units);
+  systemctl("reset-failed", "--", ...units);
 }
 
 /** Waits until a unit is unloaded, so its name can start again. */
@@ -181,10 +182,18 @@ export class Service {
     await this.closed;
   }
 
-  /** Ends the service: it exits when its stdin closes. */
+  /** Ends the service: it exits when its stdin closes. Does nothing once it has ended. */
   async close(): Promise<void> {
+    if (this.ended()) {
+      await this.closed;
+      return;
+    }
     this.child.stdin?.end();
     await Promise.race([this.closed, sleep(15_000)]);
-    if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill("SIGKILL");
+    if (!this.ended()) this.child.kill("SIGKILL");
+  }
+
+  private ended(): boolean {
+    return this.child.exitCode !== null || this.child.signalCode !== null;
   }
 }

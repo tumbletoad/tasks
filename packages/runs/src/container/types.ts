@@ -9,7 +9,9 @@ import type { Readable } from "node:stream";
 /** What to start inside a new container. */
 export interface ContainerSpec {
   /**
-   * The container's name, unique per run and recorded by the caller before the container exists:
+   * The container's name, recorded by the caller before the container exists. On Windows a job's
+   * name is shared by every install in the person's session, so it must be unique per run on the
+   * machine, not only within one install (a random run ID is). Its characters:
    * ASCII letters, digits, '-', '_' and '.', starting with a letter or digit, at most 100 long.
    */
   readonly name: string;
@@ -92,7 +94,8 @@ export interface Containers {
   start(spec: ContainerSpec): Promise<Contained>;
   /**
    * Asks the agent to stop: SIGINT to its process group on Linux, Ctrl+C on its console on
-   * Windows. False when it could not be delivered. It ends nothing by itself.
+   * Windows. False when it could not be delivered or the agent itself has exited: what it left
+   * behind is ended with kill. It ends nothing by itself.
    */
   interrupt(name: string): Promise<boolean>;
   /** Ends every process in the container at once. Confirm with confirmEmpty. */
