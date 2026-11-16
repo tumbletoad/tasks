@@ -9,8 +9,9 @@ import { join } from "node:path";
 
 /**
  * Taken from the parent when present. The OS basics, the home and profile folders, and what the
- * CLIs proved to need on the two machines (2026-11-12): Claude Code and Codex on Windows read
- * HOMEDRIVE and HOMEPATH, ProgramFiles to find Git Bash, and ComSpec and PATHEXT to run commands.
+ * CLIs proved to need on Windows 11 and Ubuntu 24.04 (2026-11-12): Claude Code and Codex on
+ * Windows read HOMEDRIVE and HOMEPATH, ProgramFiles to find Git Bash, and ComSpec and PATHEXT to
+ * run commands.
  */
 export const BASE_NAMES = [
   "PATH",

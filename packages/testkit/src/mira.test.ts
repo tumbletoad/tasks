@@ -293,8 +293,8 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
   });
 
   // Seed "fixed" at the largest size must not collide on a UNIQUE source key. About 2 s on
-  // Windows 11. The sample flushes once, at its close (mira.ts), so the time is the generator's work and not the
-  // disk's; the timeout allows a slow CI runner.
+  // Windows 11. The sample flushes once, at its close (mira.ts), so the time is the generator's
+  // work and not the disk's; the timeout allows a slow CI runner.
   test("the largest size the script accepts builds, with a valid history", async () => {
     const space = await seedMira(temp(), { seed: "fixed", tasks: MAX_TASKS });
     expect(space.counts["tasks"]).toBe(MAX_TASKS);

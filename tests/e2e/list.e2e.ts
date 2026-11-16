@@ -7,9 +7,9 @@
 // the viewport below the top bar is left uncovered by an item (a blank frame), whether the focused
 // row still holds focus, and how long each frame took. What it cannot say: a CI runner or a
 // development machine is not the real Ubuntu 24.04 machine A5's targets name, so the frame times
-// are recorded, not judged; A5's 60 fps target is M5.13's measurement on a real machine. Programmatic scrolling also skips the
-// compositor's own smooth scrolling, so it is a stricter test of coverage than a wheel, and no test
-// of smoothness.
+// are recorded, not judged; A5's 60 fps target is M5.13's measurement on a real machine.
+// Programmatic scrolling also skips the compositor's own smooth scrolling, so it is a stricter test
+// of coverage than a wheel, and no test of smoothness.
 import { expect, type Page } from "@playwright/test";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
