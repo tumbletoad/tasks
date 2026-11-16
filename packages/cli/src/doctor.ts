@@ -312,6 +312,8 @@ interface Status {
     state: string;
     reason?: string;
     holder?: unknown;
+    /** What happened and what to run, when the space is not open for writing. */
+    message?: string;
   }[];
 }
 
@@ -417,6 +419,10 @@ async function serviceChecks(
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
     const bad = spaces.filter((s) => s.state !== "open" && s.state !== "read_only");
+    // A space's way out names `<folder>`, which tasks space list shows: this row holds no path.
+    const folders = spaces.some((s) => s.message?.includes("<folder>") === true)
+      ? " Run tasks space list to see each space's folder."
+      : "";
     checks.push({
       id: "spaces",
       status: bad.length > 0 ? "warn" : "ok",
@@ -424,11 +430,13 @@ async function serviceChecks(
         spaces.length === 0
           ? "No spaces."
           : spaces
-              .map(
-                (s) =>
-                  `${s.name ?? s.id ?? `entry ${String(s.entry)}`}: ${s.state}${s.reason === undefined ? "" : ` (${s.reason})`}`,
-              )
-              .join("; "),
+              .map((s) => {
+                const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
+                const reason = s.reason === undefined ? "" : ` (${s.reason})`;
+                const message = s.message === undefined ? "" : `. ${s.message}`;
+                return `${name}: ${s.state}${reason}${message}`;
+              })
+              .join("; ") + folders,
     });
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));

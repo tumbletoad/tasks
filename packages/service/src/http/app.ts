@@ -707,9 +707,10 @@ export class HttpApp {
 
   /**
    * `POST /api/v1/space/<action>`: the space switcher's list (every space this service has, by ID,
-   * name and state, and the machine's default), or Make default. The UI's grant is the person, so
-   * Make default is the person's explicit act (A2 3.1). Neither names a tab's space: a tab's space is
-   * its route, and the default decides only what a new tab and an unbound CLI call use.
+   * name, state and the reason it is not open, the spaces that never opened by state and reason,
+   * and the machine's default), or Make default. The UI's grant is the person, so Make default is
+   * the person's explicit act. Neither names a tab's space: a tab's space is its route, and the
+   * default decides only what a new tab and an unbound CLI call use.
    */
   async #space(
     res: ServerResponse,
@@ -720,11 +721,20 @@ export class HttpApp {
     try {
       const defaults = this.options.defaults;
       if (action === "list") {
-        const spaces = this.options.ops
-          .spaces()
-          .filter((s) => s.id !== undefined && s.state !== "closed")
-          .map((s) => ({ id: s.id, name: s.name ?? "", state: s.state }));
-        this.#json(res, port, 200, { result: { spaces, default: defaults?.get() ?? null } });
+        const live = this.options.ops.spaces().filter((s) => s.state !== "closed");
+        const reasonOf = (s: { readonly reason?: string }) =>
+          s.reason === undefined ? {} : { reason: s.reason };
+        const spaces = live
+          .filter((s) => s.id !== undefined)
+          .map((s) => ({ id: s.id, name: s.name ?? "", state: s.state, ...reasonOf(s) }));
+        // A space that never opened has no ID or name yet, but the person must still learn that
+        // it is there and why it is not open, never that the computer has no space.
+        const unopened = live
+          .filter((s) => s.id === undefined)
+          .map((s) => ({ state: s.state, ...reasonOf(s) }));
+        this.#json(res, port, 200, {
+          result: { spaces, unopened, default: defaults?.get() ?? null },
+        });
         return;
       }
       if (defaults === undefined) {

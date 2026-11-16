@@ -122,6 +122,7 @@ import {
   type FolderCheck,
   type SyncHost,
 } from "./sync-folders.ts";
+import { wayOutOf } from "./space-ways.ts";
 import { realSyncHost } from "./sync-host.ts";
 import { readOnly, type ServedSpace } from "../ops/index.ts";
 import { bounded, Timeout, within } from "./wait.ts";
@@ -164,10 +165,10 @@ export interface SpaceView {
   /** Who holds the space's writer.lock, from its writer.json. For status, never for the log. */
   readonly holder?: WriterHolder;
   /**
-   * Why the space is read-only, for people, never the log: in A1 3.2's words when its folder is
-   * synced or on a network file system, or a failed migration's message, A1 3.17's (the
-   * revisions, the cause's code, that the data is unchanged and the barrier backup's name,
-   * A1 3.17), with how it is tried again (A1 3.17). It names no path and no content.
+   * Why the space is read-only or unavailable and what to run, for people, never the log: the
+   * words of its folder check or failed migration (the revisions, the cause's code, that the data
+   * is unchanged, the barrier backup's name and how it is tried again), else its way out
+   * (space-ways.ts). It names no path and no content.
    */
   readonly message?: string;
   /** What the folder check found (A1 3.2), when it found a sync client or a network file system. */
@@ -399,8 +400,14 @@ class Hosted {
     this.message = undefined;
   }
 
+  /** What a person reads about the state: its own message, else its way out (space-ways.ts). */
+  shown(): string | undefined {
+    return this.message ?? wayOutOf(this.state, this.reason);
+  }
+
   view(): SpaceView {
     const check = this.check;
+    const message = this.shown();
     return {
       entry: this.index,
       state: this.state,
@@ -408,7 +415,7 @@ class Hosted {
       ...(this.reason === undefined ? {} : { reason: this.reason }),
       ...(this.code === undefined ? {} : { code: this.code }),
       ...(this.holder === undefined ? {} : { holder: this.holder }),
-      ...(this.message === undefined ? {} : { message: this.message }),
+      ...(message === undefined ? {} : { message }),
       ...(check === undefined || check.verdict === "local"
         ? {}
         : {
@@ -481,16 +488,19 @@ export class SpaceManager {
    * as this machine's, a reader while it is served.
    */
   served(): ServedSpace[] {
-    return this.#spaces.map((space) => ({
-      id: space.id,
-      name: space.name,
-      state: space.state,
-      ...(space.reason === undefined ? {} : { reason: space.reason }),
-      ...(space.message === undefined ? {} : { message: space.message }),
-      writer: space.state === "open" ? space.writer : undefined,
-      reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
-      folder: space.folder,
-    }));
+    return this.#spaces.map((space) => {
+      const message = space.shown();
+      return {
+        id: space.id,
+        name: space.name,
+        state: space.state,
+        ...(space.reason === undefined ? {} : { reason: space.reason }),
+        ...(message === undefined ? {} : { message }),
+        writer: space.state === "open" ? space.writer : undefined,
+        reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
+        folder: space.folder,
+      };
+    });
   }
 
   /** The folder of a registered space, for the space verbs. */

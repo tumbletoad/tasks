@@ -460,3 +460,37 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
     expect(wayOut({ entry: 0, state: "open" })).toEqual([]);
   });
 });
+
+describe("[A2.3.10.cli.space-needs-recovery] a space that needs recovery says what to run", () => {
+  test("space list and doctor name tasks space recover, which then opens it", async () => {
+    const folder = join(world.root, "s", "journal");
+    const made = await user(["space", "create", "Journal", "--path", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    expect((await user(["space", "close", folder])).code).toBe(0);
+    // A rollback journal beside the database, as a crash in another tool leaves one.
+    writeFileSync(join(folder, "space.db-journal"), "");
+    const opened = await user(["space", "open", folder, "--json"]);
+    expect(parsed(opened.stdout)["space"]).toMatchObject({
+      state: "unavailable",
+      reason: "needs_recovery",
+    });
+
+    const way = `${CLI_NAME} space recover <folder>`;
+    const listed = await user(["space", "list"]);
+    expect(listed.stdout).toContain("unavailable: needs_recovery");
+    expect(listed.stdout).toContain(way);
+    const doctor = parsed((await world.tasks(["doctor", "--json"])).stdout) as {
+      checks: { id: string; detail: string }[];
+    };
+    const spaces = doctor.checks.find((c) => c.id === "spaces")?.detail ?? "";
+    expect(spaces).toContain(way);
+    expect(spaces).toContain(`${CLI_NAME} space list`);
+
+    const recovered = await user(["space", "recover", folder, "--json"]);
+    expect(recovered.code, recovered.stdout + recovered.stderr).toBe(0);
+    expect(parsed(recovered.stdout)["space"]).toMatchObject({ name: "Journal", state: "open" });
+    const after = parsed((await user(["space", "list", "--json"])).stdout)["spaces"] as Row[];
+    expect(after.find((s) => s.name === "Journal")).not.toHaveProperty("message");
+    expect((await user(["space", "close", folder])).code).toBe(0);
+  }, 300_000);
+});

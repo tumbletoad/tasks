@@ -561,7 +561,7 @@ function readerOf(space: ServedSpace): WorkerConnection {
   if ((space.state === "open" || space.state === "read_only") && space.reader !== undefined) {
     return space.reader;
   }
-  throw spaceUnavailable("not_served", false, space.reason ?? space.state);
+  throw spaceUnavailable("not_served", false, space.reason ?? space.state, space.message);
 }
 
 function writerOf(space: ServedSpace): SpaceWriterHandle {
