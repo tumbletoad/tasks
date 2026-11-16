@@ -14,9 +14,10 @@
 // What that prevents and what it only detects is the decision's "guarantee".
 //
 // start goes through the OS (A2 3.3.5, 3.5 rule 5) and never runs `tasks serve` in this process's
-// tree, except where nothing else can start it: Linux without a user manager (setsid), and Windows
-// without Explorer in this session (detached). Both wait for a ready service that completes a
-// handshake.
+// tree, except where nothing else can start it: Linux without this install's unit (no user manager,
+// or no unit installed: setsid), and Windows without Explorer in this session (detached). Both wait
+// for a ready service that completes a handshake. A Linux install takes over a service started by
+// hand: it stops it right before the unit starts, so two services never run.
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -32,7 +33,6 @@ import {
   rmdirSync,
   rmSync,
   unlinkSync,
-  writeSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
@@ -43,13 +43,14 @@ import {
   ensurePrivateDir,
   judgePath,
   makeDir,
+  writeAll,
   type Judged,
 } from "../hub/files.ts";
 import { unsafeMessage } from "../hub/permissions.ts";
 import { readUmask, umaskRefusal } from "../hub/umask.ts";
 import { liveRecord, type Probe, type ProbeReason, type ServiceContext } from "./context.ts";
 import { ServiceCommandError } from "./errors.ts";
-import { TOOL_TIMEOUT_MS, type Runner } from "./process.ts";
+import { TOOL_TIMEOUT_MS, type Runner, type RunResult } from "./process.ts";
 import {
   missingKeys,
   regBytes,
@@ -255,6 +256,20 @@ export function unitDropIns(unitDir: string, unit: string): string {
     }
   }
   return found.join("\n");
+}
+
+/**
+ * Whether this install's unit is installed and ours (Linux). A launcher path systemd does not
+ * accept has no unit of this install, so start runs the service by hand and stop asks it over the
+ * endpoint, while install still refuses that path.
+ */
+async function unitIsOurs(ctx: ServiceContext): Promise<boolean> {
+  try {
+    return (await readEntry(ctx)).info.state === "ours";
+  } catch (error) {
+    if (error instanceof ServiceCommandError && error.code === "invalid_install_path") return false;
+    throw error;
+  }
 }
 
 const unitPath = (ctx: ServiceContext) => join(ctx.roots.unitDir, ctx.names.unit);
@@ -570,7 +585,11 @@ export type Step =
       readonly creates?: string;
     }
   | { readonly do: "start" }
-  | { readonly do: "stop" };
+  /**
+   * `startedByHand`: install takes over a service that runs without the unit, when one runs as the
+   * step runs (A2 3.3.3).
+   */
+  | { readonly do: "stop"; readonly startedByHand?: true };
 
 export interface Plan {
   readonly verb: "install" | "uninstall";
@@ -758,10 +777,15 @@ export async function planInstall(ctx: ServiceContext): Promise<Plan> {
       const wants = join(ctx.roots.unitDir, WANTS);
       const enable = systemctl("enable", ctx.names.unit);
       const wantsMissing = !existsSync(wants);
+      // A service of this install that runs without the unit, started by hand (A2 3.3.3), is
+      // stopped right before the unit starts: the unit takes it over, and its own start would
+      // otherwise meet the running one's lock and exit 73. Whether one runs is decided when the
+      // step runs, not at the preview: it may start, or still be starting, in between.
       steps.push(
         { do: "write-file", path: wanted.info.where, text: wanted.content, existing },
         systemctl("daemon-reload"),
         wantsMissing ? { ...enable, creates: wants } : enable,
+        { do: "stop", startedByHand: true },
         { do: "start" },
       );
       creates ||= wantsMissing;
@@ -987,7 +1011,7 @@ function createEntryFile(path: string, text: string, changedError: () => Error):
   }
   try {
     try {
-      writeSync(fd, text);
+      writeAll(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -1017,7 +1041,7 @@ function replaceEntryFile(
   const fd = createFile(temp, ENTRY_FILE_MODE);
   try {
     try {
-      writeSync(fd, text);
+      writeAll(fd, text);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -1145,7 +1169,11 @@ export async function applyPlan(ctx: ServiceContext, plan: Plan): Promise<Applie
         started = await startService(ctx, guardFor(ctx, plan, expected, n));
         break;
       case "stop":
-        stopped = await stopService(ctx, guardFor(ctx, plan, expected, n));
+        if (step.startedByHand === true) {
+          // The takeover: only a service the unit does not run, and only when one runs.
+          const taken = await stopStartedByHand(ctx, guardFor(ctx, plan, expected, n));
+          if (taken !== undefined) stopped = taken;
+        } else stopped = await stopService(ctx, guardFor(ctx, plan, expected, n));
         break;
     }
     // 4. The entry again: what the step left there, or the run stops here.
@@ -1166,8 +1194,16 @@ export interface StartOutcome {
   readonly outcome: "started" | "already_running";
   /** How it was started: the manager, Explorer, or a direct start. */
   readonly via: "systemd" | "launchd" | "explorer" | "direct" | "manual" | "none";
+  /**
+   * Linux, started by hand where a user manager runs: this install's unit is not installed, so
+   * nothing starts the service at sign-in (NO_UNIT_LINE says so).
+   */
+  readonly unit?: "not_installed";
   readonly status: ServiceStatus;
 }
+
+/** What `tasks service start` and `tasks open` say after a start by hand where a unit could do it. */
+export const NO_UNIT_LINE = `It does not start by itself when you sign in. To have it start by itself, run: ${CLI_NAME} service install`;
 
 export interface StopOutcome {
   readonly outcome: "stopped" | "not_running";
@@ -1433,10 +1469,11 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
     throw unreachable(before);
   }
   let via: StartOutcome["via"];
+  let unit: StartOutcome["unit"];
   switch (ctx.platform) {
     case "linux": {
-      if (await userManager(ctx, call)) {
-        if ((await readEntry(ctx)).info.state !== "ours") throw notInstalled();
+      const manager = await userManager(ctx, call);
+      if (manager && (await unitIsOurs(ctx))) {
         await ready();
         const result = await launch(SYSTEMCTL, ["--user", "start", ctx.names.unit]);
         if (result.code !== 0) {
@@ -1449,11 +1486,15 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
         }
         via = "systemd";
       } else {
-        // No user manager (A2 3.3.3): a detached service in its own session; nothing restarts it.
+        // No user manager, or no unit of this install (A2 3.3.3): a detached service in a session
+        // of its own, which the end of this terminal or SSH session does not reach. Nothing
+        // restarts it, and nothing starts it at sign-in.
         needProgram(ctx);
         await ready();
-        ctx.startDetached(ctx.program, ["serve"]);
+        // In the home folder, as the unit runs it: never the caller's folder, which it would hold.
+        ctx.startDetached(ctx.program, ["serve"], { cwd: ctx.home });
         via = "manual";
+        if (manager) unit = "not_installed";
       }
       break;
     }
@@ -1478,7 +1519,7 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
           );
         }
         await ready();
-        ctx.startDetached(ctx.program, []);
+        ctx.startDetached(ctx.program, [], { cwd: ctx.home });
         via = "direct";
       }
       break;
@@ -1504,7 +1545,7 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
   }
   const status = await waitReady(ctx, deadline);
   if (status === undefined) throw notReady(seconds);
-  return { outcome: "started", via, status };
+  return { outcome: "started", via, ...(unit === undefined ? {} : { unit }), status };
 }
 
 const SYSTEMD_RUNNING = new Set(["active", "activating", "reloading", "deactivating"]);
@@ -1519,11 +1560,15 @@ const SYSTEMD_RUNNING = new Set(["active", "activating", "reloading", "deactivat
  * The process to wait for is taken before anything is asked to stop, with its start time where
  * the OS gives one, so a record that goes away during the stop cannot hide a process that still
  * runs. Every tool and probe gets only the time left. As a plan's step, `guard` reads the entry
- * last before each request to stop: a changed entry is not stopped (exit 4).
+ * last before each request to stop: a changed entry is not stopped (exit 4). `deadline`: a caller's
+ * own, which this stop shares (install's takeover); stop's bound from now by default.
  */
-export async function stopService(ctx: ServiceContext, guard?: EntryGuard): Promise<StopOutcome> {
+export async function stopService(
+  ctx: ServiceContext,
+  guard?: EntryGuard,
+  deadline: number = Date.now() + ctx.stopTimeoutMs,
+): Promise<StopOutcome> {
   refuseIdentity(ctx, "stop", { operator: true });
-  const deadline = Date.now() + ctx.stopTimeoutMs;
   const left = () => Math.max(1, deadline - Date.now());
   const late = () => stillRunning(ctx, "did not stop");
   const call = bounded(ctx, () => deadline, late);
@@ -1531,7 +1576,7 @@ export async function stopService(ctx: ServiceContext, guard?: EntryGuard): Prom
   const before = recorded(ctx);
   let via: StopOutcome["via"] = "none";
   let done: string | undefined;
-  if (ctx.platform === "linux" && (await readEntry(ctx)).info.state === "ours") {
+  if (ctx.platform === "linux" && (await unitIsOurs(ctx))) {
     const active = await call(SYSTEMCTL, ["--user", "is-active", ctx.names.unit]);
     if (SYSTEMD_RUNNING.has(active.stdout.trim())) {
       await check();
@@ -1588,6 +1633,55 @@ export async function stopService(ctx: ServiceContext, guard?: EntryGuard): Prom
   }
   if (!(await waitEnded(ctx, processes, deadline))) throw late();
   return { outcome: "stopped", via };
+}
+
+/**
+ * Install's takeover on Linux (A2 3.3.3), decided when its step runs: a service of this install
+ * that the unit does not run (started by hand, or still starting so) is stopped, so that the unit's
+ * own start, the next step, never meets its lock. The unit runs it only when systemd reports the
+ * unit running with the service's own PID as its main process: a unit started while a service by
+ * hand holds the lock is active for a moment before it exits 73. A service the unit runs is left as
+ * it is. One deadline, stop's, for the questions and the stop. Undefined when nothing was stopped.
+ */
+async function stopStartedByHand(
+  ctx: ServiceContext,
+  guard: EntryGuard,
+): Promise<StopOutcome | undefined> {
+  const deadline = Date.now() + ctx.stopTimeoutMs;
+  const call = bounded(
+    ctx,
+    () => deadline,
+    () => stillRunning(ctx, "did not stop"),
+  );
+  const noAnswer = (what: string, result: RunResult) =>
+    // No answer is not "inactive": stopping now could stop the unit's own service.
+    new ServiceCommandError(
+      "internal",
+      "tool_failed",
+      `systemctl --user ${what} ${ctx.names.unit} did not answer (${result.failure ?? `exit ${String(result.code)}`}).`,
+      `${CLI_NAME} service status`,
+    );
+  const active = await call(SYSTEMCTL, ["--user", "is-active", ctx.names.unit]);
+  const state = active.stdout.trim();
+  if (state === "") throw noAnswer("is-active", active);
+  if (SYSTEMD_RUNNING.has(state)) {
+    // Whose is the service that answers? One still starting is waited for until it can say.
+    let probe = await ctx.probe(Math.max(1, deadline - Date.now()));
+    if (!probe.answers && probe.reason === "starting") probe = await waitAnswer(ctx, deadline);
+    if (!probe.answers) return undefined;
+    const main = await call(SYSTEMCTL, [
+      "--user",
+      "show",
+      "--property=MainPID",
+      "--value",
+      ctx.names.unit,
+    ]);
+    const pid = main.stdout.trim();
+    if (!/^\d+$/.test(pid)) throw noAnswer("show --property=MainPID", main);
+    if (pid === String(probe.status.pid)) return undefined;
+  }
+  const outcome = await stopService(ctx, guard, deadline);
+  return outcome.outcome === "stopped" ? outcome : undefined;
 }
 
 // ---------------------------------------------------------------------------------------------

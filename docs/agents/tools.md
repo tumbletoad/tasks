@@ -425,6 +425,10 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row, state for a run |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |
 | `unresolved[].at` | string | yes | When |
+| `script_change` | object | no | A newer change by a script, which is not on the undo stack |
+| `script_change.task` | string | yes | Task reference |
+| `script_change.change` | string | yes | Its first operation's kind on the task, such as task.complete |
+| `script_change.at` | string | yes | When |
 
 ### Examples
 
@@ -768,6 +772,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `task` | string, max 40 | yes | Task ref (M-14) or ID |
 | `instance` | string, max 64 | no | The instance to open in, from this machine's; leave out to Copy |
 | `text` | string, max 65536 | no | Your words for the agent: they replace the brief's last line |
+| `pack` | boolean | no | Copy the context pack: the task's text, for an app without the tools |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -788,7 +793,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `launch.at.confirmed` | integer, 0 to 253402300799999 | no | When a session was confirmed |
 | `launch.at.failed` | integer, 0 to 253402300799999 | no | When it failed |
 | `launch.at.unknown` | integer, 0 to 253402300799999 | no | When the service lost track of it |
-| `copy` | string, max 40000 | no | Text for the clipboard: Copy's pointer brief, or the brief to paste |
+| `copy` | string, max 200000 | no | Text for the clipboard: the pointer brief, context pack or brief to paste |
 | `text` | "none" \| "inline" \| "note" | yes | Where your words went: none given, in the brief, or saved as a note |
 
 ### Examples

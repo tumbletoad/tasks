@@ -36,16 +36,33 @@ const ISSUE: Readonly<Record<string, string>> = {
   not_multiple_of: "Not an allowed number",
 };
 
+/** The value at a schema issue's path in the input, or undefined where nothing is. */
+function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
+  let node = input;
+  for (const key of path) {
+    if (typeof node !== "object" || node === null) return undefined;
+    node = (node as Record<PropertyKey, unknown>)[key];
+  }
+  return node;
+}
+
 /**
  * A schema failure: `too_large` when every issue is a limit (A3 3.5: over a field, item or
- * request limit), else `invalid_input`, with each issue's path and a fixed sentence.
+ * request limit), else `invalid_input`, with each issue's path and a fixed sentence. A field the
+ * input leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong.
  */
-export function schemaFailure(error: {
-  readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[];
-}): AppError {
+export function schemaFailure(
+  error: {
+    readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[];
+  },
+  input?: unknown,
+): AppError {
   const issues = error.issues.slice(0, 20).map((issue) => ({
     path: issue.path.map(String).join("."),
-    message: ISSUE[issue.code] ?? "Invalid",
+    message:
+      issue.code === "invalid_type" && valueAt(input, issue.path) === undefined
+        ? "Missing"
+        : (ISSUE[issue.code] ?? "Invalid"),
   }));
   const tooLarge = error.issues.every((issue) => issue.code === "too_big");
   return new AppError({
@@ -74,6 +91,13 @@ const HINTS: Readonly<Record<string, string>> = {
   UNDO_BEFORE_FLOOR: "Changes from before the space's last format change stay as they are.",
 };
 
+/** A conflict's `reason` when complete_task's wrap-up was held (A3 3.4.8). */
+export const ALREADY_WRAPPED = "already_wrapped";
+const WRAPPED =
+  "The task is already wrapped up with another outcome or other learnings, so nothing was changed.";
+const WRAPPED_HINT =
+  "To add to it, log an entry: add_entry (tasks log). To finish it again, reopen it first: reopen_task (tasks reopen).";
+
 /**
  * Who wrote a version, as people read it (A3 3.10): an import, the user, else the actor's label.
  * read.ts labels entries and history rows by the same rule.
@@ -82,20 +106,52 @@ export const byOf = (by: { kind: string; label: string; origin?: string }): stri
   by.origin === "import" ? "import" : by.kind === "human" ? "user" : by.label;
 
 /**
+ * Whether a conflict is complete_task's held wrap-up (A3 3.4.8): every conflict is on `wrap` of
+ * the request's `once` wrap-up operation, on a task the writer found wrapped. A base conflict on
+ * that operation finds the task not wrapped (else it is held), so the value tells them apart. A
+ * replay's receipt holds no value, and is read as held, the case a person meets.
+ */
+function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
+  if (op === undefined || result.status !== "conflict" || result.conflicts.length === 0) {
+    return false;
+  }
+  return result.conflicts.every((c) => {
+    if (c.entity !== "tasks" || c.field !== "wrap" || c.op !== op) return false;
+    if (c.value === undefined) return true;
+    return (
+      typeof c.value === "object" &&
+      c.value !== null &&
+      (c.value as Record<string, unknown>)["wrap_state"] === "wrapped"
+    );
+  });
+}
+
+/**
  * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
- * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form.
+ * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form. `wrapUp` is the
+ * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
+ * base.
  */
 export function resultFailure(
   result: WriteResult,
   hints: Readonly<Record<string, string>> = {},
+  wrapUp?: number,
 ): AppError {
   const problem = result.error;
-  const hint = problem === undefined ? undefined : (hints[problem.code] ?? HINTS[problem.code]);
+  // complete_task on a task wrapped up already with another outcome or other learnings: the
+  // writer holds the wrap-up whatever the base, so a fresh read changes nothing. The message says
+  // what happened, `reason` names it for a script, and the hint says what the person can do.
+  const wrapped = heldWrapUp(result, wrapUp);
+  const hint = wrapped
+    ? WRAPPED_HINT
+    : problem === undefined
+      ? undefined
+      : (hints[problem.code] ?? HINTS[problem.code]);
   const base: ErrorBody =
     problem === undefined
       ? { code: "conflict", message: "A field changed after the base: read again." }
       : {
-          ...a1ErrorBody(problem.code, problem.message, {
+          ...a1ErrorBody(problem.code, wrapped ? WRAPPED : problem.message, {
             ...(problem.op === undefined ? {} : { op: problem.op }),
             ...(problem.field === undefined ? {} : { field: problem.field }),
             ...(problem.at === undefined ? {} : { at: problem.at }),
@@ -126,6 +182,7 @@ export function resultFailure(
     hint: hint ?? "Read the task again, then send the change with a new request ID.",
     data: {
       ...base.data,
+      ...(wrapped ? { reason: ALREADY_WRAPPED } : {}),
       as_of: result.as_of,
       // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
       // passes it to Undo the rest or Restore mine, so they never reach a newer change instead.

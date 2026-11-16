@@ -73,6 +73,8 @@
   "row.copy": "Copy",
   "row.copyFor": "Copy {title}",
   "row.copied": "Copied",
+  "row.packCopied": "Context pack copied",
+  "row.copyTip": "Copy the brief. Shift-click copies the context pack: the task's text, its notes for agents, sources and recent log, for an app without the tools.",
   "row.copyFailed": "The browser did not allow copying.",
   "row.openIn": "Open in {label}",
   "row.openFailed": "The launch was not recorded. Try again.",

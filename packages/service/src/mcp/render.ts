@@ -2,8 +2,14 @@
 // 3.5's text form, 3.9.6's digest, 3.10's framing). The text is the entry's rendering of the
 // structured result that `op/call` returns, so every face reports the same outcome: the MCP
 // contract suite holds the two equal. text.ts frames stored text and fits the budget.
-import { PRODUCT_NAME } from "@tasks/brand";
-import { LIMITS, findEntry, type ErrorBody, type OutputOf } from "@tasks/contracts";
+import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import {
+  LIMITS,
+  findEntry,
+  messageWithHint,
+  type ErrorBody,
+  type OutputOf,
+} from "@tasks/contracts";
 import { toolOf } from "./tools.ts";
 import {
   clip,
@@ -808,7 +814,6 @@ export function renderError(body: ErrorBody, random?: Random): string {
   const data = body.data ?? {};
   const reason =
     typeof data["reason"] === "string" && WORD.test(data["reason"]) ? ` (${data["reason"]})` : "";
-  const hint = body.hint === undefined ? "" : ` ${body.hint}`;
   const issues = Array.isArray(data["issues"])
     ? (data["issues"] as { path?: unknown; message?: unknown }[])
     : [];
@@ -820,7 +825,7 @@ export function renderError(body: ErrorBody, random?: Random): string {
   const where = (c: Conflict) => join(asText(c.task), asText(c.field)).replaceAll(" · ", " ");
   const parts: Part[] = [
     fixed(
-      `error ${body.code}${reason}: ${body.message}${hint}${data["replayed"] === true ? " (replayed)" : ""}`,
+      `error ${body.code}${reason}: ${messageWithHint(body.message, body.hint, CLI_NAME)}${data["replayed"] === true ? " (replayed)" : ""}`,
       ...issues
         .slice(0, 5)
         .map(
@@ -829,7 +834,8 @@ export function renderError(body: ErrorBody, random?: Random): string {
         ),
       conflicts.length === 0
         ? undefined
-        : `Changed since your base: ${conflicts
+        : // A wrap-up held whatever the base (A3 3.4.8) did not change since it.
+          `${data["reason"] === "already_wrapped" ? "Wrapped up already" : "Changed since your base"}: ${conflicts
             .slice(0, 5)
             .map((c) => `${where(c)} (v${asText(c.version)})`)
             .join(", ")}`,

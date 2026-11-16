@@ -18,6 +18,7 @@ export {
   CREATED_FILE,
   explorerInSession,
   linger,
+  NO_UNIT_LINE,
   planInstall,
   planUninstall,
   readEntry,

@@ -5,7 +5,7 @@
 // failure is A3's `service_unavailable` with its reason.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import {
   LocalError,
   openRpc,
@@ -17,6 +17,7 @@ import {
 import { AppError } from "@tasks/contracts";
 import { hostFacts, IPC_KEY, LayoutError, resolveLayout, SERVICE_JSON } from "@tasks/service/paths";
 import type { Io } from "./io.ts";
+import { RESTART_HINT } from "./output.ts";
 
 /** This CLI's version and build. M1.13's release build stamps its own. */
 export const CLI_BUILD = { version: "0.0.0", build: "source" } as const;
@@ -73,8 +74,8 @@ function alive(pid: unknown): boolean {
 
 const TEXT: Record<TransportReason | "starting", { message: string; hint?: string }> = {
   not_running: {
-    message: `${PRODUCT_NAME}'s service is not running. Start it with: tasks service start`,
-    hint: "tasks service start",
+    message: `${PRODUCT_NAME}'s service is not running.`,
+    hint: `${CLI_NAME} service start`,
   },
   starting: {
     message: `${PRODUCT_NAME}'s service is still starting.`,
@@ -97,8 +98,8 @@ const TEXT: Record<TransportReason | "starting", { message: string; hint?: strin
     hint: "Run the tasks command of the current install.",
   },
   service_too_old: {
-    message: `A newer ${PRODUCT_NAME} is installed than the running service. Run: tasks service restart`,
-    hint: "tasks service restart",
+    message: `A newer ${PRODUCT_NAME} is installed than the running service.`,
+    hint: RESTART_HINT,
   },
 };
 

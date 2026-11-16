@@ -592,6 +592,33 @@
             ],
             "type": "string"
           },
+          "script_change": {
+            "additionalProperties": false,
+            "description": "A newer change by a script, which is not on the undo stack",
+            "properties": {
+              "at": {
+                "description": "When",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                "type": "string"
+              },
+              "change": {
+                "description": "Its first operation's kind on the task, such as task.complete",
+                "pattern": "^[a-z_]{1,20}\\.[a-z_]{1,20}$",
+                "type": "string"
+              },
+              "task": {
+                "description": "Task reference",
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "change",
+              "at"
+            ],
+            "type": "object"
+          },
           "task_count": {
             "description": "How many tasks it changed",
             "maximum": 9999999999,
@@ -1618,6 +1645,10 @@
             "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
             "type": "string"
           },
+          "pack": {
+            "description": "Copy the context pack: the task's text, for an app without the tools",
+            "type": "boolean"
+          },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",
             "maxLength": 64,
@@ -1651,8 +1682,8 @@
         "additionalProperties": false,
         "properties": {
           "copy": {
-            "description": "Text for the clipboard: Copy's pointer brief, or the brief to paste",
-            "maxLength": 40000,
+            "description": "Text for the clipboard: the pointer brief, context pack or brief to paste",
+            "maxLength": 200000,
             "type": "string"
           },
           "launch": {

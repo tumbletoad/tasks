@@ -60,7 +60,7 @@ const MAX_RECORD_BYTES = 1024 * 1024;
 const MAX_ENTRIES = 16;
 
 /** The targets detection proposes an instance for and this command writes. */
-const TARGETS = ["claude-cli", "codex-cli"] as const;
+const TARGETS = ["claude-cli", "codex-cli", "t3"] as const;
 
 /** The keys an entry may have, in the order they are written (A4 3.2, detect.ts instanceEntry). */
 const KEYS = [
@@ -72,8 +72,14 @@ const KEYS = [
   "args_prefix",
   "config_home",
   "env",
+  "t3_environment",
+  "t3_provider_instance",
+  "t3_model",
   "remote_allowed",
 ] as const;
+
+/** The T3 keys, which only a T3 entry has (the reader's rule too, sections.ts). */
+const T3_KEYS = ["t3_environment", "t3_provider_instance", "t3_model"] as const;
 
 interface Recorded {
   readonly id: string;
@@ -156,7 +162,7 @@ function entryOf(value: unknown, at: number): Map<string, EditValue> {
     throw invalid(`${path}.id`, "Expected an instance ID");
   }
   if (typeof target !== "string" || !(TARGETS as readonly string[]).includes(target)) {
-    throw invalid(`${path}.target`, "Expected claude-cli or codex-cli");
+    throw invalid(`${path}.target`, "Expected claude-cli, codex-cli or t3");
   }
   const entry = new Map<string, EditValue>([
     ["id", id],
@@ -198,6 +204,23 @@ function entryOf(value: unknown, at: number): Map<string, EditValue> {
       throw invalid(`${path}.env`, "Expected the agent's environment variables");
     }
     entry.set("env", Object.fromEntries(values));
+  }
+  // T3 (A4 3.2): the local environment, the provider instance and its model, all three or none.
+  const t3 = T3_KEYS.map((key) => raw[key]);
+  if (target === "t3") {
+    const [environment, provider, model] = t3;
+    if (environment !== "local") {
+      throw invalid(`${path}.t3_environment`, "Expected local");
+    }
+    if (!isText(provider, 64)) {
+      throw invalid(`${path}.t3_provider_instance`, "Expected T3's provider instance");
+    }
+    if (!isText(model, 128)) throw invalid(`${path}.t3_model`, "Expected a model");
+    entry.set("t3_environment", environment);
+    entry.set("t3_provider_instance", provider);
+    entry.set("t3_model", model);
+  } else if (t3.some((value) => value !== undefined)) {
+    throw invalid(`${path}.target`, "Only a T3 instance takes the t3 keys");
   }
   // Reserved for L1 (A6): a command from another machine never uses an instance this writes.
   if (remote_allowed !== undefined && remote_allowed !== false) {

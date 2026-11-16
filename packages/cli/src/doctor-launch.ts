@@ -66,7 +66,7 @@ export function scopesCheck(scopes: unknown): Check {
     return {
       id,
       status: "warn",
-      detail: `Terminals start without a systemd scope (systemd-run --user did not work), so a restart or update of the service may end the agent sessions in them. Check that your user manager runs (systemctl --user status), then run: ${CLI_NAME} service restart`,
+      detail: `Terminals start without a systemd scope (systemd-run --user did not work), so a restart or update of the service may end the agent sessions in them. Check that your user manager runs (systemctl --user status), then restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start`,
     };
   }
   return {

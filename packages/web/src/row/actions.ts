@@ -14,7 +14,8 @@ export interface RowActions {
   /** The tile shows a launch on its way or done: expand to its thread entry. */
   readonly expand: (task: TaskRow) => void;
   readonly open: (task: TaskRow, instance: Instance) => void;
-  readonly copy: (task: TaskRow) => void;
+  /** Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5). */
+  readonly copy: (task: TaskRow, pack?: boolean) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
   /** The view's visible move out of it (A5 3.5): "Move to Open" or "Back to open". */
   readonly move: (task: TaskRow, kind: RowMove) => void;

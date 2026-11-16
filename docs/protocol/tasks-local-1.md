@@ -87,7 +87,7 @@ The service accepts the protocols it lists in the challenge (`[current - 1, curr
 |---|---|
 | `op/call`, `op/list`, `feed/subscribe`, `service/status`, `space/list`, `roots/list` | `cli-interactive`, `cli-script`, `cli-agent` |
 | `service/shutdown`, `ui/mint_code` | `cli-interactive`, `cli-script` |
-| `service/port`, `space/create`, `space/open`, `space/close`, `space/backup`, `space/backups`, `space/restore`, `space/claim`, `space/recover`, `roots/add` | `cli-interactive` only: the person's |
+| `service/port`, `space/create`, `space/open`, `space/close`, `space/backup`, `space/backups`, `space/restore`, `space/claim`, `space/recover`, `view/rebuild`, `roots/add` | `cli-interactive` only: the person's |
 | `launch.claim`, `launch.attach`, `launch.started`, `launch.settled`, `launch.exited`, `launch.failed`, `run.attach`, `run.event`, `run.exited` | `shim` only. Each checks its own credential (A4) |
 
 - `op/call {space?, op, input, request_id?}` calls one registry entry and answers its result or A3's error body. `space` is a space ID or name. `op/list {}` answers `{entries: [{name, kind, actors, summary}]}`, sorted by name.
