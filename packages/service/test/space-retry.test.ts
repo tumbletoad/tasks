@@ -7,6 +7,7 @@ import { createSpace, newId, StorageWorker, type Id } from "@tasks/storage";
 import { checkedDriver } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
+import { Timeout } from "../src/hub/wait.ts";
 import {
   registerSpaces,
   removeRuntimeDir,
@@ -94,7 +95,11 @@ function workers(...ready: (() => Promise<StorageWorker>)[]) {
   };
 }
 
-/** A stand-in worker whose writer never opens and whose close ends only when the test says so. */
+/**
+ * A stand-in worker whose writer's open ran past its bound and whose close ends only when the
+ * test says so. It reports the passed bound itself, so the real worker opened after it keeps the
+ * default bound, whatever the machine's speed.
+ */
 function hungWorker() {
   let end: () => void = () => undefined;
   const ended = new Promise<void>((resolve) => {
@@ -102,7 +107,7 @@ function hungWorker() {
   });
   let closes = 0;
   const worker = {
-    openSpaceWriter: () => new Promise(() => undefined),
+    openSpaceWriter: () => Promise.reject(new Timeout()),
     close: () => {
       closes += 1;
       return ended;
@@ -110,8 +115,6 @@ function hungWorker() {
   } as unknown as StorageWorker;
   return { worker, end, closes: () => closes };
 }
-
-const SHORT = { openTimeoutMs: 200, closeTimeoutMs: 200 };
 
 describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, and a stuck one once its worker has ended", () => {
   test("a space missing at the start opens with one space open once its folder is there", async () => {
@@ -158,7 +161,11 @@ describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, 
     const space = await fixtureSpace(join(spaces, "work"), machine);
     const hung = hungWorker();
     const pool = workers(() => Promise.resolve(hung.worker));
-    const service = await start(home, space.folder, { ...SHORT, startWorker: pool.start });
+    // The close's bound is short: the hung close passes it whatever the machine's speed.
+    const service = await start(home, space.folder, {
+      closeTimeoutMs: 200,
+      startWorker: pool.start,
+    });
     expect(service.spaces()).toEqual([
       expect.objectContaining({ entry: 0, state: "unavailable", reason: "open_failed" }),
     ]);
@@ -174,9 +181,9 @@ describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, 
       code: "SPACE_WRITER_TAKEN",
     });
     expect(pool.started()).toBe(1);
-    // The worker ends while the next open waits for it: that open goes on and opens the space.
+    // The worker ends once the next open waits for it: that open goes on and opens the space.
     const opening = service.spaceManager.open(space.folder);
-    setTimeout(hung.end, 50);
+    hung.end();
     await opening;
     expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: space.space.spaceId }]);
     expect(pool.started()).toBe(2);
