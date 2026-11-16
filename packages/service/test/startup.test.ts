@@ -130,7 +130,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const ok = await fixtureSpaceAt01(join(spaces, "ok"), machine);
     const bad = await fixtureSpaceAt01(join(spaces, "bad"), machine);
 
-    // This build's real 0.2 and 0.3 (M3.01, M6.01): the open migrates the 0.1 space.
+    // This build's real 0.2, 0.3 and 0.4: the open migrates the 0.1 space.
     const migrating = await start(home, [ok.folder], { maintenance: false });
     expect(migrating.spaces()).toEqual([{ entry: 0, state: "open", id: ok.space.spaceId }]);
     expect(events(home, "space.migrated")).toEqual([
@@ -138,8 +138,8 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
         entry: 0,
         space: ok.space.spaceId,
         from: encodeRevision({ major: 0, minor: 1 }),
-        to: encodeRevision({ major: 0, minor: 3 }),
-        steps: 2,
+        to: encodeRevision({ major: 0, minor: 4 }),
+        steps: 3,
       }),
     ]);
     expect(events(home, "space.open")).toEqual([expect.objectContaining({ migrated: true })]);
@@ -163,7 +163,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       reason: "migration_failed",
       code: "MIGRATION_FAILED",
       message:
-        "Migration to 0.4 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.1. " +
+        "Migration to 0.5 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.1. " +
         `Backup: ${backup?.name ?? "?"}. It is tried again after an update, or now with: ` +
         "tasks space open <folder> --retry-migration",
       id: bad.space.spaceId,
