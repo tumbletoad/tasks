@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 69 of 110, and M2.04b and M4.05b outside the base count.
+**Done so far:** 70 of 110, and M2.04b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 11 · total 110. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -134,7 +134,7 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
 | M4.01 | Remaining tools | M3.05, M3.06 | M | done |
-| M4.01b | What M4.01 left: area and project operations in the writer, and organize's create, rename, move and archive | M4.01 | M | ready |
+| M4.01b | What M4.01 left: area and project operations in the writer, and organize's create, rename, move and archive | M4.01 | M | doing |
 | M4.02 | Autonomy and proposals | M3.01 | M | ready |
 | M4.03 | Digest v1 and framing | M3.01, M3.05 | M | ready |
 | M4.04 | Final server instructions | M4.01 | S | done |
@@ -143,7 +143,7 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | M4.06 | Binding complete | M2.04, M2.04b | M | doing |
 | M4.07 | Source ingestion | M4.01 | S | ready |
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
-| M4.09 | Folders in the space: storage and operations | M4.01b | M | todo |
+| M4.09 | Folders in the space: storage and operations | M4.01b | M | doing |
 | M4.10 | Agent and command-line fields for folders | M4.09 | M | todo |
 | M4.11 | Folder follow-ups, the old places retired | M4.10, M6.16, M7.11, M3.10 | S | todo |
 
@@ -174,8 +174,8 @@ M4.05b and M4.01b are not in the base count.
 |---|---|---|---|---|
 | M6.01 | Run records and states | M2.05 | M | done |
 | M6.02 | Supervisor and limits | M6.01 | M | ready |
-| M6.03 | Run shim | M6.01, M2.08 | M | ready |
-| M6.04 | Cancellation | M6.03 | M | todo |
+| M6.03 | Run shim | M6.01, M2.08 | M | doing |
+| M6.04 | Cancellation | M6.03 | M | doing |
 | M6.05 | Stream parsers | M0.11 | S | done |
 | M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | todo |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
@@ -197,8 +197,8 @@ M4.05b and M4.01b are not in the base count.
 | M7.02 | Pure parsers | M7.01 | S | done |
 | M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | done |
 | M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | done |
-| M7.05 | Apply, undo, idempotent re-import | M7.04 | M | doing |
-| M7.06 | Export to the prototype format | M7.03 | M | todo |
+| M7.05 | Apply, undo, idempotent re-import | M7.04 | M | done |
+| M7.06 | Export to the prototype format | M7.03 | M | ready |
 | M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |
 | M7.08 | Trial tooling | M7.07 | S | todo |
 | M7.09 | Rehearsal on the Linux reference machine | M5, M6, M7.08 | S RM | todo |
@@ -217,7 +217,7 @@ Not in the base count. Each applies only when an M0 measurement calls for it.
 | F2 | Native forwarder: offline responder, reconnect | F1 | M | conditional |
 | F3 | Native forwarder builds per platform | F2 | S | conditional |
 | F4 | Native forwarder re-measured, default switched | F3 | S RM | conditional |
-| M6.04h | Windows console-attach cancel helper | M6.04 | S | todo |
+| M6.04h | Windows console-attach cancel helper | M6.04 | S | done |
 | M1.02 (fallback) | Fallback driver `better-sqlite3` as primary | G1 | S | conditional |
 
-F1 to F4 apply only if bridge rule 3 fires (A2 3.7.7). The Node forwarder ships, and lab session 3's cold bridge starts re-check that. M6.04h applies: lab row N03 showed that Windows needs the helper to cancel a console agent cleanly. The fallback driver as primary applies only if R01 or R02 fail, and both passed.
+F1 to F4 apply only if bridge rule 3 fires (A2 3.7.7). The Node forwarder ships, and lab session 3's cold bridge starts re-check that. M6.04h applied and is built: the helper that holds a run's job on Windows also sends the Ctrl+C. The fallback driver as primary applies only if R01 or R02 fail, and both passed.

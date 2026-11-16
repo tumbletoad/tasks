@@ -232,7 +232,7 @@ export interface RunningService {
    * The registered spaces' manager: close one, restore one in place, claim a read-only copy
    * (A1 3.18). M1.10's handlers call these through the handler table.
    */
-  readonly spaceManager: Pick<SpaceManager, "close" | "restoreInPlace" | "claim">;
+  readonly spaceManager: Pick<SpaceManager, "open" | "close" | "restoreInPlace" | "claim">;
   /**
    * The request path's host (ops/): this machine and the spaces it serves. The local endpoint's
    * `op/call` uses it; so do MCP (M2.02) and HTTP (M2.12), and the contract suite in-process.
@@ -668,6 +668,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         bindings,
         defaultSpace: () => defaults.get(),
         homes,
+        resultMismatch: (entry: string) => {
+          log.log("service.result_mismatch", { entry });
+        },
         // `launch.open` (A4 3.4, 3.15): the one launch machine per space this service keeps.
         launches: {
           openTask: (request: OpenTaskRequest) => {
