@@ -295,9 +295,6 @@ export class RunHost {
       };
     });
     const abort = new AbortController();
-    this.#closed.signal.addEventListener("abort", () => {
-      abort.abort();
-    });
     const flow: Flow = {
       id,
       stopping: false,
@@ -565,6 +562,8 @@ export class RunHost {
    * `retryForMs`; after that the run is left to the next start's recovery.
    */
   async #settle(id: string, end: RunEnd): Promise<RunRecord | undefined> {
+    // A closed host's runs end with its service: the next start records why.
+    if (this.#isClosed()) return undefined;
     const until = this.#elapsed() + this.#times.retryForMs;
     for (;;) {
       try {
@@ -578,10 +577,14 @@ export class RunHost {
         return after;
       } catch (error) {
         this.#failed("settle", error);
-        if (this.#closed.signal.aborted || this.#elapsed() >= until) return undefined;
+        if (this.#isClosed() || this.#elapsed() >= until) return undefined;
         if (!(await this.#pause(this.#times.retryMs))) return undefined;
       }
     }
+  }
+
+  #isClosed(): boolean {
+    return this.#closed.signal.aborted;
   }
 
   /** Waits `ms`: true once they passed, false when the host closed first. */

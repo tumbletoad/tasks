@@ -116,7 +116,8 @@ describe("[A4.3.11.8.run.stop] on a real container, Stop ends the agent and ever
     test(`an agent that ${mode === "ignore-stop" ? "ignores the Stop" : mode === "fork-late" ? "starts children late" : "detached a child and a daemon"}`, async (ctx) => {
       need(ctx);
       const label = `stop-${mode}-${newToken()}`;
-      const service = await startService(label, await bench(label));
+      const at = await bench(label);
+      const service = await startService(label, at);
       try {
         const { token, run } = await startRun(service, mode);
         await waitForCensus(token, (pids) => pids.length >= alive);
@@ -125,6 +126,15 @@ describe("[A4.3.11.8.run.stop] on a real container, Stop ends the agent and ever
           () => read(service, run),
           (r) => r.state === "running",
         );
+        if (mode === "detach-stay") {
+          // Its first message comes once it listens for the interrupt.
+          const files = new RunFiles(join(at.state, RUNS_FOLDER));
+          await waitFor(
+            "listening",
+            () => files.readAnswer(run),
+            (a) => a !== undefined,
+          );
+        }
         const stopped = await service.request<RunRecord>("stop", { run });
         expect(stopped.state).toBe("cancelling");
         const after = await ended(service, run);
