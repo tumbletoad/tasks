@@ -156,8 +156,11 @@ export function expanded(stored: string, home: string, platform: NodeJS.Platform
   return stored === "~" || stored.startsWith(`~${sep}`) ? `${home}${stored.slice(1)}` : stored;
 }
 
-/** Runs a look at the disk, or answers `not_answering` once it took longer than LOOK_MS. */
-async function bounded<T>(look: () => Promise<T>, ms = LOOK_MS): Promise<T | "not_answering"> {
+/** Runs a look at the disk, or answers `not_answering` once it took longer than `ms`. */
+export async function bounded<T>(
+  look: () => Promise<T>,
+  ms = LOOK_MS,
+): Promise<T | "not_answering"> {
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<"not_answering">((resolve) => {
     timer = setTimeout(() => {
