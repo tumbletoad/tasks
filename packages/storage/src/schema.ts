@@ -150,7 +150,9 @@ export const CLOSED_ENUMS: Readonly<
  * Open sets: values other appendices extend (A1 3.4, 3.7). The writer validates them against these
  * lists. They have no CHECK, because changing a CHECK means rebuilding the table, and `commits` and
  * `changes` are the largest tables. `changes.entity` is the name of a table with history (every
- * table with `created_seq`), and grows with each such table. `aliases.entity_kind` is what an alias
+ * table with `created_seq`), and grows with each such table, and of the two tables whose rows have
+ * no versions but change only through change rows too (`VERSIONLESS_TABLES`: an alias and an
+ * exchange's item, A1 3.4). `aliases.entity_kind` is what an alias
  * names: a legacy task ID, an old slug of an area, project or label, or an old reference prefix
  * of the space (A1 3.3). `tasks.status` and `tasks.effort` are neither: they hold keys of the
  * space's preferences `tasks.statuses` and `tasks.effort_scale` (A1 3.16), which the writer checks.
@@ -201,6 +203,9 @@ export const OPEN_SETS = {
     "attachments",
     "proposals",
     "exchanges",
+    // Rows without versions, written with their create change rows (VERSIONLESS_TABLES, M7.05).
+    "aliases",
+    "exchange_items",
     // Schema 0.3 (M6.01).
     "sessions",
     "runs",
@@ -264,3 +269,10 @@ export const JSON_COLUMNS: Readonly<Record<string, readonly string[]>> = {
  * quarter of a page spill to overflow pages in an index b-tree, so every other table keeps a rowid.
  */
 export const WITHOUT_ROWID_TABLES = ["aliases", "outbox", "task_labels", "task_sources"] as const;
+
+/**
+ * The tables whose rows have no `created_seq`, `version`, `fv` or `fp` and still change only
+ * through change rows (A1 3.4): a legacy ID's alias and an exchange's item, each written once with
+ * what it belongs to; an alias's move is a `set` row. Undo never inverts them.
+ */
+export const VERSIONLESS_TABLES = ["aliases", "exchange_items"] as const;

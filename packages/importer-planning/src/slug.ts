@@ -14,6 +14,8 @@
 // sync" are one project, `clinic-sync`, and so are "🏠 (Q1)" and "🏠 (Q2)". Only a project that is
 // nothing but `(…)` keeps it. Its title keeps the full text.
 
+import { createHash } from "node:crypto";
+
 export const SLUG_MAX = 48;
 
 /**
@@ -71,6 +73,15 @@ export function groupKey(text: string, kind: "area" | "project"): string {
   const key = letters(base);
   // A title without a letter or digit: its own text. The NUL keeps it apart from every letter key.
   return key === "" ? `\u0000${base.normalize("NFC").trim().toLowerCase()}` : key;
+}
+
+/**
+ * A group's identity as an import records it (PlannedArea.key): the base64url SHA-256 of its keys
+ * (an area's; a project's area's and its own), so the record is plain ASCII that the space's text
+ * rules keep as written, whatever script or symbol the title holds.
+ */
+export function storedKey(...keys: readonly string[]): string {
+  return createHash("sha256").update(keys.join("\u0000"), "utf8").digest("base64url");
 }
 
 /**

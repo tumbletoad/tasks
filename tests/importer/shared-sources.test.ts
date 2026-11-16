@@ -1,13 +1,14 @@
 // M7.03's Verify line, its writer half (A7 3.14): two legacy tasks with one source key become two
 // tasks linked to one source row, and the fixture task with the same key is untouched. The plan of
 // the synthetic prototype goes into the Mira sample space through the space's writer, which runs
-// A1 3.6's source upsert and `dedupe: "none"` as the apply (M7.05) will.
+// A1 3.6's source upsert and `dedupe: "none"` as the apply does.
 //
 // The importer never imports storage, and testkit and the importer import nothing from each other
-// (A7 3.2, 3.15.8), so this test lives outside both packages. The writer does not take every part
-// of a plan yet: `writerToday` leaves out what M7.05 adds to it (the alias, `created_at`, `ext`,
-// the dates of log entries and completions), and each left-out part is named there. Fixture data
-// only, in a temporary folder removed by its full name.
+// (A7 3.2, 3.15.8), so this test lives outside both packages. It sends the operations as a plain
+// request of the user: `writerToday` leaves out the parts only an import's own request carries
+// (the alias, `created_at`, `ext`, the dates of log entries and completions), which the whole
+// apply puts in ([A7.3.15.importer.apply]). Fixture data only, in a temporary folder removed by
+// its full name.
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,13 +56,12 @@ let space: string[];
 let ids: Map<string, Id<"t">>;
 let before: { tasks: Row[]; links: Row[]; sources: Row[] };
 
-/** The parts of a bound operation the writer takes today. M7.05 adds the rest to the writer. */
+/** The parts of a bound operation a plain request takes; an import's request carries the rest. */
 function writerToday(op: BoundOp): Operation | undefined {
-  // The alias (planning, <legacy id>): a new operation kind.
+  // The alias (planning, <legacy id>): an import's own operation.
   if (op.kind === "alias.add") return undefined;
-  // The creation instant from `(added …)` and `ext.planning`: fields task.create does not take.
-  // The dates of an evidence entry and of a completion: fields log.add and task.complete do not
-  // take. Without them the writer stamps the commit's instant, the plan's import time.
+  // The creation instant from `(added …)`, `ext.planning`, and the dates of an evidence entry and
+  // of a completion: an import's own fields. Without them the writer stamps the commit's instant.
   const later = new Set(["created_at", "ext", "at"]);
   const rest = Object.fromEntries(Object.entries(op).filter(([field]) => !later.has(field)));
   return rest as unknown as Operation;
@@ -117,7 +117,7 @@ beforeAll(async () => {
     principal_id: human?.["id"] as Id<"ac">,
     actor_kind: "human",
     machine_id: seeded.machine,
-    origin: "import",
+    origin: "cli",
   };
   result = writer.submit({
     space_id: opened.space.spaceId,

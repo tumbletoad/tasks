@@ -318,6 +318,8 @@ const VERIFIED = new Set([
   "history.undo 0",
   "history.redo 0",
   "import.planning.preview 0",
+  "import.planning.apply 0",
+  "import.planning.undo 0",
 ]);
 
 /**
@@ -474,6 +476,22 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         counts: Object.fromEntries(FOLDER_COUNTS.map((k) => [k, counts[k]])),
       };
     }
+    case "import.planning.apply": {
+      // The world's run, commit and backup: compared by form. It creates every task, the first time.
+      const counts = value["counts"] as Value;
+      return {
+        status: value["status"],
+        created: Number(counts["created"]) > 0,
+        commit: typeof value["commit"] === "string",
+        backup: typeof value["backup"] === "string",
+      };
+    }
+    case "import.planning.undo":
+      // Nobody changed the world's imported tasks, so the example's kept task is no part of it.
+      return {
+        undone: typeof value["undone"] === "string",
+        removed: Number(value["removed"]) > 0,
+      };
     case "prefs.manage":
       return { action: value["action"], prefs: value["prefs"], result: value["result"] };
     case "history.undo":
@@ -692,6 +710,8 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
       const transport = await open();
       try {
         const world = await buildWorld(transport);
+        /** The world's own dry run: its apply and undo examples name it. */
+        let dryRun: { run: string; token: string } | undefined;
         for (const entry of registry) {
           for (const [i, example] of entry.examples.entries()) {
             const key = `${entry.name} ${String(i)}`;
@@ -705,6 +725,11 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             if (entry.name === "import.planning.preview") {
               input["folder"] = PLANNING_FIXTURE;
               delete input["roots"];
+            }
+            // The apply's and the undo's run is the world's dry run, and its token the run's.
+            if (entry.name === "import.planning.apply" || entry.name === "import.planning.undo") {
+              input["run"] = dryRun?.run ?? input["run"];
+              if (entry.name === "import.planning.apply") input["token"] = dryRun?.token ?? "";
             }
             // A verified example's launch reference stands for a launch of its task in the world:
             // `task.get 0` loads M-14 by the reference its Brief gave.
@@ -732,6 +757,9 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             const parsed = entry.output.safeParse(result);
             expect(parsed.success, key).toBe(true);
             const value = result as Value;
+            if (entry.name === "import.planning.preview") {
+              dryRun = { run: String(value["run"]), token: String(value["token"]) };
+            }
             if (typeof value["as_of"] === "string") expect(value["as_of"]).toMatch(AS_OF);
             expect(meaning(entry.name, value, true), key).toEqual(
               meaning(entry.name, example.output as Value, transport.binds),
