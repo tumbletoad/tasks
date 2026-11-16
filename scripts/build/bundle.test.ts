@@ -259,7 +259,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
       `TT Tasks ${identity.version} (${identity.build})\n`,
     );
     expect(readdirSync(join(home, "cache", "compile")).length).toBeGreaterThan(0);
-  }, 60_000);
+  });
 
   test("ws, a CommonJS package, bundles with static imports of built-ins only and runs without its add-ons", async () => {
     // The UI listener's server and a client, bundled as lib/ bundles them, talk over a WebSocket.
@@ -305,7 +305,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
     });
     expect(ran.stderr).toBe("");
     expect(ran.stdout.trim()).toBe("hello over the bundle");
-  }, 60_000);
+  });
 
   test("tasks mcp through the bundled entry is the bridge, answering from lib/mcp-offline.json", () => {
     const env = Object.fromEntries(
@@ -341,5 +341,5 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
     expect(reply.id).toBe(1);
     expect(reply.result?.protocolVersion).toBe("2025-11-25");
     expect(ran.stderr).toMatch(/^mcp bridge: /m);
-  }, 60_000);
+  });
 });

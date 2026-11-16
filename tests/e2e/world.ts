@@ -22,7 +22,7 @@ import {
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
-import { addBulkTasks } from "./bulk.ts";
+import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
 import { FAKE_INSTANCE_TOML, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
@@ -90,6 +90,8 @@ interface Described {
 export interface WorldOptions {
   /** Fixture tasks to add to Mira's space before the service opens it (bulk.ts). */
   readonly bulk?: number;
+  /** Finished fixture tasks to add to Mira's space before the service opens it (bulk.ts). */
+  readonly finished?: FinishedCounts;
 }
 
 export async function startWorld(ui: string, options: WorldOptions = {}): Promise<World> {
@@ -136,6 +138,13 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         seeded.folder,
         { id: machine, name: "mira-desktop", os: "linux" },
         options.bulk,
+      );
+    }
+    if (options.finished !== undefined) {
+      await addFinishedTasks(
+        seeded.folder,
+        { id: machine, name: "mira-desktop", os: "linux" },
+        options.finished,
       );
     }
     mkdirSync(stateOf(home), { recursive: true, mode: 0o700 });

@@ -103,6 +103,8 @@
   "fact.reopen": "Reopen",
   "row.completedTip": "Completed {date}",
   "row.desc.completed": "completed {date}",
+  "row.droppedTip": "Dropped {date}",
+  "row.desc.dropped": "dropped {date}",
 
   "row.copy": "Copy",
   "row.copyFor": "Copy {title}",
@@ -113,6 +115,7 @@
   "row.openIn": "Open in {label}",
   "row.openFailed": "The launch was not recorded. Try again.",
   "row.done": "Done: {title}",
+  "row.dropped": "Dropped: {title}",
   "row.star": "Star",
   "row.today": "Today",
   "row.tomorrow": "Tomorrow",

@@ -1,16 +1,16 @@
-// Completed: finished tasks in "Checked off" and one group per completion month, read in
-// pages (completed.ts) because the live store never holds them. The paged query restarts
-// whenever the feed could change which tasks it holds or their order (queries.ts: a lifecycle,
-// wrap or deletion change), so a task that is completed while the view is open appears in it; the
-// one list keeps focus and scroll on the same task across the restart.
-import { useCallback, useContext, useMemo, useRef } from "react";
+// Completed: "Checked off", then one group per month, read in pages (completed.ts) because the
+// live store never holds finished tasks. The paged query reads again whenever the feed could change
+// which tasks it holds or their order (queries.ts: a lifecycle, wrap or deletion change), so a task
+// finished while the view is open appears in it; the one list keeps focus and scroll on the same
+// task across the read.
+import { useCallback, useContext, useMemo } from "react";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useClock } from "../row/useClock.ts";
 import { usePagedQuery } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { completedGroups, completedSource, rowOfSearch } from "./completed.ts";
+import { completedGroups, completedSource } from "./completed.ts";
 import css from "./TaskList.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
@@ -28,26 +28,12 @@ export interface CompletedProps {
 
 export function CompletedPage({ task, onExpand }: CompletedProps) {
   const t = useT();
-  const { api, live } = useContext(Session);
+  const { api } = useContext(Session);
   const clock = useClock(false);
-  const now = useRef(clock);
-  now.current = clock;
-  // Read once per mount (usePagedQuery): the clock and the live areas are read when a page is.
-  const source = useMemo(
-    () =>
-      completedSource({
-        search: (input) => api.client.task.search(input),
-        clock: () => now.current,
-        rowOf: (row, checkedOff) => {
-          const { areas, projects } = live.getState();
-          return rowOfSearch(row, areas, projects, checkedOff);
-        },
-      }),
-    [api, live],
-  );
+  const source = useMemo(() => completedSource((input) => api.client.task.finished(input)), [api]);
   const { state, query } = usePagedQuery(QUERY, source);
   const groups = useCallback<GroupsOf>(
-    (_tasks, held) => completedGroups(state.rows, clock, held?.task),
+    (_tasks, held) => completedGroups(state.rows, clock, held),
     [state.rows, clock],
   );
   return (

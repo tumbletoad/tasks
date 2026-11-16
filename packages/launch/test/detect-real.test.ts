@@ -116,7 +116,7 @@ describe("[A4.3.2.detect.real] detection on the real file system with fake comma
     expect(Date.now() - t0).toBeLessThan(20_000);
     // A shim is never run.
     expect(await host.output(join(home, "x.cmd"), ["--version"])).toBeUndefined();
-  }, 60_000);
+  });
 
   test("a command that hangs with a descendant is killed with its whole tree at the bound, on every OS", async () => {
     const home = mkdtempSync(join(tmpdir(), "tasks-detect-hangtree-"));
@@ -153,7 +153,7 @@ describe("[A4.3.2.detect.real] detection on the real file system with fake comma
     const survived = alive();
     if (survived) process.kill(pid);
     expect(survived).toBe(false);
-  }, 60_000);
+  });
 
   test("a command that leaves a descendant holding its output still ends within the bound; on Linux and macOS the descendant is killed", async () => {
     const home = mkdtempSync(join(tmpdir(), "tasks-detect-tree-"));
@@ -197,5 +197,5 @@ describe("[A4.3.2.detect.real] detection on the real file system with fake comma
       while (alive() && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
       expect(alive()).toBe(false);
     }
-  }, 60_000);
+  });
 });

@@ -233,7 +233,7 @@ describe("[A2.3.3.hub.exit-codes] stop and restart in this process", () => {
     } as unknown as StorageWorker);
     await waitFor(() => (lateClosed > 0 ? true : undefined), 10_000, "the late worker closes");
     expect(existsSync(join(folder, "writer.lock"))).toBe(false);
-  }, 60_000);
+  });
 });
 
 describe("[A2.3.4.hub.single-instance] the lock under a race", () => {

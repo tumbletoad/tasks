@@ -14,6 +14,7 @@ import {
   revokedSession,
   type ContractTransport,
 } from "@tasks/service/test/contract";
+import { classSession, errorOf } from "@tasks/service/test/ops-helpers";
 import { CLI_SPEC } from "../src/args.ts";
 import { runMain } from "./cli-harness.ts";
 
@@ -55,6 +56,12 @@ function argvOf(entry: string, input: Record<string, unknown>): string[] {
   ];
 }
 
+/** Whether the CLI has a command for an entry. A read only the page makes has none. */
+const onCli = (entry: string): boolean =>
+  entry === "entry.add" ||
+  entry.startsWith("import.planning.") ||
+  CLI_SPEC.verbs.some((v) => v.entry === entry);
+
 contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --json", async () => {
   const w = await contractWorld("cj");
   const transport: ContractTransport = {
@@ -63,6 +70,17 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
     binds: false,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {
+      // An entry without a command goes the request path the CLI's own calls take.
+      if (!onCli(entry)) {
+        const session = await classSession(w.home, w.path, "cli-interactive");
+        try {
+          return await session.call("op/call", { op: entry, input }, { timeoutMs: 60_000 });
+        } catch (error) {
+          throw new ContractError(errorOf(error));
+        } finally {
+          session.close();
+        }
+      }
       const ran = await runMain(argvOf(entry, input), {
         home: w.home,
         tty: actor === "user",

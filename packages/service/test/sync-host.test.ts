@@ -16,7 +16,7 @@ import { join, win32 } from "node:path";
 import { REGISTRY_READS } from "@tasks/launch";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { system32 } from "../src/hub/identity.ts";
-import type { WindowsSyncFacts } from "../src/hub/sync-folders.ts";
+import { CHECK_TIMEOUT_MS, type WindowsSyncFacts } from "../src/hub/sync-folders.ts";
 import {
   DRIVE_FACTS,
   readWindowsFacts,
@@ -29,11 +29,8 @@ import {
 } from "../src/hub/sync-host.ts";
 import { NO_WINDOWS } from "./sync-fixtures.ts";
 
-/**
- * The real runs' bound in these tests. The product's is 10 s, but these tests are about what the
- * script writes, not how fast PowerShell starts while other tests load the machine.
- */
-const RUN_BOUND_MS = 60_000;
+/** The real runs' bound in these tests: the product's, which only ends a run that hangs. */
+const RUN_BOUND_MS = CHECK_TIMEOUT_MS;
 
 /** A run that answers each call with the next of `answers`, and counts its calls. */
 function runs(answers: (WindowsSyncFacts | undefined)[]): {

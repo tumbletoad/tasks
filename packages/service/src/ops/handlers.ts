@@ -15,6 +15,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import {
   findEntry,
   AppError,
+  FINISHED_CURSOR,
   fitsShape,
   GROUP_LIMITS,
   isKeyList,
@@ -130,6 +131,7 @@ import {
 import { duplicateWarning } from "./similar.ts";
 import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
 import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
+import { readFinished } from "./task-rows.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -1368,6 +1370,44 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(include.length === 0 ? {} : { sections: status.sections }),
       ...(guide === undefined ? {} : { guide: GUIDES[guide] }),
       ...(hint === undefined ? {} : { hint }),
+    };
+  },
+
+  "task.finished": async (call) => {
+    const { input, host } = call;
+    let after: { at: number; id: string } | undefined;
+    const cursor = input["cursor"];
+    if (cursor !== undefined) {
+      if (typeof cursor !== "string" || !FINISHED_CURSOR.test(cursor)) {
+        throw invalid("cursor", "Not a cursor this read gave", "Read from the start again.");
+      }
+      const dot = cursor.indexOf(".");
+      after = { at: Number(cursor.slice(0, dot)), id: cursor.slice(dot + 1) };
+    }
+    const limit = Number(input["limit"]);
+    const checkedOff = typeof input["checked_off"] === "boolean" ? input["checked_off"] : undefined;
+    const reader = readerOf(call.space);
+    let read;
+    try {
+      read = await readFinished(
+        reader,
+        { checkedOff, limit, after },
+        {
+          machine: host.machine.id,
+          roots: host.roots ?? (() => []),
+          platform: host.platform ?? process.platform,
+        },
+      );
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    const at = read.rows[read.rows.length - 1]?.["finished_at"];
+    const id = read.rows[read.rows.length - 1]?.["id"];
+    return {
+      rows: read.rows,
+      ...(read.more && typeof at === "number" && typeof id === "string"
+        ? { cursor: `${String(at)}.${id}` }
+        : {}),
     };
   },
 

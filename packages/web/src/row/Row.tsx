@@ -480,6 +480,7 @@ function RowView({
             type="checkbox"
             className={styles.box}
             data-part="check"
+            data-dropped={(leaving === undefined && task.lifecycle === "archived") || undefined}
             aria-label={sayMsg(t, model.done)}
             checked={checked}
             disabled={!checkable}

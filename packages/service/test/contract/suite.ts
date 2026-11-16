@@ -303,6 +303,9 @@ const VERIFIED = new Set([
   "task.get 0",
   "task.get 1",
   "task.get 2",
+  "task.finished 0",
+  "task.finished 1",
+  "task.finished 2",
   "task.update 0",
   "entry.add 0",
   "entry.add 1",
@@ -383,6 +386,16 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         guide: typeof value["guide"] === "string",
       };
     }
+    case "task.finished":
+      return {
+        rows: ((value["rows"] as Value[] | undefined) ?? []).map((r) => [
+          r["ref"],
+          r["lifecycle"],
+          r["wrap_state"],
+          typeof r["finished_at"],
+        ]),
+        cursor: value["cursor"],
+      };
     case "task.update":
       return {
         result: value["result"],

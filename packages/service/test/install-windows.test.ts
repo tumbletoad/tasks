@@ -81,7 +81,7 @@ beforeAll(async () => {
     "/f",
   );
   await reg("add", SCRATCH, "/v", "Count", "/t", "REG_DWORD", "/d", "7", "/f");
-}, 60_000);
+});
 
 afterAll(async () => {
   if (!windows) return;
@@ -96,7 +96,7 @@ afterAll(async () => {
     }
     if (attempt >= 3) throw new Error(`the scratch keys ${SCRATCH}, ${FRESH} could not be removed`);
   }
-}, 60_000);
+});
 
 /** Whether `reg query HKCU\Software` lists `key`. */
 const listed = (listing: string, key: string): boolean =>
@@ -200,7 +200,7 @@ describe.skipIf(!windows)(
       expect(await registry.tree(`${SCRATCH}\\absent\\deeper\\still`)).toBeUndefined();
       expect(await registry.values(`${keys.approved}32`)).toBeUndefined();
       expect(await registry.values(keys.approved)).toBeDefined();
-    }, 60_000);
+    });
 
     test("a value of something else at the install's name stays as it was", async () => {
       const { registry, ctx } = context();
