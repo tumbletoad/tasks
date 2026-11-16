@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 /** A home whose machine.json names `machine`, and the Mira sample in `<root>/spaces/mira`. */
-async function setUp(label: string) {
+async function setUp(label: string, machineToml = "") {
   const { root, cleanup } = tempRoot(label);
   cleanups.push(cleanup);
   const machine = newId("m");
@@ -76,7 +76,7 @@ async function setUp(label: string) {
       target: "claude-cli",
       label: "Claude · work",
       exec: process.execPath,
-    }),
+    }) + machineToml,
   );
   return { root, home, spaceId: manifest.space_id };
 }
@@ -358,7 +358,10 @@ function fakeBoxes() {
 
 describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: what blocks it, nothing new starts, Stop on request, and the hold goes with its connection", () => {
   test("the hold names the running run with its task, a new run waits with the reason update, stop_held stops the run with its answer, and closing the hold's connection lets the queue move", async () => {
-    const { home, spaceId } = await setUp("runs-hold");
+    const { home, spaceId } = await setUp(
+      "runs-hold",
+      "\n[runs]\nmax_minutes = 7\nmax_quiet_minutes = 3\n",
+    );
     const boxes = fakeBoxes();
     const service = await start(home, { containers: boxes.containers });
     const task = await addTask(home, service, 1);
@@ -393,8 +396,12 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     expect(blocker?.task).toMatch(/^[A-Z]+-\d+$/);
     expect(typeof blocker?.space_name).toBe("string");
 
-    // A run queued meanwhile waits, and says why.
-    const second = await service.runs.start(spaceId, input(other), "runs-hold-run-000002", command);
+    // A run queued meanwhile waits, and says why. Without limits of its own it takes [runs]'s.
+    const unlimited: Partial<Omit<NewRun, "machine">> & Omit<NewRun, "machine" | "limits"> =
+      input(other);
+    delete unlimited.limits;
+    const second = await service.runs.start(spaceId, unlimited, "runs-hold-run-000002", command);
+    expect(second.limits).toMatchObject({ wallMs: 7 * 60_000, idleMs: 3 * 60_000 });
     await waitFor(
       () => (service.runs.waiting(second.id) === "update" ? true : undefined),
       15_000,
