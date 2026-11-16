@@ -28,6 +28,7 @@ import {
   RESOLVE_REASONS,
   SNAPSHOT_OUTCOMES,
   TERMINAL_APPS,
+  TERMINAL_SOURCES,
 } from "@tasks/launch";
 import { ID_ALPHABET, STORAGE_ERROR_CODES } from "@tasks/storage";
 import { SECTIONS } from "../config/section-names.ts";
@@ -531,7 +532,7 @@ export const EVENTS = {
     },
   },
   // Each terminal a launch tried (A4 3.6.2): the adapter, its kind and how it went, never its
-  // argv, its program's path or the folder.
+  // argv, its program's path or the folder. The one Dispatched names why it was chosen.
   "launch.terminal": {
     lvl: "info",
     c: "launch",
@@ -542,6 +543,7 @@ export const EVENTS = {
       error: "error_code",
       code: "int",
       scoped: "bool",
+      source: TERMINAL_SOURCES,
     },
   },
   // The login-shell snapshot (A4 3.8): how it ended and how many names it found, never a name

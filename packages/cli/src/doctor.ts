@@ -22,7 +22,7 @@
 //   accounts   other interactive user accounts on the machine (agent sandbox accounts left out)
 //   http       the UI listener: blocked by a foreign port holder, moved, a Windows excluded range,
 //              and its self-test (a rebinding Host gets 421, index.html has a fresh nonce)
-//   launch.scopes, launch.env, launch.t3, sessions
+//   launch.scopes, launch.terminal, launch.env, launch.t3, sessions
 //              what the service's launch service and binding say (doctor-launch.ts, A3 3.14)
 //   candidate-space, candidate-endpoint, candidate-bridge
 //              with --self-test from a version folder: the candidate's own checks of A2 3.12.6

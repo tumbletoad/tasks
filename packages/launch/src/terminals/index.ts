@@ -5,3 +5,4 @@ export * from "./accept.ts";
 export * from "./commands.ts";
 export * from "./detect.ts";
 export * from "./launcher.ts";
+export * from "./windows-default.ts";

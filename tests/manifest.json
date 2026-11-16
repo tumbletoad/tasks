@@ -1475,8 +1475,32 @@
     },
     {
       "id": "A4.5.terminal.chain",
-      "title": "The terminal chain: auto picks the session's TERMINAL, the xdg-terminals lists, then A4's order of installed terminals on Linux, Windows Terminal when its app execution alias exists else the console on Windows; a chosen terminal comes first with its fallbacks, the console always last on Windows",
+      "title": "The terminal chain: a chosen terminal comes first with its configured fallbacks, or with none configured the other installed ones, and wins over every default; the console always last on Windows",
       "source": "A4 3.6.1, A4 3.6.2, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.default",
+      "title": "auto opens the operating system's default terminal first, as a table over fixtures: on Linux $TERMINAL, KDE's own setting, the xdg-terminals lists in the specification's order of folders and desktops, then x-terminal-emulator, and only then the fixed order of installed terminals; on Windows the Default terminal application's values (Let Windows decide, Console Host, Windows Terminal and Preview, another terminal); a default without an adapter is named; macOS chooses nothing; the real file reader over fixture folders",
+      "source": "A4 3.6.1",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.receipt",
+      "title": "A terminal launch's receipt names the terminal Dispatched and why it was chosen, in a few words, Dispatching and Confirmed alike; the page gets them only as the fixed words a launch records, anything else is left out; a launch without them reads as before",
+      "source": "A4 3.6.1, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.windows-default",
+      "title": "Windows' Default terminal application read with reg.exe by its full path under a short deadline through a fake capture: the two values parsed as GUIDs only, a missing key is Windows deciding, no answer is no setting; the launcher reads the host at each launch and names the Dispatched terminal and its source",
+      "source": "A4 3.6.1",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2571,7 +2595,7 @@
     },
     {
       "id": "A3.3.14.doctor.launch",
-      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
+      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.terminal naming the terminal a launch opens first and why (a warning when it is missing or the person's default has no adapter, named without a path), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
       "source": "A3 3.14, A4 3.4.1, A4 3.7, A4 3.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
