@@ -251,8 +251,12 @@ describe("[A5.3.15.web.installed] the page and a newer installed version", () =>
 
   test("after a restart into another build the page is stale, keeps its rows and stops asking", async () => {
     let stale = false;
+    let tickets = 0;
     const api = {
-      ticket: () => (stale ? Promise.reject(new StaleBuild()) : Promise.resolve("t".repeat(32))),
+      ticket: () => {
+        tickets += 1;
+        return stale ? Promise.reject(new StaleBuild()) : Promise.resolve("t".repeat(32));
+      },
     } as unknown as Api;
     const live = new Live({
       api,
@@ -275,8 +279,10 @@ describe("[A5.3.15.web.installed] the page and a newer installed version", () =>
     expect(live.getState().stale).toBe(true);
     // Its rows stay, and it asks nothing more of the service until the person reloads.
     expect([...live.getState().tasks.keys()]).toEqual(["a"]);
+    const asked = tickets;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(FakeSocket.all).toHaveLength(1);
+    expect(tickets).toBe(asked);
     live.stop();
   });
 });

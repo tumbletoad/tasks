@@ -36,10 +36,15 @@ function recorder(answer?: boolean, platform: NodeJS.Platform = "linux") {
   return io;
 }
 
-function service(options: { agentShell?: boolean; restartCode?: number } = {}) {
+function service(
+  options: { agentShell?: boolean; restartCode?: number; afterRestart?: string | undefined } = {},
+) {
   const calls = { restart: 0 };
   const stand: InstalledService = {
-    running: () => Promise.resolve("0.1.0"),
+    running: () =>
+      Promise.resolve(
+        calls.restart > 0 && "afterRestart" in options ? options.afterRestart : "0.1.0",
+      ),
     agentShell: options.agentShell ?? false,
     restart: () => {
       calls.restart += 1;
@@ -98,7 +103,33 @@ describe("[A2.3.12.4.install.restart-notice] the end of an install names the res
     const broken = service({ restartCode: 6 });
     await offerRestart(failed, installed, "0.1.0", broken.stand);
     expect(broken.calls.restart).toBe(1);
-    expect(lastLines(failed.out)[1]).toContain("service restart");
+    expect(lastLines(failed.out)).toEqual([
+      `${PRODUCT_NAME}'s service still runs 0.1.0. To run 0.2.0, restart it:`,
+      "  '/home/fixture/tasks test/bin/tasks' service restart",
+    ]);
+
+    // The restart stopped the old service and the start failed: the lines say that none runs.
+    const stopped = recorder(true);
+    await offerRestart(
+      stopped,
+      installed,
+      "0.1.0",
+      service({ restartCode: 6, afterRestart: undefined }).stand,
+    );
+    expect(lastLines(stopped.out)).toEqual([
+      `${PRODUCT_NAME}'s service is not running. To run 0.2.0, start it:`,
+      "  '/home/fixture/tasks test/bin/tasks' service start",
+    ]);
+
+    // The start only took longer than the restart waited: the new version runs, nothing to add.
+    const late = recorder(true);
+    await offerRestart(
+      late,
+      installed,
+      "0.1.0",
+      service({ restartCode: 6, afterRestart: "0.2.0" }).stand,
+    );
+    expect(late.out).toBe("");
 
     const agent = recorder(true);
     const shell = service({ agentShell: true });

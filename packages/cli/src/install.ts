@@ -149,7 +149,12 @@ export async function installCommand(
     ].join("\n"),
   );
   if (pending && service !== undefined) {
-    await offerRestart(io, { version: finished.version, command: finished.command }, running, service);
+    await offerRestart(
+      io,
+      { version: finished.version, command: finished.command },
+      running,
+      service,
+    );
   }
   return 0;
 }
@@ -188,7 +193,15 @@ async function installedService(io: Io): Promise<InstalledService | undefined> {
       install.serviceEntry(
         "restart",
         {},
-        { out: (text) => io.stdout(text), err: (text) => io.stderr(text), ask: undefined },
+        {
+          out: (text) => {
+            io.stdout(text);
+          },
+          err: (text) => {
+            io.stderr(text);
+          },
+          ask: undefined,
+        },
         () => ctx,
       ),
   };
@@ -196,8 +209,8 @@ async function installedService(io: Io): Promise<InstalledService | undefined> {
 
 /**
  * The end of an install whose service still runs another version: at a terminal, one question
- * whether to restart it now; otherwise, or when the restart did not happen, the last lines name
- * the one command that does it.
+ * whether to restart it now; otherwise, or when the restart did not happen, the last lines say
+ * what runs now and name the one command that brings up the installed version.
  */
 export async function offerRestart(
   io: Io,
@@ -205,17 +218,25 @@ export async function offerRestart(
   running: string | null,
   service: InstalledService,
 ): Promise<void> {
-  const was = running ?? "another version";
+  let now: string | null | undefined = running;
   if (io.ask !== undefined && !service.agentShell) {
     const yes = await io.ask(
-      `\n${PRODUCT_NAME}'s service still runs ${was}. Restart it on ${installed.version} now? Background runs end and keep their answers so far. Agent sessions keep running and reconnect. [y/N] `,
+      `\n${PRODUCT_NAME}'s service still runs ${running ?? "another version"}. Restart it on ${installed.version} now? Background runs end and keep their answers so far. Agent sessions keep running and reconnect. [y/N] `,
     );
-    if (yes && (await service.restart()) === 0) return;
+    if (yes) {
+      if ((await service.restart()) === 0) return;
+      // The restart said why it failed; it may have stopped the old service first.
+      now = await service.running();
+      if (now === installed.version) return;
+    }
   }
+  const verb = now === undefined ? "start" : "restart";
   const line =
-    shellLine(io.platform, [installed.command, "service", "restart"]) ??
-    `${installed.command} service restart`;
-  io.stdout(
-    `\n${PRODUCT_NAME}'s service still runs ${was}. To run ${installed.version}, restart it:\n  ${line}\n`,
-  );
+    shellLine(io.platform, [installed.command, "service", verb]) ??
+    `${installed.command} service ${verb}`;
+  const state =
+    now === undefined
+      ? `${PRODUCT_NAME}'s service is not running.`
+      : `${PRODUCT_NAME}'s service still runs ${now ?? "another version"}.`;
+  io.stdout(`\n${state} To run ${installed.version}, ${verb} it:\n  ${line}\n`);
 }

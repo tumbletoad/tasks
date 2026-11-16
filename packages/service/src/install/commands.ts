@@ -1652,10 +1652,27 @@ export interface RestartOutcome {
  */
 export async function restartService(ctx: ServiceContext): Promise<RestartOutcome> {
   refuseIdentity(ctx, "restart", { operator: true });
+  // What start needs and can be known now is checked before the stop, so that a restart does not
+  // stop a service it then cannot start.
+  needProgram(ctx);
+  if (ctx.platform === "darwin" && (await readEntry(ctx)).info.state !== "ours") {
+    throw notInstalled();
+  }
   const before = await ctx.probe();
   const was = before.answers ? before.status.version : null;
   const stop = await stopService(ctx);
-  const start = await startService(ctx);
+  let start: StartOutcome;
+  try {
+    start = await startService(ctx);
+  } catch (error) {
+    if (stop.outcome !== "stopped" || !(error instanceof ServiceCommandError)) throw error;
+    throw new ServiceCommandError(
+      error.errorClass,
+      error.code,
+      `${PRODUCT_NAME}'s service stopped for the restart, and the start failed: ${error.message}`,
+      error.hint ?? `${CLI_NAME} service start`,
+    );
+  }
   return {
     outcome: stop.outcome === "not_running" ? "started" : "restarted",
     was,

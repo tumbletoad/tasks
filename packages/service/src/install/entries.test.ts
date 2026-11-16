@@ -338,6 +338,28 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(agent.service.events).toEqual(["start tasksw"]);
   });
 
+  test("restart leaves a running service alone when it could not start it again, and says so when the start fails after the stop", async () => {
+    // No program to start: the running service keeps running.
+    const gone = fakeContext({ platform: "win32", dir: join(dir, "gone") });
+    gone.service.start("tasksw");
+    rmSync(gone.ctx.program);
+    const refused = captureIO();
+    expect(await run("restart", {}, refused, gone)).toBe(3);
+    expect(refused.errors()).toContain("No TT Tasks build at");
+    expect(gone.service.events).toEqual(["start tasksw"]);
+    expect(gone.service.running).toBe(true);
+
+    // The stop worked and the new service never became ready: the error says the old one stopped.
+    fake.service.start("tasksw");
+    fake.service.becomesReady = false;
+    const failed = captureIO();
+    expect(await run("restart", {}, failed)).not.toBe(0);
+    expect(failed.errors()).toContain(
+      "TT Tasks's service stopped for the restart, and the start failed: TT Tasks's service did not become ready",
+    );
+    expect(failed.errors()).toContain("Try: tasks service status");
+  });
+
   test("stop asks the service over its endpoint, and an agent's shell may not", async () => {
     const idle = captureIO();
     expect(await run("stop", {}, idle)).toBe(0);
