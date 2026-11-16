@@ -408,6 +408,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 |---|---|---|---|
 | `commit` | string, max 40 | no | The change you mean: refused when a newer one of yours stands before it |
 | `partial` | boolean | no | Undo the fields nobody changed since, and keep the others' changes |
+| `check_script` | boolean | no | Undo nothing when a script changed the space after the change undone |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output

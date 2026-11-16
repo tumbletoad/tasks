@@ -4,6 +4,7 @@
 //
 // This is a guard for well-behaved agents, not a security boundary: same-user code can fake a
 // TTY or drop the markers (A2 3.6.5, A6 3.15).
+import { CLI_NAME } from "@tasks/brand";
 import { isAgentMarker, isObject, type ClientInfo, type Mode } from "@tasks/bridge/protocol";
 
 /** A2 3.6.5's classes. `ui` comes from the HTTP transport, never from the socket or pipe. */
@@ -29,8 +30,12 @@ export function hasAgentMarker(context: unknown): boolean {
  * together, which the service refuses at bind:
  * - mcp mode from a bridge or a native forwarder: `bridge`;
  * - rpc mode from a shim: `shim`;
- * - rpc mode from the CLI: `cli-agent` with any agent marker, else `cli-interactive` when stdin
- *   and stdout are both TTYs, else `cli-script`.
+ * - rpc mode from the CLI: `cli-agent` with any agent marker, else `cli-interactive` when any of
+ *   its standard streams is a terminal, else `cli-script`.
+ *
+ * A person who pipes or redirects a command's output (`tasks space list | less`, `x=$(tasks …)`)
+ * still has a terminal on its input or its errors. What has none at all is a script run by cron,
+ * a command over ssh without a terminal, or an agent's shell, which also carries a marker.
  */
 export function classify(
   mode: Mode,
@@ -43,7 +48,8 @@ export function classify(
   if (client.kind === "shim") return "shim";
   if (client.kind !== "cli") return undefined;
   if (hasAgentMarker(context)) return "cli-agent";
-  return client.tty.stdin && client.tty.stdout ? "cli-interactive" : "cli-script";
+  const { stdin, stdout, stderr } = client.tty;
+  return stdin || stdout || stderr === true ? "cli-interactive" : "cli-script";
 }
 
 const CLI: readonly ConnectionClass[] = ["cli-interactive", "cli-script", "cli-agent"];
@@ -65,13 +71,15 @@ export const RPC_METHODS = {
   "ui/mint_code": OPERATOR,
   // `tasks service port <n> [--reuse]` (A2 3.8.2 step 5): the person resolves a foreign holder.
   "service/port": USER,
-  // `tasks space` (A2 3.10.1, M1.10): the list for every CLI, the rest for the user only.
+  // `tasks space`: what only reads (the list, a space's backups) for every CLI, the rest for the
+  // user only.
   "space/list": CLI,
   "space/create": USER,
   "space/open": USER,
   "space/close": USER,
+  "space/forget": USER,
   "space/backup": USER,
-  "space/backups": USER,
+  "space/backups": CLI,
   // `tasks space export` (A1 3.18, M3.07): a bundle of the space, for the user only.
   "space/export": USER,
   "space/restore": USER,
@@ -123,4 +131,30 @@ export function isRpcMethod(name: string): name is RpcMethod {
 /** Whether a connection of class `cls` may call `method`. */
 export function mayCall(cls: ConnectionClass, method: RpcMethod): boolean {
   return RPC_METHODS[method].includes(cls);
+}
+
+/**
+ * Why a connection of class `cls` may not call `method`, in the words of the person who meets it:
+ * a user-only method from a command without a terminal, or from an agent's shell, says how to
+ * run it instead.
+ */
+export function refusalOf(
+  cls: ConnectionClass,
+  method: RpcMethod,
+): { readonly message: string; readonly hint?: string } {
+  const forUser = mayCall("cli-interactive", method);
+  if (forUser && cls === "cli-script") {
+    return {
+      message:
+        "Only the user can run this, from a terminal, and this command has none: its input, output and errors all go to files or pipes, as in a script or over ssh without -t.",
+      hint: `Run the same ${CLI_NAME} command in a terminal window, or over ssh -t.`,
+    };
+  }
+  if (forUser && cls === "cli-agent") {
+    return {
+      message: "Only the user can run this, and this command runs in an agent's shell.",
+      hint: `Ask the user to run the same ${CLI_NAME} command in their own terminal.`,
+    };
+  }
+  return { message: "This connection cannot call this method." };
 }

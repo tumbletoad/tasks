@@ -539,6 +539,10 @@
       "input": {
         "additionalProperties": false,
         "properties": {
+          "check_script": {
+            "description": "Undo nothing when a script changed the space after the change undone",
+            "type": "boolean"
+          },
           "commit": {
             "description": "The change you mean: refused when a newer one of yours stands before it",
             "maxLength": 40,

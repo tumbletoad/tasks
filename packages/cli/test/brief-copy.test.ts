@@ -76,7 +76,6 @@ describe("[A4.5.brief.copy-cli] tasks brief --copy and --pack", () => {
       expect((await tasks(["add", "Fixture task without a clipboard"])).code).toBe(0);
       const none = await tasks(["brief", "M-1", "--copy"], { status: "failed", reason: "no_tool" });
       expect(none.code).toBe(0);
-      // After the request line every write prints (A3 3.4.1), the reason.
       expect(none.stderr.split("\n").slice(-2)).toEqual([
         "Not copied: No clipboard tool was found: install wl-clipboard (Wayland), xclip or xsel. The brief follows.",
         "",
@@ -88,8 +87,8 @@ describe("[A4.5.brief.copy-cli] tasks brief --copy and --pack", () => {
         tool: "set-clipboard",
         code: 1,
       });
-      expect(failed.stderr).toContain(
-        "\nNot copied: Set-Clipboard failed (exit code 1). The brief follows.\n",
+      expect(failed.stderr).toBe(
+        "Not copied: Set-Clipboard failed (exit code 1). The brief follows.\n",
       );
       expect(failed.stdout).toMatch(/^TT Tasks task M-1 /u);
       const session = await tasks(["brief", "M-1", "--copy"], {

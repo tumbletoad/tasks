@@ -21,7 +21,7 @@ function recorder(
     env,
     cwd: process.cwd(),
     platform: process.platform,
-    tty: { stdin: false, stdout: false },
+    tty: { stdin: false, stdout: false, stderr: false },
     pid: process.pid,
     out: "",
     err: "",
@@ -162,6 +162,21 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(
       render("entry.add", { kind: "evidence", entry: "l3", task: "M-14", replayed: true }, "Mira"),
     ).toBe("Logged l3 on M-14 in Mira (replayed)\n");
+  });
+
+  test("a task shows the one state a person says, and no as-of token", () => {
+    const shown = (lifecycle: string) =>
+      render(
+        "task.get",
+        {
+          as_of: "1.1046.5n0w8k3q",
+          task: { ref: "M-25", title: "Fixture task", status: "open", priority: 2, lifecycle },
+        },
+        "Mira",
+      );
+    expect(shown("completed")).toBe("M-25  Fixture task  (completed, p2)\n");
+    expect(shown("archived")).toBe("M-25  Fixture task  (dropped, p2)\n");
+    expect(shown("active")).toBe("M-25  Fixture task  (open, p2)\n");
   });
 
   test("no service: exit 6 with A2 3.3.6's message, and tasks alone still answers", async () => {
@@ -307,7 +322,7 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
       "Mira",
     );
     expect(text.split("\n")).toEqual([
-      '16–20 of 37 · scope all · parsed: zone OR "time zone" · as of 1.1046.5n0w8k3q',
+      '16–20 of 37 · scope all · parsed: zone OR "time zone"',
       "M-14 · open · P1 · M · due 2026-11-13 · Lumen Health · Fix appointment time zones — …stored without zone… *",
       "M-3 · completed 2026-04-03 · Fix DST bug in reports — learning: Always store UTC",
       "M-15 · open · due 2026-11-13T09:30:00.000Z (Europe/Lisbon) · Call the clinic",
@@ -328,7 +343,7 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
       },
       "Mira",
     );
-    expect(learnings).toBe("0 of 0 · scope learnings · as of 1.1046.5n0w8k3q\n");
+    expect(learnings).toBe("0 of 0 · scope learnings\n");
   });
 });
 
@@ -359,7 +374,6 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
         "  and 2 more projects",
         "Learning (1)",
         "No area: Loose (0)",
-        "as of 1.1046.5n0w8k3q",
         "",
       ].join("\n"),
     );
@@ -376,7 +390,7 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
       "Mira",
     );
     expect(got).toBe(
-      'autonomy.level: "review" (default) · policy\ntasks.statuses: ["open","parked"]\nas of 1.1046.5n0w8k3q\n',
+      'autonomy.level: "review" (default) · policy\ntasks.statuses: ["open","parked"]\n',
     );
     const described = render(
       "prefs.manage",

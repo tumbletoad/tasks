@@ -411,7 +411,10 @@ async function serviceChecks(
     });
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
-    const bad = spaces.filter((s) => s.state !== "open" && s.state !== "read_only");
+    // A space the person closed is as they left it, not a problem.
+    const bad = spaces.filter(
+      (s) => s.state !== "open" && s.state !== "read_only" && s.state !== "closed",
+    );
     // A space's way out names `<folder>`, which tasks space list shows: this row holds no path.
     const folders = spaces.some((s) => s.message?.includes("<folder>") === true)
       ? " Run tasks space list to see each space's folder."

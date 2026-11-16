@@ -64,6 +64,11 @@ export const HistoryUndoInput = z.strictObject({
     .boolean()
     .describe("Undo the fields nobody changed since, and keep the others' changes")
     .optional(),
+  check_script: z
+    .boolean()
+    // Without commit: a conflict naming both changes instead of undoing one older than a script's.
+    .describe("Undo nothing when a script changed the space after the change undone")
+    .optional(),
   request_id: RequestId,
 });
 
@@ -102,7 +107,8 @@ export const historyUndo = defineEntry({
   ops: ["undo"],
   input: HistoryUndoInput,
   output: HistoryUndoResult,
-  faces: { ui: true, cli: { verb: "undo" } },
+  // The CLI sets check_script itself, and leaves it out for --yes.
+  faces: { ui: true, cli: { verb: "undo", exclude: ["check_script"] } },
   errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
   examples: [
     {

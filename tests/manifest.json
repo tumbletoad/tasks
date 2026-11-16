@@ -3386,6 +3386,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.actors.script-undo-check",
+      "title": "history.undo with check_script undoes nothing when a script changed the space after the person's newest change, and names that change (commit, tasks, kind) and the script's; the named commit then undoes it; a retry of an undo that applied replays it",
+      "source": "A3 3.7.4, A1 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.space-forget",
+      "title": "A closed space keeps its name after a restart; space forget refuses an open space with the words to close it, takes a closed one off the list and out of machine.toml, touches no file of it, clears the default that named it, and space open of its folder lists it again",
+      "source": "A2 3.1, A2 3.2.4, A2 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.1.hub.spaces-remembered",
       "title": "space create, open and close record the space in machine.toml's [[spaces]] (enabled, or enabled = false), keeping the person's comments, order, hand edits made while the service runs and the file's mode; after a restart the open spaces open and the closed one is listed closed with its ID; a folder gone at the start leaves its entry unavailable(missing) and in the file while the others open, and space open serves it again once it is back; a create where a space is names tasks space open <folder>, and a create in a gone space's folder re-points the entry",
       "source": "A2 3.1, A2 3.2.4, A2 3.10.1",

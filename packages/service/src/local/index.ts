@@ -31,6 +31,7 @@ export {
   hasAgentMarker,
   isRpcMethod,
   mayCall,
+  refusalOf,
   type ConnectionClass,
   type RpcMethod,
 } from "./classes.ts";
