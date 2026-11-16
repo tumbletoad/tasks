@@ -221,7 +221,8 @@ export type LocalEvent =
   | { readonly ev: "local.frame_too_large"; readonly conn: number }
   | { readonly ev: "local.slow_reader"; readonly conn: number }
   | { readonly ev: "local.handler_failed"; readonly conn: number; readonly method: RpcMethod }
-  | { readonly ev: "local.revoked"; readonly conn: number };
+  | { readonly ev: "local.revoked"; readonly conn: number }
+  | { readonly ev: "local.listen_error"; readonly code: string };
 
 type Stage = (typeof HANDSHAKE_STAGES)[number];
 type HandshakeFailure = (typeof HANDSHAKE_FAILURES)[number];
@@ -412,8 +413,10 @@ export async function serve(options: ServeOptions): Promise<LocalServer> {
       resolve();
     });
   });
-  server.on("error", () => {
-    // After listen, errors belong to single connections, which handle their own.
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    // A failed accept, such as a pipe instance Windows would not create, can leave the endpoint
+    // with nothing to connect to while the service runs on: its code is what explains that.
+    shared.log({ ev: "local.listen_error", code: error.code ?? "EIO" });
   });
 
   const unsubscribe = options.grants?.onRevoke((grantId) => {
