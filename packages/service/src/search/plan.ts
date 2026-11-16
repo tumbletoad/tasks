@@ -19,6 +19,7 @@
 // - Filters are SQL over the task, each wrapped so a NULL is false and a negation is exact.
 import type { SqlValue } from "@tasks/storage";
 import { normaliseSourceKey, SOURCE_KINDS } from "@tasks/storage";
+import { CLI_NAME } from "@tasks/brand";
 import { AppError, type SEARCH_SCOPES } from "@tasks/contracts";
 import { addDays } from "../ops/dates.ts";
 import {
@@ -56,6 +57,8 @@ export interface PlanContext {
   readonly vocabulary: Vocabulary;
   /** Whether the space holds the search tables (A1 3.12). Text needs them. */
   readonly indexed: boolean;
+  /** Why it does not, for the refusal of a query with words. */
+  readonly unindexed?: Unindexed;
   readonly scope: Scope;
   readonly audience: "user" | "agent";
   /** Today in the space's time zone, `YYYY-MM-DD`. */
@@ -84,15 +87,32 @@ export interface SearchPlan {
   readonly match: string | null;
 }
 
+/** Why a space has no search index: what notIndexed says. */
+export interface Unindexed {
+  /** The space's schema revision, `major.minor`. */
+  readonly revision: string;
+  /** Whether this machine tried to update the space and failed. */
+  readonly updateFailed: boolean;
+}
+
 /**
- * A search's words need the search tables, which this space's schema does not hold yet (A1 3.12):
- * the space cannot answer this query, and a retry will not help. A query of filters works.
+ * A search's words need the search index, which a space holds from schema 0.4 on. A space this
+ * build serves at an older schema is one it could not update, or one another machine writes: it
+ * cannot answer words, and a retry will not help until the space is updated. Filters work.
  */
-export function notIndexed(): AppError {
+export function notIndexed(why: Unindexed): AppError {
   return new AppError({
     code: "space_unavailable",
-    message: "This space has no search index yet, so words cannot be searched.",
-    hint: "Filters such as status:open work now. The index arrives with a later update.",
+    message: why.updateFailed
+      ? `This space could not be updated from schema ${why.revision}, so it has no word ` +
+        "index yet and words cannot be searched."
+      : `This space is at schema ${why.revision}, from before word search, so words cannot be ` +
+        "searched yet.",
+    hint: why.updateFailed
+      ? `Filters such as status:open work now. ${CLI_NAME} space list shows why the update ` +
+        "failed and how to try it again."
+      : `Filters such as status:open work now. Words work once the space is updated to this ` +
+        `version: ${CLI_NAME} space list shows its state.`,
     data: { reason: "not_indexed", retryable: false },
   });
 }
@@ -459,7 +479,9 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const b = new Binder();
   const match = positiveMatch(query);
   const negative = negativeMatch(query);
-  if ((match !== null || negative !== null) && !ctx.indexed) throw notIndexed();
+  if ((match !== null || negative !== null) && !ctx.indexed) {
+    throw notIndexed(ctx.unindexed ?? { revision: "?", updateFailed: false });
+  }
   const audience = ctx.audience === "agent" ? " AND d.audience = 'all'" : "";
   const where = ["t.deleted_at IS NULL", ...filterWhere(query, ctx, b)];
   const lifecycles = LIFECYCLES[ctx.scope];

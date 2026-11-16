@@ -142,6 +142,8 @@ export const CLOSED_ENUMS: Readonly<
     state: ["opening", "live", "ended", "unknown"],
     bound: [0, 1],
   },
+  // Schema 0.4: the search index's document kinds (search/tables.ts SEARCH_DOC_KINDS).
+  search_docs: { kind: ["task", "note", "log", "learning", "project", "area"] },
 };
 
 /**

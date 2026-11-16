@@ -393,7 +393,7 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
 
   test("the search index follows archive, wrap-up, delete and restore in the commit: it equals a fresh rebuild", async () => {
     // A space with the search tables, as the schema step that adds them will make it (A1 3.12).
-    const f = await writeFixture(temp.make(), { search: true });
+    const f = await writeFixture(temp.make());
     try {
       const send = (ops: Operation[]): WriteResult => {
         const result = f.writer.submit(f.request(f.human, ops, { base: f.base() }));

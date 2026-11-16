@@ -247,7 +247,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
     } finally {
       conn.close();
     }
-    // The sample at this build's revision holds the same rows in every 0.1 table: 0.2 and 0.3 add
+    // The sample at this build's revision holds the same rows in every 0.1 table: 0.2 to 0.4 add
     // only tables and the space's hold, and the sample's requests that need them. Its eight run
     // requests (0.3) each add a commit, a receipt and a change row. Mira's wrap-up with two
     // learnings (0.2), its last request, adds one commit with its receipt, the task's wrap change
