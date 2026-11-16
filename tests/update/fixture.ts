@@ -246,18 +246,17 @@ export class FakeRuns {
   }
 
   hold(calls: string[]): RunsHold {
-    const runs = this;
     return {
-      blocking: () => runs.blocking,
+      blocking: () => this.blocking,
       changed: () =>
         new Promise<void>((resolve) => {
-          runs.#waiters.push(resolve);
+          this.#waiters.push(resolve);
         }),
       held: true,
       stopAll: () => {
         calls.push("stop runs");
-        runs.blocking = runs.stubborn;
-        return Promise.resolve(runs.stubborn);
+        this.blocking = this.stubborn;
+        return Promise.resolve(this.stubborn);
       },
       release: () => {
         calls.push("release");
