@@ -2462,7 +2462,10 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   const ops: Operation[] = [];
   let group: { kind: "area" | "project"; id: string; name: string };
   if (action === "create") {
-    let area = resolveGroup(names, "area", path.area, "path");
+    // The group created is created as named; an area named only to hold it keeps the typo check.
+    let area = resolveGroup(names, "area", path.area, "path", {
+      create: path.project === undefined,
+    });
     if (area === undefined) {
       area = newId("a");
       ops.push({ kind: "area.create", id: area as Id<"a">, title: path.area });
@@ -2472,7 +2475,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       const fresh = ops.length > 0;
       let project = fresh
         ? undefined
-        : resolveGroup(names, "project", path.project, "path", { area });
+        : resolveGroup(names, "project", path.project, "path", { area, create: true });
       if (project === undefined) {
         project = newId("p");
         ops.push({ kind: "project.create", id: project as Id<"p">, title: path.project, area });

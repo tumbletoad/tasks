@@ -6,7 +6,8 @@
 // `data.suggestions` (stored names never reach a message, A3 3.5): "Client wrok" is a typo of
 // "Client work", while "UX" is no typo of "QA". Any other name is a new group, which the caller
 // creates (`area.create`, `project.create`) in the same request. Where a name only looks a group
-// up (organize's list), an unknown one is `not_found`.
+// up (organize's list), an unknown one is `not_found`. Where the caller asks to create the group by
+// that name, a close one is new too: "Release 2" beside "Release 1" is meant.
 import { AppError } from "@tasks/contracts";
 import type { GroupName, GroupNames } from "./read.ts";
 
@@ -80,14 +81,19 @@ const exact = (group: GroupName, wanted: string): boolean =>
  * The ID of the area or project `name` names, at input path `path`, or undefined for a new name:
  * one no group has and none is close to. `area` is the area the caller named beside a project: a
  * project there wins over one of the same name elsewhere. `lookup`: the name only looks a group up,
- * so an unknown one is `not_found` rather than a group to create.
+ * so an unknown one is `not_found` rather than a group to create. `create`: the caller creates the
+ * group by this name, so one close to another's is new rather than a typo.
  */
 export function resolveGroup(
   names: GroupNames,
   kind: Kind,
   name: string,
   path: string,
-  options: { readonly area?: string | undefined; readonly lookup?: boolean } = {},
+  options: {
+    readonly area?: string | undefined;
+    readonly lookup?: boolean;
+    readonly create?: boolean;
+  } = {},
 ): string | undefined {
   const { area } = options;
   const groups = kind === "area" ? names.areas : names.projects;
@@ -100,6 +106,8 @@ export function resolveGroup(
     // The writer files a task under its project's own area, whatever area the call named (A1
     // 3.6), so a project only elsewhere would move the task out of the area asked for.
     const inArea = found.filter((group) => group.area === area);
+    // A project created in an area is new there, whatever other areas hold.
+    if (inArea.length === 0 && options.create === true) return undefined;
     if (inArea.length === 0) throw elsewhere(names, found, path);
     found = inArea;
   }
@@ -132,7 +140,7 @@ export function resolveGroup(
       },
     });
   }
-  if (close.length > 0) {
+  if (close.length > 0 && options.create !== true) {
     throw new AppError({
       code: "invalid_input",
       message: `No ${kind} has this name, and one is close to it.`,

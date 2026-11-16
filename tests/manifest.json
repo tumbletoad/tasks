@@ -699,7 +699,7 @@
     },
     {
       "id": "A3.3.4.organize.write",
-      "title": "organize's writes through the request path: create a project in a new area, create of what exists answers no_change, rename keeping the ID with a retry that replays after the rename took the old name, move a project to another area, an area that moves nowhere, archive and unarchive with archive twice no change, and an unknown name not_found",
+      "title": "organize's writes through the request path: create a project in a new area, create of what exists answers no_change, create of a name close to another's or of a project another area has makes it while an area named to hold it keeps the typo check, rename keeping the ID with a retry that replays after the rename took the old name, move a project to another area, an area that moves nowhere, archive and unarchive with archive twice no change, and an unknown name not_found",
       "source": "A3 3.4.10",
       "owner": "M4",
       "kind": "ci",

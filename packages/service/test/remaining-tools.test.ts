@@ -547,6 +547,36 @@ describe("[A3.3.4.organize.write] organize: create, rename, move, archive and un
       ),
     ).toMatchObject({ code: "not_found" });
   });
+
+  test("create makes the group it names even beside a close name or a project of that name in another area; the area named to hold it keeps the typo check", async () => {
+    const write = async (input: Record<string, unknown>) =>
+      GroupManageResult.parse(
+        await call(organized, script, "group.manage", { request_id: rid(), ...input }),
+      );
+    expect(await write({ action: "create", path: "Sprint 1" })).toMatchObject({
+      result: "created",
+    });
+    expect(await write({ action: "create", path: "Sprint 2" })).toMatchObject({
+      result: "created",
+      group: { kind: "area", name: "Sprint 2" },
+    });
+    expect(await write({ action: "create", path: "Sprint 1/Website" })).toMatchObject({
+      result: "created",
+    });
+    expect(await write({ action: "create", path: "Sprint 2/Website" })).toMatchObject({
+      result: "created",
+      group: { kind: "project", name: "Website" },
+    });
+    expect(
+      await refusal(
+        call(organized, script, "group.manage", {
+          action: "create",
+          path: "Sprint 3/Website",
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({ code: "invalid_input", data: { suggestions: ["Sprint 1", "Sprint 2"] } });
+  });
 });
 
 describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and who may set them", () => {
