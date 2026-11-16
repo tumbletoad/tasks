@@ -84,6 +84,31 @@ export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined
   return undefined;
 }
 
+/** What a view's sidebar entry shows besides its name and icon. */
+export interface SidebarEntry {
+  /** Counted views only, and only once the rows are known. */
+  readonly count?: number;
+  /** Shown quieter, without a count: it holds nothing. */
+  readonly empty: boolean;
+}
+
+/**
+ * Every view's entry, always all of them in `VIEWS` order: people find these by position, so no
+ * state adds, removes or moves one. Without counts (no snapshot yet) no entry claims a number or
+ * emptiness it does not know.
+ */
+export function sidebarEntries(
+  counts: Readonly<Record<CountedView, number>> | undefined,
+): ReadonlyMap<View, SidebarEntry> {
+  return new Map(
+    VIEWS.map((view): [View, SidebarEntry] => {
+      if (counts === undefined || !isCounted(view)) return [view, { empty: false }];
+      const count = counts[view];
+      return [view, { count, empty: count === 0 }];
+    }),
+  );
+}
+
 /** How a status view lists what it holds (A5 3.5), and the line it shows when it holds nothing. */
 export interface ViewList {
   /** What the grouping states, so the rows leave it out (A5 3.6). */

@@ -1,7 +1,15 @@
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../live.ts";
 import { landingSpace, type SpaceList } from "./spaces.ts";
-import { areaFilter, COUNTED, countedViewOf, viewCounts, viewFilter, VIEWS } from "./views.ts";
+import {
+  areaFilter,
+  COUNTED,
+  countedViewOf,
+  sidebarEntries,
+  viewCounts,
+  viewFilter,
+  VIEWS,
+} from "./views.ts";
 
 let n = 0;
 const task = (patch: Partial<TaskRow>): TaskRow => {
@@ -72,6 +80,27 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       "open",
       "backlog",
     ]);
+  });
+
+  test("every view has its entry in every state; an empty one is quiet, an unknown one claims nothing", () => {
+    // Before the first snapshot nothing is known: no count, and no view says it is empty.
+    expect(VIEWS.map((view) => sidebarEntries(undefined).get(view))).toEqual(
+      VIEWS.map(() => ({ empty: false })),
+    );
+    const entries = sidebarEntries(viewCounts(TASKS.filter((t) => t.status !== "review")));
+    expect([...entries.keys()]).toEqual(VIEWS);
+    expect(Object.fromEntries(entries)).toEqual({
+      today: { empty: false },
+      inbox: { count: 2, empty: false },
+      open: { count: 2, empty: false },
+      waiting: { count: 1, empty: false },
+      review: { count: 0, empty: true },
+      backlog: { count: 1, empty: false },
+      completed: { empty: false },
+      agents: { empty: false },
+    });
+    // A space with nothing in it: still every entry, in the same order.
+    expect([...sidebarEntries(viewCounts([])).keys()]).toEqual(VIEWS);
   });
 });
 
