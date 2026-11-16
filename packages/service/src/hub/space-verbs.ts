@@ -474,9 +474,22 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
 
     "space/forget": async (params, cls) => {
       userOnly(cls);
-      const view = find(required(params, "space"));
+      const wanted = required(params, "space");
+      // An ID or a name means the copy that takes writes, but only a copy that serves nothing is
+      // forgotten: the closed original beside a claimed copy is the one a person means here.
+      const resting = (view: SpaceView) => view.state === "closed" || view.state === "unavailable";
+      const restingMatches = isAbsolute(wanted)
+        ? []
+        : listed().filter(
+            (view) =>
+              resting(view) &&
+              ((view.id ?? view.registered) === wanted ||
+                view.name?.toLowerCase() === wanted.toLowerCase()),
+          );
+      const view =
+        restingMatches.length === 1 && restingMatches[0] ? restingMatches[0] : find(wanted);
       const folder = manager.folderOf(view.entry);
-      if (view.state !== "closed" && view.state !== "unavailable") {
+      if (!resting(view)) {
         throw new AppError({
           code: "invalid_input",
           message: "Only a closed space is forgotten, and this one is open.",

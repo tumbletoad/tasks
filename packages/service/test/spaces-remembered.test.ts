@@ -225,6 +225,7 @@ describe("[A2.3.1.hub.space-forget] a closed space is forgotten, and keeps its n
       expect(open.hint).toContain("space close");
       expect(open.hint).toContain(mira?.folder ?? "?");
 
+      // By its name: the closed one, also when its name were shared with an open copy.
       const forgotten = await again.call("space/forget", { space: "Life" }, CALL);
       expect(forgotten).toMatchObject({ forgotten: true, space: { folder: lifeFolder } });
       expect((await list(again)).map((r) => r.folder)).toEqual([mira?.folder]);
@@ -264,6 +265,25 @@ describe("[A2.3.1.hub.space-forget] a closed space is forgotten, and keeps its n
       expect((await list(user)).map((r) => [r.name, r.state])).toEqual([
         ["Mira", "open"],
         ["Life", "open"],
+      ]);
+
+      // A claimed copy beside its closed original: the name forgets the original, never the copy.
+      const backup = (await user.call("space/backup", { space: lifeFolder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "life-copy");
+      await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: lifeFolder },
+        CALL,
+      );
+      await user.call("space/close", { space: lifeFolder }, CALL);
+      await user.call("space/claim", { space: copyFolder }, CALL);
+      const forgot = await user.call("space/forget", { space: "Life" }, CALL);
+      expect(forgot).toMatchObject({ space: { folder: lifeFolder } });
+      expect((await list(user)).map((r) => [r.name, r.state, r.folder === copyFolder])).toEqual([
+        ["Mira", "open", false],
+        ["Life", "open", true],
       ]);
     },
   );
