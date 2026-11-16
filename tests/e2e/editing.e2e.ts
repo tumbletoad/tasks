@@ -382,6 +382,7 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
     // Reopened, the line offers Try again, which saves it.
     await world.op(world.mira.id, "task.reopen", {
       task: ref,
+      reason: "Not done yet",
       base: (await read(world, ref)).as_of,
     });
     await expect(line).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
