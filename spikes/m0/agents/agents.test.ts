@@ -66,7 +66,7 @@ const alive = (pid: number | undefined): boolean => {
 /** Runs lab.ts as a program, as the lab runs it, with extra variables for the test. */
 const labRun = (argv: string[], extra: Record<string, string> = {}) =>
   run(process.execPath, [LAB, ...argv], {
-    env: { ...cleanEnv(process.env), TASKS_M0_LAPTOP_CLAUDE: "1", ...extra },
+    env: { ...cleanEnv(process.env), TASKS_M0_LINUX_CLAUDE: "1", ...extra },
     cwd: tmp,
     timeoutMs: 120_000,
   });

@@ -9,7 +9,7 @@
 // Tasks's registration adds or changes, each with its previous value or its absence, and the
 // file's hash for the concurrency check. No other value of the file is copied.
 //
-// The real homes on the Windows lab machine are compared by key NAMES only, of exactly two places (rule 4 of
+// The real homes on Windows are compared by key NAMES only, of exactly two places (rule 4 of
 // the step): the user-scope `mcpServers` of `~/.claude.json` and the `[mcp_servers.*]` tables of
 // `~/.codex/config.toml`. Nothing else in those files is read into the record, and sign-in files
 // are never opened.

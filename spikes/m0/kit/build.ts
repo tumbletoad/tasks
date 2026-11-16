@@ -1,7 +1,7 @@
 // Builds a standalone .mjs copy of the kit: Node's own type stripping, then `./x.ts` imports
 // rewritten to `./x.mjs`. The lab runs the forwarder, shims and probe from this copy, because
-// running .ts costs Node about 20 ms of extra start time (measured on the Windows lab machine), which would
-// bias rows B01 and B07. The copy needs no node_modules, so it can be copied to the Linux lab machine.
+// running .ts costs Node about 20 ms of extra start time (measured on Windows 11), which would
+// bias rows B01 and B07. The copy needs no node_modules, so it can be copied to a Linux machine.
 // `build.json` records the source folder and a hash of every source file, so the bench can refuse
 // a copy that is missing files or older than its sources (`checkBuiltKit`).
 import { createHash } from "node:crypto";

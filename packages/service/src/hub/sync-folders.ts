@@ -395,10 +395,10 @@ function pathStarts(bytes: Uint8Array): number[] {
 }
 
 /**
- * The folders inside Drive for desktop's SyncTargets value (A1 3.2). On the Windows reference
- * machine it is a protobuf message: each target holds the account, the virtual drive's letter and
- * the mirror root as length-delimited fields, so each field is read on its own, as UTF-8 or
- * UTF-16. Only drive and UNC paths count.
+ * The folders inside Drive for desktop's SyncTargets value (A1 3.2). As seen on Windows 11, it is
+ * a protobuf message: each target holds the account, the virtual drive's letter and the mirror
+ * root as length-delimited fields, so each field is read on its own, as UTF-8 or UTF-16. Only
+ * drive and UNC paths count.
  *
  * `complete`: whether the value was read whole, decided by its bytes, not by the walk's shape:
  * every place in the value where a drive or UNC path starts, in UTF-8 or UTF-16 at any offset,
