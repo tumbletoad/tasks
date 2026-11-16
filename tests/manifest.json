@@ -1272,6 +1272,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.3.service-stop.alive",
+      "title": "The service commands' liveness check: a running process runs, an ended one does not, and on Linux a process that exited before its parent collected it does not either",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.3.2.service-install.reg-export",
       "title": "The reader of reg.exe export files: every value type, escaped names and data, continued hex lines, the default value, subkeys, and a value's own key only",
       "source": "A2 3.3.2, A7 3.8 M1.12",
