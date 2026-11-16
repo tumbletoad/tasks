@@ -547,7 +547,7 @@
     },
     {
       "id": "A1.5.migration.from-0.1",
-      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to the build's latest revision behind its verified barrier backup: every 0.1 row stays, one migration commit per step, the new tables empty, the schema equal to a new space's and to the pinned released schema, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to the build's latest revision behind its verified barrier backup: every 0.1 row stays, one migration commit per step, the new tables empty but the search index, which holds the tasks, the schema equal to a new space's and to the pinned released schema, and the barrier backup restores the fixture's counts, last_seq and rows",
       "source": "A1 3.4, A1 3.17, A1 5, A7 3.10 M3.01, MIL-02",
       "owner": "M3",
       "kind": "ci",
@@ -594,6 +594,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.from-0.3",
+      "title": "The 0.3 fixture (the Mira sample built by the 0.3 chain, with a session row) migrates to 0.4 behind its verified barrier backup: every 0.3 row stays, one migration commit, the search index equal to a rebuild with every document kind and finding a task by a word of its title, the schema equal to a new 0.4 space's and to the pinned 0.4 schema, and the barrier backup restores the fixture",
+      "source": "A1 3.4, A1 3.12, A1 3.17, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.statement-faults-0004",
+      "title": "A fault at every statement boundary of the 0.3 to 0.4 migration, the search index's fill included, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the 0.3 sample's, it opens read-only with the failure's message, the 0.3 build still writes it, and without the fault it migrates",
+      "source": "A1 3.17, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.older-build-0004",
+      "title": "A 0.3 build refuses to open a 0.4 space writable: the 0.3 chain's writer, in the calling thread and in its storage worker, is refused with SPACE_TOO_NEW and changes nothing, its reader reads, and it restores no 0.4 backup",
+      "source": "A1 3.17, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.run-parents-0003",
       "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
       "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",
@@ -603,7 +627,7 @@
     },
     {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2 and 0.3: a populated 0.1 fixture space, a fault planted in its migration' last step, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
+      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task tasks find finds by a word",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",
@@ -630,6 +654,14 @@
       "title": "Restore into a new folder verifies sizes, SHA-256, integrity_check, revision and the sidecar's facts before the folder appears; a tampered, mismatched, linked or newer backup is refused and leaves nothing",
       "source": "A1 3.18",
       "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.search-derived",
+      "title": "The search index is derived: a backup made before schema 0.4, one made after it, one whose search tables are missing and one whose search tables differ each verify by a trial restore and restore into a new folder and in place, with the index made again from the copy's tasks and a new space's schema",
+      "source": "A1 3.12, A1 3.18",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -1133,6 +1165,14 @@
       "id": "A2.3.1.hub.failed-migration",
       "title": "A failed migration is not tried again by itself: ten opens of a space whose migration fails leave one barrier backup and one failure record, and the nine later opens write nothing (backups folder, settings file and database byte for byte) and serve it read-only with a message that names the retry; the record survives a restart; another build, another state of the database (a restore in place, another writer) and the person's explicit retry each try again behind a new barrier backup; the retry is refused for a caller that is not the user; a successful retry migrates and forgets the record; a damaged or unreadable record is no record",
       "source": "A1 3.17, A1 3.18, A2 3.1, A2 3.6.5, A7 3.10 M3.01, MIL-02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.search-after-migration",
+      "title": "Through a running service's request path: a 0.3 space migrates on open and its words are found, and the index follows an add, a title change, a note and a completion; a space the build creates answers words from its first task; a space whose update failed answers filters and refuses words with not_indexed and a line that says the update failed and where to see why",
+      "source": "A1 3.12, A1 3.17, A3 3.9",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -1851,8 +1891,8 @@
     },
     {
       "id": "A3.3.6.mcp.instructions",
-      "title": "The server instructions v0: ASCII, at most 3,500 bytes and about 2 KB, the trigger and start rule within the first 240 characters, and every tool they name is a listed tool",
-      "source": "A3 3.2.5, A3 3.6, A3 5, M0 row A06, A7 3.9 M2.02",
+      "title": "The server instructions: ASCII, at most 3,500 bytes and about 2 KB, the trigger and start rule within the first 240 characters, every tool they name is a registry tool and every registry tool is named, and the fields and values they name are the tools' own",
+      "source": "A3 3.2.5, A3 3.6, A3 5, M0 row A06, A7 3.9 M2.02, A7 3.11 M4.04",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2442,6 +2482,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.12.setup.generated",
+      "title": "Rule 2 reads a generator's notice, not keywords: a table of a person's own instruction files (rules about generated files, editing and this file, in lists, comments and titles) and of generators' notices in common forms (an HTML comment anywhere in a line or over several lines, a title, a quoted note, a sentence about the file itself, TOML comments); each notice is found on its line, and nothing past the first 20 lines counts",
+      "source": "A3 3.12, A7 3.11 M4.04",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.12.setup.block",
+      "title": "The instruction block on scratch homes: it names only registry tools; the preview's unified diff writes nothing; apply then remove gives back the file byte for byte (CRLF, byte order mark, no final newline, a file setup made, an empty one it found), also by property over random files, with text the person wrote after the block kept on its own line; Codex's override file wins and is never made, and a block past the 32 KiB Codex reads is refused; a link, a linked home, a generated mark and machine.toml's paths are delegated and never written; an edited or hand-added block is left by apply and remove; duplicate or unbalanced markers name their lines; an older version is replaced in place; a file changed since the preview, a home folder that is gone and an apply cut before its write change nothing",
+      "source": "A3 3.12, A7 3.11 M4.04",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.12.setup.block-cli",
+      "title": "tasks setup agents --parts block and print-block through the CLI, with no service: print-block prints the block and its file and writes nothing; the preview shows the unified diff and writes nothing; only the user applies, with the preview's plan and parts; remove takes the block out byte for byte; a remove of the entries says the blocks stay; doctor's block row passes for a current block, warns for an older or missing one, and is information only for none and for a managed file",
+      "source": "A3 3.12, A3 3.13.1, A3 3.14, A7 3.11 M4.04",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.13.setup.apps",
       "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
@@ -2467,7 +2531,7 @@
     },
     {
       "id": "A3.3.14.doctor.agents",
-      "title": "tasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print and approve-tools write nothing",
+      "title": "tasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print, print-block, approve-tools and the block's preview write nothing",
       "source": "A3 3.14, A3 3.13.1, A3 3.13.7, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",

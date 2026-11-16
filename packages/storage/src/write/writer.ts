@@ -745,8 +745,8 @@ export class SpaceWriter {
   readonly #random: RandomSource;
   readonly #seams: WriteSeams;
   /**
-   * Whether the space holds the search tables (A1 3.12), which a schema step after 0.2 adds: each
-   * commit then writes the documents it changed. A space without them keeps no index.
+   * Whether the space holds the search tables, which schema 0.4 adds: each commit then writes the
+   * documents it changed. A space of an older build's chain (tests write those) keeps no index.
    */
   readonly #search: boolean;
   readonly spaceId: Id<"sp">;

@@ -2,7 +2,8 @@
 // - into a new folder, the read-only mark (markReadOnlyCopy), with a claim of the copy run and taken
 //   back before it;
 // - in place, the claim itself (claim.ts, restore.ts).
-// Both drop first what the exact-schema rule leaves out (dropUnchecked).
+// Both first drop what the exact-schema rule leaves out and make the search index again
+// (prepareCopy).
 //
 // The mark is `space.transfer` = `{state: "restored_copy", at}`: every open of the copy is then
 // read-only with the reason `read_only_copy` until it is claimed (A6 3.5). It writes no commit: the
@@ -18,8 +19,10 @@ import { StorageError } from "../errors.ts";
 import { newId, osRandom } from "../ids.ts";
 import { openWriter } from "../open.ts";
 import { decodeSpaceRow, type SpaceRow } from "../rows.ts";
+import type { SchemaStep } from "../schema.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { ALL_OBJECTS, isDropped } from "../backup/snapshot.ts";
+import { remakeSearchIndex } from "../search/remake.ts";
 import { claimInTransaction } from "./claim.ts";
 
 /** The state `space.transfer` holds for a read-only copy (A6 3.5's `read_only_copy`). */
@@ -42,6 +45,20 @@ export function dropUnchecked(conn: Connection): void {
 }
 
 /**
+ * What every first write on a copy starts with, inside the caller's write transaction: the
+ * unchecked objects dropped (dropUnchecked), then the search index made again from the copy's tasks
+ * (search/remake.ts), so the copy's own index, whatever it holds, is never used.
+ */
+export function prepareCopy(
+  checked: CheckedDriver,
+  conn: Connection,
+  steps: readonly SchemaStep[],
+): void {
+  dropUnchecked(conn);
+  remakeSearchIndex(checked, conn, steps);
+}
+
+/**
  * Runs a claim of the copy on `conn` inside the caller's write transaction and takes it back (see
  * the header). The trial's machine is a random one: nothing of it is kept.
  */
@@ -61,12 +78,17 @@ function trialClaim(conn: Connection, now: number): void {
 
 /**
  * Marks the space on `conn`, a writer on a restored copy in its staging folder, as a read-only
- * copy, in one transaction: the unchecked objects dropped, a claim run and taken back, then the
+ * copy, in one transaction: the copy prepared (prepareCopy), a claim run and taken back, then the
  * mark. Returns the marked row, which must hold the mark.
  */
-export function markReadOnlyCopy(conn: Connection, now: number): SpaceRow {
+export function markReadOnlyCopy(
+  checked: CheckedDriver,
+  conn: Connection,
+  now: number,
+  steps: readonly SchemaStep[],
+): SpaceRow {
   return conn.transaction("immediate", () => {
-    dropUnchecked(conn);
+    prepareCopy(checked, conn, steps);
     trialClaim(conn, now);
     conn
       .prepare("UPDATE space SET transfer = $transfer WHERE one = 1")
@@ -115,6 +137,9 @@ export function markCopy(
   now: number,
   options: { busyTimeoutMs?: number },
   invalid: (why: string) => StorageError,
+  steps: readonly SchemaStep[],
 ): SpaceRow {
-  return firstWrite(checked, db, options, invalid, (conn) => markReadOnlyCopy(conn, now));
+  return firstWrite(checked, db, options, invalid, (conn) =>
+    markReadOnlyCopy(checked, conn, now, steps),
+  );
 }
