@@ -149,6 +149,29 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(searchGroups([], done, new Map()).map((g) => g.key)).toEqual(["s:finished"]);
   });
 
+  test("a finished row carries how it ended, for the summary's place; a summary without a match stays", () => {
+    const dropped = rowOf(
+      taskRow(4, { lifecycle: "archived", ending: "Not needed after all." }),
+      "finished",
+    );
+    expect(dropped).toMatchObject({ ending: "Not needed after all." });
+    expect(dropped).not.toHaveProperty("summary");
+    const noted = rowOf(
+      taskRow(5, {
+        lifecycle: "completed",
+        snippet: "A word in a note",
+        snippet_from: "note",
+        ending: "Shipped.",
+      }),
+      "finished",
+    );
+    expect(noted).toMatchObject({ ending: "Shipped." });
+    expect(noted).not.toHaveProperty("summary");
+    expect(rowOf(taskRow(6, { snippet: "Its summary." }), "open")).toMatchObject({
+      summary: "Its summary.",
+    });
+  });
+
   test("a task both searches found shows once, where it was first: under To do", () => {
     // Checked off from the results, then Completed read again after its cursor expired.
     const open = [1, 2].map((n) => rowOf(taskRow(n), "open") as FoundRow);

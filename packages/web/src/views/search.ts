@@ -52,6 +52,8 @@ export function rowOfFound(
     ref: row.ref,
     title: row.title,
     ...(summary === undefined || summary === "" ? {} : { summary }),
+    // A finished task's row says how it ended in the summary's place, as in Completed.
+    ...(row.ending === undefined ? {} : { ending: row.ending }),
     status: row.status,
     inbox: row.inbox,
     lifecycle: row.lifecycle,

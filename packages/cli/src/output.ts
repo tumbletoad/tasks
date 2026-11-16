@@ -170,10 +170,12 @@ function searchLines(result: Result): string[] {
           str(row["title"]),
         ].filter((part) => part !== "");
         const from = str(row["snippet_from"]);
-        // A snippet that only says the title again (a summary that is the title) adds nothing.
+        // A finished task without a match in its text says how it ended in the summary's place.
+        const line = row["snippet"] ?? row["ending"];
+        // A line that only says the title again (a summary that is the title) adds nothing.
         const snippet =
-          typeof row["snippet"] === "string" && row["snippet"] !== row["title"]
-            ? ` — ${from === "" || from === "task" ? "" : `${from}: `}${row["snippet"]}`
+          typeof line === "string" && line !== row["title"]
+            ? ` — ${from === "" || from === "task" ? "" : `${from}: `}${line}`
             : "";
         lines.push(`${parts.join(" · ")}${snippet}${mark}`);
       }

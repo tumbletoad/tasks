@@ -6362,6 +6362,10 @@
                       "description": "Effort",
                       "type": "string"
                     },
+                    "ending": {
+                      "description": "A finished task's ending, one line: why it was dropped, or its outcome",
+                      "type": "string"
+                    },
                     "id": {
                       "description": "Task ID",
                       "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
@@ -6401,7 +6405,7 @@
                       "type": "string"
                     },
                     "snippet": {
-                      "description": "Where it matched, else its summary",
+                      "description": "Where it matched, else its summary when it has no ending",
                       "type": "string"
                     },
                     "snippet_from": {

@@ -544,6 +544,45 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(hit).toMatchObject({ snippet: "Before bodyhitword after.", snippet_from: "note" });
   });
 
+  test("a finished task's row says how it ended in its summary's place; a match in its notes still shows", async () => {
+    const [shipped = "", dropped = "", plain = "", noted = "", open = ""] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Endword shipped", summary: "Shipped summary." },
+        { kind: "task.create", title: "Endword dropped", summary: "Dropped summary." },
+        { kind: "task.create", title: "Endword plain", summary: "Plain summary." },
+        { kind: "task.create", title: "Endword noted", summary: "Noted summary." },
+        { kind: "task.create", title: "Endword open", summary: "Open summary." },
+      ]),
+    );
+    submit(fx, [
+      { kind: "task.complete", task: shipped, outcome: "## Shipped it.\nWith evidence." },
+      { kind: "task.archive", task: dropped, reason: "Not needed after all." },
+      { kind: "task.archive", task: plain },
+      { kind: "task.complete", task: noted, outcome: "Noted outcome." },
+      { kind: "note.add", task: noted, body: "An endnoteword in a note." },
+    ]);
+    const rows = (await search({ q: "endword", scope: "all", limit: 50 })).rows;
+    const row = (id: string) => rows.find((r) => r["id"] === id);
+    expect(row(shipped)).toMatchObject({ ending: "Shipped it." });
+    expect(row(shipped)).not.toHaveProperty("snippet");
+    expect(row(dropped)).toMatchObject({ ending: "Not needed after all." });
+    expect(row(dropped)).not.toHaveProperty("snippet");
+    expect(row(plain)).toMatchObject({ snippet: "Plain summary." });
+    expect(row(plain)).not.toHaveProperty("ending");
+    expect(row(open)).toMatchObject({ snippet: "Open summary." });
+    expect(row(open)).not.toHaveProperty("ending");
+    const hit = (await search({ q: "endnoteword", scope: "finished" })).rows[0];
+    expect(hit).toMatchObject({
+      id: noted,
+      snippet: "An endnoteword in a note.",
+      snippet_from: "note",
+      ending: "Noted outcome.",
+    });
+    for (const each of [...rows, hit]) {
+      expect(TaskSearchResult.shape.rows.element.safeParse(each).success).toBe(true);
+    }
+  });
+
   test("titles are cut at 90 characters and snippets at 100", async () => {
     const long = `Cutword ${"x".repeat(120)}`;
     const [task] = created(
