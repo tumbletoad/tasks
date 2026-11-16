@@ -463,9 +463,22 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
       slug: "work",
       reuses: "a_two",
     });
-    // A record whose group is gone is no record.
+    // A group whose recorded group is gone is made anew, never a live group of its title or slug.
     const gone = placeGroups(plan, { areas: areas.slice(1), projects: [], landed });
     expect(gone.areas.get("home")).toEqual({ slug: "home" });
+    const lost = placeGroups(plan, {
+      areas: [
+        { slug: "home", id: "a_three", version: 1, title: "Home" },
+        { slug: "work", id: "a_two", version: 1, title: "Work" },
+      ],
+      projects: [{ slug: "admin", id: "p_three", version: 1, area: "home", title: "Admin" }],
+      landed,
+    });
+    expect(Object.fromEntries(lost.areas)).toEqual({
+      home: { slug: "home-2" },
+      work: { slug: "work", reuses: "a_two" },
+    });
+    expect(lost.projects.get("admin")).toEqual({ slug: "admin-3" });
 
     // The token pins each record and whether its group is live.
     const at = (more: Partial<PreviewRun["space"]>) =>

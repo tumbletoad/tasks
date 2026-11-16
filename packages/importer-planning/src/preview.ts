@@ -113,14 +113,17 @@ function liveGroups<T extends { readonly slug: string; readonly title?: string }
 }
 
 /**
- * Where each planned area and project goes in the space (A7 3.15.3, Areas and projects), the rule
- * the dry run reports and the apply follows. A planned group that an earlier import landed in a
+ * Where each planned area and project goes in the space, the rule the dry run reports and the
+ * apply follows. A planned group that an earlier import landed in a
  * group that is still live goes there, whatever its title or slug is now: the import records each
  * group's whole identity with the group's ID (`landed`), because titles are cut to fit and slugs
  * number by the order of the prototype's lines, so neither tells two long, similar groups apart
  * once the prototype is reordered. A project goes to its record only in the area its area goes to.
  *
- * A group without such a record is first the live group with its identity (its title's letters and
+ * A group whose record names a group that is gone (an undo of its import removed it, or the
+ * person did) is made anew, at its slug or the next number free.
+ *
+ * A group without any record is first the live group with its identity (its title's letters and
  * digits, as the import groups titles; a project only in its area), then the live group with its
  * slug (a project only in the same area), as an import into a space whose groups it did not make
  * reuses them. Else a new group with its slug, or the next number free in the space, the plan and
@@ -157,6 +160,12 @@ export function placeGroups(
   const areas = new Map<string, GroupPlacement>();
   const claimedAreas = new Set<string>();
   const areaById = new Map(space.areas.map((a) => [a.id, a]));
+  // A group an earlier import made and that is gone since is made anew: another group with its
+  // shown title or slug is not it, and its tasks would land among that group's.
+  const areaGone = (p: { readonly key: string }) => {
+    const id = space.landed?.areas.get(p.key);
+    return id !== undefined && !areaById.has(id);
+  };
   for (const p of plan.areas) {
     const id = space.landed?.areas.get(p.key);
     const row = id === undefined ? undefined : areaById.get(id);
@@ -166,7 +175,7 @@ export function placeGroups(
     areas.set(p.slug, { slug: row.slug, reuses: row.id });
   }
   for (const p of plan.areas) {
-    if (areas.has(p.slug)) continue;
+    if (areas.has(p.slug) || areaGone(p)) continue;
     const same = liveAreas.byIdentity.get(groupKey(p.title, "area")) ?? [];
     for (const a of same) lookArea(a.slug);
     const candidates = same.filter((a) => !claimedAreas.has(a.slug));
@@ -181,7 +190,7 @@ export function placeGroups(
   for (const p of plan.areas) {
     if (areas.has(p.slug)) continue;
     const row = lookArea(p.slug);
-    if (row !== undefined && !claimedAreas.has(row.slug)) {
+    if (row !== undefined && !claimedAreas.has(row.slug) && !areaGone(p)) {
       claimedAreas.add(row.slug);
       usedAreas.add(row.slug);
       areas.set(p.slug, { slug: row.slug, reuses: row.id });
@@ -214,6 +223,10 @@ export function placeGroups(
   const projects = new Map<string, GroupPlacement>();
   const claimed = new Set<string>();
   const projectById = new Map(space.projects.map((p) => [p.id, p]));
+  const projectGone = (p: { readonly key: string }) => {
+    const id = space.landed?.projects.get(p.key);
+    return id !== undefined && !projectById.has(id);
+  };
   for (const p of plan.projects) {
     const id = space.landed?.projects.get(p.key);
     const row = id === undefined ? undefined : projectById.get(id);
@@ -224,7 +237,7 @@ export function placeGroups(
     projects.set(p.slug, { slug: row.slug, reuses: row.id });
   }
   for (const p of plan.projects) {
-    if (projects.has(p.slug)) continue;
+    if (projects.has(p.slug) || projectGone(p)) continue;
     const area = areaOf(p.area);
     const same = (liveProjects.byIdentity.get(groupKey(p.title, "project")) ?? []).filter(
       (r) => r.area === area,
@@ -241,12 +254,13 @@ export function placeGroups(
   for (const p of plan.projects) {
     if (projects.has(p.slug)) continue;
     const area = areaOf(p.area);
+    const gone = projectGone(p);
     const row = look(p.slug);
     if (row === undefined && !claimed.has(p.slug)) {
       projects.set(p.slug, { slug: p.slug });
       continue;
     }
-    if (row !== undefined && row.area === area && !claimed.has(row.slug)) {
+    if (row !== undefined && row.area === area && !claimed.has(row.slug) && !gone) {
       claimed.add(row.slug);
       projects.set(p.slug, { slug: p.slug, reuses: row.id });
       continue;
@@ -257,12 +271,12 @@ export function placeGroups(
       has: (slug: string) => {
         if (taken.has(slug)) return true;
         const held = look(slug);
-        return held !== undefined && (held.area !== area || claimed.has(slug));
+        return held !== undefined && (gone || held.area !== area || claimed.has(slug));
       },
     };
     const slug = numberedSlug(p.slug, free, next);
     taken.add(slug);
-    const same = look(slug);
+    const same = gone ? undefined : look(slug);
     if (same !== undefined) claimed.add(slug);
     projects.set(p.slug, same === undefined ? { slug } : { slug, reuses: same.id });
   }

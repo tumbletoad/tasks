@@ -925,6 +925,45 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       world.close();
     }
   }, 120_000);
+
+  test("a group the import made and its undo removed is made again, never another group of the same shown title", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      const long = `Long ${"name ".repeat(70)}`;
+      const a = { id: "pa", title: "A", meta: { category: `${long}alpha` } };
+      const b = { id: "pb", title: "B", meta: { category: `${long}beta` } };
+      writePrototype(prototype, { tasks: [a, b] });
+      const first = await importedSynthetic(world, prototype);
+      const areaOf = (legacy: string) => String(task(world, taskOf(world, legacy))["area_id"]);
+      const [alpha, beta] = [areaOf("pa"), areaOf("pb")];
+      expect(alpha).not.toBe(beta);
+      // The person works on A, then undoes the import: A and its area stay, B and its area go.
+      expect(
+        world.edit([{ kind: "task.patch", task: taskOf(world, "pa"), set: { title: "Mine" } }])
+          .status,
+      ).toBe("applied");
+      await world.undo(first.preview.run);
+      const liveArea = (id: string) =>
+        world.rows("SELECT deleted_at FROM areas WHERE id = $id", { id })[0]?.["deleted_at"] ===
+        null;
+      expect([liveArea(alpha), liveArea(beta)]).toEqual([true, false]);
+
+      // The prototype now holds B alone: the dry run and the apply both make its area anew.
+      writePrototype(prototype, { tasks: [b] });
+      const again = await importedSynthetic(world, prototype);
+      expect(again.preview.counts).toMatchObject({ areas: 1, areas_existing: 0 });
+      const made = areaOf("pb");
+      expect(made).not.toBe(alpha);
+      expect(liveArea(made)).toBe(true);
+      expect(
+        world.rows("SELECT count(*) AS n FROM tasks WHERE area_id = $a AND deleted_at IS NULL", {
+          a: alpha,
+        })[0]?.["n"],
+      ).toBe(1);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
 });
 
 describe("[A7.3.15.importer.undo] the undo of an import", () => {
