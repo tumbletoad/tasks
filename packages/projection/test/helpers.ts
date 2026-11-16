@@ -346,6 +346,37 @@ export function faultState(state: string, plan: (n: number) => Fault, log?: Faul
   };
 }
 
+/** libuv's UV_FS_O_EXLOCK on Windows: an open that shares nothing (no read, write or delete). */
+export const EXCLUSIVE = 0x10000000;
+
+/**
+ * Holds the file at `abs` open as an editor, a scanner or a backup tool may on Windows: nothing
+ * can open, rename or remove it, each failing with EBUSY, until the returned function lets it go.
+ * Elsewhere no open shares nothing, so node:fs's openSync fails for that file as it would there.
+ */
+export function holdOpen(abs: string): () => void {
+  if (process.platform === "win32") {
+    const fd = fs.openSync(abs, fs.constants.O_RDONLY | EXCLUSIVE);
+    return () => {
+      fs.closeSync(fd);
+    };
+  }
+  const table = fs as unknown as Record<string, FsCall>;
+  const real = table["openSync"] as FsCall;
+  const held = resolve(abs);
+  table["openSync"] = (...args) => {
+    if (typeof args[0] === "string" && resolve(args[0]) === held) {
+      throw Object.assign(new Error("fixture: the file is held open"), { code: "EBUSY" });
+    }
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  return () => {
+    table["openSync"] = real;
+    syncBuiltinESMExports();
+  };
+}
+
 /** The end of a process: thrown at the kill and at every act after it. */
 export class Killed extends Error {
   override readonly name = "Killed";
