@@ -22,6 +22,7 @@ import { inRange, RANGES } from "../rows.ts";
 import { OPEN_SETS } from "../schema.ts";
 import { canonicalJson, isJsonData } from "./canonical.ts";
 import { PATCHABLE_FIELDS, type PatchableField } from "./fields.ts";
+import { isFolderForm } from "./folders.ts";
 import {
   RUN_APP_TOOLS,
   RUN_EVIDENCE_FIELDS,
@@ -95,6 +96,10 @@ export const WRITE_LIMITS = {
   ext: 64 * 1024 * 1024,
   /** Characters of a slug of an area or a project (A7 3.15.3: at most 48). */
   slug: 64,
+  /** UTF-8 bytes of an area's or a project's brief. */
+  brief: 4 * 1024,
+  /** Characters of a folder's path, as the machine spells it. */
+  folder: 4_096,
 } as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -131,6 +136,8 @@ export const WRITE_ERROR_CODES = [
    * differs from the token the person applied: the space changed since the dry run (A7 3.15.5).
    */
   "PREVIEW_STALE",
+  /** Another live project holds this folder on this machine. */
+  "FOLDER_TAKEN",
 ] as const;
 
 export type WriteErrorCode = (typeof WRITE_ERROR_CODES)[number];
@@ -178,7 +185,8 @@ export type ConflictEntity =
   | "preferences"
   | "runs"
   | "areas"
-  | "projects";
+  | "projects"
+  | "folders";
 
 /**
  * One field that changed after the caller's base, or the link version the caller named (A1 3.5).
@@ -805,6 +813,97 @@ export interface ProjectUpsert {
   id?: Id<"p">;
 }
 
+/** The fields of an area or a project that `area.patch` and `project.patch` set. */
+export interface GroupValues {
+  title?: string;
+  brief?: string;
+  /** `#rrggbb` in lower case, or null for none. */
+  color?: string | null;
+}
+
+/**
+ * `area.create`: a new area at the end of the space's areas. Without a slug the writer makes one
+ * from the title, numbered when another live area holds it.
+ */
+export interface AreaCreate extends GroupValues {
+  kind: "area.create";
+  id?: Id<"a">;
+  title: string;
+  slug?: string;
+}
+
+/**
+ * `project.create`: a new project at the end of its area's projects, or of the projects without an
+ * area. Its slug is unique among live projects, made from the title as an area's is.
+ */
+export interface ProjectCreate extends GroupValues {
+  kind: "project.create";
+  id?: Id<"p">;
+  title: string;
+  slug?: string;
+  /** An area ID or slug, also of an area an earlier operation of the request creates. */
+  area?: string | null;
+}
+
+export interface AreaPatch {
+  kind: "area.patch";
+  area: string;
+  set: GroupValues;
+}
+
+export interface ProjectPatch {
+  kind: "project.patch";
+  project: string;
+  set: GroupValues;
+}
+
+/** `project.move`: another area, or none. The project's tasks are in its area, so they move too. */
+export interface ProjectMove {
+  kind: "project.move";
+  project: string;
+  area: string | null;
+}
+
+/**
+ * Archiving takes a group out of the lists people file work into. Its tasks keep their state and
+ * their place, and an archived project keeps its folders. Both directions are idempotent.
+ */
+export interface GroupArchive {
+  kind: "area.archive" | "area.unarchive" | "project.archive" | "project.unarchive";
+  area?: string;
+  project?: string;
+}
+
+/**
+ * `project.delete` tombstones the project and its folders on every machine; `project.restore`
+ * clears its tombstone and brings back the folders the delete removed, except one whose folder
+ * another live project holds by then on that machine, which stays removed and is a conflict of
+ * the applied result. A project that still holds tasks that are not deleted is not deleted.
+ */
+export interface ProjectDelete {
+  kind: "project.delete" | "project.restore";
+  project: string;
+}
+
+/**
+ * `project.folder_set` and `task.folder_set`: the owner's folder on the request's machine, as that
+ * machine spells it, the home written as `~`. The path is stored exactly as sent. A project's
+ * change moves its tasks' folders that are its old folder or inside it, on that machine, along.
+ */
+export interface FolderSet {
+  kind: "project.folder_set" | "task.folder_set";
+  project?: string;
+  task?: string;
+  path: string;
+}
+
+/** `project.folder_clear` and `task.folder_clear`: removes the owner's folder on this machine. */
+export interface FolderClear {
+  kind: "project.folder_clear" | "task.folder_clear";
+  project?: string;
+  task?: string;
+}
+
 /** One task of an exchange: its file, or the prototype's marker, and its base (A1 3.14). */
 export interface ExchangeItem {
   task: string;
@@ -856,6 +955,15 @@ export type Operation =
   | AliasAdd
   | AreaUpsert
   | ProjectUpsert
+  | AreaCreate
+  | ProjectCreate
+  | AreaPatch
+  | ProjectPatch
+  | ProjectMove
+  | GroupArchive
+  | ProjectDelete
+  | FolderSet
+  | FolderClear
   | ExchangeCreate
   | ImportUndo
   | TaskCreate
@@ -910,7 +1018,30 @@ export const OPERATION_KINDS = [
   "project.upsert",
   "exchange.create",
   "import.undo",
+  "area.create",
+  "area.patch",
+  "area.archive",
+  "area.unarchive",
+  "project.create",
+  "project.patch",
+  "project.move",
+  "project.archive",
+  "project.unarchive",
+  "project.delete",
+  "project.restore",
+  "project.folder_set",
+  "project.folder_clear",
+  "task.folder_set",
+  "task.folder_clear",
 ] as const satisfies readonly OperationKind[];
+
+/** The operations that write a folder row. Their paths are stored exactly as sent. */
+export const FOLDER_OPERATIONS: ReadonlySet<OperationKind> = new Set([
+  "project.folder_set",
+  "project.folder_clear",
+  "task.folder_set",
+  "task.folder_clear",
+]);
 
 /** The operations only the prototype import's request carries (isImportRequest). */
 export const IMPORT_OPERATIONS: ReadonlySet<OperationKind> = new Set([
@@ -1787,9 +1918,129 @@ function checkOperation(value: unknown, i: number): Operation {
       op = { kind, commit: f.id("commit", "op") };
       break;
     }
+    case "area.create":
+    case "project.create": {
+      const values = groupValues(f);
+      const title = f.text("title", { chars: WRITE_LIMITS.title, line: true });
+      let slug: string | undefined;
+      if (f.has("slug")) {
+        const raw = f.raw("slug");
+        if (typeof raw !== "string" || raw.length > WRITE_LIMITS.slug || !SLUG.test(raw)) {
+          f.fail("VALIDATION_FAILED", "Expected a slug of a-z, 0-9 and -", "slug");
+        }
+        slug = raw as string;
+      }
+      if (kind === "area.create") {
+        const area: AreaCreate = { kind, ...values, title };
+        if (slug !== undefined) area.slug = slug;
+        if (f.has("id")) {
+          const id = f.raw("id");
+          if (!isId(id, "a")) f.fail("VALIDATION_FAILED", "Expected an ID", "id");
+          area.id = id as Id<"a">;
+        }
+        op = area;
+      } else {
+        const project: ProjectCreate = { kind, ...values, title };
+        if (slug !== undefined) project.slug = slug;
+        if (f.has("area")) project.area = f.group("area");
+        if (f.has("id")) {
+          const id = f.raw("id");
+          if (!isId(id, "p")) f.fail("VALIDATION_FAILED", "Expected an ID", "id");
+          project.id = id as Id<"p">;
+        }
+        op = project;
+      }
+      break;
+    }
+    case "area.patch":
+    case "project.patch": {
+      const owner = kind === "area.patch" ? "area" : "project";
+      const ref = requiredGroup(f, owner);
+      const set = f.sub("set");
+      const values = groupValues(set);
+      if (set.has("title")) {
+        values.title = set.text("title", { chars: WRITE_LIMITS.title, line: true });
+      }
+      set.done();
+      if (Object.keys(values).length === 0) {
+        f.fail("VALIDATION_FAILED", "A patch sets at least one field", "set");
+      }
+      op =
+        kind === "area.patch"
+          ? { kind, area: ref, set: values }
+          : { kind, project: ref, set: values };
+      break;
+    }
+    case "project.move": {
+      if (!f.has("area")) f.fail("VALIDATION_FAILED", "A move names the area, or null", "area");
+      op = { kind, project: requiredGroup(f, "project"), area: f.group("area") };
+      break;
+    }
+    case "area.archive":
+    case "area.unarchive":
+      op = { kind, area: requiredGroup(f, "area") };
+      break;
+    case "project.archive":
+    case "project.unarchive":
+      op = { kind, project: requiredGroup(f, "project") };
+      break;
+    case "project.delete":
+    case "project.restore":
+      op = { kind, project: requiredGroup(f, "project") };
+      break;
+    case "project.folder_set":
+    case "task.folder_set": {
+      // Stored exactly as sent: a text normalisation could make it name another folder.
+      const path = f.raw("path");
+      if (!isFolderForm(path)) {
+        f.fail(
+          "VALIDATION_FAILED",
+          "Expected a folder: an absolute path or a path under ~, without control characters",
+          "path",
+        );
+      }
+      op =
+        kind === "project.folder_set"
+          ? { kind, project: requiredGroup(f, "project"), path: path as string }
+          : { kind, task: f.reference("task"), path: path as string };
+      break;
+    }
+    case "project.folder_clear":
+    case "task.folder_clear":
+      op =
+        kind === "project.folder_clear"
+          ? { kind, project: requiredGroup(f, "project") }
+          : { kind, task: f.reference("task") };
+      break;
   }
   f.done();
   return op;
+}
+
+/** An area or a project an operation acts on: an ID or a slug, never null. */
+function requiredGroup(f: Fields, key: "area" | "project"): string {
+  const group = f.group(key);
+  if (group === null) return f.fail("VALIDATION_FAILED", "Expected an ID or a slug", key);
+  return group;
+}
+
+/** A colour of an area or a project: `#rrggbb` in lower case. */
+const COLOR = /^#[0-9a-f]{6}$/u;
+
+/** The brief and the colour of an area or a project, where `f` has them. */
+function groupValues(f: Fields): GroupValues {
+  const values: GroupValues = {};
+  if (f.has("brief")) {
+    values.brief = f.text("brief", { bytes: WRITE_LIMITS.brief, empty: true });
+  }
+  if (f.has("color")) {
+    const color = f.raw("color");
+    if (color !== null && (typeof color !== "string" || !COLOR.test(color))) {
+      f.fail("VALIDATION_FAILED", "Expected a colour #rrggbb in lower case, or null", "color");
+    }
+    values.color = color;
+  }
+  return values;
 }
 
 /** A legacy ID: the prototype's marker grammar (A7 3.15.2), which holds every fallback ID. */
@@ -2229,13 +2480,17 @@ export function checkRequest(value: unknown): CheckedRequest {
   return request;
 }
 
-/** The operations that may name a draft that dedupes by source key: its entries, sources, place. */
+/**
+ * The operations that may name a draft that dedupes by source key: its entries, sources, place and
+ * folder.
+ */
 const MATCHABLE_DRAFT_OPS: ReadonlySet<Operation["kind"]> = new Set([
   "log.add",
   "note.add",
   "task.context_append",
   "source.add",
   "place.set",
+  "task.folder_set",
 ]);
 
 /**

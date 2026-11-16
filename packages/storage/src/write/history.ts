@@ -45,6 +45,15 @@ import { formatTaskRef } from "../refs.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
 import {
+  decodeFolder,
+  FOLDER_SQL,
+  folderKey,
+  hasFolders,
+  machineOs,
+  type FolderOs,
+  type FolderRow,
+} from "./folders.ts";
+import {
   CHILD_FIELDS,
   columnsValue,
   EXT_TABLES,
@@ -71,7 +80,8 @@ export type InvertibleEntity =
   | "task_sources"
   | "places"
   | "areas"
-  | "projects";
+  | "projects"
+  | "folders";
 
 interface Table {
   readonly fields: Readonly<Record<string, readonly string[]>>;
@@ -95,9 +105,9 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
     where: "task_id = $task AND source_id = $source",
   },
   places: { fields: CHILD_FIELDS.places, tombstone: "deleted", where: BY_ID },
-  // An import's areas and projects (A7 3.15.5): their tombstone is their one field so far.
   areas: { fields: CHILD_FIELDS.areas, tombstone: "deleted", where: BY_ID },
   projects: { fields: CHILD_FIELDS.projects, tombstone: "deleted", where: BY_ID },
+  folders: { fields: CHILD_FIELDS.folders, tombstone: "deleted", where: BY_ID },
 };
 
 /**
@@ -221,6 +231,7 @@ const TASK_CHILDREN: readonly Child[] = [
     column: null,
     since: true,
   },
+  folderChild("task", "owner_id"),
 ];
 
 /** A source's links: a source another task links to stays. */
@@ -236,6 +247,21 @@ const SOURCE_CHILDREN: readonly Child[] = [
     column: "removed_at",
   },
 ];
+
+/** An owner's folders (schema 0.5): a folder another commit set keeps its owner's create. */
+function folderChild(kind: "task" | "project", task: string): Child {
+  return {
+    entity: "folders",
+    key: "id",
+    task,
+    parent: "owner_id",
+    where: ` AND owner_kind = '${kind}'`,
+    fields: CHILD_FIELDS.folders,
+    field: "deleted",
+    column: "deleted_at",
+    since: true,
+  };
+}
 
 /** A group's places: a place another commit bound to it keeps it. */
 const groupPlaces = (kind: "area" | "project"): Child => ({
@@ -276,7 +302,11 @@ const AREA_CHILDREN: readonly Child[] = [
   },
   groupPlaces("area"),
 ];
-const PROJECT_CHILDREN: readonly Child[] = [groupTasks("project_id"), groupPlaces("project")];
+const PROJECT_CHILDREN: readonly Child[] = [
+  groupTasks("project_id"),
+  groupPlaces("project"),
+  folderChild("project", "NULL"),
+];
 
 const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = {
   tasks: TASK_CHILDREN,
@@ -361,6 +391,39 @@ const SQL = {
     "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
   areaTaken: "SELECT * FROM areas WHERE slug = $slug AND deleted_at IS NULL AND id <> $id",
   projectTaken: "SELECT * FROM projects WHERE slug = $slug AND deleted_at IS NULL AND id <> $id",
+  folderTaken:
+    "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
+    "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
+  /** A project's live folders while the project is live. */
+  liveFoldersOfProject:
+    "SELECT f.id AS id FROM folders f JOIN projects p ON p.id = f.owner_id " +
+    "WHERE f.owner_kind = 'project' AND f.owner_id = $id AND f.deleted_at IS NULL " +
+    "AND p.deleted_at IS NULL",
+  liveProject: "SELECT 1 AS found FROM projects WHERE id = $id AND deleted_at IS NULL",
+  /** The projects that the tasks in `$tasks` are in now. */
+  projectsOfTasks:
+    "SELECT id, project_id AS project FROM tasks WHERE id IN (SELECT value FROM json_each($tasks)) " +
+    "AND project_id IS NOT NULL",
+  /** The project owners of the folders in `$folders`. */
+  ownersOfFolders:
+    "SELECT owner_id AS project FROM folders WHERE id IN (SELECT value FROM json_each($folders)) " +
+    "AND owner_kind = 'project'",
+  /** The live tasks of the deleted projects in `$projects`. */
+  liveTasksOfDeleted:
+    "SELECT t.id AS id, t.project_id AS project FROM tasks t JOIN projects p ON p.id = t.project_id " +
+    "WHERE p.id IN (SELECT value FROM json_each($projects)) AND p.deleted_at IS NOT NULL " +
+    "AND t.deleted_at IS NULL ORDER BY t.project_id, t.ref",
+  /** The live folders of the deleted projects in `$projects`. */
+  liveFoldersOfDeleted:
+    "SELECT f.id AS id, f.owner_id AS project FROM folders f JOIN projects p ON p.id = f.owner_id " +
+    "WHERE f.owner_kind = 'project' AND p.id IN (SELECT value FROM json_each($projects)) " +
+    "AND p.deleted_at IS NOT NULL AND f.deleted_at IS NULL ORDER BY f.owner_id, f.id",
+  /** The tasks in `$tasks`, or in a project in `$projects`, whose area is not their project's. */
+  outOfArea:
+    "SELECT t.id AS id, t.project_id AS project FROM tasks t JOIN projects p ON p.id = t.project_id " +
+    "WHERE (t.id IN (SELECT value FROM json_each($tasks)) " +
+    "OR t.project_id IN (SELECT value FROM json_each($projects))) " +
+    "AND t.area_id IS NOT p.area_id ORDER BY t.id",
   /**
    * The active holders, as they stand, of the keyed sources in `$sources` and of those the tasks
    * in `$tasks` link to (A1 3.6): an active task that is not deleted, with a live link to the live
@@ -791,6 +854,15 @@ function takenBy(
     found = conn
       .prepare(entity === "areas" ? SQL.areaTaken : SQL.projectTaken)
       .get({ slug: raw["slug"] as string, id: raw["id"] as string });
+  } else if (entity === "folders") {
+    // One live folder per owner and machine. Two live projects on one folder is a rule across
+    // rows, decided on the state the inversion makes (applyInversions).
+    found = conn.prepare(SQL.folderTaken).get({
+      kind: raw["owner_kind"] as string,
+      owner: raw["owner_id"] as string,
+      machine: raw["machine_id"] as string,
+      id: raw["id"] as string,
+    });
   }
   if (found === undefined) return undefined;
   const r = new RowReader(entity, found);
@@ -1010,56 +1082,325 @@ export interface Applied {
  *   every task the plan brought a learning back to. A task over the limit gets none of them back,
  *   and the conflict names each live learning the plan did not bring back, with who wrote it.
  *
+ * - **Two live projects never share one folder on one machine.** The statement reads the live
+ *   project folders of every machine whose folder the plan brought back or set back. A folder of
+ *   the plan's that another live project's folder holds by the machine's case rule does not come
+ *   back, and the conflict names that other folder's path, with who set it.
+ * - **A project and what is in it** (groupRules): a deleted project holds no live task and no live
+ *   folder, and a task in a project is in that project's area.
+ *
  * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
- * before the plan, and a partial inversion applies the rest: leaving a restore out only takes
- * holders and learnings away, so the rest breaks neither rule. A full inversion then applies
- * nothing and returns undefined, and `plan.conflicts` says why.
+ * before the plan, and a partial inversion applies the rest, checked again, since a folder left
+ * where it is can meet another the plan moves. A full inversion then applies nothing and returns
+ * undefined, and `plan.conflicts` says why.
  */
 export function applyInversions(
   conn: Connection,
   plan: InversionPlan,
   options: ApplyOptions,
 ): Applied | undefined {
-  const restores = restoresOf(plan.inversions);
-  if (restores.size === 0) return writeInversions(conn, plan.inversions, options);
-  conn.exec("SAVEPOINT restores");
-  const applied = writeInversions(conn, plan.inversions, options);
-  const broken: Broken = { undone: new Set(), named: [] };
-  brokenKeys(conn, restores, broken);
-  tooManyLearnings(conn, restores, broken);
-  if (broken.undone.size === 0) {
+  const checked = (inversions: readonly Inversion[]): boolean =>
+    restoresOf(inversions).size > 0 || inversions.some(inGroupRules);
+  if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
+  const since = Math.min(...plan.inversions.map((i) => i.change.seq));
+  for (;;) {
+    conn.exec("SAVEPOINT restores");
+    const applied = writeInversions(conn, plan.inversions, options);
+    const restores = restoresOf(plan.inversions);
+    const broken: Broken = { undone: new Set(), named: [] };
+    brokenKeys(conn, restores, broken);
+    tooManyLearnings(conn, restores, broken);
+    sharedFolders(conn, plan.inversions, broken);
+    groupRules(conn, plan.inversions, broken, { seq: options.seq, since });
+    if (broken.undone.size === 0) {
+      conn.exec("RELEASE restores");
+      return applied;
+    }
+    conn.exec("ROLLBACK TO restores");
+    const conflict = namer(conn, options);
+    const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
+    for (const n of broken.named) {
+      if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;
+      named.add(`${n.entity}|${n.id}|${n.field}`);
+      const row = readRow(conn, n.entity, n.id);
+      if (row === undefined) throw misuse("A row the plan read has gone");
+      plan.conflicts.push(
+        conflict(
+          {
+            entity: n.entity,
+            id: n.id,
+            ...(n.task === null ? {} : { task: n.task }),
+            field: n.field,
+            value: valueIn(n.entity, row.raw, n.field),
+          },
+          versionOf(row, n.field),
+        ),
+      );
+    }
+    plan.inversions = plan.inversions.filter((i) => !broken.undone.has(i));
     conn.exec("RELEASE restores");
-    return applied;
+    if (!options.partial) return undefined;
+    if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
   }
-  conn.exec("ROLLBACK TO restores");
-  const conflict = namer(conn, options);
-  const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
-  for (const n of broken.named) {
-    if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;
-    named.add(`${n.entity}|${n.id}|${n.field}`);
-    const row = readRow(conn, n.entity, n.id);
-    if (row === undefined) throw misuse("A row the plan read has gone");
-    plan.conflicts.push(
-      conflict(
-        {
-          entity: n.entity,
-          id: n.id,
-          task: n.task,
-          field: n.field,
-          value: columnsValue(row.raw, TABLES[n.entity].fields[n.field] ?? []),
-        },
-        versionOf(row, n.field),
-      ),
+}
+
+/**
+ * Two live projects on one folder of one machine (applyInversions): each folder row the plan wrote
+ * that is now a live project's live folder, compared with every other live project folder of its
+ * machine by that machine's case rule. On a clash the plan's inversions of that row stay undone,
+ * and the other row is named by its path.
+ */
+function sharedFolders(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
+  const mine = new Map<string, Inversion[]>();
+  const add = (id: string, inversion: Inversion): void => {
+    const list = mine.get(id);
+    if (list === undefined) mine.set(id, [inversion]);
+    else list.push(inversion);
+  };
+  for (const i of inversions) {
+    if (i.entity === "folders") add(i.id, i);
+    // A project brought back brings its live folders back into the rule.
+    if (i.entity === "projects" && i.field === "deleted") {
+      for (const row of conn.prepare(SQL.liveFoldersOfProject).all({ id: i.id })) {
+        add(String(row["id"]), i);
+      }
+    }
+  }
+  if (mine.size === 0) return;
+  const machines = new Map<string, { os: FolderOs; rows: FolderRow[] }>();
+  const machineRows = (machine: string) => {
+    let found = machines.get(machine);
+    if (found === undefined) {
+      const os = machineOs(conn, machine);
+      if (os === undefined) throw invalidValue("folders", "machine_id");
+      found = {
+        os,
+        rows: conn.prepare(FOLDER_SQL.liveProjectFolders).all({ machine }).map(decodeFolder),
+      };
+      machines.set(machine, found);
+    }
+    return found;
+  };
+  for (const [id, made] of mine) {
+    const row = conn.prepare(FOLDER_SQL.folder).get({ id });
+    if (row === undefined) throw misuse("A folder the plan wrote has gone");
+    const folder = decodeFolder(row);
+    if (folder.deleted || folder.ownerKind !== "project") continue;
+    // A deleted project's folder holds no folder from anyone (groupRules keeps it from staying).
+    if (conn.prepare(SQL.liveProject).get({ id: folder.ownerId }) === undefined) continue;
+    const { os, rows } = machineRows(folder.machineId);
+    const key = folderKey(folder.path, os);
+    const other = rows.find(
+      (r) => r.id !== folder.id && r.ownerId !== folder.ownerId && folderKey(r.path, os) === key,
     );
+    if (other === undefined) continue;
+    // The folder's own inversions stay undone, and a project's restore comes back without it. A
+    // folder that is live already keeps the project from coming back.
+    const own = made.filter((i) => i.entity === "folders");
+    for (const i of own.length > 0 ? own : made) broken.undone.add(i);
+    broken.named.push({ entity: "folders", id: other.id, task: null, field: "path" });
   }
-  plan.inversions = plan.inversions.filter((i) => !broken.undone.has(i));
-  if (!options.partial) {
-    conn.exec("RELEASE restores");
-    return undefined;
+}
+
+/** The inversions the group rules (groupRules) look at. */
+const inGroupRules = (i: Inversion): boolean =>
+  i.entity === "projects" ||
+  i.entity === "folders" ||
+  (i.entity === "tasks" && (i.field === "deleted" || i.field === "grouping"));
+
+/** The rows a write touched that the group rules look at, by ID. */
+export interface GroupTouch {
+  readonly projects: readonly string[];
+  readonly tasks: readonly string[];
+  readonly folders: readonly string[];
+  /** The projects whose area the write set, and the tasks whose project or area it set. */
+  readonly moved: readonly string[];
+  readonly regrouped: readonly string[];
+}
+
+/**
+ * Where a project and what is in it break their rules after a write: a deleted project that holds
+ * a live task or a live folder (`held`), or a task whose area is not its project's (`stray`).
+ */
+export interface GroupBreak {
+  readonly rule: "held" | "stray";
+  readonly project: string;
+  readonly child: { readonly entity: "tasks" | "folders"; readonly id: string };
+}
+
+/**
+ * The group rules on the state a write made, for the projects it touched, the projects of the
+ * tasks and folders it touched, and the tasks it moved: a deleted project holds no live task and no
+ * live folder, and a task in a project is in that project's area. Also the project each touched
+ * task is in now.
+ */
+export function groupBreaks(
+  conn: Connection,
+  touch: GroupTouch,
+): { breaks: GroupBreak[]; projectOf: Map<string, string> } {
+  const folders = hasFolders(conn) ? touch.folders : [];
+  const projectOf = new Map(
+    conn
+      .prepare(SQL.projectsOfTasks)
+      .all({ tasks: JSON.stringify(touch.tasks) })
+      .map((row) => [String(row["id"]), String(row["project"])]),
+  );
+  const projects = [
+    ...new Set([
+      ...touch.projects,
+      ...projectOf.values(),
+      ...(folders.length === 0
+        ? []
+        : conn
+            .prepare(SQL.ownersOfFolders)
+            .all({ folders: JSON.stringify(folders) })
+            .map((row) => String(row["project"]))),
+    ]),
+  ];
+  const breaks: GroupBreak[] = [];
+  const held = (entity: "tasks" | "folders", sql: string): void => {
+    for (const row of conn.prepare(sql).all({ projects: JSON.stringify(projects) })) {
+      breaks.push({
+        rule: "held",
+        project: String(row["project"]),
+        child: { entity, id: String(row["id"]) },
+      });
+    }
+  };
+  if (projects.length > 0) {
+    held("tasks", SQL.liveTasksOfDeleted);
+    if (hasFolders(conn)) held("folders", SQL.liveFoldersOfDeleted);
   }
-  const rest = writeInversions(conn, plan.inversions, options);
-  conn.exec("RELEASE restores");
-  return rest;
+  if (touch.moved.length > 0 || touch.regrouped.length > 0) {
+    const stray = conn.prepare(SQL.outOfArea).all({
+      tasks: JSON.stringify(touch.regrouped),
+      projects: JSON.stringify(touch.moved),
+    });
+    for (const row of stray) {
+      breaks.push({
+        rule: "stray",
+        project: String(row["project"]),
+        child: { entity: "tasks", id: String(row["id"]) },
+      });
+    }
+  }
+  return { breaks, projectOf };
+}
+
+/** Whether `found` holds between the rows `rowOf` gives (groupBreaks' statements, on any state). */
+export function brokenIn(
+  found: GroupBreak,
+  rowOf: (entity: "projects" | "tasks" | "folders", id: string) => Row | undefined,
+): boolean {
+  const project = rowOf("projects", found.project);
+  const child = rowOf(found.child.entity, found.child.id);
+  if (project === undefined || child === undefined) return false;
+  if (found.rule === "stray") {
+    return child["project_id"] === found.project && child["area_id"] !== project["area_id"];
+  }
+  const inside =
+    found.child.entity === "tasks"
+      ? child["project_id"] === found.project
+      : child["owner_kind"] === "project" && child["owner_id"] === found.project;
+  return inside && project["deleted_at"] !== null && child["deleted_at"] === null;
+}
+
+/**
+ * The group rules (groupBreaks) on the state the plan makes (applyInversions). When the plan
+ * breaks one, its inversions on its own side stay undone: a project's tombstone or move together
+ * with its folders' tombstones and its tasks' moves, or the task or folder it would bring into a
+ * deleted project. The other side is named, with who wrote it: for a task, who put it into the
+ * project.
+ *
+ * A break whose every side the plan set back (`seq`) or is older than the commits it inverts
+ * (`since`) is as it was before them: the plan brings back what a person had, also a break that an
+ * earlier version let in. Only a side written since by another makes it the plan's.
+ */
+function groupRules(
+  conn: Connection,
+  inversions: readonly Inversion[],
+  broken: Broken,
+  { seq, since }: { seq: number; since: number },
+): void {
+  const mine = new Map<string, Inversion[]>();
+  for (const i of inversions) {
+    if (!inGroupRules(i)) continue;
+    const key = `${i.entity}|${i.id}`;
+    const list = mine.get(key);
+    if (list === undefined) mine.set(key, [i]);
+    else list.push(i);
+  }
+  if (mine.size === 0) return;
+  const of = (entity: InvertibleEntity, id: string, field?: string): Inversion[] =>
+    (mine.get(`${entity}|${id}`) ?? []).filter((i) => field === undefined || i.field === field);
+  const ids = (entity: InvertibleEntity, field?: string): string[] =>
+    [...mine.keys()]
+      .filter((k) => k.startsWith(`${entity}|`))
+      .map((k) => k.slice(entity.length + 1))
+      .filter((id) => of(entity, id, field).length > 0);
+  const regrouped = ids("tasks", "grouping");
+  const { breaks, projectOf } = groupBreaks(conn, {
+    projects: ids("projects"),
+    tasks: ids("tasks"),
+    folders: ids("folders"),
+    moved: ids("projects", "grouping"),
+    regrouped,
+  });
+  const undo = (list: readonly Inversion[]): void => {
+    for (const i of list) broken.undone.add(i);
+  };
+  /** A project's own side: its tombstone with its folders', or its move with its tasks'. */
+  const projectSide = (project: string, field: "deleted" | "grouping"): Inversion[] => {
+    const own = of("projects", project, field);
+    if (own.length === 0) return own;
+    if (field === "grouping") {
+      return [
+        ...own,
+        ...regrouped
+          .filter((t) => projectOf.get(t) === project)
+          .flatMap((t) => of("tasks", t, "grouping")),
+      ];
+    }
+    const theirs = conn
+      .prepare(FOLDER_SQL.allOfOwner)
+      .all({ kind: "project", owner: project })
+      .flatMap((row) => of("folders", String(row["id"]), "deleted"));
+    return [...own, ...theirs];
+  };
+  const asBefore = ([entity, id, field]: readonly [InvertibleEntity, string, string]): boolean => {
+    const row = readRow(conn, entity, id);
+    if (row === undefined) throw misuse("A row the plan read has gone");
+    const version = versionOf(row, field);
+    return version === seq || version < since;
+  };
+  const sides = ({ rule, project, child }: GroupBreak) =>
+    rule === "stray"
+      ? ([
+          ["projects", project, "grouping"],
+          ["tasks", child.id, "grouping"],
+        ] as const)
+      : ([
+          ["projects", project, "deleted"],
+          [child.entity, child.id, "deleted"],
+          ...(child.entity === "tasks" ? ([["tasks", child.id, "grouping"]] as const) : []),
+        ] as const);
+  for (const found of breaks) {
+    if (sides(found).every(asBefore)) continue;
+    const { rule, project, child } = found;
+    const task = child.entity === "tasks" ? (child.id as Id<"t">) : null;
+    const side = projectSide(project, rule === "held" ? "deleted" : "grouping");
+    const brought =
+      rule === "held" ? of(child.entity, child.id) : of("tasks", child.id, "grouping");
+    if (side.length > 0) {
+      undo(side);
+      const field = child.entity === "tasks" ? "grouping" : "deleted";
+      broken.named.push({ entity: child.entity, id: child.id, task, field });
+    } else if (brought.length > 0) {
+      undo(brought);
+      const field = rule === "held" ? "deleted" : "grouping";
+      broken.named.push({ entity: "projects", id: project, task: null, field });
+    }
+  }
 }
 
 /** The entities whose restores a rule across rows counts. */
@@ -1078,11 +1419,14 @@ function restoresOf(inversions: readonly Inversion[]): Map<string, Inversion> {
 /** What the rules across rows found: the restores that stay undone, and the rows that block them. */
 interface Broken {
   undone: Set<Inversion>;
-  /** A standing holder's link, a holder's lifecycle, or a live learning. */
+  /**
+   * A standing holder's link, a holder's lifecycle, a live learning, another's folder, or a
+   * project and what is in it.
+   */
   named: {
-    entity: "tasks" | "task_sources" | "learnings";
+    entity: "tasks" | "task_sources" | "learnings" | "folders" | "projects";
     id: string;
-    task: Id<"t">;
+    task: Id<"t"> | null;
     field: string;
   }[];
 }

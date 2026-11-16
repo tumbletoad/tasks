@@ -19,8 +19,8 @@
 // - space-opens, integrity: the space opens with no reason to refuse its next writer but an older
 //   revision, and passes integrity_check and foreign_key_check.
 // - migration-atomic: the schema revision is one the build reaches by whole migrations (0.1 or
-//   0.5, never one between), the schema is exactly that revision's, the format matches, and the
-//   history holds one migration commit per step it went through. At 0.5 the search index equals
+//   0.6, never one between), the schema is exactly that revision's, the format matches, and the
+//   history holds one migration commit per step it went through. At 0.6 the search index equals
 //   a rebuild of the space's tasks: it is written in the same transaction as what it indexes.
 // - seq-gapless: commits are numbered 1 to last_seq without a gap.
 // - counters-monotonic: within an incarnation, last_seq and the next task reference never go back
@@ -88,9 +88,11 @@ import {
   REVISION_0_3,
   REVISION_0_4,
   REVISION_0_5,
+  REVISION_0_6,
   TABLES_0_2,
   TABLES_0_3,
   TABLES_0_4,
+  TABLES_0_5,
 } from "./steps.ts";
 
 const BUSY_TIMEOUT_MS = 60_000;
@@ -185,7 +187,7 @@ export async function checkSpace(
   const { conn } = opened;
   // The next writer must be able to open what the kill left: a reader's reason other than the
   // older revision the writer migrates (A1 3.17) would refuse it, which a reader alone hides.
-  const allowed = encodeRevision(opened.revision) < REVISION_0_5 ? ["older_revision"] : [];
+  const allowed = encodeRevision(opened.revision) < REVISION_0_6 ? ["older_revision"] : [];
   for (const reason of opened.readOnlyReasons) {
     if (!allowed.includes(reason)) {
       found.add("space-opens", `the space opens read-only for its writer (${reason})`);
@@ -291,14 +293,14 @@ function reconcile(space: SpaceRow, ledger: Ledger, found: Found): void {
 }
 
 function checkMigration(conn: Connection, space: SpaceRow, revision: number, found: Found): void {
-  if (revision !== REVISION_0_1 && revision !== REVISION_0_5) {
+  if (revision !== REVISION_0_1 && revision !== REVISION_0_6) {
     found.add(
       "migration-atomic",
       `the schema is at revision ${String(revision)}, between whole migrations`,
     );
     return;
   }
-  const at = revision === REVISION_0_5 ? { major: 0, minor: 5 } : { major: 0, minor: 1 };
+  const at = revision === REVISION_0_6 ? { major: 0, minor: 6 } : { major: 0, minor: 1 };
   if (space.format.major !== at.major || space.format.minor !== at.minor) {
     found.add("migration-atomic", "the space's format is not its revision's");
   }
@@ -334,7 +336,12 @@ function checkMigration(conn: Connection, space: SpaceRow, revision: number, fou
       found.add("migration-atomic", "the search index differs from a rebuild of the space");
     }
   }
-  // The stand-in 0.5: its table, column and index.
+  // The real 0.5: the folders table.
+  const atLeast05 = revision >= REVISION_0_5;
+  if (tables(TABLES_0_5).some((n) => (n === 1) !== atLeast05)) {
+    found.add("migration-atomic", "the 0.5 step's table does not match the revision");
+  }
+  // The stand-in 0.6: its table, column and index.
   const table = one(
     conn,
     "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'test_labels'",
@@ -347,11 +354,11 @@ function checkMigration(conn: Connection, space: SpaceRow, revision: number, fou
     conn,
     "SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = 'test_labels_name'",
   );
-  const at05 = revision === REVISION_0_5;
-  if ((table === 1) !== at05 || (column === 1) !== at05 || (index === 1) !== at05) {
+  const at06 = revision === REVISION_0_6;
+  if ((table === 1) !== at06 || (column === 1) !== at06 || (index === 1) !== at06) {
     found.add(
       "migration-atomic",
-      "the 0.5 step's table, column and index do not match the revision",
+      "the 0.6 step's table, column and index do not match the revision",
     );
   }
   const steps = conn
@@ -361,7 +368,7 @@ function checkMigration(conn: Connection, space: SpaceRow, revision: number, fou
     const entry = (JSON.parse(s.ops) as { input?: { to?: string } }[])[0];
     return entry?.input?.to ?? "?";
   });
-  const expected = revision === REVISION_0_5 ? ["0.2", "0.3", "0.4", "0.5"] : [];
+  const expected = revision === REVISION_0_6 ? ["0.2", "0.3", "0.4", "0.5", "0.6"] : [];
   if (targets.join() !== expected.join()) {
     found.add(
       "migration-atomic",
@@ -1118,6 +1125,8 @@ const HISTORY_TABLES: readonly { table: string; key: string; fields: Fields }[] 
   // Schema 0.3 (M6.01): there from that revision on. The workload writes none yet.
   { table: "sessions", key: "id", fields: {} },
   { table: "runs", key: "id", fields: CHILD_FIELDS.runs },
+  // Schema 0.5: there from that revision on. The workload writes none yet.
+  { table: "folders", key: "id", fields: CHILD_FIELDS.folders },
 ];
 
 const DERIVED = new Set<string>([...DERIVED_COLUMNS, "entity_id"]);
@@ -1190,7 +1199,7 @@ function checkRows(
       }
       version = Math.max(version, at);
     }
-    // Every column the row had when it was created. A column a migration added since (the 0.5
+    // Every column the row had when it was created. A column a migration added since (the 0.6
     // step's test_flag) has no history to compare with.
     for (const column of Object.keys(played)) {
       if (DERIVED.has(column)) continue;
