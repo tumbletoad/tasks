@@ -56,7 +56,10 @@ export function itemsOf(
   const items: Item[] = [];
   let rows = 0;
   groups.forEach((group, g) => {
-    items.push({ kind: "group", key: `g:${group.key}`, group, first: g === 0 });
+    // A flat group has no heading: its rows stand on their own (A5 3.5).
+    if (group.kind !== "flat") {
+      items.push({ kind: "group", key: `g:${group.key}`, group, first: g === 0 });
+    }
     for (const section of group.sections) {
       const sectionKey = `s:${section.key}`;
       if (section.title !== undefined) {

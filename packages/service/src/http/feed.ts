@@ -145,6 +145,10 @@ const TASK_COLUMNS =
   "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
   "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
   "t.created_at, t.version, t.touched, " +
+  // When a waiting task's wait began (the Waiting view's age): the commit that last changed its
+  // status, or its creation. A new person waited on is the same wait.
+  "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
+  "json_extract(t.fv, '$.status')), t.created_at) END AS waiting_since, " +
   // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
   // and `place` by `taskRows`. A `$machine` of null (no machine given) matches no place.
   "(SELECT json_group_array(json_object('p', x.position, 'kind', x.kind, 'title', x.title, " +
