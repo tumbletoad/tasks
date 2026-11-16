@@ -29,7 +29,7 @@ export function createClient(transport: ClientTransport) {
         apply: (input: InputOf<"import.planning.apply">): Promise<OutputOf<"import.planning.apply">> => call("import.planning.apply", input),
         /** Dry run of the Planning prototype import: a report and a preview token. */
         preview: (input: InputOf<"import.planning.preview">): Promise<OutputOf<"import.planning.preview">> => call("import.planning.preview", input),
-        /** Undo an applied import; tasks changed since stay as they are and are listed. */
+        /** Undo an applied import; a task changed since stays as it is and is listed. */
         undo: (input: InputOf<"import.planning.undo">): Promise<OutputOf<"import.planning.undo">> => call("import.planning.undo", input),
       },
     },

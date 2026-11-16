@@ -42,7 +42,7 @@ and never a field you changed since: such a field is listed as a conflict and ke
   --checked-as completed|review    A checked task: completed (default) or kept in Review
   --include-orphans                Create metadata entries without a task line, in Backlog
   --apply <run> --token <token>    Apply the dry run with that run ID and token
-  --undo <run>                     Undo that applied run; tasks changed since stay as they are
+  --undo <run>                     Undo that applied run; a task changed since stays as it is
 
 The dry run's token stops being valid when the space or the prototype folder changes: run the dry
 run again. Only the user can run this, in an interactive terminal.
@@ -272,7 +272,7 @@ function applied(r: ImportPlanningApplyResult): string {
 /** An undo's answer for a person. */
 function undone(r: ImportPlanningUndoResult): string {
   const lines = [
-    `Undid run ${r.run}: ${String(r.removed)} tasks removed, ${String(r.restored)} set back.`,
+    `Undid run ${r.run}: removed ${String(r.removed)} tasks, set back ${String(r.restored)}.`,
   ];
   if (r.kept.length > 0) {
     lines.push("Changed since the import, kept as they are:");

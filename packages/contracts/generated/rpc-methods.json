@@ -2027,7 +2027,7 @@
       },
       "remote": "never",
       "scope": "space:write",
-      "summary": "Undo an applied import; tasks changed since stay as they are and are listed."
+      "summary": "Undo an applied import; a task changed since stays as it is and is listed."
     },
     {
       "actorKinds": [

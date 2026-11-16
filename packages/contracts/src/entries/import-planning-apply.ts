@@ -189,7 +189,7 @@ export const importPlanningApply = defineEntry({
 
 export const importPlanningUndo = defineEntry({
   name: "import.planning.undo",
-  summary: "Undo an applied import; tasks changed since stay as they are and are listed.",
+  summary: "Undo an applied import; a task changed since stays as it is and is listed.",
   kind: "write",
   actors: "user",
   scope: "space:write",
