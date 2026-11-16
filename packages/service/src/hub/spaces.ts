@@ -1699,7 +1699,9 @@ export class SpaceManager {
     space.hold(work);
     // A close that failed may have left the worker running: its watch then stays.
     void work.then(
-      () => this.#unwatch(worker),
+      () => {
+        this.#unwatch(worker);
+      },
       () => undefined,
     );
     return false;

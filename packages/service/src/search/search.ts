@@ -125,7 +125,9 @@ const SNIPPETS =
   "FROM json_each($docs) j LEFT JOIN search_docs d ON d.doc = j.value";
 
 const MATCH_START = "\u0002";
-const unmarked = (text: string): string => text.replace(/[\u0002\u0003]/gu, "");
+const MATCH_END = "\u0003";
+const unmarked = (text: string): string =>
+  text.replaceAll(MATCH_START, "").replaceAll(MATCH_END, "");
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 const rows = (value: unknown): Row[] => (Array.isArray(value) ? (value as Row[]) : []);
