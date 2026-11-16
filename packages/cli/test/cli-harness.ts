@@ -16,6 +16,7 @@ import { isAgentMarker } from "@tasks/bridge/protocol";
 import {
   openSession,
   readServiceJson,
+  registerSpaces,
   removeRuntimeDirOf,
   serviceEnv,
   Services,
@@ -78,11 +79,11 @@ export interface CliWorld {
 
 /**
  * Starts a service child with one space, "Mira" (prefix M), created by the user. `env` adds to the
- * service's environment.
+ * service's environment; `machineToml` is machine.toml's text before the service starts.
  */
 export async function startWorld(
   label: string,
-  options: { readonly env?: Record<string, string> } = {},
+  options: { readonly env?: Record<string, string>; readonly machineToml?: string } = {},
 ): Promise<CliWorld> {
   const temp = tempRoot(label);
   const home = join(temp.root, "h");
@@ -90,6 +91,7 @@ export async function startWorld(
   const children = new Set<ReturnType<typeof spawn>>();
   let json: ServiceJson | undefined;
   try {
+    if (options.machineToml !== undefined) registerSpaces(home, [], {}, options.machineToml);
     const install = INSTALLED === undefined ? undefined : layoutTestInstall(INSTALLED, home);
     const service = services.start(home, {
       ...(install === undefined ? {} : { command: [install.launcher, "serve"] as const }),

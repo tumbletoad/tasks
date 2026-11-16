@@ -19,8 +19,20 @@ import {
   type Spawner,
   type TicketControl,
 } from "./accept.ts";
-import { scopeCommand, scopeProbe, scopeUnit, terminalCommand } from "./commands.ts";
-import { terminalChain, type ChainEntry, type TerminalHost } from "./detect.ts";
+import {
+  scopeCommand,
+  scopeProbe,
+  scopeUnit,
+  terminalCommand,
+  type AdapterApp,
+} from "./commands.ts";
+import {
+  terminalChoice,
+  type ChainEntry,
+  type TerminalChoice,
+  type TerminalHost,
+  type TerminalSource,
+} from "./detect.ts";
 import type { DispatchOutcome } from "../machine.ts";
 
 /** How long the scope probe may take. */
@@ -36,8 +48,13 @@ export interface TerminalLauncherOptions {
    * or `node <entry>` for a service run from source. `shim <ticket>` follows it.
    */
   readonly shimCommand: readonly string[] | undefined;
-  /** Detection's view of this machine, with the session's TERMINAL and the person's PATH. */
-  readonly host: (session: Readonly<Record<string, string>>) => TerminalHost;
+  /**
+   * Detection's view of this machine, with the session's variables, the person's PATH and, on
+   * Windows, the default terminal setting read now.
+   */
+  readonly host: (
+    session: Readonly<Record<string, string>>,
+  ) => TerminalHost | Promise<TerminalHost>;
   /** `systemd-run`, absolute, or undefined (no user manager, or not Linux). */
   readonly systemdRun: string | undefined;
   /** `true`, absolute, for the scope probe. */
@@ -110,22 +127,28 @@ export class TerminalLauncher {
     }
   }
 
-  /** The chain for this launch: settings over what this machine has now. */
-  chain(session: Readonly<Record<string, string>>): ChainEntry[] {
-    return terminalChain(this.#o.settings, this.#o.host(session));
+  /** The choice a launch now would make: settings over what this machine has now (doctor). */
+  async choose(session: Readonly<Record<string, string>>): Promise<TerminalChoice> {
+    return terminalChoice(this.#o.settings, await this.#o.host(session));
   }
 
-  /** Starts the launch's terminal by the chain and the acceptance rules. */
-  async start(
-    input: TerminalStartInput,
-  ): Promise<{ outcome: DispatchOutcome; attempts: Attempt[]; scoped: boolean }> {
+  /**
+   * Starts the launch's terminal by the chain and the acceptance rules. `terminal` is the one that
+   * was Dispatched, with why it was in the chain.
+   */
+  async start(input: TerminalStartInput): Promise<{
+    outcome: DispatchOutcome;
+    attempts: Attempt[];
+    scoped: boolean;
+    terminal?: { app: AdapterApp; source: TerminalSource };
+  }> {
     const product = this.#o.shimCommand;
     if (product === undefined || product.length === 0) {
       return { outcome: { kind: "refused", reason: "refused" }, attempts: [], scoped: false };
     }
     const scoped = await this.scopes(input.env);
-    const host = this.#o.host(input.session);
-    const chain = terminalChain(this.#o.settings, host);
+    const host = await this.#o.host(input.session);
+    const chain = terminalChoice(this.#o.settings, host).chain;
     const run = this.#o.systemdRun;
     const build = (entry: ChainEntry, ticket: string, attempt: number) => {
       const command = terminalCommand({
@@ -159,6 +182,17 @@ export class TerminalLauncher {
       ...(this.#o.watchMs === undefined ? {} : { watchMs: this.#o.watchMs }),
       ...(this.#o.sleep === undefined ? {} : { sleep: this.#o.sleep }),
     });
-    return { ...result, scoped };
+    // The last attempt is the one that ended the chain; it was Dispatched when the outcome is not
+    // a refusal. Each adapter is in the chain once.
+    const last = result.attempts.at(-1);
+    const used =
+      result.outcome.kind === "refused" || last === undefined
+        ? undefined
+        : chain.find((entry) => entry.app === last.app);
+    return {
+      ...result,
+      scoped,
+      ...(used === undefined ? {} : { terminal: { app: used.app, source: used.source } }),
+    };
   }
 }
