@@ -1,7 +1,7 @@
-// Agents (A5 3.5, 3.14) as far as the page's data allows: "Recent", the tasks an agent or a routine
+// Agents as far as the page's data allows: "Recent", the tasks an agent or a routine
 // changed while this tab followed the space, newest first, one small heading per day. The rows are
 // ordinary rows, so a task expands to its thread, where the changes are. "Running", "Routines" and
-// the full history with Revert wait for the service's read of sessions, runs and routines (A5 3.5).
+// the full history with Revert wait for the service's read of sessions, runs and routines.
 import { useCallback, useContext, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
@@ -43,7 +43,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
               }),
         sections: [{ key: `d:${day.date}`, tasks: day.tasks }],
       }));
-      // The expanded task stays shown while it is expanded, at the top of the list (A5 3.3).
+      // The expanded task stays shown while it is expanded, at the top of the list.
       const shown =
         held !== undefined && days.some((d) => d.tasks.some((r) => r.id === held.task.id));
       if (held === undefined || shown) return out;

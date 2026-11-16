@@ -1,12 +1,12 @@
-// The views of the sidebar (A5 3.3, 3.4, 3.5) as pure functions of the live rows, so membership and
-// the counts are unit tests. Today's sections and week strip are `todayOf` (A5 3.4); each status
-// view's grouping is `VIEW_LIST` (A5 3.5).
+// The views of the sidebar as pure functions of the live rows, so membership and
+// the counts are unit tests. Today's sections and week strip are `todayOf`; each status
+// view's grouping is `VIEW_LIST`.
 //
 // - Status views are disjoint (U5): Inbox holds the tasks with the inbox flag, and Open, Waiting,
 //   Review and Backlog hold the other active tasks by status. So the counts add up.
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
-// - Every view is always in the sidebar, in its fixed place, whatever it holds (A5 3.3).
-// - Completed and Agents read data the live store does not hold (A5 3.25: completed tasks are never
+// - Every view is always in the sidebar, in its fixed place, whatever it holds.
+// - Completed and Agents read data the live store does not hold (completed tasks are never
 //   in it): Completed is a paged query (views/Completed.tsx), Agents the tab's change log.
 import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
@@ -26,7 +26,7 @@ export const VIEWS = [
 ] as const;
 export type View = (typeof VIEWS)[number];
 
-/** The landing view of a space (A5 3.3: Today, a preference later). */
+/** The landing view of a space: Today, a preference later. */
 export const LANDING: View = "today";
 
 export const COUNTED = ["inbox", "open", "waiting", "review", "backlog"] as const;
@@ -109,12 +109,12 @@ export function sidebarEntries(
   );
 }
 
-/** How a status view lists what it holds (A5 3.5), and the line it shows when it holds nothing. */
+/** How a status view lists what it holds, and the line it shows when it holds nothing. */
 export interface ViewList {
-  /** What the grouping states, so the rows leave it out (A5 3.6). */
+  /** What the grouping states, so the rows leave it out. */
   readonly grouping: Grouping;
   readonly group: GroupTasks;
-  /** The empty line (A5 3.16). */
+  /** The empty line. */
   readonly empty: MessageId;
 }
 
@@ -125,18 +125,18 @@ export const VIEW_LIST: Readonly<Record<CountedView, ViewList>> = {
   open: { grouping: "area", group: groupTasks, empty: "view.empty.open" },
   // By the person waited on, who is the group's heading.
   waiting: { grouping: "person", group: personGroups, empty: "view.empty.waiting" },
-  // Flat, newest first. Pending proposals join it with M5.09 (A5 3.10).
+  // Flat, newest first.
   review: { grouping: "flat", group: flatGroups, empty: "view.empty.review" },
   backlog: { grouping: "area", group: groupTasks, empty: "view.empty.backlog" },
 };
 
-/** An area view: every open task of the area (A5 3.5), or of one of its projects. */
+/** An area view: every open task of the area, or of one of its projects. */
 export function areaFilter(area: string, project?: string): (task: TaskRow) => boolean {
   return (task) => task.area_id === area && (project === undefined || task.project_id === project);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Today (A5 3.4): the week strip, then Focus, This week, Next and Changes. A task appears in the
+// Today: the week strip, then Focus, This week, Next and Changes. A task appears in the
 // first section that selects it and in no other, so the sections are disjoint by construction:
 // each section takes only what the sections before it left. Computed from the task rows in the
 // client, never by a model: Today reads what the space holds (a star is `focus_on`, a plan is
@@ -157,16 +157,16 @@ export const isTodaySection = (value: string): value is TodaySection =>
 
 /** Next's length until the preference `today.next_limit` reaches the page (A5 open item 5). */
 export const NEXT_LIMIT = 3;
-/** Changes shows at most this many lines (A5 3.4, 3.14). */
+/** Changes shows at most this many lines. */
 export const CHANGES_LIMIT = 5;
-/** A change older than this drops off Changes (A5 3.14). */
+/** A change older than this drops off Changes. */
 export const CHANGES_DAYS = 7;
-/** The strip draws this many marks under a day, then a plus (A5 3.4). */
+/** The strip draws this many marks under a day, then a plus. */
 export const STRIP_MARKS = 4;
 
 const DAY_MS = 86_400_000;
 
-/** An agent's change to a task (A5 3.14's digest, as far as the page knows it). */
+/** An agent's change to a task, as far as the page knows it. */
 export interface TaskChange {
   readonly task: string;
   /** The actor's label ("Codex"). */
@@ -240,7 +240,7 @@ const plannedOf = (task: TaskRow): string | undefined =>
     ? task.planned_for
     : undefined;
 
-/** Starred: `focus_on` today or earlier. The star carries over until it is cleared (A5 3.4). */
+/** Starred: `focus_on` today or earlier. The star carries over until it is cleared. */
 export const isStarred = (task: TaskRow, today: string): boolean =>
   task.focus_on !== undefined && task.focus_on <= today;
 
@@ -488,7 +488,7 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
 }
 
 // ---------------------------------------------------------------------------------------------
-// Agents (A5 3.5, 3.14) until the service has a read of sessions, runs and routines: "Recent", the
+// Agents until the service has a read of sessions, runs and routines: "Recent", the
 // tasks an agent or a routine changed while this tab followed the space (the change log Today's
 // Changes reads), newest first, one group per day of the change.
 
@@ -524,7 +524,7 @@ export interface HeldTask {
 }
 
 /**
- * Today's sections with the expanded task kept where it was shown (A5 3.3, 3.15: nothing moves
+ * Today's sections with the expanded task kept where it was shown (nothing moves
  * under focus). An update that moves the expanded task inside its section, to another section,
  * or off Today, leaves it at its place in the section it was in until it is collapsed, with its
  * latest data. An expanded task Today has not shown (a link or a reload names it) sits at the top

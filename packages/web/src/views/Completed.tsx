@@ -1,8 +1,8 @@
-// Completed (A5 3.5): finished tasks in "Checked off" and one group per completion month, read in
-// pages (completed.ts) because the live store never holds them (A5 3.25). The paged query restarts
+// Completed: finished tasks in "Checked off" and one group per completion month, read in
+// pages (completed.ts) because the live store never holds them. The paged query restarts
 // whenever the feed could change which tasks it holds or their order (queries.ts: a lifecycle,
 // wrap or deletion change), so a task that is completed while the view is open appears in it; the
-// one list keeps focus and scroll on the same task across the restart (A5 3.15 item 6).
+// one list keeps focus and scroll on the same task across the restart.
 import { useCallback, useContext, useMemo, useRef } from "react";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";

@@ -1,9 +1,8 @@
-// Completed (A5 3.5): finished tasks, read in pages because the live store never holds them (A5
-// 3.25). Pure parts, so the order and the groups are unit tests: the page source over `task.search`
+// Completed: finished tasks, read in pages because the live store never holds them. Pure parts, so the order and the groups are unit tests: the page source over `task.search`
 // and the grouping into "Checked off" and one group per completion month.
 //
 // The source reads whole windows, so a window's order is the completion date's, newest first,
-// whatever order the search returns them in (it orders without words by due date, A3 3.9.3):
+// whatever order the search returns them in (it orders without words by due date):
 //
 // 1. "Checked off": completed tasks whose outcome is still missing (`is:unwrapped`).
 // 2. Then one window per completion month, newest first: this month from its first day on, then
@@ -12,7 +11,7 @@
 //
 // A page is one or more whole windows: at least as many rows as the page asked for, unless the
 // windows ran out. The cursor names the next month to read. A window holds at most the 1,000 tasks
-// a search freezes (A3 3.9.5); more than that in one month is a limit stated in A5 3.5.
+// a search freezes; more than that in one month is a limit.
 import type { Client } from "@tasks/contracts/generated/client.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { Group } from "../groups.ts";
@@ -28,12 +27,12 @@ type SearchInput = Parameters<Client["task"]["search"]>[0];
 /** The search entry the source reads through. */
 export type Search = (input: SearchInput) => Promise<SearchResult>;
 
-/** The most rows one search call returns (A3 3.4.3). */
+/** The most rows one search call returns. */
 const SEARCH_PAGE = 50;
 /** How far back the source steps at most: a guard, never reached by a real space. */
 const MAX_MONTHS = 1_200;
 
-/** Completed tasks whose outcome is still missing: the checked-off list (A1, A5 3.5). */
+/** Completed tasks whose outcome is still missing: the checked-off list. */
 export const CHECKED_OFF_QUERY = "is:unwrapped";
 /** Every other finished task: the month windows. */
 const NOT_CHECKED_OFF = `-${CHECKED_OFF_QUERY}`;
@@ -106,7 +105,7 @@ export function rowOfSearch(
     (p) => p.title === row.project && (area === undefined || p.area_id === area.id),
   );
   const due = row.due;
-  // Without words the snippet is the summary (A3 3.9.4).
+  // Without words the snippet is the summary.
   const summary = row.snippet_from === undefined ? row.snippet : undefined;
   return {
     id: row.id,
@@ -198,9 +197,9 @@ export function completedGroupOf(row: TaskRow, timeZone: string): string {
 const CHECKED_LABEL: MessageId = "group.checkedOff";
 
 /**
- * Completed's groups (A5 3.5): "Checked off" first, then one group per completion month, newest
+ * Completed's groups: "Checked off" first, then one group per completion month, newest
  * first, each in the order the rows came in. `held` is the expanded task when the rows do not hold
- * it (a link named it, or it left the list while expanded): it sits at the top of its group (A5 3.3).
+ * it (a link named it, or it left the list while expanded): it sits at the top of its group.
  */
 export function completedGroups(
   rows: readonly TaskRow[],
