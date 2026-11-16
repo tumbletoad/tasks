@@ -539,8 +539,8 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
   test("strictly inside: resolution, case on Windows, prefixes", () => {
     expect(
       isStrictlyInside(
-        "C:\\Users\\M\\tasks-test\\m0-09",
-        "c:\\users\\m\\TASKS-TEST\\m0-09\\a",
+        "C:\\Users\\M\\Scratch\\s-09",
+        "c:\\users\\m\\SCRATCH\\s-09\\a",
         true,
       ),
     ).toBe(process.platform === "win32");

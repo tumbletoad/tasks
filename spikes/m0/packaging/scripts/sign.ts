@@ -5,7 +5,7 @@
 //
 // Generates the key with ssh-keygen in the given folder, writes SHA256SUMS, SHA256SUMS.sshsig and
 // install-<version>.sh/.ps1 (which pin the throwaway public key), then deletes the key. There is no
-// option to use any other key: real release signing is a later, manual step on the owner's machine.
+// option to use any other key: real releases are signed by the release workflow.
 import { mkdirSync, readdirSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { defaultDist } from "../src/paths.ts";
