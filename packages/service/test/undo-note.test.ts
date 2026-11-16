@@ -1,0 +1,86 @@
+// An undo whose optional note cannot be read (A3 3.7.4): the undo has applied, so its answer says
+// so, without the note, and a second plain undo is never needed to learn that. The note's read
+// fails through a stand-in for read.ts's readScriptChange. A service in this process, fixture
+// text and temporary folders only.
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { HistoryUndoResult } from "@tasks/contracts";
+import { opCall, type Caller } from "../src/ops/index.ts";
+import { contractWorld, type ContractWorld } from "./contract/suite.ts";
+
+const gate = vi.hoisted(() => ({ fail: false }));
+
+vi.mock("../src/ops/read.ts", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../src/ops/read.ts")>();
+  return {
+    ...real,
+    readScriptChange: async (...args: Parameters<typeof real.readScriptChange>) => {
+      if (gate.fail) throw new Error("Fixture: the space closed before the note was read");
+      return real.readScriptChange(...args);
+    },
+  };
+});
+
+type Json = Record<string, unknown>;
+let w: ContractWorld & { root: string };
+const LONG = 120_000;
+
+beforeAll(async () => {
+  w = await contractWorld("undonote");
+}, LONG);
+afterAll(async () => {
+  await w.close();
+}, LONG);
+
+const USER: Caller = { class: "cli-interactive", env: {} };
+const SCRIPT: Caller = { class: "cli-script", env: {} };
+
+const call = async (op: string, input: Json, caller: Caller = USER): Promise<Json> =>
+  (await opCall(w.service.ops, caller, { op, input })) as Json;
+
+let n = 0;
+const rid = () => `fixture-undonote-${String((n += 1)).padStart(6, "0")}`;
+const asOf = async () => (await call("space.status", {}))["as_of"] as string;
+const set = async (task: string, values: Json, caller: Caller = USER): Promise<Json> =>
+  call("task.update", { task, set: values, base: await asOf(), request_id: rid() }, caller);
+const show = async (task: string): Promise<Json> =>
+  (await call("task.get", { task }))["task"] as Json;
+
+async function add(title: string): Promise<string> {
+  const added = await call("task.add", { tasks: [{ title }], request_id: rid() });
+  return String((added["tasks"] as Json[])[0]?.["ref"]);
+}
+
+describe("[A3.3.7.actors.script-undo-note.unread] an undo whose note cannot be read", () => {
+  test(
+    "reports the undo it applied, leaves the note out, and a replay answers the same",
+    async () => {
+      const mine = await add("Fixture task the person changes");
+      const scripts = await add("Fixture task a script changes");
+      await set(mine, { summary: "Fixture summary to undo" });
+      await set(scripts, { summary: "Fixture summary by a script" }, SCRIPT);
+
+      gate.fail = true;
+      const request_id = rid();
+      let undone: Json;
+      try {
+        undone = await call("history.undo", { request_id });
+      } finally {
+        gate.fail = false;
+      }
+      expect(HistoryUndoResult.parse(undone)).toMatchObject({ result: "undone", tasks: [mine] });
+      expect(undone).not.toHaveProperty("script_change");
+      expect((await show(mine))["summary"]).toBe("");
+      // The script's change stands, and the person's earlier add was not undone a second time.
+      expect((await show(scripts))["summary"]).toBe("Fixture summary by a script");
+      expect((await show(mine))["title"]).toBe("Fixture task the person changes");
+      // The same request again replays the undo, now with the note it can read.
+      expect(await call("history.undo", { request_id })).toMatchObject({
+        result: "undone",
+        commit: undone["commit"],
+        replayed: true,
+        script_change: { task: scripts },
+      });
+    },
+    LONG,
+  );
+});

@@ -138,7 +138,12 @@ export interface WindowsTools {
 export interface ServiceContext extends InstallFacts {
   readonly roots: ServiceRoots;
   readonly run: Runner;
-  readonly startDetached: (file: string, args: readonly string[]) => void;
+  /** process.ts startDetached; `cwd` is where the program runs when that folder exists. */
+  readonly startDetached: (
+    file: string,
+    args: readonly string[],
+    options?: { readonly cwd?: string },
+  ) => void;
   readonly registry: Registry;
   /** Undefined when System32 cannot be found (and on Linux and macOS). */
   readonly windows: WindowsTools | undefined;

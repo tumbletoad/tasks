@@ -63,13 +63,16 @@ interface Refused {
  * exit.json 0600): folders 0700, files 0600, except service.lock and update.lock, which A2 3.2.3
  * makes 0644. The socket's own mode is listen's 0777 masked by the umask: its 0700 folder is what
  * keeps every other user from it, so no mode is set on it by path (A2 3.2.2 rule 5). A link has no
- * mode of its own on Linux; the install's `current` and stable command are the only ones.
+ * mode of its own on Linux; the install's `current` and stable command are the only ones. The
+ * projection's files in the space's `view/`, and their temporary files, are read-only, 0400, from their
+ * creation (A1 3.13); its record and journal, in the state's `spaces/`, are 0600 like every other file.
  */
 function planned(entry: Entry, umask: number): number {
   if (entry.type === "folder") return 0o700;
   if (entry.type === "socket") return 0o777 & ~umask;
   if (entry.type === "link") return entry.mode;
   if (entry.path.endsWith("/service.lock") || entry.path.endsWith("/update.lock")) return 0o644;
+  if (/^sp\/work\/view\//.test(entry.path)) return 0o400;
   return 0o600;
 }
 

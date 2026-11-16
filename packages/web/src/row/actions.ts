@@ -13,7 +13,8 @@ export interface RowActions {
   /** The tile shows a launch on its way or done: expand to its thread entry. */
   readonly expand: (task: TaskRow) => void;
   readonly open: (task: TaskRow, instance: Instance) => void;
-  readonly copy: (task: TaskRow) => void;
+  /** Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5). */
+  readonly copy: (task: TaskRow, pack?: boolean) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
   /** The checkbox (A5 3.12): check-off, or, during its hold, its undo. */
   readonly check: (task: TaskRow) => void;

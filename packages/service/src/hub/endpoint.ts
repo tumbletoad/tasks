@@ -8,7 +8,8 @@
 // The rpc methods the service answers are registered in one place, `handlerTable` below. The hub
 // owns two itself (A2 3.6.4): `service/status` and `service/shutdown`, which is how a stop reaches
 // the service on Windows (A2 3.3.5). M1.10 registers `op/call` and `op/list` (the request path for
-// operations, ops/) and the `space/*` verbs (space-verbs.ts), M2.07 the `roots/*` verbs (roots.ts),
+// operations, ops/) and the `space/*` verbs (space-verbs.ts, with M3.10's `view/rebuild`), M2.07
+// the `roots/*` verbs (roots.ts),
 // M2.11 the `t3/*` verbs of `tasks setup t3` (t3.ts), M2.14 the `setup/*` verbs of `tasks setup
 // agents` (agent-homes.ts), `tasks setup instances` its `instances/*` (instances.ts); later steps
 // add theirs the same way.
@@ -90,8 +91,14 @@ export interface EndpointHub {
   readonly roots?: RootsHost;
   /** The machine's default space: `tasks space use` (`space/use`). */
   readonly defaults?: Pick<DefaultSpace, "make">;
-  /** The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). */
-  readonly launches?: { handlers(): RpcHandlers; doctor?(take: boolean): Promise<JsonObject> };
+  /**
+   * The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). `doctor`
+   * answers `doctor/launch` (A3 3.14); undefined while there is no launch service to ask.
+   */
+  readonly launches?: {
+    handlers(): RpcHandlers;
+    doctor?(take: boolean): Promise<JsonObject | undefined>;
+  };
   /** `tasks setup t3` (`t3/*`). */
   readonly t3?: T3Host;
   /**
@@ -259,6 +266,7 @@ const VERB_METHODS = [
   "space/claim",
   "space/recover",
   "space/use",
+  "view/rebuild",
   "roots/list",
   "roots/add",
   "instances/add",

@@ -2,7 +2,7 @@
 // in `tasks doctor`. The log gets codes only (service.ts).
 import { PRODUCT_NAME } from "@tasks/brand";
 import type { ConfigProblem } from "@tasks/launch";
-import { unsafeMessage } from "../hub/permissions.ts";
+import { unsafeMessage, type Person } from "../hub/permissions.ts";
 import { MACHINE_TOML, type UnsafeConfig } from "./machine-toml.ts";
 
 /**
@@ -25,9 +25,9 @@ export function configRefusal(problems: readonly ConfigProblem[]): string {
  * The line a person reads when machine.toml or its folder fails the rule (another user could change
  * it, it is a link, or its owner lacks access): which one, what is wrong, why that matters, and the
  * one command that fixes both (A2 3.2.2 rule 5, permissions.ts). It names paths, so it goes to
- * stderr and doctor only, never to the log.
+ * stderr and doctor only, never to the log. `person`: whose rule judged it, this process's by default.
  */
-export function unsafeConfigMessage(found: UnsafeConfig, user?: string): string {
+export function unsafeConfigMessage(found: UnsafeConfig, user?: string, person?: Person): string {
   const file = `${PRODUCT_NAME}'s ${MACHINE_TOML}`;
   return unsafeMessage(
     found.map((part) => ({
@@ -38,5 +38,6 @@ export function unsafeConfigMessage(found: UnsafeConfig, user?: string): string 
     })),
     `${PRODUCT_NAME} uses ${MACHINE_TOML} only when no one else can change it, because it names commands ${PRODUCT_NAME} runs as you, so the service does not start`,
     user,
+    person,
   );
 }

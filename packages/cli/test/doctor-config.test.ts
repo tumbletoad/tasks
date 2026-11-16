@@ -1,9 +1,9 @@
 // `tasks doctor`'s config row (A2 3.13, A2 3.2.4): machine.toml as the service reads it, with the
 // command that fixes a file or folder another user could change. Fixture text only.
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { shellPath } from "@tasks/service/permissions";
+import { currentPerson, shellPath } from "@tasks/service/permissions";
 import { tempRoot } from "@tasks/service/test/harness";
 import { configCheck } from "../src/doctor.ts";
 
@@ -47,18 +47,26 @@ describe("[A2.3.2.2.permissions.rule] tasks doctor's config row", () => {
     () => {
       const { io, dir, file } = home();
       writeFileSync(file, '[log]\nlevel = "warn"\n', { mode: 0o600 });
+      // As an editor makes it under umask 002, in this account's group: that group may write it
+      // only when it is the account's own private group (A2 3.2.2 rule 5).
       chmodSync(file, 0o664);
       const group = configCheck(io);
-      expect(group.status).toBe("fail");
-      expect(group.detail).toContain("can be changed by the members of its group");
-      expect(group.detail).toContain(`To fix it, run: chmod go-w ${shellPath(file)}`);
+      if (currentPerson()?.ownGroup() === statSync(file).gid) {
+        expect(group.status).toBe("ok");
+      } else {
+        expect(group.status).toBe("fail");
+        expect(group.detail).toContain("can be changed by the members of its group");
+        expect(group.detail).toContain(`To fix it, run: chmod g-w ${shellPath(file)}`);
+      }
       chmodSync(file, 0o646);
-      expect(configCheck(io).detail).toContain("can be changed by every user");
-      // The folder and the file, as a person makes them by hand under umask 002: one command.
-      chmodSync(dir, 0o775);
-      chmodSync(file, 0o664);
+      const world = configCheck(io);
+      expect(world.status).toBe("fail");
+      expect(world.detail).toContain("can be changed by every user");
+      expect(world.detail).toContain(`To fix it, run: chmod o-w ${shellPath(file)}`);
+      // The folder and the file, both open to every user: one command.
+      chmodSync(dir, 0o757);
       expect(configCheck(io).detail).toContain(
-        `To fix it, run: chmod go-w ${shellPath(dir)} ${shellPath(file)}`,
+        `To fix it, run: chmod o-w ${shellPath(dir)} ${shellPath(file)}`,
       );
       chmodSync(dir, 0o700);
       chmodSync(file, 0o600);
@@ -70,11 +78,11 @@ describe("[A2.3.2.2.permissions.rule] tasks doctor's config row", () => {
     "[A2.3.2.2.permissions.repair] a config folder that fails the rule fails before machine.toml exists too, as the service's start does",
     () => {
       const { io, dir } = home();
-      chmodSync(dir, 0o775);
+      chmodSync(dir, 0o757);
       const check = configCheck(io);
       expect(check.status).toBe("fail");
-      expect(check.detail).toContain("can be changed by the members of its group");
-      expect(check.detail).toContain(`To fix it, run: chmod go-w ${shellPath(dir)}`);
+      expect(check.detail).toContain("can be changed by every user");
+      expect(check.detail).toContain(`To fix it, run: chmod o-w ${shellPath(dir)}`);
       chmodSync(dir, 0o700);
       expect(configCheck(io)).toMatchObject({ status: "ok" });
     },

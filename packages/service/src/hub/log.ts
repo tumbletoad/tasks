@@ -302,6 +302,55 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", space: "space", code: "error_code" },
   },
+  // The projection (A1 3.13): counts, the watermark and codes, never a path (a file's name holds a
+  // task's title).
+  "space.projection_started": {
+    lvl: "info",
+    c: "space",
+    fields: { entry: "int", space: "space", rebuild: "bool", recovered: "bool", temps: "int" },
+  },
+  "space.projected": {
+    lvl: "debug",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      written: "int",
+      removed: "int",
+      failed: "int",
+      watermark: "int",
+      backlog: "bool",
+      ms: "int",
+    },
+  },
+  "space.projection_reconciled": {
+    lvl: "info",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      full: "bool",
+      checked: "int",
+      queued: "int",
+      forgotten: "int",
+    },
+  },
+  "space.projection_rescued": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", files: "int" },
+  },
+  // Not a file at the projection's record or journal path: moved aside beside it, never removed.
+  "space.projection_state_moved_aside": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", file: ["record", "journal"] },
+  },
+  "space.projection_failed": {
+    lvl: "warn",
+    c: "space",
+    fields: { entry: "int", space: "space", code: "error_code" },
+  },
   "space.ownership_lost": {
     lvl: "error",
     c: "space",
@@ -507,6 +556,13 @@ export const EVENTS = {
       opener: ["rundll32", "explorer", "gio", "xdg-open", "open", "none"],
       result: OPEN_RESULTS,
     },
+  },
+  // A best-effort app's binding (A4 3.4.4, 3.4.5): whether the bridge's folder was the launch's,
+  // never either folder.
+  "launch.folder_check": {
+    lvl: "info",
+    c: "launch",
+    fields: { result: ["same", "other", "unknown"] },
   },
   // Codex's reference match (A4 3.4.3): whether a native ID was found, never the ID or a path.
   "launch.native_id": {

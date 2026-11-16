@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -24,6 +25,7 @@ import {
   sectionOf,
   type MachineConfig,
 } from "./machine-toml.ts";
+import { currentPerson } from "../hub/permissions.ts";
 import { MAX_CONFIG_BYTES } from "./toml.ts";
 
 const FIXTURES = fileURLToPath(new URL("../../test/config/", import.meta.url));
@@ -226,21 +228,29 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
       const dir = tempDir();
       const file = join(dir, MACHINE_TOML);
       writeFileSync(file, '[log]\nlevel = "warn"\n', { mode: 0o600 });
-      // Group write is refused whatever the group (permissions.ts, A2 3.2.2 rule 5).
+      // Group write is refused unless the group is the person's own private group, which a new
+      // file's group is when this account has one (permissions.ts, A2 3.2.2 rule 5).
+      const own = currentPerson()?.ownGroup();
+      const ownGroup = (path: string) => own !== undefined && own === statSync(path).gid;
       expect(loadMachineConfig(dir, "linux").config.log.level).toBe("warn");
-      for (const [path, mode, restore] of [
-        [file, 0o620, 0o600],
-        [file, 0o602, 0o600],
-        [dir, 0o770, 0o700],
-        [dir, 0o707, 0o700],
+      for (const [path, mode, restore, refused] of [
+        [file, 0o620, 0o600, !ownGroup(file)],
+        [file, 0o602, 0o600, true],
+        [dir, 0o770, 0o700, !ownGroup(dir)],
+        [dir, 0o707, 0o700, true],
       ] as const) {
         chmodSync(path, mode);
         const loaded = loadMachineConfig(dir, "linux");
-        expect(loaded.problems).toEqual([
-          { key: "", code: "unsafe_permissions", severity: "error" },
-        ]);
-        expect(loaded.config).toBe(DEFAULT_CONFIG);
-        expect(fatalProblems(loaded.problems)).toHaveLength(1);
+        if (refused) {
+          expect(loaded.problems).toEqual([
+            { key: "", code: "unsafe_permissions", severity: "error" },
+          ]);
+          expect(loaded.config).toBe(DEFAULT_CONFIG);
+          expect(fatalProblems(loaded.problems)).toHaveLength(1);
+        } else {
+          expect(loaded.problems).toEqual([]);
+          expect(loaded.config.log.level).toBe("warn");
+        }
         chmodSync(path, restore);
       }
     },
