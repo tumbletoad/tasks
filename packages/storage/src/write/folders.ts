@@ -4,7 +4,7 @@
 // normalisation, because a decomposed and a composed `é` name two folders on Linux.
 //
 // Comparisons follow the machine's case rule: Windows and macOS compare without case, Linux with.
-// A comparison is by whole segments, so `~/Dev/a` is inside `~/Dev` and `~/Dev-old` is not.
+// A comparison is by whole segments, so `~/work/a` is inside `~/work` and `~/work-old` is not.
 import type { Connection, Row } from "../driver.ts";
 import { isId, type Id } from "../ids.ts";
 import { RowReader } from "../rows.ts";

@@ -539,8 +539,8 @@ function bindFolders(
     base: formatAsOf(writer.asOf()),
     undoable: true,
     ops: [
-      { kind: "project.folder_set", project: portal, path: "~/Dev/lumen/portal" },
-      { kind: "task.folder_set", task: first, path: "~/Dev/lumen/portal/appointments" },
+      { kind: "project.folder_set", project: portal, path: "~/work/lumen/portal" },
+      { kind: "task.folder_set", task: first, path: "~/work/lumen/portal/appointments" },
     ],
   });
   if (result.status !== "applied") {

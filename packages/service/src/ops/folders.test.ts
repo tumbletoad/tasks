@@ -6,27 +6,27 @@ import { expanded, storedForm } from "./folders.ts";
 describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the home written as ~", () => {
   test("Linux and macOS: ~ in and out, separators made plain, case kept on Linux", () => {
     const home = "/home/mira";
-    expect(storedForm("/home/mira/Dev/tasks", home, "linux")).toEqual({
-      stored: "~/Dev/tasks",
-      absolute: "/home/mira/Dev/tasks",
+    expect(storedForm("/home/mira/work/tasks", home, "linux")).toEqual({
+      stored: "~/work/tasks",
+      absolute: "/home/mira/work/tasks",
     });
-    expect(storedForm("~/Dev//tasks/", home, "linux")).toEqual({
-      stored: "~/Dev/tasks",
-      absolute: "/home/mira/Dev/tasks",
+    expect(storedForm("~/work//tasks/", home, "linux")).toEqual({
+      stored: "~/work/tasks",
+      absolute: "/home/mira/work/tasks",
     });
     expect(storedForm("~", home, "linux")).toEqual({ stored: "~", absolute: "/home/mira" });
     expect(storedForm("/srv/build", home, "linux")).toEqual({
       stored: "/srv/build",
       absolute: "/srv/build",
     });
-    // Whole segments: /home/mirabel is no folder of /home/mira; Linux keeps case.
-    expect(storedForm("/home/mirabel/x", home, "linux")).toMatchObject({
-      stored: "/home/mirabel/x",
+    // Whole segments: /home/mirafixture is no folder of /home/mira; Linux keeps case.
+    expect(storedForm("/home/mirafixture/x", home, "linux")).toMatchObject({
+      stored: "/home/mirafixture/x",
     });
     expect(storedForm("/home/Mira/x", home, "linux")).toMatchObject({ stored: "/home/Mira/x" });
     // macOS compares the home without case.
-    expect(storedForm("/Users/MIRA/Dev", "/Users/mira", "darwin")).toMatchObject({
-      stored: "~/Dev",
+    expect(storedForm("/Users/MIRA/work", "/Users/mira", "darwin")).toMatchObject({
+      stored: "~/work",
     });
     // A decomposed é stays decomposed: it names another folder than a composed one on Linux.
     const decomposed = "/srv/cafe\u0301";
@@ -34,7 +34,7 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
     expect(storedForm("relative/x", home, "linux")).toBe("not_absolute");
     expect(storedForm("/srv/../etc", home, "linux")).toBe("invalid_path");
     expect(storedForm("/srv/a\u0007b", home, "linux")).toBe("invalid_path");
-    expect(expanded("~/Dev/tasks", home, "linux")).toBe("/home/mira/Dev/tasks");
+    expect(expanded("~/work/tasks", home, "linux")).toBe("/home/mira/work/tasks");
     expect(expanded("/srv/build", home, "linux")).toBe("/srv/build");
   });
 

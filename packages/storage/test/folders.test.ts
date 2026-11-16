@@ -82,7 +82,7 @@ function newTask(title: string, project?: string, path?: string): Id<"t"> {
 describe("[A1.5.write.folders] a project's and a task's folder through the write path", () => {
   test("a project created with its folder is one commit and one undo step; the path is stored exactly as sent", () => {
     // A decomposed é (e and U+0301): the writer's text normalisation would make it another folder.
-    const decomposed = "~/Dev/cafe\u0301";
+    const decomposed = "~/work/cafe\u0301";
     const id = newProject("Café", decomposed);
     expect(live()).toEqual({ [`project:${id}`]: decomposed });
     const commit = fx.reader
@@ -100,11 +100,11 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
   });
 
   test("changing a project's folder needs a base and moves its tasks' folders inside the old one, as one undo step", () => {
-    const project = newProject("Portal two", "~/Dev/portal");
-    const inside = newTask("Header", project, "~/Dev/portal/web/header");
-    const same = newTask("Root", project, "~/Dev/portal");
-    const outside = newTask("Docs", project, "~/Dev/portal-docs");
-    const elsewhere = newTask("Not in the project", undefined, "~/Dev/portal/other");
+    const project = newProject("Portal two", "~/work/portal");
+    const inside = newTask("Header", project, "~/work/portal/web/header");
+    const same = newTask("Root", project, "~/work/portal");
+    const outside = newTask("Docs", project, "~/work/portal-docs");
+    const elsewhere = newTask("Not in the project", undefined, "~/work/portal/other");
     const before = live();
     const unbased = fx.writer.submit(
       fx.request(fx.human, [{ kind: "project.folder_set", project, path: "~/Code/portal" }]),
@@ -117,8 +117,8 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       [`project:${project}`]: "~/Code/portal",
       [`task:${inside}`]: "~/Code/portal/web/header",
       [`task:${same}`]: "~/Code/portal",
-      [`task:${outside}`]: "~/Dev/portal-docs",
-      [`task:${elsewhere}`]: "~/Dev/portal/other",
+      [`task:${outside}`]: "~/work/portal-docs",
+      [`task:${elsewhere}`]: "~/work/portal/other",
     });
     expectStatus(undo(), "applied");
     expect(live()).toEqual(before);
@@ -133,15 +133,15 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
   });
 
   test("a stale base is a conflict on a task folder the move would carry", () => {
-    const project = newProject("Moves", "~/Dev/moves");
-    const task = newTask("Inner", project, "~/Dev/moves/inner");
+    const project = newProject("Moves", "~/work/moves");
+    const task = newTask("Inner", project, "~/work/moves/inner");
     const stale = fx.base();
     expectStatus(
-      submit([{ kind: "task.folder_set", task, path: "~/Dev/moves/inner2" }]),
+      submit([{ kind: "task.folder_set", task, path: "~/work/moves/inner2" }]),
       "applied",
     );
     const conflict = submit(
-      [{ kind: "project.folder_set", project, path: "~/Dev/moved" }],
+      [{ kind: "project.folder_set", project, path: "~/work/moved" }],
       fx.human,
       {
         base: stale,
@@ -154,26 +154,26 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
   });
 
   test("two live projects never share one folder on one machine; an archived one keeps its folder, a deleted one frees it", () => {
-    const first = newProject("First", "~/Dev/shared");
+    const first = newProject("First", "~/work/shared");
     const second = newProject("Second");
-    const taken = submit([{ kind: "project.folder_set", project: second, path: "~/Dev/shared" }]);
+    const taken = submit([{ kind: "project.folder_set", project: second, path: "~/work/shared" }]);
     expectStatus(taken, "rejected");
     expect(taken.error).toMatchObject({ code: "FOLDER_TAKEN", field: "path" });
     // Nested folders are fine, and so is a task's folder in a project's.
     expectStatus(
-      submit([{ kind: "project.folder_set", project: second, path: "~/Dev/shared/inner" }]),
+      submit([{ kind: "project.folder_set", project: second, path: "~/work/shared/inner" }]),
       "applied",
     );
-    newTask("Same folder", undefined, "~/Dev/shared");
+    newTask("Same folder", undefined, "~/work/shared");
     expectStatus(submit([{ kind: "project.archive", project: first }]), "applied");
     const third = newProject("Third");
     expectStatus(
-      submit([{ kind: "project.folder_set", project: third, path: "~/Dev/shared" }]),
+      submit([{ kind: "project.folder_set", project: third, path: "~/work/shared" }]),
       "rejected",
     );
     // Linux compares with case: another spelling is another folder there.
     expectStatus(
-      submit([{ kind: "project.folder_set", project: third, path: "~/Dev/Shared" }]),
+      submit([{ kind: "project.folder_set", project: third, path: "~/work/Shared" }]),
       "applied",
     );
   });
@@ -181,7 +181,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
   test("delete removes a project's folders on every machine; restore brings them back unless another live project took one meanwhile", async () => {
     const other = { ...fx.human, machine_id: newId("m") };
     await addMachine(other.machine_id, "linux");
-    const project = newProject("Gone", "~/Dev/gone");
+    const project = newProject("Gone", "~/work/gone");
     expectStatus(
       submit([{ kind: "project.folder_set", project, path: "/srv/gone" }], other),
       "applied",
@@ -189,11 +189,11 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expectStatus(submit([{ kind: "project.delete", project }]), "applied");
     expect(live()).toEqual({});
     // Meanwhile a new project takes the folder on the first machine.
-    const taker = newProject("Taker", "~/Dev/gone");
+    const taker = newProject("Taker", "~/work/gone");
     const restored = submit([{ kind: "project.restore", project }]);
     expectStatus(restored, "applied");
     expect(live()).toEqual({
-      [`project:${taker}`]: "~/Dev/gone",
+      [`project:${taker}`]: "~/work/gone",
       [`project:${project}`]: "/srv/gone",
     });
     // The result names the folder that stays removed, by the project that holds it now.
@@ -201,11 +201,11 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       expect.objectContaining({ entity: "folders", field: "path" }),
     ]);
     expectStatus(undo(), "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/Dev/gone" });
+    expect(live()).toEqual({ [`project:${taker}`]: "~/work/gone" });
   });
 
   test("undo of a delete is a conflict on a folder another project took; the partial undo brings the project back without it", () => {
-    const project = newProject("Undone", "~/Dev/undone");
+    const project = newProject("Undone", "~/work/undone");
     expectStatus(submit([{ kind: "project.delete", project }]), "applied");
     // An agent's project takes the folder: agents' commits are on no undo stack.
     const taker = newId("p");
@@ -213,7 +213,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       submit(
         [
           { kind: "project.create", id: taker, title: "Taker" },
-          { kind: "project.folder_set", project: taker, path: "~/Dev/undone" },
+          { kind: "project.folder_set", project: taker, path: "~/work/undone" },
         ],
         fx.codex,
       ),
@@ -222,78 +222,78 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const blocked = undo();
     expectStatus(blocked, "conflict");
     expect(blocked.conflicts).toEqual([
-      expect.objectContaining({ entity: "folders", field: "path", value: "~/Dev/undone" }),
+      expect.objectContaining({ entity: "folders", field: "path", value: "~/work/undone" }),
     ]);
     expectStatus(undo(true), "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/Dev/undone" });
+    expect(live()).toEqual({ [`project:${taker}`]: "~/work/undone" });
     expect(
       fx.reader.prepare("SELECT deleted_at FROM projects WHERE id = $id").get({ id: project }),
     ).toEqual({ deleted_at: null });
   });
 
   test("undo of a folder change that another project's folder took back is a conflict", () => {
-    const project = newProject("Mover", "~/Dev/a");
-    expectStatus(submit([{ kind: "project.folder_set", project, path: "~/Dev/b" }]), "applied");
+    const project = newProject("Mover", "~/work/a");
+    expectStatus(submit([{ kind: "project.folder_set", project, path: "~/work/b" }]), "applied");
     const taker = newId("p");
     expectStatus(
       submit(
         [
           { kind: "project.create", id: taker, title: "Taker" },
-          { kind: "project.folder_set", project: taker, path: "~/Dev/a" },
+          { kind: "project.folder_set", project: taker, path: "~/work/a" },
         ],
         fx.codex,
       ),
       "applied",
     );
     expectStatus(undo(), "conflict");
-    expect(live()[`project:${project}`]).toBe("~/Dev/b");
+    expect(live()[`project:${project}`]).toBe("~/work/b");
   });
 
   test("a task's folder: set, changed and cleared on this machine, with a draft in one request and one undo", () => {
-    const task = newTask("Own folder", fx.project, "~/Dev/own");
-    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/Dev/own2" }]), "applied");
+    const task = newTask("Own folder", fx.project, "~/work/own");
+    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/work/own2" }]), "applied");
     expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
     expect(live()).toEqual({});
     expectStatus(undo(), "applied");
-    expect(live()).toEqual({ [`task:${task}`]: "~/Dev/own2" });
+    expect(live()).toEqual({ [`task:${task}`]: "~/work/own2" });
     // One request changes an owner's folder once: set and cleared, or set twice, is refused.
     for (const second of [
       { kind: "task.folder_clear" as const, task },
-      { kind: "task.folder_set" as const, task, path: "~/Dev/z" },
+      { kind: "task.folder_set" as const, task, path: "~/work/z" },
     ]) {
       expectStatus(
-        submit([{ kind: "task.folder_set", task, path: "~/Dev/x" }, second]),
+        submit([{ kind: "task.folder_set", task, path: "~/work/x" }, second]),
         "rejected",
       );
     }
     // An agent sets a folder too; a deleted task takes none.
     expectStatus(
-      submit([{ kind: "task.folder_set", task, path: "~/Dev/agent" }], fx.codex),
+      submit([{ kind: "task.folder_set", task, path: "~/work/agent" }], fx.codex),
       "applied",
     );
     expectStatus(submit([{ kind: "task.delete", task }]), "applied");
-    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/Dev/y" }]), "rejected");
+    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/work/y" }]), "rejected");
   });
 
   test("a project's folder changed to one inside or around the old one moves no task folder; a deleted task's folder moves with a real move", () => {
-    const project = newProject("Portal three", "~/Dev/portal");
-    const web = newTask("Web", project, "~/Dev/portal/web");
-    const api = newTask("Api", project, "~/Dev/portal/api");
-    const trashed = newTask("Trashed", project, "~/Dev/portal/old");
+    const project = newProject("Portal three", "~/work/portal");
+    const web = newTask("Web", project, "~/work/portal/web");
+    const api = newTask("Api", project, "~/work/portal/api");
+    const trashed = newTask("Trashed", project, "~/work/portal/old");
     expectStatus(submit([{ kind: "task.delete", task: trashed }]), "applied");
     // The project is really the web folder: the folders below stay where they are.
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/Dev/portal/web" }]),
+      submit([{ kind: "project.folder_set", project, path: "~/work/portal/web" }]),
       "applied",
     );
-    expect(live()[`task:${web}`]).toBe("~/Dev/portal/web");
-    expect(live()[`task:${api}`]).toBe("~/Dev/portal/api");
+    expect(live()[`task:${web}`]).toBe("~/work/portal/web");
+    expect(live()[`task:${api}`]).toBe("~/work/portal/api");
     // And back out to the folder around it.
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/Dev/portal" }]),
+      submit([{ kind: "project.folder_set", project, path: "~/work/portal" }]),
       "applied",
     );
-    expect(live()[`task:${web}`]).toBe("~/Dev/portal/web");
+    expect(live()[`task:${web}`]).toBe("~/work/portal/web");
     // A real move carries every task's folder inside, a deleted task's too.
     expectStatus(
       submit([{ kind: "project.folder_set", project, path: "~/Code/portal" }]),
@@ -307,13 +307,13 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
   });
 
   test("a task that joined the project after the base is a conflict on a folder change that would move its folder", () => {
-    const project = newProject("Joined", "~/Dev/joined");
-    const loose = newTask("Loose", undefined, "~/Dev/joined/data");
+    const project = newProject("Joined", "~/work/joined");
+    const loose = newTask("Loose", undefined, "~/work/joined/data");
     const stale = fx.base();
     // An agent files the task into the project after the person read it.
     expectStatus(submit([{ kind: "task.move", task: loose, project }], fx.codex), "applied");
     const conflict = submit(
-      [{ kind: "project.folder_set", project, path: "~/Dev/elsewhere" }],
+      [{ kind: "project.folder_set", project, path: "~/work/elsewhere" }],
       fx.human,
       { base: stale },
     );
@@ -321,15 +321,15 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(conflict.conflicts).toEqual([
       expect.objectContaining({ entity: "tasks", field: "grouping", task: loose }),
     ]);
-    expect(live()[`task:${loose}`]).toBe("~/Dev/joined/data");
+    expect(live()[`task:${loose}`]).toBe("~/work/joined/data");
   });
 
   test("setting a folder from a base before another's clear is a conflict; without a base it sets", () => {
-    const project = newProject("Cleared", "~/Dev/cleared");
+    const project = newProject("Cleared", "~/work/cleared");
     const stale = fx.base();
     expectStatus(submit([{ kind: "project.folder_clear", project }], fx.codex), "applied");
     const conflict = submit(
-      [{ kind: "project.folder_set", project, path: "~/Dev/other" }],
+      [{ kind: "project.folder_set", project, path: "~/work/other" }],
       fx.human,
       { base: stale },
     );
@@ -337,24 +337,27 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(conflict.conflicts).toEqual([
       expect.objectContaining({ entity: "folders", field: "deleted" }),
     ]);
-    expectStatus(submit([{ kind: "project.folder_set", project, path: "~/Dev/other" }]), "applied");
+    expectStatus(
+      submit([{ kind: "project.folder_set", project, path: "~/work/other" }]),
+      "applied",
+    );
     // With an older removed folder beside it, the newest clear still counts.
     const before = fx.base();
     expectStatus(submit([{ kind: "project.folder_clear", project }], fx.codex), "applied");
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/Dev/third" }], fx.human, {
+      submit([{ kind: "project.folder_set", project, path: "~/work/third" }], fx.human, {
         base: before,
       }),
       "conflict",
     );
     const unbased = fx.writer.submit(
-      fx.request(fx.human, [{ kind: "task.folder_set", task: newTask("T"), path: "~/Dev/t" }]),
+      fx.request(fx.human, [{ kind: "task.folder_set", task: newTask("T"), path: "~/work/t" }]),
     );
     expectStatus(unbased, "applied");
   });
 
   test("a deleted project never holds a live folder: undo of a clear while it is deleted is a conflict, so its restore cannot share a folder", () => {
-    const project = newProject("Away", "~/Dev/away");
+    const project = newProject("Away", "~/work/away");
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");
     expectStatus(submit([{ kind: "project.delete", project }], fx.codex), "applied");
     const blocked = undo();
@@ -367,14 +370,14 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       submit(
         [
           { kind: "project.create", id: taker, title: "Taker" },
-          { kind: "project.folder_set", project: taker, path: "~/Dev/away" },
+          { kind: "project.folder_set", project: taker, path: "~/work/away" },
         ],
         fx.codex,
       ),
       "applied",
     );
     expectStatus(submit([{ kind: "project.restore", project }], fx.codex), "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/Dev/away" });
+    expect(live()).toEqual({ [`project:${taker}`]: "~/work/away" });
   });
 
   test("undo of a restore is a conflict when a folder was set on the project since, and redo of a delete when a task was filed into it", () => {
@@ -382,7 +385,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expectStatus(submit([{ kind: "project.delete", project }]), "applied");
     expectStatus(submit([{ kind: "project.restore", project }]), "applied");
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/Dev/twice" }], fx.codex),
+      submit([{ kind: "project.folder_set", project, path: "~/work/twice" }], fx.codex),
       "applied",
     );
     const restoreUndo = undo();
@@ -391,7 +394,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       expect.objectContaining({ entity: "folders", field: "deleted" }),
     ]);
     expectStatus(undo(true), "applied");
-    expect(live()[`project:${project}`]).toBe("~/Dev/twice");
+    expect(live()[`project:${project}`]).toBe("~/work/twice");
 
     // A delete undone, then a task an agent files into the project: the redo would hide it.
     const other = newProject("Once");
@@ -415,7 +418,11 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
 
   test("a request whose operations together would leave a live folder or task in a deleted project is refused", () => {
     for (const after of [
-      (project: string): Operation => ({ kind: "project.folder_set", project, path: "~/Dev/late" }),
+      (project: string): Operation => ({
+        kind: "project.folder_set",
+        project,
+        path: "~/work/late",
+      }),
       (project: string): Operation => ({ kind: "task.create", title: "Late", project }),
       (project: string): Operation => ({ kind: "task.move", task: newTask("Moved"), project }),
     ]) {
@@ -466,9 +473,9 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     for (const path of [
       "relative/folder",
       "C:\\work",
-      "~/Dev/../etc",
-      "~/Dev//x",
-      "~/Dev/x/",
+      "~/work/../etc",
+      "~/work//x",
+      "~/work/x/",
       "~/a\u0007b",
       "",
     ]) {
@@ -503,7 +510,7 @@ async function addMachine(id: Id<"m">, os: "linux" | "windows"): Promise<void> {
 
 describe("[A1.3.15.folders.form] a folder's form, its case rule and where a folder lands when its parent moves", () => {
   test("the forms of each OS", () => {
-    for (const path of ["~", "~/Dev/tasks", "/srv/build", "/"]) {
+    for (const path of ["~", "~/work/tasks", "/srv/build", "/"]) {
       expect(folderProblem(path, "linux"), path).toBeUndefined();
       expect(folderProblem(path, "macos"), path).toBeUndefined();
     }
@@ -513,7 +520,7 @@ describe("[A1.3.15.folders.form] a folder's form, its case rule and where a fold
     for (const path of ["C:\\work", "\\\\server\\share", "~\\Projects"]) {
       expect(folderProblem(path, "linux"), path).toBeDefined();
     }
-    for (const path of ["/srv", "~/Dev", "d:\\work", "C:\\work\\", "C:\\a:b", "\\\\server"]) {
+    for (const path of ["/srv", "~/work", "d:\\work", "C:\\work\\", "C:\\a:b", "\\\\server"]) {
       expect(folderProblem(path, "windows"), path).toBeDefined();
     }
     expect(isFolderForm("x".repeat(4097))).toBe(false);
@@ -525,10 +532,10 @@ describe("[A1.3.15.folders.form] a folder's form, its case rule and where a fold
     expect(folderKey("~\\Projects\\Tasks", "windows")).toBe(
       folderKey("~\\projects\\tasks", "windows"),
     );
-    expect(folderKey("~/Dev/Tasks", "linux")).not.toBe(folderKey("~/dev/tasks", "linux"));
-    expect(rebased("~/Dev/a/b", "~/Dev/a", "~/Code/a", "linux")).toBe("~/Code/a/b");
-    expect(rebased("~/Dev/ab", "~/Dev/a", "~/Code/a", "linux")).toBeUndefined();
-    expect(rebased("~/dev/a/b", "~/Dev/a", "~/Code/a", "linux")).toBeUndefined();
+    expect(folderKey("~/work/Tasks", "linux")).not.toBe(folderKey("~/dev/tasks", "linux"));
+    expect(rebased("~/work/a/b", "~/work/a", "~/Code/a", "linux")).toBe("~/Code/a/b");
+    expect(rebased("~/work/ab", "~/work/a", "~/Code/a", "linux")).toBeUndefined();
+    expect(rebased("~/dev/a/b", "~/work/a", "~/Code/a", "linux")).toBeUndefined();
     expect(rebased("~\\dev\\A\\b", "~\\Dev\\a", "D:\\", "windows")).toBe("D:\\b");
     expect(rebased("/x/y", "/", "/srv", "linux")).toBe("/srv/x/y");
   });
@@ -537,17 +544,17 @@ describe("[A1.3.15.folders.form] a folder's form, its case rule and where a fold
 describe("[A1.3.15.folders.launch] the folder a launch uses on a machine", () => {
   test("the task's own folder there, else its project's there, else the machine that has one, else none", () => {
     const here = fx.human.machine_id;
-    const project = newProject("Launch", "~/Dev/launch");
-    const own = newTask("Own", project, "~/Dev/launch/own");
+    const project = newProject("Launch", "~/work/launch");
+    const own = newTask("Own", project, "~/work/launch/own");
     const inherits = newTask("Inherits", project);
     const loose = newTask("Loose");
     expect(launchFolder(fx.reader, own, here)).toMatchObject({
       kind: "task",
-      folder: { path: "~/Dev/launch/own", machine: here },
+      folder: { path: "~/work/launch/own", machine: here },
     });
     expect(launchFolder(fx.reader, inherits, here)).toMatchObject({
       kind: "project",
-      folder: { path: "~/Dev/launch" },
+      folder: { path: "~/work/launch" },
     });
     expect(launchFolder(fx.reader, loose, here)).toEqual({ kind: "none" });
     // On a machine with no folder of its own: it opens where the folder is.

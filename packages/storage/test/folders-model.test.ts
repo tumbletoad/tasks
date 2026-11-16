@@ -27,7 +27,7 @@ const temp = tempFolders("folders-model");
 afterAll(temp.cleanup);
 
 const PATHS: Readonly<Record<FolderOs, readonly string[]>> = {
-  linux: ["~/Dev/a", "~/Dev/a/x", "~/Dev/a/x/y", "~/Dev/b", "~/Dev/A", "/srv/c"],
+  linux: ["~/work/a", "~/work/a/x", "~/work/a/x/y", "~/work/b", "~/work/A", "/srv/c"],
   windows: ["~\\Dev\\a", "~\\dev\\A", "~\\Dev\\a\\x", "D:\\w", "D:\\w\\z", "D:\\W\\z"],
   macos: [],
 };
