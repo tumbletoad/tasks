@@ -92,8 +92,8 @@ Every entry has one class. The class decides the faces it may have and who reach
 
 - **Agent-allowed** (`agent`): MCP, CLI and UI. `space.status`, `task.search`, `task.get`, `task.add`, `task.update`, `entry.add`, `task.finish`, `task.reopen`, `group.manage`, `prefs.manage`. `receipt.get` is agent-allowed too but is never a tool: it is the CLI's own lookup before a retry (3.4.1) and the page's for a request that got no answer (A5 3.11).
 - **Agent-allowed, runs only** (`run`): `run.report`. Listed on every connection, but a call works only on a connection bound to a run or routine, otherwise `not_permitted`. CLI too, no UI.
-- **User-only** (`user`): CLI as the user, and UI. Not even visible to agents. Only A2's classes `ui` and `cli-interactive` reach them, and an agent actor gets `forbidden` with `rule: "user_only"`. They are: the `for_agents` field of `entry.add`; `history.undo` and `history.redo` (A1's `undo`, `redo`), `revert`, `revert_session`; `proposal.accept`, `proposal.reject`; policy keys through `pref.set`; `launch.*` (`launch.open` is Open and Copy, CLI `tasks brief`), `run.start`, `run.stop`, `routine.*`, `target.*`, `instance.*`; `space.hold`, `space.release`; `exchange.*`, including file imports, which only a human applies (X15); `import.planning.*`; A4's pasted `tasks-update` blocks, which become proposals; `session.unbind`, `session.rebind`, `session.end`; `redact`.
-- **UI-only** (`ui`): `command.approve` (R10), `ui.auth.*`, `place.reveal`, `ui.mark_seen`, `ui.clear_digest`.
+- **User-only** (`user`): CLI as the user, and UI. Not even visible to agents. Only A2's classes `ui` and `cli-interactive` reach them, and an agent actor gets `forbidden` with `rule: "user_only"`. They are: the `for_agents` field of `entry.add`; `history.undo` and `history.redo` (A1's `undo`, `redo`), `revert`, `revert_session`; `proposal.accept`, `proposal.reject`; policy keys through `pref.set`; `launch.*` (`launch.open` is Open and Copy, CLI `tasks brief`), `run.start`, `run.stop`, `routine.*`, `target.*`, `instance.*`; `space.hold`, `space.release`; `exchange.*`, including file imports, which only a human applies (X15); `import.planning.*`; A4's pasted `tasks-update` blocks, which become proposals; `session.unbind`, `session.rebind`, `session.end`; `redact`; `folder.make` (one new folder for the person, A5 3.29) and `folder.adopt` ("Use the same folders here", A1 3.15).
+- **UI-only** (`ui`): `command.approve` (R10), `ui.auth.*`, `folder.browse` (the folder browser's listing, A5 3.29), `folder.reveal`, `ui.mark_seen`, `ui.clear_digest`. The folder browser is the person's page: agents have their own file tools.
 
 One entry serves both actors where the operation is the same: the user checks a task off through `task.finish` without an outcome, and the agent input of the same entry requires `outcome`.
 
@@ -104,12 +104,12 @@ One entry serves both actors where the operation is the same: the user checks a 
 **Conditional preconditions** belong to the handlers, because the table records only unconditional ones (A1 3.5, 3.6):
 
 - `source.add` revival and `source.unlink`: the link version or a base, else `BASE_REQUIRED`. `task.label`: a link version to remove or revive a label link.
-- `place.set`, `place.clear`: a base only when the owner already has a place on this machine.
+- `project.folder_set`, `task.folder_set`: a base only when the owner already has a folder on this machine. The clears always need one.
 - `note.patch`, `note.delete`, `log.delete`: an agent changes only what it wrote.
 - `pref.set`: an agent writes only keys whose declaration lists it. A policy key needs a human actor and the `admin` scope, else `forbidden` with `rule: "policy"`. Only the handler can tell a policy key, so an entry that emits `pref.set` may need `space:write` or `admin`.
 - `proposal.accept`, `proposal.reject`: the optional fresh base. `redact`: the typed confirmation.
 
-**Outside the registry.** Service operations that are not A1 operations (the space verbs, roots, setup's agent-home rows, T3 pairing) have no request ID, so they are rpc methods, not entries, until the UI needs them over HTTP. The page's own HTTP routes sit beside the registry's under every check of A2 3.8.3.
+**Outside the registry.** Service operations that are not A1 operations (the space verbs, setup's agent-home rows, T3 pairing) have no request ID, so they are rpc methods, not entries, until the UI needs them over HTTP. The page's own HTTP routes sit beside the registry's under every check of A2 3.8.3.
 
 #### 3.2.4 Naming, versioning and the registry check
 
@@ -157,21 +157,22 @@ The shared field schemas and both limit sets (`USER_LIMITS`, `AGENT_LIMITS`) liv
 - **`request_id`** on every write: a new value for every intended change, the same value only to retry that call. The bridge never invents one: an invented ID would turn a retry into a second change.
 - **`base`** is the `as_of` of the agent's last read, copied verbatim, on every write that changes existing fields. It is checked against the state at the start of the request, so a bundle never conflicts with its own earlier operations (X11). Appends (new tasks, log entries, notes, new sources, a context append) need none and never conflict.
 - **`cwd`** is passed explicitly, because MCP roots are deprecated in 2026-07-28.
+- **`folder`** (a draft's, a follow-up's, `update_task`'s `set.folder`, `organize`'s) is `"cwd"`, the call's `cwd`, or an absolute folder of this machine, a `~` path included (A1 3.15). It binds a folder that exists: an agent creates a new one with its own tools first (mkdir, `git init`, `git clone`) and then binds it, so the limits of the person's agent setup apply to that act and Tasks has no code that makes folders on an agent's behalf (D28). A folder that is missing, no directory, or inside Tasks' own data is `invalid_input` naming the field, with A1's reason in `data.reason` (`folder_missing`, `not_a_directory`, `not_answering`, `folder_reserved`) and the hint to create it first. The message may name the folder. `"cwd"` inside the Tasks home (a Tasks work folder) or a space folder binds no folder and is no error: a task launched in the work folder has none. Until M4.10 the field is today's `place`, with its `{root, path}` form.
 - **`mode: "propose"`** (M4.02) turns any call into a proposal, at any autonomy level.
 - **Dates** (`ops/dates.ts`) never guess a phrase they do not know. Agents set no timed due in v1. M8's reminders add `due_at` and `due_tz` to the inputs.
 - **Limits.** Agent limits are tighter than the user's, to keep results inside the token budgets. Lengths count code points, as JSON Schema does. A context append is held to A1's 64 KiB for the whole context, not to the agent's 8,000 characters, so an agent can still append to a context the user made longer.
 
-**Schema and handler.** The handler and the writer check the formats of references, `base`, `cwd`, source keys and relative paths, because they resolve them anyway and can answer with a hint. The patterns of task references and source keys stay out of the schemas: they would add tokens to every tool and remove no handler check, and a strict key pattern would refuse keys A1's writer accepts. Text never uses `min(1)`, because normalisation can empty a string. Still to build: a malformed reference, another space's prefix and a `t_` ID of the wrong length answer `not_found` with similar rows. A reference with another space's prefix is never a task elsewhere.
+**Schema and handler.** The handler and the writer check the formats of references, `base`, `cwd`, source keys and folder paths, because they resolve them anyway and can answer with a hint. The patterns of task references and source keys stay out of the schemas: they would add tokens to every tool and remove no handler check, and a strict key pattern would refuse keys A1's writer accepts. Text never uses `min(1)`, because normalisation can empty a string. Still to build: a malformed reference, another space's prefix and a `t_` ID of the wrong length answer `not_found` with similar rows. A reference with another space's prefix is never a task elsewhere.
 
 **Fields a later step brings** are refused with `invalid_input` naming the step (`unsupported()` in `ops/errors.ts`), never dropped: a stored result must never claim a change that was ignored. Each step lifts its own refusal.
 
-**Retries (X12).** A durable receipt answers every result the writer decides, keyed by writer scope (3.7.9) and `request_id`, with a fingerprint of the intent (`packages/storage/src/write/receipts.ts`, A1 3.8). The fingerprint never depends on how dates are read, references resolved, dedupe run, policy evaluated or operations expanded, so a retry replays the first result, warnings included, even after the state has changed. Refusals that depend only on the input store nothing, so a corrected input can reuse the ID. After a `conflict` the agent sends a new ID: a reviewed change is a new decision, not a retry. `handlers.ts` (`placeSets`, the intent without `cwd`) and the CLI's `verbs.ts` (receipt first) keep replays free of this machine's folders and of fresh reads.
+**Retries (X12).** A durable receipt answers every result the writer decides, keyed by writer scope (3.7.9) and `request_id`, with a fingerprint of the intent (`packages/storage/src/write/receipts.ts`, A1 3.8). The fingerprint never depends on how dates are read, references resolved, dedupe run, policy evaluated or operations expanded, so a retry replays the first result, warnings included, even after the state has changed. Refusals that depend only on the input store nothing, so a corrected input can reuse the ID. After a `conflict` the agent sends a new ID: a reviewed change is a new decision, not a retry. `handlers.ts` (the folders a call binds, the intent without `cwd`) and the CLI's `verbs.ts` (receipt first) keep replays free of this machine's folders and of fresh reads.
 
 #### 3.4.2 `status`
 
 Orientation and session status (`entries/space-status.ts`, `ops/here.ts`). It is the first call for a session the product did not start and for a refresh routine. With one exact match for `cwd` the agent is told to bind with `get_task` and tell the user, with several to ask the user first. The folder itself binds nothing (3.7.3).
 
-- `here` compares the folder a place resolves to now with the real path of `cwd`, never the stored path as text, because a link inside a root may lead elsewhere. Every root that can hold a match is searched, so a task placed through an outer root is found from inside a nested one.
+- **`here`** names the project `cwd` belongs to (the deepest live project folder on this machine that is `cwd` or contains it, A1 3.15) with its folder and its count of active tasks, and lists the active tasks whose own folder on this machine is `cwd`. An exact match is such a task, or, when none has `cwd` as its own folder and `cwd` is the project's folder, the project's one active task without a folder of its own. Folders are compared by what they are on disk now (identity), never as stored text, because a link may lead elsewhere. Until M6.16 it is today's place match through roots.
 - A bound session also sees the count of proposals rejected since its last call (M4.02). A routine session, bound to the space, sees "Session: routine" (M6).
 - `guide` returns one workflow text instead of the overview (`ops/guides.ts`). The guides replace a skill: they cost nothing until asked for and work in every app. `work` and `triage` (sorting the Inbox into the groups `organize` lists) exist. `refresh` (M4.07, 3.11.3) and `organize` (M4.01b, with organize's changes) are refused naming their step, because they rely on what that step brings.
 
@@ -215,14 +216,16 @@ Loads a task as a bounded digest (3.9.6), or selected sections in full a page at
 
 #### 3.4.5 `add_tasks`
 
-Create 1 to 25 tasks in one transaction: follow-ups found during work, items from a refresh, splits of a large task (`entries/task-add.ts`). One invalid draft rejects the call. The handler binds every place before anything is sent (`ops/places.ts`), and a folder under no root creates the task without a place and warns, because only the user adds roots. Its text gives the counts, then one line per draft by its input path (`tasks.0: created M-31`, `tasks.1: exists M-14 · by source key · log added`; an ambiguous match shows three references and how many more), then the warnings (3.2.5).
+Create 1 to 25 tasks in one transaction: follow-ups found during work, items from a refresh, splits of a large task (`entries/task-add.ts`). One invalid draft rejects the call. The handler binds every folder before anything is sent (3.4.1), so a missing folder rejects the call like any invalid draft. Its text gives the counts, then one line per draft by its input path (`tasks.0: created M-31`, `tasks.1: exists M-14 · by source key · log added`; an ambiguous match shows three references and how many more), then the warnings (3.2.5).
 
 **Upsert by source key (R4)** through A1's dedupe (A1 3.6; `ops/handlers.ts`: `draftOps`, `draftOutcome`; test `[A3.3.4.add.upsert]`). `on_existing` sets the draft's `task.create`: `return`, the default, is A1's default, `add_sources` sets `link_sources`, and `create_new` sets `dedupe: "new"`. Each row comes from the writer's result, so a replay says the same.
 - An **active** task linked to any key of the draft: `exists` with its `id`, `ref`, `lifecycle` and `matched_by: "source_key"`, and nothing else written for that draft. With `add_sources`, the draft's sources are linked to it. The draft's `log` text is added to it either way (`log_added`), so "create or find, then log" is one call. Autonomy then applies to the matched task's own area, never to the area the draft names (3.8.3).
 - **Several** active matches: `exists` with an `ambiguous` list of references and no `id` or `ref`, and nothing written for the draft, its log included. The agent picks one.
 - A task **completed or archived in the last 30 days**: `exists` with its lifecycle, and nothing written, its log included. The agent reopens it and adds the entry, or sends the draft again with `on_existing: "create_new"`, which creates a new active task with the same source, so later lookups find it first.
 - `create_new` against an active match is `invalid_input` (`data.field: "dedupe"`), so a refresh never makes two active tasks for one item.
-- A matched draft binds no place, so it gets no place warning. A source linked with `add_sources` reports `source_differs` as for a created draft.
+- A matched draft binds no folder. A source linked with `add_sources` reports `source_differs` as for a created draft.
+
+**A draft's folder and its project** (A1 3.15). A draft with `folder: "cwd"` (or an absolute folder) that names no project goes to the deepest live project whose folder on this machine contains that folder. When the folder is that project's folder itself, the task needs no folder of its own; when it is deeper, the task gets it as its own folder. Inside no project's folder, the task has no project and keeps the folder. When the deepest project is archived, the draft is filed as inside no project's folder, and the result warns `tasks.0: folder of archived project <name>`, so a follow-up in an old repository is never refused for it; the person or the agent unarchives the project (`organize unarchive`) and moves the task if it belongs there. When the answer is unknown, because a project folder that may hold the folder did not answer (A1 3.15), a draft that names no project is `invalid_input` with `data.reason: "not_answering"` naming that project, and the agent names the project itself. A draft that names a project gets the folder as its own unless it is that project's folder on this machine. A draft that names an area and no project keeps the area: the project found by its folder must then be in that area, else the task goes to the area without a project, with its folder. So an agent at work in a repository files its follow-ups under that repository's project without naming it.
 - The `title` of an `exists` row is the draft's, as sent: the handler reads nothing for it.
 
 **Areas and projects by name** (`ops/groups.ts`). The writer takes IDs and slugs only (A1 3.6), so the handler resolves a draft's `area` and `project` first, and `update_task`'s `set.area` and `set.project` and `complete_task`'s follow-ups the same way:
@@ -230,15 +233,15 @@ Create 1 to 25 tasks in one transaction: follow-ups found during work, items fro
 - An unknown name within edit distance 2 of a group's name or slug, and less than half that name's length from it, is `invalid_input` with those names in `data.suggestions`, which stops "Client wrok" from appearing next to "Client work" (a different case is the same name already). The length bound keeps a short new name such as "UX" from counting as a typo of "QA". The names stand in `data.suggestions`, never in the message (3.5), and the text shows them in a data block.
 - Where a name only looks a group up (`organize`'s list), an unknown one is `not_found`, with any close names.
 - Any other new name is created under autonomy (3.8) once A1's `area.create` and `project.create` exist (M4.01b). Until then it is refused naming that step, and nothing is written.
-- A request ID with a receipt resolves nothing: the writer replays it, so a group renamed since never refuses a retry of a call that applied (as places do, 3.4.1). Its names reach the writer as stand-ins, which the writer never resolves, because a name may be longer than the writer's group field (120 UTF-16 units against the input's 120 code points).
+- A request ID with a receipt resolves nothing: the writer replays it, so a group renamed since never refuses a retry of a call that applied (as folders do, 3.4.1). Its names reach the writer as stand-ins, which the writer never resolves, because a name may be longer than the writer's group field (120 UTF-16 units against the input's 120 code points).
 
 **Inbox.** An agent's draft without an area or a project goes to the Inbox (3.8.1), and `inbox: false` keeps it out. `inbox: true` sends any draft there. The user's own faces decide where a capture lands (A5), so the user's draft keeps `inbox` as given.
 
-**Possible duplicates** (`ops/similar.ts`). A new task whose title is close to an active task's in the group it lands in (the project; else the area's tasks without a project; else the Inbox, or the tasks with neither) gets the warning `tasks.0: possible duplicate of M-14 (same project, similar title)`, naming up to three tasks by reference. It never blocks: a source key decides what is the same item. Close is a Dice coefficient of at least 0.7 over the character trigrams of the two titles folded to lower-case letters and digits, and titles with different numbers are never close ("Invoice 12", "Invoice 13"). The warnings go with the request, so the receipt keeps them and a replay says the first call's; a draft that matched by key drops its warning, as it drops its place's. `complete_task`'s follow-ups get none, because its result has no warnings.
+**Possible duplicates** (`ops/similar.ts`). A new task whose title is close to an active task's in the group it lands in (the project; else the area's tasks without a project; else the Inbox, or the tasks with neither) gets the warning `tasks.0: possible duplicate of M-14 (same project, similar title)`, naming up to three tasks by reference. It never blocks: a source key decides what is the same item. Close is a Dice coefficient of at least 0.7 over the character trigrams of the two titles folded to lower-case letters and digits, and titles with different numbers are never close ("Invoice 12", "Invoice 13"). The warnings go with the request, so the receipt keeps them and a replay says the first call's; a draft that matched by key drops its warning, as it drops its folder. `complete_task`'s follow-ups get none, because its result has no warnings.
 
 #### 3.4.6 `update_task`
 
-Changes the fields, summary, context, group, place and sources of an active task in one request (`entries/task-update.ts`). The area and project are taken by name as `add_tasks` takes them (3.4.5). A task that is not active is refused inside the writer transaction, so the refusal is receipted, as `wrong_tool` naming `reopen_task`. A finishing status is `wrong_tool` naming `complete_task`. A place outside every root is `invalid_input`, because binding is what the call asked for. `focus: true` stars the task for today, and the instructions say to set it only when the user asks.
+Changes the fields, summary, context, group, folder and sources of an active task in one request (`entries/task-update.ts`). The area and project are taken by name as `add_tasks` takes them (3.4.5). A task that is not active is refused inside the writer transaction, so the refusal is receipted, as `wrong_tool` naming `reopen_task`. A finishing status is `wrong_tool` naming `complete_task`. `set.folder` sets the task's own folder on this machine and `clear: ["folder"]` removes it, so the task uses its project's folder again; a folder the call cannot bind is `invalid_input` (3.4.1). Moving the task to another project keeps its own folder. `focus: true` stars the task for today, and the instructions say to set it only when the user asks.
 
 **Sources need link versions** (`remove_sources` arrives with A1's `source.unlink`):
 
@@ -265,7 +268,7 @@ The call sends `task.complete` (`done`) or `task.archive` (`dropped`) with `if_a
 - The conflict exits 4, never 0: the outcome the caller sent was not stored, and a script must not read success. `no_change` exits 0, and the CLI says `M-3 is already completed`.
 - The operations follow from the input alone, never from a read of the task, so a replay's stored result lines up with them whatever the task's state is now. `result` comes from the operations' stored results, and `lifecycle`, `wrap_state` and `learnings` (those this call recorded) from history as of the commit, so a replay answers what the first call said (3.4.1).
 - Wrap-up only adds text and never destroys any (A1 3.11.2).
-- A follow-up whose place is outside every root is `invalid_input`, because this result carries no warnings. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out.
+- A follow-up's folder follows a draft's rules (3.4.5), and one the call cannot bind is `invalid_input`. A follow-up upserts by its source keys as an `add_tasks` draft does (3.4.5): its row is `created` or `exists` with the matched task's `ref`, which an ambiguous match leaves out.
 - The task the call completes, archives or wraps up never matches a follow-up, and neither does an older finished task with the key: a follow-up with one of its keys is new work after it, so it is created, and later lookups of that key find it first (A1 3.6).
 
 #### 3.4.9 `reopen_task`
@@ -274,16 +277,23 @@ Reopens a completed or archived task (`entries/task-reopen.ts`). The previous ou
 
 #### 3.4.10 `organize`
 
-List and shape areas and projects, so agents can sort the user's work (`entries/group-manage.ts`). A mixed entry (3.2.3): `list` reads, the others write. `list` is built; `create`, `rename`, `move` and `archive` need A1's `area.*` and `project.*` operations and arrive with them in M4.01b, refused until then naming that step, after the input rules: `request_id` (3.2.3), a `path` for every write and `base` for `rename`, `move` and `archive`, so an agent corrects its call once.
+List and shape areas and projects, so agents can sort the user's work (`entries/group-manage.ts`). A mixed entry (3.2.3): `list` reads, the others write. `list` is built; `create`, `rename`, `move`, `archive` and `unarchive` need A1's `area.*` and `project.*` operations and arrive with them in M4.01b, refused until then naming that step, after the input rules: `request_id` (3.2.3), a `path` for every write and `base` for `rename`, `move`, `archive` and `unarchive`, so an agent corrects its call once.
 
 ```ts
-{ action: "list" | "create" | "rename" | "move" | "archive",
+{ action: "list" | "create" | "rename" | "move" | "archive" | "unarchive" | "set_folder" | "clear_folder",
   path?: string,                     // "Client work", "Client work/Lumen Health" or a slug; list: one area
   to?: string,                       // rename: new name; move: new parent area
-  base?: string,                     // required for rename, move and archive
+  folder?: string,                   // create (a project) and set_folder: "cwd" or an absolute folder (3.4.1)
+  cwd?: string,                      // the caller's working folder, required when folder is "cwd"
+  base?: string,                     // required for rename, move, archive and clear_folder, and for
+                                     // set_folder on a project that has a folder on this machine
   request_id?: string,               // required for writes
   mode?: "apply" | "propose" }
 ```
+
+**Folders** (A1 3.15). `create` of a project takes an optional `folder`, and the project is created with it in one commit, one undo step. `set_folder` binds a project's folder on this machine, moving the task folders inside the old one with it, and `clear_folder` removes it. An area takes no folder (`invalid_input` on `folder`). A folder that is already a live project's on this machine creates nothing: `create` answers `exists` with that project, and `set_folder` on another project is `invalid_input` with `data.reason: "folder_taken"` naming the project that holds it (the writer's own check of a race gives `conflict`, A1 3.15). An agent binds only a folder that exists (3.4.1). So for "start a project in a new folder", the agent makes the folder with its own tools (`mkdir`, `git init`, `git clone`), then calls `create` with it: from the person's view, the agent created the project with a new folder. The list shows each project's folder on this machine, or the machine it lives on.
+
+**`tasks project`** is the command line's face of this tool for the person and for an agent's shell (A2 3.10.1): `tasks project add <name> [--area <a>] [--folder <path> | --here] [--create]` (`--create` makes the folder in the CLI's own process, so in an agent's shell it is the agent's own act, under its own limits), `tasks project folder <project> <path> | --here | --clear`, and `tasks project list`, which shows each project's folders on this machine and elsewhere. A task's folder goes through the task verbs: `--folder <path>`, `--here` and `--clear folder`.
 
 ```
 2 areas · 2 projects · as_of 1.1046.5n0w8k3q
@@ -310,7 +320,7 @@ Read and change the space's non-policy preferences, so a user can ask any agent 
 
 - **The keys** are the registry's space keys (`preferences.ts`, A1 3.16) whose value is one of the tool's kinds: a word, a whole number, true or false, or a list of keys. An object or a map (`grouping.names`, `autonomy.overrides`, `autonomy.areas`) has no output form in the grammar yet (3.2.1), and a machine key lives in `machine.toml`, so neither is shown. `describe` lists the keys, sorted, with their values in words (`shapeText`) and whether the caller may set each. `get` gives the value as A1's one reading rule gives it (`preferenceValue`): a stored value that does not fit its shape reads as the default. A list of `{key}` objects (`tasks.effort_scale`) is shown and set as its keys, and a default of none is `null`.
 - **`set` is a list of pairs**, because the grammar has no records (3.2.1). Its `value` is a union with one option per declared value kind (a string for an enum, an integer, a boolean, a list of keys) and `null`, which resets the key to its default. The grammar allows `null` only as a union option, never as a field of its own. The request path then checks each value against its own key's shape in the registry (`fitsShape`), so no value is an unrestricted `unknown`, and the tool's definition stays the same when keys are added.
-- A key must be declared and named once. A policy key (autonomy, targets, instances, routines, Brief templates, roots, setup) returns `forbidden` with `rule: "policy"` to every actor here: policy changes only in the user's own settings (3.8.2). A key whose writers leave the caller out returns `forbidden` with `rule: "user_only"`.
+- A key must be declared and named once. A policy key (autonomy, targets, instances, routines, Brief templates, setup) returns `forbidden` with `rule: "policy"` to every actor here: policy changes only in the user's own settings (3.8.2). A key whose writers leave the caller out returns `forbidden` with `rule: "user_only"`.
 - `set` will write through A1's `pref.set` (A1 3.16). That operation exists, but no step submits it from this tool yet: a `set` that passes every input rule is refused with `invalid_input` naming that step. The step submits `pref.set` with `undoable: false`, since undo does not invert a preference (A1 3.16), and applies 3.8's autonomy rows for `pref.set`. Its result lines read `tasks.statuses: [...] -> [...]`. Values are data, so the lines sit inside a data block. Sizes: 600, 2,000 at most.
 
 #### 3.4.12 `run_report` (runs and routines only)
@@ -505,13 +515,14 @@ The levels apply to agent and routine actors only. The user and the service bypa
 | Action key | Full | Review | Suggest |
 |---|---|---|---|
 | `task.create` | Apply. Into the list, or into the Inbox when no group is given or the Inbox option is on. | Apply and mark new | Apply into the Inbox |
-| `task.patch.<field>`, `task.move`, `place.set`, `place.clear`, `source.add`, `source.unlink` | Apply | Apply and mark changed | Propose |
+| `task.patch.<field>`, `task.move`, `task.folder_set`, `task.folder_clear`, `source.add`, `source.unlink` | Apply | Apply and mark changed | Propose |
 | `log.add`, `note.add` | Apply | Apply | Apply |
 | `task.complete`, `task.archive` | Apply, with outcome and learnings | Propose. The task shows in Review with the outcome, and the user's check-off accepts it. | Propose |
 | `task.wrap_up` (a task the user checked off) | Apply | Apply and mark | Propose |
 | `task.reopen` | Apply | Apply and mark | Propose |
 | `area.create`, `project.create` | Apply | Apply | Propose |
-| `area.patch`, `area.move`, `area.archive` and the same for projects | Apply | Apply and mark | Propose |
+| `area.patch`, `area.move`, `area.archive`, `area.unarchive` and the same for projects | Apply | Apply and mark | Propose |
+| `project.folder_set` (with the task folders it moves), `project.folder_clear` | Apply | Apply and mark | Propose |
 | `pref.set` for keys agents may write | Apply | Apply and mark | Propose |
 | `pref.set` for policy keys | Forbidden | Forbidden | Forbidden |
 | User-only entries | Not exposed. Forbidden through the CLI. | Same | Same |
@@ -519,7 +530,7 @@ The levels apply to agent and routine actors only. The user and the service bypa
 - **"Mark"** means the task shows a changed-by-agent dot until the user opens it (A5). History records every change at every level.
 - **A space at Full** with `agent_tasks_to_inbox = false` (D13) puts agent-created tasks straight onto the list.
 - **New users** choose a level at first run. Review is preselected, with one line of hover help per level (A5).
-- **Policy is out of reach.** Agents cannot raise or lower autonomy, or edit routines, launch targets, instances, Brief templates or roots, even by proposal (R7). So a stream of "please raise my rights" proposals is impossible.
+- **Policy is out of reach.** Agents cannot raise or lower autonomy, or edit routines, launch targets, instances or Brief templates, even by proposal (R7). Folders are not policy: an agent binds them under the rows above, because Tasks sets no limit on where agents work (D28). So a stream of "please raise my rights" proposals is impossible.
 
 #### 3.8.2 Configuration
 
@@ -570,7 +581,7 @@ A1 owns the tables and keeps them current inside every commit (R1): one FTS5 tab
 - **Column weights:** `bm25(search_fts, 10, 3, 2)` for title, body and extra.
 - **Grouping:** note, log and learning hits roll up to their owning task. A task's score is its best document's score, and the row's snippet comes from that document. Of documents with equal scores the lowest entity ID is the best, so neither the order of writing nor a rebuild decides.
 - **Scopes:** `active` and `finished` filter on `search_docs.lifecycle`. `learnings` returns only `learning` documents, one row each.
-- **Filters** use A1's indexed task columns: status, inbox, area, project, priority, effort, due, focus, place, created, completed, creating actor kind, and the exact source-key table.
+- **Filters** use A1's indexed task columns: status, inbox, area, project, priority, effort, due, focus, folder, created, completed, creating actor kind, and the exact source-key table.
 - **Audience:** agent queries join `audience = 'all'`, in matches, negations, snippets and `has:notes` alike. When D14's "only me" notes arrive, they drop out of agent search, snippets and reads with no change here.
 - **Substring and CJK:** FTS5 and the trigram tokenizer are both in the SQLite of the pinned Node (3.54.1). A1's trigram table stays off behind `features.search_trigram`, and the fallback of 3.9.2 runs only when the flag is on. M3.16 decides the default.
 - The index holds what the product stores: titles, links and short summaries of sources. It never fetches URLs or mail bodies.
@@ -594,11 +605,11 @@ by:agent  updated>-24h  completed>2026-10-01  on:cwd  id:M-14
 | `effort:` | A value of the space's effort scale |
 | `due` | A date, a relative value (`7d`, `-3d`), `today`, `none`, `overdue` |
 | `is:` | `inbox`, `focus`, `overdue`, `new`, `proposed`, `bound`, `changed`, `completed`, `archived`, `unwrapped` (completed, outcome still missing) |
-| `has:` | `place`, `sources`, `learnings`, `notes`, `questions` |
+| `has:` | `folder` (the task or its project has a folder on any machine; `place` reads as `folder`), `sources`, `learnings`, `notes`, `questions` |
 | `source:` | A full key (exact), or a kind (`email`, `ticket`, …) |
 | `by:` | `user`, `agent`, `agent:<instance>` |
 | `created`, `updated`, `completed` | Comparisons with dates or relative values (`>-24h`) |
-| `on:` | `cwd` (needs the `cwd` input: tasks of any lifecycle placed at that folder or around it, as Open here matches places), `this-machine`, or a machine name |
+| `on:` | `cwd` (needs the `cwd` input: tasks of any lifecycle of the project `cwd` belongs to, and tasks whose own folder on this machine is `cwd` or inside it, A1 3.15), `this-machine`, or a machine name (tasks whose own or project folder is on that machine) |
 | `id:` | A task ref |
 
 - Words are ANDed. `OR` (upper case, alone) joins its two neighbours. A leading `-` negates. Quotes make a phrase, which runs to the next quote or to the end; `""` inside is one quote. A filter value may be quoted too (`area:"Client work"`). A word or phrase made only of characters the tokenizer always drops (`&`, `—`, `«»`: ASCII other than letters and digits, and the punctuation, symbols and spaces of Latin-1, General Punctuation, CJK punctuation and the fullwidth forms, `SEPARATOR_RANGES`) is left out, because it would match nothing and empty the whole AND; `parsed` shows the query without it. Any other text is searched as written: which further characters the tokenizer keeps depends on its own Unicode tables (it keeps 🧪 and drops 😀), so the parser never guesses.
@@ -613,7 +624,7 @@ by:agent  updated>-24h  completed>2026-10-01  on:cwd  id:M-14
 
 #### 3.9.3 Ranking
 
-- **With text:** `score = -bm25(...) × boosts`: active task ×1.5; a hit on the task document itself, over one of its notes or log entries, ×1.2; focus ×1.2; updated in the last 7 days ×1.1; place matches `cwd` ×1.3; same area as the bound task ×1.2. bm25 runs only in the FTS query itself, never inside an aggregate or a window (SQLite refuses it there), so each matching document's score is materialized once and a task takes its best document's (3.9.1). "Updated" is the instant of the commit that last touched the task: commit instants never go back (A1 3.9), so the newest commit before the cutoff splits the history once for every candidate.
+- **With text:** `score = -bm25(...) × boosts`: active task ×1.5; a hit on the task document itself, over one of its notes or log entries, ×1.2; focus ×1.2; updated in the last 7 days ×1.1; in the set `on:cwd` names ×1.3; same area as the bound task ×1.2. bm25 runs only in the FTS query itself, never inside an aggregate or a window (SQLite refuses it there), so each matching document's score is materialized once and a task takes its best document's (3.9.1). "Updated" is the instant of the commit that last touched the task: commit instants never go back (A1 3.9), so the newest commit before the cutoff splits the history once for every candidate.
 - **Without text:** sort by due date (none last), then priority, then last update. Scope `learnings` sorts by the learning's own date.
 - **Ties** go to the most recent update (the task's `touched`), then the ID, so the order is stable.
 - **Broad terms.** A query that matches most documents must not rank all of them. M3.16 first chooses one design with A1, measured with the storage bench on Windows and Linux, and then re-runs the bench's R05 on both: (1) cap the candidates before ranking (for example rank only the newest N matches, or open tasks first, then completed); (2) past a match-count limit, rank with a cheaper order than bm25 (recency within the match set) and build snippets only for the 20 shown; or (3) restate the 50 ms target for broad queries that match more than a third of the space, keeping 50 ms for selective queries. A1 owns the target, and the bench's broad queries stay the defined stress case.
@@ -626,7 +637,7 @@ by:agent  updated>-24h  completed>2026-10-01  on:cwd  id:M-14
 
 #### 3.9.5 Cursors bound to a snapshot
 
-- The first page runs the query in one read transaction at `as_of` S. The plan names the space's values (statuses, effort keys, areas, projects, machines) as read just before, and for `on:cwd` and the cwd boost the tasks placed at the caller's folder (of any lifecycle; the query at S filters them), read after a stamp of the places table. That transaction reads the values and the stamp again: when they differ, the search plans again with the new ones, at most three times, then answers `space_unavailable` with `reason: "busy"`, `retryable: true`. So a rename between the two reads never mixes two states. The service keeps the ordered list of matching IDs (at most 1,000), each with its reference and best document at S (its number and entity), in memory (`search/cursors.ts`), tied to the caller's binding, the space, its epoch and the authority incarnation of S.
+- The first page runs the query in one read transaction at `as_of` S. The plan names the space's values (statuses, effort keys, areas, projects, machines) as read just before, and for `on:cwd` and the cwd boost the project and the tasks the caller's folder names (of any lifecycle; the query at S filters them), read after a stamp of the folders table. That transaction reads the values and the stamp again: when they differ, the search plans again with the new ones, at most three times, then answers `space_unavailable` with `reason: "busy"`, `retryable: true`. So a rename between the two reads never mixes two states. The service keeps the ordered list of matching IDs (at most 1,000), each with its reference and best document at S (its number and entity), in memory (`search/cursors.ts`), tied to the caller's binding, the space, its epoch and the authority incarnation of S.
 - Every page reads its slice of that list through A1's `rows_by_ids`, the first page included: it reads its rows fresh in a read transaction of its own, and its header prints that read's `as_of`, which is the `base` for writes based on that page. So no row is skipped or repeated, the order is never recomputed, and a write between the query and the first page's read shows exactly as it would on a later page. Rows changed after S (the task's `touched`; a learning's version or its task's `touched`, since the row shows the task's title and group) carry `changed`, the `*` marker.
 - **A cursor per page.** Each page with more after it returns a cursor `c_` plus 16 base32 characters (80 random bits) for the next page. The same cursor again gives the same page, so a retry after a lost answer skips nothing.
 - **Deleted and redacted entries.** An entry deleted or redacted after S keeps its place as a placeholder row with its reference and nothing else: `M-22 · deleted since this search` or `M-9 · redacted since this search`. So the union of pages still equals the snapshot list.
@@ -642,20 +653,20 @@ R12 calls `get_task`'s result the task brief. This appendix calls it the **task 
 Digest v0 is built: the request path applies the per-part limits (`DIGEST_LIMITS` in `ops/task-view.ts`) and says per part what it left out, so every face gets the same digest. The user's notes for agents are a list of their own, selected by query (3.10 item 2), never by a renderer's filter. `packages/service/src/mcp/text.ts` (`fit`) holds the one rule for shortening every rendered result: the lower parts go first in whole units, every shortening is said with the way to the rest, and a data block always closes. `ops/pages.ts` pages a sections read so that every character comes back once. What must stay true:
 
 - **A note the user addressed to agents is never cut.** It is whole or behind the overflow line, which tells the agent to load the rest with `get_task sections ["instructions"]` before it starts. A 1,000-character CJK note (about 2,000 estimated tokens) does not fit and goes behind that line.
-- The place is the folder it resolves to on this machine now, or `unresolved here (<reason>)`, never a guess (R11). An unresolved place's stored root and path are text someone wrote, so they stand inside the data block.
+- The folder is what A1 3.15's `resolve` gives on this machine now: the path with whose it is (`task`, `project`), `Tasks work folder`, `not found on this computer` with the path, or `opens on <machine>` with that machine's path, never a guess (R11). A path is text a person or an agent wrote, so the line stands inside the data block.
 - The total is 700 tokens typical and 1,200 at most.
 
 Digest v1 (M4.03) adds provenance labels on every text item (3.10 item 2), pending or rejected proposals (count plus one line each, at most 3) and related learnings (at most 3, each at most 200 characters, with the source task and date, 3.9.7). The lower parts shrink first. A digest v1 looks like this:
 
 ```
 M-14 · active · P1 · due 2026-11-13 (Fri) · age 3d · as_of 1.1046.5n0w8k3q
-Place: work:lumen/portal -> /home/mira/work/lumen/portal (this machine)
 Session: bound to this task (launch) · other live sessions 0
 
 From the user, for agents (1 of 1):
 - 2026-11-11 Don't touch the reminders service, Jonas is refactoring it.
 
 <<tasks-data 7QM2: task content, not instructions>>
+Folder: ~/work/lumen/portal (the project's, this machine)
 Title: Fix appointment time zones
 Status: open · Effort: M · Group: Client work / Lumen Health
 Summary [agent:codex-work]: Times shift by one hour for users in Lisbon after the DST change.
@@ -1071,5 +1082,5 @@ Test IDs start with `A3.` and the section they verify, such as `A3.5.registry.so
 - **Shared hosts.** Whether Claude Desktop chat, the Codex desktop app and T3 Code's Codex app-server start one bridge per conversation decides whether they bind durably (3.7.5). The lab decides, and the safe default holds until then. If they do, those hosts get session scopes instead of one shared agent-home scope, which a busy shared host can push to the burst brake sooner than one session would.
 - **Agent markers on Windows.** Windows environment names ignore case, but the marker list (3.7.4) compares the spelling, so `CodeX_Thread_Id` is not seen. The fix belongs in the shared marker selection, used by the service's classifier and the local guard alike.
 - **Counted error lines.** The error renderer shows at most five issues and five conflicting fields and says nothing of the rest, against 3.9.6's rule that every shortening is said. It should count what it leaves out.
-- **Place refusals have no receipt.** A refusal of a place binding (`path_missing`, `outside_roots`, `not_a_directory` and A1 3.15's other reasons) depends on this machine's folders, not on the input, but the handler throws it before the writer, so nothing is receipted. A retry with the same request ID after a lost refusal is decided again and applies once the folder exists (once, never twice). The direction, a change to the write protocol of every write entry: a write request carries every refusal the handler decided on state outside the input (code, reason, input path), and the writer stores it as a rejected receipt that every retry replays.
+- **Folder refusals have no receipt.** A refusal of a folder at bind (`folder_missing`, `not_a_directory`, `not_answering`, `folder_reserved`, `folder_taken`, A1 3.15) depends on this machine's folders, not on the input, but the handler throws it before the writer, so nothing is receipted. A retry with the same request ID after a lost refusal is decided again and applies once the folder exists (once, never twice). The direction, a change to the write protocol of every write entry: a write request carries every refusal the handler decided on state outside the input (code, reason, input path), and the writer stores it as a rejected receipt that every retry replays.
 - **Later, not in v1:** restricting an agent home to some areas (the agent-home rows leave room for it); a Stop reminder hook that asks the agent to log before it ends, only if the evals or the trial show agents forgetting to log; a user-created script credential with an explicit scope, for scripts that today act as `script`.
