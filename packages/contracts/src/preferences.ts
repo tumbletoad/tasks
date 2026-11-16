@@ -107,12 +107,19 @@ function flag(
  * too (A1 3.16: "An agent writes only keys whose declaration lists it").
  */
 export const PREFERENCES: readonly PreferenceSpec[] = [
+  // The page's look and keys are the person's on this computer, the same in every space and tab.
+  // A per-space theme, if one comes, is a key of its own that overrides this one.
   pref("ui.theme", {
-    scope: "space",
+    scope: "machine",
     shape: { type: "enum", values: ["sumi", "washi", "system"] },
     default: "sumi",
-    writers: ["human", "agent"],
-    summary: "The page's theme: Sumi (dark), Washi (light) or the system's choice",
+    summary: "The page's theme on this computer: Sumi (dark), Washi (light) or the system's",
+  }),
+  pref("ui.single_keys", {
+    scope: "machine",
+    shape: { type: "boolean" },
+    default: true,
+    summary: "Keys without Ctrl or Alt, such as n and /, on this computer",
   }),
   pref("tasks.statuses", {
     scope: "space",
