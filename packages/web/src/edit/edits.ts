@@ -517,13 +517,14 @@ export class Edits {
 
   /**
    * Reopen a finished task (the facts' Reopen): one action, with a base, and an Undo that
-   * finishes it again by its own commit. Its earlier outcome and learnings stay with it.
+   * finishes it again by its own commit. Its earlier outcome and learnings stay with it. The
+   * service asks every reopen for a reason; a person's click gives the catalogue's plain one.
    */
-  reopen(task: TaskRow): void {
+  reopen(task: TaskRow, reason: string): void {
     const sent = this.#sendWith(task.id, ["lifecycle"], this.#deps.asOf(), (base, request) =>
       this.#deps.client.task.reopen({
         task: task.id,
-        reason: "",
+        reason,
         base: base ?? "",
         request_id: request,
       }),

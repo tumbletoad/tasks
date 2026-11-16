@@ -680,10 +680,10 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
       status: "open",
       as_of: w.asOf(11),
     }));
-    w.edits.reopen(done);
+    w.edits.reopen(done, "Reopened by hand");
     expect(w.calls[0]).toMatchObject({
       name: "task.reopen",
-      input: { task: "t_00007", base: w.asOf(10) },
+      input: { task: "t_00007", reason: "Reopened by hand", base: w.asOf(10) },
     });
     expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.reopened" } });
     await flush();
@@ -707,7 +707,7 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     w.answer("task.reopen", () => {
       throw appError("TASK_NOT_ACTIVE", {});
     });
-    w.edits.reopen(task(8, { lifecycle: "archived" }));
+    w.edits.reopen(task(8, { lifecycle: "archived" }), "Reopened by hand");
     await flush();
     expect(w.lastToast()).toEqual(
       expect.objectContaining({ kind: "error", text: { id: "toast.reopenFailed" } }),

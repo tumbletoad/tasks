@@ -68,6 +68,7 @@
   "completed.failed": "Completed tasks could not be read.",
   "row.backToOpen": "Back to open",
   "fact.reopen": "Reopen",
+  "fact.reopenReason": "Reopened by hand",
   "row.completedTip": "Completed {date}",
   "row.desc.completed": "completed {date}",
 

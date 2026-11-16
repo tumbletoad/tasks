@@ -364,7 +364,7 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
       task: ref,
       base: (await read(world, ref)).as_of,
     });
-    await expect(row.locator("[data-fact]").first()).toHaveText("Checked off", {
+    await expect(row.locator('[data-part="lifecycle"]')).toHaveText("Checked off", {
       timeout: SLOW_MS,
     });
     await page.keyboard.press("Enter");

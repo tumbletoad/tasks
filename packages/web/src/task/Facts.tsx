@@ -322,7 +322,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
     return (
       <dl className={styles.facts} aria-label={t("fact.label")}>
         <Fact label={t("fact.status")}>
-          {statusOf(task, t)}
+          <span data-part="lifecycle">{statusOf(task, t)}</span>
           {task.deleted_at === undefined ? (
             // Read-only, apart from this: the way back for a task finished by mistake or too soon.
             <button
@@ -330,7 +330,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
               className={`${styles.move} ${styles.reopen}`}
               data-part="reopen"
               onClick={() => {
-                edits.reopen(task);
+                edits.reopen(task, t("fact.reopenReason"));
               }}
             >
               {t("fact.reopen")}

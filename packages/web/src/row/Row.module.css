@@ -610,6 +610,11 @@ a.source:hover {
   .sources {
     display: none;
   }
+
+  /* The title needs the room more; expanded, the facts still offer the move. */
+  .move {
+    display: none;
+  }
 }
 
 @container (max-width: 589px) {
