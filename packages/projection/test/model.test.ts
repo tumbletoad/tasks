@@ -41,6 +41,7 @@ import {
   statSync,
   symlinkSync,
   writeFileSync,
+  type Stats,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -229,6 +230,20 @@ const action: fc.Arbitrary<Action> = fc.oneof(
 const hash = (data: Buffer | string): string => createHash("sha256").update(data).digest("hex");
 const modeOf = (path: string): number => statSync(path).mode & 0o777;
 
+/**
+ * What is at `abs`, never followed; undefined when nothing is. Linux answers ENOTDIR, not ENOENT,
+ * when a folder on the way is a file (the person put one where `completed/` was), and lstat's
+ * throwIfNoEntry covers only ENOENT.
+ */
+function entryAt(abs: string): Stats | undefined {
+  try {
+    return lstatSync(abs, { throwIfNoEntry: false });
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "ENOTDIR") return undefined;
+    throw error;
+  }
+}
+
 interface Entry {
   readonly type: "file" | "dir" | "link" | "other";
   readonly mode: number;
@@ -333,12 +348,12 @@ class Model {
 
   /** The person overwrites or removes a file at `abs`: words of theirs in it are theirs to lose. */
   forget(abs: string): void {
-    if (lstatSync(abs, { throwIfNoEntry: false })?.isFile() !== true) return;
+    if (entryAt(abs)?.isFile() !== true) return;
     this.artifacts.delete(readFileSync(abs, "utf8"));
   }
 
   realFolder(abs: string): boolean {
-    return lstatSync(abs, { throwIfNoEntry: false })?.isDirectory() === true;
+    return entryAt(abs)?.isDirectory() === true;
   }
 
   /** The generated task files the trusted record names, with their tasks. */
@@ -947,7 +962,8 @@ class Model {
     for (const [path, text] of tree) {
       if (fresh.has(path)) continue;
       const theirs = text.startsWith(MARK) || this.theirLinks.has(path);
-      expect(theirs, `${path} is the person's`).toBe(true);
+      // A file the projection made and left behind fails here, never a person's.
+      expect(theirs, `${path} is not in a fresh render, so it is the person's`).toBe(true);
     }
     // 6. Every rescue folder there is was told, whatever failed or was killed on the way.
     if (this.realFolder(rescued) && this.realFolder(this.exchange)) {
@@ -1078,6 +1094,52 @@ async function run(actions: readonly Action[]): Promise<void> {
   }
 }
 
+const quietRun = {
+  kind: "run",
+  steps: 1,
+  killAt: null,
+  during: "none",
+  leftover: false,
+  hold: null,
+  fault: null,
+} as const;
+
+/** Sequences random runs once failed, kept as they shrank: each runs first, every time. */
+const COUNTEREXAMPLES: [Action[]][] = [
+  // Windows: a task renamed, its old file held open while the batch retires it; once let go, it
+  // was left in the folder for good.
+  [
+    [
+      { kind: "rename", pick: 1437316263 },
+      { ...quietRun, steps: 2, hold: 1919241737 },
+      { kind: "elsewhere", which: 0 },
+      { kind: "create", squat: false },
+      { kind: "edit", pick: 0, how: "write" },
+      { kind: "create", squat: false },
+    ],
+  ],
+  // Windows: the same with a completed task reopened, so its file moves to open/.
+  [
+    [
+      { kind: "reopen", pick: 9 },
+      { ...quietRun, steps: 2, hold: 786592087 },
+      quietRun,
+      { kind: "create", squat: false },
+      { kind: "rename", pick: 0 },
+      { kind: "restart", killAt: null },
+    ],
+  ],
+  // Linux: a file where completed/ was, then the person's look at completed/2026 below it.
+  [
+    [
+      { kind: "folder-file", which: 1 },
+      { kind: "folder-file", which: 2 },
+      { kind: "rest" },
+      { kind: "create", squat: false },
+    ],
+  ],
+];
+
 describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at every act and faults in what the projection writes outside the tree, against the projection's invariants", () => {
   test("no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told", async () => {
     const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
@@ -1094,7 +1156,7 @@ describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at
       return;
     }
     // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
-    await fc.assert(property, { numRuns: 80, seed: 20261114 });
+    await fc.assert(property, { numRuns: 80, seed: 20261114, examples: COUNTEREXAMPLES });
     for (const [what, least] of Object.entries(LEAST)) {
       expect(seen[what as keyof typeof seen], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(
         least,
