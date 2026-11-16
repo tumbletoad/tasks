@@ -32,10 +32,13 @@ export {
   type SpawnRecord,
 } from "./fakes/index.ts";
 export {
+  createLaunchSpace,
   LAUNCH_MACHINE,
   openLaunchSpace,
+  openLaunchSpaceAt,
   openLaunchSpaceInWorker,
   type LaunchSpace,
+  type LaunchSpaceFolder,
   type WorkerLaunchSpace,
 } from "./launch-space.ts";
 /**
@@ -70,5 +73,6 @@ export {
   RUN_REASONS as STORAGE_RUN_REASONS,
   RUN_REQUEST_MAX_BYTES as STORAGE_RUN_REQUEST_MAX_BYTES,
   RUN_STATES as STORAGE_RUN_STATES,
+  RUN_RESULT_TEXT_MAX_BYTES as STORAGE_RUN_RESULT_TEXT_MAX_BYTES,
   RUN_TEXT_MAX_BYTES as STORAGE_RUN_TEXT_MAX_BYTES,
 } from "@tasks/storage";

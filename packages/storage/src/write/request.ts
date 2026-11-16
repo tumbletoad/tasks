@@ -31,6 +31,7 @@ import {
   RUN_OUTCOMES,
   RUN_PERMISSIONS,
   RUN_REQUEST_MAX_BYTES,
+  RUN_RESULT_TEXT_MAX_BYTES,
   RUN_STATES,
   RUN_TEXT_MAX_BYTES,
   RUN_USAGE_KEYS,
@@ -79,6 +80,11 @@ export const WRITE_LIMITS = {
    */
   importOps: 1_000_000,
   importBytes: 512 * 1024 * 1024,
+  /**
+   * Bytes of JSON of a request that only moves runs: a run's answer (RUN_RESULT_TEXT_MAX_BYTES) is
+   * up to six times longer as escaped JSON, so such a request is never refused for its answer.
+   */
+  runBytes: 8 * 1024 * 1024,
   /** Characters of a legacy ID kept as an alias: the prototype's marker grammar (A7 3.15.2). */
   alias: 1_024,
   /**
@@ -2112,16 +2118,19 @@ function runLimits(f: Fields): RunLimitsRow {
 const SIGNAL = /^SIG[A-Z0-9]{1,12}$/;
 
 /**
- * A run's final outcome (A4 3.11.5): the verdict, codes, counts, the native ID, usage, and the
- * agent's final result and error as text of at most 8 KiB each, normalised like every text the
- * writer stores. Never a folder.
+ * A run's final outcome (A4 3.11.5): the verdict, codes, counts, the native ID, usage, the agent's
+ * answer (at most 1 MiB, with whether it was cut and whether it is final) and its error (at most
+ * 8 KiB), normalised like every text the writer stores. Never a folder.
  */
 function runResult(f: Fields): RunResultRow {
   const count = (key: string): number => f.int(key, RANGES.count.min, RANGES.count.max);
   const nullable = <T>(key: string, read: () => T): T | null =>
     f.raw(key) === null ? null : read();
-  const text = (key: string): string | null =>
-    nullable(key, () => f.text(key, { bytes: RUN_TEXT_MAX_BYTES, empty: true }));
+  const text = (key: string, bytes: number): string | null =>
+    nullable(key, () => f.text(key, { bytes, empty: true }));
+  const flags: Pick<RunResultRow, "text_cut" | "text_final"> = {};
+  if (f.has("text_cut")) flags.text_cut = f.boolean("text_cut");
+  if (f.has("text_final")) flags.text_final = f.boolean("text_final");
   const result: RunResultRow = {
     ok: f.boolean("ok"),
     outcome: f.oneOf("outcome", RUN_OUTCOMES),
@@ -2140,8 +2149,9 @@ function runResult(f: Fields): RunResultRow {
       }
       return id;
     }),
-    text: text("text"),
-    error: text("error"),
+    text: text("text", RUN_RESULT_TEXT_MAX_BYTES),
+    ...flags,
+    error: text("error", RUN_TEXT_MAX_BYTES),
     usage: nullable("usage", () => {
       const usage = f.sub("usage");
       const out: Record<string, number> = {};
@@ -2388,12 +2398,27 @@ export function checkRequest(value: unknown): CheckedRequest {
   // from the origin, which the credential's check below confirms.
   const importing =
     isRecord(value) && isRecord(value["actor"]) && value["actor"]["origin"] === "import";
+  // A request that only moves runs may carry a whole answer; its operations' own checks below
+  // still hold the answer to its cap.
+  const ops0 = isRecord(value) ? value["ops"] : undefined;
+  const runsOnly =
+    Array.isArray(ops0) &&
+    ops0.length > 0 &&
+    ops0.every((op) => isRecord(op) && op["kind"] === "run.transition");
   const bytes = utf8Bytes(json ?? "");
-  const maxBytes = importing ? WRITE_LIMITS.importBytes : WRITE_LIMITS.requestBytes;
+  const maxBytes = importing
+    ? WRITE_LIMITS.importBytes
+    : runsOnly
+      ? WRITE_LIMITS.runBytes
+      : WRITE_LIMITS.requestBytes;
   if (bytes > maxBytes) {
     fail(
       "TOO_LARGE",
-      importing ? "The import is larger than 512 MiB" : "The request is larger than 512 KiB",
+      importing
+        ? "The import is larger than 512 MiB"
+        : runsOnly
+          ? "The request is larger than 8 MiB"
+          : "The request is larger than 512 KiB",
       "",
     );
   }
