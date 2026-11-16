@@ -23,6 +23,7 @@ export function editsOf(live: Live, api: Api): Edits {
         return undefined;
       },
       newRequest: requestId,
+      alive: () => !live.stopped,
     });
     controllers.set(live, edits);
   }

@@ -2,8 +2,8 @@
 // shows the current value, and this line keeps the person's own value one click away. After a
 // conflict: "Changed by Codex just now · Apply mine · Keep theirs". After a failed call: "Not saved
 // · Try again · Discard". On a finished task, which takes no edit until it is reopened: "Not saved:
-// the task is finished · Copy · Discard". The line stays until the person chooses, whatever the
-// feed brings.
+// the task is finished · Copy · Discard", after the value itself where no fact shows it (the
+// title). The line stays until the person chooses, whatever the feed brings.
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -13,17 +13,20 @@ import { keyOf, whoOf } from "./edits.ts";
 import css from "./Unsaved.module.css";
 import { useEditState, useEdits } from "./useEdits.ts";
 
-const styles = classes(css, ["line", "why", "act"]);
+const styles = classes(css, ["line", "why", "act", "value"]);
 
 export function Unsaved({
   task,
   field,
   finished = false,
+  withValue = false,
 }: {
   readonly task: string;
   readonly field: Field;
   /** The task is finished: the value cannot be saved now, only copied or discarded. */
   readonly finished?: boolean;
+  /** On a finished task, the line shows the value itself too: no fact shows it (the title). */
+  readonly withValue?: boolean;
 }) {
   const t = useT();
   const say = useToast();
@@ -36,6 +39,11 @@ export function Unsaved({
   if (finished) {
     return (
       <span className={styles.line} data-part="unsaved" data-reason="finished" role="status">
+        {withValue ? (
+          <span className={styles.value} dir="auto" data-part="unsaved-value">
+            {mine}
+          </span>
+        ) : null}
         <span className={styles.why}>{t("edit.notSavedFinished")}</span>
         <button
           type="button"
