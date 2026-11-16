@@ -263,7 +263,7 @@ async function surveyOf(
 
 /**
  * Offers a person can tell apart: two of one app (two Codex homes) are each labelled with their
- * home's folder name, such as `Codex (.codex-personal)`, in the preview and in the entry, whose
+ * home's folder name, such as `Codex (.codex-second)`, in the preview and in the entry, whose
  * label names the instance's tile.
  */
 export function distinctLabels(

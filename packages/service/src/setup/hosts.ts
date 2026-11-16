@@ -449,7 +449,7 @@ function homeAccount(home: string, platform: NodeJS.Platform): string {
   return m?.[2] ?? "default";
 }
 
-/** The instance ID a T3 provider instance is proposed under: `t3-codex`, `t3-claude-personal`. */
+/** The instance ID a T3 provider instance is proposed under: `t3-codex`, `t3-claude-second`. */
 function t3ProposalId(instance: T3ProviderInstance): string {
   if (instance.id === "codex") return "t3-codex";
   if (instance.id === "claudeAgent") return "t3-claude";
@@ -557,7 +557,7 @@ export function t3InstanceId(home: T3Home, platform: NodeJS.Platform): string {
     const id = `${base}-${m[2] ?? ""}`;
     if (INSTANCE_ID.test(id)) return id;
   }
-  // T3's own IDs take `_` (`claude_personal`), which instance IDs do not.
+  // T3's own IDs take `_` (`claude_second`), which instance IDs do not.
   const key = home.provider.toLowerCase().replaceAll("_", "-");
   if (key.startsWith(base) && INSTANCE_ID.test(key)) return key;
   return `${base}-t3`;

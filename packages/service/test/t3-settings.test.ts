@@ -49,11 +49,11 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     const read = t3ProviderInstances(linux(), {
       providerInstances: {
         // As T3 writes an added Claude instance, and a default that was only renamed.
-        claude_personal: {
+        claude_second: {
           driver: "claudeAgent",
-          displayName: "Claude Personal",
+          displayName: "Claude Second",
           enabled: true,
-          config: { homePath: "~/.claude_personal" },
+          config: { homePath: "~/.claude_second" },
         },
         claudeAgent: { driver: "claudeAgent", displayName: "Claude Work", enabled: true },
       },
@@ -61,12 +61,12 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     expect(read.skipped).toEqual([]);
     expect(read.instances).toEqual([
       {
-        id: "claude_personal",
+        id: "claude_second",
         driver: "claudeAgent",
         app: "claude-code",
-        displayName: "Claude Personal",
+        displayName: "Claude Second",
         listed: true,
-        home: "/home/mira/.claude_personal",
+        home: "/home/mira/.claude_second",
         isDefault: false,
       },
       {
@@ -105,7 +105,7 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
           driver: "codex",
           environment: [
             { name: "OPENAI_API_KEY", value: SENTINEL, sensitive: true },
-            { name: "CODEX_HOME", value: "~/.codex_personal", sensitive: false },
+            { name: "CODEX_HOME", value: "~/.codex_second", sensitive: false },
           ],
         },
         codex_work: {
@@ -123,7 +123,7 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     };
     const read = t3ProviderInstances(linux({ CLAUDE_CONFIG_DIR: "/srv/claude-shell" }), doc);
     expect(byId(read.instances, "codex")).toMatchObject({
-      home: "/home/mira/.codex_personal",
+      home: "/home/mira/.codex_second",
       isDefault: false,
     });
     expect(byId(read.instances, "codex_work").home).toBe("/srv/codex-work");
@@ -143,12 +143,12 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
           driver: "codex",
           environment: [
             { name: "CODEX_HOME", value: "D:\\first", sensitive: false },
-            { name: "codex_home", value: "~\\.codex_personal", sensitive: false },
+            { name: "codex_home", value: "~\\.codex_second", sensitive: false },
           ],
         },
       },
     });
-    expect(byId(win.instances, "codex").home).toBe("C:\\Users\\mira\\.codex_personal");
+    expect(byId(win.instances, "codex").home).toBe("C:\\Users\\mira\\.codex_second");
     // Linux reads names exactly: `codex_home` is another variable.
     const exact = t3ProviderInstances(linux(), {
       providerInstances: {
@@ -189,7 +189,7 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     // never taken for the default. T3 expands `~` in an inherited CODEX_HOME, not in an inherited
     // CLAUDE_CONFIG_DIR.
     const inherited = t3ProviderInstances(
-      linux({ CODEX_HOME: "relative/codex", CLAUDE_CONFIG_DIR: "~/.claude_personal" }),
+      linux({ CODEX_HOME: "relative/codex", CLAUDE_CONFIG_DIR: "~/.claude_second" }),
       undefined,
       "missing",
     );
@@ -218,16 +218,16 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
     const managed = t3ProviderInstances(linux({ CODEX_HOME: "/srv/shell" }), {
       providerInstances: {
         codex: { driver: "codex", config: { setupMode: "managed" } },
-        codex_personal: {
+        codex_second: {
           driver: "codex",
-          config: { homePath: "~/.codex", shadowHomePath: "~/.codex-t3/personal" },
+          config: { homePath: "~/.codex", shadowHomePath: "~/.codex-t3/second" },
         },
       },
     });
     expect(byId(managed.instances, "codex").home).toBe("/home/mira/.codex");
-    expect(byId(managed.instances, "codex_personal")).toMatchObject({
+    expect(byId(managed.instances, "codex_second")).toMatchObject({
       home: "/home/mira/.codex",
-      shadow: "/home/mira/.codex-t3/personal",
+      shadow: "/home/mira/.codex-t3/second",
     });
   });
 
@@ -292,11 +292,11 @@ describe("[A3.3.13.6.t3-settings] T3's provider instances as T3 writes them", ()
   test("an instance ID for a home only T3 uses comes from its folder, `_` as well as `-`", () => {
     const id = (home: string, provider = "x") =>
       t3InstanceId({ app: "claude-code", provider, home, isDefault: false }, "linux");
-    expect(id("/home/mira/.claude_personal")).toBe("claude-personal");
+    expect(id("/home/mira/.claude_second")).toBe("claude-second");
     expect(id("/home/mira/.claude-work")).toBe("claude-work");
     expect(id("/home/mira/.claude")).toBe("claude");
     expect(id("/srv/agents/home", "claude-lab")).toBe("claude-lab");
-    expect(id("/srv/agents/home", "claude_personal")).toBe("claude-personal");
+    expect(id("/srv/agents/home", "claude_second")).toBe("claude-second");
     expect(id("/srv/agents/home", "Claude Lab")).toBe("claude-t3");
   });
 
