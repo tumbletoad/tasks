@@ -5849,7 +5849,6 @@
         },
         "required": [
           "task",
-          "reason",
           "base",
           "request_id"
         ],

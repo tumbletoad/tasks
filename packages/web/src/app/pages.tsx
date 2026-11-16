@@ -1,6 +1,6 @@
-// The content of each route: Today's sections (views/Today.tsx), and for the views whose own step
-// is still to come (A7 3.12) the grouped list filtered to what the view holds, or a plain line for
-// a view that has no list yet. No view has a heading (U3); the sidebar's active item and the tab's
+// The content of each route: Today's sections (views/Today.tsx), each status view's list grouped
+// as A5 3.5 says (`VIEW_LIST`), the area and project views, Completed (views/Completed.tsx) and
+// Agents (views/Agents.tsx). No view has a heading (U3); the sidebar's active item and the tab's
 // title name it.
 //
 // A view holds its expanded task in the URL (`?task=<ref>`, A5 3.3): expanding a row writes it
@@ -18,7 +18,18 @@ import type { TaskFacts } from "../task/detail.ts";
 import { useTitle, useToast } from "./frame.ts";
 import { hostOf, type Host } from "./host.ts";
 import css from "./pages.module.css";
-import { areaFilter, LANDING, VIEW_LABEL, viewFilter, type View } from "./views.ts";
+import {
+  areaFilter,
+  isCounted,
+  LANDING,
+  VIEW_LABEL,
+  VIEW_LIST,
+  viewFilter,
+  type View,
+} from "./views.ts";
+import { areaGroups, projectGroups } from "../groups.ts";
+import { AgentsPage } from "../views/Agents.tsx";
+import { CompletedPage } from "../views/Completed.tsx";
 import { TaskList } from "../views/TaskList.tsx";
 import { TodayPage } from "../views/Today.tsx";
 import { classes } from "./css.ts";
@@ -69,9 +80,6 @@ function useDayInUrl(): (day: string | undefined) => void {
   );
 }
 
-/** Completed lists nothing yet (M5.05): it holds only the task a link named. */
-const NONE = () => false;
-
 export function ViewPage({
   view,
   task,
@@ -90,26 +98,19 @@ export function ViewPage({
   if (view === "today") {
     return <TodayPage task={task} day={day} onExpand={onExpand} onDay={onDay} />;
   }
-  if (view === "completed" && task !== undefined) {
-    return (
-      <TaskList
-        key={view}
-        view="open"
-        filter={NONE}
-        empty={t("view.notBuilt")}
-        expand={task}
-        onExpand={onExpand}
-      />
-    );
-  }
-  if (filter === undefined || view === "completed" || view === "agents") return <NotBuilt />;
+  if (view === "completed") return <CompletedPage task={task} onExpand={onExpand} />;
+  if (view === "agents") return <AgentsPage task={task} onExpand={onExpand} />;
+  if (filter === undefined || !isCounted(view)) return null;
+  const list = VIEW_LIST[view];
   // Keyed by the view: another view starts at its top with nothing expanded.
   return (
     <TaskList
       key={view}
       view={view}
+      grouping={list.grouping}
+      group={list.group}
       filter={filter}
-      empty={t("view.empty")}
+      empty={t(list.empty)}
       expand={task}
       onExpand={onExpand}
     />
@@ -137,6 +138,8 @@ export function AreaPage({
     <TaskList
       key={`${area}/${project ?? ""}`}
       view="area"
+      grouping="project"
+      group={project === undefined ? areaGroups : projectGroups}
       filter={filter}
       empty={t("view.empty")}
       expand={task}

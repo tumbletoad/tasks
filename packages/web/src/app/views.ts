@@ -1,17 +1,18 @@
-// The views of the sidebar (A5 3.3, 3.4, 3.5) as pure functions of the live rows, so membership and
-// the counts are unit tests. Today's sections and week strip are `todayOf` (A5 3.4); the other
-// views' own groupings are M5.05's, and until then each shows the open tasks it holds through the
-// grouped list.
+// The views of the sidebar as pure functions of the live rows, so membership and
+// the counts are unit tests. Today's sections and week strip are `todayOf`; each status
+// view's grouping is `VIEW_LIST`.
 //
 // - Status views are disjoint (U5): Inbox holds the tasks with the inbox flag, and Open, Waiting,
 //   Review and Backlog hold the other active tasks by status. So the counts add up.
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
-// - Inbox and Backlog are shown only when they hold a task, in fixed places (A5 3.3).
-// - Completed and Agents read data the live store does not hold (A5 3.25: completed tasks are never
-//   in it), so they have no list here yet.
+// - Every view is always in the sidebar, in its fixed place, whatever it holds.
+// - Completed and Agents read data the live store does not hold (completed tasks are never
+//   in it): Completed is a paged query (views/Completed.tsx), Agents the tab's change log.
+import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
 import { dateOf, dayNumber, localDate, type Clock } from "../row/dates.ts";
+import type { Grouping } from "../row/model.ts";
 
 export const VIEWS = [
   "today",
@@ -25,14 +26,11 @@ export const VIEWS = [
 ] as const;
 export type View = (typeof VIEWS)[number];
 
-/** The landing view of a space (A5 3.3: Today, a preference later). */
+/** The landing view of a space: Today, a preference later. */
 export const LANDING: View = "today";
 
 export const COUNTED = ["inbox", "open", "waiting", "review", "backlog"] as const;
 export type CountedView = (typeof COUNTED)[number];
-
-/** Shown only when not empty, each at its own fixed place. */
-export const SHOWN_WHEN_NOT_EMPTY: readonly View[] = ["inbox", "backlog"];
 
 export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
   today: "nav.today",
@@ -48,7 +46,7 @@ export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
 export const isView = (value: string): value is View =>
   (VIEWS as readonly string[]).includes(value);
 
-const isCounted = (view: View): view is CountedView =>
+export const isCounted = (view: View): view is CountedView =>
   (COUNTED as readonly string[]).includes(view);
 
 /** The counted view a task belongs to: Inbox by its flag, else its status; none for another. */
@@ -86,13 +84,59 @@ export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined
   return undefined;
 }
 
-/** An area view: every open task of the area (A5 3.5), or of one of its projects. */
+/** What a view's sidebar entry shows besides its name and icon. */
+export interface SidebarEntry {
+  /** Counted views only, and only once the rows are known. */
+  readonly count?: number;
+  /** Shown quieter, without a count: it holds nothing. */
+  readonly empty: boolean;
+}
+
+/**
+ * Every view's entry, always all of them in `VIEWS` order: people find these by position, so no
+ * state adds, removes or moves one. Without counts (no snapshot yet) no entry claims a number or
+ * emptiness it does not know.
+ */
+export function sidebarEntries(
+  counts: Readonly<Record<CountedView, number>> | undefined,
+): ReadonlyMap<View, SidebarEntry> {
+  return new Map(
+    VIEWS.map((view): [View, SidebarEntry] => {
+      if (counts === undefined || !isCounted(view)) return [view, { empty: false }];
+      const count = counts[view];
+      return [view, { count, empty: count === 0 }];
+    }),
+  );
+}
+
+/** How a status view lists what it holds, and the line it shows when it holds nothing. */
+export interface ViewList {
+  /** What the grouping states, so the rows leave it out. */
+  readonly grouping: Grouping;
+  readonly group: GroupTasks;
+  /** The empty line. */
+  readonly empty: MessageId;
+}
+
+export const VIEW_LIST: Readonly<Record<CountedView, ViewList>> = {
+  // Flat, newest first: quick captures wait here for triage.
+  inbox: { grouping: "flat", group: flatGroups, empty: "view.empty.inbox" },
+  // Area headings, then project labels.
+  open: { grouping: "area", group: groupTasks, empty: "view.empty.open" },
+  // By the person waited on, who is the group's heading.
+  waiting: { grouping: "person", group: personGroups, empty: "view.empty.waiting" },
+  // Flat, newest first.
+  review: { grouping: "flat", group: flatGroups, empty: "view.empty.review" },
+  backlog: { grouping: "area", group: groupTasks, empty: "view.empty.backlog" },
+};
+
+/** An area view: every open task of the area, or of one of its projects. */
 export function areaFilter(area: string, project?: string): (task: TaskRow) => boolean {
   return (task) => task.area_id === area && (project === undefined || task.project_id === project);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Today (A5 3.4): the week strip, then Focus, This week, Next and Changes. A task appears in the
+// Today: the week strip, then Focus, This week, Next and Changes. A task appears in the
 // first section that selects it and in no other, so the sections are disjoint by construction:
 // each section takes only what the sections before it left. Computed from the task rows in the
 // client, never by a model: Today reads what the space holds (a star is `focus_on`, a plan is
@@ -113,22 +157,27 @@ export const isTodaySection = (value: string): value is TodaySection =>
 
 /** Next's length until the preference `today.next_limit` reaches the page (A5 open item 5). */
 export const NEXT_LIMIT = 3;
-/** Changes shows at most this many lines (A5 3.4, 3.14). */
+/** Changes shows at most this many lines. */
 export const CHANGES_LIMIT = 5;
-/** A change older than this drops off Changes (A5 3.14). */
+/** A change older than this drops off Changes. */
 export const CHANGES_DAYS = 7;
-/** The strip draws this many marks under a day, then a plus (A5 3.4). */
+/** The strip draws this many marks under a day, then a plus. */
 export const STRIP_MARKS = 4;
 
 const DAY_MS = 86_400_000;
 
-/** An agent's change to a task (A5 3.14's digest, as far as the page knows it). */
+/** An agent's change to a task, as far as the page knows it. */
 export interface TaskChange {
   readonly task: string;
   /** The actor's label ("Codex"). */
   readonly actor: string;
   /** When the page saw it, in milliseconds since 1970. */
   readonly at: number;
+  /**
+   * The task's newest row the feed brought, kept for a task the live rows no longer hold: one the
+   * agent finished is still what the person comes back to see.
+   */
+  readonly row?: TaskRow;
 }
 
 export interface TodayOptions {
@@ -196,7 +245,7 @@ const plannedOf = (task: TaskRow): string | undefined =>
     ? task.planned_for
     : undefined;
 
-/** Starred: `focus_on` today or earlier. The star carries over until it is cleared (A5 3.4). */
+/** Starred: `focus_on` today or earlier. The star carries over until it is cleared. */
 export const isStarred = (task: TaskRow, today: string): boolean =>
   task.focus_on !== undefined && task.focus_on <= today;
 
@@ -443,6 +492,36 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
   return { strip, sections };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Agents until the service has a read of sessions, runs and routines: "Recent", the
+// tasks an agent or a routine changed while this tab followed the space (the change log Today's
+// Changes reads), newest first, one group per day of the change. A task the agent finished stays,
+// with the row the feed last brought; a deleted one leaves.
+
+export interface RecentDay {
+  /** `YYYY-MM-DD` on the viewer's calendar. */
+  readonly date: string;
+  readonly tasks: readonly TaskRow[];
+}
+
+/** The changed tasks, by the day of their newest change, newest first. */
+export function recentOf(
+  changes: readonly TaskChange[],
+  tasks: ReadonlyMap<string, TaskRow>,
+  timeZone: string,
+): RecentDay[] {
+  const days: { date: string; tasks: TaskRow[] }[] = [];
+  for (const change of changes) {
+    const task = tasks.get(change.task) ?? change.row;
+    if (task === undefined || task.deleted_at !== undefined) continue;
+    const date = localDate(change.at, timeZone);
+    const last = days.at(-1);
+    if (last?.date === date) last.tasks.push(task);
+    else days.push({ date, tasks: [task] });
+  }
+  return days;
+}
+
 /** The expanded task as the list last showed it: its section and its place there. */
 export interface HeldTask {
   readonly task: TaskRow;
@@ -451,7 +530,7 @@ export interface HeldTask {
 }
 
 /**
- * Today's sections with the expanded task kept where it was shown (A5 3.3, 3.15: nothing moves
+ * Today's sections with the expanded task kept where it was shown (nothing moves
  * under focus). An update that moves the expanded task inside its section, to another section,
  * or off Today, leaves it at its place in the section it was in until it is collapsed, with its
  * latest data. An expanded task Today has not shown (a link or a reload names it) sits at the top

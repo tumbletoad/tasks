@@ -9,6 +9,7 @@
 // ends with the session's space. Plain code, no React; Today reads it through
 // `useSyncExternalStore`.
 import type { Change } from "../store/core.ts";
+import type { TaskRow } from "../store/rows.ts";
 import type { Changes } from "../store/store.ts";
 import type { TaskChange } from "./views.ts";
 
@@ -46,17 +47,28 @@ export class ChangeLog {
   #apply(changes: readonly Change[]): void {
     const at = this.#now();
     const fresh = new Map<string, TaskChange>();
+    /** Each task's newest row in the frame, whoever changed it. */
+    const rows = new Map<string, TaskRow>();
     // A frame's changes are in commit order: the last one of a task is its newest.
     for (const change of changes) {
+      if (change.type === "task" && change.after !== undefined) {
+        rows.set(change.id, change.after as TaskRow);
+      }
       if (!AGENT_KINDS.has(change.actor.kind) || change.task === undefined) continue;
       // A launch is the person's act and its receipts are the tile's, not a change to the task.
       if (change.type === "launch") continue;
       fresh.delete(change.task);
       fresh.set(change.task, { task: change.task, actor: change.actor.label, at });
     }
-    if (fresh.size === 0) return;
+    const held = this.#entries.filter((e) => !fresh.has(e.task));
+    if (fresh.size === 0 && !held.some((e) => rows.has(e.task))) return;
+    const before = new Map(this.#entries.map((e) => [e.task, e.row]));
+    const withRow = (entry: TaskChange): TaskChange => {
+      const row = rows.get(entry.task) ?? before.get(entry.task);
+      return row === undefined ? entry : { ...entry, row };
+    };
     const newest = [...fresh.values()].reverse();
-    this.#entries = [...newest, ...this.#entries.filter((e) => !fresh.has(e.task))].slice(0, KEPT);
+    this.#entries = [...newest, ...held].slice(0, KEPT).map(withRow);
     for (const listener of this.#listeners) listener();
   }
 }

@@ -327,11 +327,11 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
         if (width === 390) {
           // A long unbroken area or project name is cut, and never widens the page. The fixture's
           // names are short and no operation renames an area yet, so the names are lengthened in
-          // place; the reload that follows restores them.
-          await page.evaluate(() => {
-            window.scrollTo(0, 0);
-          });
-          await expect(page.locator("[data-list] h2").first()).toBeAttached();
+          // place; the reload that follows restores them. The Inbox is one flat list, so this
+          // looks at Open, which has area headings, and goes back.
+          const inbox = page.url();
+          await page.goto(inbox.replace(/\/inbox(\?.*)?$/, "/open"));
+          await expect(page.locator("[data-list] h2").first()).toBeAttached({ timeout: SLOW_MS });
           const widened = await page.evaluate(() => {
             const names = document.querySelectorAll(
               "[data-list] h2 > span[dir], [data-list] h3 > span[dir]",
@@ -344,6 +344,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
           });
           expect(widened.names).toBeGreaterThan(0);
           expect(widened.scroll, "horizontal scroll with long headings").toBeLessThanOrEqual(0);
+          await page.goto(inbox);
         }
       }
     }
