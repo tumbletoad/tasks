@@ -37,7 +37,7 @@ async function folderOf(ref: string): Promise<unknown> {
   return (shown["task"] as Record<string, unknown>)["folder"];
 }
 
-const ends = (tail: string) => expect.stringMatching(new RegExp(`${tail}$`, "u"));
+const ends = (tail: string): unknown => expect.stringMatching(new RegExp(`${tail}$`, "u"));
 
 describe("[A3.3.4.folders.cli] folders at the command line", () => {
   test("a task's folder from --folder ., folder= relative, --here, and --clear folder", async () => {

@@ -2804,12 +2804,9 @@ interface GroupsHere extends Awaited<ReturnType<typeof readGroups>> {
  */
 async function readGroupsHere(call: Call, reader: WorkerConnection): Promise<GroupsHere> {
   const read = await readGroups(reader);
-  let folders: readonly ProjectFolderRow[] = [];
-  try {
-    folders = await readProjectFolders(reader, call.host.machine.id);
-  } catch {
-    folders = [];
-  }
+  const folders = await readProjectFolders(reader, call.host.machine.id).catch(
+    (): ProjectFolderRow[] => [],
+  );
   return { ...read, folders: new Map(folders.map((f) => [f.project, f.stored])) };
 }
 

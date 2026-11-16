@@ -48,7 +48,7 @@ export async function folderVerb(
   ];
   if (!here && !create) return runVerb(io, globals, verb, rest, options);
   let made: string[] = [];
-  let succeeded = false;
+  const call = { succeeded: false };
   const code = await runVerb(
     io,
     globals,
@@ -56,7 +56,7 @@ export async function folderVerb(
     rest,
     options,
     (_result, printed) => {
-      succeeded = true;
+      call.succeeded = true;
       io.stdout(printed);
       return Promise.resolve();
     },
@@ -76,7 +76,7 @@ export async function folderVerb(
       },
     },
   );
-  if (!succeeded) {
+  if (!call.succeeded) {
     // Innermost first: a folder made here and still empty goes; anything put in it stays.
     for (const folder of made.toReversed()) {
       try {

@@ -79,7 +79,7 @@ async function addHere(title: string, cwd: string) {
   );
 }
 
-const ends = (tail: string) => expect.stringMatching(new RegExp(`${tail}$`, "u"));
+const ends = (tail: string): unknown => expect.stringMatching(new RegExp(`${tail}$`, "u"));
 
 beforeAll(async () => {
   const temp = tempRoot("fields");
