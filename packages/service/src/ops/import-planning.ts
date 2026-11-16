@@ -956,6 +956,8 @@ const HINTS: Readonly<Record<string, string>> = {
 };
 
 export interface PlanningUndoCall {
+  /** The space's folder on this machine: the run's undo.json goes beside its report. */
+  readonly folder?: string;
   readonly reader: WorkerConnection;
   readonly writer: SpaceWriterHandle;
   readonly input: Record<string, unknown>;
@@ -1023,16 +1025,31 @@ export async function planningUndo(call: PlanningUndoCall): Promise<ImportPlanni
     kept.set(c.ref, fields);
   }
   const list = [...kept].map(([task, fields]) => ({ task, fields: [...fields] }));
-  return {
+  const answer: ImportPlanningUndoResult = {
     run,
     commit: must(result.commit),
     undone: commit.id,
     removed: removed.size,
     restored: restored.size,
-    kept: list.slice(0, PREVIEW_ROWS),
-    kept_more: Math.max(0, list.length - PREVIEW_ROWS),
+    kept: list,
+    kept_more: 0,
     as_of: result.as_of,
     ...(result.replayed === true ? { replayed: true } : {}),
+  };
+  // Every kept task beside the run's report, as apply.json holds every task of the apply; the
+  // entry returns the first 2,000. The undo stands whether or not this file can be written.
+  if (call.folder !== undefined) {
+    try {
+      const file = join(runFolderOf(call.folder, run), "undo.json");
+      writeNew(file, `${JSON.stringify(answer, null, 2)}\n`);
+    } catch {
+      // No run folder any more, a file there already, or no room: the answer still goes back.
+    }
+  }
+  return {
+    ...answer,
+    kept: list.slice(0, PREVIEW_ROWS),
+    kept_more: Math.max(0, list.length - PREVIEW_ROWS),
   };
 }
 

@@ -188,6 +188,7 @@ export async function attachWorld(
       }),
     undo: (run) =>
       planningUndo({
+        folder,
         reader,
         writer: handle,
         input: { run },

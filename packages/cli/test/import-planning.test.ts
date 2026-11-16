@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { ImportPlanningPreviewResult } from "@tasks/contracts";
+import { undoText } from "../src/import.ts";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -232,6 +233,25 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
     expect(undone.code, undone.stdout).toBe(0);
     expect(undone.stdout).toContain(`Undid run ${dry.run}`);
   }, 120_000);
+
+  test("[A7.3.15.importer.undo] the undo's text counts every kept task and says where the unlisted ones are", () => {
+    const kept = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ task: `M-${String(i + 1)}`, fields: ["title"] }));
+    const answer = {
+      run: "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+      commit: "op_0c4g8k2n6r0v4y8b2e6h0m4q8t",
+      undone: "op_1c4g8k2n6r0v4y8b2e6h0m4q8t",
+      removed: 3,
+      restored: 1,
+      as_of: "1.ai_0c4g8k2n6r0v4y8b2e6h0m4q8t.9",
+    };
+    const all = undoText({ ...answer, kept: kept(2), kept_more: 0 });
+    expect(all).toContain("kept as they are: 2 tasks.");
+    expect(all).not.toContain("more");
+    const cut = undoText({ ...answer, kept: kept(3), kept_more: 2_400 });
+    expect(cut).toContain("kept as they are: 2403 tasks.");
+    expect(cut).toContain("and 2400 more, listed in the run's undo.json");
+  });
 
   test("usage: a folder that is not there, a missing --dry-run, an option of a later build", async () => {
     const missing = await run([

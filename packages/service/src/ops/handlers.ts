@@ -1851,6 +1851,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw storageFailure(error);
     }
     return await planningUndo({
+      ...(call.space.folder === undefined ? {} : { folder: call.space.folder }),
       reader,
       writer,
       input: call.input,

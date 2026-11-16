@@ -270,13 +270,17 @@ function applied(r: ImportPlanningApplyResult): string {
 }
 
 /** An undo's answer for a person. */
-function undone(r: ImportPlanningUndoResult): string {
+export function undoText(r: ImportPlanningUndoResult): string {
   const lines = [
     `Undid run ${r.run}: removed ${String(r.removed)} tasks, set back ${String(r.restored)}.`,
   ];
-  if (r.kept.length > 0) {
-    lines.push("Changed since the import, kept as they are:");
+  const total = r.kept.length + r.kept_more;
+  if (total > 0) {
+    lines.push(`Changed since the import, kept as they are: ${String(total)} tasks.`);
     for (const k of r.kept) lines.push(`  ${k.task}  ${k.fields.join(", ")}`);
+  }
+  if (r.kept_more > 0) {
+    lines.push(`  and ${String(r.kept_more)} more, listed in the run's undo.json`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -321,7 +325,7 @@ export async function importCommand(
       run: parsed.run,
       request_id: `iu_${parsed.run.slice(3)}`,
     })) as ImportPlanningUndoResult;
-    io.stdout(globals.json ? `${JSON.stringify(result)}\n` : undone(result));
+    io.stdout(globals.json ? `${JSON.stringify(result)}\n` : undoText(result));
     return 0;
   } catch (error) {
     if (error instanceof UsageError) return printUsage(io, globals.json, error.message);

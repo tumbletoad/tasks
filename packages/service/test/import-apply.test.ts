@@ -961,6 +961,16 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
       const refOf = (id: string) => `M-${String(task(world, id)["ref"])}`;
       // Only the import's own tasks are listed; the person's task keeps its area without a mention.
       expect(undone.kept.map((k) => k.task).sort()).toEqual([refOf(ta), refOf(tb)].sort());
+      // The run's undo.json holds every kept task, as the answer does up to its 2,000.
+      const saved = ImportPlanningUndoResult.parse(
+        JSON.parse(
+          readFileSync(
+            join(world.folder, "exchange", "planning", preview.run, "undo.json"),
+            "utf8",
+          ),
+        ),
+      );
+      expect(saved.kept).toEqual(undone.kept);
       expect(undone.removed).toBe(created.length - 2);
       expect(
         world.rows("SELECT deleted_at FROM areas WHERE id = $id", {
