@@ -83,7 +83,10 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
       expect(read(text).chips, text).toEqual([]);
     }
     // A second priority stays in the title.
-    expect(read("p1 compare p2 plans").draft).toMatchObject({ title: "compare p2 plans", priority: 1 });
+    expect(read("p1 compare p2 plans").draft).toMatchObject({
+      title: "compare p2 plans",
+      priority: 1,
+    });
   });
 
   test("#area and #area/project by name or slug, a project alone when it is the only one", () => {
@@ -155,7 +158,10 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
       project: "Garden",
       inbox: false,
     });
-    expect(read("Weed the beds", { here }).chips[0]).toMatchObject({ kind: "area", fromView: true });
+    expect(read("Weed the beds", { here }).chips[0]).toMatchObject({
+      kind: "area",
+      fromView: true,
+    });
     expect(read("Draft the brief #client-work", { here }).draft).toMatchObject({
       area: "Client work",
     });
@@ -186,8 +192,6 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
       "#home/garden",
       "#home/repairs",
     ]);
-    expect(groupSuggestions("#ga", AREAS, PROJECTS).map((s) => s.insert)).toEqual([
-      "#home/garden",
-    ]);
+    expect(groupSuggestions("#ga", AREAS, PROJECTS).map((s) => s.insert)).toEqual(["#home/garden"]);
   });
 });

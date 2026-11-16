@@ -22,6 +22,7 @@ import { areaFilter, LANDING, VIEW_LABEL, viewFilter, type View } from "./views.
 import { TaskList } from "../views/TaskList.tsx";
 import { TodayPage } from "../views/Today.tsx";
 import { classes } from "./css.ts";
+import { SearchPage as SearchResults } from "../views/Search.tsx";
 
 const styles = classes(css, ["line"]);
 
@@ -245,8 +246,14 @@ export function TaskPage({ task }: { readonly task: string }) {
   }
 }
 
-export function SearchPage() {
-  const t = useT();
-  useTitle(t("nav.search"));
-  return <NotBuilt />;
+/** The search route: the top field's search, its expanded result in the URL as in a view. */
+export function SearchPage({
+  q,
+  task,
+}: {
+  readonly q?: string | undefined;
+  readonly task?: string | undefined;
+}) {
+  const onExpand = useExpandInUrl();
+  return <SearchResults q={q ?? ""} task={task} onExpand={onExpand} />;
 }

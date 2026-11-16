@@ -85,7 +85,7 @@ export function searchSource(options: SourceOptions): PageSource<FoundRow> {
     while (first || cursor !== undefined) {
       const page: SearchResult = first
         ? await search({ q, scope, limit: SEARCH_PAGE })
-        : await search({ cursor: cursor as string });
+        : await search({ cursor: cursor });
       first = false;
       cursor = page.cursor;
       for (const row of page.rows) {
@@ -262,12 +262,10 @@ export function searchGroups(
   }
   return (["open", "finished"] as const)
     .filter((found) => lists[found].length > 0)
-    .map(
-      (found): Group => ({
-        key: `s:${found}`,
-        kind: "section",
-        label: LABEL[found],
-        sections: [{ key: `s:${found}`, tasks: lists[found] }],
-      }),
-    );
+    .map((found): Group => ({
+      key: `s:${found}`,
+      kind: "section",
+      label: LABEL[found],
+      sections: [{ key: `s:${found}`, tasks: lists[found] }],
+    }));
 }

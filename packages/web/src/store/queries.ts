@@ -207,9 +207,12 @@ export class PagedQuery<R extends { readonly id: string }> {
           error: undefined,
         });
       },
-      (error: unknown) => {
+      async (error: unknown) => {
         if (generation !== this.#generation) return;
-        if (this.#expired(error)) return this.#restart(this.#state.rows.length + this.#pageSize);
+        if (this.#expired(error)) {
+          await this.#restart(this.#state.rows.length + this.#pageSize);
+          return;
+        }
         this.#set({ phase: "failed", error });
       },
     );

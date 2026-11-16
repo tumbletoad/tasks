@@ -38,7 +38,7 @@ const taskRow = (n: number, more: Partial<SearchRow> = {}): SearchRow =>
 
 /** A fake `task.search` over `total` rows, pages of the first call's limit, cursors `c_<n>`. */
 function fakeSearch(total: number, options: { expireOnce?: boolean } = {}) {
-  const calls: { q?: string; scope?: string; cursor?: string }[] = [];
+  const calls: Parameters<Search>[0][] = [];
   let limit = 0;
   let expire = options.expireOnce === true;
   const search: Search = (input) => {
@@ -72,7 +72,13 @@ const rowOf = (row: SearchRow, found: "open" | "finished") =>
 describe("[A5.3.13.web.search] search results read in pages, frozen, in two groups", () => {
   test("the open tasks are read at once; finished ones a page at a time with their cursor", async () => {
     const open = fakeSearch(120);
-    const all = await searchSource({ search: open.search, q: "fence", found: "open", rowOf, all: true })({
+    const all = await searchSource({
+      search: open.search,
+      q: "fence",
+      found: "open",
+      rowOf,
+      all: true,
+    })({
       after: undefined,
       limit: 50,
     });
@@ -121,7 +127,7 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
       rowOf(taskRow(3, { lifecycle: "completed", area: "Home", project: "Garden" }), "finished"),
     ] as FoundRow[];
     expect(done[0]).toMatchObject({ area_id: "a_home", project_id: "p_garden", version: 0 });
-    expect(rowOf({ kind: "deleted", id: "t_x", ref: "M-9" } as SearchRow, "open")).toBeUndefined();
+    expect(rowOf({ kind: "deleted", id: "t_x", ref: "M-9" }, "open")).toBeUndefined();
     const live = new Map<string, TaskRow>([
       [open[0]?.id ?? "", { ...(open[0] as TaskRow), title: "Edited at once", version: 3 }],
     ]);
@@ -136,7 +142,9 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     ]);
     // A task checked off from the results is no longer live; it stays under Tasks.
     const checked = { ...(open[1] as FoundRow), lifecycle: "completed" };
-    expect(searchGroups([open[0] as FoundRow, checked], [], new Map())[0]?.sections[0]?.tasks).toHaveLength(2);
+    expect(
+      searchGroups([open[0] as FoundRow, checked], [], new Map())[0]?.sections[0]?.tasks,
+    ).toHaveLength(2);
     // An empty group is hidden.
     expect(searchGroups([], done, new Map()).map((g) => g.key)).toEqual(["s:finished"]);
   });
@@ -167,7 +175,9 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
       data: { reason: "not_indexed", retryable: false },
     });
     expect(isUnindexed(unindexed)).toBe(true);
-    expect(isUnindexed(Object.assign(new Error("busy"), { code: "space_unavailable" }))).toBe(false);
+    expect(isUnindexed(Object.assign(new Error("busy"), { code: "space_unavailable" }))).toBe(
+      false,
+    );
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {

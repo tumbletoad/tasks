@@ -75,8 +75,13 @@ export interface TaskListProps {
   readonly groups?: GroupsOf;
   /** The view's clock, when the view reads it too (Today's sections and strip). */
   readonly clock?: Clock;
-  /** The line an empty view shows. */
-  readonly empty: string;
+  /** The line an empty view shows; none while the view does not know yet (a query on its way). */
+  readonly empty: string | undefined;
+  /**
+   * Rows checked off here stay, checked, after their hold: the list's rows are a search's, which
+   * do not move under the pointer.
+   */
+  readonly keepsFinished?: boolean;
   /**
    * The task the URL names (a reference or an ID): expanded once it is found. In the live rows,
    * or else read with `task.get` and injected (A5 3.3): a task of another lifecycle, or one the
@@ -97,6 +102,7 @@ export function TaskList({
   groups: groupsOf,
   clock: viewClock,
   empty,
+  keepsFinished = false,
   expand: wantedRef,
   onExpand,
 }: TaskListProps) {
@@ -345,12 +351,15 @@ export function TaskList({
     (task: TaskRow) => {
       setExpanded(task.id);
       setCurrent(task.id);
-      // An injected row belongs to its expansion: another task's expansion ends it.
-      setInjected((known) => (known?.id === task.id ? known : undefined));
+      // An injected row belongs to its expansion: another task's expansion ends it. A row the live
+      // store does not hold (a finished task in Completed) is kept as the expanded one's, so it
+      // stays where it is if the view's next read leaves it out (A5 3.3).
+      const inStore = live.getState().tasks.has(task.id);
+      setInjected((known) => (known?.id === task.id ? known : inStore ? undefined : task));
       watched.current.add(task.id);
       loadReceipts(task.id);
     },
-    [loadReceipts],
+    [loadReceipts, live],
   );
 
   /**
@@ -534,6 +543,11 @@ export function TaskList({
   let currentKey = current !== undefined && items.index.has(current) ? current : undefined;
   if (currentKey === undefined) currentKey = items.items.find((i) => i.kind === "row")?.key;
 
+  const leavingOf = (id: string) => {
+    const entry = holding.get(id);
+    return keepsFinished && entry?.out === true ? undefined : entry;
+  };
+
   const row = (item: RowItem, place: Place) => (
     <Row
       key={item.key}
@@ -550,7 +564,7 @@ export function TaskList({
       posinset={item.posinset}
       setsize={item.setsize}
       actions={actions}
-      leaving={holding.get(item.key)}
+      leaving={leavingOf(item.key)}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}
@@ -567,7 +581,9 @@ export function TaskList({
         onCollapse={collapse}
         row={row}
         // The empty line shows once the rows are live; the list keeps a row that holds focus.
-        {...(state.phase === "live" ? { empty: <p className={styles.line}>{empty}</p> } : {})}
+        {...(state.phase === "live" && empty !== undefined
+          ? { empty: <p className={styles.line}>{empty}</p> }
+          : {})}
       />
       <div className={styles.announce} role="status" aria-live="polite">
         {announcement}

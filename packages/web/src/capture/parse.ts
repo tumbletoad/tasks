@@ -371,7 +371,10 @@ function draftOf(title: string, chips: readonly Chip[]): CaptureDraft {
 }
 
 /** The `#words` being typed at the caret, for the area type-ahead. */
-export function groupTyped(text: string, caret: number): { start: number; typed: string } | undefined {
+export function groupTyped(
+  text: string,
+  caret: number,
+): { start: number; typed: string } | undefined {
   const before = text.slice(0, caret);
   const match = /(?:^|\s)(#[^\s#]*)$/u.exec(before);
   if (match === null) return undefined;

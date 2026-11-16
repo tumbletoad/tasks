@@ -1,0 +1,50 @@
+/* The search results: the lines around the one list. */
+
+.line {
+  margin: 24px 0;
+  color: var(--k-muted);
+}
+
+/* "Results changed · Refresh": muted, above the results, never moving them. */
+.changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  color: var(--k-muted);
+  font-size: 0.875rem;
+}
+
+.foot {
+  margin: 16px 0 24px;
+}
+
+.action {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--k-hover);
+}
+
+.line .action {
+  margin-inline-start: 8px;
+}
+
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
