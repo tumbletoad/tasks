@@ -16,8 +16,17 @@
 //                                   the entry and the file it belongs in, for an app setup does not
 //                                   manage or a managed file (A3 3.13.7): a hand-made entry, which
 //                                   uses the machine's default space (A3 3.7.8). Writes nothing
+//   tasks setup agents print-block --for claude|agents
+//                                   the instruction block and the file it belongs in, for a managed
+//                                   file's source or an app setup does not write (A3 3.12). Reads no
+//                                   home and writes nothing
 //   [--app claude-code,codex,claude-desktop,codex-app,t3] [--instance <id>] [--home <folder>]
-//   [--parts mcp,approve-tools] [--space <id or name>] [--json]
+//   [--parts mcp,approve-tools,block] [--space <id or name>] [--json]
+//
+// `block` (A3 3.12, setup/block.ts) is the optional instruction block in each Claude Code and Codex
+// home's instruction file: the preview shows its unified diff, apply writes exactly that, and
+// remove takes back only a block that is still exactly setup's. It names no space and needs no
+// service, so a plan of only that part asks the service nothing.
 //
 // The CLI changes the homes itself, in the person's session and environment, so the apps' commands
 // are the ones on the person's PATH (setup/agents.ts in @tasks/service). The service keeps the
@@ -45,8 +54,23 @@ import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import {
   AGENT_APPS,
   appLabel,
+  applyBlock,
   applyHome,
   approveToolsHint,
+  BLOCK_FORS,
+  blockCanonical,
+  editedDiff,
+  planBlocks,
+  printedBlock,
+  printTargets,
+  readBlockRecords,
+  removeBlock,
+  surveyBlocks,
+  type BlockFor,
+  type BlockItem,
+  type BlockOutcome,
+  type BlockReason,
+  type BlockView,
   handRemoval,
   HOSTS,
   isPrintApp,
@@ -100,7 +124,7 @@ export interface AgentsSetupOptions {
   readonly systemApplications?: string;
 }
 
-type Mode = "preview" | "apply" | "remove" | "status" | "print";
+type Mode = "preview" | "apply" | "remove" | "status" | "print" | "print-block";
 
 /** What `--app` selects: an app with entries, or the hosts that read their homes. */
 type AppWord = AgentApp | Host;
@@ -108,7 +132,7 @@ const APP_WORDS: readonly AppWord[] = [...AGENT_APPS, ...HOSTS];
 const isAppWord = (value: string): value is AppWord =>
   (APP_WORDS as readonly string[]).includes(value);
 
-const PARTS = ["mcp", "approve-tools"] as const;
+const PARTS = ["mcp", "approve-tools", "block"] as const;
 type Part = (typeof PARTS)[number];
 
 interface Parsed {
@@ -119,6 +143,8 @@ interface Parsed {
   readonly parts: readonly Part[];
   /** `--plan <token>`: the preview's plan, which `--apply` carries out or refuses. */
   readonly plan: string | undefined;
+  /** print-block's `--for`: the instruction file's kind. */
+  readonly for: BlockFor | undefined;
 }
 
 /** A plan token: the preview's digest (planToken). */
@@ -128,17 +154,16 @@ const PLAN = /^[0-9a-f]{16}$/u;
 function parse(input: readonly string[]): Parsed {
   let mode: Mode | undefined;
   let args = input;
-  if (args[0] === "print") {
-    mode = "print";
+  if (args[0] === "print" || args[0] === "print-block") {
+    mode = args[0];
     args = args.slice(1);
-  } else if (args[0] === "print-block") {
-    throw new UsageError(`${CLI_NAME} setup agents print-block is not in this build yet`);
   }
   let apps: string[] | undefined;
   let instance: string | undefined;
   let home: string | undefined;
   let parts: Part[] | undefined;
   let plan: string | undefined;
+  let kind: BlockFor | undefined;
   const value = (token: string, i: number): string => {
     const inline = token.indexOf("=");
     const found = inline === -1 ? args[i + 1] : token.slice(inline + 1);
@@ -151,9 +176,18 @@ function parse(input: readonly string[]): Parsed {
     const step = token.includes("=") ? 0 : 1;
     if (["--preview", "--apply", "--remove", "--status"].includes(token)) {
       if (mode !== undefined) {
-        throw new UsageError("Name one of --preview, --apply, --remove, --status and print");
+        throw new UsageError(
+          "Name one of --preview, --apply, --remove, --status, print and print-block",
+        );
       }
       mode = token.slice(2) as Mode;
+    } else if (name === "--for") {
+      const found = value(token, i);
+      if (!(BLOCK_FORS as readonly string[]).includes(found)) {
+        throw new UsageError(`--for takes ${BLOCK_FORS.join(" or ")}`);
+      }
+      kind = found as BlockFor;
+      i += step;
     } else if (name === "--app") {
       const list = value(token, i).split(",");
       apps = list;
@@ -166,13 +200,10 @@ function parse(input: readonly string[]): Parsed {
       i += step;
     } else if (name === "--parts") {
       const list = value(token, i).split(",");
-      if (list.includes("block")) {
-        throw new UsageError(`${CLI_NAME} setup agents --parts block is not in this build yet`);
-      }
       if (!list.every((p): p is Part => (PARTS as readonly string[]).includes(p))) {
-        throw new UsageError("--parts takes mcp, approve-tools or both");
+        throw new UsageError(`--parts takes ${PARTS.join(", ")} or several of them`);
       }
-      parts = list;
+      parts = [...new Set(list)];
       i += step;
     } else if (name === "--plan") {
       plan = value(token, i);
@@ -186,26 +217,34 @@ function parse(input: readonly string[]): Parsed {
   }
   const chosen = mode ?? "preview";
   if (plan !== undefined && chosen !== "apply") throw new UsageError("--plan goes with --apply");
+  if (kind !== undefined && chosen !== "print-block") {
+    throw new UsageError("--for goes with print-block");
+  }
   if (parts !== undefined) {
-    if (chosen === "status" || chosen === "print") {
+    if (chosen === "status" || chosen === "print" || chosen === "print-block") {
       throw new UsageError("--parts goes with the preview, --apply and --remove");
     }
     // Remove takes out what setup wrote, and setup never writes approve-tools: a remove of only
     // that part must not take the MCP entries out.
-    if (chosen === "remove" && !parts.includes("mcp")) {
+    if (chosen === "remove" && !parts.includes("mcp") && !parts.includes("block")) {
       throw new UsageError(
-        `setup never writes approve-tools, so there is nothing of it to remove; ${CLI_NAME} setup agents --remove takes out the MCP entries`,
+        `setup never writes approve-tools, so there is nothing of it to remove; ${CLI_NAME} setup agents --remove takes out the MCP entries, and --parts block the instruction blocks`,
       );
     }
   }
-  if (chosen === "print") {
+  if (chosen === "print-block") {
+    if (kind === undefined) throw new UsageError(`print-block takes --for ${BLOCK_FORS.join("|")}`);
+    if (apps !== undefined || instance !== undefined || home !== undefined) {
+      throw new UsageError("print-block reads no home: it takes only --for");
+    }
+  } else if (chosen === "print") {
     if (apps?.length !== 1 || !isPrintApp(apps[0])) {
       throw new UsageError(`print takes --app and one of ${PRINT_APPS.join(", ")}`);
     }
   } else if (apps !== undefined && !apps.every(isAppWord)) {
     throw new UsageError(`--app takes ${APP_WORDS.join(", ")}`);
   }
-  return { mode: chosen, apps, instance, home, parts: parts ?? ["mcp"], plan };
+  return { mode: chosen, apps, instance, home, parts: parts ?? ["mcp"], plan, for: kind };
 }
 
 /** A person at a terminal (A2 3.6.5's `cli-interactive`): no agent marker, both ends a TTY. */
@@ -458,12 +497,18 @@ export async function agentsCommand(
       (parsed.instance === undefined || view.home.instance === parsed.instance) &&
       (parsed.home === undefined || samePath(input.platform, view.home.home, parsed.home));
     const spaceOf = () => pickSpace(call, globals.space, defaultSpace);
+    const mcp = parsed.parts.includes("mcp");
+    const block = parsed.parts.includes("block");
+    // The service's rows matter only for the entries: a plan of only the block asks it nothing.
+    const rowsOf = async () => (mcp ? withRows(input, call) : input);
     const mode: Mode = parsed.mode;
     switch (mode) {
       case "status":
         return await status(io, globals, await withRows(input, call), selected, call);
       case "preview":
-        return await preview(io, globals, await withRows(input, call), selected, parsed, spaceOf);
+        return await preview(io, globals, await rowsOf(), selected, parsed, spaceOf);
+      case "print-block":
+        return printBlock(io, globals, input, parsed.for ?? "claude");
       case "print":
         // A printed entry is a hand-made one, which uses the machine's default space (print.ts).
         if (globals.space !== undefined) {
@@ -473,7 +518,7 @@ export async function agentsCommand(
         }
         return printCommand(io, globals, input, parsed.apps?.[0] as PrintApp);
       case "apply": {
-        if (!isFolder(root) || !exists(input.tasks)) {
+        if (mcp && (!isFolder(root) || !exists(input.tasks))) {
           throw new AppError({
             code: "invalid_input",
             message: `${PRODUCT_NAME}'s command is not installed where the entries would run it.`,
@@ -481,15 +526,20 @@ export async function agentsCommand(
             data: { issues: [{ path: "command", message: "Not installed" }] },
           });
         }
-        const outcomes = await withSetupLock(input.stateDir, async () => {
+        const { outcomes, blocks } = await withSetupLock(input.stateDir, async () => {
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
-          const views = parsed.parts.includes("mcp")
-            ? (await survey(await withRows(input, call))).filter(selected)
-            : [];
+          const all = (await survey(await rowsOf())).filter(selected);
+          const views = mcp ? all : [];
           const space = needsSpace(views) ? await spaceOf() : "";
           const items = planOf(input, views, space);
-          if (planToken(space, items) !== parsed.plan) {
+          const planned = block ? await blockPlan(input, all, selected) : undefined;
+          const token = planToken(
+            space,
+            items,
+            planned === undefined ? undefined : blockCanonical(planned),
+          );
+          if (token !== parsed.plan) {
             throw new AppError({
               code: "conflict",
               message: "The agent homes changed since the preview, so nothing was changed.",
@@ -498,23 +548,41 @@ export async function agentsCommand(
           }
           const done: Outcome[] = [];
           for (const item of items) done.push(await applyOne(input, item, space, call));
-          return done;
+          return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
-        return report(io, globals, "apply", outcomes);
+        return report(io, globals, "apply", outcomes, [], blocks);
       }
       case "remove": {
-        const { outcomes, notes } = await withSetupLock(input.stateDir, async () => {
-          const views = (await survey(input)).filter(
-            (view) => selected(view) && view.record !== undefined,
-          );
-          // Reverse order (A3 3.13.1): the latest apply first.
-          views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
+        const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
+          const surveyed = await survey(input);
           const done: Outcome[] = [];
-          for (const view of views) done.push(await removeHome(input, view));
-          // Under the same lock: an apply that runs right after must not lose its row to this.
-          return { outcomes: done, notes: await revokeLeftRows(input, selected, call) };
+          const said: string[] = [];
+          if (mcp) {
+            const views = surveyed.filter((view) => selected(view) && view.record !== undefined);
+            // Reverse order (A3 3.13.1): the latest apply first.
+            views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
+            for (const view of views) done.push(await removeHome(input, view));
+            // Under the same lock: an apply that runs right after must not lose its row to this.
+            said.push(...(await revokeLeftRows(input, selected, call)));
+          }
+          if (!block) {
+            // The blocks are a part of their own: a remove of the entries says they stay.
+            const kept = readBlockRecords(input.stateDir).some((r) =>
+              selected({ home: { app: r.app, instance: r.instance, home: r.home, hosts: [] } }),
+            );
+            if (kept) said.push(BLOCKS_STAY);
+            return { outcomes: done, notes: said, blocks: [] };
+          }
+          const found = await surveyBlocks(
+            input,
+            surveyed.map((v) => v.home),
+          );
+          const chosen = found.filter(
+            (v) => selected(v) && (v.record !== undefined || v.state === "foreign"),
+          );
+          return { outcomes: done, notes: said, blocks: chosen.map((v) => removeBlock(input, v)) };
         });
-        return report(io, globals, "remove", outcomes, notes);
+        return report(io, globals, "remove", outcomes, notes, blocks);
       }
       default: {
         const never: never = mode;
@@ -747,15 +815,19 @@ async function preview(
   spaceOf: () => Promise<string>,
 ): Promise<number> {
   const all = (await survey(input)).filter(selected);
-  const views = parsed.parts.includes("mcp") ? all : [];
+  const mcp = parsed.parts.includes("mcp");
+  const views = mcp ? all : [];
   const registers = needsSpace(views);
-  const anything = applies(views);
+  const blocks = parsed.parts.includes("block") ? await blockPlan(input, all, selected) : undefined;
+  const blockChanges = (blocks ?? []).filter((b) => typeof b.change === "object").length;
+  const anything = applies(views) || blockChanges > 0;
   // The space each new entry names comes from the service, which keeps the rows apply makes.
   const space = registers ? await spaceOf() : "";
   const items = planOf(input, views, space);
-  const plan = planToken(space, items);
+  const plan = planToken(space, items, blocks === undefined ? undefined : blockCanonical(blocks));
   const delegated = parsed.parts.includes("approve-tools") ? approvals(all, io.platform) : [];
-  // The exact apply of this preview: the same selection, the same space, and the plan's token.
+  // The exact apply of this preview: the same selection, parts and space, and the plan's token.
+  const parts = parsed.parts.filter((p) => p !== "approve-tools");
   const apply = [
     CLI_NAME,
     "setup",
@@ -766,6 +838,7 @@ async function preview(
     ...(parsed.apps === undefined ? [] : ["--app", parsed.apps.join(",")]),
     ...(parsed.instance === undefined ? [] : ["--instance", parsed.instance]),
     ...(parsed.home === undefined ? [] : ["--home", parsed.home]),
+    ...(parts.length === 1 && parts[0] === "mcp" ? [] : ["--parts", parts.join(",")]),
     // The space by its ID, which the preview resolved: the same space, and safe in any shell.
     ...(registers ? ["--space", space] : []),
   ];
@@ -775,6 +848,7 @@ async function preview(
         mode: "preview",
         ...(registers ? { space } : {}),
         ...(anything ? { plan, apply } : {}),
+        ...(blocks === undefined ? {} : { blocks: blocks.map(blockItemJson) }),
         homes: items.map(({ view, change }) => ({
           ...viewJson(view),
           ...(change === undefined
@@ -853,7 +927,20 @@ async function preview(
       );
     }
   }
-  if (!parsed.parts.includes("mcp")) return 0;
+  if (blocks !== undefined) {
+    io.stdout(
+      `Instruction block (optional: the server instructions carry the workflow without it):\n`,
+    );
+    if (blocks.length === 0) {
+      io.stdout("  No selected home has an instruction file setup writes.\n");
+    }
+    for (const item of blocks) {
+      n += 1;
+      showBlock(io, n, item);
+      if (typeof item.change === "object") changes += 1;
+    }
+  }
+  if (!mcp && blocks === undefined) return 0;
   // A --home no line keeps as it is, or a line too long to paste: the person's own command again,
   // with the apply's words.
   const line =
@@ -866,6 +953,168 @@ async function preview(
         ? `Nothing was changed. To renew the registered homes' grant rows, run: ${line}\n`
         : `Nothing was changed. To make ${changes === 1 ? "this change" : `these ${String(changes)} changes`}, run: ${line}\n`,
   );
+  return 0;
+}
+
+/** The block part of a plan: the selected homes' instruction files, judged and planned. */
+async function blockPlan(
+  input: SetupInput,
+  homes: readonly HomeView[],
+  selected: Selected,
+): Promise<BlockItem[]> {
+  const views = await surveyBlocks(
+    input,
+    homes.map((v) => v.home),
+  );
+  return planBlocks(views.filter(selected));
+}
+
+/** A remove of the entries leaves the blocks: they are a part of their own. */
+const BLOCKS_STAY = `The instruction blocks setup wrote stay: ${CLI_NAME} setup agents --remove --parts block takes them out.`;
+
+const BLOCK_STATE: Readonly<Record<BlockView["state"], string>> = {
+  absent: "no block yet",
+  current: "has setup's block, the current version",
+  outdated: "has setup's block, an older version",
+  edited: "has setup's block, changed by hand since",
+  missing: "setup wrote a block here that is gone now",
+  foreign: "has a block setup did not write",
+  refused: "left alone",
+};
+
+const BLOCK_REASON: Readonly<Record<BlockReason, string>> = {
+  managed:
+    "its file is managed elsewhere (a link, marked as generated in its first 20 lines, listed in machine.toml's [setup.managed] paths, or tracked by another git repository), so setup writes nothing there",
+  unsafe: "its file or folder belongs to another user, or anyone can change it",
+  unreadable: "its file cannot be read",
+  too_large: "its file is too large",
+  encoding: "its file is not UTF-8 text",
+  markers: `its ${MCP_SERVER_KEY} block markers are duplicated or unbalanced: fix them by hand, then run setup again`,
+  no_folder: "the home's folder is not there",
+  codex_cap:
+    "Codex reads only the first 32 KiB of the file, and the block would come after that, so setup writes nothing: put the block near the top yourself",
+  edited:
+    "the block was changed by hand since setup wrote it, so setup leaves it: to have setup's block again, delete it and run setup again",
+  foreign:
+    "the block there was not written by setup (added by hand, or setup lost its record), so setup leaves it: take it out by hand if it is not wanted",
+  not_registered: "setup has not written a block there",
+  missing: "the block setup wrote is gone",
+  changed_meanwhile: "its file changed while setup was working",
+};
+
+/** Why a home's block was left, with what the person can do: print-block for a managed file. */
+function blockReason(reason: BlockReason, view: BlockView): string {
+  const text = BLOCK_REASON[reason];
+  const print = `${CLI_NAME} setup agents print-block --for ${view.for} prints it`;
+  if (reason === "managed" && view.lines !== undefined) {
+    // Rule 2: the person can see the line, and add the block by hand if the file is their own.
+    return `line ${view.lines.join(", ")} of its file says the file is generated or managed by another tool, so setup writes nothing there. Add the block at its source, or by hand if the file is your own: ${print}`;
+  }
+  if (reason === "managed" || reason === "codex_cap")
+    return `${text}. Add it at its source: ${print}`;
+  if (reason === "markers" && view.lines !== undefined) {
+    return `${text} (lines ${view.lines.join(", ")} of the file)`;
+  }
+  return text;
+}
+
+const blockTitle = (view: BlockView): string =>
+  `${appLabel(view.home.app)} · ${view.home.home} (instance ${view.home.instance})`;
+
+/** Indents a diff under its home. */
+const indented = (diff: string): string =>
+  diff
+    .split("\n")
+    .filter((line, i, lines) => line !== "" || i < lines.length - 1)
+    .map((line) => `     ${line}\n`)
+    .join("");
+
+function showBlock(io: Io, n: number, { view, change }: BlockItem): void {
+  io.stdout(`${String(n)}. ${blockTitle(view)}\n`);
+  const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
+  io.stdout(`   ${view.file} (${hash})\n`);
+  if (view.shadowed === true) {
+    io.stdout(
+      "   Codex now reads another instruction file here (an AGENTS.override.md), so it does not see this block.\n",
+    );
+  }
+  if (view.pastCodexCap === true) {
+    io.stdout(
+      "   The block ends past the first 32 KiB of the file, which is all Codex reads, so Codex does not see it: move it nearer the top.\n",
+    );
+  }
+  if (change === undefined) {
+    const reason =
+      view.state === "refused"
+        ? `: ${blockReason(view.refusal ?? "unreadable", view)}`
+        : view.state === "edited" || view.state === "foreign"
+          ? `: ${blockReason(view.state, view)}`
+          : "";
+    const delegated = view.refusal === "managed" ? "delegated" : BLOCK_STATE[view.state];
+    io.stdout(`   ${delegated}${reason}. Nothing to do.\n`);
+    if (view.state === "edited") {
+      io.stdout("   What was changed since setup wrote it:\n");
+      io.stdout(indented(editedDiff(view)));
+    }
+  } else if (typeof change === "string") {
+    io.stdout(
+      `   ${change === "managed" ? "delegated" : "left alone"}: ${blockReason(change, view)}.\n`,
+    );
+  } else {
+    io.stdout(
+      change.kind === "add"
+        ? `   ${view.sha256 === null ? "creates the file with the block" : "adds the block at the end of the file"}:\n`
+        : "   replaces the older block in place:\n",
+    );
+    io.stdout(indented(change.diff));
+  }
+}
+
+const blockItemJson = ({ view, change }: BlockItem) => ({
+  app: view.home.app,
+  home: view.home.home,
+  instance: view.home.instance,
+  file: view.file,
+  for: view.for,
+  state: view.state,
+  ...(view.refusal === undefined ? {} : { reason: view.refusal }),
+  ...(view.refusal === "managed" ? { delegated: true } : {}),
+  ...(view.lines === undefined ? {} : { lines: view.lines }),
+  ...(view.shadowed === true ? { shadowed: true } : {}),
+  ...(view.pastCodexCap === true ? { past_codex_cap: true } : {}),
+  sha256: view.sha256,
+  ...(view.state === "edited" ? { edit: editedDiff(view) } : {}),
+  ...(change === undefined
+    ? {}
+    : typeof change === "string"
+      ? { state: "refused", reason: change, ...(change === "managed" ? { delegated: true } : {}) }
+      : { change: { kind: change.kind, diff: change.diff } }),
+});
+
+const blockOutcomeJson = (outcome: BlockOutcome) => ({
+  app: outcome.view.home.app,
+  home: outcome.view.home.home,
+  instance: outcome.view.home.instance,
+  file: outcome.view.file,
+  result: outcome.result,
+  ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+});
+
+/** `print-block --for claude|agents`: the block and where it goes. Reads no home, writes nothing. */
+function printBlock(io: Io, globals: Globals, input: SetupInput, kind: BlockFor): number {
+  const files = printTargets(input, kind);
+  const text = printedBlock();
+  if (globals.json) {
+    io.stdout(`${JSON.stringify({ for: kind, files, text })}\n`);
+    return 0;
+  }
+  io.stdout(
+    kind === "claude"
+      ? `Add this to ${files.join(", ")}, or at its source when that file is managed, keeping what is there:\n`
+      : `Add this to ${files[0] ?? ""} (or ${files[1] ?? ""} when it is there: Codex then reads only that file), or to the AGENTS.md another app reads, or at its source when the file is managed, within the first 32 KiB, keeping what is there:\n`,
+  );
+  io.stdout(text);
+  io.stdout("Nothing was changed.\n");
   return 0;
 }
 
@@ -904,14 +1153,41 @@ function report(
   mode: "apply" | "remove",
   outcomes: readonly Outcome[],
   notes: readonly string[] = [],
+  blocks: readonly BlockOutcome[] = [],
 ): number {
-  const complete = outcomes.every((o) => o.result !== "failed" && o.result !== "left");
+  const complete =
+    outcomes.every((o) => o.result !== "failed" && o.result !== "left") &&
+    blocks.every((b) => b.result !== "failed" && b.result !== "left");
   if (globals.json) {
     io.stdout(
-      `${JSON.stringify({ mode, homes: outcomes.map(outcomeJson), ...(notes.length === 0 ? {} : { notes }) })}\n`,
+      `${JSON.stringify({
+        mode,
+        homes: outcomes.map(outcomeJson),
+        ...(blocks.length === 0 ? {} : { blocks: blocks.map(blockOutcomeJson) }),
+        ...(notes.length === 0 ? {} : { notes }),
+      })}\n`,
     );
   } else {
-    if (outcomes.length === 0) io.stdout("Nothing to do.\n");
+    if (outcomes.length === 0 && blocks.length === 0) io.stdout("Nothing to do.\n");
+    const blockVerb = {
+      added: "instruction block added",
+      updated: "instruction block replaced by the current version",
+      removed: "instruction block removed",
+      unchanged: "instruction block unchanged",
+      left: "instruction block left alone",
+      failed: "instruction block not changed",
+    } as const;
+    for (const outcome of blocks) {
+      const reason =
+        outcome.reason === undefined || outcome.result === "removed"
+          ? ""
+          : `: ${blockReason(outcome.reason, outcome.view)}`;
+      io.stdout(`${blockTitle(outcome.view)}\n  ${blockVerb[outcome.result]}${reason}\n`);
+      if (outcome.reason === "edited") {
+        io.stdout("  What was changed since setup wrote it:\n");
+        io.stdout(indented(editedDiff(outcome.view)));
+      }
+    }
     const verb = {
       applied: "registered",
       removed: "removed",
@@ -935,6 +1211,9 @@ function report(
     }
     if (mode === "apply" && changed.some((o) => o.home.app !== "claude-desktop")) {
       io.stdout("Restart the agent apps' sessions to load the entry.\n");
+    }
+    if (blocks.some((b) => b.result === "added" || b.result === "updated")) {
+      io.stdout("Agent sessions read the instruction file when they start.\n");
     }
   }
   return complete ? 0 : 10;

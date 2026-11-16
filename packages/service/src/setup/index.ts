@@ -1,7 +1,10 @@
-// @tasks/service/setup: `tasks setup agents` (A3 3.13; M2.14, M4.05). The CLI runs it in the
+// @tasks/service/setup: `tasks setup agents` (A3 3.12, 3.13; M2.14, M4.04, M4.05). The CLI runs it in the
 // person's session, with the person's environment, and keeps the agent-home rows through the
 // service. Doctor's agent checks (A3 3.14) read through the same functions.
 export * from "./agents.ts";
+export * from "./block.ts";
+export { unifiedDiff } from "./diff.ts";
+export { generatorNotice, markedAsGenerated } from "./generated.ts";
 export {
   claudeDesktopFolders,
   codexAppEngines,
