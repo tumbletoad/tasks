@@ -361,7 +361,7 @@ Target: WCAG 2.2 AA from the first UI milestone. A full audit before 1.0.
 
 ### 3.25 Performance
 
-Targets hold on the Linux reference machine (Ubuntu 24.04, Firefox snap) with a seeded space at A1's **design scale**: **5,000 open tasks** and 50,000 completed, 30 areas and 200 projects, with 10 agent sessions writing and the service already running. A1 owns these numbers. Its larger stress corpus is for A1 and A3's query budgets, not for these targets.
+Targets hold on a real Ubuntu 24.04 machine, in the Firefox snap, with a seeded space at A1's **design scale**: **5,000 open tasks** and 50,000 completed, 30 areas and 200 projects, with 10 agent sessions writing and the service already running. A1 owns these numbers. Its larger stress corpus is for A1 and A3's query budgets, not for these targets.
 
 | Measure | Target |
 |---|---|
@@ -384,7 +384,7 @@ Targets hold on the Linux reference machine (Ubuntu 24.04, Firefox snap) with a 
 
 **The list** (`src/list/List.tsx`, `items.ts`) is one sequence of items, group headings and project labels included. Over 200 rows it is virtualised with TanStack Virtual against the window, with 10 items of overscan each way. Both modes render the same structure with the same keys, so a list that crosses 200 keeps its rows and focus. The current, focused and expanded rows always stay mounted. Offsets are custom properties written through the CSSOM, never a style attribute, so the CSP holds. TanStack's `directDomUpdates` stays off, because the scroll anchoring of 3.15 item 6 must know every offset. Size estimates are never taller than the real heights. Tests: `A5.3.25.web.items`, `A5.3.25.web.render-count`, `A7.3.12.m5-03.e2e.scroll-5000` (5,000 rows, every frame of a full sweep covered with focus kept) and `A7.3.12.m5-03.e2e.rows`.
 
-**Still to build:** the Playwright performance test over this table, in CI (Chromium and Firefox on Linux) and on the Linux reference machine at each UI milestone.
+**Still to build:** the Playwright performance test over this table, in CI (Chromium and Firefox on Linux) and on a real Ubuntu 24.04 machine at each UI milestone.
 
 **Measured so far** (M0 lab row U07, 5,000 rows, headless Firefox 159): 60 fps scrolling, view switch p95 23 to 24 ms, burst script work 12 to 15 ms with no late frame. The stack needs none of M0-4's fallbacks. The burst has little margin, and the spike re-derived all 5,000 tasks per burst where the product derives per event. The visible run in the Firefox snap is still open (M0-4); a miss there reopens the stack choice before M5.13. Headless Firefox keeps a 1366 × 768 window and reports `performance.now()` in whole milliseconds, so headless numbers are coarse.
 
@@ -409,7 +409,7 @@ Not built yet (M5.14). A project's folder is chosen where the person adds the pr
 - `folder.make {parent, name}` (user-only) creates one new folder through `packages/files`, refusing a name that exists, is not one valid name on this OS, or a parent that is missing. It writes no operation: the binding that follows is the operation.
 - `folder.reveal {path}` (UI-only) opens the folder in the file manager.
 
-**The project card** opens from the project's name in the sidebar and from Add project when the folder is already a project's. It holds the project's name and area (editable as facts are, 3.11) and its folders, one line per machine: this computer first, "This computer · ~/Dev/Tools/tasks" with **Change**, **Open folder** and **Remove**, then each other machine, "mira-laptop · ~/work/lumen/portal", read-only. A project with no folder here shows **Add folder on this computer**. Change opens the folder browser at the current folder, and moves the task folders inside it with it (A1 3.15). Remove asks nothing and shows the toast with Undo. A folder on this computer that is on disk the same folder as another live project's (only an undo or a restore across two spellings leaves one, A1 3.15) shows "Same folder as <project>" under its line. Archive (Unarchive on an archived project) and Delete sit at the card's foot, as for a task (3.12).
+**The project card** opens from the project's name in the sidebar and from Add project when the folder is already a project's. It holds the project's name and area (editable as facts are, 3.11) and its folders, one line per machine: this computer first, "This computer · ~/work/lumen/portal" with **Change**, **Open folder** and **Remove**, then each other machine, "mira-laptop · ~/work/lumen/portal", read-only. A project with no folder here shows **Add folder on this computer**. Change opens the folder browser at the current folder, and moves the task folders inside it with it (A1 3.15). Remove asks nothing and shows the toast with Undo. A folder on this computer that is on disk the same folder as another live project's (only an undo or a restore across two spellings leaves one, A1 3.15) shows "Same folder as <project>" under its line. Archive (Unarchive on an archived project) and Delete sit at the card's foot, as for a task (3.12).
 
 **The expanded task's folder** is 3.7's: its own or its project's, with Change, Choose folder and Clear.
 ---
