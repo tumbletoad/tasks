@@ -131,7 +131,7 @@ import {
 import { duplicateWarning } from "./similar.ts";
 import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
 import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
-import { readFinished } from "../http/feed.ts";
+import { readFinished } from "./task-rows.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {

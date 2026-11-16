@@ -14,16 +14,24 @@
 //   of a task, area or project (the working set's kinds) and null for the rest (notes, log
 //   entries, sources, links, places, launches): a client refetches the task those touch. No body
 //   of a note or log entry, no context, outcome or other long text is in the feed.
-// - A task's compact row also carries what its row shows of its children (A5 3.6): its first
-//   three sources with their own text and URL (`sources`), how many more it has
-//   (`sources_more`), and its place's state on this machine (`place`). A commit that changes a
+// - A task's compact row (ops/task-rows.ts) also carries what its row shows of its children
+//   (A5 3.6): its first three sources with their own text and URL (`sources`), how many more it
+//   has (`sources_more`), and its place's state on this machine (`place`). A commit that changes a
 //   source, a link or a place of a task therefore carries the task's row too, as an entity of
 //   its own, so the row the client holds never shows a source or a place the space no longer has.
 import type { PreferenceRead } from "@tasks/contracts";
 import type { Row, WorkerConnection } from "@tasks/storage";
-import type { Root } from "@tasks/launch";
-import { placeState } from "../ops/here.ts";
+import {
+  compact,
+  machineOf,
+  taskRows,
+  TASK_COLUMNS,
+  type CompactRow,
+  type FeedHere,
+} from "../ops/task-rows.ts";
 import { PREFERENCE_ROWS, spacePreferencesOf } from "../ops/preferences.ts";
+
+export type { FeedHere } from "../ops/task-rows.ts";
 
 /** The applied-through cursor (A1 3.7). */
 export interface Cursor {
@@ -38,38 +46,6 @@ export interface SpaceHead {
   readonly ref_prefix: string;
   readonly cursor: Cursor;
 }
-
-/** A source as a task's row shows it: its kind and its own text, never a label (A5 3.6). */
-export interface CompactSource {
-  readonly kind: string;
-  readonly title: string;
-  readonly who?: string;
-  /** The source's own key in its system ("LUM-212"), shown in mono. */
-  readonly ref?: string;
-  readonly url?: string;
-}
-
-/**
- * A task's place as its row shows it, on the machine that serves the feed: a folder here that
- * resolves now, one that does not (its folder is missing, its root is gone, another repository is
- * there), or a place only on another machine, named. A task without a place has none.
- */
-export type CompactPlace =
-  | { readonly state: "here" | "missing" }
-  | { readonly state: "elsewhere"; readonly machine: string };
-
-export type CompactValue = string | number | boolean | readonly CompactSource[] | CompactPlace;
-export type CompactRow = Readonly<Record<string, CompactValue>>;
-
-/** The machine the feed resolves places on: its ID, its roots as they are now, its platform. */
-export interface FeedHere {
-  readonly machine: string;
-  readonly roots: () => readonly Root[];
-  readonly platform: NodeJS.Platform;
-}
-
-/** At most this many sources ride on a task's row: the row shows three, then "+2" (A5 3.6). */
-export const ROW_SOURCES = 3;
 
 export interface FeedEntity {
   readonly type: string;
@@ -140,40 +116,6 @@ const SPACE_SQL =
   "SELECT space_id, name, ref_prefix, authority_epoch, authority_incarnation, last_seq " +
   "FROM space WHERE one = 1";
 
-/**
- * When a finished task was finished: its completion, or for a dropped task, which keeps no
- * completion time, the commit that last changed its lifecycle. A task that was never changed
- * after it was made (one an import created finished) was finished when it was made.
- */
-const FINISHED_AT =
-  "COALESCE(t.completed_at, (SELECT c.at FROM commits c WHERE c.seq = " +
-  "json_extract(t.fv, '$.lifecycle')), t.created_at)";
-
-const TASK_COLUMNS =
-  "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
-  "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
-  "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
-  "t.created_at, t.version, t.touched, " +
-  `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT} END AS finished_at, ` +
-  // When a waiting task's wait began (the Waiting view's age): the commit that last changed its
-  // status, or its creation. A new person waited on is the same wait.
-  "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
-  "json_extract(t.fv, '$.status')), t.created_at) END AS waiting_since, " +
-  // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
-  // and `place` by `taskRows`. A `$machine` of null (no machine given) matches no place.
-  "(SELECT json_group_array(json_object('p', x.position, 'kind', x.kind, 'title', x.title, " +
-  "'who', x.who, 'ref', x.ref, 'key', x.source_key, 'url', x.url)) FROM (SELECT ts.position, " +
-  "s.kind, s.title, s.who, s.ref, s.source_key, s.url FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE ts.task_id = t.id " +
-  `AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position LIMIT ${String(ROW_SOURCES)}) x) ` +
-  "AS x_sources, " +
-  "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
-  "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count, " +
-  "(SELECT json_object('root', pl.root_id, 'path', pl.rel_path, 'kind', pl.kind, 'identity', " +
-  "pl.identity) FROM places pl WHERE pl.owner_kind = 'task' AND pl.owner_id = t.id AND " +
-  "pl.machine_id = $machine AND pl.deleted_at IS NULL) AS x_place_here, " +
-  "(SELECT m.name FROM places pl JOIN machines m ON m.id = pl.machine_id WHERE " +
-  "pl.owner_kind = 'task' AND pl.owner_id = t.id AND pl.machine_id <> $machine AND " +
-  "pl.deleted_at IS NULL ORDER BY pl.id LIMIT 1) AS x_place_elsewhere";
 const AREA_COLUMNS =
   "a.id, a.slug, a.title, a.position, a.color, a.lifecycle, a.deleted_at, a.version";
 const PROJECT_COLUMNS =
@@ -220,139 +162,6 @@ export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   preferences: "preference",
 };
 
-/** A row without its nulls, booleans as booleans. */
-function compact(row: Row, booleans: readonly string[] = []): CompactRow {
-  const out: Record<string, string | number | boolean> = {};
-  for (const [name, value] of Object.entries(row)) {
-    if (value === null || value === undefined) continue;
-    if (booleans.includes(name)) out[name] = value === 1 || value === true;
-    else if (typeof value === "string" || typeof value === "number") out[name] = value;
-    else if (typeof value === "bigint") out[name] = Number(value);
-  }
-  return out;
-}
-
-const isPlain = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-function parsed(value: unknown): unknown {
-  if (typeof value !== "string") return undefined;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The kinds whose key names the item in its own system, shown before the title: LUM-212. */
-const KEYED_KINDS: ReadonlySet<string> = new Set(["ticket", "issue", "pr"]);
-
-/**
- * A ticket's, issue's or pull request's own key from its source key (`jira:LUM-212` gives
- * `LUM-212`), when the source records none: a short single line after the namespace, else none.
- */
-function keyRef(kind: unknown, key: unknown): string | undefined {
-  if (typeof kind !== "string" || !KEYED_KINDS.has(kind) || typeof key !== "string") {
-    return undefined;
-  }
-  const at = key.indexOf(":");
-  const ref = at < 0 ? "" : key.slice(at + 1);
-  return ref !== "" && ref.length <= 40 && !/\s/u.test(ref) ? ref : undefined;
-}
-
-/** The row's sources from `x_sources`, in their order, each without its empty fields. */
-function sourcesOf(value: unknown): CompactSource[] {
-  const list = parsed(value);
-  if (!Array.isArray(list)) return [];
-  const sorted = list
-    .filter(isPlain)
-    .sort((a, b) =>
-      String(a["p"]) < String(b["p"]) ? -1 : String(a["p"]) > String(b["p"]) ? 1 : 0,
-    );
-  const out: CompactSource[] = [];
-  for (const s of sorted) {
-    if (typeof s["kind"] !== "string" || typeof s["title"] !== "string") continue;
-    const source: { -readonly [K in keyof CompactSource]: CompactSource[K] } = {
-      kind: s["kind"],
-      title: s["title"],
-    };
-    for (const key of ["who", "ref", "url"] as const) {
-      const v = s[key];
-      if (typeof v === "string" && v !== "") source[key] = v;
-    }
-    const ref = source.ref ?? keyRef(s["kind"], s["key"]);
-    if (ref !== undefined) source.ref = ref;
-    out.push(source);
-  }
-  return out;
-}
-
-/** A place of this machine as `placeState` reads it, from `x_place_here`. */
-interface HerePlace {
-  readonly root: unknown;
-  readonly path: unknown;
-  readonly kind: unknown;
-  readonly identity: unknown;
-}
-
-/**
- * The tasks' compact rows, with what each row shows of its children: its first sources, how many
- * more, and its place's state on `here`'s machine, each place resolved once now (`placeState`, the
- * rule the digest and `here` use). Without `here`, no place is resolved and none is shown.
- */
-async function taskRows(
-  rows: readonly Row[],
-  prefix: string,
-  here?: FeedHere,
-): Promise<CompactRow[]> {
-  const states = new Map<string, Promise<"here" | "missing">>();
-  const resolve = (place: HerePlace): Promise<"here" | "missing"> => {
-    const key = JSON.stringify([place.root, place.path, place.kind, place.identity]);
-    let found = states.get(key);
-    if (found === undefined) {
-      found =
-        here === undefined
-          ? Promise.resolve("missing")
-          : placeState(place, here.roots(), here.platform).then(
-              (state) => ("folder" in state ? "here" : "missing"),
-              () => "missing",
-            );
-      states.set(key, found);
-    }
-    return found;
-  };
-  return Promise.all(
-    rows.map(async (row) => {
-      const {
-        x_sources: sources,
-        x_source_count: count,
-        x_place_here: placeHere,
-        x_place_elsewhere: elsewhere,
-        ref,
-        ...own
-      } = row;
-      const out: Record<string, CompactValue> = compact(
-        { ...own, ref: typeof ref === "number" ? `${prefix}-${String(ref)}` : ref },
-        ["inbox"],
-      );
-      const shown = sourcesOf(sources);
-      if (shown.length > 0) out["sources"] = shown;
-      const more = Number(count ?? 0) - shown.length;
-      if (more > 0) out["sources_more"] = more;
-      const place = parsed(placeHere);
-      if (here !== undefined && isPlain(place)) {
-        out["place"] = { state: await resolve(place as unknown as HerePlace) };
-      } else if (here !== undefined && typeof elsewhere === "string") {
-        out["place"] = { state: "elsewhere", machine: elsewhere };
-      }
-      return out;
-    }),
-  );
-}
-
-/** The `$machine` a task read binds: none without `here`, which matches no place. */
-const machineOf = (here: FeedHere | undefined): string | null => here?.machine ?? null;
-
 function headOf(row: unknown): SpaceHead {
   const r = (row ?? {}) as Row;
   return {
@@ -397,58 +206,6 @@ export async function readSnapshot(
     projects: (projects as Row[]).map((row) => compact(row)),
     preferences: spacePreferencesOf(preferences as Row[]),
   };
-}
-
-/** A page of finished tasks: which of them, how many, and the last row of the page before. */
-export interface FinishedRequest {
-  /** Only the checked-off list (true), every other finished task (false), or all of them. */
-  readonly checkedOff?: boolean | undefined;
-  readonly limit: number;
-  readonly after?: { readonly at: number; readonly id: string } | undefined;
-}
-
-const CHECKED_OFF = "(t.lifecycle = 'completed' AND t.wrap_state IS 'pending')";
-
-/**
- * Finished tasks newest first, from a key. The page's keys are chosen first and the rows built
- * only for them: a row's sources and place cost a read each, and a space finishes tasks for years.
- */
-function finishedSql(request: FinishedRequest): string {
-  const where = ["t.lifecycle IN ('completed', 'archived')", "t.deleted_at IS NULL"];
-  if (request.checkedOff === true) where.push(CHECKED_OFF);
-  if (request.checkedOff === false) where.push(`NOT ${CHECKED_OFF}`);
-  const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
-  return (
-    `SELECT ${TASK_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT t.id AS id, ${FINISHED_AT} ` +
-    `AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
-    "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
-  );
-}
-
-/**
- * A page of the space's finished tasks (completed or dropped, not deleted), newest first by the
- * time each was finished, then by ID: up to `limit` compact rows, and whether more follow.
- */
-export async function readFinished(
-  reader: WorkerConnection,
-  request: FinishedRequest,
-  here?: FeedHere,
-): Promise<{ rows: CompactRow[]; more: boolean }> {
-  const [space, rows] = await reader.transaction("deferred", [
-    { sql: SPACE_SQL, mode: "get" },
-    {
-      sql: finishedSql(request),
-      mode: "all",
-      params: {
-        limit: request.limit + 1,
-        machine: machineOf(here),
-        ...(request.after === undefined ? {} : { at: request.after.at, id: request.after.id }),
-      },
-    },
-  ]);
-  const found = rows as Row[];
-  const page = await taskRows(found.slice(0, request.limit), headOf(space).ref_prefix, here);
-  return { rows: page, more: found.length > request.limit };
 }
 
 /**
