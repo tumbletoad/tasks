@@ -11,7 +11,8 @@
 //   holds back no younger run of another, so no run waits while there is room for it.
 // - Right before a queued run starts, what it needs is checked again (`prepare`): one that can no
 //   longer start fails with why, before anything exists for it.
-// - While an update holds the supervisor, nothing new starts; queued runs wait and say so.
+// - While an update holds the supervisor, or an update has not finished, nothing new starts;
+//   queued runs wait and say so.
 // - A run folder goes once its run is final, confirmed, saved in its space and old (retain).
 import {
   FINAL_RUN_STATES,
@@ -22,7 +23,6 @@ import {
 } from "@tasks/contracts/runs";
 import type { AgentCommand, RunHost } from "./host.ts";
 import type { RunMachine, StartRefusal } from "./machine.ts";
-import type { SavedAnswer } from "./run-files.ts";
 
 export { QUEUE_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
 
@@ -46,8 +46,13 @@ export interface Lane {
   readonly host: RunHost;
 }
 
-/** What runs for a queued run, or why it can no longer start. */
-export type Prepared = AgentCommand | { readonly refused: StartRefusal };
+/**
+ * What runs for a queued run, or why it can no longer start. `command` is asked once, after the
+ * `starting` commit: a start whose commit did not land leaves it to the next try.
+ */
+export type Prepared =
+  | { readonly command: (run: RunRecord) => AgentCommand | Promise<AgentCommand> }
+  | { readonly refused: StartRefusal };
 
 /** A run an update would cut short: one that may still run, or whose end is not confirmed. */
 export interface Blocker {
@@ -61,7 +66,8 @@ export interface Blocker {
 export interface RunFolderList {
   list(): readonly { readonly id: string; readonly changedAt: number }[];
   remove(id: string): void;
-  readAnswer(id: string): SavedAnswer | undefined;
+  /** Whether the folder may hold an answer: one is there, or it could not be told. */
+  hasAnswer(id: string): boolean;
 }
 
 /** How long run folders are kept: a folder older than `days`, or past the newest `count`, goes. */
@@ -77,6 +83,12 @@ const RETAIN_EVERY_MS = 60 * 60_000;
 
 /** How long a Stop of every blocking run may take: the grace, the confirmation, the drain. */
 export const STOP_ALL_MS = 30_000;
+
+/**
+ * How long the check before a start may take. One that takes longer leaves its run queued for a
+ * later round, so a folder that does not answer holds up no other run and no update.
+ */
+export const PREPARE_MS = 30_000;
 
 export type SupervisorLog = (
   event: "run.refused" | "run.removed" | "run.failed",
@@ -95,6 +107,13 @@ export interface SupervisorOptions {
    * leaves the run queued for the next round.
    */
   readonly prepare: (lane: Lane, run: RunRecord) => Promise<Prepared>;
+  /** Default: PREPARE_MS. */
+  readonly prepareMs?: number;
+  /**
+   * Whether an update is under way that has not finished: nothing new starts meanwhile, even when
+   * the updater's hold is gone. Default: none.
+   */
+  readonly updating?: () => boolean;
   /** The run folders, for retention. Without it no folder is removed. */
   readonly folders?: RunFolderList;
   readonly retention?: Retention;
@@ -208,7 +227,12 @@ export class Supervisor {
 
   /** Whether an update holds new starts back now. */
   get held(): boolean {
-    return this.#holds.size > 0;
+    if (this.#holds.size > 0) return true;
+    try {
+      return this.#options.updating?.() === true;
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -290,18 +314,23 @@ export class Supervisor {
    * the host works on for the host's end of it.
    */
   async ended(lane: Lane, id: string): Promise<RunRecord | undefined> {
+    let asked = false;
     for (;;) {
       const seen = this.#rounds;
       const run = await lane.machine.read(id);
       if (run === undefined || FINAL.has(run.state) || this.#closed) return run;
       if (lane.host.hosted().includes(id)) return lane.host.ended(id);
       if (this.#rounds !== seen) continue;
-      // A queued run waits for the round that starts or refuses it; one left `starting` with
-      // nothing behind it is settled by the next round, asked for now.
+      // A queued run waits for the round that starts or refuses it. One left `starting` with
+      // nothing behind it is settled by a round: one is asked for now, and if that did not settle
+      // it (its store did not answer), the regular rounds go on trying.
       const next = new Promise<void>((resolve) => {
         this.#roundEnded.push(resolve);
       });
-      if (run.state !== "queued") void this.round();
+      if (run.state !== "queued" && !asked) {
+        asked = true;
+        void this.round();
+      }
       await next;
     }
   }
@@ -312,14 +341,31 @@ export class Supervisor {
     for (const resolve of this.#roundEnded.splice(0)) resolve();
   }
 
+  /**
+   * The runs whose record says they may still run, and every run a host works on whatever its
+   * last read record says: a space whose store did not answer keeps what was read before, and a
+   * run that started after that read is still in it as `queued`.
+   */
   #blockers(): Blocker[] {
     const out: Blocker[] = [];
-    for (const [space, runs] of this.#records) {
+    const lanes = new Map(this.#options.lanes().map((lane) => [lane.space, lane]));
+    const spaces = new Set([...this.#records.keys(), ...lanes.keys()]);
+    for (const space of spaces) {
+      const runs = this.#records.get(space) ?? [];
+      const hosted = new Set(lanes.get(space)?.host.hosted() ?? []);
       for (const run of runs) {
-        if (ACTIVE.has(run.state) || awaitsConfirmation(run)) {
-          out.push({ space, run: run.id, task: run.task, state: run.state });
+        const listed = ACTIVE.has(run.state) || awaitsConfirmation(run);
+        if (listed || hosted.has(run.id)) {
+          out.push({
+            space,
+            run: run.id,
+            task: run.task,
+            state: run.state === "queued" ? "starting" : run.state,
+          });
         }
+        hosted.delete(run.id);
       }
+      for (const id of hosted) out.push({ space, run: id, task: null, state: "running" });
     }
     return out;
   }
@@ -391,13 +437,13 @@ export class Supervisor {
     for (const { lane } of read) {
       for (const run of records.get(lane.space) ?? []) byId.set(run.id, { lane, run });
     }
-    // A planned run that did not start (refused, or stopped meanwhile) leaves its place to the
-    // next round, which comes at once.
+    // A planned run that left the queue without starting (refused, or stopped meanwhile) leaves
+    // its place to the next round, which comes at once. One still queued waits for a later round.
     let again = false;
     for (const slot of start) {
       const found = byId.get(slot.id);
       if (found === undefined || this.#isClosed() || this.held) continue;
-      if (!(await this.#start(found.lane, found.run))) again = true;
+      if (await this.#start(found.lane, found.run)) again = true;
     }
     await this.#retainWhenDue();
     if (again) void this.round();
@@ -426,38 +472,62 @@ export class Supervisor {
   }
 
   /**
-   * Starts one queued run. False when it took no place: refused, or no longer queued. A check or a
-   * store that failed leaves it for a later round.
+   * Starts one queued run. True when its place went unused: it left the queue without starting
+   * (refused, or stopped meanwhile). A check or a store that failed, or a store that did not take
+   * the move, leaves it queued for a later round, and its place unused until then.
    */
   async #start(lane: Lane, run: RunRecord): Promise<boolean> {
     this.#starting.add(run.id);
     try {
-      let prepared: Prepared;
+      let prepared: Prepared | undefined;
       try {
-        prepared = await this.#options.prepare(lane, run);
+        prepared = await this.#bounded(this.#options.prepare(lane, run));
       } catch (error) {
         this.#failed("prepare", error);
-        return true;
-      }
-      if ("refused" in prepared) {
-        await lane.machine.refuse(run.id, prepared.refused);
-        this.#log("run.refused", { reason: prepared.refused });
         return false;
       }
-      const command = prepared;
-      const begun = await lane.host.start(run.id, () => command);
-      if (begun?.state !== "starting" || !lane.host.hosted().includes(run.id)) return false;
-      // Its end frees a place: the next round may start what waits.
-      void lane.host.ended(run.id).then(
-        () => this.round(),
-        () => this.round(),
-      );
-      return true;
+      if (prepared === undefined) {
+        this.#log("run.failed", { stage: "prepare", type: "timeout" });
+        return false;
+      }
+      if ("refused" in prepared) {
+        const after = await lane.machine.refuse(run.id, prepared.refused);
+        this.#log("run.refused", { reason: prepared.refused });
+        return after !== undefined && after.state !== "queued";
+      }
+      const begun = await lane.host.start(run.id, prepared.command);
+      if (begun?.state === "starting" && lane.host.hosted().includes(run.id)) {
+        // Its end frees a place: the next round may start what waits.
+        void lane.host.ended(run.id).then(
+          () => this.round(),
+          () => this.round(),
+        );
+        return false;
+      }
+      return begun !== undefined && begun.state !== "queued";
     } catch (error) {
       this.#failed("start", error);
-      return true;
+      return false;
     } finally {
       this.#starting.delete(run.id);
+    }
+  }
+
+  /** `promise`'s value, or undefined once it took longer than prepareMs. */
+  async #bounded<T>(promise: Promise<T>): Promise<T | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => {
+            resolve(undefined);
+          }, this.#options.prepareMs ?? PREPARE_MS);
+          timer.unref();
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -474,8 +544,8 @@ export class Supervisor {
   /**
    * Removes the run folders past the newest `count` or older than `days`, each only when its run
    * is final, its end confirmed, its host done with it, and its answer saved in its space (its
-   * record holds the answer, or the folder holds none). A folder whose run no open space knows
-   * stays: its space may open again. Returns how many went.
+   * record holds the answer, or the folder has no answer file). A folder whose run no open space
+   * knows stays: its space may open again. Returns how many went.
    */
   async retain(): Promise<number> {
     const folders = this.#options.folders;
@@ -513,7 +583,7 @@ export class Supervisor {
       if (!FINAL.has(run.state) || awaitsConfirmation(run)) return false;
       if (lane.host.hosted().includes(id) || this.#starting.has(id)) return false;
       if (typeof run.result?.text === "string") return true;
-      return folders.readAnswer(id) === undefined;
+      return !folders.hasAnswer(id);
     }
     return false;
   }

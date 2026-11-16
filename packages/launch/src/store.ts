@@ -238,7 +238,7 @@ export class ExecutionRefused extends Error {
 export class RunRefused extends Error {
   override readonly name = "RunRefused";
   readonly code: RefusalCode;
-  /** The input path that broke a rule, such as `next` or `patch.evidence.claim`. Never a value. */
+  /** The input path that broke a rule, such as `next` or `patch.evidence.pid`. Never a value. */
   readonly field: string | undefined;
   /** The record as it is now, for `stale` and `evidence`. */
   readonly current: RunRecord | undefined;

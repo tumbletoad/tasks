@@ -182,9 +182,10 @@ export interface ServiceControl {
   waitFor(version: string, timeoutMs: number): Promise<boolean>;
   /**
    * Holds new background runs back while the hold is open, and says which runs a restart would
-   * cut short. Undefined when no service runs, or one that hosts no runs.
+   * cut short. Undefined when no service runs, or one that hosts no runs; `silent` when the
+   * service did not say which runs it has in time.
    */
-  holdRuns?(): Promise<RunsHold | undefined>;
+  holdRuns?(): Promise<RunsHold | "silent" | undefined>;
   /**
    * Linux: adds `Delegate=yes`, which background runs need, to the service's unit when an earlier
    * version wrote it without; the restart then runs the service with it. True when it changed.
@@ -694,7 +695,17 @@ async function waitForRuns(options: UpdateOptions): Promise<RunsHold | undefined
   const runs = options.runs;
   const control = options.control;
   if (runs === undefined || control?.holdRuns === undefined) return undefined;
-  const hold = await control.holdRuns();
+  const take = async (): Promise<RunsHold | undefined> => {
+    const taken = await control.holdRuns?.();
+    if (taken === "silent") {
+      throw new InstallError(
+        "The service did not say which background runs it has, so it was not restarted. Nothing was changed.",
+        1,
+      );
+    }
+    return taken;
+  };
+  let hold = await take();
   if (hold === undefined) return undefined;
   try {
     let blocking = hold.blocking();
@@ -707,17 +718,24 @@ async function waitForRuns(options: UpdateOptions): Promise<RunsHold | undefined
       `New runs wait in the queue meanwhile. The update waits up to ${String(Math.round(waitMs / 60_000))} minutes for these to finish.`,
     );
     const end = Date.now() + waitMs;
-    while (blocking.length > 0 && hold.held && Date.now() < end) {
-      await Promise.race([hold.changed(), pause(Math.max(1, Math.min(5_000, end - Date.now())))]);
+    for (;;) {
+      if (!hold.held) {
+        // The service ended meanwhile, and its runs with it. One that started again holds runs
+        // of its own, which may have started since: the update holds and asks that one.
+        hold.release();
+        const again = await take();
+        if (again === undefined) {
+          say(options, "The service stopped meanwhile, and its runs with it.");
+          return undefined;
+        }
+        hold = again;
+      }
       blocking = hold.blocking();
+      if (blocking.length === 0 || Date.now() >= end) break;
+      await Promise.race([hold.changed(), pause(Math.max(1, Math.min(5_000, end - Date.now())))]);
     }
     if (blocking.length === 0) {
       say(options, "The runs finished.");
-      return hold;
-    }
-    // A service that stopped meanwhile took its runs with it: nothing is left to wait for.
-    if (!hold.held) {
-      say(options, "The service stopped meanwhile, and its runs with it.");
       return hold;
     }
     if ((await runs.decide(blocking)) === "give_up") {

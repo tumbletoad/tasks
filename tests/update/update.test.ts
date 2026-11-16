@@ -521,6 +521,44 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
       ]),
     );
   });
+
+  test("a service that started again during the wait is held again and its runs waited for; one that does not say which runs it has is not restarted", async () => {
+    const w = await world("runs-again");
+    const runs = new FakeRuns(running);
+    w.control.runs = runs;
+    const asked: number[] = [];
+    const options: UpdateOptions = {
+      ...w.options,
+      runs: {
+        waitMs: 60_000,
+        decide: (blocking) => {
+          asked.push(blocking.length);
+          return Promise.resolve("give_up");
+        },
+      },
+    };
+    const r2 = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const updating = updateFromArchive(r2.archive, options);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The service ended by itself and came back, and a run of its own started before any hold.
+    runs.restarted([{ space_name: "Work", task: "WORK-13", state: "running" }]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(w.control.calls).toEqual(["hold", "release", "hold"]);
+    expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+    runs.set([]);
+    expect(await updating).toMatchObject({ outcome: "updated", to: "0.2.0" });
+    expect(asked).toEqual([]);
+
+    w.control.calls.length = 0;
+    runs.silent = true;
+    const given = await refusal(rollbackUpdate(options));
+    expect(given.exitCode).toBe(1);
+    expect(given.message).toMatch(
+      /did not say which background runs it has.*Nothing was changed\./,
+    );
+    expect(currentOf(w.root, os)).toBe("0.2.0");
+    expect(w.control.calls).toEqual(["hold"]);
+  });
 });
 
 describe("[A2.3.12.6.update.repair] a repair finishes or rolls back whatever an interrupted update left, and is safe to run again after it was cut off", () => {

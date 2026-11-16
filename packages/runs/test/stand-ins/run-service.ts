@@ -78,7 +78,9 @@ const supervisor = new Supervisor({
   prepare: (_lane, run) => {
     const command = commands.get(run.id);
     commands.delete(run.id);
-    return Promise.resolve(command ?? { refused: "spawn_failed" as const });
+    return Promise.resolve(
+      command === undefined ? { refused: "spawn_failed" as const } : { command: () => command },
+    );
   },
   folders: files,
 });

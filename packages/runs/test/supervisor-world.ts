@@ -181,7 +181,7 @@ export class SupervisorWorld {
         Promise.resolve(
           run.task !== null && this.closedTasks.has(run.task)
             ? { refused: "task_closed" as const }
-            : { command: "agent", args: [], cwd: "/", env: {} },
+            : { command: () => ({ command: "agent", args: [], cwd: "/", env: {} }) },
         ),
       folders: files,
       retention: { days: 1, count: 3 },
@@ -295,6 +295,7 @@ export class SupervisorWorld {
         this.folders.set(id, { changedAt: this.now, answer });
       },
       readAnswer: (id) => this.folders.get(id)?.answer,
+      hasAnswer: (id) => this.folders.get(id)?.answer !== undefined,
       logs: () => ({
         stdout: () => undefined,
         stderr: () => undefined,

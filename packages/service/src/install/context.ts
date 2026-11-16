@@ -491,17 +491,26 @@ const heldRuns = (value: unknown): HeldRun[] =>
       }))
     : [];
 
-/** How long the service may take to say what blocks an update. */
-const HOLD_ANSWER_MS = 15_000;
+/**
+ * How long the service may take to say what blocks an update. Its hold is in force from the
+ * request on; a service that says nothing for this long is not one an update should restart.
+ */
+export const HOLD_ANSWER_MS = 120_000;
 /** How long stopping the runs may take: their grace, confirmation and drain, and some. */
 const STOP_HELD_MS = 120_000;
 
 /**
  * `runs/hold`: no new run starts while the hold's connection is open, and the service says which
  * runs the update would cut short. Undefined when no service of this install answers, or one of an
- * earlier version that hosts no runs.
+ * earlier version that hosts no runs; `silent` when the service took the request but did not say
+ * within `answerMs` which runs it has.
  */
-export async function holdRuns(state: string, id: string, env: Env): Promise<RunsHold | undefined> {
+export async function holdRuns(
+  state: string,
+  id: string,
+  env: Env,
+  answerMs: number = HOLD_ANSWER_MS,
+): Promise<RunsHold | "silent" | undefined> {
   const opened = await openSession(state, id, env, probeEnd(undefined));
   if ("reason" in opened) return undefined;
   const session = opened.session;
@@ -538,12 +547,16 @@ export async function holdRuns(state: string, id: string, env: Env): Promise<Run
     new Promise<"late">((resolve) => {
       setTimeout(() => {
         resolve("late");
-      }, HOLD_ANSWER_MS).unref();
+      }, answerMs).unref();
     }),
   ]);
-  if (answered === "late" || !live.held) {
+  if (!live.held) {
     session.close();
     return undefined;
+  }
+  if (answered === "late") {
+    session.close();
+    return "silent";
   }
   return {
     blocking: () => live.runs,

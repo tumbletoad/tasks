@@ -134,6 +134,16 @@ export class RunFiles implements RunFolders {
     removeStaleTemps(this.folder(id), [ANSWER_FILE]);
   }
 
+  /** Whether the run's answer file is there, or could not be told (any error but its absence). */
+  hasAnswer(id: string): boolean {
+    try {
+      lstatSync(join(this.folder(id), ANSWER_FILE));
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== "ENOENT";
+    }
+  }
+
   /** The run folders there are, each with when it last changed (ms), in no order. */
   list(): { readonly id: string; readonly changedAt: number }[] {
     let names: string[];

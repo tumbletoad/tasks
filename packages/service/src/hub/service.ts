@@ -20,7 +20,7 @@
 // service.json, a stale socket file, a temporary file of an atomic write. A start that fails after
 // the lock removes its own service.json.
 import { randomBytes } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { envVar, PRODUCT_NAME } from "@tasks/brand";
 import type { Instance, Root } from "@tasks/launch";
@@ -112,6 +112,7 @@ import {
   type SessionStore,
 } from "../binding/index.ts";
 import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
+import { UPDATE_JOURNAL } from "../version/journal.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { SeenCalls } from "./agent-homes.ts";
@@ -544,6 +545,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         if (service === undefined) return true;
         return (await service.resolveFolder(space, place)).status === "ok";
       },
+      // From the journal's write to its removal an update may restart the service, a repair
+      // included, whether or not its updater still holds the queue.
+      updating: () => existsSync(join(layout.state, UPDATE_JOURNAL)),
     });
     void runs.probe();
 

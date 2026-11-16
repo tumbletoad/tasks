@@ -220,10 +220,11 @@ export class FakeControl implements ServiceControl {
   /** Linux: the unit's Delegate=yes added, when a test gives the service a unit to change. */
   delegateUnit?: () => Promise<boolean>;
 
-  holdRuns(): Promise<RunsHold | undefined> {
+  holdRuns(): Promise<RunsHold | "silent" | undefined> {
     const runs = this.runs;
     if (runs === undefined || this.version === undefined) return Promise.resolve(undefined);
     this.calls.push("hold");
+    if (runs.silent) return Promise.resolve("silent");
     return Promise.resolve(runs.hold(this.calls));
   }
 }
@@ -236,7 +237,11 @@ export class FakeRuns {
   blocking: HeldRun[];
   /** The runs left after a Stop of all. */
   stubborn: HeldRun[] = [];
+  /** The service takes a hold but does not say what blocks it. */
+  silent = false;
   #waiters: (() => void)[] = [];
+  /** Which life of the service a hold belongs to: one ends with its service. */
+  #life = 0;
 
   constructor(blocking: HeldRun[]) {
     this.blocking = blocking;
@@ -248,14 +253,24 @@ export class FakeRuns {
     for (const resolve of this.#waiters.splice(0)) resolve();
   }
 
+  /** The service ended by itself and started again: its holds end, and `next` blocks now. */
+  restarted(next: HeldRun[]): void {
+    this.#life += 1;
+    this.set(next);
+  }
+
   hold(calls: string[]): RunsHold {
+    const life = this.#life;
+    const current = () => this.#life;
     return {
       blocking: () => this.blocking,
       changed: () =>
         new Promise<void>((resolve) => {
           this.#waiters.push(resolve);
         }),
-      held: true,
+      get held() {
+        return current() === life;
+      },
       stopAll: () => {
         calls.push("stop runs");
         this.blocking = this.stubborn;

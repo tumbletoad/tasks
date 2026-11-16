@@ -65,6 +65,8 @@ export interface RunServiceOptions extends RunOptions {
   readonly instances?: () => readonly { readonly id: string }[];
   /** Whether a task's place still resolves to a folder runs can use. Default: not checked. */
   readonly folderUsable?: (space: string, place: RunPlace) => Promise<boolean>;
+  /** Whether an update of this install has not finished (its journal is there). Default: no. */
+  readonly updating?: () => boolean;
 }
 
 /** How often spaces that opened since are recovered, and the queue looked at. */
@@ -145,6 +147,7 @@ export class RunService {
       limits: () => this.#settings().limits,
       available: async () => (await this.probe()).available,
       prepare: (lane, run) => this.#prepare(lane, run),
+      ...(options.updating === undefined ? {} : { updating: options.updating }),
       folders: this.#files,
       log: (event, fields) => {
         this.#options.log.log(event, fields);
@@ -340,7 +343,10 @@ export class RunService {
     }
   }
 
-  /** A queued run checked again right before it starts, and what runs for it. */
+  /**
+   * A queued run checked again right before it starts, and what runs for it. Its command is
+   * taken only once its `starting` commit landed, so a start that did not land can be tried again.
+   */
   async #prepare(lane: Lane, run: RunRecord): Promise<Prepared> {
     const served = this.#options.spaces().find((s) => s.id === lane.space && isOpen(s));
     if (served === undefined) throw new Error("The space is not open on this machine");
@@ -350,13 +356,12 @@ export class RunService {
       this.#commands.delete(run.id);
       return { refused: refused ?? "spawn_failed" };
     }
-    this.#commands.delete(run.id);
-    try {
-      return await command(run);
-    } catch (error) {
-      this.#failed("prepare", error);
-      return { refused: "spawn_failed" };
-    }
+    return {
+      command: (started) => {
+        this.#commands.delete(run.id);
+        return command(started);
+      },
+    };
   }
 
   /** What a queued run needs, read now: its task open, its instance and its folder still there. */
@@ -471,7 +476,7 @@ export class RunService {
     await hosted.life.host?.close();
   }
 
-  #failed(stage: "probe" | "prepare", error: unknown): void {
+  #failed(stage: "probe", error: unknown): void {
     const code = errorCode(error);
     this.#options.log.log("run.failed", {
       stage,

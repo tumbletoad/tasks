@@ -1,16 +1,21 @@
 // The supervisor's rules one by one, over an in-memory store and fake containers: a run whose
 // `starting` commit reached the store after its deadline, what retention keeps, and a queued run's
 // wait, Stop and refusal.
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { RunRecord } from "@tasks/contracts/runs";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
-import { seenRun, type RunStore } from "@tasks/launch/execution-store";
+import { RunRefused, seenRun, type RunStore } from "@tasks/launch/execution-store";
 import { describe, expect, test } from "vitest";
 import {
+  RunFiles,
   RunHost,
   RunMachine,
   Supervisor,
   type Containers,
   type Lane,
+  type Prepared,
   type RunFolderList,
   type RunFolders,
   type SavedAnswer,
@@ -19,6 +24,37 @@ import { MACHINE, settle } from "./supervisor-world.ts";
 
 const DAY = 24 * 60 * 60_000;
 const TASK = "t_0000000000000000000000000a";
+const OTHER_TASK = "t_0000000000000000000000000b";
+
+/** A store whose openWork fails while `failing()` holds, and counts its calls in `opens`. */
+function flaky(failing: () => boolean, counted: { opens: number }) {
+  return (store: RunStore): RunStore =>
+    new Proxy(store, {
+      get(target, key, receiver) {
+        const value: unknown = Reflect.get(target, key, receiver);
+        if (typeof value !== "function") return value;
+        const call = (value as (...a: unknown[]) => unknown).bind(target);
+        if (key !== "openWork") return call;
+        return (...args: unknown[]) => {
+          counted.opens += 1;
+          return failing() ? Promise.reject(new Error("The store is busy")) : call(...args);
+        };
+      },
+    });
+}
+
+/** A run of TASK that ran and failed without an answer in its record. */
+async function failedWithoutAnswer(store: RunStore, run: RunRecord): Promise<void> {
+  const starting = await store.transitionRun(
+    run.id,
+    { state: "queued", version: run.version },
+    "starting",
+  );
+  const running = await store.transitionRun(run.id, seenRun(starting), "running", {
+    evidence: { pid: 7 },
+  });
+  await store.transitionRun(run.id, seenRun(running), "failed", { reason: "no_result" });
+}
 
 /** Containers whose start never answers: a run that reaches one stays starting. */
 const hanging: Containers = {
@@ -36,6 +72,7 @@ function folders(now: () => number) {
     prepare: (id) => kept.set(id, { changedAt: now() }),
     saveAnswer: (id, answer) => kept.set(id, { changedAt: now(), answer }),
     readAnswer: (id) => kept.get(id)?.answer,
+    hasAnswer: (id) => kept.get(id)?.answer !== undefined,
     logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
     removeTemps: () => undefined,
     list: () => [...kept].map(([id, f]) => ({ id, changedAt: f.changedAt })),
@@ -44,7 +81,15 @@ function folders(now: () => number) {
   return { kept, files };
 }
 
-function bench(options: { store?: (store: RunStore) => RunStore; deadline?: number } = {}) {
+function bench(
+  options: {
+    store?: (store: RunStore) => RunStore;
+    deadline?: number;
+    prepare?: (run: RunRecord) => Promise<Prepared> | undefined;
+    prepareMs?: number;
+    updating?: () => boolean;
+  } = {},
+) {
   let now = Date.UTC(2026, 10, 16, 9, 0, 0);
   const durable = new MemoryDurable(() => now);
   const plain = new MemoryExecutionStore(durable);
@@ -61,12 +106,15 @@ function bench(options: { store?: (store: RunStore) => RunStore; deadline?: numb
     lanes: () => [lane],
     limits: () => ({ runs: 3, perInstance: 2, perTask: 1 }),
     available: () => Promise.resolve(true),
-    prepare: () =>
+    prepare: (_lane, run) =>
+      options.prepare?.(run) ??
       Promise.resolve(
         refuse
           ? { refused: "folder_gone" as const }
-          : { command: "agent", args: [], cwd: "/", env: {} },
+          : { command: () => ({ command: "agent", args: [], cwd: "/", env: {} }) },
       ),
+    ...(options.prepareMs === undefined ? {} : { prepareMs: options.prepareMs }),
+    ...(options.updating === undefined ? {} : { updating: options.updating }),
     folders: files,
     retention: { days: 14, count: 2 },
     now: () => now,
@@ -232,5 +280,124 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
     expect([...b.kept.keys()].sort()).toEqual([open, unsure, unsaved, elsewhere].sort());
     b.supervisor.close();
     await settle();
+  });
+
+  test("retention keeps the folder of a run whose record holds no answer while an answer file is there, even one that cannot be read", async () => {
+    const b = bench();
+    const run = await b.queue();
+    await failedWithoutAnswer(b.store, run);
+    const root = mkdtempSync(join(tmpdir(), "tasks-retain-"));
+    try {
+      const files = new RunFiles(root);
+      files.prepare(run.id);
+      const answer = join(files.folder(run.id), "answer.json");
+      writeFileSync(answer, "{ not an answer");
+      const supervisor = new Supervisor({
+        lanes: () => [b.lane],
+        limits: () => ({ runs: 3, perInstance: 2, perTask: 1 }),
+        available: () => Promise.resolve(true),
+        prepare: () => Promise.resolve({ refused: "spawn_failed" }),
+        folders: files,
+        retention: { days: 14, count: 0 },
+        now: b.now,
+      });
+      expect(await supervisor.retain()).toBe(0);
+      rmSync(answer);
+      expect(await supervisor.retain()).toBe(1);
+      expect(files.list()).toEqual([]);
+      supervisor.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an update is asked about every run a host works on, also when the space's store did not answer the round after its start", async () => {
+    let failing = false;
+    const counted = { opens: 0 };
+    const b = bench({ store: flaky(() => failing, counted) });
+    const run = await b.queue();
+    await b.supervisor.round();
+    expect(b.host.hosted()).toEqual([run.id]);
+    failing = true;
+    expect(await b.supervisor.blocking()).toEqual([
+      expect.objectContaining({ run: run.id, state: "starting" }),
+    ]);
+    b.supervisor.close();
+    await b.host.close();
+  });
+
+  test("waiting for the end of a run left starting asks for one round, not one after another while its store does not answer", async () => {
+    let failing = false;
+    const counted = { opens: 0 };
+    const b = bench({ store: flaky(() => failing, counted) });
+    const run = await b.queue();
+    await b.store.transitionRun(run.id, { state: "queued", version: run.version }, "starting");
+    failing = true;
+    counted.opens = 0;
+    const ended = b.supervisor.ended(b.lane, run.id);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(counted.opens).toBeLessThanOrEqual(2);
+    b.supervisor.close();
+    expect((await ended)?.state).toBe("starting");
+  });
+
+  test("a check before a start that does not answer leaves its run queued and holds up no other run", async () => {
+    const stalled = new Set<string>();
+    const b = bench({
+      prepareMs: 20,
+      prepare: (run) => (stalled.has(run.id) ? new Promise<never>(() => undefined) : undefined),
+    });
+    const first = await b.queue();
+    stalled.add(first.id);
+    const second = await b.queue(OTHER_TASK);
+    await b.supervisor.round();
+    expect((await b.store.readRun(first.id))?.state).toBe("queued");
+    expect((await b.store.readRun(second.id))?.state).toBe("starting");
+    b.supervisor.close();
+    await b.host.close();
+  });
+
+  test("a store that does not take a start leaves the run queued for a later round, without a round after round", async () => {
+    let refusals = 0;
+    const b = bench({
+      store: (store) =>
+        new Proxy(store, {
+          get(target, key, receiver) {
+            const value: unknown = Reflect.get(target, key, receiver);
+            if (typeof value !== "function") return value;
+            const call = (value as (...a: unknown[]) => unknown).bind(target);
+            if (key !== "transitionRun") return call;
+            return (...args: unknown[]) => {
+              // Bounded, so a supervisor that asks again and again ends and the count tells.
+              if (args[2] === "starting" && refusals < 50) {
+                refusals += 1;
+                return Promise.reject(new RunRefused("unavailable", "The space is read-only"));
+              }
+              return call(...args);
+            };
+          },
+        }),
+    });
+    const run = await b.queue();
+    await b.supervisor.round();
+    await settle();
+    expect(refusals).toBe(1);
+    expect((await b.store.readRun(run.id))?.state).toBe("queued");
+    b.supervisor.close();
+    await b.host.close();
+  });
+
+  test("while an update has not finished nothing new starts, also without the updater's hold, and the run says why it waits", async () => {
+    let updating = true;
+    const b = bench({ updating: () => updating });
+    const run = await b.queue();
+    await b.supervisor.round();
+    expect(b.supervisor.waiting(run.id)).toBe("update");
+    expect((await b.store.readRun(run.id))?.state).toBe("queued");
+    updating = false;
+    await b.supervisor.round();
+    expect((await b.store.readRun(run.id))?.state).toBe("starting");
+    b.supervisor.close();
+    await b.host.close();
   });
 });
