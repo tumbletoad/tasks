@@ -191,7 +191,7 @@ describe("[A1.5.projection.latency] one task shows within 1 s of its commit, and
     } finally {
       w.close();
     }
-  }, 60_000);
+  });
 
   test("one change: the batch runs 500 ms after it", async () => {
     const { run, batches } = scripted([1_000]);

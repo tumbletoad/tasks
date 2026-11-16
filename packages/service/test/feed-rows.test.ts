@@ -74,7 +74,7 @@ afterAll(async () => {
   await service.stop();
   removeRuntimeDir(service);
   cleanup();
-}, 60_000);
+});
 
 type Rows = readonly Readonly<Record<string, unknown>>[];
 const byTitle = (rows: Rows, title: string) => rows.find((r) => r["title"] === title);

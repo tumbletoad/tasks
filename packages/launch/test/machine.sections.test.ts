@@ -135,11 +135,11 @@ describe.each(BENCHES)(
       time = new Time();
       bench = await open(time);
       tasks = [];
-    }, 60_000);
+    });
 
     afterEach(async () => {
       await bench.close();
-    }, 60_000);
+    });
 
     const read = (id: string): Promise<LaunchIntent | undefined> => bench.durable().readIntent(id);
 

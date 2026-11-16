@@ -69,7 +69,7 @@ afterAll(async () => {
   await service.stop();
   removeRuntimeDir(service);
   cleanup();
-}, 60_000);
+});
 
 describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
   test("op/list names every entry", async () => {

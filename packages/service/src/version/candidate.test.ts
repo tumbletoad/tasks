@@ -94,7 +94,7 @@ describe("[A2.3.12.6.candidate.checks] the candidate's checks: a temporary space
     expect(row.detail).toMatch(process.platform === "win32" ? /pipe/ : /socket/);
     expect(leftovers(o.state)).toEqual([]);
     expect(readdirSync(o.state).filter((name) => name.includes("candidate"))).toEqual([]);
-  }, 60_000);
+  });
 
   test("the bridge answers tools/list from its offline file in an empty home, with MCP frames only", async () => {
     const o = options({ entry: [process.execPath, CLI], offline: OFFLINE });

@@ -673,7 +673,7 @@ describe.runIf(windows)("Windows launchers", () => {
           killQuietly(pid);
         }
       }
-    }, 60_000);
+    });
 
     test("a detached child of Node is outside the job and survives tasks.exe", async () => {
       const { child, line } = firstLine(stable(root), ["detach"]);
@@ -693,7 +693,7 @@ describe.runIf(windows)("Windows launchers", () => {
         child.kill();
         for (const pid of pids) killQuietly(pid);
       }
-    }, 60_000);
+    });
 
     test(
       "a refused job step stops Node before it runs (exit 70), and a release build ignores the hook",
