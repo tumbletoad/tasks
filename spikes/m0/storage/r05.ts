@@ -1,7 +1,7 @@
 // R05 (A1 3.20, A1 3.12, A3 M0-11): FTS5 top 20 with snippets over the design-scale space, then
 // the optional trigram index: present, its build time, its size against the unicode61 index and its
 // substring query latency. The same queries also run over the stress corpus, for information.
-// Pass: p95 <= 50 ms for the `desktop` role, <= 100 ms for the `laptop` role, and the trigram tokenizer present.
+// Pass: p95 <= 50 ms for the `windows` role, <= 100 ms for the `linux` role, and the trigram tokenizer present.
 //
 // Three query groups, each with its own percentiles:
 // - broad: words of the fixture vocabulary, which match a large share of all documents. This is
@@ -285,7 +285,7 @@ export function r05(ctx: Context, o: R05Options): RowResult {
   const stress = searchAll(o.stress);
 
   const latency = main.groups.broad.latency;
-  const limit = ctx.machine.role === "desktop" ? 50 : 100;
+  const limit = ctx.machine.role === "windows" ? 50 : 100;
   // A7 3.7: the design-scale space of 55,000 tasks. The bench runs 1,000 broad queries there.
   const v = verdict(
     [
@@ -298,7 +298,7 @@ export function r05(ctx: Context, o: R05Options): RowResult {
   return {
     row: "R05",
     title: `FTS5 top 20 with snippets, ${String(o.queries)} broad queries over ${String(main.tasks)} tasks`,
-    threshold: `broad p95 <= ${String(limit)} ms (${ctx.machine.role}; desktop 50 ms, laptop 100 ms) and trigram present`,
+    threshold: `broad p95 <= ${String(limit)} ms (${ctx.machine.role}; windows 50 ms, linux 100 ms) and trigram present`,
     ...v,
     latency,
     metrics: {

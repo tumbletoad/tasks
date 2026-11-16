@@ -44,8 +44,8 @@ const HELP = `Tasks storage bench (M0.04)
   --seed <text>       Seed of the fixture generators. Default "mira".
   --text <profile>    default or heavy. heavy writes longer and more notes and log entries,
                       near A1 3.20's 80 MB. Default: default.
-  --machine <role>    desktop or laptop: which R03 and R05 thresholds apply.
-                      Default: desktop on Windows, laptop elsewhere.
+  --machine <role>    windows or linux: which R03 and R05 thresholds apply.
+                      Default: windows on Windows, linux elsewhere.
   --r04-seconds <n>   Duration of R04. Default 300 at full scale, 3 at 1 %. A run under 300 s
                       is indicative only.
   --layout            Also measure the history table in both layouts (history-layout.json).
@@ -107,8 +107,8 @@ function parse(argv: string[]): Options {
   if (out !== undefined && readdirSync(values.out).length > 0) {
     fail("--out must be a new or empty folder. It holds files already: use a new folder per run.");
   }
-  const role = values.machine ?? (process.platform === "win32" ? "desktop" : "laptop");
-  if (role !== "desktop" && role !== "laptop") fail("--machine must be desktop or laptop");
+  const role = values.machine ?? (process.platform === "win32" ? "windows" : "linux");
+  if (role !== "windows" && role !== "linux") fail("--machine must be windows or linux");
   const text = values.text;
   if (text !== "default" && text !== "heavy") fail("--text must be default or heavy");
   const fault = values["inject-fault"];

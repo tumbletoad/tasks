@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type Row = "R02" | "R03" | "R04" | "R05" | "R06";
-export type MachineRole = "desktop" | "laptop";
+export type MachineRole = "windows" | "linux";
 
 export interface Latency {
   count: number;
