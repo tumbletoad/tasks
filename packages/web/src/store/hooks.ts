@@ -1,7 +1,13 @@
 // React on top of the live store (A5 3.24: `useSyncExternalStore`). The store itself has no React.
 import { useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Session } from "../context.ts";
-import { PagedQuery, type PageSource, type QueryDef, type QueryState } from "./queries.ts";
+import {
+  PagedQuery,
+  type PageSource,
+  type QueryDef,
+  type QueryOptions,
+  type QueryState,
+} from "./queries.ts";
 import type { LiveState } from "./store.ts";
 
 /** The tab's live state: open rows, areas, projects, instances and the feed's phase. */
@@ -18,9 +24,10 @@ export function useLive(): LiveState {
 export function usePagedQuery<R extends { readonly id: string }>(
   def: QueryDef,
   source: PageSource<R>,
+  options?: QueryOptions,
 ): { readonly state: QueryState<R>; readonly query: PagedQuery<R> } {
   const { live } = useContext(Session);
-  const [query] = useState(() => new PagedQuery(def, source));
+  const [query] = useState(() => new PagedQuery(def, source, options));
   useEffect(() => {
     const stop = live.onChanges((changes) => {
       query.apply(changes);
