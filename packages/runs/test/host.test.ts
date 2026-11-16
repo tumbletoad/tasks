@@ -1,13 +1,144 @@
 // The run host's rules one by one, on the model world's fake containers and clock (host-world.ts):
 // Stop before the agent's PID, while it runs and after it exited, the start time, the run's limits,
 // a container that refuses to empty and End by force, and the next start after a crash.
+import { spawn, type ChildProcess } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { RunRecord } from "@tasks/contracts/runs";
+import type { RunStore } from "@tasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
+import {
+  RunHost,
+  RunMachine,
+  type AgentCommand,
+  type AgentExit,
+  type Containers,
+  type RunFolders,
+  type RunTimes,
+  type SavedAnswer,
+} from "../src/index.ts";
 import { endMove } from "../src/machine.ts";
-import { World, type Event } from "./host-world.ts";
+import { MODEL_LIMITS, World, type Event } from "./host-world.ts";
 
 const MACHINE = "m_3q7k9d2xw8f4r6t1c5v0b2n8a7";
+
+/**
+ * A host over a memory store with no model world: for what the world does not model, real child
+ * processes and preparation that never ends. `wrap` changes what the store does.
+ */
+async function bareHost(options: {
+  containers: Containers;
+  wrap?: (store: RunStore) => RunStore;
+  times?: Partial<RunTimes>;
+  wait?: (ms: number, signal: AbortSignal) => Promise<void>;
+  elapsed?: () => number;
+}) {
+  const store = new MemoryExecutionStore(new MemoryDurable(() => Date.UTC(2026, 10, 16)));
+  const machine = new RunMachine({ store: options.wrap?.(store) ?? store, machine: MACHINE });
+  const saved = new Map<string, SavedAnswer>();
+  const files: RunFolders = {
+    prepare: () => undefined,
+    saveAnswer: (id, answer) => saved.set(id, answer),
+    readAnswer: (id) => saved.get(id),
+    logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
+    removeTemps: () => undefined,
+  };
+  const host = new RunHost({
+    machine,
+    containers: options.containers,
+    files,
+    ...(options.times === undefined ? {} : { times: options.times }),
+    ...(options.wait === undefined ? {} : { wait: options.wait }),
+    ...(options.elapsed === undefined ? {} : { elapsed: options.elapsed }),
+  });
+  const queued = await machine.queue(
+    {
+      task: "t_0000000000000000000000000a",
+      routine: null,
+      instance: "claude-work",
+      adapter: "claude-print",
+      place: null,
+      request: "Fix the export.",
+      briefHash: "0a1b2c3d".repeat(8),
+      permission: "auto-edit",
+      limits: MODEL_LIMITS,
+    },
+    "host-bare-00000001",
+  );
+  return { host, id: queued.id, saved };
+}
+
+/** Containers that run each agent as a plain child process, and one that refuses every start. */
+function childContainers(): Containers & { exited: Promise<void> } {
+  const children = new Map<string, ChildProcess>();
+  let ended!: () => void;
+  const exited = new Promise<void>((resolve) => {
+    ended = resolve;
+  });
+  const gone = (child: ChildProcess | undefined) =>
+    child === undefined || child.exitCode !== null || child.signalCode !== null;
+  const confirm = async (name: string, waitMs = 0) => {
+    const child = children.get(name);
+    if (!gone(child)) {
+      await Promise.race([new Promise((resolve) => child?.once("exit", resolve)), sleep(waitMs)]);
+    }
+    return gone(child)
+      ? { state: "empty" as const }
+      : { state: "occupied" as const, detail: "alive" };
+  };
+  return {
+    exited,
+    probe: () => Promise.resolve({ available: true, kind: "job" }),
+    start: (spec) => {
+      const child = spawn(spec.command, [...spec.args], { stdio: ["ignore", "pipe", "pipe"] });
+      children.set(spec.name, child);
+      const exit = new Promise<AgentExit>((resolve) => {
+        child.once("exit", (code, signal) => {
+          resolve({ code, signal });
+          ended();
+        });
+      });
+      return new Promise((resolve, reject) => {
+        child.once("error", reject);
+        child.once("spawn", () => {
+          if (child.pid === undefined) {
+            reject(new Error("no PID"));
+            return;
+          }
+          resolve({
+            name: spec.name,
+            pid: child.pid,
+            stdout: child.stdout,
+            stderr: child.stderr,
+            exited: exit,
+          });
+        });
+      });
+    },
+    interrupt: () => Promise.resolve(false),
+    kill: (name) => {
+      children.get(name)?.kill();
+      return Promise.resolve();
+    },
+    confirmEmpty: (name, o) => confirm(name, o?.waitMs),
+    recover: (name, o) => {
+      children.get(name)?.kill();
+      return confirm(name, o?.waitMs);
+    },
+  };
+}
+
+const refusing: Containers = {
+  probe: () => Promise.resolve({ available: true, kind: "job" }),
+  start: () => Promise.reject(new Error("the agent did not start")),
+  interrupt: () => Promise.resolve(false),
+  kill: () => Promise.resolve(),
+  confirmEmpty: () => Promise.resolve({ state: "empty" }),
+  recover: () => Promise.resolve({ state: "empty" }),
+};
+
+/** A command that is never ready, as an adapter's preparation that hangs. */
+const never = (): Promise<AgentCommand> => new Promise<AgentCommand>(() => undefined);
 
 /** A world with one queued run, and a way to read it. */
 async function oneRun(): Promise<{
@@ -187,6 +318,93 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(await read()).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
     await run({ kind: "release", pick: 0 }, { kind: "forceEnd", pick: 0 }, tick(1_000));
     expect(await read()).toMatchObject({ state: "failed", reason: "service_ended" });
+  });
+
+  test("an agent that answers and exits while its start is being recorded keeps its answer", async () => {
+    const containers = childContainers();
+    const { host, id, saved } = await bareHost({
+      containers,
+      // The `running` commit lands only after the agent exited and its pipes were left alone.
+      wrap: (store) => ({
+        createRun: (input, request) => store.createRun(input, request),
+        readRun: (run) => store.readRun(run),
+        openWork: (machine) => store.openWork(machine),
+        transitionRun: async (run, seen, next, patch) => {
+          if (next === "running") {
+            await containers.exited;
+            await sleep(300);
+          }
+          return store.transitionRun(run, seen, next, patch);
+        },
+      }),
+    });
+    const line = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "Done at once.",
+    });
+    await host.start(id, () => ({
+      command: process.execPath,
+      args: ["-e", `process.stdout.write(${JSON.stringify(`${line}\n`)})`],
+      cwd: process.cwd(),
+      env: Object.fromEntries(
+        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+      ),
+    }));
+    const after = await host.ended(id);
+    expect(after).toMatchObject({ state: "succeeded", result: { text: "Done at once." } });
+    expect(saved.get(id)?.text).toBe("Done at once.");
+  }, 30_000);
+
+  test("Stop while the agent's command is still being prepared: cancelled at once, and nothing starts", async () => {
+    let starts = 0;
+    const { host, id } = await bareHost({
+      containers: {
+        ...refusing,
+        start: () => {
+          starts += 1;
+          return Promise.reject(new Error("unexpected"));
+        },
+      },
+    });
+    await host.start(id, never);
+    expect((await host.stop(id))?.state).toBe("cancelling");
+    expect((await host.ended(id))?.state).toBe("cancelled");
+    expect(starts).toBe(0);
+  });
+
+  test("a command that is never ready fails the run after the start time", async () => {
+    const { host, id } = await bareHost({ containers: refusing, times: { startMs: 50 } });
+    await host.start(id, never);
+    expect(await host.ended(id)).toMatchObject({ state: "failed", reason: "start_timed_out" });
+  });
+
+  test("a store that refuses the end for a long time records it once it takes it again", async () => {
+    let mono = 0;
+    const { host, id } = await bareHost({
+      containers: refusing,
+      elapsed: () => mono,
+      // Each wait passes at once on this clock.
+      wait: (ms, signal) =>
+        new Promise<void>((resolve) => {
+          if (signal.aborted) return;
+          mono += ms;
+          setImmediate(resolve);
+        }),
+      wrap: (store) => ({
+        createRun: (input, request) => store.createRun(input, request),
+        readRun: (run) => store.readRun(run),
+        openWork: (machine) => store.openWork(machine),
+        transitionRun: (run, seen, next, patch) =>
+          next === "failed" && mono < 60 * 60_000
+            ? Promise.reject(new Error("The disk is full"))
+            : store.transitionRun(run, seen, next, patch),
+      }),
+    });
+    await host.start(id, () => ({ command: "agent", args: [], cwd: "/", env: {} }));
+    expect(await host.ended(id)).toMatchObject({ state: "failed", reason: "spawn_failed" });
+    expect(mono).toBeGreaterThanOrEqual(60 * 60_000);
   });
 
   test("endMove: a final run stays; an accepted Stop makes every confirmed end cancelled", async () => {

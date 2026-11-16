@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   ANSWER_CAP_BYTES,
   createStreamParser,
+  LINE_CAP_BYTES,
   STREAM_KINDS,
   type RunEvent,
   type StreamKind,
@@ -101,6 +102,16 @@ describe.each(STREAM_KINDS)(
       const { outcome } = parser.end({ code: null, signal: "SIGKILL" });
       expect(outcome.result).toBe("Found it.");
       expect(outcome.resultFinal).toBe(false);
+    });
+
+    test("an answer on a line too long to read leaves the earlier message unfinished, never final", () => {
+      const parser = createStreamParser(kind);
+      parser.push(`${messageLine(kind, "Working.")}\n`);
+      const lines = finalLines(kind, "a".repeat(LINE_CAP_BYTES + 1));
+      parser.push(`${lines.join("\n")}\n`);
+      const { outcome } = parser.end(exit0);
+      expect([outcome.result, outcome.resultFinal]).toEqual(["Working.", false]);
+      expect(outcome.counts.oversized).toBe(1);
     });
 
     test("a message after the final answer does not replace it", () => {

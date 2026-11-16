@@ -84,9 +84,12 @@ export class RunService {
     this.#files = new RunFiles(join(options.stateDir, RUNS_FOLDER));
   }
 
-  /** Probes this machine's containers once; later calls return the same answer. */
+  /**
+   * Probes this machine's containers. Only a success is kept: a machine that could not contain
+   * runs a moment ago, a busy user manager for one, is asked again at the next call.
+   */
   probe(): Promise<ProbeResult> {
-    this.#probe ??= this.#containers.probe().then(
+    const probe = (this.#probe ??= this.#containers.probe().then(
       (result) => {
         this.#options.log.log(
           "runs.probe",
@@ -96,7 +99,7 @@ export class RunService {
         );
         return result;
       },
-      (error: unknown) => {
+      (error: unknown): ProbeResult => {
         this.#failed("probe", error);
         return {
           available: false,
@@ -104,8 +107,11 @@ export class RunService {
           message: `${PRODUCT_NAME} could not check whether runs can be contained here.`,
         };
       },
-    );
-    return this.#probe;
+    ));
+    void probe.then((result) => {
+      if (!result.available && this.#probe === probe) this.#probe = undefined;
+    });
+    return probe;
   }
 
   /** Recovers every open space now and every 30 s the spaces that opened since. */
@@ -118,18 +124,27 @@ export class RunService {
     void this.tick();
   }
 
-  /** One round: a host, with its recovery, for every space that opened since. */
+  /**
+   * One round: a host, with its recovery, for every space that opened since, and the end of the
+   * hosts whose space closed.
+   */
   tick(): Promise<void> {
-    this.#round ??= (async () => {
-      try {
-        for (const space of this.#options.spaces().filter(isOpen)) {
-          await this.#space(space.id ?? "").catch(() => undefined);
-        }
-      } finally {
-        this.#round = undefined;
+    if (this.#round !== undefined) return this.#round;
+    const round = (async () => {
+      for (const [space, hosted] of [...this.#hosted]) {
+        if (!this.#serves(space, hosted.writer)) this.#drop(space, hosted);
+      }
+      for (const space of this.#options.spaces().filter(isOpen)) {
+        await this.#space(space.id ?? "").catch(() => undefined);
       }
     })();
-    return this.#round;
+    // Cleared after it is set: a round with nothing to await has already ended here.
+    this.#round = round;
+    const clear = () => {
+      if (this.#round === round) this.#round = undefined;
+    };
+    round.then(clear, clear);
+    return round;
   }
 
   /** Ends hosting: the containers of live runs are killed; the next start settles their runs. */
@@ -194,6 +209,7 @@ export class RunService {
     if (served === undefined || writer === undefined) return undefined;
     const known = this.#hosted.get(space);
     if (known?.writer === writer) return known.made;
+    if (known !== undefined) this.#drop(space, known);
     const made = this.#make(space, served);
     this.#hosted.set(space, { writer, made });
     made.catch(() => {
@@ -234,6 +250,22 @@ export class RunService {
     await this.probe();
     await host.recover();
     return { host, machine };
+  }
+
+  #serves(space: string, writer: unknown): boolean {
+    return this.#options.spaces().some((s) => s.id === space && isOpen(s) && s.writer === writer);
+  }
+
+  /**
+   * Ends the host of a space whose writer is gone: its runs can no longer be recorded, so their
+   * containers are killed, and the space's next open settles them.
+   */
+  #drop(space: string, hosted: Hosted): void {
+    if (this.#hosted.get(space) === hosted) this.#hosted.delete(space);
+    void hosted.made.then(
+      ({ host }) => host.close(),
+      () => undefined,
+    );
   }
 
   #failed(stage: "probe", error: unknown): void {

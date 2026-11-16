@@ -2,15 +2,18 @@
 // started through the internal call. Services run in this process on temporary homes; fixture
 // spaces and generated agents only.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildRunHelper } from "@tasks/launcher-win/build";
 import type { NewRun, RunRecord } from "@tasks/contracts/runs";
 import { newId, type Id } from "@tasks/storage";
-import { RunFiles, RUNS_FOLDER } from "@tasks/runs";
+import { RunFiles, RUNS_FOLDER, type Containers, type ProbeResult } from "@tasks/runs";
 import { seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
+import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
-import { RunsUnavailable } from "../src/runs/service.ts";
+import type { ServedSpace } from "../src/ops/index.ts";
+import { RunService, RunsUnavailable } from "../src/runs/service.ts";
 import {
   readLog,
   registerSpaces,
@@ -194,6 +197,51 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     expect(events).toContain("runs.probe");
     expect(events).toContain("run.recovered");
   }, 180_000);
+
+  test("a probe that failed is asked again, and a space that opens after an empty round is recovered", async () => {
+    const answers: ProbeResult[] = [
+      { available: false, reason: "check_failed", message: "The user manager did not answer." },
+      { available: true, kind: "job" },
+    ];
+    let probes = 0;
+    const containers: Containers = {
+      probe: () =>
+        Promise.resolve(answers[Math.min(probes++, 1)] ?? { available: true, kind: "job" }),
+      start: () => Promise.reject(new Error("no runs here")),
+      interrupt: () => Promise.resolve(false),
+      kill: () => Promise.resolve(),
+      confirmEmpty: () => Promise.resolve({ state: "empty" }),
+      recover: () => Promise.resolve({ state: "empty" }),
+    };
+    let spaces: ServedSpace[] = [];
+    let recovered = 0;
+    // The host's making starts with the writer: that it is asked shows the space is looked at.
+    const writer = {
+      actor: () => {
+        recovered += 1;
+        return Promise.reject(new Error("closed"));
+      },
+    };
+    const service = new RunService({
+      containers,
+      machine: newId("m"),
+      stateDir: join(tmpdir(), "tasks-runs-unused"),
+      platform: process.platform,
+      spaces: () => spaces,
+      log: { log: () => undefined } as unknown as Logger,
+    });
+    try {
+      expect((await service.probe()).available).toBe(false);
+      expect((await service.probe()).available).toBe(true);
+      expect(probes).toBe(2);
+      await service.tick();
+      spaces = [{ id: newId("sp"), state: "open", writer } as unknown as ServedSpace];
+      await service.tick();
+      expect(recovered).toBe(1);
+    } finally {
+      await service.close();
+    }
+  });
 
   test("where runs cannot be contained, the probe says why and the internal call refuses", async () => {
     const { home, spaceId } = await setUp("runs-none");

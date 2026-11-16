@@ -42,8 +42,6 @@ export interface RunTimes {
   drainMs: number;
   /** Between attempts to record a run's end that the store did not take. */
   retryMs: number;
-  /** How long those attempts go on; the next start settles the run after that. */
-  retryForMs: number;
 }
 
 export const RUN_TIMES: Readonly<RunTimes> = {
@@ -52,7 +50,6 @@ export const RUN_TIMES: Readonly<RunTimes> = {
   confirmMs: 10_000,
   drainMs: 5_000,
   retryMs: 30_000,
-  retryForMs: 10 * 60_000,
 };
 
 /** What runs in a run's container: the agent's program, arguments, folder and environment. */
@@ -343,18 +340,24 @@ export class RunHost {
     command: (run: RunRecord) => AgentCommand | Promise<AgentCommand>,
   ): Promise<RunRecord | undefined> {
     const name = containerName(run.id);
-    let spec: ContainerSpec;
+    // The command is asked within the start time, and a Stop ends the wait: no container exists
+    // yet, so nothing is left to stop.
+    let prepared: AgentCommand | "stop" | undefined;
     try {
       this.#files.prepare(run.id);
-      spec = { ...(await command(run)), name };
+      const asked = Promise.resolve().then(() => command(run));
+      prepared = await this.#within(flow, Promise.race([asked, flow.stopped]), this.#times.startMs);
     } catch (error) {
       this.#failed("prepare", error);
       return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     }
-    // A Stop before anything started: nothing to stop.
-    if (flow.stopping) {
+    if (prepared === undefined) {
+      return this.#settle(flow.id, { kind: "start_failed", reason: "start_timed_out" });
+    }
+    if (prepared === "stop" || flow.stopping) {
       return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     }
+    const spec: ContainerSpec = { ...prepared, name };
 
     flow.startPending = true;
     const starting = this.#containers.start(spec).then(
@@ -415,10 +418,9 @@ export class RunHost {
       return exit;
     });
     this.#log("run.started", { adapter: run.adapter });
-    await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
-      this.#failed("started", error);
-    });
 
+    // Read before anything is awaited: a pipe nobody reads when the agent exits is emptied and its
+    // output thrown away, so an agent that answers and exits quickly would lose its answer.
     const parser = createStreamParser(run.adapter);
     const logs = this.#files.logs(flow.id);
     let lastOutput = startedAt;
@@ -434,6 +436,10 @@ export class RunHost {
       logs.stderr(chunk);
     });
     const drained = Promise.all([endOf(contained.stdout), endOf(contained.stderr)]);
+
+    await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
+      this.#failed("started", error);
+    });
 
     const limits = new AbortController();
     flow.abort.signal.addEventListener("abort", () => {
@@ -558,13 +564,12 @@ export class RunHost {
   }
 
   /**
-   * Records an end. A store that does not take it now is asked again every `retryMs` for
-   * `retryForMs`; after that the run is left to the next start's recovery.
+   * Records an end. A store that does not take it now, a full disk for one, is asked again every
+   * `retryMs` for as long as the host is open: the run's end is known, and only this flow holds it.
    */
   async #settle(id: string, end: RunEnd): Promise<RunRecord | undefined> {
     // A closed host's runs end with its service: the next start records why.
     if (this.#isClosed()) return undefined;
-    const until = this.#elapsed() + this.#times.retryForMs;
     for (;;) {
       try {
         const after = await this.#machine.settle(id, end);
@@ -577,7 +582,6 @@ export class RunHost {
         return after;
       } catch (error) {
         this.#failed("settle", error);
-        if (this.#isClosed() || this.#elapsed() >= until) return undefined;
         if (!(await this.#pause(this.#times.retryMs))) return undefined;
       }
     }
