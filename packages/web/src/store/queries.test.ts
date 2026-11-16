@@ -132,6 +132,31 @@ describe("[A5.3.15.web.store.queries] query-level invalidation", () => {
     expect(racing.getState().phase).toBe("ready");
   });
 
+  test("a restart asks the source to read on to where the shown rows end", async () => {
+    const asked: Parameters<PageSource<Row>>[0][] = [];
+    let pages = 2;
+    const query = new PagedQuery<Row>(
+      { kind: "completed" },
+      (request) => {
+        asked.push(request);
+        pages -= 1;
+        return Promise.resolve({
+          rows: [{ id: `t_${String(asked.length)}`, title: "Row" }],
+          ...(pages > 0 ? { next: `after-${String(asked.length)}` } : {}),
+        });
+      },
+      { pageSize: 1 },
+    );
+    // The first read has no end; a restart while more follow ends at the last row shown.
+    await query.refresh();
+    expect(asked.at(-1)).toEqual({ after: undefined, limit: 1 });
+    await query.refresh();
+    expect(asked.at(-1)).toEqual({ after: undefined, limit: 1, through: "after-1" });
+    // Every row shown: a restart reads to the end.
+    await query.refresh();
+    expect(asked.at(-1)).toEqual({ after: undefined, limit: 1, through: null });
+  });
+
   test("a fresh snapshot after a gap counts as a change to every query", () => {
     const change = (patch: Partial<Change>): Change => ({
       type: "task",

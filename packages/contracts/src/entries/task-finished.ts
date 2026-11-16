@@ -20,13 +20,18 @@ export const TaskFinishedInput = z.strictObject({
   cursor: z.string().max(60).describe("Next page: the last page's cursor").optional(),
 });
 
-/** A finished task's compact row, with the time it was finished. */
+/** A finished task's compact row, with the time it was finished and how it ended. */
 export const FinishedRow = CompactTaskRow.extend({
   finished_at: z
     .int()
     .min(-8_640_000_000_000_000)
     .max(8_640_000_000_000_000)
     .describe("When it was completed or dropped"),
+  ending: z
+    .string()
+    .max(300)
+    .describe("How it ended, one line: why it was dropped, or its outcome once wrapped up")
+    .optional(),
 });
 
 export const TaskFinishedResult = z.strictObject({
