@@ -125,7 +125,7 @@ export const ImportPlanningUndoResult = z.strictObject({
   replayed: Replayed.optional(),
   unsaved: z
     .literal(true)
-    .describe("The run's undo.json could not be written: tasks beyond those are listed nowhere")
+    .describe("The run's undo.json could not be written: the rest are listed nowhere")
     .optional(),
 });
 export type ImportPlanningUndoResult = z.infer<typeof ImportPlanningUndoResult>;

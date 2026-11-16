@@ -2014,7 +2014,7 @@
           },
           "unsaved": {
             "const": true,
-            "description": "The run's undo.json could not be written: tasks beyond those are listed nowhere",
+            "description": "The run's undo.json could not be written: the rest are listed nowhere",
             "type": "boolean"
           }
         },
