@@ -60,8 +60,11 @@ export async function undoCommand(
   const ask = options.ask ?? io.ask;
   return runVerb(io, globals, verb, rest, options, undefined, {
     input: (input) => {
-      // A named commit is the change the person means: nothing to ask.
-      if (!yes && input["commit"] === undefined) input["check_script"] = true;
+      // A named commit is the change the person means, and --input is the whole input as the
+      // caller wrote it: nothing to add.
+      if (!yes && input["commit"] === undefined && globals.input === undefined) {
+        input["check_script"] = true;
+      }
     },
     failed: async (body: ErrorBody, again) => {
       const data = body.data ?? {};
