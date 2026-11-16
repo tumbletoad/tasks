@@ -49,6 +49,14 @@ const ROUND_MS = 30_000;
 interface Hosted {
   readonly writer: unknown;
   readonly made: Promise<{ host: RunHost; machine: RunMachine }>;
+  readonly life: HostLife;
+}
+
+interface HostLife {
+  /** Set once made, before its recovery: closing it also ends a recovery still under way. */
+  host: RunHost | undefined;
+  /** Its space's writer is gone, or the service ends: no recovery starts on it any more. */
+  closed: boolean;
 }
 
 /** Runs cannot start here; the message says why, for the person. */
@@ -152,10 +160,7 @@ export class RunService {
     this.#stopped = true;
     if (this.#timer !== undefined) clearInterval(this.#timer);
     this.#timer = undefined;
-    const hosts = await Promise.all(
-      [...this.#hosted.values()].map((hosted) => hosted.made.catch(() => undefined)),
-    );
-    await Promise.all(hosts.map((made) => made?.host.close() ?? Promise.resolve()));
+    await Promise.all([...this.#hosted.values()].map((hosted) => this.#close(hosted)));
   }
 
   /**
@@ -210,8 +215,9 @@ export class RunService {
     const known = this.#hosted.get(space);
     if (known?.writer === writer) return known.made;
     if (known !== undefined) this.#drop(space, known);
-    const made = this.#make(space, served);
-    this.#hosted.set(space, { writer, made });
+    const life: HostLife = { host: undefined, closed: false };
+    const made = this.#make(space, served, life);
+    this.#hosted.set(space, { writer, made, life });
     made.catch(() => {
       if (this.#hosted.get(space)?.made === made) this.#hosted.delete(space);
     });
@@ -219,7 +225,11 @@ export class RunService {
   }
 
   /** A host over the space's store; it is handed out once its recovery ended. */
-  async #make(space: string, served: ServedSpace): Promise<{ host: RunHost; machine: RunMachine }> {
+  async #make(
+    space: string,
+    served: ServedSpace,
+    life: HostLife,
+  ): Promise<{ host: RunHost; machine: RunMachine }> {
     const writer = served.writer;
     if (writer === undefined) throw new Error("The space has no writer");
     const id = this.#options.machine;
@@ -246,8 +256,10 @@ export class RunService {
       log,
       ...(this.#options.times === undefined ? {} : { times: this.#options.times }),
     });
+    life.host = host;
     // Recovery waits for the probe: on Linux the service must sit in its own cgroup first.
     await this.probe();
+    if (life.closed) throw new Error("The space's host was closed");
     await host.recover();
     return { host, machine };
   }
@@ -262,10 +274,12 @@ export class RunService {
    */
   #drop(space: string, hosted: Hosted): void {
     if (this.#hosted.get(space) === hosted) this.#hosted.delete(space);
-    void hosted.made.then(
-      ({ host }) => host.close(),
-      () => undefined,
-    );
+    void this.#close(hosted);
+  }
+
+  async #close(hosted: Hosted): Promise<void> {
+    hosted.life.closed = true;
+    await hosted.life.host?.close();
   }
 
   #failed(stage: "probe", error: unknown): void {
