@@ -2098,6 +2098,7 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].place.state` | "here" \| "missing" | yes | Its folder here, or missing |
 | `rows[].place.state` | "elsewhere" | yes | Only on another machine |
 | `rows[].place.machine` | string | yes | That machine's name |
+| `rows[].ending` | string, max 300 | no | How it ended, one line: why it was dropped, or its outcome once wrapped up |
 | `cursor` | string | no | Pass it for the next page |
 
 ### Examples

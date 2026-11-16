@@ -125,6 +125,48 @@ describe("[A5.3.5.web.completed] Completed: the source over the read of finished
     expect((await source({ after: "nonsense", limit: 3 })).rows).toEqual([]);
   });
 
+  test("a restart reads on to the last row shown: a task finished above pushes none of them out", async () => {
+    const rows = [
+      done("C-1", "2026-11-11", "pending"),
+      ...Array.from({ length: 120 }, (_, i) =>
+        done(`D-${String(i)}`, `2026-10-${String((i % 28) + 1).padStart(2, "0")}`),
+      ),
+    ];
+    const { read } = fakeRead(rows);
+    const source = completedSource(read);
+    const first = await source({ after: undefined, limit: 50 });
+    const second = await source({ after: first.next, limit: 50 });
+    const shownRows = [...first.rows, ...second.rows].map((r) => r.ref);
+    const end = second.next;
+    if (end === undefined) throw new Error("the second page is the last");
+    // Finished while the list is open: one at the top of the rest, one checked off.
+    rows.push(done("N-1", "2026-11-12"), done("C-2", "2026-11-12", "pending"));
+    const again = await source({ after: undefined, limit: 100, through: end });
+    expect(again.rows.map((r) => r.ref)).toEqual(["C-2", "C-1", "N-1", ...shownRows.slice(1)]);
+    // The next page goes on from the same row as before: nothing repeats, nothing is skipped.
+    expect(again.next).toBe(second.next);
+    const rest = await source({ after: again.next, limit: 50 });
+    expect(rest.rows).toHaveLength(21);
+    expect(rest.next).toBeUndefined();
+
+    // A shown row reopened: the restart still ends at the same place, one row shorter.
+    const gone = rows.findIndex((r) => r.ref === shownRows[40]);
+    rows.splice(gone, 1);
+    const fewer = await source({ after: undefined, limit: 100, through: end });
+    expect(fewer.rows).toHaveLength(101);
+    expect(fewer.next).toBe(second.next);
+
+    // Every row was shown: to the end, however many there are.
+    const all = await source({ after: undefined, limit: 50, through: null });
+    expect(all.rows).toHaveLength(122);
+    expect(all.next).toBeUndefined();
+
+    // The shown rows ended with the checked-off part: none of the rest is read.
+    const onlyChecked = await source({ after: undefined, limit: 50, through: "d:" });
+    expect(onlyChecked.rows.map((r) => r.ref)).toEqual(["C-2", "C-1"]);
+    expect(onlyChecked.next).toBe("d:");
+  });
+
   test("every finished task stays reachable: thousands in one month, the checked off ones first", async () => {
     const rows: TaskRow[] = [];
     for (let i = 0; i < 1_200; i += 1) {
