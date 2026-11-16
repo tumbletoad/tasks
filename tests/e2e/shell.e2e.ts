@@ -446,6 +446,8 @@ test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so ca
         },
       });
     });
+    // Screenshots of the popover as it stands, not as it fades in.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
     const trigger = page.getByRole("button", {
       name: `Space ${world.mira.name}. Its backups need attention. Switch space`,
