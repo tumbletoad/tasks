@@ -140,13 +140,24 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
       "Edited at once",
       "Fixture result 2",
     ]);
-    // A task checked off from the results is no longer live; it stays under Tasks.
+    // A task checked off from the results is no longer live; it stays under To do.
     const checked = { ...(open[1] as FoundRow), lifecycle: "completed" };
     expect(
       searchGroups([open[0] as FoundRow, checked], [], new Map())[0]?.sections[0]?.tasks,
     ).toHaveLength(2);
     // An empty group is hidden.
     expect(searchGroups([], done, new Map()).map((g) => g.key)).toEqual(["s:finished"]);
+  });
+
+  test("a task both searches found shows once, where it was first: under To do", () => {
+    // Checked off from the results, then Completed read again after its cursor expired.
+    const open = [1, 2].map((n) => rowOf(taskRow(n), "open") as FoundRow);
+    const done = [2, 3].map(
+      (n) => rowOf(taskRow(n, { lifecycle: "completed" }), "finished") as FoundRow,
+    );
+    const groups = searchGroups(open, done, new Map());
+    const refs = groups.map((g) => g.sections[0]?.tasks.map((t) => t.ref));
+    expect(refs).toEqual([["M-1", "M-2"], ["M-3"]]);
   });
 
   test("the expanded task stays at its place when a refresh no longer finds it", () => {

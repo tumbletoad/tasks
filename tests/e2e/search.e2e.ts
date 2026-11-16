@@ -323,6 +323,15 @@ test.describe("[A7.3.12.m5-10.e2e.keyboard] Both modes by keyboard alone", () =>
     await page.keyboard.press("/");
     await expect(searching(page)).toBeFocused();
     await expect(searching(page)).toHaveValue(word);
+    // Enter straight after typing a new search reaches that search's first result, not the
+    // previous one's.
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type(`${word} preserves`);
+    await page.keyboard.press("Enter");
+    await expect(shown).toHaveText([`Label ${word} preserves`]);
+    await expect(shown.first()).toBeFocused();
+    await page.keyboard.press("/");
+    await expect(searching(page)).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/today$`));
     await expect(adding(page)).toBeFocused();

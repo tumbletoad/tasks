@@ -220,7 +220,7 @@ const LABEL: Readonly<Record<Found, MessageId>> = {
 };
 
 /**
- * The results as the list's groups: Tasks, then Completed, each hidden when empty. A row the live
+ * The results as the list's groups: To do, then Completed, each hidden when empty. A row the live
  * store holds is shown with the store's row, which carries the person's edits at once; another
  * with the search's row, which the feed keeps current. `held` is the expanded task, kept at its
  * place when a refresh no longer finds it.
@@ -231,9 +231,12 @@ export function searchGroups(
   live: ReadonlyMap<string, TaskRow>,
   held?: HeldRow,
 ): Group[] {
+  // The two searches are separate snapshots, so one task can be in both (checked off from the
+  // results, then Completed read again): it stays where the person saw it first.
+  const inOpen = new Set(open.map((row) => row.id));
   const lists: Record<Found, TaskRow[]> = {
     open: open.map((row) => live.get(row.id) ?? row),
-    finished: finished.map((row) => live.get(row.id) ?? row),
+    finished: finished.filter((row) => !inOpen.has(row.id)).map((row) => live.get(row.id) ?? row),
   };
   if (held !== undefined && ![...open, ...finished].some((row) => row.id === held.task.id)) {
     const into: Found = held.group === "s:finished" ? "finished" : "open";

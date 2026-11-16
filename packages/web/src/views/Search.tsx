@@ -4,7 +4,7 @@
 // rows, and an expired cursor starts the search again by itself. A space without the word index
 // (an older space this build could not update) says so and searches its filters alone.
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { askField } from "../app/field.ts";
+import { askField, isWanted, onWantResults, wantResults } from "../app/field.ts";
 import { classes } from "../app/css.ts";
 import { useTitle } from "../app/frame.ts";
 import { Session } from "../context.ts";
@@ -59,7 +59,14 @@ export function SearchPage({ q, task, onExpand }: SearchPageProps) {
         </p>
       ) : null}
       {asked === "" ? null : (
-        <Results key={asked} q={asked} task={task} onExpand={onExpand} onUnindexed={onUnindexed} />
+        <Results
+          key={asked}
+          q={asked}
+          typed={query}
+          task={task}
+          onExpand={onExpand}
+          onUnindexed={onUnindexed}
+        />
       )}
       {words ? (
         <p className={styles.foot}>
@@ -79,10 +86,24 @@ export function SearchPage({ q, task, onExpand }: SearchPageProps) {
 }
 
 interface ResultsProps extends SearchPageProps {
+  /** The search as the person typed it, trimmed: what Enter in the field asks focus for. */
+  readonly typed: string;
   readonly onUnindexed: () => void;
 }
 
-function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
+/** The first result's title, the one in the list's tab order. */
+function firstResult(): HTMLElement | null {
+  return (
+    document
+      .getElementById("main")
+      ?.querySelector<HTMLElement>('li[data-current="true"] [data-part="title"]') ?? null
+  );
+}
+
+/** How many frames the results wait for their first row to be drawn before giving up focus. */
+const FOCUS_FRAMES = 10;
+
+function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   const t = useT();
   const { api, live } = useContext(Session);
   const state = useLive();
@@ -132,7 +153,41 @@ function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
       ? (failed.error as { message?: unknown; hint?: unknown })
       : undefined;
 
-  const nothing = open.state.rows.length + done.state.rows.length === 0;
+  const openIds = new Set(open.state.rows.map((row) => row.id));
+  const doneCount = done.state.rows.filter((row) => !openIds.has(row.id)).length;
+  const nothing = open.state.rows.length + doneCount === 0;
+
+  // Enter in the field asked for this search's first result: focus it once it is drawn.
+  const [asks, setAsks] = useState(0);
+  useEffect(
+    () =>
+      onWantResults(() => {
+        setAsks((n) => n + 1);
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (!ready) return;
+    let frame = 0;
+    let frames = 0;
+    const attempt = () => {
+      if (!isWanted(typed)) return;
+      const title = firstResult();
+      if (title !== null) {
+        wantResults(undefined);
+        title.focus();
+      } else if (nothing || frames >= FOCUS_FRAMES) {
+        wantResults(undefined);
+      } else {
+        frames += 1;
+        frame = requestAnimationFrame(attempt);
+      }
+    };
+    attempt();
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [ready, nothing, typed, asks]);
 
   return (
     <>
@@ -148,7 +203,7 @@ function Results({ q, task, onExpand, onUnindexed }: ResultsProps) {
         ) : ready && !nothing ? (
           t("search.count", {
             open: open.state.rows.length,
-            done: done.state.rows.length,
+            done: doneCount,
             more: done.state.more ? "yes" : "no",
           })
         ) : null}
