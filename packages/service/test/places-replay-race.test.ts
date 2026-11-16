@@ -75,7 +75,7 @@ afterAll(async () => {
   await service.stop();
   removeRuntimeDir(service);
   cleanup();
-}, 60_000);
+});
 
 describe("[A1.3.15.places.request-path] a retry racing its first call while a place is bound", () => {
   test("the replay carries the stored result's warnings, not those of its own late binding", async () => {

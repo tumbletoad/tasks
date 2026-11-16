@@ -43,12 +43,12 @@ export default defineConfig({
           name: "product",
           include: testFiles.include,
           exclude: [...testFiles.exclude, `${LAB_DIR}/**`],
-          // Vitest's default of 5 s is too tight for tests that open spaces, start workers or
-          // push megabytes through a parser while every other file runs beside them: several
-          // timed out on a loaded machine and passed alone in seconds. A test's own explicit
-          // timeout still wins.
-          testTimeout: 30_000,
-          hookTimeout: 30_000,
+          // A time limit only ends a test that hangs: it says nothing about how fast the code is.
+          // On a loaded machine, tests that take a second or two alone have taken more than 30 s
+          // beside every other file. A test's own explicit timeout still wins: give one only to
+          // a test that needs longer than this.
+          testTimeout: 120_000,
+          hookTimeout: 120_000,
         },
       },
       {

@@ -89,7 +89,7 @@ afterAll(async () => {
   await service.stop();
   removeRuntimeDir(service);
   cleanup();
-}, 60_000);
+});
 
 /** The place task.get shows for a task on this machine: its root and path, as bound. */
 async function placeOfTask(s: RpcSession, ref: string): Promise<unknown> {
