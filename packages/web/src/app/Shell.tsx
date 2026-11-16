@@ -146,9 +146,18 @@ export function Shell({ space }: { readonly space: string }) {
                 </button>
               </div>
             ) : null}
-            {state.phase === "offline" ? (
+            {/* A page of an older build is refused by the service, which runs: it is not offline. */}
+            {state.phase === "offline" && !state.stale ? (
               <div className={styles.bar} data-tone="late" role="status">
                 {t("app.offline")}
+              </div>
+            ) : null}
+            {state.installed !== undefined && !state.stale ? (
+              <div className={styles.bar} role="status" data-part="installed">
+                {t("app.installed", {
+                  version: state.installed.version,
+                  running: state.installed.running,
+                })}
               </div>
             ) : null}
             <main id="main" tabIndex={-1} className={styles.main}>

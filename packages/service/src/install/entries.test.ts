@@ -63,7 +63,7 @@ const run = (
   context: FakeContext = fake,
 ) => serviceEntry(verb, flags, capture.io, () => context.ctx);
 
-describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, start, stop and status", () => {
+describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, start, stop, restart and status", () => {
   test("install shows its preview first and changes nothing until it gets a yes", async () => {
     const before = registry.dump();
     const declined = captureIO(false);
@@ -285,6 +285,79 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(await run("start", { json: true }, again)).toBe(0);
     expect(JSON.parse(again.text())).toMatchObject({ outcome: "already_running", via: "none" });
     expect(fake.tools.lines().filter((line) => line.startsWith("explorer.exe"))).toHaveLength(1);
+  });
+
+  test("restart is stop, then start through Explorer, with one answer that names the version that runs now; status names an installed version the service does not run", async () => {
+    fake.service.version = "0.1.0";
+    fake.service.start("tasksw");
+    // An install put 0.2.0 in place while the service ran.
+    writeFileSync(join(fake.ctx.layout.root, "current"), "0.2.0");
+    fake.service.current = "0.2.0";
+    const pending = captureIO();
+    expect(await run("status", {}, pending)).toBe(0);
+    expect(pending.text()).toContain(
+      "  Installed: 0.2.0, not yet running. To run it: tasks service restart\n",
+    );
+    const pendingJson = captureIO();
+    expect(await run("status", { json: true }, pendingJson)).toBe(0);
+    expect(JSON.parse(pendingJson.text())).toMatchObject({
+      installed: "0.2.0",
+      service: { answers: true, version: "0.1.0" },
+    });
+
+    const restarted = captureIO();
+    expect(await run("restart", {}, restarted)).toBe(0);
+    expect(restarted.text()).toBe(
+      `TT Tasks's service restarted on version 0.2.0 (it ran 0.1.0 before): ready, PID ${String(fake.service.pid)}, build test, started by tasksw.\n`,
+    );
+    expect(fake.service.events.slice(-2)).toEqual(["stop", "start tasksw"]);
+    const after = captureIO();
+    expect(await run("status", {}, after)).toBe(0);
+    expect(after.text()).not.toContain("Installed:");
+
+    // A restart with nothing running starts it.
+    expect(await run("stop", {}, captureIO())).toBe(0);
+    const started = captureIO();
+    expect(await run("restart", { json: true }, started)).toBe(0);
+    expect(JSON.parse(started.text())).toMatchObject({
+      outcome: "started",
+      was: null,
+      stop: { outcome: "not_running" },
+      start: { outcome: "started", via: "explorer", status: { version: "0.2.0" } },
+    });
+    const again = captureIO();
+    expect(await run("restart", {}, again)).toBe(0);
+    expect(again.text()).toMatch(/^TT Tasks's service restarted on version 0\.2\.0: ready, /);
+
+    // An agent's shell may not restart it, as it may not stop it: refused before anything is asked.
+    const agent = fakeContext({ platform: "win32", dir: join(dir, "agent"), agentShell: true });
+    agent.service.start("tasksw");
+    const refused = captureIO();
+    expect(await run("restart", {}, refused, agent)).toBe(5);
+    expect(refused.errors()).toContain("tasks service restart is not run from an agent's shell");
+    expect(agent.service.events).toEqual(["start tasksw"]);
+  });
+
+  test("restart leaves a running service alone when it could not start it again, and says so when the start fails after the stop", async () => {
+    // No program to start: the running service keeps running.
+    const gone = fakeContext({ platform: "win32", dir: join(dir, "gone") });
+    gone.service.start("tasksw");
+    rmSync(gone.ctx.program);
+    const refused = captureIO();
+    expect(await run("restart", {}, refused, gone)).toBe(3);
+    expect(refused.errors()).toContain("No TT Tasks build at");
+    expect(gone.service.events).toEqual(["start tasksw"]);
+    expect(gone.service.running).toBe(true);
+
+    // The stop worked and the new service never became ready: the error says the old one stopped.
+    fake.service.start("tasksw");
+    fake.service.becomesReady = false;
+    const failed = captureIO();
+    expect(await run("restart", {}, failed)).not.toBe(0);
+    expect(failed.errors()).toContain(
+      "TT Tasks's service stopped for the restart, and the start failed: TT Tasks's service did not become ready",
+    );
+    expect(failed.errors()).toContain("Try: tasks service status");
   });
 
   test("stop asks the service over its endpoint, and an agent's shell may not", async () => {
@@ -781,7 +854,8 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
       flags: { yes: true, json: true },
     });
     expect(parseServiceArgs(["status"])).toEqual({ verb: "status", flags: {} });
-    expect(parseServiceArgs(["restart"])).toBeUndefined();
+    expect(parseServiceArgs(["restart"])).toEqual({ verb: "restart", flags: {} });
+    expect(parseServiceArgs(["reload"])).toBeUndefined();
     expect(parseServiceArgs(["install", "--force"])).toBeUndefined();
     expect(parseServiceArgs(["install", "toString"])).toBeUndefined();
     expect(parseServiceArgs([])).toBeUndefined();

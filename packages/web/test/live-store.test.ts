@@ -25,6 +25,7 @@ function wire(message: unknown) {
   if (
     parsed === undefined ||
     parsed.type === "hello" ||
+    parsed.type === "installed" ||
     parsed.type === "error" ||
     parsed.type === "machine"
   ) {

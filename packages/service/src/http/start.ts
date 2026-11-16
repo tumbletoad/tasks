@@ -64,6 +64,8 @@ export interface HttpStart {
   readonly ui?: string | UiBundle;
   /** Which commits a feed subscriber sees (v1: all). */
   readonly visible?: Visibility;
+  /** The installed version when it is not the one this service runs, for the page. Default: none. */
+  readonly installed?: () => string | undefined;
 }
 
 export interface HttpOptions extends HttpStart {
@@ -151,6 +153,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     timers,
     redeemCheck: options.redeemCheck ?? osRedeemCheck(),
     ...(options.visible === undefined ? {} : { visible: options.visible }),
+    ...(options.installed === undefined ? {} : { installed: options.installed }),
     ...(options.launch === undefined ? {} : { launch: options.launch }),
     ...(options.defaults === undefined ? {} : { defaults: options.defaults }),
     ...(options.machine === undefined ? {} : { machine: options.machine }),

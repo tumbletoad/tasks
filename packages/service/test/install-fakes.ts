@@ -141,6 +141,10 @@ export class FakeService {
   http: NonNullable<ServiceStatus["http"]> | null = null;
   pid = 4120;
   instance = "9c4e1f07a2d35b8e6f10c2a94d7b3e51";
+  /** The version it answers with. */
+  version = "0.0.0-test";
+  /** What `current` names: a start from now on runs that version. */
+  current: string | undefined;
   /** The drain removes service.json before the process ends (A2 3.3.1 step 4): a probe then finds none. */
   recordGoesFirst = false;
   /** The OS gives process start times (Linux); off, processStart gives none (Windows, macOS). */
@@ -160,6 +164,7 @@ export class FakeService {
     if (this.running || this.#draining > 0) return;
     this.running = true;
     this.manager = manager;
+    if (this.current !== undefined) this.version = this.current;
     this.#pending = this.startingProbes;
     this.#hidden = this.hiddenProbes;
     this.pid += 1;
@@ -220,7 +225,7 @@ export class FakeService {
       pid: this.pid,
       instance: this.instance,
       install_id: "",
-      version: "0.0.0-test",
+      version: this.version,
       build: "test",
       uptime_ms: 90_000,
       manager: this.manager,

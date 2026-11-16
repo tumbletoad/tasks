@@ -1,5 +1,5 @@
-// The thin entries of `tasks service install|uninstall|start|stop|status`: they print and return
-// the exit code. The CLI (packages/cli/src/service.ts, A2 3.10.1) parses the command
+// The thin entries of `tasks service install|uninstall|start|stop|restart|status`: they print and
+// return the exit code. The CLI (packages/cli/src/service.ts, A2 3.10.1) parses the command
 // line and calls serviceEntry with the verb and its flags.
 //
 // install and uninstall print their plan first, the preview, and ask once before they change
@@ -13,10 +13,12 @@ import {
   NO_UNIT_LINE,
   planInstall,
   planUninstall,
+  restartService,
   serviceStatus,
   startService,
   stopService,
   type Plan,
+  type RestartOutcome,
   type ServiceAnswer,
   type StartOutcome,
   type StatusReport,
@@ -27,7 +29,14 @@ import { defaultServiceContext, isTty, type ServiceContext } from "./context.ts"
 import { ServiceCommandError } from "./errors.ts";
 import { RegExportError, RegistryError } from "./registry.ts";
 
-export const SERVICE_VERBS = ["install", "uninstall", "start", "stop", "status"] as const;
+export const SERVICE_VERBS = [
+  "install",
+  "uninstall",
+  "start",
+  "stop",
+  "restart",
+  "status",
+] as const;
 export type ServiceVerb = (typeof SERVICE_VERBS)[number];
 
 export const isServiceVerb = (value: string): value is ServiceVerb =>
@@ -208,6 +217,21 @@ function runningText(outcome: StartOutcome, plain = false): string {
   return `${head}: ${s.state}, PID ${String(s.pid)}, version ${s.version} (${s.build}), started by ${s.manager}.\n`;
 }
 
+function restartedText(outcome: RestartOutcome): string {
+  const s = outcome.start.status;
+  const head =
+    outcome.outcome === "started"
+      ? `${PRODUCT_NAME}'s service was not running. It runs version ${s.version} now`
+      : outcome.was !== null && outcome.was !== s.version
+        ? `${PRODUCT_NAME}'s service restarted on version ${s.version} (it ran ${outcome.was} before)`
+        : `${PRODUCT_NAME}'s service restarted on version ${s.version}`;
+  return `${head}: ${s.state}, PID ${String(s.pid)}, build ${s.build}, started by ${s.manager}.\n`;
+}
+
+/** Status's line when the running service is not the version `current` names. */
+const installedLine = (installed: string): string =>
+  `  Installed: ${installed}, not yet running. To run it: ${CLI_NAME} service restart`;
+
 function stoppedText(outcome: StopOutcome): string {
   return outcome.outcome === "not_running"
     ? `${PRODUCT_NAME}'s service is not running.\n`
@@ -301,6 +325,9 @@ export function statusText(ctx: ServiceContext, report: StatusReport): string {
       ? `  Service:  ${s.state}, PID ${String(s.pid)}, version ${s.version} (${s.build}), up ${minutes(s.uptime_ms)}, started by ${s.manager}`
       : `  Service:  ${REASONS[s.reason]}`,
   );
+  if (s.answers && report.installed !== null && report.installed !== s.version) {
+    lines.push(installedLine(report.installed));
+  }
   if (s.answers) {
     lines.push(`  Spaces:   ${spacesText(s.spaces)}`, `  UI:       ${uiText(s.http)}`);
   }
@@ -408,6 +435,15 @@ export async function serviceEntry(
       case "stop": {
         const outcome = await stopService(ctx);
         io.out(flags.json === true ? json(outcome) : stoppedText(outcome));
+        return 0;
+      }
+      case "restart": {
+        const outcome = await restartService(ctx);
+        if (flags.json === true) io.out(json(outcome));
+        else {
+          io.out(restartedText(outcome));
+          if (outcome.start.unit === "not_installed") io.out(`${NO_UNIT_LINE}\n`);
+        }
         return 0;
       }
       case "status": {
