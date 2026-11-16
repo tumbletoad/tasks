@@ -350,6 +350,7 @@ Built: `write/receipts.ts` (its header states the fingerprint and what a receipt
 - The receipt's key leaves the epoch and incarnation out, so a retry across a local claim finds it instead of applying twice.
 - **Retry versus reconciliation.** A retry repeats one intent with one ID. A change made after re-reading, for example after a conflict, is a new decision with a new ID. The writer never aborts because the caller timed out.
 - **CLI.** For a verb whose base the CLI fills (`set`, `done`, `reopen`) with `--request-id`, the CLI first calls `receipt.get` and resends the same input with the receipt's `as_of`, so a repeated command after a lost reply never re-expands with a fresh base.
+- **The page.** A person's edit, check-off, undo or redo without an answer is asked about with `receipt.get` and sent again with the same ID and input (A5 3.11).
 
 ### 3.9 Concurrency and threads
 

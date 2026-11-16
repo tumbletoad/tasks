@@ -108,6 +108,7 @@ import {
   readPlaced,
   readPlacedAny,
   readReceipt,
+  readScriptChange,
   readSpacePreferences,
   readLaunchTask,
   readSiblings,
@@ -214,7 +215,7 @@ const opUnknown = (): AppError =>
   new AppError({
     code: "op_unknown",
     message: "The running service does not know this operation.",
-    hint: `Update ${PRODUCT_NAME}, or run: ${CLI_NAME} service restart`,
+    hint: `Update ${PRODUCT_NAME}, or restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start.`,
   });
 
 /** `op/list` (A2 3.6.4): the registry's metadata for help and completion. */
@@ -375,7 +376,7 @@ async function callWith(
   }
   checkHiddenFields(entry, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
-  if (!parsed.success) throw schemaFailure(parsed.error);
+  if (!parsed.success) throw schemaFailure(parsed.error, input);
   checkActionFields(entry, parsed.data);
   if (params.space !== undefined && typeof params.space !== "string") {
     throw invalid("space", "Expected a space ID or name");
@@ -615,6 +616,8 @@ async function submit(
     readonly undoable?: false;
     /** Hints of the refusals whose remedy differs for this entry (resultFailure). */
     readonly hints?: Readonly<Record<string, string>>;
+    /** The index of complete_task's `once` wrap-up operation (resultFailure). */
+    readonly wrapUp?: number;
   } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
@@ -670,7 +673,7 @@ async function submit(
     throw storageFailure(error);
   }
   if (result.status === "conflict" || result.status === "rejected") {
-    throw resultFailure(result, options.hints);
+    throw resultFailure(result, options.hints, options.wrapUp);
   }
   return result;
 }
@@ -1648,7 +1651,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // task.finish's result has no warnings, so a follow-up's folder under no root is refused. A
     // follow-up bound without a remote (its config unreadable) has no remote check, unannounced.
     ops.push(...(await placeSets(call, asks, "refuse", ops.length)).ops);
-    const result = await submit(call, ops);
+    const result = await submit(call, ops, own > 1 ? { wrapUp: 1 } : {});
     const done = opAt(result, 0);
     // Whether the call finished or wrapped up the task, from the operations' stored results; its
     // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a
@@ -1808,7 +1811,27 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(input["partial"] === true ? { partial: true } : {}),
     };
     const result = await submit(call, [op], { undoable: false });
-    return historyResult(call, result, result.conflicts.length > 0 ? "partial" : "undone");
+    const answer = await historyResult(
+      call,
+      result,
+      result.conflicts.length > 0 ? "partial" : "undone",
+    );
+    // A3 3.7.4: a script of the same person (`cli-script` on this machine) writes as `script`,
+    // whose changes are on no undo stack. When one changed the space after the change undone,
+    // the answer names it, so the person knows this undo did not take it back. The note is extra:
+    // the undo has applied, so a failed read of it leaves the note out and never turns the undo
+    // into a failure, which a plain `tasks undo` again would answer by undoing one more change.
+    let scripted;
+    try {
+      scripted = await readScriptChange(readerOf(call.space), {
+        scope: principalOf("cli-script", call.host.machine.id).scope,
+        undone: String(answer["commit"]),
+        seq: result.seq,
+      });
+    } catch {
+      scripted = undefined;
+    }
+    return scripted === undefined ? answer : { ...answer, script_change: scripted };
   },
 
   "history.redo": async (call) => {

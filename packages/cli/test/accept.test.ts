@@ -269,6 +269,8 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     });
     const text = await world.tasks(["status"], { script: NEWER });
     expect(text.code).toBe(7);
-    expect(text.stderr).toContain("tasks service restart");
+    expect(text.stderr).toContain(
+      "Restart the service: tasks service stop, then tasks service start.",
+    );
   }, 180_000);
 });

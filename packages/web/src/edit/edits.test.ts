@@ -16,6 +16,7 @@ import {
   triageChange,
   waitingChange,
 } from "./change.ts";
+import { ASK_MS } from "./calls.ts";
 import { Edits, HOLD_MS, COLLAPSE_MS, type Toast } from "./edits.ts";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
@@ -83,6 +84,7 @@ class World {
     const client = {
       task: { update: call("task.update"), finish: call("task.finish") },
       history: { undo: call("history.undo"), redo: call("history.redo") },
+      receipt: { get: call("receipt.get") },
     } as unknown as ConstructorParameters<typeof Edits>[0]["client"];
     this.edits = new Edits({
       client,
@@ -291,7 +293,8 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     w.edits.edit(task(1), priorityChange(2));
     await flush();
     const toasts = w.toasts.length;
-    failFirst(new Error("network"));
+    // A refusal the service decided (a failure on the way is asked about by its ID instead).
+    failFirst(appError("invalid_input", { cause: "VALIDATION_FAILED" }));
     await flush();
     expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
     expect(w.toasts.slice(toasts).some((t) => t?.kind === "error")).toBe(false);
@@ -318,7 +321,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     // The person picks another priority while the first edit is on its way; then it fails.
     w.edits.edit(task(1), priorityChange(2));
     await flush();
-    failFirst(new Error("network"));
+    failFirst(appError("invalid_input", { cause: "VALIDATION_FAILED" }));
     await flush();
     expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
     expect(w.edits.unsaved("t_00001", "title")?.change.set).toEqual({ title: "My title" });
@@ -913,9 +916,443 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     });
     await w.edits.undo("op_old");
     expect(w.lastToast()?.text).toEqual({ id: "toast.newerFirst" });
-    const calls = w.calls.length;
-    await w.edits.undo(Promise.resolve(undefined));
-    expect(w.calls).toHaveLength(calls);
+    // A toast's write the feed confirmed without its commit, and whose receipt names none (it was
+    // refused): nothing is undone.
+    w.answer("receipt.get", () => ({ found: false }));
+    await w.edits.undo({ commit: Promise.resolve(undefined), request: "rq-gone" });
+    expect(w.calls.map((c) => c.name).filter((n) => n.startsWith("history"))).toHaveLength(2);
     expect(w.lastToast()?.text).toEqual({ id: "toast.undoUnknown" });
+  });
+});
+
+describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", () => {
+  const never = () => new Promise(() => undefined);
+  const undone = (w: World, seq: number, commit = "op_c") => ({
+    result: "undone",
+    commit,
+    tasks: [],
+    task_count: 0,
+    as_of: w.asOf(seq),
+  });
+  const updated = (w: World, seq: number) => ({
+    result: "updated",
+    task: "M-1",
+    fields: [],
+    as_of: w.asOf(seq),
+    warnings: [],
+  });
+  /** A receipt for an applied request: where it landed, and the commit its operation moved. */
+  const applied = (w: World, request: string, seq: number, id = "op_c") => ({
+    found: true,
+    request,
+    status: "applied",
+    decided_at: "2026-11-12T10:00:00.000Z",
+    as_of: w.asOf(seq),
+    incarnation: INCARNATION,
+    commit: `op_${String(seq).padStart(26, "0")}`,
+    results: [{ i: 0, status: "updated", id, version: seq }],
+    warnings: [],
+  });
+  const names = (w: World) => w.calls.map((c) => c.name);
+  const requestOf = (w: World, name: string, nth = 0) =>
+    String(w.calls.filter((c) => c.name === name)[nth]?.input["request_id"]);
+  const down = () => {
+    throw new Error("network");
+  };
+
+  test("an undo that gets no answer holds later edits until its receipt says what it did; they then go out with a base past it", async () => {
+    const w = new World([task(1), task(2)]);
+    w.answer("history.undo", never);
+    w.answer("history.undo", never);
+    void w.edits.undo();
+    // The person edits two tasks after Ctrl+Z: each shows at once, and waits for the undo.
+    w.edits.edit(task(2), effortChange("M"));
+    w.edits.edit(task(1), priorityChange(1));
+    expect(w.row("t_00002")?.effort).toBe("M");
+    expect(w.row("t_00001")?.priority).toBe(1);
+    await flush();
+    expect(names(w)).toEqual(["history.undo"]);
+    const undo = requestOf(w, "history.undo");
+    w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
+    w.answer("task.update", () => updated(w, 12));
+    w.answer("task.update", () => updated(w, 13));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    // Asked by the undo's own ID, and sent again with the same ID, which applies it at most once.
+    expect(w.calls.find((c) => c.name === "receipt.get")?.input).toEqual({ request: undo });
+    expect(requestOf(w, "history.undo", 1)).toBe(undo);
+    // The undo's commit (seq 11) directly follows what the person saw: the bases move past it.
+    expect(w.calls.filter((c) => c.name === "task.update").map((c) => c.input)).toEqual([
+      expect.objectContaining({ task: "t_00002", base: w.asOf(11) }),
+      expect.objectContaining({ task: "t_00001", base: w.asOf(11) }),
+    ]);
+    expect(w.toasts.some((t) => t?.text.id === "toast.undone")).toBe(true);
+    expect(w.edits.getState().unsaved.size).toBe(0);
+  });
+
+  test("an undo the service has not decided yet is sent again with its own ID, and that answer lets the queue go on", async () => {
+    const w = new World([task(1), task(2)]);
+    w.answer("history.undo", never);
+    w.answer("history.undo", () => undone(w, 11));
+    w.answer("receipt.get", () => ({ found: false }));
+    w.answer("task.update", () => updated(w, 12));
+    void w.edits.undo();
+    w.edits.edit(task(2), effortChange("M"));
+    await flush();
+    expect(names(w)).toEqual(["history.undo"]);
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(requestOf(w, "history.undo", 1)).toBe(requestOf(w, "history.undo"));
+    expect(w.calls.find((c) => c.name === "task.update")?.input).toMatchObject({
+      task: "t_00002",
+      base: w.asOf(11),
+    });
+  });
+
+  test("a slow answer that comes after the page asked is still taken: no third send, and the edit goes out once", async () => {
+    const w = new World([task(1), task(2)]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("history.undo", () => new Promise((resolve) => (answerFirst = resolve)));
+    w.answer("history.undo", never);
+    w.answer("receipt.get", () => ({ found: false }));
+    w.answer("task.update", () => updated(w, 12));
+    void w.edits.undo();
+    w.edits.edit(task(2), effortChange("M"));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(names(w)).toEqual(["history.undo", "history.undo", "receipt.get"]);
+    answerFirst(undone(w, 11));
+    await flush();
+    expect(names(w)).toEqual(["history.undo", "history.undo", "receipt.get", "task.update"]);
+    expect(w.toasts.filter((t) => t?.text.id === "toast.undone")).toHaveLength(1);
+  });
+
+  test("when the outcome cannot be learned, the waiting edits are kept as not saved and never sent; Try again asks again first", async () => {
+    const w = new World([task(1), task(2)]);
+    w.answer("history.undo", never);
+    // The service is down: the receipt and the second send fail on the way.
+    w.answer("history.undo", down);
+    w.answer("receipt.get", down);
+    void w.edits.undo();
+    w.edits.edit(task(2), effortChange("M"));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    // Nothing went out after the undo, and nothing of the person's is lost.
+    expect(names(w).filter((n) => n === "task.update")).toEqual([]);
+    expect(w.row("t_00002")?.effort).toBeUndefined();
+    expect(w.edits.unsaved("t_00002", "effort")).toMatchObject({ reason: "failed" });
+    expect(w.toasts.some((t) => t?.text.id === "toast.undoFailed")).toBe(true);
+    expect(w.lastToast()).toMatchObject({
+      kind: "error",
+      action: { label: { id: "toast.tryAgain" } },
+    });
+    // A later edit asks again first, and is kept too: Ctrl+Z might still take back the newest.
+    w.answer("history.undo", down);
+    w.answer("receipt.get", down);
+    w.edits.edit(task(1), priorityChange(1));
+    await flush();
+    expect(names(w).filter((n) => n === "task.update")).toEqual([]);
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({ reason: "failed" });
+    // The service is back: Try again first learns what the undo did, then sends the edit.
+    const undo = requestOf(w, "history.undo");
+    w.answer("history.undo", never);
+    w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
+    w.answer("task.update", () => updated(w, 12));
+    w.edits.apply("t_00002", "effort");
+    expect(w.row("t_00002")?.effort).toBe("M");
+    await flush();
+    expect(w.calls.filter((c) => c.name === "receipt.get").at(-1)?.input).toEqual({
+      request: undo,
+    });
+    expect(w.calls.filter((c) => c.name === "task.update").map((c) => c.input)).toEqual([
+      expect.objectContaining({ task: "t_00002", set: { effort: "M" }, base: w.asOf(11) }),
+    ]);
+  });
+
+  test("an edit without an answer: the next edit of the task waits for its receipt, and its base moves past it", async () => {
+    const w = new World([task(1)]);
+    w.answer("task.update", never);
+    w.answer("task.update", never);
+    w.edits.edit(task(1), priorityChange(1));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    expect(names(w)).toEqual(["task.update"]);
+    const first = requestOf(w, "task.update");
+    w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
+    w.answer("task.update", () => updated(w, 12));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    const updates = w.calls.filter((c) => c.name === "task.update").map((c) => c.input);
+    // The first sent again with its own ID and base, then the second with a base past the first.
+    expect(updates[1]).toEqual(updates[0]);
+    expect(updates[2]).toMatchObject({ set: { priority: 2 }, base: w.asOf(11) });
+    expect(updates[2]?.["request_id"]).not.toBe(first);
+    expect(w.edits.getState().unsaved.size).toBe(0);
+  });
+
+  test("an edit kept as not saved because no answer came goes once the feed shows it was saved", async () => {
+    const w = new World([task(1)]);
+    w.answer("task.update", never);
+    w.answer("task.update", down);
+    w.answer("receipt.get", down);
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({ reason: "failed" });
+    // It had reached the service: the feed brings it, and its receipt says so.
+    w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
+    w.answer("task.update", never);
+    w.feed([task(1, { priority: 1, version: 2 })], requestOf(w, "task.update"), ["priority"]);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+  });
+
+  test("a toast's Undo clicked before the feed names the commit takes its place at once: an edit made after it goes out after it", async () => {
+    const w = new World([task(1), task(2)]);
+    w.answer("task.update", () => updated(w, 11));
+    w.answer("history.undo", () => undone(w, 12));
+    w.answer("task.update", () => updated(w, 13));
+    w.edits.edit(task(1), priorityChange(1));
+    await flush();
+    // The answer came; the feed has not named the commit yet. Undo, then another task's edit.
+    w.lastToast()?.action?.run();
+    w.edits.edit(task(2), effortChange("M"));
+    await flush();
+    expect(names(w)).toEqual(["task.update"]);
+    w.feed([task(1, { priority: 1, version: 2 })], requestOf(w, "task.update"), ["priority"]);
+    await flush();
+    expect(w.calls.map((c) => [c.name, c.input["task"] ?? c.input["commit"]])).toEqual([
+      ["task.update", "t_00001"],
+      ["history.undo", `op_${"11".padStart(26, "0")}`],
+      ["task.update", "t_00002"],
+    ]);
+  });
+
+  test("a toast's Undo whose commit the feed never names takes it from the write's receipt", async () => {
+    const w = new World([task(1), task(2)]);
+    w.answer("task.update", () => updated(w, 11));
+    w.answer("history.undo", () => undone(w, 12));
+    w.answer("task.update", () => updated(w, 13));
+    w.edits.edit(task(1), priorityChange(1));
+    await flush();
+    const write = requestOf(w, "task.update");
+    w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
+    w.lastToast()?.action?.run();
+    w.edits.edit(task(2), effortChange("M"));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(
+      w.calls.map((c) => [c.name, c.input["task"] ?? c.input["commit"] ?? c.input["request"]]),
+    ).toEqual([
+      ["task.update", "t_00001"],
+      ["receipt.get", write],
+      ["history.undo", `op_${"11".padStart(26, "0")}`],
+      ["task.update", "t_00002"],
+    ]);
+  });
+});
+
+describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives later is reconciled against it", () => {
+  const updated = (w: World, seq: number) => ({
+    result: "updated",
+    task: "M-1",
+    fields: [],
+    as_of: w.asOf(seq),
+    warnings: [],
+  });
+  const down = () => {
+    throw new Error("network");
+  };
+  const conflict = appError("conflict", {
+    cause: "VERSION_CONFLICT",
+    conflicts: [
+      {
+        task: "M-1",
+        field: "priority",
+        value: 3,
+        version: 11,
+        by: "Codex",
+        at: "2026-11-12T09:40:00.000Z",
+      },
+    ],
+  });
+  /**
+   * The first send of the next request of `name` hangs until the test settles it, and the page
+   * cannot learn its outcome (the replay and the receipt fail on the way): it shows as not saved.
+   */
+  const hanging = (w: World, name: string) => {
+    const first: { resolve?: (value: unknown) => void; reject?: (error: Error) => void } = {};
+    w.answer(
+      name,
+      () =>
+        new Promise((resolve, reject: (error: Error) => void) => {
+          first.resolve = resolve;
+          first.reject = reject;
+        }),
+    );
+    w.answer(name, down);
+    w.answer("receipt.get", down);
+    return first;
+  };
+  const updates = (w: World) => w.calls.filter((c) => c.name === "task.update").map((c) => c.input);
+
+  test("the original answer of a request its replay decided moves no base back past the tab's own later write", async () => {
+    const w = new World([task(1)]);
+    let answerFirst!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerFirst = resolve)));
+    // The replay with the same request ID answers: the edit landed at 11.
+    w.answer("task.update", () => updated(w, 11));
+    w.answer("receipt.get", () => ({ found: false }));
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    // The feed is stalled at 10. Another window changes another field at 12; this tab's next
+    // priority edit commits at 13.
+    w.answer("task.update", () => updated(w, 13));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    expect(updates(w)[2]).toMatchObject({ set: { priority: 2 }, base: w.asOf(11) });
+    // The first send's own answer comes at last, with the same as_of as its replay.
+    answerFirst(updated(w, 11));
+    await flush();
+    w.answer("task.update", () => updated(w, 14));
+    w.edits.edit(task(1), priorityChange(3));
+    await flush();
+    expect(updates(w)[3]).toMatchObject({ set: { priority: 3 }, base: w.asOf(13) });
+  });
+
+  test("a conflict decided after the edit showed as not saved replaces Try again with who changed it and Apply mine", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({ reason: "failed" });
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.tryAgain" });
+    first.reject?.(conflict);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({
+      reason: "conflict",
+      by: "Codex",
+    });
+    expect(w.lastToast()).toMatchObject({
+      kind: "error",
+      text: { id: "toast.changedBy" },
+      action: { label: { id: "toast.applyMine" } },
+    });
+  });
+
+  test("a finished task's refusal decided late leaves no Try again that would only fail again", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    first.reject?.(appError("wrong_tool", { cause: "TASK_NOT_ACTIVE" }));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({ reason: "failed" });
+    expect(w.lastToast()).toMatchObject({ kind: "error" });
+    expect(w.lastToast()?.action).toBeUndefined();
+  });
+
+  test("a late refusal keeps the person's newer choices: a discarded value stays gone, a newer edit stands, and a newer toast stays", async () => {
+    const w = new World([task(1), task(2)]);
+    const one = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    // Discarded: the late conflict brings nothing back, and takes the stale Try again away.
+    w.edits.dismiss("t_00001", "priority");
+    one.reject?.(conflict);
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.lastToast()).toBeUndefined();
+
+    // Another edit's toast took the place of the edit's Try again: the late refusal updates the
+    // line under the field and leaves the newer toast alone.
+    const two = hanging(w, "task.update");
+    w.edits.edit(task(2), effortChange("M"));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    w.answer("task.update", () => updated(w, 12));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    const newer = w.lastToast();
+    expect(newer?.text.id).toBe("toast.priority");
+    two.reject?.(conflict);
+    await flush();
+    expect(w.lastToast()).toBe(newer);
+    expect(w.edits.unsaved("t_00002", "effort")).toMatchObject({ reason: "conflict" });
+
+    // Try again, clicked before the late decision, is the person's newer edit: it stands.
+    const three = hanging(w, "task.update");
+    w.edits.edit(task(2), effortChange("S"), { base: w.asOf(12) });
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    w.answer("task.update", () => new Promise(() => undefined));
+    w.answer("receipt.get", () => ({ found: false }));
+    w.lastToast()?.action?.run();
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    const retried = w.edits.unsaved("t_00002", "effort");
+    expect(retried).toMatchObject({ reason: "failed", change: { set: { effort: "S" } } });
+    const shown = w.lastToast();
+    three.reject?.(conflict);
+    await flush();
+    expect(w.edits.unsaved("t_00002", "effort")).toBe(retried);
+    expect(w.lastToast()).toBe(shown);
+  });
+
+  test("a success decided late takes the not-saved line and its Try again away, and the toast offers Undo again", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.update");
+    w.edits.edit(task(1), priorityChange(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.lastToast()?.action?.label).toEqual({ id: "toast.tryAgain" });
+    first.resolve?.(updated(w, 11));
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
+    expect(w.lastToast()).toMatchObject({
+      kind: "undo",
+      text: { id: "toast.priority" },
+      action: { label: { id: "toast.undo" } },
+    });
+  });
+
+  test("an undo that said it failed for want of an answer, and then turns out done, says so with Redo", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "history.undo");
+    const done = w.edits.undo();
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await done;
+    expect(w.lastToast()?.text).toEqual({ id: "toast.undoFailed" });
+    first.resolve?.({
+      result: "undone",
+      commit: "op_c",
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(11),
+    });
+    await flush();
+    expect(w.lastToast()).toMatchObject({
+      text: { id: "toast.undone" },
+      action: { label: { id: "toast.redo" } },
+    });
+  });
+
+  test("a check-off that said it failed for want of an answer, and then turns out done, offers its Undo again", async () => {
+    const w = new World([task(1)]);
+    const first = hanging(w, "task.finish");
+    w.edits.checkOff(task(1));
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(w.lastToast()?.text).toEqual({ id: "toast.checkFailed" });
+    first.resolve?.({ result: "completed", task: "M-1", as_of: w.asOf(11), warnings: [] });
+    await flush();
+    expect(w.lastToast()).toMatchObject({
+      text: { id: "toast.done" },
+      action: { label: { id: "toast.undo" } },
+    });
   });
 });

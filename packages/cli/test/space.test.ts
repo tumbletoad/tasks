@@ -16,7 +16,7 @@ import { configOf } from "@tasks/service/test/harness";
 import { createSpace, newId } from "@tasks/storage";
 import { checkedDriver } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { SPACE_HELP, wayOut } from "../src/space.ts";
+import { wayOut } from "../src/space.ts";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
 
 let world: CliWorld;
@@ -591,7 +591,9 @@ describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names
         error: { message: "The space needs no recovery." },
       });
     }
-    expect((await user(["help", "recover"])).stdout).toBe(SPACE_HELP);
+    expect((await user(["help", "recover"])).stdout).toMatch(
+      new RegExp(`^Usage: ${CLI_NAME} recover \\[<space>\\]\\n[\\s\\S]*${CLI_NAME} space recover`),
+    );
     // Only the user recovers a space, under either name.
     expect((await world.tasks(["recover", world.spaceFolder, "--json"])).code).toBe(5);
 
