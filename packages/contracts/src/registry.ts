@@ -28,6 +28,8 @@ export const registry = [
   spaceStatus,
   taskGet,
   taskAdd,
+  // Before the later writes: as the UI's, its create would be the change the undo takes back.
+  groupManage,
   taskUpdate,
   entryAdd,
   taskFinish,
@@ -35,12 +37,12 @@ export const registry = [
   receiptGet,
   launchOpen,
   taskSearch,
-  groupManage,
-  folderManage,
   prefsManage,
   runReport,
   historyUndo,
   historyRedo,
+  // After the undo's and redo's examples: its user's change would be the one they take back.
+  folderManage,
   importPlanningPreview,
   importPlanningApply,
   importPlanningUndo,

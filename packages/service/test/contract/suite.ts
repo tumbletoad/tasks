@@ -61,6 +61,11 @@ export interface ContractTransport {
   readonly binds: boolean;
   /** A launch reference for the task in the world, for an example's `launch` (`ContractWorld.launch`). */
   launch(task: string): Promise<string>;
+  /**
+   * Whether the face carries an entry at all. One it does not (a UI-only entry has no command)
+   * has no examples on it. Default: every entry.
+   */
+  carries?(entry: string): boolean;
   close(): Promise<void>;
 }
 
@@ -254,24 +259,16 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "launch_unknown" },
   },
   "task.add 0": {
-    owner: "M4.01b (creating an area and a project by name)",
-    why: "the world has no area or project, and a new name is not created yet",
-    now: { error: "invalid_input" },
-  },
-  "task.finish 0": {
-    owner: "M4.01b (creating a follow-up's new project by name)",
-    why: "a follow-up in a project the world does not have",
-    now: { error: "invalid_input" },
-  },
-  "group.manage 0": {
-    owner: "M4.01b (A1's area and project operations)",
-    why: "the world has no areas or projects until organize creates them",
+    owner: "a world whose M-14 holds the ticket jira:LUM-212 and sits in Lumen Health",
+    why:
+      "the second draft matches M-14 by that ticket, and the first warns of M-14 in its project; " +
+      "the world's M-14 has neither, so both drafts are created, in a new area and project",
     now: { result: "schema" },
   },
-  "group.manage 1": {
-    owner: "M4.01b (A1's area and project operations)",
-    why: "organize's create",
-    now: { error: "invalid_input" },
+  "group.manage 0": {
+    owner: "a world that holds Mira's areas and projects (Lumen Health, Brightside Bikes, Learning)",
+    why: "the world's groups are the ones its own examples create, with other counts",
+    now: { result: "schema" },
   },
   "prefs.manage 1": {
     owner: "M3.11 (the preferences registry and pref.set)",
@@ -284,9 +281,9 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { error: "not_permitted" },
   },
   "task.search 0": {
-    owner: "M4.01b (A1's area and project operations) and the query design for word forms",
+    owner: "the query design for word forms, and a world that holds Mira's areas and projects",
     why:
-      "the rows need areas and projects, an earlier example reopens M-3, and the phrase " +
+      "the rows need Mira's areas and projects, an earlier example reopens M-3, and the phrase " +
       '"time zone" does not find "time zones"',
     now: { result: "schema" },
   },
@@ -306,12 +303,15 @@ const VERIFIED = new Set([
   "task.update 0",
   "entry.add 0",
   "entry.add 1",
+  "task.finish 0",
   "task.finish 1",
   "task.reopen 0",
   "receipt.get 0",
   "receipt.get 1",
   "receipt.get 2",
   "launch.open 0",
+  "group.manage 1",
+  "folder.manage 0",
   "prefs.manage 0",
   "history.undo 0",
   "history.redo 0",
@@ -426,8 +426,33 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         lifecycle: value["lifecycle"],
         wrap_state: value["wrap_state"],
         learnings: value["learnings"],
-        follow_ups: refs(value["follow_ups"]),
+        // A follow-up's reference is the world's: compared by form.
+        follow_ups: ((value["follow_ups"] as Value[] | undefined) ?? []).map((f) => [
+          f["result"],
+          typeof f["ref"],
+          f["title"],
+        ]),
       };
+    case "group.manage":
+      // The world's other groups and their counts are its own: the write and its group.
+      return {
+        action: value["action"],
+        result: value["result"],
+        group: [
+          (value["group"] as Value | undefined)?.["kind"],
+          (value["group"] as Value | undefined)?.["name"],
+        ],
+      };
+    case "folder.manage": {
+      // The folder is the world's portal, stored as this machine spells it.
+      const owner = value["owner"] as Value;
+      return {
+        action: value["action"],
+        result: value["result"],
+        owner: [owner["kind"], owner["name"]],
+        folder: typeof value["folder"],
+      };
+    }
     case "task.reopen":
       return {
         result: value["result"],
@@ -701,6 +726,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
         /** The world's own dry run: its apply and undo examples name it. */
         let dryRun: { run: string; token: string } | undefined;
         for (const entry of registry) {
+          if (transport.carries?.(entry.name) === false) continue;
           for (const [i, example] of entry.examples.entries()) {
             const key = `${entry.name} ${String(i)}`;
             const actor: Actor = example.actor ?? "agent";
@@ -709,6 +735,10 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             if (typeof input["base"] === "string") input["base"] = await world.asOf();
             // An example's working folder is the world's portal, where M-14 and M-15 are placed.
             if (typeof input["cwd"] === "string") input["cwd"] = transport.portal;
+            // An example's folder is the world's portal too: a folder that exists on this machine.
+            if (entry.name === "folder.manage" && typeof input["folder"] === "string") {
+              input["folder"] = transport.portal;
+            }
             // An import example's prototype folder is the committed synthetic prototype.
             if (entry.name === "import.planning.preview") {
               input["folder"] = PLANNING_FIXTURE;
