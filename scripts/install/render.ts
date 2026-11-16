@@ -6,7 +6,7 @@
 // Two kinds of build, and only these:
 //   release  the keys come from packages/service/src/version/release-keys.ts and nowhere else. A
 //            release build fails while that file still holds its placeholder, so an installer can
-//            never ship that trusts a test key, or nothing. `pnpm release sign` renders them.
+//            never ship that trusts a test key, or nothing. `pnpm release sign` and `sign-ci` render them.
 //   test     a throwaway key made by a test or a CI run, given here. The script says so in its
 //            first comment and on stderr every time it runs, and is named install-<v>-test.*.
 // A template that was never rendered trusts no key: it refuses to install anything.
