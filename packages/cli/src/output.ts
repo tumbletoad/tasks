@@ -8,6 +8,7 @@ import {
   errorClass,
   EXIT_CODES,
   isErrorCode,
+  messageWithHint,
   AppError,
   type ErrorBody,
   type ErrorClass,
@@ -19,6 +20,9 @@ export const str = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean"
     ? String(value)
     : "";
+
+/** How a person restarts the service: stop, then start (A2 3.3.5 builds no restart). */
+export const RESTART_HINT = `Restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start.`;
 
 /** Any failure as A3's error body. A JSON-RPC protocol error is the service's `internal`. */
 export function bodyOf(error: unknown): ErrorBody {
@@ -32,7 +36,7 @@ export function bodyOf(error: unknown): ErrorBody {
       return {
         code: "op_unknown",
         message: "The running service does not know this command.",
-        hint: "tasks service restart",
+        hint: RESTART_HINT,
       };
     }
   }
@@ -58,12 +62,20 @@ export function printError(io: Io, json: boolean, body: ErrorBody): number {
     );
   } else {
     // A3 3.5's text form: error <code>: <one sentence>. <hint>
-    const hint = body.hint === undefined ? "" : ` ${body.hint}`;
-    io.stderr(`error ${body.code}: ${body.message}${hint}\n`);
+    io.stderr(`error ${body.code}: ${messageWithHint(body.message, body.hint, CLI_NAME)}\n`);
     const issues = body.data?.["issues"];
     if (Array.isArray(issues)) {
       for (const issue of issues.slice(0, 5) as { path?: unknown; message?: unknown }[]) {
         io.stderr(`  ${str(issue.path)}: ${str(issue.message)}\n`);
+      }
+    }
+    // A conflict names its task and field, and who wrote it when (A3 3.5), never the value.
+    const conflicts = body.data?.["conflicts"];
+    if (Array.isArray(conflicts)) {
+      for (const c of conflicts.slice(0, 5) as Record<string, unknown>[]) {
+        const what = [str(c["task"]), str(c["field"])].filter((part) => part !== "").join(" ");
+        const who = str(c["by"]) === "" ? "" : `: ${str(c["by"])} at ${str(c["at"])}`;
+        io.stderr(`  ${what}${who}\n`);
       }
     }
   }
@@ -178,6 +190,18 @@ function draftLine(task: Result, space: string): string {
   return `Found ${String(task["ref"])}${lifecycle} in ${space} by its source key${logged}`;
 }
 
+/** A change's operation kind as a verb on its task, for the undo's note on a script's change. */
+const SCRIPT_VERBS: Readonly<Record<string, string>> = {
+  "task.create": "added",
+  "task.complete": "completed",
+  "task.archive": "dropped",
+  "task.wrap_up": "wrapped up",
+  "task.reopen": "reopened",
+  "task.move": "moved",
+  "log.add": "logged on",
+  "note.add": "added a note to",
+};
+
 /** Plain text for a person, per entry. `space` names the space a write went to (A2 3.10.2). */
 export function render(entry: string, result: Result, space: string): string {
   const lines: string[] = [];
@@ -202,13 +226,12 @@ export function render(entry: string, result: Result, space: string): string {
       );
       break;
     case "task.finish": {
-      const done =
+      const dropped = result["lifecycle"] === "archived";
+      lines.push(
         result["result"] === "no_change"
-          ? "No change to"
-          : result["lifecycle"] === "archived"
-            ? "Dropped"
-            : "Completed";
-      lines.push(`${done} ${String(result["task"])} in ${space}${replay(result)}`);
+          ? `${String(result["task"])} is already ${dropped ? "dropped" : "completed"} in ${space}${replay(result)}`
+          : `${dropped ? "Dropped" : "Completed"} ${String(result["task"])} in ${space}${replay(result)}`,
+      );
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
         const ref = typeof f["ref"] === "string" ? f["ref"] : undefined;
         lines.push(
@@ -244,6 +267,14 @@ export function render(entry: string, result: Result, space: string): string {
       for (const field of kept) {
         const task = typeof field["task"] === "string" ? `${field["task"]} ` : "";
         lines.push(`  ${task}${str(field["field"])}: ${str(field["by"])} at ${str(field["at"])}`);
+      }
+      // A3 3.7.4: a newer change by a script of the same person, which no undo reaches. A partial
+      // undo that kept a script's field has said so above.
+      const scripted = result["script_change"] as Result | undefined;
+      if (scripted !== undefined && !kept.some((field) => field["by"] === "script")) {
+        lines.push(
+          `Not undone: a script ${SCRIPT_VERBS[str(scripted["change"])] ?? "changed"} ${str(scripted["task"])} after that, and a script's changes are not on your undo stack.`,
+        );
       }
       break;
     }

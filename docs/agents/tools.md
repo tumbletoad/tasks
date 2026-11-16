@@ -427,6 +427,10 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row, state for a run |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |
 | `unresolved[].at` | string | yes | When |
+| `script_change` | object | no | A newer change by a script, which is not on the undo stack |
+| `script_change.task` | string | yes | Task reference |
+| `script_change.change` | string | yes | Its first operation's kind on the task, such as task.complete |
+| `script_change.at` | string | yes | When |
 
 ### Examples
 
