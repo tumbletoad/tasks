@@ -182,6 +182,8 @@ export interface OpsHost {
   readonly homes?: HomeGate;
   /** Launching (`launch.open`): the hub's launch service. None: no task opens here. */
   readonly launches?: LaunchPort;
+  /** Told of a write's answer that does not match its entry's contract (the service logs it). */
+  readonly resultMismatch?: (entry: string) => void;
 }
 
 /** What `launch.open` needs of the launch service (launch/service.ts). */
@@ -206,6 +208,8 @@ interface Call {
   /** The input after the contract: SafeText, defaults and the audience's limits. */
   readonly input: Record<string, unknown>;
   readonly today: string;
+  /** Whether the writer accepted a request of this call: its change is in the space. */
+  applied: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -391,12 +395,20 @@ async function callWith(
     space,
     input: parsed.data,
     today: dateIn(now, (host.timeZone ?? localTimeZone)()),
+    applied: false,
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
   const result = await handler(call);
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
+    // A write that applied is answered as applied, as afterWrite does: an error would send the
+    // caller to do it again, or to undo an older change. The mismatch is a defect to find in the
+    // log. A read has changed nothing, so its caller can be told plainly.
+    if (call.applied) {
+      host.resultMismatch?.(entry.name);
+      return result;
+    }
     throw new AppError({
       code: "internal",
       message: "The service built a result that does not match its contract.",
@@ -675,6 +687,7 @@ async function submit(
   if (result.status === "conflict" || result.status === "rejected") {
     throw resultFailure(result, options.hints, options.wrapUp);
   }
+  call.applied = true;
   return result;
 }
 

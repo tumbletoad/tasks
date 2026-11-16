@@ -3,13 +3,14 @@
 // fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
+  findEntry,
   HistoryRedoResult,
   HistoryUndoResult,
   TaskFinishResult,
   TaskReopenResult,
   TaskUpdateResult,
 } from "@tasks/contracts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { opCall, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
 const gate = vi.hoisted(() => ({ fail: false }));
@@ -155,6 +156,45 @@ describe("[A3.3.4.write.applied-answer] a write whose answer cannot be read afte
         replayed: true,
         tasks: [task],
       });
+    },
+    LONG,
+  );
+});
+
+describe("[A3.3.4.write.result-mismatch] an answer that does not match its contract", () => {
+  /** Makes the next check of `name`'s answer against its contract fail, as a defect would. */
+  const mismatchOnce = (name: string) => {
+    const entry = findEntry(name);
+    if (entry === undefined) throw new Error(`no entry ${name}`);
+    const parse = entry.output.safeParse.bind(entry.output);
+    return vi.spyOn(entry.output, "safeParse").mockImplementationOnce((value: unknown) => {
+      const real = parse(value);
+      return real.success ? parse(Symbol("not an answer")) : real;
+    });
+  };
+
+  test(
+    "a write that applied is answered as applied and told to the service, a read is an internal error",
+    async () => {
+      const told: string[] = [];
+      const host: OpsHost = { ...w.service.ops, resultMismatch: (entry) => told.push(entry) };
+      const task = await add("Fixture task for the mismatch");
+      const spy = mismatchOnce("task.update");
+      const updated = (await opCall(host, USER, {
+        op: "task.update",
+        input: { task, set: { summary: "Fixture mismatch" }, base: await asOf(), request_id: rid() },
+      })) as Json;
+      spy.mockRestore();
+      expect(updated).toMatchObject({ result: "updated", task, fields: ["summary"] });
+      expect(told).toEqual(["task.update"]);
+      expect((await show(task))["summary"]).toBe("Fixture mismatch");
+
+      const read = mismatchOnce("task.get");
+      await expect(opCall(host, USER, { op: "task.get", input: { task } })).rejects.toMatchObject({
+        code: "internal",
+      });
+      read.mockRestore();
+      expect(told).toEqual(["task.update"]);
     },
     LONG,
   );

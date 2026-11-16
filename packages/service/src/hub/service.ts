@@ -659,6 +659,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         bindings,
         defaultSpace: () => defaults.get(),
         homes,
+        resultMismatch: (entry: string) => {
+          log.log("service.result_mismatch", { entry });
+        },
         // `launch.open` (A4 3.4, 3.15): the one launch machine per space this service keeps.
         launches: {
           openTask: (request: OpenTaskRequest) => {
