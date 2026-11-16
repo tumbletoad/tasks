@@ -213,7 +213,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     expect(() => {
       refuseInCi({ GITHUB_ACTIONS: "true" });
     }).toThrow(Refusal);
-    await expect(sign({ env: { CI: "1" } })).rejects.toThrow(/owner's machine/);
+    await expect(sign({ env: { CI: "1" } })).rejects.toThrow(/outside CI/);
     const ran = spawnSync(
       process.execPath,
       [MAIN, "sign", "--key", join(keys, KEY_FILE), "--dist", dist],
@@ -225,7 +225,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
       },
     );
     expect(ran.status).toBe(2);
-    expect(ran.stderr).toMatch(/owner's machine/);
+    expect(ran.stderr).toMatch(/outside CI/);
   });
 
   test("without a terminal the command asks nothing and signs nothing", () => {

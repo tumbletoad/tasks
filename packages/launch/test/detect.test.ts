@@ -22,7 +22,7 @@ const LINUX: FakeHostSpec = {
     "/home/mira/.local/share/claude/versions/2.1.322": { kind: "file", executable: true },
     // The fixture user's wrappers (A4 3.2): one per account.
     "/home/mira/.local/bin/codex-work": { kind: "file", executable: true },
-    "/home/mira/.local/bin/codex-personal": { kind: "file", executable: true },
+    "/home/mira/.local/bin/codex-second": { kind: "file", executable: true },
     // Not wrappers: not executable, a name Tasks cannot turn into an ID, a folder.
     "/home/mira/.local/bin/claude-notes.txt": { kind: "file" },
     "/home/mira/.local/bin/codex-Old_Copy": { kind: "file", executable: true },
@@ -37,7 +37,7 @@ const LINUX: FakeHostSpec = {
     "/home/mira/.codex/auth.json": { kind: "file" },
     "/home/mira/.codex/config.toml": { kind: "file" },
     "/home/mira/.codex/sessions/2026/11/13/rollout-1.jsonl": { kind: "file" },
-    "/home/mira/.codex-personal/auth.json": { kind: "file" },
+    "/home/mira/.codex-second/auth.json": { kind: "file" },
     "/home/mira/.codex.bak/auth.json": { kind: "file" },
     "/home/mira/.claude/.credentials.json": { kind: "file" },
     "/home/mira/.claude.json": { kind: "file" },
@@ -70,10 +70,10 @@ const WINDOWS: FakeHostSpec = {
     // T3's shim is not on PATH and is a .cmd: found in its folder, never run (M2.09 reads it).
     "C:\\Users\\mira\\.t3\\bin\\t3.cmd": { kind: "file" },
     "C:\\Users\\mira\\.Codex\\auth.json": { kind: "file" },
-    "C:\\Users\\mira\\.codex-personal\\auth.json": { kind: "file" },
+    "C:\\Users\\mira\\.codex-second\\auth.json": { kind: "file" },
     "C:\\Users\\mira\\.claude\\.credentials.json": { kind: "file" },
     // A second home named as T3 Code's documentation suggests, with `_`.
-    "C:\\Users\\mira\\.claude_personal\\.credentials.json": { kind: "file" },
+    "C:\\Users\\mira\\.claude_second\\.credentials.json": { kind: "file" },
   },
   outputs: {
     "C:\\Users\\mira\\.local\\bin\\claude.exe --version": "2.1.322 (Claude Code)\r\n",
@@ -115,16 +115,16 @@ const FIXTURES: Record<string, FakeHostSpec> = {
 const HOMES: Record<string, string[]> = {
   linux: [
     "/home/mira/.codex",
-    "/home/mira/.codex-personal",
+    "/home/mira/.codex-second",
     "/home/mira/.codex.bak",
     "/home/mira/.claude",
     "/home/mira/.t3/userdata",
   ],
   win32: [
     "C:\\Users\\mira\\.Codex",
-    "C:\\Users\\mira\\.codex-personal",
+    "C:\\Users\\mira\\.codex-second",
     "C:\\Users\\mira\\.claude",
-    "C:\\Users\\mira\\.claude_personal",
+    "C:\\Users\\mira\\.claude_second",
     "C:\\Users\\mira\\.t3\\userdata",
   ],
   darwin: ["/Users/mira/.claude-work", "/Users/mira/.codex", "/Users/mira/codex-homes/lab"],
@@ -150,7 +150,7 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
       // Only the raw commands ran, each with --version alone: never a wrapper or a shim.
       for (const line of host.ran) {
         expect(line).toMatch(/ --version$/u);
-        expect(line).not.toMatch(/codex-(work|personal)|\.cmd|\.ps1/u);
+        expect(line).not.toMatch(/codex-(work|second)|\.cmd|\.ps1/u);
       }
     });
   }
@@ -158,13 +158,13 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
   test("linux: wrappers win, a wrapper without a home of its name asks for one, unusable names are left out", async () => {
     const detection = await detect(fakeHost(LINUX));
     const ids = detection.proposals.map((p) => p.id);
-    expect(ids).toEqual(["claude", "codex-personal", "codex-work", "codex", "t3"]);
+    expect(ids).toEqual(["claude", "codex-second", "codex-work", "codex", "t3"]);
     const work = detection.proposals.find((p) => p.id === "codex-work");
     expect(work?.needs).toEqual(["config_home"]);
-    const personal = detection.proposals.find((p) => p.id === "codex-personal");
-    expect(personal).toMatchObject({
+    const second = detection.proposals.find((p) => p.id === "codex-second");
+    expect(second).toMatchObject({
       source: "wrapper",
-      configHome: "/home/mira/.codex-personal",
+      configHome: "/home/mira/.codex-second",
       needs: [],
     });
     // The raw default home runs nvm's Node with the npm entry, and needs no CODEX_HOME.
@@ -198,14 +198,14 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
       },
     ];
     const detection: Detection = await detect(fakeHost(LINUX), existing);
-    expect(detection.proposals.map((p) => p.id)).toEqual(["claude", "codex-personal", "t3"]);
+    expect(detection.proposals.map((p) => p.id)).toEqual(["claude", "codex-second", "t3"]);
     expect(detection.configured).toEqual(["codex-work", "codex"]);
   });
 
   test("a second home named with `_` (T3 Code's documented form) is found like one with `-`", async () => {
     const entries = {
       ...LINUX.entries,
-      "/home/mira/.claude_personal/settings.json": { kind: "file" as const },
+      "/home/mira/.claude_second/settings.json": { kind: "file" as const },
       "/home/mira/.codex_lab/config.toml": { kind: "file" as const },
       // Not a home: no suffix after the separator, or one Tasks cannot turn into an ID.
       "/home/mira/.codex_/x": { kind: "file" as const },
@@ -214,14 +214,14 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     const detection = await detect(fakeHost({ ...LINUX, entries }));
     expect(detection.homes.map((h) => [h.path, h.suffix])).toEqual([
       ["/home/mira/.claude", ""],
-      ["/home/mira/.claude_personal", "personal"],
+      ["/home/mira/.claude_second", "second"],
       ["/home/mira/.codex", ""],
-      ["/home/mira/.codex-personal", "personal"],
+      ["/home/mira/.codex-second", "second"],
       ["/home/mira/.codex_lab", "lab"],
     ]);
-    expect(detection.proposals.find((p) => p.id === "claude-personal")).toMatchObject({
-      configHome: "/home/mira/.claude_personal",
-      env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude_personal" },
+    expect(detection.proposals.find((p) => p.id === "claude-second")).toMatchObject({
+      configHome: "/home/mira/.claude_second",
+      env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude_second" },
       needs: [],
     });
     expect(detection.proposals.find((p) => p.id === "codex-lab")?.configHome).toBe(
@@ -255,7 +255,7 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     // The launch removes these from the inherited environment (A4 3.8), so an instance without
     // one runs the default home. Pinning the default instead would move Claude's .claude.json.
     expect(HOME_VARIABLES).toEqual(["CLAUDE_CONFIG_DIR", "CODEX_HOME"]);
-    // Both homes in the home folder, and the agent environment selecting the personal one, as an
+    // Both homes in the home folder, and the agent environment selecting the second one, as an
     // absolute or a relative value: the raw default proposal stays the default home with no
     // variable (it is scrubbed at launch), and every other home names its own.
     const entries = Object.fromEntries(
@@ -264,7 +264,7 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     const proposals = [];
     for (const env of [
       LINUX.env,
-      { ...LINUX.env, CODEX_HOME: "/home/mira/.codex-personal" },
+      { ...LINUX.env, CODEX_HOME: "/home/mira/.codex-second" },
       { ...LINUX.env, CODEX_HOME: ".codex" },
       { ...LINUX.env, CLAUDE_CONFIG_DIR: "/home/mira/.claude-work" },
     ]) {
@@ -273,8 +273,8 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
       expect(raw).toMatchObject({ configHome: "/home/mira/.codex", needs: [] });
       expect(raw?.env).toBeUndefined();
       expect(detection.proposals.find((p) => p.id === "claude")?.env).toBeUndefined();
-      expect(detection.proposals.find((p) => p.id === "codex-personal")?.env).toEqual({
-        CODEX_HOME: "/home/mira/.codex-personal",
+      expect(detection.proposals.find((p) => p.id === "codex-second")?.env).toEqual({
+        CODEX_HOME: "/home/mira/.codex-second",
       });
       proposals.push(raw);
     }
@@ -291,12 +291,12 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
   });
 
   test("a command on PATH that resolves to a wrapper is never run and never proposed as the raw command", async () => {
-    // ~/.local/bin/codex is a link to the personal wrapper: running `codex --version` would run it.
+    // ~/.local/bin/codex is a link to the second wrapper: running `codex --version` would run it.
     const spec: FakeHostSpec = {
       ...LINUX,
       entries: {
         ...LINUX.entries,
-        "/home/mira/.local/bin/codex": { kind: "link", to: "codex-personal" },
+        "/home/mira/.local/bin/codex": { kind: "link", to: "codex-second" },
       },
     };
     const host = fakeHost(spec);

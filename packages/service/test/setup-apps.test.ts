@@ -363,7 +363,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
     "T3 Code: its provider instances' homes are offered and marked as read by T3; its settings are only read",
     async () => {
       const w = world("t3");
-      for (const folder of [".codex", ".codex_personal", "work-claude", "off-claude"]) {
+      for (const folder of [".codex", ".codex_second", "work-claude", "off-claude"]) {
         mkdirSync(join(w.home, folder));
       }
       const t3 = join(w.home, ".t3", "userdata");
@@ -377,13 +377,13 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
           {
             providerInstances: {
               codex: { driver: "codex", displayName: "Codex", enabled: true },
-              codex_personal: {
+              codex_second: {
                 driver: "codex",
-                displayName: "Codex Personal",
+                displayName: "Codex Second",
                 enabled: true,
                 config: {
-                  homePath: "~/.codex_personal",
-                  shadowHomePath: join(w.home, ".t3", "shadow", "codex-personal"),
+                  homePath: "~/.codex_second",
+                  shadowHomePath: join(w.home, ".t3", "shadow", "codex-second"),
                 },
               },
               claude_work: {
@@ -416,7 +416,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         [
           ["claude-code", "claude-work", ["t3"], false],
           ["codex", "codex", ["t3"], true],
-          ["codex", "codex-personal", ["t3"], false],
+          ["codex", "codex-second", ["t3"], false],
         ].sort(),
       );
       const work = byFolder(views, "claude-code", "work-claude");
@@ -436,7 +436,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         [
           ["claude", join(w.home, "work-claude"), null],
           ["codex", null, join(w.home, ".codex")],
-          ["codex", null, join(w.home, ".codex_personal")],
+          ["codex", null, join(w.home, ".codex_second")],
         ].sort(),
       );
       for (const view of await survey(input)) {
@@ -454,9 +454,9 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         join(elsewhere, "settings.json"),
         JSON.stringify({
           providerInstances: {
-            codex_personal: {
+            codex_second: {
               driver: "codex",
-              config: { homePath: join(w.home, ".codex_personal") },
+              config: { homePath: join(w.home, ".codex_second") },
             },
           },
         }),
@@ -469,7 +469,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
           .filter((v) => v.home.hosts.includes("t3"))
           .map((v) => v.home.instance)
           .sort(),
-      ).toEqual(["codex", "codex-personal"]);
+      ).toEqual(["codex", "codex-second"]);
       if (!windows) {
         // A settings file anyone can change, or a link, is not believed: what it says about its
         // instances is not used, and only T3's default homes are taken as its (here `.codex`).
