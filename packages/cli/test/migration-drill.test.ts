@@ -1,14 +1,14 @@
-// The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4 (A7 3.10
+// The installed-build migration failure and restore drill with the real 0.2 to 0.5 (A7 3.10
 // M3.01 and 3.13 M6.01, which repeat M1.15's drill; A1 5; MIL-02). Against a build (`pnpm accept
 // m3 --part migration --installed <install root or version folder>`; CI's smoke job runs it on the
 // real install), the service is the built one, so the migration, its barrier backup and the
 // restore run in the build's own workers. From source, the same test runs on every `pnpm verify`.
-// The drill also searches by words, which the space can answer only once it is at 0.4.
+// The drill also searches by words, which the space can answer only once it is at 0.4 or later.
 //
 // The fault. A product build has no fault hook (A1 5: only a test's worker entry can arm
 // one), and this drill runs the version folder `pnpm build --sign test` makes, unchanged. So the
-// fault is planted in the space instead: a trigger that fails the 0.4 step's system commit, after
-// every statement and commit of the 0.2 and 0.3 steps and every statement of the 0.4 step ran in
+// fault is planted in the space instead: a trigger that fails the 0.5 step's system commit, after
+// every statement and commit of the 0.2 to 0.4 steps and every statement of the 0.5 step ran in
 // the migration's one transaction. Its rollback has to take all of them back. The trigger is a schema
 // object, not a row: the fixture's counts and last_seq do not see it. Removing it lets the same
 // space migrate, which is the upgrade the owner's real spaces get once this drill passes.
@@ -43,20 +43,20 @@ const TRIED_AGAIN =
   "It is tried again after an update, or now with: tasks space open <folder> --retry-migration";
 
 /**
- * A failed migration's message (A1 3.17), for the 0.1 to 0.4 migration, and how it is
+ * A failed migration's message (A1 3.17), for the 0.1 to 0.5 migration, and how it is
  * tried again (A2 3.1).
  */
 const FAILED_MESSAGE = new RegExp(
-  "^Migration to 0\\.4 failed \\(STORAGE_CONSTRAINT\\)\\. Your data is unchanged\\. The space " +
+  "^Migration to 0\\.5 failed \\(STORAGE_CONSTRAINT\\)\\. Your data is unchanged\\. The space " +
     "stays at 0\\.1\\. Backup: (pre-migrate-[0-9TZ.]+-e1-s[0-9]+)\\. " +
     `${TRIED_AGAIN.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`,
   "u",
 );
 
-/** The planted fault: the 0.4 step's system commit, and nothing else, is refused. */
+/** The planted fault: the 0.5 step's system commit, and nothing else, is refused. */
 const FAULT =
   "CREATE TRIGGER drill_fault BEFORE INSERT ON commits WHEN NEW.kind = 'migration' " +
-  "AND json_extract(NEW.ops, '$[0].input.to') = '0.4' " +
+  "AND json_extract(NEW.ops, '$[0].input.to') = '0.5' " +
   "BEGIN SELECT RAISE(ABORT, 'drill fault'); END";
 
 async function onClosedSpace(folder: string, sql: string): Promise<void> {
@@ -96,7 +96,7 @@ async function factsOf(folder: string): Promise<Facts> {
   }
 }
 
-describe("[A1.5.migration.drill] the installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4", () => {
+describe("[A1.5.migration.drill] the installed-build migration failure and restore drill with the real 0.2 to 0.5", () => {
   test("a fault in the migration leaves the 0.1 space read-only with A1's message, its barrier backup restores the fixture, and without the fault it upgrades", async () => {
     // The service that migrates is the build under test: the built folder's, or the source.
     const build =
@@ -221,7 +221,7 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
       reason: "migration_failed",
       code: "MIGRATION_FAILED",
       message:
-        "Migration to 0.4 failed with this version (MIGRATION_FAILED) and was not tried again. " +
+        "Migration to 0.5 failed with this version (MIGRATION_FAILED) and was not tried again. " +
         `Your data is unchanged. The space stays at 0.1. Backup: ${backupName}. ${TRIED_AGAIN}`,
     });
     const barriers = async () =>
@@ -240,7 +240,7 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     expect(await barriers()).toBe(1);
 
     // The person asks for it in a terminal: the space migrates, behind its own new barrier backup:
-    // 0.4, a migration commit per step, every 0.1 table's rows kept, the new tables empty but the
+    // 0.5, a migration commit per step, every 0.1 table's rows kept, the new tables empty but the
     // search index, which holds the tasks, and writes are taken and found by their words.
     const reopened = await user(["space", "open", folder, "--retry-migration", "--json"]);
     expect(reopened.code, reopened.stdout + reopened.stderr).toBe(0);
@@ -248,7 +248,7 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     expect(parsed(reopened.stdout)["space"]).not.toHaveProperty("message");
     expect(await barriers()).toBe(2);
     const upgraded = await factsOf(folder);
-    expect(upgraded.userVersion).toBe(4);
+    expect(upgraded.userVersion).toBe(5);
     expect(upgraded.lastSeq).toBeGreaterThan(fixture.lastSeq);
     for (const [table, n] of Object.entries(fixture.counts)) {
       if (table !== "commits") expect(upgraded.counts[table], table).toBe(n);
@@ -261,6 +261,7 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
       "exchanges",
       "sessions",
       "runs",
+      "folders",
     ]) {
       expect(upgraded.counts[table], table).toBe(0);
     }

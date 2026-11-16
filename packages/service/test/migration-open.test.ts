@@ -17,7 +17,7 @@ import {
 import { join } from "node:path";
 import type { RpcSession } from "@tasks/bridge/protocol";
 import { backupsFolder, listBackups, StorageWorker, type Id } from "@tasks/storage";
-import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_0_4 } from "@tasks/storage/revisions";
+import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@tasks/storage/revisions";
 import { checkedDriver, digestSpace } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeCommits } from "../../storage/test/backup-helpers.ts";
@@ -557,7 +557,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
           code: "ETIMEDOUT",
           message:
             // The service names its own build's latest revision: the stopped worker's cannot tell.
-            "Migration to 0.4 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
+            "Migration to 0.5 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
             "The space stays at 0.1. It is tried again when the space next opens.",
           id,
         },
@@ -574,13 +574,13 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       // The next open tries again, with this build's real steps, and migrates.
       const next = await start(home, space.folder);
       expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
     },
     LONG,
   );
 
   test(
-    "a migration that succeeds within the close's bound after the open's bound passed leaves the space at this build's 0.3, served for writing, never reported unchanged",
+    "a migration that succeeds within the close's bound after the open's bound passed leaves the space at this build's latest revision, served for writing, never reported unchanged",
     async () => {
       const { home, spaces } = setUp("slowok");
       const space = await spaceAt01(join(spaces, "work"));
@@ -593,7 +593,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
         closeTimeoutMs: 30_000,
       });
       expect(slow.closed()).toBeDefined();
-      // The stopped open's migration committed before its worker ended: the space is at 0.3, and
+      // The stopped open's migration committed before its worker ended: the space is migrated, and
       // the writer opened again in the new worker. Never read-only, never "unchanged".
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
       expect(events(home, "space.read_only")).toEqual([]);
@@ -610,16 +610,16 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       expect(added).toHaveProperty("tasks");
       await stop(service);
       const after = await dbState(space.folder);
-      expect(after.revision).toEqual({ major: 0, minor: 4 });
-      // The fixture's commits, then the migration's three, this machine's registration and the
+      expect(after.revision).toEqual({ major: 0, minor: 5 });
+      // The fixture's commits, then the migration's four, this machine's registration and the
       // task's.
-      expect(after.lastSeq).toBe(before.lastSeq + 5);
+      expect(after.lastSeq).toBe(before.lastSeq + 6);
     },
     LONG,
   );
 
   test.each([
-    ["succeeds", "slow-real", { major: 0, minor: 4 }],
+    ["succeeds", "slow-real", { major: 0, minor: 5 }],
     ["fails", "slow-failing", { major: 0, minor: 1 }],
   ] as const)(
     "a migration still running when the close's bound passes, which then %s: no reader is served, the space is unavailable, and the next start finds the state it left intact",
@@ -659,7 +659,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       // with this build's real steps (a timeout recorded no failure).
       const next = await start(home, space.folder);
       expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
       expect(barrierBackups(space.folder)).toHaveLength(set === "slow-real" ? 1 : 2);
     },
     LONG,
@@ -702,7 +702,7 @@ describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a
       const id = space.space.spaceId;
       const service = await start(home, space.folder);
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
       const user = await session(home, service, "cli-interactive");
 
       // What the space held before its migration is found by its words.
@@ -752,7 +752,7 @@ describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a
         await checkedDriver(),
         join(spaces, "work"),
         { name: "Work", ownerLabel: "Mira Okafor", machineId: MACHINE },
-        STEPS_0_4,
+        STEPS_LATEST,
       );
       const id = created.space.spaceId;
       const service = await start(home, created.folder);

@@ -618,6 +618,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.from-0.4",
+      "title": "The 0.4 fixture (the Mira sample built by the 0.4 chain, with its project's place row and a session row) migrates to 0.5 behind its verified barrier backup: every 0.4 row stays, the place rows and their history read as before, one migration commit, an empty folders table, the same search documents, the schema equal to a new 0.5 space's and to the pinned 0.5 schema, and the barrier backup restores the fixture",
+      "source": "A1 3.4, A1 3.15, A1 3.17, A1 5",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.statement-faults-0005",
+      "title": "A fault at every statement boundary of the 0.4 to 0.5 migration, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the 0.4 sample's, it opens read-only with the failure's message, the 0.4 build still writes it, and without the fault it migrates",
+      "source": "A1 3.17, A1 5",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.older-build-0005",
+      "title": "A 0.4 build refuses to open a 0.5 space writable: the 0.4 chain's writer, in the calling thread and in its storage worker, is refused with SPACE_TOO_NEW and changes nothing, its reader reads, and it restores no 0.5 backup",
+      "source": "A1 3.17, A1 5",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.run-parents-0003",
       "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
       "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",

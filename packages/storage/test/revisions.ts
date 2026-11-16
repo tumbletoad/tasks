@@ -9,6 +9,7 @@ import { step0001 } from "../migrations/0001-schema-0.1.ts";
 import { step0002 } from "../migrations/0002-schema-0.2.ts";
 import { step0003 } from "../migrations/0003-schema-0.3.ts";
 import { step0004 } from "../migrations/0004-schema-0.4.ts";
+import { step0005 } from "../migrations/0005-schema-0.5.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
 import type { SchemaStep } from "../src/schema.ts";
 import {
@@ -32,6 +33,15 @@ export const STEPS_0_3: readonly SchemaStep[] = [step0001, step0002, step0003];
 
 /** The chain of steps of the 0.4 builds: the search index. Frozen once it is released. */
 export const STEPS_0_4: readonly SchemaStep[] = [step0001, step0002, step0003, step0004];
+
+/** The chain of steps of the 0.5 builds: folders. Frozen once it is released. */
+export const STEPS_0_5: readonly SchemaStep[] = [
+  step0001,
+  step0002,
+  step0003,
+  step0004,
+  step0005,
+];
 
 /** This build's chain, for symmetry with the released ones. */
 export const STEPS_LATEST: readonly SchemaStep[] = SCHEMA_STEPS;
