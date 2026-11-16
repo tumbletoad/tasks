@@ -359,7 +359,7 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
           {
             name: "Client work",
             active: 7,
-            projects: [{ name: "Lumen Health", active: 4 }],
+            projects: [{ name: "Lumen Health", active: 4, folder: "~/work/lumen" }],
             more_projects: 2,
           },
           { name: "Learning", active: 1, projects: [] },
@@ -371,10 +371,11 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
     expect(groups).toBe(
       [
         "Client work (7)",
-        "  Lumen Health (4)",
+        "  Lumen Health (4)  ~/work/lumen",
         "  and 2 more projects",
         "Learning (1)",
-        "No area: Loose (0)",
+        "No area",
+        "  Loose (0)",
         "",
       ].join("\n"),
     );
