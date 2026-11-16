@@ -1306,7 +1306,7 @@
     },
     {
       "id": "A2.3.3.5.service-install.commands",
-      "title": "tasks service install, uninstall, start, stop and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, and status with the entry, Startup apps, systemd and linger state and the service's answer",
+      "title": "tasks service install, uninstall, start, stop, restart and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, restart as stop then start naming the version that runs, and status with the entry, Startup apps, systemd and linger state, the service's answer and an installed version it does not run",
       "source": "A2 3.3.2, A2 3.3.3, A2 3.3.5, A2 3.5, A2 3.10.3, A7 3.8 M1.12",
       "owner": "M1",
       "kind": "ci",
@@ -4348,6 +4348,46 @@
       "title": "The remote command envelope types live in the registry's type package and no transport: no entry or generated face names them, and every action's validity is within the receivers' limit",
       "source": "A6 3.3, A6 3.8.1, A7 3.11 M4.01",
       "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.restart-notice",
+      "title": "The end of an install whose service runs another version: at a terminal one question that says what a restart ends, and a yes restarts it; otherwise, after a no, a failed restart or in an agent's shell, the last lines name the running version and the one restart command, quoted for the shell",
+      "source": "A2 3.12.4, A2 3.3.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.restart",
+      "title": "Through a real install script over a real running service: the script's last lines name the pending restart, service status names the installed version, and service restart brings it up and says so",
+      "source": "A2 3.12.4, A2 3.3.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.installed",
+      "title": "The feed's hello names an installed version that is not the service's own, and a heartbeat tells an open page of a change once",
+      "source": "A2 3.8.4, A2 3.12.4",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.installed",
+      "title": "The page holds the installed version a restart switches to from hello and installed messages, ignores one that is no version name, and after a restart into another build is stale, keeps its rows and stops asking",
+      "source": "A5 3.15, A2 3.8.4",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.installed",
+      "title": "In Chromium and Firefox: the page names a newer installed version and the restart command in its status bar; after a restart into another build it offers a reload, keeps its rows and does not say the service is down",
+      "source": "A5 3.3, A2 3.8.4",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     }

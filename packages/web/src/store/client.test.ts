@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FakeFrames } from "../../test/fake-frames.ts";
-import { SignedOut, type Api } from "../api.ts";
+import { SignedOut, StaleBuild, type Api } from "../api.ts";
 import { Live } from "./client.ts";
 
 const SPACE = "sp_00000000000000000000000000";
@@ -226,6 +226,57 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     socket().receive({ type: "hello", build: "b" });
     expect(socket().sent).toEqual([{ type: "subscribe", space: SPACE }]);
+    live.stop();
+  });
+});
+
+describe("[A5.3.15.web.installed] the page and a newer installed version", () => {
+  test("hello and installed say which version a restart switches to; the same version again clears it", async () => {
+    const live = start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b", version: "0.1.0", installed: "0.2.0" });
+    expect(live.getState().installed).toEqual({ version: "0.2.0", running: "0.1.0" });
+    receive(snapshot(5));
+    expect(live.getState().installed).toEqual({ version: "0.2.0", running: "0.1.0" });
+    // Rolled back while the service ran: it runs the installed version again.
+    socket().receive({ type: "installed" });
+    expect(live.getState().installed).toBeUndefined();
+    socket().receive({ type: "installed", version: "0.3.0" });
+    expect(live.getState().installed).toEqual({ version: "0.3.0", running: "0.1.0" });
+    // A version that is no version name is not shown.
+    socket().receive({ type: "installed", version: "<b>0.4</b>" });
+    expect(live.getState().installed).toBeUndefined();
+    live.stop();
+  });
+
+  test("after a restart into another build the page is stale, keeps its rows and stops asking", async () => {
+    let stale = false;
+    const api = {
+      ticket: () => (stale ? Promise.reject(new StaleBuild()) : Promise.resolve("t".repeat(32))),
+    } as unknown as Api;
+    const live = new Live({
+      api,
+      route: { space: SPACE },
+      build: "b1",
+      onSpace: () => undefined,
+      onSignedOut: () => undefined,
+      frames,
+    });
+    live.start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b1", version: "0.1.0", installed: "0.2.0" });
+    receive(snapshot(5, [task("a", "One")]));
+    // The service stops for its restart, and comes back as another build: the page's ticket is
+    // refused for its build.
+    stale = true;
+    socket().drop(1001);
+    expect(live.getState().phase).toBe("offline");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(live.getState().stale).toBe(true);
+    // Its rows stay, and it asks nothing more of the service until the person reloads.
+    expect([...live.getState().tasks.keys()]).toEqual(["a"]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
     live.stop();
   });
 });

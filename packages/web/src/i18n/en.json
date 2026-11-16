@@ -3,6 +3,7 @@
   "app.signedOut": "Run {cli} open to sign in this browser.",
   "app.offline": "{product}'s service is not running. Trying again.",
   "app.updated": "{product} was updated.",
+  "app.installed": "{product} {version} is installed. This page and the service still run {running}: run {cli} service restart to switch.",
   "app.reload": "Reload",
   "app.noSpace": "This space is not open on this machine. {cli} space list says why and what to run.",
   "app.noSpaces": "No space is open on this machine. Run {cli} space create to make one.",

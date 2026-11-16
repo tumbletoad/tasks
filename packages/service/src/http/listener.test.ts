@@ -52,7 +52,12 @@ afterEach(async () => {
 });
 
 async function serve(
-  options: { limits?: Partial<HttpLimits>; peer?: () => boolean; redeem?: () => boolean } = {},
+  options: {
+    limits?: Partial<HttpLimits>;
+    peer?: () => boolean;
+    redeem?: () => boolean;
+    installed?: () => string | undefined;
+  } = {},
 ): Promise<Served> {
   const events: HttpEvent[] = [];
   const clock = testClock<HttpTimerKind>({ virtual: "all" });
@@ -70,6 +75,7 @@ async function serve(
     now: () => state.now,
     timers: clock.timers,
     redeemCheck: options.redeem ?? (() => true),
+    ...(options.installed === undefined ? {} : { installed: options.installed }),
   });
   const listener = await listenHttp(app, 0, options.peer ?? (() => true));
   const served: Served = {
@@ -789,5 +795,50 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
     expect(
       s.events.some((e) => e.ev === "http.request" && e.route === "op" && e.entry === "task.add"),
     ).toBe(true);
+  });
+});
+
+describe("[A2.3.8.http.installed] the feed tells the page when another version is installed", () => {
+  test(
+    "hello names the installed version when it is not the service's own, and a heartbeat names a change once",
+    SLOW,
+    async () => {
+      let installed: string | undefined = "0.2.0";
+      const s = await serve({ installed: () => installed });
+      const tick = () => {
+        for (const t of s.clock.live({ kind: "ws_ping" })) s.clock.fire(t);
+      };
+      const first = await openFeed(s.port, await signIn(s));
+      expect(await first.next()).toEqual({
+        type: "hello",
+        protocol: 1,
+        version: BUILD.version,
+        build: BUILD.build,
+        installed: "0.2.0",
+      });
+      // Another install while the page is open: its next heartbeat says so.
+      installed = "0.3.0";
+      tick();
+      expect(await first.next()).toEqual({ type: "installed", version: "0.3.0" });
+      first.ws.close();
+      await first.closed;
+      await expect.poll(() => s.app.feed.size, { timeout: 30_000 }).toBe(0);
+
+      // A rollback to the service's own version: the page hears that there is none any more.
+      const second = await openFeed(s.port, await signIn(s));
+      expect(await second.next()).toMatchObject({ type: "hello", installed: "0.3.0" });
+      installed = undefined;
+      tick();
+      expect(await second.next()).toEqual({ type: "installed" });
+      expect(second.messages.filter((m) => m["type"] === "installed")).toHaveLength(1);
+      second.ws.close();
+    },
+  );
+
+  test("without an installed version the hello names none", SLOW, async () => {
+    const s = await serve();
+    const feed = await openFeed(s.port, await signIn(s));
+    expect(await feed.next()).not.toHaveProperty("installed");
+    feed.ws.close();
   });
 });
