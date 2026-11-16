@@ -30,6 +30,11 @@ export interface LiveState {
   readonly phase: Phase;
   /** The service runs another build: the page offers a reload. */
   readonly stale: boolean;
+  /**
+   * Another version is installed than the one the service runs (and this page came from): a
+   * restart of the service switches to it.
+   */
+  readonly installed: { readonly version: string; readonly running: string } | undefined;
   readonly space: SpaceHead | undefined;
   /** The open tasks: the confirmed rows with this tab's pending writes on top. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
@@ -110,6 +115,7 @@ export class LiveStore {
   #state: LiveState = {
     phase: "starting",
     stale: false,
+    installed: undefined,
     space: undefined,
     tasks: new Map(),
     areas: new Map(),
@@ -202,6 +208,18 @@ export class LiveStore {
       return;
     }
     this.#state = { ...this.#state, ...patch };
+    this.#emit();
+  }
+
+  /** The installed version when the service runs `running`; undefined: the same, or not known. */
+  setInstalled(version: string | undefined, running: string | undefined): void {
+    const next =
+      version === undefined || running === undefined || version === running
+        ? undefined
+        : { version, running };
+    const now = this.#state.installed;
+    if (next?.version === now?.version && next?.running === now?.running) return;
+    this.#state = { ...this.#state, installed: next };
     this.#emit();
   }
 

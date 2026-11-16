@@ -21,8 +21,7 @@ export const str = (value: unknown): string =>
     ? String(value)
     : "";
 
-/** How a person restarts the service: stop, then start (A2 3.3.5 builds no restart). */
-export const RESTART_HINT = `Restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start.`;
+export const RESTART_HINT = `Restart the service: ${CLI_NAME} service restart.`;
 
 /** Any failure as A3's error body. A JSON-RPC protocol error is the service's `internal`. */
 export function bodyOf(error: unknown): ErrorBody {

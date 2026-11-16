@@ -174,7 +174,7 @@ describe("[A4.3.2.approval.hash] approval hashes of definitions that arrive with
     expect(
       approvalState(
         "routine",
-        routineApproval({ ...routine, instance_id: "codex-personal" }, "auto-edit"),
+        routineApproval({ ...routine, instance_id: "codex-second" }, "auto-edit"),
         approvals,
       ),
     ).toBe("needs_approval");

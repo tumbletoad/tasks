@@ -72,13 +72,13 @@ const OS = {
       ],
     }),
     codex: instance({
-      id: "codex-personal",
+      id: "codex-second",
       target: "codex-cli",
       exec: "C:\\Program Files\\nodejs\\node.exe",
       argsPrefix: [
         "C:\\Users\\mira\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js",
       ],
-      env: { CODEX_HOME: "C:\\Users\\mira\\.codex-personal" },
+      env: { CODEX_HOME: "C:\\Users\\mira\\.codex-second" },
       openPermission: "full-access",
     }),
     folder: "C:\\Users\\mira\\work\\R&D; tests (v2)\\Caf\u{E9}",

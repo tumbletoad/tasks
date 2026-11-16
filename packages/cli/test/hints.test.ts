@@ -117,9 +117,10 @@ export function unknownCommands(text: string): string[] {
 
 describe("[A2.3.10.cli.hints] every command a message names exists", () => {
   test("the check finds a command that does not exist", () => {
-    expect(unknownCommands("Run: tasks service restart")).toEqual(["tasks service restart"]);
+    expect(unknownCommands("Run: tasks service reload")).toEqual(["tasks service reload"]);
     expect(unknownCommands("Restart it with `tasks restart`.")).toEqual(["tasks restart"]);
     expect(unknownCommands("Run: tasks service stop, then tasks service start")).toEqual([]);
+    expect(unknownCommands("Run: tasks service restart")).toEqual([]);
     expect(unknownCommands("Several tasks in Mira have its source key")).toEqual([]);
     expect(unknownCommands("tasks space has no command like that")).toEqual([]);
     expect(unknownCommands("tasks has no command like that")).toEqual([]);
@@ -135,8 +136,8 @@ describe("[A2.3.10.cli.hints] every command a message names exists", () => {
       "tasks space mend",
     ]);
     expect(unknownCommands("It ran (tasks repair --all).")).toEqual(["tasks repair"]);
-    expect(unknownCommands("Stop it, then tasks service restart.")).toEqual([
-      "tasks service restart",
+    expect(unknownCommands("Stop it, then tasks service reload.")).toEqual([
+      "tasks service reload",
     ]);
     // A command that takes a subcommand is checked mid-sentence too.
     expect(unknownCommands("Add it with tasks roots mend <id> <folder>.")).toEqual([

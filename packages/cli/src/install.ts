@@ -10,10 +10,14 @@
 //   3. only then the switch (service's finishInstall): update.lock, current, the stable command,
 //      install.json with what the installer created,
 //   4. the stable command, and the offer of `tasks service install` (A2 3.12.4), which this
-//      never runs itself.
+//      never runs itself,
+//   5. when this install's service runs another version, the last lines say so and name the
+//      restart. A person at a terminal is asked once whether to restart it now: a restart ends
+//      background runs, so it never happens unasked.
 // It loads the service's install code, and with it storage, only for this command.
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
 import { PRODUCT_NAME } from "@tasks/brand";
+import { shellLine } from "@tasks/launch";
 import { hostFacts, type Layout } from "@tasks/service/paths";
 import type { Globals } from "./args.ts";
 import { candidateRows, versionChecks, type Check } from "./doctor.ts";
@@ -116,6 +120,9 @@ export async function installCommand(
     }
     throw error;
   }
+  const service = await installedService(io);
+  const running = await service?.running();
+  const pending = running !== undefined && running !== finished.version;
   if (globals.json) {
     io.stdout(
       `${JSON.stringify({
@@ -128,6 +135,7 @@ export async function installCommand(
           install_id: finished.installId,
           command: finished.command,
         },
+        ...(pending ? { service: { version: running, restart_needed: true } } : {}),
       })}\n`,
     );
     return 0;
@@ -140,5 +148,95 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
+  if (pending && service !== undefined) {
+    await offerRestart(
+      io,
+      { version: finished.version, command: finished.command },
+      running,
+      service,
+    );
+  }
   return 0;
+}
+
+/** This install's service as the end of an install sees it (the service install's context). */
+export interface InstalledService {
+  /**
+   * The version the running service answers with; null for one that runs but speaks another
+   * protocol, so its version is not known; undefined when none runs.
+   */
+  readonly running: () => Promise<string | null | undefined>;
+  /** An agent's shell may not restart the service: it is not asked. */
+  readonly agentShell: boolean;
+  /** `tasks service restart`, printing what it prints; its exit code. */
+  readonly restart: () => Promise<number>;
+}
+
+async function installedService(io: Io): Promise<InstalledService | undefined> {
+  const install = await import("@tasks/service/install");
+  let ctx: ReturnType<typeof install.defaultServiceContext>;
+  try {
+    ctx = install.defaultServiceContext({ env: io.env });
+  } catch {
+    return undefined;
+  }
+  return {
+    agentShell: ctx.agentShell,
+    running: async () => {
+      const probe = await ctx.probe();
+      if (probe.answers) return probe.status.version;
+      return probe.reason === "service_too_old" || probe.reason === "restart_session"
+        ? null
+        : undefined;
+    },
+    restart: () =>
+      install.serviceEntry(
+        "restart",
+        {},
+        {
+          out: (text) => {
+            io.stdout(text);
+          },
+          err: (text) => {
+            io.stderr(text);
+          },
+          ask: undefined,
+        },
+        () => ctx,
+      ),
+  };
+}
+
+/**
+ * The end of an install whose service still runs another version: at a terminal, one question
+ * whether to restart it now; otherwise, or when the restart did not happen, the last lines say
+ * what runs now and name the one command that brings up the installed version.
+ */
+export async function offerRestart(
+  io: Io,
+  installed: { readonly version: string; readonly command: string },
+  running: string | null,
+  service: InstalledService,
+): Promise<void> {
+  let now: string | null | undefined = running;
+  if (io.ask !== undefined && !service.agentShell) {
+    const yes = await io.ask(
+      `\n${PRODUCT_NAME}'s service still runs ${running ?? "another version"}. Restart it on ${installed.version} now? Background runs end and keep their answers so far. Agent sessions keep running and reconnect. [y/N] `,
+    );
+    if (yes) {
+      if ((await service.restart()) === 0) return;
+      // The restart said why it failed; it may have stopped the old service first.
+      now = await service.running();
+      if (now === installed.version) return;
+    }
+  }
+  const verb = now === undefined ? "start" : "restart";
+  const line =
+    shellLine(io.platform, [installed.command, "service", verb]) ??
+    `${installed.command} service ${verb}`;
+  const state =
+    now === undefined
+      ? `${PRODUCT_NAME}'s service is not running.`
+      : `${PRODUCT_NAME}'s service still runs ${now ?? "another version"}.`;
+  io.stdout(`\n${state} To run ${installed.version}, ${verb} it:\n  ${line}\n`);
 }
