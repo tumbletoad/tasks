@@ -1,4 +1,5 @@
-// Builds tasks.exe and tasksw.exe from launcher.c with MSVC (A2 3.12.3). Windows only.
+// Builds tasks.exe and tasksw.exe from launcher.c, and tasks-run.exe from run.c, with MSVC.
+// Windows only.
 //
 //   node packages/launcher-win/src/build.ts [--out <dir>] [--test-hooks]
 //
@@ -19,6 +20,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** The one C source of both launchers. */
 export const launcherSource = join(here, "launcher.c");
+/** The source of tasks-run.exe, which holds a background run's job object. */
+export const runHelperSource = join(here, "run.c");
 /** Where a build writes by default (git-ignored). */
 export const defaultOut = resolve(here, "..", "dist");
 
@@ -134,13 +137,19 @@ export function findMsvc(): Msvc {
   return { cl, env };
 }
 
+interface Program {
+  name: "tasks" | "tasksw" | "tasks-run";
+  source: string;
+  gui: boolean;
+  testHooks: boolean;
+}
+
 /**
- * Compiles one launcher. Hardening: buffer security checks, Control Flow Guard, CET shadow-stack
+ * Compiles one program. Hardening: buffer security checks, Control Flow Guard, CET shadow-stack
  * compatibility, ASLR with high entropy, DEP, the static C runtime (no runtime DLL to plant) and
  * imported DLLs loaded from System32 only. /Brepro makes the output reproducible.
  */
-function compile(outDir: string, name: "tasks" | "tasksw", testHooks: boolean, msvc: Msvc) {
-  const gui = name === "tasksw";
+function compile(outDir: string, { name, source, gui, testHooks }: Program, msvc: Msvc) {
   const objDir = join(outDir, `${name}.obj.d`);
   mkdirSync(objDir, { recursive: true });
   const exe = join(outDir, `${name}.exe`);
@@ -163,7 +172,7 @@ function compile(outDir: string, name: "tasks" | "tasksw", testHooks: boolean, m
       ...(testHooks ? ["/DTASKS_TEST_HOOKS"] : []),
       `/Fo${objDir}\\`,
       `/Fe${exe}`,
-      launcherSource,
+      source,
       "/link",
       "/Brepro",
       "/guard:cf",
@@ -212,8 +221,8 @@ export function buildLaunchers(outDir: string = defaultOut, options: BuildOption
   const testHooks = options.testHooks ?? false;
   mkdirSync(outDir, { recursive: true });
   const built: Launchers = {
-    tasks: compile(outDir, "tasks", testHooks, msvc),
-    tasksw: compile(outDir, "tasksw", testHooks, msvc),
+    tasks: compile(outDir, { name: "tasks", source: launcherSource, gui: false, testHooks }, msvc),
+    tasksw: compile(outDir, { name: "tasksw", source: launcherSource, gui: true, testHooks }, msvc),
   };
   if (!testHooks) {
     try {
@@ -228,6 +237,21 @@ export function buildLaunchers(outDir: string = defaultOut, options: BuildOption
   return built;
 }
 
+/**
+ * Builds `tasks-run.exe`, the holder of a background run's job object (src/run.c), into outDir and
+ * returns its path. It has no test hooks: a test build and a release build are the same.
+ */
+export function buildRunHelper(outDir: string = defaultOut, msvc: Msvc = findMsvc()): string {
+  mkdirSync(outDir, { recursive: true });
+  const exe = compile(
+    outDir,
+    { name: "tasks-run", source: runHelperSource, gui: false, testHooks: false },
+    msvc,
+  );
+  assertReleaseBinary(exe);
+  return exe;
+}
+
 if (import.meta.main) {
   const { values } = parseArgs({
     options: {
@@ -235,9 +259,9 @@ if (import.meta.main) {
       "test-hooks": { type: "boolean", default: false },
     },
   });
-  const built = buildLaunchers(resolve(values.out ?? defaultOut), {
-    testHooks: values["test-hooks"],
-  });
+  const out = resolve(values.out ?? defaultOut);
+  const built = buildLaunchers(out, { testHooks: values["test-hooks"] });
   console.log(built.tasks);
   console.log(built.tasksw);
+  console.log(buildRunHelper(out));
 }

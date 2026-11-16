@@ -1378,6 +1378,54 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.8.container.kill",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.interrupt",
+      "title": "An interrupt (SIGINT to the agent's group, Ctrl+C on its console) reaches a stand-in agent, which prints its last words and exits, and its container is then empty",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.crash",
+      "title": "Killing the stand-in service by force leaves nothing of its runs and recover confirms each container empty by name; a service that lost its records recovers a live container from its name; on Windows a job handle held elsewhere keeps a run alive past the crash, confirm says occupied and recover ends it",
+      "source": "A4 3.11.8, A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.start",
+      "title": "A container's agent gets hostile arguments unchanged and none of the service's control pipes, a name in use is refused also when the service forgot it, and the probe creates, kills and confirms a real container",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.probe",
+      "title": "The container probe names why runs cannot be contained (no systemd, no cgroup v2, no user manager, not a service, no Delegate=yes, no cgroup.kill, no tasks-run.exe, another platform), and start refuses there",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.command-line",
+      "title": "A Windows command line quotes each argument as the C runtime reads it back",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.execution-store.contract",
       "title": "The ExecutionStore contract suites on every backend (in memory, the space database in the writer's thread and through a storage worker), for launches and for runs: one Prepared record per click and one queued run per request, with request-ID replay, a second click focusing the intent in flight, only A4's edges, a compare-and-set on the state or the version that moves nothing when it loses, every transition read back as returned, evidence that only grows, a time per state, every record unchanged and openWork per machine after a restart with the unknown runs that await their exit, texts kept as the space stores them with an agent's cut and never refused, every other result field judged as the writer judges it (a property feeds each store and the writer's own validation the same generated result values of every JSON shape and requires the same verdict and the same kept result), records of IDs and codes only, and the writer's copy of A4's rules and text normalisation",
       "source": "A4 3.16.1, A4 5.1, X7, A7 3.9 M2.05",

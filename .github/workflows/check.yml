@@ -49,6 +49,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The run-container tests need real cgroups: transient systemd user units with Delegate=yes,
+      # as the service's own unit has. They make such units only where this variable says the user
+      # manager is the runner's own, never in a person's session
+      # (packages/runs/test/stand-ins/service.ts). Linger starts the runner user's manager.
+      - if: runner.os == 'Linux'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          for _ in $(seq 1 100); do
+            [ -S "/run/user/$(id -u)/systemd/private" ] && break
+            sleep 0.1
+          done
+          echo "TASKS_TEST_USER_UNITS=1" >> "$GITHUB_ENV"
+
       # Linux runs verify under umask 002, the default of a desktop with user private groups
       # (Ubuntu, Fedora), where every file a person or a test makes is group-writable. The runners'
       # own 022 hid a class of failures there: a file made without an explicit mode that the
