@@ -58,21 +58,31 @@ async function readInput(io: Io, source: string): Promise<Record<string, unknown
   return value as Record<string, unknown>;
 }
 
+/** A folder value that names itself: `cwd`, or one under `~`, which the service expands. */
+const namesItself = (value: string): boolean =>
+  value === "cwd" || value === "~" || value.startsWith("~/") || value.startsWith("~\\");
+
 /**
- * A place given as a folder relative to the working folder (`--place .`, `place=../portal`) made
- * absolute here, as `tasks space` does with its folders: the service never reads a relative path
- * against its own working folder. `cwd` stays `cwd`. Every place field of the input: a task
- * update's `set.place`, a draft's or a follow-up's `place`.
+ * A folder given relative to the working folder (`--folder .`, `folder=../portal`) made absolute
+ * here, as `tasks space` does with its folders: the service never reads a relative path against its
+ * own working folder. Every folder field of the input: organize's `folder`, a task update's
+ * `set.folder`, a draft's or a follow-up's `folder`.
  */
-function absolutePlaces(input: Record<string, unknown>, cwd: string): void {
+function absoluteFolders(input: Record<string, unknown>, cwd: string): void {
   const fix = (holder: unknown): void => {
     if (typeof holder !== "object" || holder === null || Array.isArray(holder)) return;
     const record = holder as Record<string, unknown>;
-    const place = record["place"];
-    if (typeof place === "string" && place !== "cwd" && place !== "" && !isAbsolute(place)) {
-      record["place"] = resolve(cwd, place);
+    const folder = record["folder"];
+    if (
+      typeof folder === "string" &&
+      folder !== "" &&
+      !namesItself(folder) &&
+      !isAbsolute(folder)
+    ) {
+      record["folder"] = resolve(cwd, folder);
     }
   };
+  fix(input);
   fix(input["set"]);
   for (const list of [input["tasks"], input["follow_ups"]]) {
     if (Array.isArray(list)) list.forEach(fix);
@@ -163,7 +173,7 @@ export async function runVerb(
   // A mixed verb's read action (`tasks area list`) is a read: no request ID, no base (A3 3.2.3).
   const write = writes(verb, input);
   if (verb.auto.includes("cwd") && input["cwd"] === undefined) input["cwd"] = io.cwd;
-  absolutePlaces(input, io.cwd);
+  absoluteFolders(input, io.cwd);
   hooks?.input?.(input);
   let generated = false;
   if (write && verb.auto.includes("request_id")) {

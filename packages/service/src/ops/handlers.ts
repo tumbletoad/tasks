@@ -2262,6 +2262,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
       return groupWrite(call, action);
     }
+    if (input["folder"] !== undefined) throw invalid("folder", "A list takes no folder");
     const reader = readerOf(call.space);
     let read;
     let names: GroupNames | undefined;
