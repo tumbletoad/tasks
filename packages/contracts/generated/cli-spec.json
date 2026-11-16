@@ -292,7 +292,7 @@
       "positionals": [
         {
           "field": "action",
-          "help": "list reads; create, rename, move and archive change a group",
+          "help": "list reads; create, rename, move, archive and unarchive change a group",
           "name": "action",
           "required": true,
           "type": "string",
@@ -301,7 +301,8 @@
             "create",
             "rename",
             "move",
-            "archive"
+            "archive",
+            "unarchive"
           ]
         },
         {
@@ -319,7 +320,7 @@
           "type": "string"
         }
       ],
-      "summary": "List the areas and projects, or create, rename, move or archive one.",
+      "summary": "List the areas and projects, or create, rename, move, archive or unarchive one.",
       "verb": "area"
     },
     {

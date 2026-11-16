@@ -34,6 +34,7 @@ import {
 import {
   isId,
   newId,
+  rebased,
   type Id,
   type Operation,
   type OpResult,
@@ -87,6 +88,15 @@ import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, placeState, type Match, type PlaceState } from "./here.ts";
 import { bindPlace, outsideWarning, placeRefused, remoteWarning } from "./places.ts";
 import {
+  checkFolder,
+  expanded,
+  folderRefused,
+  osOf,
+  reservedBy,
+  storedForm,
+  type Folder,
+} from "./folders.ts";
+import {
   byOf,
   invalid,
   readOnly,
@@ -102,6 +112,7 @@ import { editDistance, fold, resolveGroup } from "./groups.ts";
 import {
   readCommit,
   readCommitTasks,
+  readBind,
   readGroupNames,
   readGroups,
   readLaunch,
@@ -124,6 +135,7 @@ import {
   text,
   type CommitFacts,
   type TaskRead,
+  type BindRead,
   type Destination,
   type GroupNames,
 } from "./read.ts";
@@ -164,6 +176,10 @@ export interface OpsHost {
   readonly roots?: () => readonly Root[];
   /** The OS whose path rules a place follows. Default: this process's. */
   readonly platform?: NodeJS.Platform;
+  /** The person's home folder on this machine: what `~` in a folder means. None: no folder binds. */
+  readonly home?: string;
+  /** Tasks' own data folder (the Tasks home): no folder is bound inside it. */
+  readonly dataFolder?: string;
   /** Milliseconds since 1970. Default: Date.now. */
   readonly now?: () => number;
   /** The space's time zone. Default: this machine's. */
@@ -2089,6 +2105,32 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return groupList(read, only);
   },
 
+  "folder.manage": async (call) => {
+    const { input } = call;
+    const action = String(input["action"]);
+    const folder = typeof input["folder"] === "string" ? input["folder"] : undefined;
+    if (action === "add_project") {
+      if (input["project"] === undefined) {
+        throw invalid("project", "Required to add a project", "Name the new project.");
+      }
+      if (input["task"] !== undefined) throw invalid("task", "A new project takes no task");
+    } else {
+      if ((input["project"] === undefined) === (input["task"] === undefined)) {
+        throw invalid("project", "Name a project or a task, one of them");
+      }
+      if (input["area"] !== undefined) throw invalid("area", "Only a new project takes an area");
+    }
+    if (action === "clear" && folder !== undefined) {
+      throw invalid("folder", "A clear takes no folder");
+    }
+    if (action !== "clear" && folder === undefined) {
+      throw invalid("folder", `Required to ${action === "set" ? "set" : "add"} a folder`);
+    }
+    // One folder's bind at a time per space, from its look to the writer's answer, so two that
+    // name one folder by two spellings are decided one after the other.
+    return bindLock(call.space.id ?? "", () => folderWrite(call, action, folder));
+  },
+
   "prefs.manage": async (call) => {
     const { input } = call;
     const action = String(input["action"]);
@@ -2131,6 +2173,198 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
 // ---------------------------------------------------------------------------------------------
 // group.manage (A3 3.4.10) and prefs.manage (A3 3.4.11)
+
+// ---------------------------------------------------------------------------------------------
+// folder.manage: a project's or a task's folder on this machine (folders.ts)
+
+/** The folder binds in flight, by space: each waits for the one before it. */
+const binds = new Map<string, Promise<unknown>>();
+
+async function bindLock<T>(space: string, work: () => Promise<T>): Promise<T> {
+  const before = binds.get(space) ?? Promise.resolve();
+  const mine = before.then(work, work);
+  const settled = mine.then(
+    () => undefined,
+    () => undefined,
+  );
+  binds.set(space, settled);
+  try {
+    return await mine;
+  } finally {
+    if (binds.get(space) === settled) binds.delete(space);
+  }
+}
+
+/** The project a folder write names: `Area/Project`, or a project by name, slug or ID. */
+function projectNamed(names: GroupNames, given: string): { id: string; name: string } {
+  const cut = given.lastIndexOf("/");
+  const area =
+    cut > 0
+      ? resolveGroup(names, "area", given.slice(0, cut).trim(), "project", { lookup: true })
+      : undefined;
+  const name = cut > 0 ? given.slice(cut + 1).trim() : given.trim();
+  const id = resolveGroup(names, "project", name, "project", { lookup: true, area }) ?? "";
+  return { id, name: names.projects.find((p) => p.id === id)?.title ?? name };
+}
+
+async function folderWrite(
+  call: Call,
+  action: string,
+  given: string | undefined,
+): Promise<unknown> {
+  const { input, host } = call;
+  const platform = host.platform ?? process.platform;
+  const home = host.home;
+  if (home === undefined) {
+    throw new AppError({ code: "internal", message: "This service has no home folder to bind." });
+  }
+  let stored: Folder | undefined;
+  if (given !== undefined) {
+    const form = storedForm(given, home, platform);
+    if (typeof form === "string") throw folderRefused("folder", form);
+    stored = form;
+  }
+  const machine = host.machine.id;
+  const replay = await applied(call);
+  const reader = readerOf(call.space);
+  let names: GroupNames;
+  try {
+    names = await readGroupNames(reader);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  const reserved = [
+    ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
+    ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
+  ];
+  const facts = { home, platform, reserved };
+
+  if (action === "add_project") {
+    const name = String(input["project"]).trim();
+    const folder = must(stored);
+    const projectId = newId("p");
+    const ops: Operation[] = [];
+    if (!replay) {
+      let read: BindRead;
+      try {
+        read = await readBind(reader, { kind: "project", id: projectId }, machine);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      const problem = await checkFolder(folder, { ...facts, projects: read.projects });
+      // A folder another live project has here: that project, rather than a second one for it.
+      if (problem?.reason === "folder_taken" && problem.project !== undefined) {
+        return {
+          action,
+          result: "exists",
+          owner: { kind: "project", id: problem.project.project, name: problem.project.name },
+          folder: problem.project.stored,
+          as_of: read.space.asOf,
+        };
+      }
+      if (problem !== undefined) throw folderRefused("folder", problem.reason);
+    }
+    let area: string | undefined;
+    if (typeof input["area"] === "string") {
+      area = replay ? REPLAY_GROUP : resolveGroup(names, "area", input["area"], "area");
+      if (area === undefined) {
+        area = newId("a");
+        ops.push({ kind: "area.create", id: area as Id<"a">, title: input["area"].trim() });
+      }
+    }
+    ops.push(
+      { kind: "project.create", id: projectId, title: name, ...(area === undefined ? {} : { area }) },
+      { kind: "project.folder_set", project: projectId, path: folder.stored },
+    );
+    const result = await submit(call, ops);
+    const project = result.results.find((r) => isId(r.id, "p"));
+    return {
+      action,
+      result: result.status === "applied" ? "created" : "no_change",
+      owner: { kind: "project", id: project?.id ?? projectId, name },
+      folder: folder.stored,
+      as_of: result.as_of,
+      ...replayed(result),
+    };
+  }
+
+  // set or clear, on a project or a task.
+  let owner: { kind: "project" | "task"; id: string; name?: string };
+  if (typeof input["project"] === "string") {
+    const project = projectNamed(names, input["project"]);
+    owner = { kind: "project", id: project.id, name: project.name };
+  } else {
+    // The writer resolves the reference; its result names the task by ID.
+    owner = { kind: "task", id: String(input["task"]) };
+  }
+  let moved: number | undefined;
+  if (!replay && action === "set") {
+    const folder = must(stored);
+    let read: BindRead;
+    try {
+      read = await readBind(reader, owner, machine);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    const others = read.projects.filter((p) => p.project !== owner.id);
+    const problem = await checkFolder(folder, {
+      ...facts,
+      ...(owner.kind === "project" ? { projects: others } : {}),
+    });
+    if (problem !== undefined) {
+      throw folderRefused(
+        "folder",
+        problem.reason,
+        problem.project === undefined
+          ? {}
+          : { project: { id: problem.project.project, name: problem.project.name } },
+      );
+    }
+    // A project's tasks' folders inside its old folder move along: none may land in Tasks' own
+    // data, or the whole change is refused, naming the task.
+    const old = read.current;
+    if (owner.kind === "project" && old !== undefined && old.path !== folder.stored) {
+      moved = 0;
+      for (const task of read.tasks) {
+        const to = rebased(task.path, old.path, folder.stored, osOf(platform));
+        if (to === undefined || to === task.path) continue;
+        moved += 1;
+        const reason = await reservedBy(expanded(to, home, platform), facts);
+        if (reason !== undefined) throw folderRefused("folder", reason, { task: task.ref });
+      }
+    }
+  }
+  const op: Operation =
+    action === "set"
+      ? owner.kind === "project"
+        ? { kind: "project.folder_set", project: owner.id, path: must(stored).stored }
+        : { kind: "task.folder_set", task: owner.id, path: must(stored).stored }
+      : owner.kind === "project"
+        ? { kind: "project.folder_clear", project: owner.id }
+        : { kind: "task.folder_clear", task: owner.id };
+  const result = await submit(call, [op]);
+  const done = result.results[0];
+  const changed = result.status === "applied";
+  return {
+    action,
+    result: changed ? (action === "set" ? "set" : "cleared") : "no_change",
+    owner: {
+      kind: owner.kind,
+      id: owner.kind === "task" ? (done?.task ?? "") : owner.id,
+      ...(owner.name === undefined ? {} : { name: owner.name }),
+      ...(done?.ref === undefined ? {} : { ref: done.ref }),
+    },
+    ...(action === "set" ? { folder: must(stored).stored } : {}),
+    ...(changed && moved !== undefined && result.replayed !== true ? { moved } : {}),
+    as_of: result.as_of,
+    ...replayed(result),
+  };
+}
+
+function must<T>(value: T | undefined): T {
+  if (value === undefined) throw new AppError({ code: "internal", message: "A value is missing." });
+  return value;
+}
 
 /** What organize's write did, by its action, when it changed the group. */
 const GROUP_DONE: Readonly<Record<string, string>> = {

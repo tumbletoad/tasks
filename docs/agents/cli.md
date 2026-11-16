@@ -13,7 +13,7 @@ and `cwd`.
 | Verb | Entry | Summary |
 |---|---|---|
 | `tasks add` | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. |
-| `tasks area` | `group.manage` | List the areas and projects, or create, rename, move or archive one. |
+| `tasks area` | `group.manage` | List the areas and projects, or create, rename, move, archive or unarchive one. |
 | `tasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
 | `tasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
 | `tasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
@@ -57,13 +57,13 @@ Only through `--input`: `tasks[].sources`.
 
 ## `tasks area`
 
-List the areas and projects, or create, rename, move or archive one.
+List the areas and projects, or create, rename, move, archive or unarchive one.
 
 Usage: `tasks area <action> [<path>] [<to>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<action>` | `action` | string | list reads; create, rename, move and archive change a group |
+| `<action>` | `action` | string | list reads; create, rename, move, archive and unarchive change a group |
 | `<path>` | `path` | string | "Area" or "Area/Project", by name or slug; list: one area |
 | `<to>` | `to` | string | rename: the new name; move: the new area |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |

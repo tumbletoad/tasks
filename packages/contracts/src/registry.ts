@@ -2,6 +2,7 @@
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
 import { entryAdd } from "./entries/entry-add.ts";
+import { folderManage } from "./entries/folder-manage.ts";
 import { groupManage } from "./entries/group-manage.ts";
 import { historyRedo } from "./entries/history-redo.ts";
 import { historyUndo } from "./entries/history-undo.ts";
@@ -35,6 +36,7 @@ export const registry = [
   launchOpen,
   taskSearch,
   groupManage,
+  folderManage,
   prefsManage,
   runReport,
   historyUndo,

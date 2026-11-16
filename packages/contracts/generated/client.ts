@@ -13,8 +13,12 @@ export function createClient(transport: ClientTransport) {
       /** Append to a task's log, or record a note for the user. */
       add: (input: InputOf<"entry.add">): Promise<OutputOf<"entry.add">> => call("entry.add", input),
     },
+    folder: {
+      /** Give a project or a task its folder on this machine, or make a project for a folder. */
+      manage: (input: InputOf<"folder.manage">): Promise<OutputOf<"folder.manage">> => call("folder.manage", input),
+    },
     group: {
-      /** List the areas and projects, or create, rename, move or archive one. */
+      /** List the areas and projects, or create, rename, move, archive or unarchive one. */
       manage: (input: InputOf<"group.manage">): Promise<OutputOf<"group.manage">> => call("group.manage", input),
     },
     history: {

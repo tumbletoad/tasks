@@ -682,6 +682,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.stored-form",
+      "title": "A folder's stored form on Linux, macOS and Windows: the home written as ~ by whole segments with the OS's case rule, separators made plain, an upper-case drive, a share, the Unicode form kept, and a relative, drive-relative or .. path refused",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.folders.request-path",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; an agent's task filed into an area and project it names first, created with it",
+      "source": "A1 3.15, A3 3.4.5",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.organize.write",
+      "title": "organize's writes through the request path: create a project in a new area, create of what exists answers no_change, rename keeping the ID with a retry that replays after the rename took the old name, move a project to another area, an area that moves nowhere, archive and unarchive with archive twice no change, and an unknown name not_found",
+      "source": "A3 3.4.10",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.run-parents-0003",
       "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
       "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",
