@@ -16,7 +16,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { fork, spawnSync } from "node:child_process";
+import { fork, spawn, spawnSync } from "node:child_process";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -43,6 +43,7 @@ import {
   lookAlikeFolder,
   offlineVersionFolder,
   packFolder,
+  powershell51,
   prepareCanary,
   present,
   proveStandInsFire,
@@ -316,7 +317,89 @@ describe("[A2.3.12.4.install.tamper] a tampered download is refused before any c
     },
     SLOW,
   );
+
+  test.runIf(windows)(
+    "a folder of the run whose file Windows still holds for a moment is removed once the file is let go",
+    async () => {
+      // As an antivirus scan holds the verifier's node.exe it has just seen run: a handle without
+      // delete sharing, until `release` appears.
+      const held = join(work, "held");
+      const download = join(held, ".download-held");
+      const file = join(download, "verifier", "node.exe");
+      const release = join(held, "release");
+      mkdirSync(join(download, "verifier"), { recursive: true });
+      writeFileSync(file, "");
+      const script = readFileSync(join(import.meta.dirname, "install.ps1"), "utf8");
+      const removeTree = /^function Remove-Tree\([\s\S]*?^\}\r?$/mu.exec(script)?.[0];
+      expect(removeTree, "install.ps1 removes its folders through Remove-Tree").toBeDefined();
+      writeFileSync(
+        join(held, "hold.ps1"),
+        `$f = [IO.File]::Open('${file}', 'Open', 'Read', 'Read')\n[Console]::Out.WriteLine('held')\n` +
+          `while (-not [IO.File]::Exists('${release}')) { [Threading.Thread]::Sleep(20) }\n$f.Dispose()\n`,
+      );
+      writeFileSync(
+        join(held, "remove.ps1"),
+        `${removeTree ?? ""}\n[Console]::Out.WriteLine('removing')\nRemove-Tree '${download}'\n`,
+      );
+      const holder = powershellFile(join(held, "hold.ps1"));
+      try {
+        await holder.said("held");
+        const remover = powershellFile(join(held, "remove.ps1"));
+        await remover.said("removing");
+        // Let Remove-Tree meet the held file before it is let go.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        writeFileSync(release, "");
+        expect(await remover.exited, remover.output()).toBe(0);
+        expect(existsSync(download)).toBe(false);
+      } finally {
+        writeFileSync(release, "");
+        await holder.exited;
+      }
+    },
+    SLOW,
+  );
 });
+
+/** A Windows PowerShell 5.1 script as a child: what it said, and its exit code. */
+function powershellFile(path: string): {
+  said(line: string): Promise<void>;
+  output(): string;
+  exited: Promise<number | null>;
+} {
+  const child = spawn(powershell51(), ["-NoProfile", "-NonInteractive", "-File", path], {
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  let out = "";
+  const waiting: { line: string; resolve: () => void }[] = [];
+  const onData = (chunk: string): void => {
+    out += chunk;
+    for (const wait of waiting.filter((w) => out.split(/\r?\n/u).includes(w.line))) {
+      waiting.splice(waiting.indexOf(wait), 1);
+      wait.resolve();
+    }
+  };
+  child.stdout.setEncoding("utf8").on("data", onData);
+  child.stderr.setEncoding("utf8").on("data", onData);
+  const exited = new Promise<number | null>((resolve) => {
+    child.once("exit", resolve);
+  });
+  return {
+    said: (line) =>
+      new Promise<void>((resolve, reject) => {
+        if (out.split(/\r?\n/u).includes(line)) {
+          resolve();
+          return;
+        }
+        waiting.push({ line, resolve });
+        void exited.then(() => {
+          reject(new Error(`exited before it said ${line}: ${out}`));
+        });
+      }),
+    output: () => out,
+    exited,
+  };
+}
 
 describe("[A2.3.12.4.install.root] the install root: named, absolute, at most 168 long, and changed by no one else", () => {
   test("without TASKS_HOME or a root, a relative root, or a missing parent, nothing is installed", () => {
@@ -758,7 +841,9 @@ describe("[A2.3.12.4.install.replace] installing again, a newer version, and a f
       mkdirSync(join(receipt, "taken"), { recursive: true });
       const failed = install({ root: own }, late);
       expect(failed.status, output(failed)).not.toBe(0);
-      expect(failed.stderr).toMatch(/current and the stable command were put back as they were/);
+      expect(failed.stderr, output(failed)).toMatch(
+        /current and the stable command were put back as they were/,
+      );
       if (windows) expect(readFileSync(join(own, "current"), "utf8")).toBe(release.version);
       else expect(linkTarget(join(own, "current"))).toBe(`versions/${release.version}`);
       expect(checkVersionFolder(join(own, "versions", "0.1.0-dev.4"))).toEqual([]);

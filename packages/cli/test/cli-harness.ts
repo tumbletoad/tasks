@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isAgentMarker } from "@tasks/bridge/protocol";
 import {
+  diagnostics,
   openSession,
   readServiceJson,
   registerSpaces,
@@ -165,6 +166,7 @@ export async function startWorld(
       tasks,
       close: async () => {
         try {
+          await reportLostService(service, home, path).catch(() => undefined);
           for (const child of children) child.kill("SIGKILL");
           if (install === undefined) service.send("stop");
           else {
@@ -197,6 +199,48 @@ export async function startWorld(
     }
     throw error;
   }
+}
+
+/**
+ * A service that ended, or stopped answering, before its test stopped it fails the commands after
+ * it with an error that says nothing about why: its state, its stderr, the end of its log and its
+ * crash files go to this test's stderr, so the failure carries its cause.
+ */
+async function reportLostService(service: Proc, home: string, path: string): Promise<void> {
+  const { exitCode, signalCode } = service.child;
+  const running = exitCode === null && signalCode === null;
+  const answers =
+    running &&
+    (await Promise.resolve()
+      .then(() => openSession(home, path, 10_000))
+      .then(
+        (session) => {
+          session.close();
+          return true;
+        },
+        () => false,
+      ));
+  if (answers) return;
+  let found: { file: string; text: string }[];
+  try {
+    found = diagnostics(home);
+  } catch (error) {
+    found = [{ file: "logs and crash files", text: `not read: ${String(error)}` }];
+  }
+  const files = found.map(({ file, text }) => {
+    const lines = text.split("\n");
+    return `--- ${file} ---\n${lines.slice(-80).join("\n")}`;
+  });
+  process.stderr.write(
+    [
+      running
+        ? `The service stopped answering before its test stopped it: service.json says ${String(readServiceJson(home)?.state)}`
+        : `The service ended before its test stopped it: exit ${String(exitCode)}, signal ${String(signalCode)}`,
+      `--- its stderr ---\n${service.stderr()}`,
+      ...files,
+      "",
+    ].join("\n"),
+  );
 }
 
 /**

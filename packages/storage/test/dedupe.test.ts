@@ -995,7 +995,8 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }
     await fc.assert(sessionsProperty({}), { numRuns: 15 });
-  }, 180_000);
+    // A bound only against a hang: the runs take one to four minutes, by the machine and its load.
+  }, 600_000);
 
   test("requests sent at once through the storage worker leave one task per key", async () => {
     const created = await createFixtureSpace(temp.make());
