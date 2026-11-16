@@ -195,6 +195,29 @@ describe("[A5.3.5.web.completed] Completed: the source over the read of finished
         (g) => g.sections[0]?.tasks ?? [],
       ),
     ).toHaveLength(3);
+    // A link's row has no finish time. Held at its place, it shows the page's whole row; held in
+    // the untitled group, where it went before the page came, it joins its month once the page
+    // holds it.
+    const bare = {
+      ...Object.fromEntries(
+        Object.entries(rows[2] as TaskRow).filter(
+          ([c]) => c !== "finished_at" && c !== "completed_at",
+        ),
+      ),
+      title: "Task M-5 (from a link)",
+    } as unknown as TaskRow;
+    const kept = completedGroups(rows, CLOCK, { task: bare, group: "c:2026-10", index: 0 });
+    expect(shown(kept)).toEqual([
+      ["November", ["M-1"]],
+      ["October", ["M-5", "M-2"]],
+    ]);
+    expect(kept[1]?.sections[0]?.tasks[0]).toBe(rows[2]);
+    const early = completedGroups(rows, CLOCK, { task: bare, group: "c:", index: 0 });
+    expect(shown(early)).toEqual([
+      ["November", ["M-1"]],
+      ["October", ["M-2", "M-5"]],
+    ]);
+    expect(early[1]?.sections[0]?.tasks[1]).toBe(rows[2]);
     // The feed's row of a task completed again moves it to its new month.
     const again = { ...rows[1], finished_at: Date.UTC(2026, 10, 12, 9) } as TaskRow;
     expect(completedGroups([again], CLOCK).map((g) => g.title)).toEqual(["November"]);

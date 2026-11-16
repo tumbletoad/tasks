@@ -90,19 +90,28 @@ export function completedGroups(
     buckets.set(key, list);
   };
   let placed = held === undefined;
+  let heldRow = held?.task;
+  // The untitled group holds only a row without its finish time: a link's row read before the
+  // page. Its place there is no place to keep once the page's row names the month.
+  const index = held?.group === PREFIX ? undefined : held?.index;
   for (const row of rows) {
     const key = completedGroupOf(row, clock.timeZone);
     if (row.id === held?.task.id) {
-      // The expanded row goes back where it was shown, below.
-      if (key === undefined || held.index !== undefined) continue;
+      // Reopened or deleted: the held row, the newest, goes back where it was shown, below.
+      if (key === undefined) continue;
+      // Still finished: the page's row is whole (a link's row has no finish time).
+      heldRow = row;
+      if (index !== undefined) continue;
       placed = true;
     }
     if (key !== undefined) add(key, row);
   }
-  if (held !== undefined && !placed) {
+  if (held !== undefined && heldRow !== undefined && !placed) {
     const shown =
-      held.group?.startsWith(PREFIX) === true ? held.group.slice(PREFIX.length) : undefined;
-    add(shown ?? completedGroupOf(held.task, clock.timeZone) ?? "", held.task, held.index ?? 0);
+      index !== undefined && held.group?.startsWith(PREFIX) === true
+        ? held.group.slice(PREFIX.length)
+        : undefined;
+    add(shown ?? completedGroupOf(heldRow, clock.timeZone) ?? "", heldRow, index ?? 0);
   }
   const year = clock.today.slice(0, 4);
   return [...buckets]
