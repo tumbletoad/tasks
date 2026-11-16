@@ -61,7 +61,9 @@ import {
 import { isAppVersion } from "../manifest.ts";
 import { inRange } from "../rows.ts";
 import type { SchemaStep } from "../schema.ts";
+import { remakeCopyIndex } from "../search/remake.ts";
 import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
+import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import {
@@ -86,7 +88,7 @@ import {
   type BackupKind,
   type BackupSidecar,
 } from "./sidecar.ts";
-import { checkSnapshot, copySnapshot, databaseBytes } from "./snapshot.ts";
+import { checkSnapshot, copySnapshot, databaseBytes, type SnapshotFacts } from "./snapshot.ts";
 
 export { BACKUP_TEMP_PREFIX };
 
@@ -108,6 +110,11 @@ export interface BackupRecord {
   file: string;
   sidecarFile: string;
   sidecar: BackupSidecar;
+  /**
+   * The space's search index failed the copy's check and was made again in the copy: the space's
+   * own index is damaged and needs the same.
+   */
+  searchIndexRemade?: true;
 }
 
 /** The points M1.07's crash harness kills at, in order. Tests also throw there. */
@@ -250,7 +257,19 @@ export async function writeBackup(
     refresh();
     seams.at?.("copied");
 
-    const facts = checkSnapshot(checked, copy, options.busyTimeoutMs);
+    let facts: SnapshotFacts;
+    let searchIndexRemade = false;
+    try {
+      facts = checkSnapshot(checked, copy, options.busyTimeoutMs);
+    } catch (error) {
+      if (!(error instanceof StorageError) || error.code !== "STORAGE_CORRUPT") throw error;
+      // The search index is derived from the tasks: damage in it alone must not cost a backup.
+      // The copy is this backup's own, so its index is made again and the copy checked once more.
+      // Damage anywhere else still fails the check.
+      remakeCopyIndex(checked, copy, options.busyTimeoutMs, seams.steps ?? SCHEMA_STEPS);
+      facts = checkSnapshot(checked, copy, options.busyTimeoutMs);
+      searchIndexRemade = true;
+    }
     refresh();
     seams.at?.("checked");
 
@@ -343,7 +362,13 @@ export async function writeBackup(
     // The backup exists only if its data is still the file it published. If not, the pair stays
     // for the reader's checks, which list it by state and never restore it.
     if (!sameFile(file, published, digests.compressedSize)) throw dataGone();
-    return { name, file, sidecarFile, sidecar };
+    return {
+      name,
+      file,
+      sidecarFile,
+      sidecar,
+      ...(searchIndexRemade ? { searchIndexRemade } : {}),
+    };
   } catch (error) {
     // The data goes while it is no backup yet, and only while it is still the file this backup
     // published: another file that took its name since (a sync, another backup) stays as it is.

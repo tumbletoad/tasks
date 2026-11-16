@@ -92,6 +92,7 @@ export interface SpaceVerbsHost {
     | "checkFolder"
     | "confirmExcluded"
     | "rebuildView"
+    | "repairSearch"
   >;
   readonly machine: MachineInfo;
   /** The state folder, for each space's machine-local settings (`backup.dir`). */
@@ -545,7 +546,9 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           folder: manager.folderOf(view.entry),
           ...(settings.backupDir === undefined ? {} : { backupDir: settings.backupDir }),
         });
-        return done.kind === "backup" ? { backup: done.backup } : {};
+        if (done.kind !== "backup") return {};
+        if (done.searchIndexDamaged === true) manager.repairSearch(view.entry);
+        return { backup: done.backup };
       } catch (error) {
         throw failure(error);
       }

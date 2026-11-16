@@ -88,6 +88,9 @@ const DEFAULT_ENTRY = new URL("./entry.ts", import.meta.url);
 /** A1 3.9: a request to a space's writer gets an answer within 10 s, or STORAGE_TIMEOUT. */
 export const REQUEST_TIMEOUT_MS = 10_000;
 
+/** How long a repair of the search index may take before its caller stops waiting. */
+const REPAIR_TIMEOUT_MS = 300_000;
+
 /** A1 3.9: at most 1,000 requests wait for a space's writer, or STORAGE_OVERLOADED. */
 export const WRITER_QUEUE_LIMIT = 1_000;
 
@@ -268,6 +271,11 @@ export interface SpaceWriterOptions {
    * take a while), with the file and its identity: the service watches it (A2 3.4).
    */
   onLock?: (lock: LockedFile) => void;
+  /**
+   * Called when the space is at an older revision and this machine will migrate it now, before the
+   * migration starts: a migration of a large space can take long, and its caller may wait for it.
+   */
+  onMigrating?: (from: Revision) => void;
   /**
    * The space this writer is for (A2 3.2.4: a `[[spaces]]` entry's ID). A folder that holds
    * another space is refused with UnexpectedSpace after a read-only open, before anything is
@@ -550,6 +558,12 @@ export class StorageWorker {
       if (expected !== undefined && probe.spaceId !== expected) throw new UnexpectedSpace();
       const purpose: WriterPurpose =
         backupDir === undefined ? { kind: "write" } : { kind: "write", backupDir };
+      if (
+        probe.readOnlyReasons.includes("older_revision") &&
+        probe.authority.machineId === machine.id
+      ) {
+        options.onMigrating?.(probe.revision);
+      }
       const { info, lock } = await this.#openClaimed(
         claim,
         dir,
@@ -802,6 +816,8 @@ export class SpaceWriterHandle {
   readonly machineRegistered: boolean;
   /** The migration this open ran before the write path attached, if the space needed one. */
   readonly migration: MigrationReport | undefined;
+  /** The open found the search index damaged and made it again, or could not. */
+  readonly searchIndex: OpenedSpaceInfo["searchIndex"];
   /**
    * The space's authority. A writer on another machine refuses every request (SPACE_READ_ONLY,
    * `not_authority`), so an opener can report the space as read-only.
@@ -828,6 +844,7 @@ export class SpaceWriterHandle {
     this.readOnlyReasons = info.readOnlyReasons;
     this.machineRegistered = machineRegistered;
     this.migration = info.migration;
+    this.searchIndex = info.searchIndex;
     this.authority = info.authority;
     this.lock = lock;
     this.#timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
@@ -932,6 +949,17 @@ export class SpaceWriterHandle {
         handle: this.handle,
         ...(keys === undefined ? {} : { keys: [...keys] }),
       }),
+    );
+  }
+
+  /**
+   * Checks the search index and makes it again when it is damaged. Waits in the writer's queue; a
+   * remake of a large space takes longer than a request, so it has a bound of its own.
+   */
+  repairSearchIndex(): Promise<"sound" | "remade" | "damaged"> {
+    return this.#queued(
+      () => this.#worker.call("repairSearchIndex", { handle: this.handle }),
+      REPAIR_TIMEOUT_MS,
     );
   }
 

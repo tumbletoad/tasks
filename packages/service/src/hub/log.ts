@@ -294,6 +294,8 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", swapped: "bool", carried: "int" },
   },
+  // A migration still runs when the open's bound passes: the open waits for it.
+  "space.migrating": { lvl: "info", c: "space", fields: { entry: "int", ms: "int" } },
   "space.migrated": {
     lvl: "info",
     c: "space",
@@ -334,6 +336,18 @@ export const EVENTS = {
       removed: "int",
       unverified: "int",
       ms: "int",
+    },
+  },
+  // The search index failed its check (at a writer's open, or in a backup's copy): made again
+  // from the tasks, or still damaged.
+  "space.search_index": {
+    lvl: "warn",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      outcome: ["sound", "remade", "damaged"],
+      code: "error_code",
     },
   },
   "space.maintenance_failed": {
