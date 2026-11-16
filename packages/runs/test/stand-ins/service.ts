@@ -117,9 +117,13 @@ export class Service {
     });
   }
 
-  /** Windows: the service as a plain child of the test. */
-  static async plain(helper: string): Promise<Service> {
-    const child = spawn(process.execPath, [HARNESS, helper], {
+  /** Windows: the service as a plain child of the test: `script` (the harness) with `args`. */
+  static async plain(
+    helper: string,
+    script = HARNESS,
+    args: readonly string[] = [],
+  ): Promise<Service> {
+    const child = spawn(process.execPath, [script, helper, ...args], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -127,7 +131,12 @@ export class Service {
   }
 
   /** Linux: the service as the main process of the transient user unit `unit`. */
-  static async inUnit(unit: string, cwd: string): Promise<Service> {
+  static async inUnit(
+    unit: string,
+    cwd: string,
+    script = HARNESS,
+    args: readonly string[] = [],
+  ): Promise<Service> {
     const child = spawn(
       found(SYSTEMD_RUN) ?? "systemd-run",
       [
@@ -143,7 +152,8 @@ export class Service {
         "--property=TimeoutStopSec=15",
         "--",
         process.execPath,
-        HARNESS,
+        script,
+        ...args,
       ],
       { env: managerEnv(), stdio: ["pipe", "pipe", "pipe"] },
     );

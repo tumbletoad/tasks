@@ -542,6 +542,7 @@ export class RunHost {
   #serviceEnded(run: RunRecord): RunEnd {
     let saved: SavedAnswer | undefined;
     try {
+      this.#files.removeTemps(run.id);
       saved = this.#files.readAnswer(run.id);
     } catch {
       saved = undefined;

@@ -209,6 +209,7 @@ export class World {
       },
       readAnswer: (id) => this.saved.get(id),
       logs: () => ({ stdout: () => undefined, stderr: () => undefined, close: () => undefined }),
+      removeTemps: () => undefined,
     };
   }
 

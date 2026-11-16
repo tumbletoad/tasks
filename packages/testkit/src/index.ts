@@ -32,10 +32,13 @@ export {
   type SpawnRecord,
 } from "./fakes/index.ts";
 export {
+  createLaunchSpace,
   LAUNCH_MACHINE,
   openLaunchSpace,
+  openLaunchSpaceAt,
   openLaunchSpaceInWorker,
   type LaunchSpace,
+  type LaunchSpaceFolder,
   type WorkerLaunchSpace,
 } from "./launch-space.ts";
 /**

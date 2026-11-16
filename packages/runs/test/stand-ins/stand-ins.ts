@@ -20,7 +20,12 @@ export type StandInMode =
   | "die"
   | "handles"
   | "argv"
-  | "nest";
+  | "nest"
+  | "talk"
+  | "detach-stay"
+  | "flood-answer"
+  | "huge-answer"
+  | "answers";
 
 /** A fresh token: it marks every process of one stand-in tree. */
 export const newToken = (): string => randomBytes(8).toString("hex");

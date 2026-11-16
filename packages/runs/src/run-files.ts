@@ -7,7 +7,7 @@
 // inherit the access list of the state folder in the person's profile, as every file of Tasks does.
 import { closeSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite, createFile, makeDir, writeAll } from "@tasks/files";
+import { atomicWrite, createFile, makeDir, removeStaleTemps, writeAll } from "@tasks/files";
 import { ANSWER_CAP_BYTES } from "@tasks/contracts/runs";
 
 /** The folder under `<state>` that holds one folder per run. */
@@ -41,9 +41,14 @@ export interface RunLogs {
 export interface RunFolders {
   /** Makes the run's folder, before its container starts. */
   prepare(id: string): void;
+  /** Replaces the saved answer. Throws when it cannot be written (a full disk, for one). */
   saveAnswer(id: string, answer: SavedAnswer): void;
+  /** The saved answer, or undefined when there is none or it is not one. */
   readAnswer(id: string): SavedAnswer | undefined;
+  /** The run's raw output files. */
   logs(id: string): RunLogs;
+  /** Removes what a crash left of a write: a temporary file beside the answer. */
+  removeTemps(id: string): void;
 }
 
 const RUN_ID = /^ru_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
@@ -122,6 +127,10 @@ export class RunFiles implements RunFolders {
     // Written by this module within the cap; a longer one was changed by something else.
     if (Buffer.byteLength(text, "utf8") > ANSWER_CAP_BYTES) return undefined;
     return { text, final, cut };
+  }
+
+  removeTemps(id: string): void {
+    removeStaleTemps(this.folder(id), [ANSWER_FILE]);
   }
 
   logs(id: string): RunLogs {

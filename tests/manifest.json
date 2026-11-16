@@ -1426,6 +1426,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.8.run.stop",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), Stop for a stand-in agent that ignores it, starts children late, or detached a child and a daemon ends the agent and everything it started, counted from the operating system, and the run is cancelled, with the answer an agent gave on the interrupt",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.5.run.answer",
+      "title": "On a real container, a 1 MiB answer that escaping makes far longer, after 50 MB of other output, is kept whole in the run's record and its saved answer, and an answer longer than 1 MiB is cut on a code point and flagged while the run succeeds",
+      "source": "A4 3.11.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.crash",
+      "title": "On a real container, the stand-in service killed by force mid run, and while answers are being saved, leaves nothing of the run alive, and the next start ends the run failed (service_ended) with the last whole saved answer",
+      "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.command-line",
       "title": "A Windows command line quotes each argument as the C runtime reads it back",
       "source": "A4 3.11.8",
