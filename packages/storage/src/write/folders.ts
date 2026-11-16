@@ -222,11 +222,7 @@ const viewOf = (f: FolderRow): FolderView => ({
 });
 
 /** An owner's live folders, one per machine, newest first. Empty before schema 0.5. */
-export function foldersOf(
-  conn: Connection,
-  kind: "project" | "task",
-  owner: string,
-): FolderView[] {
+export function foldersOf(conn: Connection, kind: "project" | "task", owner: string): FolderView[] {
   if (!hasFolders(conn)) return [];
   return conn
     .prepare(FOLDER_SQL.liveOfOwner)

@@ -74,7 +74,10 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     arbitrary: fc.record({ kind: fc.constant("steal" as const), m, p, pick: fc.nat() }),
     weight: 2,
   },
-  { arbitrary: fc.record({ kind: fc.constant("undo" as const), partial: fc.boolean() }), weight: 5 },
+  {
+    arbitrary: fc.record({ kind: fc.constant("undo" as const), partial: fc.boolean() }),
+    weight: 5,
+  },
   { arbitrary: fc.record({ kind: fc.constant("redo" as const) }), weight: 3 },
 );
 
@@ -133,14 +136,12 @@ async function world(): Promise<World> {
   const tasks = Array.from({ length: TASKS }, () => newId("t"));
   const ops: Operation[] = [
     ...projects.map((id, k): Operation => ({ kind: "project.create", id, title: `P${String(k)}` })),
-    ...tasks.map(
-      (id, k): Operation => ({
-        kind: "task.create",
-        id,
-        title: `T${String(k)}`,
-        project: projects[k % 2] ?? "",
-      }),
-    ),
+    ...tasks.map((id, k): Operation => ({
+      kind: "task.create",
+      id,
+      title: `T${String(k)}`,
+      project: projects[k % 2] ?? "",
+    })),
   ];
   const created = fx.writer.submit(fx.request(fx.codex, ops));
   if (created.status !== "applied") throw new Error("the world was not created");
@@ -163,7 +164,11 @@ function folders(w: World): FolderState[] {
 
 function snapshot(w: World): Snapshot {
   return {
-    folders: Object.fromEntries(folders(w).filter((f) => f.live).map((f) => [f.id, f.path])),
+    folders: Object.fromEntries(
+      folders(w)
+        .filter((f) => f.live)
+        .map((f) => [f.id, f.path]),
+    ),
     projects: w.fx.reader
       .prepare("SELECT id FROM projects WHERE deleted_at IS NULL ORDER BY id")
       .all()
@@ -190,7 +195,9 @@ function checkInvariants(w: World): void {
     const keys = all
       .filter((f) => f.kind === "project" && f.machine === machine.id && liveProjects.has(f.owner))
       .map((f) => folderKey(f.path, machine.os));
-    expect(new Set(keys).size, `two live projects on one folder of ${machine.os}`).toBe(keys.length);
+    expect(new Set(keys).size, `two live projects on one folder of ${machine.os}`).toBe(
+      keys.length,
+    );
   }
 }
 
@@ -269,9 +276,7 @@ async function run(steps: readonly Step[]): Promise<void> {
           const taken = lost[s.pick % Math.max(lost.length, 1)];
           if (taken === undefined) continue;
           actor = machine?.agent ?? w.fx.codex;
-          ops = [
-            { kind: "project.folder_set", project: w.projects[s.p] ?? "", path: taken.path },
-          ];
+          ops = [{ kind: "project.folder_set", project: w.projects[s.p] ?? "", path: taken.path }];
           break;
         }
         case "undo":
@@ -306,14 +311,16 @@ async function run(steps: readonly Step[]): Promise<void> {
           if (s.kind === "undo") {
             const entry = done.pop();
             if (entry !== undefined) {
-              if (whole && entry.clean) expect(snapshot(w), "an undo gives back the space").toEqual(entry.before);
+              if (whole && entry.clean)
+                expect(snapshot(w), "an undo gives back the space").toEqual(entry.before);
               if (!whole) entry.clean = false;
               undone.unshift(entry);
             }
           } else {
             const entry = undone.shift();
             if (entry !== undefined) {
-              if (entry.clean) expect(snapshot(w), "a redo gives back the commit").toEqual(entry.after);
+              if (entry.clean)
+                expect(snapshot(w), "a redo gives back the commit").toEqual(entry.after);
               done.push(entry);
             }
           }
@@ -339,7 +346,8 @@ async function run(steps: readonly Step[]): Promise<void> {
           if (!f.live) continue;
           const now = after.get(f.id);
           let expected = f.path;
-          if (f.kind === "project" && f.owner === project && f.machine === machine.id) expected = to;
+          if (f.kind === "project" && f.owner === project && f.machine === machine.id)
+            expected = to;
           else if (
             old !== undefined &&
             f.kind === "task" &&
@@ -359,16 +367,12 @@ async function run(steps: readonly Step[]): Promise<void> {
 }
 
 describe("[A1.5.write.folders-model] random folder operations, deletes, restores, undos and redos on two machines", () => {
-  test(
-    "one folder per owner and machine, never two live projects on one folder, moves carry exactly the folders inside, and undo gives back what was",
-    async () => {
-      await fc.assert(
-        fc.asyncProperty(fc.array(step, { minLength: 5, maxLength: 40 }), async (steps) => {
-          await run(steps);
-        }),
-        { numRuns: 100 },
-      );
-    },
-    300_000,
-  );
+  test("one folder per owner and machine, never two live projects on one folder, moves carry exactly the folders inside, and undo gives back what was", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(step, { minLength: 5, maxLength: 40 }), async (steps) => {
+        await run(steps);
+      }),
+      { numRuns: 100 },
+    );
+  }, 300_000);
 });

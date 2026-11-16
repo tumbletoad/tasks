@@ -35,13 +35,7 @@ export const STEPS_0_3: readonly SchemaStep[] = [step0001, step0002, step0003];
 export const STEPS_0_4: readonly SchemaStep[] = [step0001, step0002, step0003, step0004];
 
 /** The chain of steps of the 0.5 builds: folders. Frozen once it is released. */
-export const STEPS_0_5: readonly SchemaStep[] = [
-  step0001,
-  step0002,
-  step0003,
-  step0004,
-  step0005,
-];
+export const STEPS_0_5: readonly SchemaStep[] = [step0001, step0002, step0003, step0004, step0005];
 
 /** This build's chain, for symmetry with the released ones. */
 export const STEPS_LATEST: readonly SchemaStep[] = SCHEMA_STEPS;

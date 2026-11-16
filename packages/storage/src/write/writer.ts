@@ -709,8 +709,7 @@ const SQL = {
   areaVersions: "UPDATE areas SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
   projectVersions: "UPDATE projects SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
   tasksOfProject: "SELECT id FROM tasks WHERE project_id = $id ORDER BY id",
-  liveTaskIn:
-    "SELECT 1 AS found FROM tasks WHERE project_id = $id AND deleted_at IS NULL LIMIT 1",
+  liveTaskIn: "SELECT 1 AS found FROM tasks WHERE project_id = $id AND deleted_at IS NULL LIMIT 1",
   taskArea: "UPDATE tasks SET area_id = $area WHERE id = $id",
   // Folders (schema 0.5): one live folder per owner and machine.
   insertFolder:
@@ -2259,9 +2258,8 @@ export class SpaceWriter {
           const id = op.id ?? newId(prefix, random);
           const taken =
             createdGroups.has(id) ||
-            conn
-              .prepare(entity === "areas" ? SQL.areaById : SQL.projectById)
-              .get({ id }) !== undefined;
+            conn.prepare(entity === "areas" ? SQL.areaById : SQL.projectById).get({ id }) !==
+              undefined;
           if (taken) problem("VALIDATION_FAILED", "A group with this ID exists", i, "id");
           const drafted = draftSlugs[entity];
           const held = (slug: string): boolean =>
@@ -3022,7 +3020,10 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
         const cleared = op.kind === "project.folder_clear" || op.kind === "task.folder_clear";
         const version =
           !cleared || owner.bound === true
-            ? new RowReader("folders", readRow(conn, "folders", staged.target)).int("version", "seq")
+            ? new RowReader("folders", readRow(conn, "folders", staged.target)).int(
+                "version",
+                "seq",
+              )
             : owner.kind === "task"
               ? readTask(conn, staged.target as Id<"t">).version
               : new RowReader("projects", readRow(conn, "projects", staged.target)).int(
@@ -3325,7 +3326,8 @@ function deletedProject(conn: Connection, ref: string, op: number): Id<"p"> {
     const deleted = conn.prepare(SQL.deletedProjectsBySlug).all({ slug: ref });
     row = live ?? (deleted.length === 1 ? deleted[0] : undefined);
   }
-  if (row === undefined) return problem("NOT_FOUND", "No project has this ID or slug", op, "project");
+  if (row === undefined)
+    return problem("NOT_FOUND", "No project has this ID or slug", op, "project");
   if (row["deleted_at"] === null) {
     problem("INVALID_TRANSITION", "Only a deleted project can be restored", op, "project");
   }
@@ -4172,7 +4174,9 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       for (const [field, value] of Object.entries(op.set)) {
         values[field] = (value ?? null) as SqlValue;
       }
-      conn.prepare(updateGroupSql(entity, Object.keys(values))).run({ ...values, id: staged.target });
+      conn
+        .prepare(updateGroupSql(entity, Object.keys(values)))
+        .run({ ...values, id: staged.target });
       groupWrote(conn, run, i, entity, staged.target, Object.keys(values));
       return;
     }

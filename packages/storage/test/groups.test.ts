@@ -2,7 +2,6 @@
 // unarchive, delete and restore, each with its history and one undo step per request. Fixture
 // text only, in a temporary space.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Id } from "../src/ids.ts";
 import type { Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
@@ -56,7 +55,7 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expect(row("areas", symbols)["slug"]).toBe("area");
 
     const result = submit([
-      { kind: "area.create", id: "a_0garden0000000000000000000" as Id<"a">, title: "Garden" },
+      { kind: "area.create", id: "a_0garden0000000000000000000", title: "Garden" },
       { kind: "project.create", title: "Beds", area: "garden" },
       { kind: "project.create", title: "Beds", area: "a_0garden0000000000000000000" },
     ]);
@@ -70,7 +69,7 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     // A given slug that a live group holds is refused, and an ID that exists too.
     expectStatus(submit([{ kind: "project.create", title: "Other", slug: "beds" }]), "rejected");
     expectStatus(
-      submit([{ kind: "area.create", id: "a_0garden0000000000000000000" as Id<"a">, title: "X" }]),
+      submit([{ kind: "area.create", id: "a_0garden0000000000000000000", title: "X" }]),
       "rejected",
     );
     // A project needs no area.
@@ -81,20 +80,22 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
   test("an agent creates a group; a task is filed into a project the same request creates", () => {
     const result = submit(
       [
-        { kind: "project.create", id: "p_0n0rth00000000000000000000" as Id<"p">, title: "North" },
+        { kind: "project.create", id: "p_0n0rth00000000000000000000", title: "North" },
         { kind: "task.create", title: "Plan the north beds", project: "north" },
       ],
       "codex",
     );
     expectStatus(result, "applied");
     const task = result.results[1]?.id ?? "";
-    expect(fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task })).toEqual(
-      { project_id: "p_0n0rth00000000000000000000" },
-    );
+    expect(
+      fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({ project_id: "p_0n0rth00000000000000000000" });
   });
 
   test("rename and other fields need a base, keep the ID, the slug and the tasks, and undo puts them back", () => {
-    const task = created(submit([{ kind: "task.create", title: "Fix the header", project: fx.project }]));
+    const task = created(
+      submit([{ kind: "task.create", title: "Fix the header", project: fx.project }]),
+    );
     const before = row("projects", fx.project);
     const unbased = fx.writer.submit(
       fx.request(fx.human, [{ kind: "project.patch", project: fx.project, set: { title: "Web" } }]),
@@ -115,9 +116,9 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
       brief: "The patient portal.",
       color: "#3366aa",
     });
-    expect(fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task })).toEqual(
-      { project_id: fx.project },
-    );
+    expect(
+      fx.reader.prepare("SELECT project_id FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({ project_id: fx.project });
     expectStatus(undo(), "applied");
     expect(row("projects", fx.project)).toMatchObject({
       title: before["title"],
@@ -128,10 +129,17 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expect(row("projects", fx.project)["title"]).toBe("Web portal");
     // A stale base is a conflict on the field another changed since.
     const stale = fx.base();
-    expectStatus(submit([{ kind: "area.patch", area: "lumen", set: { title: "Lumen Health" } }]), "applied");
-    const conflict = submit([{ kind: "area.patch", area: "lumen", set: { title: "Lumen" } }], "human", {
-      base: stale,
-    });
+    expectStatus(
+      submit([{ kind: "area.patch", area: "lumen", set: { title: "Lumen Health" } }]),
+      "applied",
+    );
+    const conflict = submit(
+      [{ kind: "area.patch", area: "lumen", set: { title: "Lumen" } }],
+      "human",
+      {
+        base: stale,
+      },
+    );
     expectStatus(conflict, "conflict");
     expect(conflict.conflicts[0]).toMatchObject({ entity: "areas", field: "title" });
     // A colour is #rrggbb or null.
@@ -160,7 +168,9 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expectStatus(undo(), "applied");
     expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.lumen);
     for (const task of [done, open]) {
-      expect(fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id: task })).toEqual({
+      expect(
+        fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id: task }),
+      ).toEqual({
         area_id: fx.areas.lumen,
       });
     }
@@ -171,16 +181,22 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     ]);
     expectStatus(result, "applied");
     const later = result.results[1]?.id ?? "";
-    expect(fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id: later })).toEqual({
+    expect(
+      fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id: later }),
+    ).toEqual({
       area_id: null,
     });
   });
 
   test("archive keeps the group's tasks as they are; archive twice and unarchive an active one change nothing", () => {
-    const task = created(submit([{ kind: "task.create", title: "Still open", project: fx.project }]));
+    const task = created(
+      submit([{ kind: "task.create", title: "Still open", project: fx.project }]),
+    );
     expectStatus(submit([{ kind: "project.archive", project: fx.project }]), "applied");
     expect(row("projects", fx.project)["lifecycle"]).toBe("archived");
-    expect(fx.reader.prepare("SELECT lifecycle FROM tasks WHERE id = $id").get({ id: task })).toEqual({
+    expect(
+      fx.reader.prepare("SELECT lifecycle FROM tasks WHERE id = $id").get({ id: task }),
+    ).toEqual({
       lifecycle: "active",
     });
     expectStatus(submit([{ kind: "project.archive", project: fx.project }]), "unchanged");

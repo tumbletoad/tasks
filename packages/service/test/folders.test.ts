@@ -112,7 +112,12 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     ).tasks;
     const ref = task?.ref ?? "";
     const own = FolderManageResult.parse(
-      await call(user, "folder.manage", { action: "set", task: ref, folder: web, request_id: rid() }),
+      await call(user, "folder.manage", {
+        action: "set",
+        task: ref,
+        folder: web,
+        request_id: rid(),
+      }),
     );
     expect(own).toMatchObject({ result: "set", owner: { kind: "task", ref } });
     const taskId = own.owner.id;

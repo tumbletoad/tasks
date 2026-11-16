@@ -2032,7 +2032,7 @@ function groupValues(f: Fields): GroupValues {
     if (color !== null && (typeof color !== "string" || !COLOR.test(color))) {
       f.fail("VALIDATION_FAILED", "Expected a colour #rrggbb in lower case, or null", "color");
     }
-    values.color = color as string | null;
+    values.color = color;
   }
   return values;
 }

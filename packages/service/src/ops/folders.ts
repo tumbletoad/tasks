@@ -141,7 +141,8 @@ export function storedForm(
   const own = absolute.split(sep);
   const fold = (s: string): string => (os === "linux" ? s : s.toLowerCase());
   const under =
-    own.length >= homeParts.length && homeParts.every((part, k) => fold(part) === fold(own[k] ?? ""));
+    own.length >= homeParts.length &&
+    homeParts.every((part, k) => fold(part) === fold(own[k] ?? ""));
   const stored = under ? ["~", ...own.slice(homeParts.length)].join(sep) : absolute;
   if (Array.from(stored).length > FOLDER_PATH_MAX) return "invalid_path";
   return { stored, absolute };

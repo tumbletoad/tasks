@@ -2273,7 +2273,12 @@ async function folderWrite(
       }
     }
     ops.push(
-      { kind: "project.create", id: projectId, title: name, ...(area === undefined ? {} : { area }) },
+      {
+        kind: "project.create",
+        id: projectId,
+        title: name,
+        ...(area === undefined ? {} : { area }),
+      },
       { kind: "project.folder_set", project: projectId, path: folder.stored },
     );
     const result = await submit(call, ops);

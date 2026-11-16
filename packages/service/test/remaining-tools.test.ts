@@ -196,7 +196,9 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
   test("a new name creates its area or project with the tasks, once however many drafts name it, and a retry creates nothing more", async () => {
     const groups = () =>
       organized.reader
-        .prepare("SELECT (SELECT count(*) FROM areas) AS areas, (SELECT count(*) FROM projects) AS projects")
+        .prepare(
+          "SELECT (SELECT count(*) FROM areas) AS areas, (SELECT count(*) FROM projects) AS projects",
+        )
         .get();
     const before = groups();
     const request = rid();
@@ -449,7 +451,10 @@ describe("[A3.3.4.organize.write] organize: create, rename, move, archive and un
         await call(organized, script, "group.manage", { request_id: request, ...input }),
       );
     const created = await write({ action: "create", path: "Clients/Northwind Clinic" });
-    expect(created).toMatchObject({ result: "created", group: { kind: "project", name: "Northwind Clinic" } });
+    expect(created).toMatchObject({
+      result: "created",
+      group: { kind: "project", name: "Northwind Clinic" },
+    });
     const clients = created.areas.find((a) => a.name === "Clients");
     expect(clients?.projects.map((p) => [p.id, p.name])).toEqual([
       [created.group?.id, "Northwind Clinic"],
@@ -465,16 +470,33 @@ describe("[A3.3.4.organize.write] organize: create, rename, move, archive and un
     });
     const request = rid();
     const renamed = await write(
-      { action: "rename", path: "Clients/Northwind Clinic", to: "Northwind", base: organized.base() },
+      {
+        action: "rename",
+        path: "Clients/Northwind Clinic",
+        to: "Northwind",
+        base: organized.base(),
+      },
       request,
     );
-    expect(renamed).toMatchObject({ result: "renamed", group: { id: created.group?.id, name: "Northwind" } });
+    expect(renamed).toMatchObject({
+      result: "renamed",
+      group: { id: created.group?.id, name: "Northwind" },
+    });
     // The retry names the old name, which the rename took away: the writer replays it.
     const again = await write(
-      { action: "rename", path: "Clients/Northwind Clinic", to: "Northwind", base: organized.base() },
+      {
+        action: "rename",
+        path: "Clients/Northwind Clinic",
+        to: "Northwind",
+        base: organized.base(),
+      },
       request,
     );
-    expect(again).toMatchObject({ result: "renamed", replayed: true, group: { id: created.group?.id } });
+    expect(again).toMatchObject({
+      result: "renamed",
+      replayed: true,
+      group: { id: created.group?.id },
+    });
     const moved = await write({
       action: "move",
       path: "Clients/Northwind",
@@ -497,13 +519,21 @@ describe("[A3.3.4.organize.write] organize: create, rename, move, archive and un
         }),
       ),
     ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "path" }] } });
-    const archived = await write({ action: "archive", path: "Home/Northwind", base: organized.base() });
+    const archived = await write({
+      action: "archive",
+      path: "Home/Northwind",
+      base: organized.base(),
+    });
     expect(archived.result).toBe("archived");
     expect(archived.areas.find((a) => a.name === "Home")?.projects).toEqual([]);
     expect(
       await write({ action: "archive", path: "Home/Northwind", base: organized.base() }),
     ).toMatchObject({ result: "no_change" });
-    const back = await write({ action: "unarchive", path: "Home/Northwind", base: organized.base() });
+    const back = await write({
+      action: "unarchive",
+      path: "Home/Northwind",
+      base: organized.base(),
+    });
     expect(back.result).toBe("unarchived");
     // A name that only looks a group up is not_found when no group has it.
     expect(

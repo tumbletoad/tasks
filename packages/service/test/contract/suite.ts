@@ -266,7 +266,8 @@ const LATER: Readonly<Record<string, Later>> = {
     now: { result: "schema" },
   },
   "group.manage 0": {
-    owner: "a world that holds Mira's areas and projects (Lumen Health, Brightside Bikes, Learning)",
+    owner:
+      "a world that holds Mira's areas and projects (Lumen Health, Brightside Bikes, Learning)",
     why: "the world's groups are the ones its own examples create, with other counts",
     now: { result: "schema" },
   },

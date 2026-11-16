@@ -88,12 +88,13 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const commit = fx.reader
       .prepare("SELECT ops FROM commits ORDER BY seq DESC LIMIT 1")
       .get<{ ops: string }>();
-    expect(JSON.parse(commit?.ops ?? "[]")[1].input.path).toBe(decomposed);
+    const ops = JSON.parse(commit?.ops ?? "[]") as { input: { path?: string } }[];
+    expect(ops[1]?.input.path).toBe(decomposed);
     expectStatus(undo(), "applied");
     expect(live()).toEqual({});
-    expect(fx.reader.prepare("SELECT deleted_at FROM projects WHERE id = $id").get({ id })).not.toEqual(
-      { deleted_at: null },
-    );
+    expect(
+      fx.reader.prepare("SELECT deleted_at FROM projects WHERE id = $id").get({ id }),
+    ).not.toEqual({ deleted_at: null });
     expectStatus(redo(), "applied");
     expect(live()).toEqual({ [`project:${id}`]: decomposed });
   });
@@ -135,10 +136,17 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const project = newProject("Moves", "~/Dev/moves");
     const task = newTask("Inner", project, "~/Dev/moves/inner");
     const stale = fx.base();
-    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/Dev/moves/inner2" }]), "applied");
-    const conflict = submit([{ kind: "project.folder_set", project, path: "~/Dev/moved" }], fx.human, {
-      base: stale,
-    });
+    expectStatus(
+      submit([{ kind: "task.folder_set", task, path: "~/Dev/moves/inner2" }]),
+      "applied",
+    );
+    const conflict = submit(
+      [{ kind: "project.folder_set", project, path: "~/Dev/moved" }],
+      fx.human,
+      {
+        base: stale,
+      },
+    );
     expectStatus(conflict, "conflict");
     expect(conflict.conflicts).toEqual([
       expect.objectContaining({ entity: "folders", field: "path", task }),
@@ -174,16 +182,24 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const other = { ...fx.human, machine_id: newId("m") };
     await addMachine(other.machine_id, "linux");
     const project = newProject("Gone", "~/Dev/gone");
-    expectStatus(submit([{ kind: "project.folder_set", project, path: "/srv/gone" }], other), "applied");
+    expectStatus(
+      submit([{ kind: "project.folder_set", project, path: "/srv/gone" }], other),
+      "applied",
+    );
     expectStatus(submit([{ kind: "project.delete", project }]), "applied");
     expect(live()).toEqual({});
     // Meanwhile a new project takes the folder on the first machine.
     const taker = newProject("Taker", "~/Dev/gone");
     const restored = submit([{ kind: "project.restore", project }]);
     expectStatus(restored, "applied");
-    expect(live()).toEqual({ [`project:${taker}`]: "~/Dev/gone", [`project:${project}`]: "/srv/gone" });
+    expect(live()).toEqual({
+      [`project:${taker}`]: "~/Dev/gone",
+      [`project:${project}`]: "/srv/gone",
+    });
     // The result names the folder that stays removed, by the project that holds it now.
-    expect(restored.conflicts).toEqual([expect.objectContaining({ entity: "folders", field: "path" })]);
+    expect(restored.conflicts).toEqual([
+      expect.objectContaining({ entity: "folders", field: "path" }),
+    ]);
     expectStatus(undo(), "applied");
     expect(live()).toEqual({ [`project:${taker}`]: "~/Dev/gone" });
   });
@@ -249,7 +265,10 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       "rejected",
     );
     // An agent sets a folder too; a deleted task takes none.
-    expectStatus(submit([{ kind: "task.folder_set", task, path: "~/Dev/agent" }], fx.codex), "applied");
+    expectStatus(
+      submit([{ kind: "task.folder_set", task, path: "~/Dev/agent" }], fx.codex),
+      "applied",
+    );
     expectStatus(submit([{ kind: "task.delete", task }]), "applied");
     expectStatus(submit([{ kind: "task.folder_set", task, path: "~/Dev/y" }]), "rejected");
   });
@@ -315,7 +334,9 @@ describe("[A1.3.15.folders.form] a folder's form, its case rule and where a fold
   });
 
   test("the case rule and the whole-segment rule", () => {
-    expect(folderKey("~\\Projects\\Tasks", "windows")).toBe(folderKey("~\\projects\\tasks", "windows"));
+    expect(folderKey("~\\Projects\\Tasks", "windows")).toBe(
+      folderKey("~\\projects\\tasks", "windows"),
+    );
     expect(folderKey("~/Dev/Tasks", "linux")).not.toBe(folderKey("~/dev/tasks", "linux"));
     expect(rebased("~/Dev/a/b", "~/Dev/a", "~/Code/a", "linux")).toBe("~/Code/a/b");
     expect(rebased("~/Dev/ab", "~/Dev/a", "~/Code/a", "linux")).toBeUndefined();

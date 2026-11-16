@@ -20,7 +20,9 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
       absolute: "/srv/build",
     });
     // Whole segments: /home/mirabel is no folder of /home/mira; Linux keeps case.
-    expect(storedForm("/home/mirabel/x", home, "linux")).toMatchObject({ stored: "/home/mirabel/x" });
+    expect(storedForm("/home/mirabel/x", home, "linux")).toMatchObject({
+      stored: "/home/mirabel/x",
+    });
     expect(storedForm("/home/Mira/x", home, "linux")).toMatchObject({ stored: "/home/Mira/x" });
     // macOS compares the home without case.
     expect(storedForm("/Users/MIRA/Dev", "/Users/mira", "darwin")).toMatchObject({

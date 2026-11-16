@@ -8,4 +8,10 @@ import { step0003 } from "./0003-schema-0.3.ts";
 import { step0004 } from "./0004-schema-0.4.ts";
 import { step0005 } from "./0005-schema-0.5.ts";
 
-export const SCHEMA_STEPS: readonly SchemaStep[] = [step0001, step0002, step0003, step0004, step0005];
+export const SCHEMA_STEPS: readonly SchemaStep[] = [
+  step0001,
+  step0002,
+  step0003,
+  step0004,
+  step0005,
+];
