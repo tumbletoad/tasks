@@ -938,6 +938,39 @@ export async function readCommitTasks(
   };
 }
 
+/**
+ * The newest commit under writer scope `$scope` after the commit `$undone` and before `$seq`, with
+ * the first task it changed and the kind of the operation that changed it (`commits.ops[op].op`).
+ */
+const SCRIPT_CHANGE: Statement = {
+  sql:
+    "SELECT k.at AS at, t.ref AS ref, json_extract(k.ops, '$[' || c.op || '].op') AS change " +
+    "FROM commits k JOIN changes c ON c.seq = k.seq AND c.task_id IS NOT NULL " +
+    "JOIN tasks t ON t.id = c.task_id WHERE k.scope_id = $scope AND k.seq < $seq " +
+    "AND k.seq > (SELECT seq FROM commits WHERE id = $undone) ORDER BY k.seq DESC, c.n LIMIT 1",
+  mode: "get",
+};
+
+/**
+ * A change a script of the same person made after the change an undo took back (A3 3.7.4): the
+ * newest under the script's writer scope between the undone commit and the undo's own, so a
+ * replay of the undo answers the same. Undefined when there is none.
+ */
+export async function readScriptChange(
+  reader: WorkerConnection,
+  query: { readonly scope: string; readonly undone: string; readonly seq: number },
+): Promise<{ task: string; change: string; at: string } | undefined> {
+  const [space, row] = await snapshot(reader, [SPACE, SCRIPT_CHANGE], { ...query });
+  const found = row as Row | null;
+  if (found === null || typeof found["change"] !== "string") return undefined;
+  const { refPrefix } = spaceFacts(space);
+  return {
+    task: formatTaskRef(refPrefix, Number(found["ref"])),
+    change: found["change"],
+    at: iso(found["at"]),
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // A task to launch (A4 3.3, 3.15; `launch.open`)
 

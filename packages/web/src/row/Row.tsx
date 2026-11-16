@@ -226,12 +226,12 @@ function Slots({
             aria-disabled={launch.state === "elsewhere" || launch.state === "opening"}
             data-tip={tileTip}
             tabIndex={tab}
-            onClick={() => {
+            onClick={(event) => {
               const action = tileClick(launch.state);
               if (action === "open" && launch.instance !== undefined)
                 actions.open(task, launch.instance);
               else if (action === "expand") actions.expand(task);
-              else if (action === "copy") actions.copy(task);
+              else if (action === "copy") actions.copy(task, event.shiftKey);
             }}
           >
             {launch.state === "copy_only" ? <CopyIcon /> : launch.instance?.glyph}
@@ -562,7 +562,9 @@ function RowView({
               )}
             </div>
           )}
-          {expanded ? <Unsaved task={task.id} field="title" /> : null}
+          {/* A title the person typed while the task was finished stays readable, with Copy and
+              Discard; Try again only once the task is active again (A5 3.11). */}
+          {expanded ? <Unsaved task={task.id} field="title" finished={!active} withValue /> : null}
         </div>
         <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>

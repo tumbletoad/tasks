@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -15,6 +16,7 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { currentPerson } from "@tasks/files/person";
 import { FakeT3 } from "@tasks/testkit/fake-t3";
 import { readT3Origin, T3Error, T3Mcp } from "../src/t3-client.ts";
 import { beginPairing, PairingError, type PairingAttempt } from "../src/t3-oauth.ts";
@@ -202,6 +204,18 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
         writeFileSync(runtime, JSON.stringify({ origin: fake.origin }));
         chmodSync(runtime, 0o666);
         expect(await readT3Origin(other)).toEqual({ status: "unsafe" });
+        // As T3 makes them under umask 002 (0775, 0664): its group may write them only when that
+        // group is the person's own private group, as for Tasks's own files (A2 3.2.2 rule 5).
+        const userdata = join(other, "userdata");
+        chmodSync(runtime, 0o664);
+        chmodSync(userdata, 0o775);
+        const own = currentPerson()?.ownGroup();
+        const ours =
+          own !== undefined && statSync(runtime).gid === own && statSync(userdata).gid === own;
+        expect(await readT3Origin(other)).toEqual(
+          ours ? { status: "ok", origin: fake.origin } : { status: "unsafe" },
+        );
+        chmodSync(userdata, 0o700);
         // A link at the file is never followed, even to a file that would pass (O_NOFOLLOW).
         chmodSync(runtime, 0o600);
         rmSync(runtime);

@@ -3,12 +3,24 @@
 // (`--json`); the entry takes the verb and `--yes` and `--dry-run`, prints its preview, asks in a
 // terminal and returns A2 3.10.3's exit code. It is loaded only for this command: the service
 // install reaches parts of the hub that the other verbs never load.
+import { CLI_NAME } from "@tasks/brand";
 import type { Globals } from "./args.ts";
 import type { Io } from "./io.ts";
 import { printUsage } from "./output.ts";
 
-export const SERVICE_HELP =
-  "Install, uninstall, start, stop or show the service (install|uninstall|start|stop|status, --yes, --dry-run); port <n> [--reuse] moves the UI's port";
+export const SERVICE_HELP = `Usage: ${CLI_NAME} service <command> [--json]
+
+  install [--yes] [--dry-run]    Make the OS start the service when you sign in, and start it
+  uninstall [--yes] [--dry-run]  Take that entry out again, and stop the service
+  start                          Start the service through the OS and wait until it is ready
+  stop                           Stop the service and wait until it has stopped
+  status                         The entry, the service, its spaces and the UI's address
+  port <n> [--reuse [--yes]]     Move the UI to another port; the service restarts
+
+install and uninstall show what they will change and ask once: --yes applies without asking (for a
+script), --dry-run only shows it. To restart the service, run ${CLI_NAME} service stop, then
+${CLI_NAME} service start.
+`;
 
 /** Runs `tasks service <verb> [--yes] [--dry-run]` and returns its exit code. */
 export async function serviceCommand(

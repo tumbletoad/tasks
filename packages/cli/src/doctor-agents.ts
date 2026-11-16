@@ -55,6 +55,7 @@ import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import {
   appLabel,
   codexEngines,
+  codexSharedHome,
   commandEnv,
   commandFor,
   entryInstance,
@@ -66,8 +67,10 @@ import {
   samePath,
   SetupStateInvalid,
   survey,
-  t3HomesOf,
+  t3Homes,
+  t3SettingsOf,
   type HomeRecord,
+  type T3Skip,
   type HomeView,
   type SetupInput,
 } from "@tasks/service/setup";
@@ -378,8 +381,10 @@ function instancesCheck(
   }
   const without = instances.filter((instance) => {
     const app = HOME_APP[instance.target];
-    const home = instanceHome(instance, userHome, io.platform)?.path;
-    if (app === undefined || home === undefined || records === undefined) return false;
+    const own = instanceHome(instance, userHome, io.platform)?.path;
+    if (app === undefined || own === undefined || records === undefined) return false;
+    // A Codex shadow home reads the entry of the home its config.toml links to.
+    const home = (app === "codex" ? codexSharedHome(io.platform, own) : undefined) ?? own;
     return !records.some((r) => r.app === app && samePath(io.platform, r.home, home));
   });
   const ids = instances.map((i) => i.id).join(", ");
@@ -670,11 +675,37 @@ function manualCheck(platform: NodeJS.Platform, views: readonly HomeView[]): Che
 /** A T3 provider instance's key that a row may show as it is. */
 const PROVIDER_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u;
 
-/** `t3.homes`: every home a T3 provider instance runs in has Tasks's entry. */
+/** Why an entry of T3's settings was passed over, in a row's words. */
+const T3_SKIP_TEXT: Readonly<Record<T3Skip, string>> = {
+  unknown_driver: "a kind of agent this build does not know",
+  invalid_entry: "not in the form T3 Code writes, or its home is no absolute folder",
+  secret_home: "its home is kept in T3 Code's secret store",
+};
+
+/**
+ * `t3.homes`: every home an enabled T3 provider instance runs in has Tasks's entry. An instance
+ * turned off in T3 is named and not checked; an entry setup passed over is named with why, and one
+ * whose home cannot be known warns, since that home may lack the entry.
+ */
 function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
-  const homes = t3HomesOf(input);
-  if (homes.length === 0) {
+  const settings = t3SettingsOf(input);
+  if (settings === undefined) {
     return { id: "t3.homes", status: "skip", detail: "T3 Code is not on this machine." };
+  }
+  const homes = t3Homes(settings);
+  const plain = (id: string) => (PROVIDER_KEY.test(id) ? id : "(a key that is not a plain name)");
+  const off = settings.off.map(plain);
+  const unknown = settings.skipped.filter((s) => s.reason === "unknown_driver");
+  const unclear = settings.skipped.filter((s) => s.reason !== "unknown_driver");
+  // Facts that change nothing: said after the row's verdict.
+  const notes: string[] = [];
+  if (off.length > 0) {
+    notes.push(`Turned off in T3 Code, so not checked: ${off.join(", ")}.`);
+  }
+  if (unknown.length > 0) {
+    notes.push(
+      `Passed over, ${T3_SKIP_TEXT.unknown_driver}: ${unknown.map((s) => plain(s.id)).join(", ")}.`,
+    );
   }
   // A provider instance that names Claude Code's default folder by its path reads `.claude.json`
   // inside it, not the user's `~/.claude.json` the default home's entry is in (readsHome).
@@ -693,22 +724,44 @@ function t3Check(input: SetupInput, views: readonly HomeView[]): Check {
     );
     return view === undefined || !(view.state === "registered" || view.state === "edited");
   });
-  if (gaps.length === 0 && elsewhere.length === 0) {
+  if (
+    gaps.length === 0 &&
+    elsewhere.length === 0 &&
+    unclear.length === 0 &&
+    settings.file !== "refused"
+  ) {
     return {
       id: "t3.homes",
       status: "ok",
-      detail: `Every home T3 Code's provider instances use has ${PRODUCT_NAME}'s entry.`,
+      detail: [
+        `Every home T3 Code's provider instances use has ${PRODUCT_NAME}'s entry.`,
+        ...notes,
+      ].join(" "),
     };
   }
   // A provider instance by its key in T3's settings when that is a plain name; a key with a path,
   // spaces or control characters in it never reaches a row.
   const label = (g: (typeof homes)[number]) =>
-    `${PROVIDER_KEY.test(g.provider) ? g.provider : "(a key that is not a plain name)"} (${g.app === "codex" ? "Codex" : "Claude Code"})`;
+    `${plain(g.provider)} (${g.app === "codex" ? "Codex" : "Claude Code"})`;
   // Each part says what to do; the command that fixes a gap comes last, as the row's last words.
-  const parts = elsewhere.map((t3) =>
-    t3.isDefault
-      ? `T3 Code's provider instance ${label(t3)} uses Claude Code's default home, so Claude Code reads the user's .claude.json, while machine.toml names that folder by its variable and setup's entry is inside it: set the instance's home path in T3 Code's settings to that folder.`
-      : `T3 Code's provider instance ${label(t3)} names Claude Code's default folder as its home path, so Claude Code reads the configuration inside that folder, where setup wrote no entry: in T3 Code's settings, clear the instance's home path so it uses the default home as the CLI does.`,
+  const parts: string[] = [];
+  if (settings.file === "refused") {
+    parts.push(
+      `T3 Code's settings file is not one setup reads (a link, another user's file or one anyone can change, too large, or not strict JSON), so only T3's default instances were checked.`,
+    );
+  }
+  for (const s of unclear) {
+    parts.push(
+      `T3 Code's provider instance ${plain(s.id)} was passed over, ${T3_SKIP_TEXT[s.reason]}: ${PRODUCT_NAME} cannot tell which home it runs in.`,
+    );
+  }
+  parts.push(...notes);
+  parts.push(
+    ...elsewhere.map((t3) =>
+      t3.isDefault
+        ? `T3 Code's provider instance ${label(t3)} uses Claude Code's default home, so Claude Code reads the user's .claude.json, while machine.toml names that folder by its variable and setup's entry is inside it: set the instance's home path in T3 Code's settings to that folder.`
+        : `T3 Code's provider instance ${label(t3)} names Claude Code's default folder as its home path, so Claude Code reads the configuration inside that folder, where setup wrote no entry: in T3 Code's settings, clear the instance's home path so it uses the default home as the CLI does.`,
+    ),
   );
   if (gaps.length > 0) {
     parts.push(
@@ -953,7 +1006,7 @@ async function bridgeCheck(
       return {
         id,
         status: "warn",
-        detail: `${name(view)}: a status round trip took ${String(Math.round(first))} ms, over ${String(BRIDGE_ROUND_TRIP_MS)} ms. Run: ${CLI_NAME} doctor again; if it stays slow, restart the service with ${CLI_NAME} service restart`,
+        detail: `${name(view)}: a status round trip took ${String(Math.round(first))} ms, over ${String(BRIDGE_ROUND_TRIP_MS)} ms. Run: ${CLI_NAME} doctor again; if it stays slow, restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start`,
       };
     }
     return {

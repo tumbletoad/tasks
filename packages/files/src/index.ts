@@ -88,6 +88,24 @@ function openForAppend(path: string, mode: number): number {
 }
 
 /**
+ * Writes every byte of `data` (a string as UTF-8) at `fd`'s position, or throws (A2 3.2.2 rule 5,
+ * "whole writes"). One write may take fewer bytes than it was given (a full volume, a signal, a
+ * network file system), so the count each returns is followed until nothing is left; a write that
+ * takes none throws EIO rather than spin. Every write of durable state goes through this.
+ */
+export function writeAll(fd: number, data: string | Uint8Array): void {
+  const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : data;
+  let offset = 0;
+  while (offset < bytes.length) {
+    const n = writeSync(fd, bytes, offset, bytes.length - offset);
+    if (!(n > 0)) {
+      throw Object.assign(new Error("A write made no progress"), { code: "EIO" });
+    }
+    offset += n;
+  }
+}
+
+/**
  * Appends `text` to `path`. A file that is not there yet is created with exactly `mode`; one that
  * is keeps its mode. A link in its place is not followed.
  */
@@ -182,27 +200,9 @@ function pause(ms: number): void {
 }
 
 /**
- * Writes every byte of `data` at `fd`'s position. A write may take fewer bytes than it was given
- * (a nearly full disk, a signal), so it is continued until all are written; a write that takes
- * none fails instead of looping.
- */
-export function writeAll(fd: number, data: string | Uint8Array): void {
-  const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : data;
-  let offset = 0;
-  while (offset < bytes.length) {
-    const written = writeSync(fd, bytes, offset, bytes.length - offset);
-    if (written <= 0) {
-      throw Object.assign(new Error("a write made no progress"), { code: "EIO" });
-    }
-    offset += written;
-  }
-}
-
-/**
  * Replaces `path` with `text` atomically: a new temporary file beside it
- * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written in full (`writeAll`) and flushed, then
- * renamed over it.
- * Readers see the old file or the new one, never a part. On Windows a rename over a file that
+ * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written whole (writeAll) and flushed, then renamed
+ * over it. Readers see the old file or the new one, never a part. On Windows a rename over a file that
  * another process has open without delete sharing fails for a moment, so it is tried a few times.
  * A failed write leaves no temporary file. `beforeRename` runs once the new file is written and
  * flushed, just before each rename attempt: it throws to give up, and the temporary file is removed

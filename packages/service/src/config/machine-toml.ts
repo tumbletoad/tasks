@@ -36,7 +36,15 @@ import {
 } from "@tasks/launch";
 import { fitsShape, preferenceSpec, type PrefValue } from "@tasks/contracts";
 import { isId, type Id } from "@tasks/storage";
-import { factsFrom, factsOf, problemOf, type PathFacts, type Unsafe } from "../hub/permissions.ts";
+import {
+  currentPerson,
+  factsFrom,
+  factsOf,
+  problemOf,
+  type PathFacts,
+  type Person,
+  type Unsafe,
+} from "../hub/permissions.ts";
 import type { Level } from "../hub/log.ts";
 import { SECTIONS, type Section } from "./section-names.ts";
 import { decodeConfig, parseToml, readConfigFile, type TomlDocument } from "./toml.ts";
@@ -335,8 +343,12 @@ const unsafeConfig = (parts: UnsafeConfig, present = true): LoadedMachineConfig 
 });
 
 /** A part for `facts` when they fail the rule, or undefined. */
-function partOf(what: UnsafePart["what"], facts: PathFacts, uid: number): UnsafePart | undefined {
-  const problem = problemOf(facts, uid);
+function partOf(
+  what: UnsafePart["what"],
+  facts: PathFacts,
+  person: Person,
+): UnsafePart | undefined {
+  const problem = problemOf(facts, person);
   return problem === undefined ? undefined : { what, path: facts.path, problem, facts };
 }
 
@@ -350,14 +362,15 @@ function lstatOrCode(path: string): Stats | string {
 }
 
 const sameObject = (a: Stats, b: Stats) =>
-  a.dev === b.dev && a.ino === b.ino && a.uid === b.uid && a.mode === b.mode;
+  a.dev === b.dev && a.ino === b.ino && a.uid === b.uid && a.gid === b.gid && a.mode === b.mode;
 
 /**
  * Reads `<config>/machine.toml`. Never writes, never creates it.
  *
  * Linux and macOS (A2 3.2.2 rule 5, permissions.ts): the config folder and the file must each be a
  * real folder and a real file (configuration is never read through a link), belong to this user,
- * and be writable by no one else. The file names commands Tasks runs as this user, so a file that
+ * and be writable by no one else (the person's own private group counts as no one else). The file
+ * names commands Tasks runs as this user, so a file that
  * fails is not used. The folder is judged first and on every path, the missing file's included:
  * the answer is the same before machine.toml exists and after Tasks has written one into it. Within
  * a folder that fails nothing is read; the file's own facts are still judged when they can be seen,
@@ -370,7 +383,7 @@ export function loadMachineConfig(
 ): LoadedMachineConfig {
   const path = join(configDir, MACHINE_TOML);
   // Undefined on Windows, where the rule is the ACL's (doctor).
-  const uid = process.platform === "win32" ? undefined : process.getuid?.();
+  const person = currentPerson();
 
   // The folder, before anything else.
   const folder = lstatOrCode(configDir);
@@ -378,22 +391,22 @@ export function loadMachineConfig(
     // Nothing there: the file is missing too, unless a file on the way makes it unreadable.
     if (folder !== "ENOENT") return unreadable(true);
   } else if (folder.isSymbolicLink()) {
-    if (uid === undefined) return unreadable(true);
+    if (person === undefined) return unreadable(true);
     const facts = factsOf(configDir, "folder", { followLink: false });
-    const part = typeof facts === "object" ? partOf("folder", facts, uid) : undefined;
+    const part = typeof facts === "object" ? partOf("folder", facts, person) : undefined;
     return part === undefined ? unreadable(true) : unsafeConfig([part]);
   } else if (!folder.isDirectory()) {
     // A file where the folder belongs is a configuration that cannot be read, not one to chmod.
     return unreadable(true);
-  } else if (uid !== undefined) {
-    const part = partOf("folder", factsFrom(configDir, "folder", folder), uid);
+  } else if (person !== undefined) {
+    const part = partOf("folder", factsFrom(configDir, "folder", folder), person);
     if (part !== undefined) {
       const file = factsOf(path, "file", { followLink: false });
       if (file === "unseen") return unsafeConfig([{ ...part, hides: true }]);
       const present = file !== "missing";
       const own =
         file !== "missing" && (file.kind === "file" || file.link !== undefined)
-          ? partOf("file", file, uid)
+          ? partOf("file", file, person)
           : undefined;
       return unsafeConfig(own === undefined ? [part] : [part, own], present);
     }
@@ -407,22 +420,22 @@ export function loadMachineConfig(
     // The open or the read failed. When the file fails the rule (a link, another owner, no read
     // for its owner), that is what the person must fix, and its message names the path and the
     // command. A folder or a FIFO in its place stays `unreadable`: no command fixes those.
-    if (uid !== undefined) {
+    if (person !== undefined) {
       const file = factsOf(path, "file", { followLink: false });
       if (typeof file === "object" && (file.kind === "file" || file.link !== undefined)) {
-        const part = partOf("file", file, uid);
+        const part = partOf("file", file, person);
         if (part !== undefined) return unsafeConfig([part]);
       }
     }
     return { present: true, config: DEFAULT_CONFIG, problems: [read.problem] };
   }
-  if (uid !== undefined) {
+  if (person !== undefined) {
     // The descriptor's facts decide. The folder must still be the one judged above.
     const now = lstatOrCode(configDir);
     if (typeof folder === "string" || typeof now === "string" || !sameObject(folder, now)) {
       return unreadable(true);
     }
-    const part = partOf("file", factsFrom(path, "file", read.stat), uid);
+    const part = partOf("file", factsFrom(path, "file", read.stat), person);
     if (part !== undefined) return unsafeConfig([part]);
   }
   const decoded = decodeConfig(read.bytes);

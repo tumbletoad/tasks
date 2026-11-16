@@ -64,12 +64,16 @@ import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml
 import {
   claudeDesktopFolders,
   codexAppEngines,
+  codexSharedHome,
   DESKTOP_FILE,
   hasT3,
   t3Homes,
   t3InstanceId,
+  t3ProviderInstances,
   t3SettingsFile,
+  type HostsInput,
   type T3Home,
+  type T3Settings,
 } from "./hosts.ts";
 import { markedAsGenerated } from "./generated.ts";
 import { addEntry, removeEntry } from "./json-edit.ts";
@@ -167,6 +171,11 @@ export interface AgentHome {
   readonly account: string;
   /** The other apps that read this home's entry: the Codex app, T3 Code. */
   readonly hosts: readonly Host[];
+  /**
+   * Codex shadow homes that read this home's file through a link (hosts.ts `codexSharedHome`):
+   * never homes of their own, so Codex run in one of them reads this entry.
+   */
+  readonly shadows?: readonly string[];
   /** A3 3.12 rules 3 and 4: machine.toml lists the file, or another git repository tracks it. */
   readonly managed: boolean;
 }
@@ -362,7 +371,7 @@ function discover(input: SetupInput): Discovered {
   return {
     desktop: claudeDesktopFolders(input),
     engines: codexAppEngines(input),
-    t3: hasT3(input) ? t3Homes(input, readT3Settings(input)) : [],
+    t3: t3HomesOf(input),
   };
 }
 
@@ -406,11 +415,16 @@ function hostsOf(
 }
 
 /**
- * Every agent home: the homes detection found (A4 3.2: `.claude`, `.claude-<suffix>`, `.codex`,
- * `.codex-<suffix>` and the home a variable names), the homes of machine.toml's instances that are
- * folders, the homes T3's provider instances use, and Claude Desktop's configuration folders. A
- * home an instance names takes the instance's ID and account; any other takes detection's
- * proposal (T3's from its folder or provider key, Claude Desktop's from the catalogue).
+ * Every agent home: the homes detection found (A4 3.2: `.claude`, `.claude-<suffix>` or
+ * `.claude_<suffix>`, the same for `.codex`, and the home a variable names), the homes of
+ * machine.toml's instances that are folders, the homes T3's enabled provider instances use, and
+ * Claude Desktop's configuration folders. A home an instance names takes the instance's ID and
+ * account; any other takes detection's proposal (T3's from its folder or provider key, Claude
+ * Desktop's from the catalogue).
+ *
+ * A Codex shadow home (its `config.toml` a link into another home, hosts.ts) is never a home of its
+ * own: the home it links to is offered in its place, with the shadow named on it, and its ID comes
+ * from that home's folder.
  */
 export async function agentHomes(
   input: SetupInput,
@@ -419,13 +433,29 @@ export async function agentHomes(
   const { platform, userHome, instances } = input;
   const p = pathOf(platform);
   const homes: AgentHome[] = [];
+  const shadows: { shared: string; shadow: string }[] = [];
   const add = async (
     app: AgentApp,
-    path: string,
-    found_: boolean,
-    id: string,
-    account: string,
+    given: string,
+    givenDefault: boolean,
+    givenId: string,
+    givenAccount: string,
   ): Promise<void> => {
+    let path = given;
+    let found_ = givenDefault;
+    let id = givenId;
+    let account = givenAccount;
+    const shared = app === "codex" ? codexSharedHome(platform, given) : undefined;
+    if (shared !== undefined) {
+      shadows.push({ shared, shadow: p.resolve(given) });
+      path = shared;
+      found_ = samePath(platform, shared, p.join(userHome, ".codex"));
+      id = t3InstanceId(
+        { app: "codex", provider: givenId, home: shared, isDefault: found_ },
+        platform,
+      );
+      account = proposedAccount(id === "codex" ? "" : id.replace(/^codex-/u, ""));
+    }
     if (homes.some((h) => h.app === app && samePath(platform, h.home, path))) return;
     const rule = targetDef(APPS[app].target).detect.homes;
     const owner = instances.find(
@@ -486,7 +516,14 @@ export async function agentHomes(
   for (const folder of found.desktop) {
     await add("claude-desktop", folder, true, "claude-desktop", proposedAccount(""));
   }
-  return homes;
+  return homes.map((home) => {
+    if (home.app !== "codex") return home;
+    const linked = shadows
+      .filter((s) => samePath(platform, s.shared, home.home))
+      .map((s) => s.shadow)
+      .filter((s, i, all) => all.findIndex((o) => samePath(platform, o, s)) === i);
+    return linked.length === 0 ? home : { ...home, shadows: linked };
+  });
 }
 
 /** The app's own command as detection found it, when it can be run. */
@@ -684,16 +721,36 @@ function readHomeFile(home: AgentHome): FileRead {
 }
 
 /**
- * T3's settings, read-only through the same reader (A3 3.13.6 step 1), or undefined when they are
- * not there or setup does not accept the file. Only the provider instances' homes are used.
+ * T3's settings, read-only through the same reader (A3 3.13.6 step 1): the provider instances of
+ * a driver Tasks knows, with their homes, or undefined when T3 is not on this machine. A file that
+ * is not there, or that setup does not accept, leaves T3's default instances (`file` says which).
+ *
+ * A Codex instance whose home is itself a shadow home (hosts.ts `codexSharedHome`) reads the shared
+ * home's file, so its home is the shared one and the shadow is named on it: setup's homes, T3's
+ * hosts and doctor then all speak of the one home that holds the entry.
  */
-export function readT3Settings(input: SetupInput): unknown {
+export function t3SettingsOf(input: HostsInput): T3Settings | undefined {
+  if (!hasT3(input)) return undefined;
   const p = pathOf(input.platform);
   const file = t3SettingsFile(input);
   const read = readText(file, p.dirname(file), 4 * 1024 * 1024);
-  if (read.kind !== "text") return undefined;
-  const parsed = parseStrictJson(read.text);
-  return parsed.ok ? parsed.value : undefined;
+  const parsed = read.kind === "text" ? parseStrictJson(read.text) : undefined;
+  const settings =
+    read.kind === "missing"
+      ? t3ProviderInstances(input, undefined, "missing")
+      : parsed?.ok === true
+        ? t3ProviderInstances(input, parsed.value)
+        : t3ProviderInstances(input, undefined, "refused");
+  return {
+    ...settings,
+    instances: settings.instances.map((instance) => {
+      if (instance.app !== "codex") return instance;
+      const shared = codexSharedHome(input.platform, instance.home);
+      return shared === undefined
+        ? instance
+        : { ...instance, home: shared, shadow: instance.shadow ?? instance.home };
+    }),
+  };
 }
 
 const entryOf = (read: FileRead): unknown => (read.kind === "read" ? read.entry : undefined);
@@ -936,9 +993,10 @@ export function handRemoval(
   };
 }
 
-/** The homes T3's provider instances use (A3 3.13.6), for doctor's `t3.homes`. */
-export function t3HomesOf(input: SetupInput): readonly T3Home[] {
-  return hasT3(input) ? t3Homes(input, readT3Settings(input)) : [];
+/** The homes T3's enabled provider instances use (A3 3.13.6), for doctor's `t3.homes`. */
+export function t3HomesOf(input: HostsInput): readonly T3Home[] {
+  const settings = t3SettingsOf(input);
+  return settings === undefined ? [] : t3Homes(settings);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -2572,7 +2572,7 @@
     "unreachable": "error service_unavailable (unreachable): TT Tasks's service cannot be reached from where this agent runs, for example from inside a sandbox. Nothing was saved. Ask the user to run `tasks doctor`.",
     "untrusted_endpoint": "error service_unavailable (untrusted_endpoint): Something other than TT Tasks is listening at TT Tasks's address. Nothing was sent to it. Ask the user to run `tasks doctor`.",
     "restart_session": "error service_unavailable (restart_session): TT Tasks was updated. Restart this agent session to use its tools.",
-    "service_too_old": "error service_unavailable (service_too_old): The running TT Tasks service is older than this session's TT Tasks tools. Ask the user to run `tasks service restart`, then retry.",
+    "service_too_old": "error service_unavailable (service_too_old): The running TT Tasks service is older than this session's TT Tasks tools. Ask the user to restart it (`tasks service stop`, then `tasks service start`), then retry.",
     "connection_lost": "error service_unavailable (connection_lost): TT Tasks restarted during this call. It may or may not have been applied. Retry with the same request ID."
   }
 }

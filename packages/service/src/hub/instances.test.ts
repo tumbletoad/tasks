@@ -92,10 +92,13 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
     await expect(
       add({ entries: [codex({ env: { CODEX_HOME: "codex-b" } })] }, "cli-interactive"),
     ).rejects.toMatchObject({ code: "invalid_input" });
-    // Keys this command never writes, a target it does not write, the hand-made entry's ID.
+    // Keys this command never writes, a T3 entry without its provider instance and model, T3's
+    // keys on another target, the hand-made entry's ID.
     for (const entry of [
       codex({ open_permission: "full" }),
       codex({ target: "t3" }),
+      codex({ target: "t3", t3_environment: "local", t3_provider_instance: "codex" }),
+      codex({ t3_environment: "local", t3_provider_instance: "codex", t3_model: "m" }),
       codex({ id: "manual" }),
     ]) {
       await expect(add({ entries: [entry] }, "cli-interactive")).rejects.toMatchObject({
@@ -125,6 +128,31 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
     expect(readFileSync(toml, "utf8")).toBe("# mine\n[http]\nport = 7713\n");
     expect(h.live).toEqual([]);
     expect(h.events).toEqual(["config.instances_changed", "config.instances_changed"]);
+
+    // A T3 instance as setup instances proposes it (A4 3.2): its provider instance and model.
+    const t3 = {
+      id: "t3-claude-personal",
+      target: "t3",
+      label: "Claude Personal",
+      account: "personal",
+      t3_environment: "local",
+      t3_provider_instance: "claude_personal",
+      t3_model: "claude-sonnet-5",
+      remote_allowed: false,
+    };
+    expect(await add({ entries: [t3] }, "cli-interactive")).toEqual({
+      added: ["t3-claude-personal"],
+    });
+    expect(h.live.map((i) => [i.id, i.t3])).toEqual([
+      [
+        "t3-claude-personal",
+        { environment: "local", providerInstance: "claude_personal", model: "claude-sonnet-5" },
+      ],
+    ]);
+    expect(await remove({}, "cli-interactive")).toEqual({
+      outcomes: [{ id: "t3-claude-personal", result: "removed" }],
+    });
+    expect(readFileSync(toml, "utf8")).toBe("# mine\n[http]\nport = 7713\n");
   });
 
   test("an entry gone from the file loses its record; a damaged record changes nothing", async () => {

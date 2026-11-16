@@ -109,11 +109,14 @@ beforeAll(async () => {
     join(desktopFolder, "claude_desktop_config.json"),
     '{\n  "mcpServers": {},\n  "preferences": {}\n}\n',
   );
-  // T3 Code with one provider instance on the default Codex home.
+  // T3 Code with its default Codex instance renamed, in T3's own shape (A3 3.13.6), and its default
+  // Claude instance, which the file does not list: both on the default homes.
   mkdirSync(join(user, ".t3", "userdata"), { recursive: true, mode: 0o700 });
   writeFileSync(
     join(user, ".t3", "userdata", "settings.json"),
-    JSON.stringify({ providerInstances: { codex: { provider: "codex" } } }),
+    JSON.stringify({
+      providerInstances: { codex: { driver: "codex", displayName: "Codex", enabled: true } },
+    }),
     { mode: 0o600 },
   );
 }, SLOW);
@@ -323,8 +326,13 @@ describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", ()
         settings,
         JSON.stringify({
           providerInstances: {
-            codex: { provider: "codex" },
-            "codex-t3x": { provider: "codex", homePath: join(user, ".codex-t3x") },
+            codex: { driver: "codex", displayName: "Codex", enabled: true },
+            codex_t3x: {
+              driver: "codex",
+              displayName: "Codex T3x",
+              enabled: true,
+              config: { homePath: join(user, ".codex-t3x") },
+            },
           },
         }),
       );
@@ -339,26 +347,31 @@ describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", ()
           .filter((h) => h.hosts.includes("t3"))
           .map((h) => h.instance)
           .sort(),
-      ).toEqual(["codex", "codex-t3x"]);
+      ).toEqual(["claude", "codex", "codex-t3x"]);
 
       // T3 names Claude Code's default folder by its path: its Claude reads `.claude.json` inside
-      // that folder, not the user's file where the default home's entry is. Doctor says so.
+      // that folder, not the user's file where the default home's entry is. Doctor says so, names
+      // an instance turned off and the entries it passed over, and checks the rest.
       writeFileSync(
         settings,
         JSON.stringify({
           providerInstances: {
-            codex: { provider: "codex" },
-            "codex-t3x": { provider: "codex", homePath: join(user, ".codex-t3x") },
-            claude: { provider: "claudeAgent", homePath: join(user, ".claude") },
+            codex: { driver: "codex", displayName: "Codex", enabled: true },
+            codex_t3x: { driver: "codex", config: { homePath: join(user, ".codex-t3x") } },
+            claudeAgent: { driver: "claudeAgent", config: { homePath: join(user, ".claude") } },
+            claude_off: { driver: "claudeAgent", enabled: false, config: { homePath: "~/off" } },
+            future: { driver: "futureAgent", enabled: true },
             // A key that is not a plain name (a path, a control character) never reaches a row.
-            [`${join(user, "odd")}\u001b[31m`]: { provider: "codex", homePath: join(user, "x") },
+            [`${join(user, "odd")}\u001b[31m`]: { driver: "codex" },
           },
         }),
       );
       const explicit = row(await doctor(), "t3.homes");
       expect(explicit).toMatchObject({ status: "warn" });
       expect(explicit?.detail).toContain("clear the instance's home path");
-      expect(explicit?.detail).toContain("(a key that is not a plain name) (Codex)");
+      expect(explicit?.detail).toContain("Turned off in T3 Code, so not checked: claude_off.");
+      expect(explicit?.detail).toContain("a kind of agent this build does not know: future.");
+      expect(explicit?.detail).toContain("(a key that is not a plain name) was passed over");
       expect(explicit?.detail).not.toContain(user);
       expect(explicit?.detail).not.toContain("\u001b");
 

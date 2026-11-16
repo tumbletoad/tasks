@@ -187,7 +187,10 @@ export interface StartOptions {
     SpaceManagerOptions,
     "startWorker" | "openTimeoutMs" | "closeTimeoutMs" | "now" | "syncHost" | "build"
   >;
-  /** False: no backup upkeep for the spaces (tests that look at a space folder's files). */
+  /**
+   * False: no backup upkeep and no projection for the spaces (tests that look at a space folder's
+   * files). Both are A1 3.9's maintenance worker's.
+   */
   readonly maintenance?: boolean;
   /** The local endpoint. The default is the M1.09 seam in endpoint.ts. */
   readonly listen?: ListenEndpoint;
@@ -627,10 +630,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         bridgeTicket: (ticket) => launching.service?.host.bridgeTicket(ticket),
         redeemBridge: (ticket) => launching.service?.host.redeemBridge(ticket),
         agentRuns: (launch) => launching.service?.host.agentRuns(launch) ?? false,
-        confirm: (space, launch, at) => {
+        confirm: (space, launch, at, folder) => {
           const service = launching.service;
           if (service === undefined) return Promise.reject(new Error("Launching is not ready"));
-          return service.confirmBinding(space, launch, at);
+          return service.confirmBinding(space, launch, at, folder);
         },
       },
       log: (event: BindingEvent) => {
@@ -688,7 +691,11 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           instances = next;
         },
       },
-      launches: { handlers: () => launching.service?.handlers() ?? {} },
+      launches: {
+        handlers: () => launching.service?.handlers() ?? {},
+        // `doctor/launch` (A3 3.14): the launch service's own scope probe and environment check.
+        doctor: (take: boolean) => launching.service?.doctor(take) ?? Promise.resolve(undefined),
+      },
       // `tasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
       // fallback (M6.10). Launching through them is a later step's.
       t3: t3Host({
@@ -723,6 +730,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             spaceManager().restoreInPlace(entry, file),
           recover: (entry: number) => spaceManager().recover(entry),
           folderOf: (entry: number) => spaceManager().folderOf(entry),
+          rebuildView: (entry: number) => spaceManager().rebuildView(entry),
         },
       },
     };
@@ -857,7 +865,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       stateDir: canonical,
       settingsDir: layout.state,
       log,
-      ...(options.maintenance === false ? {} : { maintenance: new Maintenance() }),
+      // The maintenance worker's work (A1 3.9): the backups, and each open space's projection.
+      ...(options.maintenance === false
+        ? {}
+        : { maintenance: new Maintenance(), projection: true }),
       ...(options.ownershipCheckMs === undefined
         ? {}
         : { ownershipCheckMs: options.ownershipCheckMs }),

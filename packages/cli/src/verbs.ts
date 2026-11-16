@@ -119,6 +119,7 @@ export async function runVerb(
   verb: VerbSpec,
   args: readonly string[],
   options: ConnectOptions,
+  present?: (result: Record<string, unknown>, printed: string) => Promise<void>,
 ): Promise<number> {
   let input: Record<string, unknown>;
   try {
@@ -179,9 +180,14 @@ export async function runVerb(
       }
     }
     const result = (await opCall(session, globals, verb.entry, input)) as Record<string, unknown>;
-    if (globals.json) io.stdout(`${JSON.stringify(result)}\n`);
-    else if (!globals.quiet || !write)
-      io.stdout(render(verb.entry, result, spaceName(session, globals, result)));
+    const printed = globals.json
+      ? `${JSON.stringify(result)}\n`
+      : !globals.quiet || !write
+        ? render(verb.entry, result, spaceName(session, globals, result))
+        : "";
+    // A verb with its own output (`tasks brief --copy`) is given the result and what it would print.
+    if (present !== undefined) await present(result, printed);
+    else io.stdout(printed);
     return 0;
   } catch (error) {
     const body = bodyOf(asAppError(error));

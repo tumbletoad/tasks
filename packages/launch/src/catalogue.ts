@@ -46,6 +46,12 @@ export interface RouteDef {
   readonly needsGui: boolean;
   /** Also copy the brief, for apps that may drop a prefill. */
   readonly copyBriefToo: boolean;
+  /**
+   * Link routes of the best-effort apps (A4 3.4.4, 3.4.5): the bridge's binding confirms the launch
+   * only when the bridge's working folder is the folder the link named. Otherwise a binding through
+   * the launch reference confirms it (A4 3.9.2).
+   */
+  readonly confirmFolder?: boolean;
   /** Terminal and t3-cli routes: whole-element placeholders only for {exec}, {permission}, {extra_args}. */
   readonly argv?: readonly Template[];
   /** Link routes: each value percent-encoded once when the route runs. */
@@ -64,6 +70,8 @@ export interface DetectRule {
   readonly homes?: { readonly folder: string; readonly env: string };
   /** A folder in the home whose presence shows the app is installed (T3's `~/.t3`). */
   readonly appFolder?: string;
+  /** A variable that names that folder instead when it holds an absolute path (`T3CODE_HOME`). */
+  readonly appFolderEnv?: string;
   /** A per-user command folder of the app, relative to the home (T3's `.t3/bin`). */
   readonly appBin?: string;
   /** URL scheme of the app's handler. Detected by a later step (A4 3.4.4, 3.4.5). */
@@ -81,6 +89,12 @@ export interface TargetDef {
   readonly detect: DetectRule;
   /** Semver range. Outside it doctor warns; launches still work. Empty: not checked. */
   readonly testedVersions: string;
+  /**
+   * T3 only: the model a proposed T3 instance opens with, per T3 driver, when T3's own default
+   * selection does not name its provider instance (A4 3.2 `tasks setup instances`). These are T3's
+   * own defaults per driver at the T3 commit A4 names.
+   */
+  readonly t3Models?: Readonly<Record<string, string>>;
   readonly permissionArgs: Readonly<
     Record<Permission, { readonly open: readonly string[]; readonly run: readonly string[] | null }>
   >;
@@ -130,8 +144,15 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
     ],
     instances: "per-provider-instance",
-    detect: { binaries: ["t3"], appFolder: ".t3", appBin: ".t3/bin", urlScheme: "t3code" },
+    detect: {
+      binaries: ["t3"],
+      appFolder: ".t3",
+      appFolderEnv: "T3CODE_HOME",
+      appBin: ".t3/bin",
+      urlScheme: "t3code",
+    },
     testedVersions: ">=0.1.7 <0.2.0",
+    t3Models: { codex: "gpt-6-astra", claudeAgent: "claude-opus-5-5" },
     // A4 3.11.6: T3 takes a runtime mode per thread, not flags. M2.09 maps the permission.
     permissionArgs: NO_ARGS,
   },
@@ -290,6 +311,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "every-launch",
         needsGui: true,
         copyBriefToo: true,
+        confirmFolder: true,
         url: "claude://code/new?folder={cwd}&q={brief}",
       },
     ],
@@ -314,6 +336,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "unknown",
         needsGui: true,
         copyBriefToo: true,
+        confirmFolder: true,
         url: "codex://threads/new?path={cwd}&prompt={brief}",
       },
     ],

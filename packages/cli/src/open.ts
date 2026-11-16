@@ -14,7 +14,8 @@
 //
 // A service that is not running is started first (A2 3.3.6, 3.9 step 1), the same way `tasks
 // service start` starts it (`startService` of @tasks/service/install: through the OS, and only a
-// ready service counts), with one line on stderr that says so. Only `not_running` starts it: a
+// ready service counts), with one line on stderr that says so, and a second when Linux started it
+// by hand because its unit is not installed (A2 3.3.3). Only `not_running` starts it: a
 // service that is starting, stopping, unreachable or untrusted is reported as every command
 // reports it. An agent's shell never starts it: it is told to ask the user, as when the service
 // runs (A2 S6, 3.6.5). A start that fails says why and names the command to look further.
@@ -61,16 +62,19 @@ export class StartFailed extends Error {
 
 /**
  * Starts this install's service as `tasks service start` does, and resolves once it is ready:
- * `started`, or `already_running` when another start got there first. Throws StartFailed.
+ * `started`, `started_by_hand` when it was started without the Linux unit a user manager could
+ * start it through (A2 3.3.3), or `already_running` when another start got there first. Throws
+ * StartFailed.
  */
-export type StartService = (io: Io) => Promise<"started" | "already_running">;
+export type StartService = (io: Io) => Promise<"started" | "started_by_hand" | "already_running">;
 
 /** `tasks service start`'s own start, loaded only when the service is not running. */
 const startAsServiceStart: StartService = async (io) => {
   const install = await import("@tasks/service/install");
   try {
     const outcome = await install.startService(install.defaultServiceContext({ env: io.env }));
-    return outcome.outcome === "started" ? "started" : "already_running";
+    if (outcome.outcome !== "started") return "already_running";
+    return outcome.unit === "not_installed" ? "started_by_hand" : "started";
   } catch (error) {
     // Its messages are for a person: fixed text and the install's own entries, never task data.
     if (error instanceof install.ServiceCommandError)
@@ -291,7 +295,10 @@ export async function openCommand(
     if (agentShell(io)) return printError(io, globals.json, askTheUser());
     try {
       const outcome = await (options.startService ?? startAsServiceStart)(io);
-      if (outcome === "started") io.stderr(`Started ${PRODUCT_NAME}'s service.\n`);
+      if (outcome !== "already_running") io.stderr(`Started ${PRODUCT_NAME}'s service.\n`);
+      if (outcome === "started_by_hand") {
+        io.stderr(`${(await import("@tasks/service/install")).NO_UNIT_LINE}\n`);
+      }
     } catch (failure) {
       const why = failure instanceof StartFailed ? failure : undefined;
       return printError(io, globals.json, {

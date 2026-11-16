@@ -340,7 +340,10 @@ const HOST_TEXT: Readonly<Record<Host, string>> = { "codex-app": "the Codex app"
 const title = (view: Pick<HomeView, "home">): string => {
   const hosts = view.home.hosts.map((h) => HOST_TEXT[h]);
   const also = hosts.length === 0 ? "" : `; also read by ${hosts.join(" and ")}`;
-  return `${appLabel(view.home.app)} · ${view.home.home} (instance ${view.home.instance}${also})`;
+  const shadows = view.home.shadows ?? [];
+  const linked =
+    shadows.length === 0 ? "" : `; also read through the shadow home ${shadows.join(", ")}`;
+  return `${appLabel(view.home.app)} · ${view.home.home} (instance ${view.home.instance}${also}${linked})`;
 };
 
 const viewJson = (view: HomeView) => ({
@@ -350,6 +353,7 @@ const viewJson = (view: HomeView) => ({
   instance: view.home.instance,
   account: view.home.account,
   hosts: view.home.hosts,
+  ...(view.home.shadows === undefined ? {} : { shadows: view.home.shadows }),
   state: view.state,
   ...(view.refusal === undefined ? {} : { reason: view.refusal }),
   sha256: view.sha256,
