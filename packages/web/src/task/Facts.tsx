@@ -30,7 +30,16 @@ import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
 import css from "./Expanded.module.css";
 
-const styles = classes(css, ["facts", "dot", "seg", "segButton", "move", "text", "plain"]);
+const styles = classes(css, [
+  "facts",
+  "dot",
+  "seg",
+  "segButton",
+  "move",
+  "reopen",
+  "text",
+  "plain",
+]);
 
 const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
   open: "status.open",
@@ -105,14 +114,15 @@ function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
   const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
   const date = localDate(task.created_at, clock.timeZone);
   // Created today: "today" alone, so today's date stays the strip's (A5 U1).
-  if (date === clock.today) return sayMsg(t, model.age.text);
+  const age = model.age === undefined ? "" : sayMsg(t, model.age.text);
+  if (date === clock.today) return age;
   const day = formatDay(date, clock.locale, { day: "numeric" });
   const month = formatDay(date, clock.locale, { month: "short" });
   const shown =
     date.slice(0, 4) === clock.today.slice(0, 4)
       ? t("row.date", { day, month })
       : t("row.dateYear", { day, month, year: date.slice(0, 4) });
-  return t("fact.createdValue", { date: shown, age: sayMsg(t, model.age.text) });
+  return t("fact.createdValue", { date: shown, age });
 }
 
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }) {
@@ -311,7 +321,22 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   if (task.lifecycle !== "active") {
     return (
       <dl className={styles.facts} aria-label={t("fact.label")}>
-        <Fact label={t("fact.status")}>{statusOf(task, t)}</Fact>
+        <Fact label={t("fact.status")}>
+          <span data-part="lifecycle">{statusOf(task, t)}</span>
+          {task.deleted_at === undefined ? (
+            // Read-only, apart from this: the way back for a task finished by mistake or too soon.
+            <button
+              type="button"
+              className={`${styles.move} ${styles.reopen}`}
+              data-part="reopen"
+              onClick={() => {
+                edits.reopen(task);
+              }}
+            >
+              {t("fact.reopen")}
+            </button>
+          ) : null}
+        </Fact>
         {priority === undefined ? null : (
           <Fact label={t("fact.priority")}>{t("row.priority", { level: Number(priority) })}</Fact>
         )}
@@ -341,7 +366,9 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
             </span>
           </Fact>
         )}
-        <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+        {task.created_at > 0 ? (
+          <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+        ) : null}
         {/* A value the person chose before the task was finished stays readable here, with Copy
             and Discard, until they choose: it is never dropped because someone checked the task
             off. Reopened, the task's control offers Try again. */}
@@ -450,7 +477,9 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         <AreaPicker task={task} />
         <Unsaved task={task.id} field="grouping" />
       </Fact>
-      <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+      {task.created_at > 0 ? (
+        <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+      ) : null}
     </dl>
   );
 }

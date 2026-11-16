@@ -30,6 +30,16 @@ export interface TaskRow {
   readonly position: string;
   readonly wrap_state?: string;
   readonly completed_at?: number;
+  /**
+   * The day it was completed, as a paged read gives it (`task.search`'s `completed`) for a finished
+   * task the live store does not hold. Not a compact row's column: `completed_at` wins when present.
+   */
+  readonly completed_on?: string;
+  /**
+   * When its current wait began, in milliseconds since the epoch (A5 3.5, 3.6): the Waiting view's
+   * age. Absent until the service's compact row carries it.
+   */
+  readonly waiting_since?: number;
   readonly deleted_at?: number;
   readonly created_at: number;
   readonly version: number;
@@ -92,6 +102,7 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
   "sources",
   "sources_more",
   "place",
+  "waiting_since",
 ]);
 
 /**
@@ -246,6 +257,7 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["project_id"], isString) ||
     !optional(v["deleted_at"], isNumber) ||
     !optional(v["touched"], isNumber) ||
+    !optional(v["waiting_since"], isNumber) ||
     !optional(v["sources"], isSources) ||
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace)

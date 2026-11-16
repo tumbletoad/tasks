@@ -386,15 +386,17 @@ export function List({
       {groups.map((group) => {
         const title = titleOf(group.item);
         // Today's sections are `section` elements (A5 3.22), named like every group by aria-label:
-        // a virtualised list may have unmounted the heading.
-        const isSection = group.item?.group.kind === "section";
+        // a virtualised list may have unmounted the heading. A flat group has no item, no heading
+        // and no name: its rows are the view's own list.
+        const kind = group.item?.group.kind;
+        const isSection = kind === "section";
         const Wrapper = isSection ? "section" : "div";
         return (
           <Wrapper
             key={group.key}
             className={styles.group}
-            role={isSection ? undefined : "group"}
-            aria-label={title}
+            role={isSection || group.item === undefined ? undefined : "group"}
+            aria-label={group.item === undefined ? undefined : title}
             data-section={isSection ? group.key : undefined}
           >
             {group.head === undefined ? null : (
@@ -407,7 +409,7 @@ export function List({
                 data-kind={group.item?.group.kind}
                 style={position(group.head)}
               >
-                {isSection ? null : (
+                {isSection || kind === "label" ? null : (
                   <span
                     className={
                       group.item?.group.slot === undefined

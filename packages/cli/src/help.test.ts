@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { SERVICE_VERBS } from "@tasks/service/install";
 import { CLI_SPEC } from "./args.ts";
-import { LOCAL_COMMANDS, shortHelp } from "./help.ts";
+import { LOCAL_COMMANDS, shortHelp, verbHelp } from "./help.ts";
 import { main, type Io } from "./main.ts";
 
 function recorder(argv: readonly string[]): Io & { out: string; err: string } {
@@ -93,13 +93,20 @@ describe("[A2.3.10.cli.help] help for every command", () => {
         expect(line, `${verb.verb} ${flag.flag}`).toBeDefined();
         expect(line?.endsWith("(required)"), `${verb.verb} ${flag.flag}`).toBe(flag.required);
         expect(usage.includes(` ${flag.flag}`), `${verb.verb} ${flag.flag}`).toBe(flag.required);
-        if (flag.required) checked += 1;
+        checked += 1;
       }
     }
     expect(checked).toBeGreaterThan(0);
-    expect((await helpOf(["help", "reopen"])).split("\n")[0]).toBe(
-      "Usage: tasks reopen <task> --reason <reason> [options]",
-    );
+    // No flag of today's contract is required, so a verb whose flag is shows how one reads.
+    const reopen = CLI_SPEC.verbs.find((verb) => verb.verb === "reopen");
+    if (reopen === undefined) throw new Error("tasks reopen is a verb");
+    const strict = {
+      ...reopen,
+      flags: reopen.flags.map((f) => (f.flag === "--reason" ? { ...f, required: true } : f)),
+    };
+    const lines = verbHelp(strict).split("\n");
+    expect(lines[0]).toBe("Usage: tasks reopen <task> --reason <reason> [options]");
+    expect(lines.find((line) => line.startsWith("  --reason"))).toMatch(/ \(required\)$/);
   });
 
   test("the description column of each help lines up", () => {

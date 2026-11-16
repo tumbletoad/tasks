@@ -161,3 +161,51 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and its pl
     expect(taskOf(unplace)?.row).toMatchObject({ title: "Fixture gone folder" });
   });
 });
+
+describe("[A5.3.5.http.waiting-since] a waiting task's row says when its wait began", () => {
+  test("from its creation or from the change to waiting; a new person keeps it; open has none", async () => {
+    const added = TaskAddResult.parse(
+      await call("task.add", {
+        tasks: [
+          { title: "Fixture waits from the start", status: "waiting", waiting_on: "Fixture One" },
+          { title: "Fixture waits later" },
+        ],
+        request_id: rid(),
+      }),
+    );
+    const [first, later] = added.tasks.map((t) => t.ref);
+    if (first === undefined || later === undefined) throw new Error("the tasks were not added");
+    const rowOf = async (title: string) => byTitle((await readSnapshot(reader)).tasks, title);
+
+    const fromStart = await rowOf("Fixture waits from the start");
+    expect(fromStart?.["waiting_since"]).toBe(fromStart?.["created_at"]);
+    expect(await rowOf("Fixture waits later")).not.toHaveProperty("waiting_since");
+
+    const update = async (set: Record<string, unknown>) => {
+      const read = TaskGetResult.parse(await call("task.get", { task: later }));
+      await call("task.update", { task: later, set, base: read.as_of, request_id: rid() });
+    };
+    const before = Date.now();
+    await update({ status: "waiting", waiting_on: "Fixture Two" });
+    const after = Date.now();
+    const since = (await rowOf("Fixture waits later"))?.["waiting_since"];
+    expect(typeof since).toBe("number");
+    expect(since as number).toBeGreaterThanOrEqual(before);
+    expect(since as number).toBeLessThanOrEqual(after);
+
+    // Waiting on someone else is the same wait.
+    await update({ waiting_on: "Fixture Three" });
+    expect((await rowOf("Fixture waits later"))?.["waiting_since"]).toBe(since);
+    // A batch carries it too.
+    const start = (await readHead(reader)).cursor.seq;
+    await update({ priority: 2 });
+    const { batch } = await readBatch(reader, start, { here });
+    const row = batch.events
+      .flatMap((e) => e.entities)
+      .find((e) => e.type === "task" && e.row?.["title"] === "Fixture waits later")?.row;
+    expect(row?.["waiting_since"]).toBe(since);
+
+    await update({ status: "open" });
+    expect(await rowOf("Fixture waits later")).not.toHaveProperty("waiting_since");
+  });
+});

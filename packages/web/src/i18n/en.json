@@ -23,7 +23,7 @@
   "nav.settings": "Settings",
   "nav.search": "Search",
   "nav.task": "Task",
-  "nav.counted": "{view}, {count, plural, one {# task} other {# tasks}}",
+  "nav.counted": "{view}, {count, plural, =0 {no tasks} one {# task} other {# tasks}}",
 
   "space.switch": "Space {name}. Switch space",
   "space.list": "Spaces on this machine",
@@ -57,6 +57,22 @@
 
   "group.inbox": "Inbox",
   "group.noArea": "No area",
+  "group.nobody": "No one named",
+  "group.checkedOff": "Checked off",
+
+  "view.empty.inbox": "Inbox is empty.",
+  "view.empty.open": "Nothing open.",
+  "view.empty.waiting": "Nothing waiting.",
+  "view.empty.review": "Nothing to review.",
+  "view.empty.backlog": "Backlog is empty.",
+  "view.empty.completed": "Nothing completed yet.",
+  "view.empty.agents": "No agent changes since this page opened.",
+  "completed.more": "Show more",
+  "completed.failed": "Completed tasks could not be read.",
+  "row.backToOpen": "Back to open",
+  "fact.reopen": "Reopen",
+  "row.completedTip": "Completed {date}",
+  "row.desc.completed": "completed {date}",
 
   "row.copy": "Copy",
   "row.copyFor": "Copy {title}",
@@ -278,6 +294,9 @@
   "toast.tryAgain": "Try again",
   "toast.checkFailed": "The task was not checked off. Try again.",
   "toast.checkConflict": "{who, select, user {You changed this task elsewhere} import {The import changed this task} other {{by} changed this task}} just now. It was not checked off.",
+  "toast.reopened": "Reopened",
+  "toast.reopenFailed": "The task was not reopened. Try again.",
+  "toast.reopenConflict": "{who, select, user {You changed this task elsewhere} import {The import changed this task} other {{by} changed this task}} just now. It was not reopened.",
   "toast.notSaved": "Your change to {field} was not saved",
   "toast.changedBy": "{who, select, user {You changed {field} elsewhere} import {The import changed {field}} other {{by} changed {field}}} just now",
 

@@ -365,10 +365,14 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
     }));
   const learnings = detail?.learnings ?? [];
   const ask = actions.ask;
+  // A row read from search knows no creation time (Completed, A5 3.5): the digest's says it.
+  const created = detail?.task.created === undefined ? Number.NaN : Date.parse(detail.task.created);
+  const facts =
+    task.created_at <= 0 && Number.isFinite(created) ? { ...task, created_at: created } : task;
   return (
     <div className={styles.body} data-part="expanded">
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
-      <Facts task={task} clock={clock} />
+      <Facts task={facts} clock={clock} />
       <div className={styles.content}>
         {detail?.outcome === undefined ? null : (
           <div

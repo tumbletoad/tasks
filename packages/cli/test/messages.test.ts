@@ -54,13 +54,14 @@ describe("[A3.3.4.finish.already-wrapped] tasks done on a finished task", () => 
 
 describe("[A3.3.5.error-text] a required flag left out", () => {
   test(
-    "the CLI names the flag before any call; --input without it is reported missing, not a wrong type",
+    "a field a script must give is named by its path and reported missing, not a wrong type; the person may leave it out",
     async () => {
-      const bare = await tasks(["reopen", "M-1"]);
+      const bare = await tasks(["reopen", "M-1"], false);
       expect(bare.code).toBe(EXIT_CODES.usage);
-      expect(bare.stderr).toMatch(/^error invalid_input: tasks reopen needs --reason\. /);
+      expect(bare.stderr).toMatch(/^error invalid_input: /m);
+      expect(bare.stderr).toContain("reason");
 
-      const input = await tasks(["reopen", "--input", "-", "--json"], true, '{"task":"M-1"}');
+      const input = await tasks(["reopen", "--input", "-", "--json"], false, '{"task":"M-1"}');
       expect(input.code).toBe(EXIT_CODES.usage);
       expect(JSON.parse(input.stdout)).toMatchObject({
         error: {
@@ -68,6 +69,10 @@ describe("[A3.3.5.error-text] a required flag left out", () => {
           data: { issues: [{ path: "reason", message: "Missing" }] },
         },
       });
+
+      const person = await tasks(["reopen", "M-1"]);
+      expect(person.code).toBe(0);
+      expect(person.stdout).toContain("M-1");
     },
     LONG,
   );

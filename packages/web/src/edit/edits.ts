@@ -515,6 +515,55 @@ export class Edits {
     );
   }
 
+  /**
+   * Reopen a finished task (the facts' Reopen): one action, with a base, and an Undo that
+   * finishes it again by its own commit. Its earlier outcome and learnings stay with it.
+   */
+  reopen(task: TaskRow): void {
+    const sent = this.#sendWith(task.id, ["lifecycle"], this.#deps.asOf(), (base, request) =>
+      this.#deps.client.task.reopen({
+        task: task.id,
+        base: base ?? "",
+        request_id: request,
+      }),
+    );
+    const reopened: Omit<Toast, "key"> = {
+      kind: "undo",
+      text: { id: "toast.reopened" },
+      action: {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo(sent);
+        },
+      },
+    };
+    const toast = this.#toast(reopened);
+    void sent.commit.then((commit) => {
+      if (commit !== undefined) this.#fieldsOf.set(commit, ["lifecycle"]);
+    });
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say, late) => {
+        if (decision.ok) {
+          if (decision.value.result === "no_change") say(undefined);
+          else if (late) say(reopened);
+          return;
+        }
+        if (this.#deps.failed(decision.error)) return;
+        const conflict = problemOf(decision.error)?.conflicts[0];
+        say({
+          kind: "error",
+          text:
+            conflict === undefined
+              ? { id: "toast.reopenFailed" }
+              : { id: "toast.reopenConflict", values: whoOf(conflict.by) },
+        });
+      },
+      toast,
+    );
+  }
+
   /** The check-offs of this tab still in their hold, with their writes. */
   readonly #checks = new Map<string, Named>();
 

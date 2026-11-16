@@ -2346,7 +2346,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `task` | string, max 40 | yes | Task ref (M-14) or ID |
-| `reason` | string, max 200 | yes | Why it is open again |
+| `reason` | string, max 200 | agents only | Why it is open again |
 | `base` | string, max 40 | yes | as_of from your last read, verbatim |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 | `mode` | "apply" \| "propose" | no, default `"apply"` | propose: ask the user to decide |
