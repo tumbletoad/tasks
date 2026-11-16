@@ -183,11 +183,16 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     } finally {
       user.close();
     }
+    // The edited file is moved aside before it is rendered again, so a poll may find none there.
+    const renderedAgain = (): boolean => {
+      try {
+        return readFileSync(edited, "utf8").startsWith("---\ngenerated: true\n");
+      } catch {
+        return false;
+      }
+    };
     await waitFor(
-      () =>
-        existsSync(deleted) && readFileSync(edited, "utf8").startsWith("---\ngenerated: true\n")
-          ? true
-          : undefined,
+      () => (existsSync(deleted) && renderedAgain() ? true : undefined),
       30_000,
       "the rebuild",
     );

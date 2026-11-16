@@ -1,21 +1,21 @@
-// Doctor's other-accounts check (A2 3.13 "Other user accounts", 3.8.6; A6 3.3; R18): v1 assumes
-// one person per machine, because another account could serve a fake page at the UI's address
-// while Tasks is stopped. Doctor warns when the machine has other interactive user accounts.
+// Doctor's accounts row: how many other user accounts this computer has, as plain information.
+// Nothing behaves differently when there are others, so the row is never a warning; the limit it
+// stands for is in docs/promises-and-limits.md.
 //
 // - Linux: `getent passwd` entries in the regular UID range with a login shell other than nologin
 //   or false.
 // - macOS: `dscl . -list /Users UniqueID` from 501 up, without the `_` service accounts.
 // - Windows: user SIDs (S-1-5-21-…) under ProfileList, which needs no admin rights.
 //
-// An agent app's own sandbox accounts are not people and are not counted (A2 3.13): the
-// Codex CLI's Windows sandbox makes accounts in a group it manages, `CodexSandboxUsers`. Only the
-// counts leave this module: no account name or SID is printed or logged. The OS's own tools run as
-// helpers of the runner (@tasks/launch helpers.ts, A3 3.14), like every program doctor starts.
+// An agent app's own sandbox accounts are not people and are not counted: the Codex CLI's Windows
+// sandbox makes accounts in a group it manages, `CodexSandboxUsers`. Only the counts leave this
+// module: no account name or SID is printed or logged. The OS's own tools run as helpers of the
+// runner (@tasks/launch helpers.ts), like every program doctor starts.
 import { readFileSync } from "node:fs";
 import { win32 } from "node:path";
 import { helperOutput } from "@tasks/launch/helpers";
 
-/** Groups that agent apps manage for their own sandbox accounts (A2 3.13). */
+/** Groups that agent apps manage for their own sandbox accounts. */
 export const SANDBOX_GROUPS = ["CodexSandboxUsers"] as const;
 
 export interface AccountFacts {

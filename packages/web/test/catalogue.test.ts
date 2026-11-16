@@ -58,6 +58,8 @@ const SAMPLE = {
   machine: "mira-desktop",
   by: "Codex",
   what: "Codex prepared the changelog",
+  why: "needs_recovery",
+  way: "Recover it.",
   actor: "Codex",
   who: "Ana Reyes",
   ref: "LUM-212",

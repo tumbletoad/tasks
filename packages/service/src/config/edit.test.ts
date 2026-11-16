@@ -328,15 +328,13 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
       if ((error as NodeJS.ErrnoException).code === "EPERM") context.skip();
       throw error;
     }
-    // A link is never followed (A2 3.2.4): on Linux and macOS it is named as a link, with
-    // where it points; Windows has no such message, and it is unreadable there. Fatal either way.
-    const posix = process.platform !== "win32";
+    // A link is never followed: on every OS it is named as a link, with where it points.
     expect(loadMachineConfig(config, "linux").problems).toEqual([
-      { key: "", code: posix ? "unsafe_permissions" : "unreadable", severity: "error" },
+      { key: "", code: "unsafe_permissions", severity: "error" },
     ]);
     expect(
       editMachineToml(config, [{ op: "set", table: ["log"], key: "level", value: "info" }]),
-    ).toEqual({ ok: false, reason: posix ? "unsafe" : "invalid_file" });
+    ).toEqual({ ok: false, reason: "unsafe" });
     expect(lstatSync(join(config, MACHINE_TOML)).isSymbolicLink()).toBe(true);
   });
 
@@ -384,10 +382,9 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
       if ((error as NodeJS.ErrnoException).code === "EPERM") context.skip();
       throw error;
     }
-    const posix = process.platform !== "win32";
     expect(
       editMachineToml(config, [{ op: "set", table: ["log"], key: "level", value: "debug" }]),
-    ).toEqual({ ok: false, reason: posix ? "unsafe" : "invalid_file" });
+    ).toEqual({ ok: false, reason: "unsafe" });
     expect(lstatSync(join(config, MACHINE_TOML)).isSymbolicLink()).toBe(true);
     expect(readFileSync(join(real, MACHINE_TOML), "utf8")).toBe(text);
   });

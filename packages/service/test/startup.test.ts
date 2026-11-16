@@ -205,6 +205,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
         reason: "read_only_copy",
         code: "SPACE_READ_ONLY_COPY",
         id: original.space.spaceId,
+        message: expect.stringContaining("space claim <folder>") as unknown,
       },
     ]);
     const change = await service.spaceManager.claim(0);
@@ -220,7 +221,13 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     const other = await fixtureSpace(join(spaces, "theirs"), newId("m"));
     const service = await start(home, [other.folder], { maintenance: false });
     expect(service.spaces()).toEqual([
-      { entry: 0, state: "read_only", reason: "not_authority", id: other.space.spaceId },
+      {
+        entry: 0,
+        state: "read_only",
+        reason: "not_authority",
+        id: other.space.spaceId,
+        message: expect.stringContaining("Another computer owns this space") as unknown,
+      },
     ]);
     expect(events(home, "space.read_only")).toEqual([
       expect.objectContaining({ entry: 0, reason: "not_authority" }),
@@ -345,7 +352,13 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
     });
     expect(locked).toBe(true);
     expect(service.spaces()).toEqual([
-      { entry: 0, state: "unavailable", reason: "open_failed", code: "ETIMEDOUT" },
+      {
+        entry: 0,
+        state: "unavailable",
+        reason: "open_failed",
+        code: "ETIMEDOUT",
+        message: expect.stringContaining("Try again") as unknown,
+      },
     ]);
     // A later close of the space has no worker of its own to close: the hung one keeps its watch.
     await service.spaceManager.close(0);

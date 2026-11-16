@@ -351,6 +351,17 @@ function partOf(
   return problem === undefined ? undefined : { what, path: facts.path, problem, facts };
 }
 
+/**
+ * The part for a link at `path`, judged by no owner: what Windows gets, where the rule is the
+ * ACL's, so that it says it is a link and to what, as Linux and macOS do.
+ */
+function linkPart(what: UnsafePart["what"], path: string): UnsafePart | undefined {
+  const facts = factsOf(path, what, { followLink: false });
+  return typeof facts === "object" && facts.link !== undefined
+    ? { what, path, problem: "link", facts }
+    : undefined;
+}
+
 /** The lstat of `path`, or the error's code. */
 function lstatOrCode(path: string): Stats | string {
   try {
@@ -374,7 +385,7 @@ const sameObject = (a: Stats, b: Stats) =>
  * the answer is the same before machine.toml exists and after Tasks has written one into it. Within
  * a folder that fails nothing is read; the file's own facts are still judged when they can be seen,
  * so that one command fixes both. Windows: a link in either place is not followed either, and is
- * `unreadable`; the profile's ACL is doctor's to check.
+ * named as a link with its target; the profile's ACL is doctor's to check.
  */
 export function loadMachineConfig(
   configDir: string,
@@ -390,7 +401,10 @@ export function loadMachineConfig(
     // Nothing there: the file is missing too, unless a file on the way makes it unreadable.
     if (folder !== "ENOENT") return unreadable(true);
   } else if (folder.isSymbolicLink()) {
-    if (person === undefined) return unreadable(true);
+    if (person === undefined) {
+      const part = linkPart("folder", configDir);
+      return part === undefined ? unreadable(true) : unsafeConfig([part]);
+    }
     const facts = factsOf(configDir, "folder", { followLink: false });
     const part = typeof facts === "object" ? partOf("folder", facts, person) : undefined;
     return part === undefined ? unreadable(true) : unsafeConfig([part]);
@@ -425,6 +439,9 @@ export function loadMachineConfig(
         const part = partOf("file", file, person);
         if (part !== undefined) return unsafeConfig([part]);
       }
+    } else {
+      const part = linkPart("file", path);
+      if (part !== undefined) return unsafeConfig([part]);
     }
     return { present: true, config: DEFAULT_CONFIG, problems: [read.problem] };
   }
