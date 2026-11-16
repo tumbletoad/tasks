@@ -1,11 +1,7 @@
-// The theme a browser shows (A5 3.19): `sumi` (the default, D17), `washi`, or `system`, which
-// follows the browser's colour scheme live through the stylesheet alone.
-//
-// A1's `ui.theme` space preference, written by `pref.set` and carried in the snapshot, is a
-// candidate home of this choice. Until the settings step (M5.11) decides between a space, machine
-// or browser scope, the choice is kept per browser under `localStorage["<product>.theme"]` (A5 3.19).
-// A stored value is untrusted (A5 3.26): only one of the three words is used, anything else is
-// removed and the default applies. Every access is wrapped: storage can be missing or blocked.
+// The theme a page shows: `sumi` (the default), `washi`, or `system`, which follows the browser's
+// colour scheme live through the stylesheet alone. The choice is this computer's: the service keeps
+// it in machine.toml, the shell arrives with it on the root element, so the first paint is already
+// in it, and the feed brings each change to every tab.
 import { PRODUCT_ID } from "@tasks/brand";
 import type { TokenStore } from "../stored.ts";
 
@@ -13,41 +9,42 @@ export const THEME_CHOICES = ["sumi", "washi", "system"] as const;
 export type ThemeChoice = (typeof THEME_CHOICES)[number];
 
 export const DEFAULT_THEME: ThemeChoice = "sumi";
-export const THEME_KEY = `${PRODUCT_ID}.theme`;
 
-const isChoice = (value: unknown): value is ThemeChoice =>
+export const isThemeChoice = (value: unknown): value is ThemeChoice =>
   typeof value === "string" && (THEME_CHOICES as readonly string[]).includes(value);
 
-/** The stored choice when it is one of the three words; the default otherwise. */
-export function readTheme(store: TokenStore | undefined): ThemeChoice {
-  if (store === undefined) return DEFAULT_THEME;
-  let value: unknown;
-  try {
-    value = store.getItem(THEME_KEY);
-  } catch {
-    return DEFAULT_THEME;
-  }
-  if (value === null) return DEFAULT_THEME;
-  if (isChoice(value)) return value;
-  try {
-    store.removeItem(THEME_KEY);
-  } catch {
-    // Blocked storage: the default applies for this load.
-  }
-  return DEFAULT_THEME;
-}
-
-export function keepTheme(store: TokenStore | undefined, choice: ThemeChoice): void {
-  if (store === undefined || !isChoice(choice)) return;
-  try {
-    store.setItem(THEME_KEY, choice);
-  } catch {
-    // Storage is blocked or full: the choice holds for this load.
-  }
+/** The theme the shell was served in, or the default (a page not served by the service). */
+export function servedTheme(root: HTMLElement): ThemeChoice {
+  const value = root.dataset["theme"];
+  return isThemeChoice(value) ? value : DEFAULT_THEME;
 }
 
 /** Shows `choice` at once: an attribute on the root element, which the stylesheet reads. */
 export function applyTheme(root: HTMLElement, choice: ThemeChoice): void {
-  if (choice === DEFAULT_THEME) delete root.dataset["theme"];
-  else root.dataset["theme"] = choice;
+  root.dataset["theme"] = choice;
+}
+
+/** Where builds before this computer kept the choice kept it, per browser. */
+export const LEGACY_THEME_KEY = `${PRODUCT_ID}.theme`;
+
+/**
+ * A choice an older build kept in this browser, other than the default: the page hands it to this
+ * computer once, so nobody loses their theme to the update. Anything else stored is no choice.
+ */
+export function legacyTheme(store: TokenStore | undefined): ThemeChoice | undefined {
+  let value: unknown;
+  try {
+    value = store?.getItem(LEGACY_THEME_KEY);
+  } catch {
+    return undefined;
+  }
+  return isThemeChoice(value) && value !== DEFAULT_THEME ? value : undefined;
+}
+
+export function forgetLegacyTheme(store: TokenStore | undefined): void {
+  try {
+    store?.removeItem(LEGACY_THEME_KEY);
+  } catch {
+    // Blocked storage: nothing was kept there to forget.
+  }
 }

@@ -8,6 +8,7 @@
 // the toast's words are formatted here from message IDs: the edits controller holds no text.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/intl.tsx";
+import { is } from "../keys/keymap.ts";
 import type { Msg } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import type { ToastKind } from "../edit/edits.ts";
@@ -105,7 +106,7 @@ export function Toast({
         if (!event.currentTarget.contains(event.relatedTarget)) setHeld(false);
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && toast !== undefined) {
+        if (is(event.nativeEvent, "close") && toast !== undefined) {
           event.preventDefault();
           returnFocus();
         }

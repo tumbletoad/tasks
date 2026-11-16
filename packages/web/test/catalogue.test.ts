@@ -82,6 +82,7 @@ const SAMPLE = {
   open: 3,
   done: 1,
   more: "yes",
+  search: "Ctrl K",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

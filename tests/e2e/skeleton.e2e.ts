@@ -139,7 +139,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
     const copy = row
       .getByRole("toolbar")
       .getByRole("button", { name: `Copy ${world.spare.title}` });
-    await expect(copy).toHaveAttribute("title", /Shift-click copies the context pack/u);
+    await expect(copy).toHaveAttribute("data-tip", /Shift-click copies the context pack/u);
     await copy.click({ modifiers: ["Shift"] });
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { copied: string[] }).copied.length), {

@@ -38,6 +38,16 @@ export interface Receipt {
   readonly terminal?: { readonly app: string; readonly source: string };
 }
 
+/** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
+export interface TerminalView {
+  /** machine.toml's choice: `auto` follows the operating system's default. */
+  readonly chosen: string;
+  readonly used: { readonly app: string; readonly source: string; readonly found: boolean } | null;
+  readonly unsupported: string | null;
+  readonly unread: "windows" | "desktop" | null;
+  readonly installed: readonly string[];
+}
+
 /** The service refused the token: it expired or was revoked. */
 export class SignedOut extends Error {}
 /** The service runs another build than the one that served this page. */
@@ -154,6 +164,20 @@ export class Api {
       },
       copy: result.copy,
     };
+  }
+
+  /** Sets one of this computer's settings of the page, or resets it with null. */
+  async setMachinePreference(key: string, value: unknown): Promise<void> {
+    await this.#result("/api/v1/machine/pref", { key, value });
+  }
+
+  /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */
+  async terminal(app?: string): Promise<TerminalView | null> {
+    const reply = await this.#result<{ terminal: TerminalView | null }>(
+      "/api/v1/machine/terminal",
+      app === undefined ? {} : { app },
+    );
+    return reply.terminal;
   }
 
   async receipts(task: string): Promise<Receipt[]> {

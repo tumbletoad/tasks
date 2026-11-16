@@ -209,7 +209,7 @@ function DueBody({
             key={id}
             type="button"
             className={styles.pick}
-            title={longDate(date, clock, t)}
+            data-tip={longDate(date, clock, t)}
             onClick={() => {
               onPick(date);
             }}

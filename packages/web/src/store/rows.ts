@@ -208,7 +208,22 @@ export interface HelloMessage {
   readonly build: string;
 }
 
-export type FeedMessage = SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage;
+/** A setting of this computer as the feed carries it: its key and value, or its default. */
+export interface MachinePreference {
+  readonly key: string;
+  readonly value: unknown;
+  /** `default`: nobody chose it. */
+  readonly state: string;
+}
+
+/** This computer's settings of the page, after `hello` and again on each change. */
+export interface MachineMessage {
+  readonly type: "machine";
+  readonly preferences: readonly MachinePreference[];
+}
+
+export type FeedMessage =
+  SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage | MachineMessage;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -409,6 +424,22 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
       return { type: "hello", build: isString(value["build"]) ? value["build"] : "" };
     case "error":
       return { type: "error", code: isString(value["code"]) ? value["code"] : "" };
+    case "machine": {
+      const list = value["preferences"];
+      if (!Array.isArray(list)) return undefined;
+      const preferences = list.flatMap((item: unknown) =>
+        isRecord(item) && isString(item["key"])
+          ? [
+              {
+                key: item["key"],
+                value: item["value"],
+                state: isString(item["state"]) ? item["state"] : "",
+              },
+            ]
+          : [],
+      );
+      return { type: "machine", preferences };
+    }
     case "snapshot": {
       const space = value["space"];
       const cursor = cursorOf(value["cursor"]);

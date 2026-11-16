@@ -347,9 +347,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         )}
         {due === undefined ? null : (
           <Fact label={t("fact.due")}>
-            <span data-tip={due.tip} title={due.tip}>
-              {due.text}
-            </span>
+            <span data-tip={due.tip}>{due.text}</span>
           </Fact>
         )}
         {area === undefined ? null : (
