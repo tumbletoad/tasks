@@ -275,8 +275,14 @@ export function shellArg(
   return shellWord("linux", path);
 }
 
-/** A path in a sentence: as a person types it, or with its control characters escaped. */
+/**
+ * A path in a sentence: as a person types it, or with its control characters escaped. A Windows
+ * path, for which no POSIX shell line is given, as Windows shows it.
+ */
 export function shellPath(path: string, home: string | undefined = homeOrUndefined()): string {
+  if (/^(?:[A-Za-z]:[\\/]|\\\\)/u.test(path)) {
+    return /\p{Cc}/u.test(path) ? JSON.stringify(path) : path;
+  }
   return shellArg(path, home) ?? JSON.stringify(path);
 }
 
