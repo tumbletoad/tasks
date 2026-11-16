@@ -9,7 +9,7 @@
 //                                           completed, agents (`?day=` Today's chosen day)
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
-//   /s/:space/search?q=                     search results (M5.10)
+//   /s/:space/search?q=                     search results of the top field (`?task=` too)
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings/:section             settings (M5.11; Appearance here)
 //
@@ -122,14 +122,20 @@ const projectRoute = createRoute({
   },
 });
 
+/** The search's text (at most what the field takes) and its expanded result. */
+export function searchSearch(search: Record<string, unknown>): { q?: string; task?: string } {
+  const q = search["q"];
+  return { ...(typeof q === "string" && q.length <= 500 ? { q } : {}), ...taskSearch(search) };
+}
+
 const searchRoute = createRoute({
   getParentRoute: () => spaceRoute,
   path: "search",
-  validateSearch: (search: Record<string, unknown>): { q?: string } => {
-    const q = search["q"];
-    return typeof q === "string" && q.length <= 500 ? { q } : {};
+  validateSearch: searchSearch,
+  component: function SearchRoute() {
+    const { q, task } = searchRoute.useSearch();
+    return <SearchPage q={q} task={task} />;
   },
-  component: SearchPage,
 });
 
 const taskRoute = createRoute({

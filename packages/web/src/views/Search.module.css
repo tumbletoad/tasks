@@ -1,0 +1,45 @@
+/* The search results: the lines around the one list. */
+
+.line {
+  margin: 24px 0;
+  color: var(--k-muted);
+}
+
+/*
+ * What the results hold, or "Results changed · Refresh": muted, above the results, and always
+ * the same height, so neither moves a row.
+ */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 12px 0 0;
+  color: var(--k-muted);
+  font-size: 0.875rem;
+}
+
+.foot {
+  margin: 16px 0 24px;
+}
+
+.action {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--k-hover);
+}
+
+.line .action {
+  margin-inline-start: 8px;
+}

@@ -3640,6 +3640,54 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-10.e2e.capture",
+      "title": "In Chromium and Firefox against the real service: a capture's date, priority, area/project and star show as chips before it is saved, a chip kept as text goes back into the title, Enter adds the task with what the chips said and never searches, text that only looks like a shortcut and markup stay text, @person waits on them, and an area's view puts the capture in its area unless the person turns that off",
+      "source": "A5 3.13, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-10.e2e.search",
+      "title": "In Chromium and Firefox against the real service: / starts a search and the field says so, results are the one list (expand into the URL, check-off with the toast and Ctrl+Z, the row staying checked after its hold), finished tasks are a group of their own, a search with words offers to add it as a task, and Escape returns to the view with the draft as it was",
+      "source": "A5 3.13, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-10.e2e.changes",
+      "title": "In Chromium and Firefox against the real service: while search results are open an agent's new match and a task that stops matching do not move the list, an edit shows in place, Results changed offers Refresh, and Refresh shows the new matches",
+      "source": "A5 3.13, A5 3.15, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-10.e2e.keyboard",
+      "title": "In Chromium and Firefox: both modes by keyboard alone (/ and typing, Enter to the first result, the list's arrows and Enter and Escape, / back to the field, Escape out to add mode), the lens and the plus switching with the text carried, and Tab taking the area type-ahead's first suggestion",
+      "source": "A5 3.13, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-10.e2e.unindexed",
+      "title": "In Chromium and Firefox, with the service answering as for a space before the word index: the page says in plain words that words cannot be searched, leaves them out and shows what the filters match",
+      "source": "A5 3.13, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-10.e2e.screens",
+      "title": "In Chromium and Firefox: the capture's chips and the search results with Results changed in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "source": "A5 3.13, A5 3.19, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-01.e2e.task-links",
       "title": "In Chromium and Firefox: a task link opened on a machine without a default keeps its task through the space chooser, and a navigation from one task's route to another's, and Back, expands the task each route names",
       "source": "A5 3.3, A2 3.1, A7 3.12 M5.01",
@@ -3883,6 +3931,22 @@
       "id": "A5.3.11.web.due",
       "title": "The due date's field reads ISO dates, tod and today, tom and tomorrow, weekdays as the service does, +3d and +2w, and - to clear, and nothing else; the quick picks give today, tomorrow, the next Monday that is not today and a week on",
       "source": "A5 3.11, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.13.web.capture",
+      "title": "A quick capture reads dates (today, tomorrow, weekdays, next week, in N days, +3d, 20 nov, ISO, with a lead word), p1 to p4, #area and #area/project, @person and * as whole words only, the first of each kind; words that only look like a shortcut stay text, a shortcut the person kept stays text, the view's area applies unless named or turned off, and the area type-ahead finds what is typed",
+      "source": "A5 3.13, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.13.web.search",
+      "title": "Search results: every open match read at once and finished ones a page at a time by the service's cursor, an expired cursor starting the search again with one page more, two groups that keep their rows (the live row when the store holds it), the expanded task kept at its place, the filters alone for a space without the word index, and the fields that make a change offer a refresh",
+      "source": "A5 3.13, A3 3.9.5, A7 3.12 M5.10",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
