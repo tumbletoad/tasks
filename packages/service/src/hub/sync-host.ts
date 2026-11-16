@@ -12,9 +12,10 @@
 //   SyncTargets value through .NET alone, and writes them in base64 of UTF-8, so no console code
 //   page alters a path. The script comes on stdin, not on the command line. Right after it, each
 //   local drive's volume identity is read, so a kept answer counts only for the volumes it
-//   describes. About 0.3 s; an answer is kept for a minute, so the spaces that open together at
-//   start share one run, and a failed run is not kept. Any failure, a read inside the run included, and any byte of its output that
-//   the script does not write, gives no facts, which leaves a folder unchecked (sync-folders.ts).
+//   describes. An answer is kept for a minute, so the spaces that open together at start share one
+//   run, and a failed run is not kept. Any failure, a read inside the run included, and any byte of
+//   its output that the script does not write, gives no facts, which leaves a folder unchecked
+//   (sync-folders.ts).
 // - Linux: `fs.statfs`'s type and /proc/self/mountinfo (bounded). macOS: /sbin/mount's output.
 import { spawn } from "node:child_process";
 import { lstat, open, readdir, realpath, stat, statfs } from "node:fs/promises";
@@ -22,10 +23,20 @@ import os from "node:os";
 import { win32 } from "node:path";
 import { base64Text, isBase64, REGISTRY_READS, scriptOutput } from "@tasks/launch";
 import { system32 } from "./identity.ts";
-import type { PathKind, SyncHost, WindowsSyncFacts } from "./sync-folders.ts";
+import {
+  CHECK_TIMEOUT_MS,
+  type PathKind,
+  type SyncHost,
+  type WindowsSyncFacts,
+} from "./sync-folders.ts";
 
 const FACTS_TTL_MS = 60_000;
-const RUN_TIMEOUT_MS = 10_000;
+/**
+ * A run's bound, which only ends a run that hangs: the whole check's. Windows PowerShell answers in
+ * about a second on an idle machine, but at a login or beside an antivirus scan its start alone can
+ * take more than ten, and a run cut short leaves every space it was for read-only.
+ */
+const RUN_TIMEOUT_MS = CHECK_TIMEOUT_MS;
 const OUTPUT_MAX_BYTES = 4 * 1024 * 1024;
 
 /** The strings a section accepts for a path: REG_SZ, and REG_EXPAND_SZ expanded. */
