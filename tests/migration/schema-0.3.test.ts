@@ -23,7 +23,6 @@ import { restoreBackup, restoreBackupWith } from "../../packages/storage/src/res
 import { openSpace } from "../../packages/storage/src/space.ts";
 import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
 import type { Id } from "../../packages/storage/src/ids.ts";
-import { StorageWorker } from "../../packages/storage/src/worker/client.ts";
 import type { Credential, Operation } from "../../packages/storage/src/write/request.ts";
 import { SpaceWriter, type MachineInfo } from "../../packages/storage/src/write/writer.ts";
 import {
@@ -205,7 +204,8 @@ describe("[A1.5.migration.from-0.2] the 0.2 fixture migrates to 0.3 behind its v
   test("every 0.2 row stays, the sessions and runs tables are empty, the schema is a new 0.3 space's, and the backup restores the fixture", async () => {
     const before = fixture.facts;
     const folder = copyOfFixture();
-    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    // The 0.3 builds' chain: this test is the 0.3 step's (schema-0.4.test.ts migrates to 0.4).
+    const worker = await workerWithSteps("0.3");
     try {
       // The storage worker's writer migrates on open, under the space's claim (A1 3.17).
       const writer = await worker.openSpaceWriter(folder, { machine: fixture.machine });
@@ -228,7 +228,7 @@ describe("[A1.5.migration.from-0.2] the 0.2 fixture migrates to 0.3 behind its v
     }
 
     const checked = await checkedDriver();
-    const opened = openSpace(checked, folder, { role: "reader" });
+    const opened = openSpaceAt(checked, folder, { role: "reader" }, STEPS_0_3);
     let migratedSchema: unknown[];
     try {
       const { conn } = opened;

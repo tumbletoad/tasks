@@ -547,7 +547,7 @@
     },
     {
       "id": "A1.5.migration.from-0.1",
-      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to the build's latest revision behind its verified barrier backup: every 0.1 row stays, one migration commit per step, the new tables empty, the schema equal to a new space's and to the pinned released schema, and the barrier backup restores the fixture's counts, last_seq and rows",
+      "title": "The 0.1 fixture (the Mira sample built by the 0.1 chain, with the 0.1 builds' digest) migrates to the build's latest revision behind its verified barrier backup: every 0.1 row stays, one migration commit per step, the new tables empty but the search index, which holds the tasks, the schema equal to a new space's and to the pinned released schema, and the barrier backup restores the fixture's counts, last_seq and rows",
       "source": "A1 3.4, A1 3.17, A1 5, A7 3.10 M3.01, MIL-02",
       "owner": "M3",
       "kind": "ci",
@@ -594,6 +594,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.from-0.3",
+      "title": "The 0.3 fixture (the Mira sample built by the 0.3 chain, with a session row) migrates to 0.4 behind its verified barrier backup: every 0.3 row stays, one migration commit, the search index equal to a rebuild with every document kind and finding a task by a word of its title, the schema equal to a new 0.4 space's and to the pinned 0.4 schema, and the barrier backup restores the fixture",
+      "source": "A1 3.4, A1 3.12, A1 3.17, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.statement-faults-0004",
+      "title": "A fault at every statement boundary of the 0.3 to 0.4 migration, the search index's fill included, one at a time, and a COMMIT that SQLite refuses, roll it back: the space's database, its schema and space.json are the 0.3 sample's, it opens read-only with the failure's message, the 0.3 build still writes it, and without the fault it migrates",
+      "source": "A1 3.17, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.migration.older-build-0004",
+      "title": "A 0.3 build refuses to open a 0.4 space writable: the 0.3 chain's writer, in the calling thread and in its storage worker, is refused with SPACE_TOO_NEW and changes nothing, its reader reads, and it restores no 0.4 backup",
+      "source": "A1 3.17, A1 5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.run-parents-0003",
       "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
       "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",
@@ -603,7 +627,7 @@
     },
     {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2 and 0.3: a populated 0.1 fixture space, a fault planted in its migration' last step, the space left at 0.1 and served read-only with A1's message, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space",
+      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task tasks find finds by a word",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",
@@ -630,6 +654,14 @@
       "title": "Restore into a new folder verifies sizes, SHA-256, integrity_check, revision and the sidecar's facts before the folder appears; a tampered, mismatched, linked or newer backup is refused and leaves nothing",
       "source": "A1 3.18",
       "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.restore.search-derived",
+      "title": "The search index is derived: a backup made before schema 0.4, one made after it, one whose search tables are missing and one whose search tables differ each verify by a trial restore and restore into a new folder and in place, with the index made again from the copy's tasks and a new space's schema",
+      "source": "A1 3.12, A1 3.18",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -1133,6 +1165,14 @@
       "id": "A2.3.1.hub.failed-migration",
       "title": "A failed migration is not tried again by itself: ten opens of a space whose migration fails leave one barrier backup and one failure record, and the nine later opens write nothing (backups folder, settings file and database byte for byte) and serve it read-only with a message that names the retry; the record survives a restart; another build, another state of the database (a restore in place, another writer) and the person's explicit retry each try again behind a new barrier backup; the retry is refused for a caller that is not the user; a successful retry migrates and forgets the record; a damaged or unreadable record is no record",
       "source": "A1 3.17, A1 3.18, A2 3.1, A2 3.6.5, A7 3.10 M3.01, MIL-02",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.search-after-migration",
+      "title": "Through a running service's request path: a 0.3 space migrates on open and its words are found, and the index follows an add, a title change, a note and a completion; a space the build creates answers words from its first task; a space whose update failed answers filters and refuses words with not_indexed and a line that says the update failed and where to see why",
+      "source": "A1 3.12, A1 3.17, A3 3.9",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
