@@ -23,6 +23,7 @@ import { writeVersionManifest } from "../../packages/service/src/version/folder.
 import { finishInstall } from "../../packages/service/src/version/install.ts";
 import { archiveName, type Platform } from "../../packages/service/src/version/release.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
+import type { HeldRun, RunsHold } from "../../packages/service/src/install/context.ts";
 import type {
   RunningService,
   SelfTest,
@@ -211,6 +212,57 @@ export class FakeControl implements ServiceControl {
   waitFor(version: string): Promise<boolean> {
     this.calls.push(`wait ${version}`);
     return Promise.resolve(this.version === version);
+  }
+
+  /** The service's background runs, when a test gives it some. */
+  runs: FakeRuns | undefined;
+
+  holdRuns(): Promise<RunsHold | undefined> {
+    const runs = this.runs;
+    if (runs === undefined || this.version === undefined) return Promise.resolve(undefined);
+    this.calls.push("hold");
+    return Promise.resolve(runs.hold(this.calls));
+  }
+}
+
+/**
+ * A stand-in service's runs: what blocks an update, which a test changes, and the runs that do not
+ * stop in time when asked to.
+ */
+export class FakeRuns {
+  blocking: HeldRun[];
+  /** The runs left after a Stop of all. */
+  stubborn: HeldRun[] = [];
+  #waiters: (() => void)[] = [];
+
+  constructor(blocking: HeldRun[]) {
+    this.blocking = blocking;
+  }
+
+  /** What blocks becomes `next`, as the service would tell it. */
+  set(next: HeldRun[]): void {
+    this.blocking = next;
+    for (const resolve of this.#waiters.splice(0)) resolve();
+  }
+
+  hold(calls: string[]): RunsHold {
+    const runs = this;
+    return {
+      blocking: () => runs.blocking,
+      changed: () =>
+        new Promise<void>((resolve) => {
+          runs.#waiters.push(resolve);
+        }),
+      held: true,
+      stopAll: () => {
+        calls.push("stop runs");
+        runs.blocking = runs.stubborn;
+        return Promise.resolve(runs.stubborn);
+      },
+      release: () => {
+        calls.push("release");
+      },
+    };
   }
 }
 

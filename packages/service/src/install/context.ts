@@ -461,6 +461,109 @@ export async function requestRestart(
   }
 }
 
+/** A run an update would cut short, as the service names it (`runs/blocking`). */
+export interface HeldRun {
+  readonly space_name: string | null;
+  /** The task's reference, or null for a routine's run. */
+  readonly task: string | null;
+  readonly state: string;
+}
+
+/** An update's hold on new runs, open as long as its connection is. */
+export interface RunsHold {
+  /** The runs the update would cut short, as the service said last. */
+  blocking(): readonly HeldRun[];
+  /** Resolves once what blocks changed, or the hold ended. */
+  changed(): Promise<void>;
+  /** False once the hold ended: the service stopped, or the connection closed. */
+  readonly held: boolean;
+  /** Stops every blocking run; resolves with those that did not end in time. */
+  stopAll(): Promise<readonly HeldRun[]>;
+  release(): void;
+}
+
+const heldRuns = (value: unknown): HeldRun[] =>
+  isObject(value) && Array.isArray(value["runs"])
+    ? value["runs"].filter(isObject).map((run) => ({
+        space_name: typeof run["space_name"] === "string" ? run["space_name"] : null,
+        task: typeof run["task"] === "string" ? run["task"] : null,
+        state: typeof run["state"] === "string" ? run["state"] : "running",
+      }))
+    : [];
+
+/** How long the service may take to say what blocks an update. */
+const HOLD_ANSWER_MS = 15_000;
+/** How long stopping the runs may take: their grace, confirmation and drain, and some. */
+const STOP_HELD_MS = 120_000;
+
+/**
+ * `runs/hold`: no new run starts while the hold's connection is open, and the service says which
+ * runs the update would cut short. Undefined when no service of this install answers, or one of an
+ * earlier version that hosts no runs.
+ */
+export async function holdRuns(state: string, id: string, env: Env): Promise<RunsHold | undefined> {
+  const opened = await openSession(state, id, env, probeEnd(undefined));
+  if ("reason" in opened) return undefined;
+  const session = opened.session;
+  const live = { held: true, runs: [] as HeldRun[] };
+  const waiters: (() => void)[] = [];
+  const wake = () => {
+    for (const resolve of waiters.splice(0)) resolve();
+  };
+  let told: () => void = () => undefined;
+  const first = new Promise<"told">((resolve) => {
+    told = () => {
+      resolve("told");
+    };
+  });
+  session.onNotification = (method, params) => {
+    if (method !== "runs/blocking") return;
+    live.runs = heldRuns(params);
+    told();
+    wake();
+  };
+  void session
+    .call("runs/hold", {})
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+    .finally(() => {
+      live.held = false;
+      told();
+      wake();
+    });
+  const answered = await Promise.race([
+    first,
+    new Promise<"late">((resolve) => {
+      setTimeout(() => {
+        resolve("late");
+      }, HOLD_ANSWER_MS).unref();
+    }),
+  ]);
+  if (answered === "late" || !live.held) {
+    session.close();
+    return undefined;
+  }
+  return {
+    blocking: () => live.runs,
+    changed: () =>
+      live.held
+        ? new Promise<void>((resolve) => {
+            waiters.push(resolve);
+          })
+        : Promise.resolve(),
+    get held() {
+      return live.held;
+    },
+    stopAll: async () =>
+      heldRuns(await session.call("runs/stop_held", {}, { timeoutMs: STOP_HELD_MS })),
+    release: () => {
+      session.close();
+    },
+  };
+}
+
 /** System32's tools, found where the loader mapped ntdll.dll from, never through SystemRoot. */
 function windowsTools(): WindowsTools | undefined {
   const folder = system32();

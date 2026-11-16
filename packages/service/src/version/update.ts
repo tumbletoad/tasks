@@ -23,8 +23,10 @@
 //   7. The service is restarted through the OS (A2 3.12.6 step 11): a supervised service is asked
 //      for `service/shutdown {restart: true}` and its manager starts it again from the new current;
 //      one nobody supervises is stopped and started. The update waits up to 30 s for a handshake
-//      that names the new version. Sessions and runs keep running in their own processes and
-//      reconnect (A2 3.11); nothing here stops them.
+//      that names the new version. Sessions keep running in their own processes and reconnect
+//      (A2 3.11). Background runs end with the service, so before anything changes the update
+//      holds new runs back, waits up to 15 minutes for the running ones, and then asks: stop them,
+//      or give the update up (waitForRuns).
 //   8. The journal goes and the lock is let go. A failure after the switch rolls back (A2 3.12.6
 //      step 13) through the same repair: phase `rolling_back`, current and the launchers back, the
 //      old service again, the reason in install.json for doctor.
@@ -57,7 +59,14 @@ import {
   type Layout,
 } from "../hub/paths.ts";
 import { startService, stopService } from "../install/commands.ts";
-import { requestRestart, type Env, type ServiceContext } from "../install/context.ts";
+import {
+  holdRuns,
+  requestRestart,
+  type Env,
+  type HeldRun,
+  type RunsHold,
+  type ServiceContext,
+} from "../install/context.ts";
 import { ServiceCommandError } from "../install/errors.ts";
 import { checkEntries, readTarGz, readZip, type ReadEntry } from "./archive.ts";
 import { checkVersionFolder, isVersionName, MANIFEST_FILE, readVersionManifest } from "./folder.ts";
@@ -102,6 +111,8 @@ import {
 export const LOCK_WAIT_MS = 10 * 60_000;
 /** How long the update waits for the restarted service to name the new version (A2 3.12.6 step 12). */
 export const RESTART_WAIT_MS = 30_000;
+/** How long the update waits for running background runs before it asks what to do. */
+export const RUNS_WAIT_MS = 15 * 60_000;
 /** The self-test's bound: a space, an endpoint and the bridge, each in a folder of its own. */
 export const SELF_TEST_MS = 180_000;
 
@@ -169,6 +180,11 @@ export interface ServiceControl {
   restart(options: { readonly supervisorChanged: boolean }): Promise<void>;
   /** Waits until the service answers ready and names `version`. */
   waitFor(version: string, timeoutMs: number): Promise<boolean>;
+  /**
+   * Holds new background runs back while the hold is open, and says which runs a restart would
+   * cut short. Undefined when no service runs, or one that hosts no runs.
+   */
+  holdRuns?(): Promise<RunsHold | undefined>;
 }
 
 const pause = (ms: number) =>
@@ -215,6 +231,7 @@ export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl 
         await pause(Math.min(250, Math.max(0, end - Date.now())));
       }
     },
+    holdRuns: () => holdRuns(ctx.layout.state, ctx.installId, env),
   };
 }
 
@@ -308,6 +325,15 @@ export interface UpdateOptions {
   readonly lockWaitMs?: number;
   readonly restartWaitMs?: number;
   readonly now?: () => Date;
+  /**
+   * What to do about background runs a restart would cut short, once the wait for them is over:
+   * stop them, or give the update up. Without it they are not waited for.
+   */
+  readonly runs?: {
+    readonly decide: (blocking: readonly HeldRun[]) => Promise<"stop" | "give_up">;
+    /** Default: RUNS_WAIT_MS. */
+    readonly waitMs?: number;
+  };
 }
 
 export type UpdateResult =
@@ -632,6 +658,77 @@ function launcherChanges(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Background runs
+
+/** What a run's state means to a person waiting for it. */
+const RUN_STATE_WORDS: Readonly<Record<string, string>> = {
+  starting: "starting",
+  running: "running",
+  waiting_for_input: "waiting",
+  cancelling: "stopping",
+  reconciling: "being checked",
+  unknown: "not confirmed ended",
+};
+
+const runLine = (run: HeldRun): string => {
+  const where = run.space_name === null ? "" : ` in ${run.space_name}`;
+  return `  ${run.task ?? "A routine's run"}${where}: ${RUN_STATE_WORDS[run.state] ?? run.state}`;
+};
+
+const runsCount = (n: number): string => (n === 1 ? "1 run" : `${String(n)} runs`);
+
+/**
+ * Before anything changes, while the service runs: holds new runs back, so they wait in the queue,
+ * and waits up to RUNS_WAIT_MS for the runs the restart would cut short. If some still run, the
+ * person decides: stop them (each keeps its answer so far) or give the update up, with nothing
+ * changed. Returns the hold, which the caller lets go once the update is over; its connection goes
+ * with the updater, so an updater that dies lets go of it too.
+ */
+async function waitForRuns(options: UpdateOptions): Promise<RunsHold | undefined> {
+  const runs = options.runs;
+  const control = options.control;
+  if (runs === undefined || control?.holdRuns === undefined) return undefined;
+  const hold = await control.holdRuns();
+  if (hold === undefined) return undefined;
+  try {
+    let blocking = hold.blocking();
+    if (blocking.length === 0) return hold;
+    const waitMs = runs.waitMs ?? RUNS_WAIT_MS;
+    say(options, `The restart would cut short ${runsCount(blocking.length)}:`);
+    for (const run of blocking) say(options, runLine(run));
+    say(
+      options,
+      `New runs wait in the queue meanwhile. The update waits up to ${String(Math.round(waitMs / 60_000))} minutes for these to finish.`,
+    );
+    const end = Date.now() + waitMs;
+    while (blocking.length > 0 && hold.held && Date.now() < end) {
+      await Promise.race([hold.changed(), pause(Math.max(1, Math.min(5_000, end - Date.now())))]);
+      blocking = hold.blocking();
+    }
+    // A service that stopped meanwhile took its runs with it: nothing is left to wait for.
+    if (blocking.length === 0 || !hold.held) {
+      say(options, "The runs finished.");
+      return hold;
+    }
+    if ((await runs.decide(blocking)) === "give_up") {
+      throw new InstallError(
+        `The update was given up while ${runsCount(blocking.length)} still ${blocking.length === 1 ? "runs" : "run"}. Nothing was changed.`,
+        2,
+      );
+    }
+    say(options, "Stopping the runs. Each keeps its answer so far.");
+    const left = await hold.stopAll();
+    if (left.length > 0) {
+      say(options, `The restart ends what did not stop in time: ${runsCount(left.length)}.`);
+    }
+    return hold;
+  } catch (error) {
+    hold.release();
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // The switch, shared by an update and a rollback
 
 interface Switch {
@@ -726,10 +823,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     if (control !== undefined && (run.journal.service || (await control.running()) !== undefined)) {
       write({ ...run.journal, phase: "restarted" });
       restarted = true;
-      say(
-        options,
-        `Restarting the service on ${to}. Sessions and runs keep running and reconnect.`,
-      );
+      say(options, `Restarting the service on ${to}. Sessions keep running and reconnect.`);
       await control.restart({
         supervisorChanged: launchers.some((l) => l.name === WINDOWS_LAUNCHERS[1]),
       });
@@ -886,64 +980,69 @@ export async function updateFromArchive(
         5,
       );
     }
-    const control = options.control;
-    const journal: Journal = {
-      format: 1,
-      kind: "update",
-      from,
-      to: release.version,
-      phase: "prepare",
-      pid: process.pid,
-      started_at: (options.now?.() ?? new Date()).toISOString(),
-      staging: `.staging-${randomBytes(8).toString("hex")}`,
-      service: control !== undefined && (await control.running()) !== undefined,
-      tested: false,
-      launchers: [],
-    };
-    writeJournal(install.state, journal);
-    await at(options, "prepared");
-    const target = join(install.root, VERSIONS, release.version);
-    const staging = join(install.root, VERSIONS, journal.staging ?? "");
+    const held = await waitForRuns(options);
     try {
-      unpack(entries, staging, install.platform);
-      const manifest = readVersionManifest(staging);
-      if (manifest.version !== release.version || manifest.platform !== platform) {
+      const control = options.control;
+      const journal: Journal = {
+        format: 1,
+        kind: "update",
+        from,
+        to: release.version,
+        phase: "prepare",
+        pid: process.pid,
+        started_at: (options.now?.() ?? new Date()).toISOString(),
+        staging: `.staging-${randomBytes(8).toString("hex")}`,
+        service: control !== undefined && (await control.running()) !== undefined,
+        tested: false,
+        launchers: [],
+      };
+      writeJournal(install.state, journal);
+      await at(options, "prepared");
+      const target = join(install.root, VERSIONS, release.version);
+      const staging = join(install.root, VERSIONS, journal.staging ?? "");
+      try {
+        unpack(entries, staging, install.platform);
+        const manifest = readVersionManifest(staging);
+        if (manifest.version !== release.version || manifest.platform !== platform) {
+          throw new InstallError(
+            `${release.archive}'s manifest.json names another version or platform.`,
+            5,
+          );
+        }
+        const unpacked = checkVersionFolder(staging);
+        if (unpacked.length > 0) {
+          throw new InstallError(
+            `The unpacked files do not match manifest.json (${unpacked.slice(0, 3).join("; ")}). Nothing from them ran.`,
+            5,
+          );
+        }
+        await at(options, "unpacked");
+        place(staging, target);
+        writeJournal(install.state, { ...journal, staging: null });
+        await at(options, "placed");
+        say(options, `Self-test of ${release.version} through its own launcher:`);
+        const tested = await options.selfTest(target);
+        if (!tested.ok) {
+          throw new InstallError(
+            `${release.version} failed its self-test (${tested.failed.join("; ")}), so current was not changed.`,
+            1,
+          );
+        }
+        await at(options, "tested");
+      } catch (error) {
+        // Nothing was switched: the staging folder and the journal go, current stays.
+        rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        removeJournal(install.state);
+        if (error instanceof InstallError) throw error;
         throw new InstallError(
-          `${release.archive}'s manifest.json names another version or platform.`,
-          5,
-        );
-      }
-      const unpacked = checkVersionFolder(staging);
-      if (unpacked.length > 0) {
-        throw new InstallError(
-          `The unpacked files do not match manifest.json (${unpacked.slice(0, 3).join("; ")}). Nothing from them ran.`,
-          5,
-        );
-      }
-      await at(options, "unpacked");
-      place(staging, target);
-      writeJournal(install.state, { ...journal, staging: null });
-      await at(options, "placed");
-      say(options, `Self-test of ${release.version} through its own launcher:`);
-      const tested = await options.selfTest(target);
-      if (!tested.ok) {
-        throw new InstallError(
-          `${release.version} failed its self-test (${tested.failed.join("; ")}), so current was not changed.`,
+          `${release.archive} could not be put in place (${(error as Error).message}). current was not changed.`,
           1,
         );
       }
-      await at(options, "tested");
-    } catch (error) {
-      // Nothing was switched: the staging folder and the journal go, current stays.
-      rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-      removeJournal(install.state);
-      if (error instanceof InstallError) throw error;
-      throw new InstallError(
-        `${release.archive} could not be put in place (${(error as Error).message}). current was not changed.`,
-        1,
-      );
+      return await switchTo({ install, options, journal: { ...journal, staging: null } });
+    } finally {
+      held?.release();
     }
-    return await switchTo({ install, options, journal: { ...journal, staging: null } });
   } finally {
     lock.release();
   }
@@ -977,24 +1076,29 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
         1,
       );
     }
-    const control = options.control;
-    const journal: Journal = {
-      format: 1,
-      kind: "rollback",
-      from,
-      to: previous,
-      phase: "prepare",
-      pid: process.pid,
-      started_at: (options.now?.() ?? new Date()).toISOString(),
-      staging: null,
-      service: control !== undefined && (await control.running()) !== undefined,
-      // Its self-test ran above.
-      tested: true,
-      launchers: [],
-    };
-    writeJournal(install.state, journal);
-    await at(options, "prepared");
-    return await switchTo({ install, options, journal });
+    const held = await waitForRuns(options);
+    try {
+      const control = options.control;
+      const journal: Journal = {
+        format: 1,
+        kind: "rollback",
+        from,
+        to: previous,
+        phase: "prepare",
+        pid: process.pid,
+        started_at: (options.now?.() ?? new Date()).toISOString(),
+        staging: null,
+        service: control !== undefined && (await control.running()) !== undefined,
+        // Its self-test ran above.
+        tested: true,
+        launchers: [],
+      };
+      writeJournal(install.state, journal);
+      await at(options, "prepared");
+      return await switchTo({ install, options, journal });
+    } finally {
+      held?.release();
+    }
   } finally {
     lock.release();
   }
