@@ -66,7 +66,8 @@ import {
   type SwapNames,
   type SwapPoint,
 } from "./folders.ts";
-import { dropUnchecked, firstWrite, markCopy } from "./mark.ts";
+import { SCHEMA_STEPS } from "../../migrations/index.ts";
+import { firstWrite, markCopy, prepareCopy } from "./mark.ts";
 import {
   inFolder,
   isBundleFile,
@@ -78,7 +79,7 @@ import {
   type UnpackSeams,
 } from "./unpack.ts";
 
-export { dropUnchecked, markReadOnlyCopy, READ_ONLY_COPY } from "./mark.ts";
+export { dropUnchecked, markReadOnlyCopy, prepareCopy, READ_ONLY_COPY } from "./mark.ts";
 
 export interface RestoreOptions {
   appVersion?: string;
@@ -219,7 +220,14 @@ export async function restoreCopy(
   const unpacked = await unpackAny(checked, file, place, busy(options), seams);
   seams.at?.("unpacked");
   const invalid = isBundleFile(file) ? bundleInvalid : backupInvalid;
-  const space = markCopy(checked, place.db, now, busy(options), invalid);
+  const space = markCopy(
+    checked,
+    place.db,
+    now,
+    busy(options),
+    invalid,
+    seams.steps ?? SCHEMA_STEPS,
+  );
   return { ...unpacked, space };
 }
 
@@ -360,7 +368,7 @@ export async function restoreInPlaceWith(
     }
     // The claim happens in the staging folder, before the copy takes the space's name: no crash
     // can leave an unclaimed old incarnation in place of the live space. It is this restore's
-    // first write (mark.ts firstWrite), after the unchecked objects are dropped.
+    // first write (mark.ts firstWrite), after the copy is prepared (prepareCopy).
     const claim: Claim = firstWrite(
       checked,
       join(names.staging, DATABASE_FILE),
@@ -368,7 +376,7 @@ export async function restoreInPlaceWith(
       isBundleFile(backupFile) ? bundleInvalid : backupInvalid,
       (conn) => {
         conn.transaction("immediate", () => {
-          dropUnchecked(conn);
+          prepareCopy(checked, conn, seams.steps ?? SCHEMA_STEPS);
         });
         return claimSpace(conn, {
           kind: "restore_claim",

@@ -6,19 +6,20 @@
 // (requireOwnSchema): a database a restore writes to, or an export writes out, has exactly the
 // tables, indexes and views that the schema steps up to its revision create. The comparison covers
 // every object of the main schema, those with SQLite's reserved prefix `sqlite_` included (the
-// steps make the same `sqlite_autoindex_…` indexes in the reference), except the ones a restore
-// drops before its first write and an export drops from its private snapshot (isDropped,
-// restore/mark.ts dropUnchecked):
-// - a trigger, since one would run on those writes;
-// - SQLite's statistics tables `sqlite_stat1` and `sqlite_stat4`, which ANALYZE makes and only the
-//   query planner reads, by their exact names.
+// steps make the same `sqlite_autoindex_…` indexes in the reference), except two groups:
+// - what a restore drops before its first write and an export drops from its private snapshot
+//   (isDropped, restore/mark.ts dropUnchecked): a trigger, since one would run on those writes,
+//   and SQLite's statistics tables `sqlite_stat1` and `sqlite_stat4`, which ANALYZE makes and only
+//   the query planner reads, by their exact names;
+// - the search index (search/tables.ts isSearchObject), which is derived from the tasks: a restore
+//   and an export drop whatever stands under its names and make it again from the steps' own
+//   statements (search/remake.ts). So a copy whose index is missing, damaged or written by an
+//   SQLite whose FTS5 lays out its shadow tables otherwise still restores, and nothing planted
+//   under those names survives to act on a later write.
 // Nothing else is left out, and everything compared is compared by its full text: an object SQLite
 // would let no statement create, such as an index named `sqlite_autoindex_…` with a definition of
-// its own, or a virtual table's shadow table with a CHECK of its own, can be planted in a file, and
-// it would act on every later write, not only on the restore's first one. A shadow table's text is
-// what the module writes for the virtual table's definition; the FTS5 texts the search index uses
-// have not changed since FTS5 came out, and a test pins them (bundle.test.ts), so an SQLite that
-// wrote them otherwise, and so would refuse older backups, fails that test before it ships.
+// its own, can be planted in a file, and it would act on every later write, not only on the
+// restore's first one.
 //
 // Every name a diagnostic gives comes from the product's own list of its tables and columns
 // (productTables), built from the schema steps, never from a name read out of the database being
@@ -30,6 +31,7 @@ import { fsCall, removeQuietly } from "../files.ts";
 import { openReader } from "../open.ts";
 import { decodeSpaceRow, inRange, type SpaceRow } from "../rows.ts";
 import { APP_ID, encodeRevision, type SchemaStep } from "../schema.ts";
+import { isSearchObject } from "../search/tables.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { checkDatabaseSize, type BundlePolicy } from "./policy.ts";
 
@@ -114,18 +116,45 @@ export const ALL_OBJECTS =
 /** The main schema's tables as SQLite classifies them: `table`, `view`, `virtual` or `shadow`. */
 const TABLE_LIST = "SELECT name, type FROM pragma_table_list WHERE schema = 'main'";
 
+/** One object of the main schema as sqlite_schema keeps it. */
+interface SchemaRow {
+  type: unknown;
+  name: unknown;
+  tbl_name: unknown;
+  sql: unknown;
+}
+
 /**
  * The schema objects of the database on `conn` as the exact-schema rule compares them (see the
- * header): each table, index and view, SQLite's own and a virtual table's shadow tables included,
- * with the SQL text SQLite keeps for it (none for an index SQLite made for a key), which holds every
- * column, constraint, key and generated value. Only what isDropped passes is left out.
+ * header): each table, index and view, SQLite's own included, with the SQL text SQLite keeps for it
+ * (none for an index SQLite made for a key), which holds every column, constraint, key and
+ * generated value. What isDropped passes and the search index are left out.
  */
 export function schemaObjects(conn: Connection): string[] {
   return conn
     .prepare(ALL_OBJECTS)
-    .all<Record<string, unknown>>()
-    .filter((row) => !isDropped(row["type"], row["name"]))
-    .map((row) => JSON.stringify([row["type"], row["name"], row["tbl_name"], row["sql"]]));
+    .all<SchemaRow>()
+    .filter((row) => !isDropped(row.type, row.name) && !isSearchObject(row.name, row.tbl_name))
+    .map((row) => JSON.stringify([row.type, row.name, row.tbl_name, row.sql]));
+}
+
+/**
+ * The statements that make the search index on `conn`, a database the schema steps built, in an
+ * order that runs: plain tables, then virtual tables, then indexes. A virtual table's shadow tables
+ * and the indexes SQLite makes for keys have no statement of their own.
+ */
+function searchStatements(conn: Connection): string[] {
+  const rows = conn
+    .prepare(ALL_OBJECTS)
+    .all<SchemaRow>()
+    .filter((row) => isSearchObject(row.name, row.tbl_name) && typeof row.sql === "string");
+  const isVirtual = (row: SchemaRow): boolean => /^CREATE VIRTUAL TABLE/iu.test(String(row.sql));
+  const virtual = rows.filter((row) => row.type === "table" && isVirtual(row));
+  const isShadow = (row: SchemaRow): boolean =>
+    virtual.some((v) => String(row.name).startsWith(`${String(v.name)}_`));
+  const plain = rows.filter((row) => row.type === "table" && !isVirtual(row) && !isShadow(row));
+  const indexes = rows.filter((row) => row.type === "index");
+  return [...plain, ...virtual, ...indexes].map((row) => String(row.sql));
 }
 
 /** A table of the product's schema that holds data, with its columns, as the schema steps make it. */
@@ -134,20 +163,33 @@ export interface ProductTable {
   columns: readonly string[];
 }
 
-/** What the schema steps make at one revision: the objects compared, and the data tables. */
+/**
+ * What the schema steps make at one revision: the objects compared, the data tables, and the
+ * statements that make the search index.
+ */
 interface Reference {
   objects: readonly string[];
   tables: readonly ProductTable[];
+  search: readonly string[];
 }
 
 const REFERENCES = new WeakMap<readonly SchemaStep[], Map<number, Reference>>();
 
-/** The product's data tables on `conn`: every plain table but SQLite's, with its columns. */
+/**
+ * The product's data tables on `conn`: every plain table but SQLite's and the search index's, with
+ * its columns.
+ */
 function dataTablesOf(conn: Connection): ProductTable[] {
   return conn
     .prepare(TABLE_LIST)
     .all<{ name: unknown; type: unknown }>()
-    .filter((row) => row.type === "table" && typeof row.name === "string" && !isReserved(row.name))
+    .filter(
+      (row) =>
+        row.type === "table" &&
+        typeof row.name === "string" &&
+        !isReserved(row.name) &&
+        !isSearchObject(row.name, row.name),
+    )
     .map((row) => String(row.name))
     .sort()
     .map((name) => ({
@@ -183,7 +225,11 @@ function reference(
       step.up(conn);
       current = encodeRevision(step.revision);
       if (current === userVersion) {
-        made = { objects: schemaObjects(conn), tables: dataTablesOf(conn) };
+        made = {
+          objects: schemaObjects(conn),
+          tables: dataTablesOf(conn),
+          search: searchStatements(conn),
+        };
         break;
       }
     }
@@ -207,21 +253,16 @@ export function referenceSchema(
 }
 
 /**
- * The SQL text the schema steps give the object `name` at `userVersion`, or undefined: no such
- * object, none kept (an index SQLite made for a key), or never reached. What a
- * caller that must make an object again runs, never text read out of the database at hand.
+ * The statements the schema steps make the search index with at `userVersion`, in an order that
+ * runs: none when that revision has no index, undefined when the steps never reach it. What a
+ * restore or an export makes the index again with, never text read out of the database at hand.
  */
-export function referenceDefinition(
+export function referenceSearch(
   checked: CheckedDriver,
   steps: readonly SchemaStep[],
   userVersion: number,
-  name: string,
-): string | undefined {
-  for (const object of reference(checked, steps, userVersion)?.objects ?? []) {
-    const [, objectName, , sql] = JSON.parse(object) as unknown[];
-    if (objectName === name) return typeof sql === "string" ? sql : undefined;
-  }
-  return undefined;
+): readonly string[] | undefined {
+  return reference(checked, steps, userVersion)?.search;
 }
 
 /**
@@ -265,14 +306,17 @@ export function requireOwnSchema(
 /** A table name Tasks can quote safely: the names its schema steps create. */
 const TABLE_NAME = /^[a-z_][a-z0-9_]{0,63}$/;
 
-/** Rows per table of the main schema (SQLite's own tables left out by their literal prefix). */
+/**
+ * Rows per table of the main schema. SQLite's own tables are left out by their literal prefix, and
+ * the search index's, whose rows a restore makes again.
+ */
 export function tableCounts(conn: Connection): Record<string, number> {
   const counts: Record<string, number> = {};
   const names = conn
     .prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table' ORDER BY name")
     .all<{ name: unknown }>()
     .map((row) => row.name)
-    .filter((name) => !isReserved(name));
+    .filter((name) => !isReserved(name) && !isSearchObject(name, name));
   for (const name of names) {
     if (typeof name !== "string" || !TABLE_NAME.test(name)) {
       throw new StorageError("SPACE_INVALID", "The database has a table that is not a space's");
