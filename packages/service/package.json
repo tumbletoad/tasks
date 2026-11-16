@@ -35,6 +35,7 @@
     "@tasks/importer-planning": "workspace:*",
     "@tasks/launch": "workspace:*",
     "@tasks/projection": "workspace:*",
+    "@tasks/runs": "workspace:*",
     "@tasks/storage": "workspace:*",
     "@modelcontextprotocol/server": "2.4.0",
     "smol-toml": "1.9.1",
@@ -42,7 +43,6 @@
   },
   "devDependencies": {
     "@tasks/launcher-win": "workspace:*",
-    "@tasks/runs": "workspace:*",
     "@tasks/testkit": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",
