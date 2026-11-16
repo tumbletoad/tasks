@@ -688,6 +688,13 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       // are measured on one clock.
       ...(options.launch?.now === undefined ? {} : { now: options.launch.now }),
     });
+    // What `~` means in a folder here, and Tasks' own data, where no folder is bound.
+    let personHome: string | undefined;
+    try {
+      personHome = homeFolder(facts);
+    } catch {
+      personHome = undefined;
+    }
     const hub = {
       status,
       requestStop: (o: { restart: boolean }) => {
@@ -700,6 +707,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         spaces: () => made.spaces?.served() ?? [],
         roots: () => roots,
         platform,
+        ...(personHome === undefined ? {} : { home: personHome }),
+        dataFolder: layout.data,
         bindings,
         defaultSpace: () => defaults.get(),
         homes,

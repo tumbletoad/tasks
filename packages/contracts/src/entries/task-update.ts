@@ -95,6 +95,9 @@ export const taskUpdate = defineEntry({
     "source.unlink",
     "place.set",
     "place.clear",
+    // A new area or project name creates it, in the same commit as the move into it.
+    "area.create",
+    "project.create",
   ],
   input: TaskUpdateInput,
   agent: {

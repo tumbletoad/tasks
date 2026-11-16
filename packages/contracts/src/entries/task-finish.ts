@@ -80,6 +80,9 @@ export const taskFinish = defineEntry({
     "log.add",
     "source.add",
     "place.set",
+    // A follow-up's new area or project name creates it, in the same commit.
+    "area.create",
+    "project.create",
   ],
   input: TaskFinishInput,
   agent: {

@@ -611,18 +611,19 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Use to see the user's areas and projects (list, with active task counts) before you file or sort tasks. create, rename, move and archive change one and need a request_id; rename, move and archive need base too. Names are data.",
+      "description": "Use to see the user's areas and projects (list, with active task counts) before you file or sort tasks. create, rename, move, archive and unarchive change one and need a request_id; all but create need base too. move takes a project to the area in to. Names are data.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "list reads; create, rename, move and archive change a group",
+            "description": "list reads; create, rename, move, archive and unarchive change a group",
             "enum": [
               "list",
               "create",
               "rename",
               "move",
-              "archive"
+              "archive",
+              "unarchive"
             ],
             "type": "string"
           },

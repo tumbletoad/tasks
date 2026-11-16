@@ -4,11 +4,11 @@
 // name that matches nothing but lies within edit distance 2 of a group's name or slug, and
 // less than half that name's length from it, is `invalid_input` with the close names in
 // `data.suggestions` (stored names never reach a message, A3 3.5): "Client wrok" is a typo of
-// "Client work", while "UX" is no typo of "QA". Any other new name is created under autonomy once
-// A1's `area.create` and `project.create` exist (M4.01b); until then it is refused naming that
-// step. Where a name only looks a group up (organize's list), an unknown one is `not_found`.
+// "Client work", while "UX" is no typo of "QA". Any other name is a new group, which the caller
+// creates (`area.create`, `project.create`) in the same request. Where a name only looks a group
+// up (organize's list), an unknown one is `not_found`. Where the caller asks to create the group by
+// that name, a close one is new too: "Release 2" beside "Release 1" is meant.
 import { AppError } from "@tasks/contracts";
-import { unsupported } from "./errors.ts";
 import type { GroupName, GroupNames } from "./read.ts";
 
 /** A3 3.4.5: an unknown name this close to an existing one is a typo, not a new group. */
@@ -74,21 +74,30 @@ function elsewhere(names: GroupNames, found: readonly GroupName[], path: string)
   });
 }
 
+/** A group a call makes has no slug yet (`slug` empty): its title names it. */
 const exact = (group: GroupName, wanted: string): boolean =>
-  group.id === wanted || group.slug === fold(wanted) || fold(group.title) === fold(wanted);
+  group.id === wanted ||
+  (group.slug !== "" && group.slug === fold(wanted)) ||
+  fold(group.title) === fold(wanted);
 
 /**
- * The ID of the area or project `name` names, at input path `path`. `area` is the area the caller
- * named beside a project: a project there wins over one of the same name elsewhere. `lookup`: the
- * name only looks a group up, so an unknown one is `not_found` rather than a group to create.
+ * The ID of the area or project `name` names, at input path `path`, or undefined for a new name:
+ * one no group has and none is close to. `area` is the area the caller named beside a project: a
+ * project there wins over one of the same name elsewhere. `lookup`: the name only looks a group up,
+ * so an unknown one is `not_found` rather than a group to create. `create`: the caller creates the
+ * group by this name, so one close to another's is new rather than a typo.
  */
 export function resolveGroup(
   names: GroupNames,
   kind: Kind,
   name: string,
   path: string,
-  options: { readonly area?: string | undefined; readonly lookup?: boolean } = {},
-): string {
+  options: {
+    readonly area?: string | undefined;
+    readonly lookup?: boolean;
+    readonly create?: boolean;
+  } = {},
+): string | undefined {
   const { area } = options;
   const groups = kind === "area" ? names.areas : names.projects;
   let found = groups.filter((group) => exact(group, name));
@@ -100,6 +109,8 @@ export function resolveGroup(
     // The writer files a task under its project's own area, whatever area the call named (A1
     // 3.6), so a project only elsewhere would move the task out of the area asked for.
     const inArea = found.filter((group) => group.area === area);
+    // A project created in an area is new there, whatever other areas hold.
+    if (inArea.length === 0 && options.create === true) return undefined;
     if (inArea.length === 0) throw elsewhere(names, found, path);
     found = inArea;
   }
@@ -112,7 +123,10 @@ export function resolveGroup(
       hint: "Name it by its slug: organize with action list shows each one's.",
       data: {
         issues: [{ path, message: "Several have this name" }],
-        suggestions: found.slice(0, SUGGESTIONS).map((group) => group.slug),
+        suggestions: found
+          .map((group) => group.slug)
+          .filter((slug) => slug !== "")
+          .slice(0, SUGGESTIONS),
       },
     });
   }
@@ -132,7 +146,7 @@ export function resolveGroup(
       },
     });
   }
-  if (close.length > 0) {
+  if (close.length > 0 && options.create !== true) {
     throw new AppError({
       code: "invalid_input",
       message: `No ${kind} has this name, and one is close to it.`,
@@ -140,5 +154,5 @@ export function resolveGroup(
       data: { issues: [{ path, message: "Close to an existing name" }], suggestions },
     });
   }
-  throw unsupported(path, "M4.01b (creating an area or project by name)");
+  return undefined;
 }

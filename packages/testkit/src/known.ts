@@ -4,7 +4,7 @@
 export const FIXED_SAMPLE = {
   seed: "fixed",
   tasks: 3,
-  digest: "525077e982d4437e117b232535d9c11e466036a01124c9c31bbacc91a58f14bb",
+  digest: "854227fbac7374c302917e2cb9d800e1fc1f56b7de995a611907894675598373",
 } as const;
 
 /**
@@ -34,4 +34,5 @@ export const RELEASED_SCHEMAS = {
   "0.2": "19ee58deae2331a9648ea25c4c8b23b9813f3ca07e16d939105e39655336ac7b",
   "0.3": "62dc8c3f82bc973dab7d9bc2683b3b72e1b191cd4265ec48ef8cae07f15c14c4",
   "0.4": "5edb0d9c4402c1c407359cbfd95dbefd9d7cf42499834cef1781c7accae087c8",
+  "0.5": "e00ccd817c6afa90fcc8ff0526e3c0166a36e78009907b0408eea95dc4b33ac4",
 } as const;

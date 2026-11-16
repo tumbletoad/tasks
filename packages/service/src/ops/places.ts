@@ -15,6 +15,7 @@ import {
   type GitRemote,
   type RootFolder,
 } from "@tasks/launch";
+import { bounded, LOOK_MS } from "./folders.ts";
 
 /** What a `place.set` takes from a bound place. */
 export interface PlaceFields {
@@ -37,8 +38,11 @@ export type Bound =
   /** Under no root of this machine (A1 `PLACE_OUTSIDE_ROOTS`), with every root ID. */
   | { readonly kind: "outside"; readonly roots: readonly string[] };
 
+/** Why a place field is refused. */
+type Reason = BindReason | "no_cwd" | "unknown_root" | "not_answering";
+
 /** The fixed sentence of each reason a place field is refused. Never a value. */
-const SENTENCES: Readonly<Record<BindReason | "no_cwd" | "unknown_root", string>> = {
+const SENTENCES: Readonly<Record<Reason, string>> = {
   not_absolute: "Not an absolute folder on this machine",
   invalid_path: "A folder a place cannot name exactly",
   path_missing: "The folder is not there",
@@ -48,24 +52,25 @@ const SENTENCES: Readonly<Record<BindReason | "no_cwd" | "unknown_root", string>
   identity_unavailable: "The folder's volume gives no file identity, so a place cannot name it",
   no_cwd: "A place given as cwd needs cwd, the working folder",
   unknown_root: "Two roots have this label",
+  not_answering: "The folder did not answer in time",
 };
 
-const HINTS: Partial<Record<BindReason | "no_cwd" | "unknown_root", string>> = {
+const HINTS: Partial<Record<Reason, string>> = {
   outside_roots: "Only the user adds roots: tasks roots add <id> <folder>.",
   ambiguous_root: "Keep one of the roots that name this folder in machine.toml.",
   no_cwd: "Pass cwd as an absolute path.",
   unknown_root: "Name the root by its ID: tasks roots.",
+  not_answering: "Check that its drive or share is connected, then try again.",
 };
+
+/** How long binding one place may take: it reads the folder, every root and the Git config. */
+const BIND_MS = 3 * LOOK_MS;
 
 /**
  * The refusal of a place field at `at`: `invalid_input` with the reason, A1's cause for a folder
  * under no root, and root IDs where they help. No path, given or found.
  */
-export function placeRefused(
-  at: string,
-  reason: BindReason | "no_cwd" | "unknown_root",
-  roots?: readonly string[],
-): AppError {
+export function placeRefused(at: string, reason: Reason, roots?: readonly string[]): AppError {
   const message = SENTENCES[reason];
   const hint = HINTS[reason];
   return new AppError({
@@ -117,6 +122,9 @@ function recorded(remote: GitRemote | undefined): {
  * A root and path is bound as given when it does not resolve here (the folder may come later, as
  * A1 allows), but it must be a place's path by this machine's rules. A root given by its label is
  * the root with that label when no root has it as its ID.
+ *
+ * A binding that takes longer than BIND_MS is refused as `not_answering`, so a share that does not
+ * answer holds up the call, and the space's calls that wait for its turn, no longer than that.
  */
 export async function bindPlace(
   value: unknown,
@@ -124,6 +132,18 @@ export async function bindPlace(
   roots: readonly (RootFolder & { readonly label?: string })[],
   at: string,
   platform: NodeJS.Platform = process.platform,
+): Promise<Bound> {
+  const found = await bounded(() => bindNow(value, cwd, roots, at, platform), BIND_MS);
+  if (found === "not_answering") throw placeRefused(at, "not_answering");
+  return found;
+}
+
+async function bindNow(
+  value: unknown,
+  cwd: unknown,
+  roots: readonly (RootFolder & { readonly label?: string })[],
+  at: string,
+  platform: NodeJS.Platform,
 ): Promise<Bound> {
   if (typeof value === "object" && value !== null) {
     const given = value as { root?: unknown; path?: unknown };

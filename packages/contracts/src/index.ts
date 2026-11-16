@@ -61,6 +61,12 @@ export {
   GroupManageResult,
 } from "./entries/group-manage.ts";
 export {
+  FOLDER_ACTIONS,
+  folderManage,
+  FolderManageInput,
+  FolderManageResult,
+} from "./entries/folder-manage.ts";
+export {
   PREFS_ACTIONS,
   prefsManage,
   PrefsManageInput,
