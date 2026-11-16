@@ -155,9 +155,11 @@ static int confirm(const wchar_t *name, int end) {
     return active == 0 ? 0 : 1;
 }
 
-
-
-/* Sends Ctrl+C to every process on the agent's console. Returns 0, or the refused call's error. */
+/*
+ * Sends Ctrl+C to every process on the agent's console. Returns 0, or the refused call's error.
+ * The helper receives it too while it is attached: its own "ignore Ctrl+C" flag keeps it alive,
+ * where a handler function did not.
+ */
 static DWORD interrupt(DWORD pid) {
     DWORD error = 0;
     FreeConsole();
