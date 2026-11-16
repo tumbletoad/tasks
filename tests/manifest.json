@@ -1515,8 +1515,32 @@
     },
     {
       "id": "A4.5.terminal.chain",
-      "title": "The terminal chain: auto picks the session's TERMINAL, the xdg-terminals lists, then A4's order of installed terminals on Linux, Windows Terminal when its app execution alias exists else the console on Windows; a chosen terminal comes first with its fallbacks, the console always last on Windows",
+      "title": "The terminal chain: a chosen terminal comes first with its configured fallbacks, or with none configured the other installed ones, and wins over every default; the console always last on Windows",
       "source": "A4 3.6.1, A4 3.6.2, A7 3.9 M2.09",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.default",
+      "title": "auto opens the operating system's default terminal first, as a table over fixtures: on Linux $TERMINAL, KDE's own setting, the xdg-terminals lists in the specification's order of folders and desktops, then x-terminal-emulator, and only then the fixed order of installed terminals; on Windows the Default terminal application's values (Let Windows decide, Console Host, Windows Terminal and Preview, another terminal); a default without an adapter is named; macOS chooses nothing; the real file reader over fixture folders",
+      "source": "A4 3.6.1",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.receipt",
+      "title": "A terminal launch's receipt names the terminal Dispatched and why it was chosen, in a few words, Dispatching and Confirmed alike; the page gets them only as the fixed words a launch records, anything else is left out; a launch without them reads as before",
+      "source": "A4 3.6.1, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.terminal.windows-default",
+      "title": "Windows' Default terminal application read with reg.exe by its full path under a short deadline through a fake capture: the two values parsed as GUIDs only, a missing key is Windows deciding, no answer is no setting; the launcher reads the host at each launch and names the Dispatched terminal and its source",
+      "source": "A4 3.6.1",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2266,6 +2290,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.1.hub.space-way-out",
+      "title": "every reason a space is read-only or unavailable has its own message or a way out that names the command to run; an open space has none",
+      "source": "A2 3.1",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.space-needs-recovery",
+      "title": "a space with a rollback journal is listed by tasks space list and doctor with tasks space recover <folder>, and the recovery the line names opens it",
+      "source": "A2 3.10.1, A1 3.18",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.not-open",
+      "title": "In Chromium and Firefox: a computer whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
+      "source": "A5 3.3, A2 3.1",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.write.applied-answer",
+      "title": "an undo, redo, update, finish or reopen whose answer cannot be read from history after it applied reports what it applied, never a failure, and a replay of the undo answers with its tasks",
+      "source": "A3 3.4.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.cli.accept",
       "title": "pnpm accept m1 --part cli against a real service child in a temporary TASKS_HOME: two parallel tasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, tasks show --json matches its schema",
       "source": "A2 3.10, A3 3.4.1, A7 3.8 M1.10",
@@ -2579,7 +2635,7 @@
     },
     {
       "id": "A3.3.14.doctor.launch",
-      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
+      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.terminal naming the terminal a launch opens first and why (a warning when it is missing or the person's default has no adapter, named without a path), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
       "source": "A3 3.14, A4 3.4.1, A4 3.7, A4 3.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
@@ -3395,7 +3451,7 @@
     },
     {
       "id": "A5.3.3.web.landing",
-      "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice",
+      "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice; a space that is not open is named with why",
       "source": "A2 3.1, A5 3.3, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",

@@ -7,7 +7,8 @@ import { SignedOut } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import css from "./Landing.module.css";
 import { useAuth, useMachineApi } from "./session.tsx";
-import { isServed, landingSpace, listSpaces, type SpaceList } from "./spaces.ts";
+import { NotOpenNotes } from "./NotOpen.tsx";
+import { isServed, landingSpace, listSpaces, notOpen, type SpaceList } from "./spaces.ts";
 import { LANDING } from "./views.ts";
 import { classes } from "./css.ts";
 
@@ -50,7 +51,16 @@ export function Landing({ task }: { readonly task?: string }) {
     );
   }
   const served = list.spaces.filter(isServed);
-  if (served.length === 0) return <p className={styles.line}>{t("app.noSpaces")}</p>;
+  const closed = notOpen(list);
+  if (served.length === 0) {
+    return closed.length === 0 ? (
+      <p className={styles.line}>{t("app.noSpaces")}</p>
+    ) : (
+      <main className={styles.page}>
+        <NotOpenNotes spaces={closed} className={styles.line} />
+      </main>
+    );
+  }
   return (
     <main className={styles.page}>
       <p className={styles.line}>{t("app.pickSpace")}</p>
@@ -78,6 +88,7 @@ export function Landing({ task }: { readonly task?: string }) {
           </li>
         ))}
       </ul>
+      <NotOpenNotes spaces={closed} className={styles.line} />
     </main>
   );
 }

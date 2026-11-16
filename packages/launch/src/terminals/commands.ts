@@ -60,11 +60,13 @@ export const CONSOLE_ARGUMENTS = envVar("CONSOLE_ARGUMENTS");
  * The console starter (Windows PowerShell 5.1): starts the program its variable names with the
  * command line in the other, through ShellExecute (`UseShellExecute`), in its own working folder.
  * ShellExecute gives a console program a new console window, visible, and the new process is not
- * in the service's job. Fixed text: nothing variable is ever part of it.
+ * in the service's job. Fixed text: nothing variable is ever part of it. .NET calls only, no
+ * cmdlet: a cmdlet makes Windows PowerShell search its module path first, which takes seconds on a
+ * slow machine.
  */
 export const CONSOLE_SCRIPT =
   "$ErrorActionPreference='Stop';" +
-  "$s=New-Object System.Diagnostics.ProcessStartInfo;" +
+  "$s=[System.Diagnostics.ProcessStartInfo]::new();" +
   `$s.FileName=$env:${CONSOLE_PROGRAM};` +
   `$s.Arguments=$env:${CONSOLE_ARGUMENTS};` +
   "$s.UseShellExecute=$true;" +

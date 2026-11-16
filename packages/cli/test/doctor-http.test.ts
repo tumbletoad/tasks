@@ -46,7 +46,7 @@ describe("[A2.3.13.cli.doctor-http] doctor's accounts and HTTP rows", () => {
     expect(accountsCheck(win)).toEqual({
       id: "accounts",
       status: "ok",
-      detail: "No other user accounts. 1 agent sandbox account is not counted.",
+      detail: "No other user accounts on this computer (not counting 1 agent sandbox account).",
     });
     // One profile path is a single string in PowerShell's JSON; the second person counts.
     const two = windowsAccounts(
@@ -77,10 +77,14 @@ describe("[A2.3.13.cli.doctor-http] doctor's accounts and HTTP rows", () => {
       "501",
       "502",
     ]);
-    const warn = accountsCheck({ me: "501", accounts: ["501", "502", "503"], sandbox: [] });
-    expect(warn.status).toBe("warn");
-    expect(warn.detail).toBe(
-      "This machine has 2 other user accounts. TT Tasks v1 assumes one user per machine. Another account could serve a fake TT Tasks page at the UI's address while TT Tasks is stopped.",
+    // Other accounts are information: doctor never looks unhealthy for them.
+    expect(accountsCheck({ me: "501", accounts: ["501", "502", "503"], sandbox: [] })).toEqual({
+      id: "accounts",
+      status: "ok",
+      detail: "2 other user accounts on this computer.",
+    });
+    expect(accountsCheck({ me: "501", accounts: ["501", "502"], sandbox: [] }).detail).toBe(
+      "1 other user account on this computer.",
     );
     expect(accountsCheck(undefined).status).toBe("skip");
   });
