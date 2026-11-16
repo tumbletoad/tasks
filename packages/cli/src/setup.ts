@@ -36,10 +36,13 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
   agents --remove     Take out every entry setup wrote that is still exactly as it wrote it
   agents --status     Each home: registered or not, and its grant row
     [--app claude-code,codex,claude-desktop,codex-app,t3] [--instance <id>] [--home <folder>]
-    [--parts mcp,approve-tools] [--space <id or name>]
+    [--parts mcp,approve-tools,block] [--space <id or name>]
   agents print --app <name>
                       The entry and the file it belongs in, to add by hand (also cursor, gemini,
                       opencode, zed, vscode). Writes nothing
+  agents print-block --for claude|agents
+                      The optional instruction block and the file it belongs in, to add by hand.
+                      Writes nothing
   instances [--preview]
                       The agent apps Open can start a task in here: what was found (each agent
                       command with its version, each home) and the machine.toml entries to add.
@@ -53,7 +56,8 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
 
 Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings:
 --parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are
-only read.
+only read. --parts block adds the optional instruction block to Claude Code's CLAUDE.md and Codex's
+AGENTS.md, changing nothing else in them; --remove --parts block takes it out again.
 setup instances makes an agent home a place Open starts the agent in; setup agents registers
 ${CLI_NAME}'s tools in it, so the agent can read and update tasks. Run both.
 --apply, --remove and pairing run only from an interactive terminal. --no-browser prints the page

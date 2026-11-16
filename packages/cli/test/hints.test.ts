@@ -31,7 +31,7 @@ const SOURCES = [
  * every word is checked: so `Run: tasks get M-1` fails although "tasks get no owner" is prose.
  */
 const PROSE = new Set(
-  "a and are as at before by command extension for get has from in into is it its itself match matched matching named never of on or per placed still than that the to tool tools whose with without".split(
+  "a and are as at before by command extension for get has from in into is it its itself live match matched matching named never of on or per placed still than that the to tool tools whose with without".split(
     " ",
   ),
 );
