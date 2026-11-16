@@ -34,7 +34,12 @@ describe("[A2.3.12.4.install.restart] an install over a running service names th
     async () => {
       if (w === undefined) throw new Error("no install");
       const [first, second] = w.versions;
-      expect(await w.startService()).toBe(first);
+      // Started as a person starts it. Started as this test's own child, the old service would stay
+      // a zombie on Linux while the test waits for the restart synchronously, and the stop would
+      // wait for it in vain.
+      const started = runProgram(w.stable, ["service", "start"]);
+      expect(started.status, `${started.stdout}\n${started.stderr}`).toBe(0);
+      expect(await w.serviceVersion()).toBe(first);
 
       const ran = w.install(second);
       expect(ran.status, `${ran.stdout}\n${ran.stderr}`).toBe(0);
