@@ -1,4 +1,4 @@
-// Windows' "Default terminal application" (A4 3.6.1): Settings > System > For developers >
+// Windows' "Default terminal application": Settings > System > For developers >
 // Terminal, stored per account as two REG_SZ GUIDs under `HKCU\Console\%%Startup` (the key's name
 // holds the two percent signs). Microsoft documents the values in "Group Policy for Windows
 // Terminal" (learn.microsoft.com/windows/terminal/group-policy, "Default terminal application")

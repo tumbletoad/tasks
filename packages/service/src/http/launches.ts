@@ -55,7 +55,7 @@ export interface UiReceipt {
   /** When it entered each state, milliseconds since 1970. */
   readonly at: Readonly<Partial<Record<IntentState, number>>>;
   /**
-   * A terminal launch: the terminal that was Dispatched and why it was chosen (A4 3.6.1), as the
+   * A terminal launch: the terminal that was Dispatched and why it was chosen, as the
    * fixed words of `[terminal] app` and TERMINAL_SOURCES. Absent before its dispatch, and for a
    * launch recorded by a build that did not record them.
    */

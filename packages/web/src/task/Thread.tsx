@@ -55,7 +55,7 @@ export function actorOf(author: string, t: Translate): { who: string; mark: stri
 
 /**
  * A4's receipt text for a state (A5 3.9). Prepared shows nothing yet. A terminal launch names the
- * terminal and why it was chosen (A4 3.6.1) once one was Dispatched.
+ * terminal and why it was chosen once one was Dispatched.
  */
 export function receiptText(receipt: Receipt, label: string, t: Translate): string | undefined {
   // ICU select keys cannot hold `-`: the adapter's name goes in with `_`.

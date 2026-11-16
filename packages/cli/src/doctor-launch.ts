@@ -4,7 +4,7 @@
 //
 //   launch.scopes   Linux: terminals start without a systemd scope, so a restart or update of the
 //                   service may end the sessions in them (warn)
-//   launch.terminal the terminal a launch opens first and why (A4 3.6.1): warn when it was not
+//   launch.terminal the terminal a launch opens first and why: warn when it was not
 //                   found, or when the default the person set is one Tasks cannot open
 //   launch.env     the person's environment as a launch reads it: on Linux and macOS the last
 //                   login-shell snapshot the service attempted did not succeed, with the age of the
@@ -91,7 +91,7 @@ export const TERMINAL_NAMES: Readonly<Record<string, string>> = {
   custom: "your custom terminal command",
 };
 
-/** Why a terminal was chosen, in a few words (A4 3.6.1). */
+/** Why a terminal was chosen, in a few words. */
 export const TERMINAL_SOURCE_WORDS: Readonly<Record<string, string>> = {
   configured: "set in machine.toml",
   fallback: "a fallback",
@@ -105,7 +105,7 @@ export const TERMINAL_SOURCE_WORDS: Readonly<Record<string, string>> = {
 /** A name the service gave for a default Tasks cannot open: plain characters only. */
 const SHOWN_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/;
 
-/** `launch.terminal` (A4 3.6.1): `doctor/launch`'s `terminal`. */
+/** `launch.terminal`: `doctor/launch`'s `terminal`. */
 export function terminalCheck(terminal: unknown): Check {
   const id = "launch.terminal";
   if (!isObject(terminal)) {

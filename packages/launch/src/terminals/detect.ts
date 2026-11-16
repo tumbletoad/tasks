@@ -1,4 +1,4 @@
-// Which terminal a launch uses, and which after it (A4 3.6.1): machine.toml's `[terminal]` over the
+// Which terminal a launch uses, and which after it: machine.toml's `[terminal]` over the
 // operating system's default terminal. Detection reads names on PATH, small text files, a link's
 // target and, on Windows, the values the service read from the registry before (windows-default.ts);
 // it starts nothing. The choice is a pure function of what was found: tests pass a fake host.
@@ -27,7 +27,7 @@ import { linkKindOf, type AdapterApp, type TerminalKind } from "./commands.ts";
 import { delegationChoice, type WindowsDelegation } from "./windows-default.ts";
 
 /**
- * Why a terminal is in the chain, in a word the receipt and doctor turn into a few (A4 3.6.1).
+ * Why a terminal is in the chain, in a word the receipt and doctor turn into a few.
  * Stored as launch evidence (`terminal_source`), so a value is never renamed or reused.
  */
 export const TERMINAL_SOURCES = [

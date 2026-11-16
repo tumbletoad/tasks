@@ -1,4 +1,4 @@
-// A terminal launch's receipt names the terminal and why it was chosen (A4 3.6.1), in the page's
+// A terminal launch's receipt names the terminal and why it was chosen, in the page's
 // own words from its catalogue. Fixture receipts only.
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";

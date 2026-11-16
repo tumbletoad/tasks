@@ -509,7 +509,7 @@ export const EVENTS = {
     },
   },
   // Each terminal a launch tried (A4 3.6.2): the adapter, its kind and how it went, never its
-  // argv, its program's path or the folder. The one Dispatched names why it was chosen (3.6.1).
+  // argv, its program's path or the folder. The one Dispatched names why it was chosen.
   "launch.terminal": {
     lvl: "info",
     c: "launch",

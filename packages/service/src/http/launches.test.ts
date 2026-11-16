@@ -1,4 +1,4 @@
-// The page's receipt from a `launches` row (A4 3.6.1, A5 3.9): the terminal and its source reach
+// The page's receipt from a `launches` row: the terminal and its source reach
 // the page only as the fixed words a launch records. Fixture rows only.
 import { describe, expect, test } from "vitest";
 import { receiptOf } from "./launches.ts";

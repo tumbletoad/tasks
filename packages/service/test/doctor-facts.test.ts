@@ -130,7 +130,7 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
         attempted_at: "2026-11-14T00:00:00.000Z",
         taken_at: "2026-11-13T00:00:00.000Z",
       },
-      // The terminal a launch now opens first, and why (A4 3.6.1).
+      // The terminal a launch now opens first, and why.
       terminal: GNOME_INSTALLED,
     });
     // The probe a launch runs: systemd-run's scope around `true`, with the terminal's environment.

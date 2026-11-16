@@ -215,7 +215,7 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly env: Env;
   readonly spaces: () => readonly ServedSpace[];
   readonly log: Logger;
-  /** machine.toml's `[terminal]` (A4 3.6.1). Default: DEFAULT_TERMINAL. */
+  /** machine.toml's `[terminal]`. Default: DEFAULT_TERMINAL. */
   readonly terminalSettings?: TerminalSettings;
   /** The install ID: scope unit names carry it (A4 3.7). */
   readonly install?: string;
@@ -461,7 +461,7 @@ export class LaunchService {
   }
 
   /**
-   * The terminal a launch now would try first (A4 3.6.1): its adapter, why, whether its program
+   * The terminal a launch now would try first: its adapter, why, whether its program
    * was found, and a default the person set that Tasks cannot open. Words only, never a path.
    */
   async #terminalFacts(session: Readonly<Record<string, string>>): Promise<JsonObject | null> {
@@ -1432,7 +1432,7 @@ export class LaunchService {
           : { source: terminal.source }),
       });
     }
-    // The receipt names the terminal and why it was chosen (A4 3.6.1).
+    // The receipt names the terminal and why it was chosen.
     if (outcome.kind === "accepted" && terminal !== undefined) {
       return {
         ...outcome,

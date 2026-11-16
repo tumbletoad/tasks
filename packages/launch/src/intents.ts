@@ -132,7 +132,7 @@ export const EVIDENCE_FIELDS = {
   bound_at: "instant",
   /**
    * Terminal: the adapter that was Dispatched (`[terminal] app`'s names), and why it was in the
-   * chain (TERMINAL_SOURCES), for the receipt (A4 3.6.1).
+   * chain (TERMINAL_SOURCES), for the receipt.
    */
   terminal: "id",
   terminal_source: "id",
