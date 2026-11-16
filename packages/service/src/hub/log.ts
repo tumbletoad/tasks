@@ -247,6 +247,8 @@ export const EVENTS = {
   "config.default_space_set": { lvl: "info", c: "hub", fields: { source: ["ui", "cli"] } },
   // A space verb recorded what it did in [[spaces]] (space-records.ts), or could not. No ID, no path.
   "config.spaces_changed": { lvl: "info", c: "hub", fields: { enabled: "bool", edits: "int" } },
+  // `tasks space forget` took a space's entry out of [[spaces]]. No ID, no path.
+  "config.space_forgotten": { lvl: "info", c: "hub", fields: {} },
   "config.spaces_failed": {
     lvl: "warn",
     c: "hub",

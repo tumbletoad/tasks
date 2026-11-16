@@ -168,6 +168,8 @@ export interface SpaceView {
   readonly name?: string;
   readonly ref_prefix?: string;
   readonly state: SpaceState;
+  /** `tasks space forget` took it off the list: kept only so other entries keep their index. */
+  readonly forgotten?: true;
   readonly reason?: SpaceReason;
   /** The storage code behind a read-only or unavailable state, when there is one. */
   readonly code?: string;
@@ -375,6 +377,11 @@ class Hosted {
   stopping = false;
   /** writer.lock was found deleted or replaced, and reported. */
   lost = false;
+  /**
+   * `tasks space forget`: the entry stays in the list so the other entries keep their index, but no
+   * one sees or names it until its folder is opened again.
+   */
+  forgotten = false;
   /** The open in progress: what a close waits for. */
   busy: Promise<void> | undefined;
   /** The close, once one has begun. */
@@ -453,6 +460,7 @@ class Hosted {
     return {
       entry: this.index,
       state: this.state,
+      ...(this.forgotten ? { forgotten: true } : {}),
       ...(this.id === undefined ? {} : { id: this.id }),
       ...(this.reason === undefined ? {} : { reason: this.reason }),
       ...(this.code === undefined ? {} : { code: this.code }),
@@ -518,6 +526,7 @@ export class SpaceManager {
     hosted.forEach((space, i) => {
       if (entries[i]?.enabled === false) {
         space.state = "closed";
+        space.name = this.#nameInFolder(space);
         return;
       }
       const group = copies.get(space.registered);
@@ -560,20 +569,23 @@ export class SpaceManager {
    * as this machine's, a reader while it is served.
    */
   served(): ServedSpace[] {
-    return this.#spaces.map((space) => {
-      const message = space.shown();
-      return {
-        id: space.id,
-        registered: space.registered,
-        name: space.name,
-        state: space.state,
-        ...(space.reason === undefined ? {} : { reason: space.reason }),
-        ...(message === undefined ? {} : { message }),
-        writer: space.state === "open" ? space.writer : undefined,
-        reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
-        folder: space.folder,
-      };
-    });
+    return this.#spaces
+      .filter((space) => !space.forgotten)
+      .map((space) => {
+        const message = space.shown();
+        return {
+          id: space.id,
+          registered: space.registered,
+          name: space.name,
+          state: space.state,
+          ...(space.reason === undefined ? {} : { reason: space.reason }),
+          ...(message === undefined ? {} : { message }),
+          writer: space.state === "open" ? space.writer : undefined,
+          reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
+          folder: space.folder,
+          ...(space.backupDir === undefined ? {} : { backupDir: space.backupDir }),
+        };
+      });
   }
 
   /** The folder of a registered space, for the space verbs. */
@@ -611,6 +623,8 @@ export class SpaceManager {
         : other === folder;
     const known = this.#spaces.find((space) => same(space.folder));
     if (known !== undefined) {
+      // A forgotten folder opened again is listed again, as any folder opened for the first time.
+      known.forgotten = false;
       // A worker that has not ended yet may still hold the space: it gets one close's bound.
       if (known.stuck) await within(known.unstuck(), this.#closeMs);
       const free = () => known.replacing === undefined && !known.stuck;
@@ -746,6 +760,44 @@ export class SpaceManager {
         return false;
       }
     });
+  }
+
+  /**
+   * A closed space's name from its folder's space.json, for the list: undefined when the file is
+   * gone, damaged or names another space than the entry.
+   */
+  #nameInFolder(space: Hosted): string | undefined {
+    try {
+      const read = readManifest(space.folder);
+      return read.state === "present" && read.manifest?.space_id === space.registered
+        ? read.manifest.name
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Takes a closed or unavailable space off the list (`tasks space forget`): nothing of its folder
+   * is touched, and `open` of the folder brings it back.
+   */
+  forget(entry: number): void {
+    if (!this.forgettable(entry)) {
+      throw new StorageError("STORAGE_MISUSE", "Only a closed space is forgotten");
+    }
+    this.#space(entry).forgotten = true;
+  }
+
+  /**
+   * Whether `forget` takes the entry now: closed or unavailable, and no restore in place, claim or
+   * recovery running. Those leave the space closed for a while and then open it again, which would
+   * serve a space that is off the list.
+   */
+  forgettable(entry: number): boolean {
+    const space = this.#space(entry);
+    return (
+      (space.state === "closed" || space.state === "unavailable") && space.replacing === undefined
+    );
   }
 
   /** Reads the served space's name and prefix through its reader, for people's output. */

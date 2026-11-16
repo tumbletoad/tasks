@@ -151,8 +151,13 @@ export type PlannedOp =
 
 export interface PlannedArea {
   readonly slug: string;
-  /** As first written. */
+  /** As first written, cut to fit. */
   readonly title: string;
+  /**
+   * Its identity, from the whole title (slug.ts: groupKey): an import records where each group
+   * landed in the space under it, and a later import finds the group by that record.
+   */
+  readonly key: string;
 }
 
 export interface PlannedProject {
@@ -160,6 +165,8 @@ export interface PlannedProject {
   readonly title: string;
   /** Its area's slug. */
   readonly area: string;
+  /** Its identity: its area's and its own whole title's (PlannedArea.key). */
+  readonly key: string;
 }
 
 export interface PlannedSource extends PlannedSourceFields {

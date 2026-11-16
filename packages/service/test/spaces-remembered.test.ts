@@ -195,6 +195,100 @@ describe("[A2.3.1.hub.spaces-remembered] what a person last did to a space holds
   );
 });
 
+describe("[A2.3.1.hub.space-forget] a closed space is forgotten, and keeps its name until then", () => {
+  test(
+    "the name after a restart; forget refuses an open space, takes a closed one off the list and machine.toml, keeps its folder and clears the default",
+    SLOW,
+    async () => {
+      const w = await world("forget");
+      const user = await w.user();
+      const lifeFolder = join(w.root, "s", "life");
+      const life = (await user.call("space/create", { name: "Life", path: lifeFolder }, CALL)) as {
+        space: Row;
+      };
+      await user.call("space/use", { space: life.space.id }, CALL);
+      await user.call("space/close", { space: lifeFolder }, CALL);
+
+      // After a restart, the closed space is listed with its name, read from its own folder.
+      let again = await restart(w);
+      expect((await list(again)).find((r) => r.folder === lifeFolder)).toMatchObject({
+        name: "Life",
+        state: "closed",
+      });
+
+      // An open space is not forgotten: the answer says to close it first, by its folder.
+      const [mira] = await list(again);
+      const open = errorOf(
+        await again.call("space/forget", { space: "Mira" }, CALL).catch((e: unknown) => e),
+      );
+      expect(open.code).toBe("invalid_input");
+      expect(open.hint).toContain("space close");
+      expect(open.hint).toContain(mira?.folder ?? "?");
+
+      // By its name: the closed one, also when its name were shared with an open copy.
+      const forgotten = await again.call("space/forget", { space: "Life" }, CALL);
+      expect(forgotten).toMatchObject({ forgotten: true, space: { folder: lifeFolder } });
+      expect((await list(again)).map((r) => r.folder)).toEqual([mira?.folder]);
+      expect(recorded(w).map((s) => s.path)).toEqual([mira?.folder]);
+      expect(tomlOf(w)).not.toContain("default_space");
+      expect(existsSync(join(lifeFolder, "space.db"))).toBe(true);
+      // Forgotten is gone for good: not named, not back after a restart.
+      const named = errorOf(
+        await again.call("space/forget", { space: "Life" }, CALL).catch((e: unknown) => e),
+      );
+      expect(named.code).toBe("not_found");
+      again = await restart(w);
+      expect((await list(again)).map((r) => r.folder)).toEqual([mira?.folder]);
+
+      // Its folder opened again lists it again, and records it.
+      const back = await again.call("space/open", { path: lifeFolder }, CALL);
+      expect(back).toMatchObject({ space: { name: "Life", state: "open" }, remembered: true });
+      expect(recorded(w).map((s) => s.path)).toEqual([mira?.folder, lifeFolder]);
+    },
+  );
+
+  test(
+    "a forgotten space in this run, and one opened again in this run, as the list and the requests see them",
+    SLOW,
+    async () => {
+      const w = await world("forget-run");
+      const user = await w.user();
+      const lifeFolder = join(w.root, "s", "life");
+      await user.call("space/create", { name: "Life", path: lifeFolder }, CALL);
+      await user.call("space/close", { space: "Life" }, CALL);
+      await user.call("space/forget", { space: lifeFolder }, CALL);
+      expect((await list(user)).map((r) => r.name)).toEqual(["Mira"]);
+      // A request that names it finds no such space.
+      const refused = errorOf(await get(user, "L-1", "Life").catch((e: unknown) => e));
+      expect(refused.code).toBe("space_unavailable");
+      await user.call("space/open", { path: lifeFolder }, CALL);
+      expect((await list(user)).map((r) => [r.name, r.state])).toEqual([
+        ["Mira", "open"],
+        ["Life", "open"],
+      ]);
+
+      // A claimed copy beside its closed original: the name forgets the original, never the copy.
+      const backup = (await user.call("space/backup", { space: lifeFolder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "life-copy");
+      await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: lifeFolder },
+        CALL,
+      );
+      await user.call("space/close", { space: lifeFolder }, CALL);
+      await user.call("space/claim", { space: copyFolder }, CALL);
+      const forgot = await user.call("space/forget", { space: "Life" }, CALL);
+      expect(forgot).toMatchObject({ space: { folder: lifeFolder } });
+      expect((await list(user)).map((r) => [r.name, r.state, r.folder === copyFolder])).toEqual([
+        ["Mira", "open", false],
+        ["Life", "open", true],
+      ]);
+    },
+  );
+});
+
 describe("[A2.3.1.hub.spaces-not-remembered] a record machine.toml cannot take is not pretended", () => {
   test(
     "the verb is done for this run, its answer says a restart will not keep it and why, and running it again once the file is fixed records it",

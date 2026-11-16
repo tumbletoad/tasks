@@ -4,7 +4,9 @@
 // this process, fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, TaskFinishResult, TaskGetResult, type ErrorBody } from "@tasks/contracts";
+import type { WriteResult } from "@tasks/storage";
 import { renderResult } from "../src/mcp/render.ts";
+import { resultFailure } from "../src/ops/errors.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -184,8 +186,34 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
         expect(held.message).toBe(
           "The task is already wrapped up with another outcome or other learnings, so nothing was changed.",
         );
-        expect(held.hint).toContain("reopen_task");
+        // In the words of the caller's face: this one calls through the command line.
+        expect(held.hint).toContain("reopen it first: tasks reopen");
       }
+      // An agent's tools name the tools; the UI names no command.
+      const writerHeld = {
+        status: "conflict",
+        error: { code: "CONFLICT", message: "Conflict" },
+        conflicts: [
+          {
+            entity: "tasks",
+            id: "t_x",
+            ref: "M-9",
+            field: "wrap",
+            op: 1,
+            version: 1,
+            by: { kind: "human", label: "user" },
+            at: 0,
+          },
+        ],
+        results: [],
+        as_of: "1.1.0",
+      } as unknown as WriteResult;
+      expect(resultFailure(writerHeld, {}, 1, "mcp").hint).toBe(
+        "To add to it, log an entry: add_entry. To finish it again, reopen it first: reopen_task.",
+      );
+      expect(resultFailure(writerHeld, {}, 1, "ui").hint).toBe(
+        "To add to it, log an entry. To finish it again, reopen it first.",
+      );
 
       // reopen_task with a base from before the task's wrap-up: a change since the base, so read
       // again, never "reopen it first".

@@ -416,7 +416,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
         x3: { category: "Lumen", project: "Admin" },
       }),
     });
-    expect(p.projects).toEqual([
+    expect(p.projects).toMatchObject([
       { slug: "admin", title: "Admin", area: "lumen" },
       { slug: "admin-2", title: "Admin (house)", area: "home" },
     ]);
@@ -790,18 +790,24 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
         x7: { category: "Work" },
       }),
     });
-    expect(p.areas).toEqual([
+    expect(p.areas).toMatchObject([
       { slug: "area", title: "Работа" },
       { slug: "area-2", title: "Дом" },
       { slug: "area-3", title: "🏠" },
       { slug: "area-4", title: "💼" },
       { slug: "work", title: "Work" },
     ]);
-    expect(p.projects).toEqual([
+    expect(p.projects).toMatchObject([
       { slug: "project", title: "Отчёт", area: "area" },
       { slug: "project-2", title: "Ремонт", area: "area-2" },
       { slug: "project-3", title: "План", area: "area" },
     ]);
+    // Each group's recorded identity is its own and plain ASCII, whatever its title's script.
+    for (const groups of [p.areas, p.projects]) {
+      const keys = groups.map((g) => g.key);
+      expect(new Set(keys).size).toBe(keys.length);
+      for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    }
     expect(createOf(p, "x4").area).toBe("area");
     // A numbered slug stays within 48 characters.
     const long = "p".repeat(48);
@@ -841,7 +847,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
         x3: { category: "Home", project: "(Q4)" },
       }),
     });
-    expect(p.projects).toEqual([
+    expect(p.projects).toMatchObject([
       { slug: "project", title: "🏠 (Q1)", area: "home" },
       { slug: "q4", title: "(Q4)", area: "home" },
     ]);

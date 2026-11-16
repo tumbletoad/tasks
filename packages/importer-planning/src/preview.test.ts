@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import {
   mapPrototype,
   parsePrototype,
+  placeGroups,
   placeProjects,
   previewOf,
   previewToken,
@@ -370,6 +371,125 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     expect(given.not_imported.map((n) => n.what)).not.toContain("browser_actions");
   });
 
+  test("a planned area or project is the live one with its identity first, whatever its slug", () => {
+    // Two areas whose slugs meet and a project "Admin" in each: the plan numbers by first
+    // appearance, here the reverse of the space's.
+    const { plan } = small({
+      todo: "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->\n",
+      metadata: JSON.stringify({
+        a: { category: "Дом", project: "Admin" },
+        b: { category: "Работа", project: "Admin" },
+      }),
+    });
+    expect(plan.areas.map((a) => a.slug)).toEqual(["area", "area-2"]);
+    expect(plan.projects.map((p) => [p.slug, p.area])).toEqual([
+      ["admin", "area"],
+      ["admin-2", "area-2"],
+    ]);
+    const area = (slug: string, title: string) => ({ slug, id: `ar_${slug}`, version: 1, title });
+    const admin = (slug: string, inArea: string) => ({
+      slug,
+      id: `pr_${slug}`,
+      version: 1,
+      area: inArea,
+      title: "Admin",
+    });
+    const placed = placeGroups(plan, {
+      areas: [area("area", "Работа"), area("area-2", "Дом")],
+      projects: [admin("admin", "area"), admin("admin-2", "area-2")],
+    });
+    expect(Object.fromEntries(placed.areas)).toEqual({
+      area: { slug: "area-2", reuses: "ar_area-2" },
+      "area-2": { slug: "area", reuses: "ar_area" },
+    });
+    expect(Object.fromEntries(placed.projects)).toEqual({
+      admin: { slug: "admin-2", reuses: "pr_admin-2" },
+      "admin-2": { slug: "admin", reuses: "pr_admin" },
+    });
+    // Without a live area of its identity, the live area with its slug is reused (an import into
+    // a space it did not make), unless another planned area has taken it: then a new number.
+    const other = placeGroups(plan, { areas: [area("area", "Работа")], projects: [] });
+    expect(Object.fromEntries(other.areas)).toEqual({
+      area: { slug: "area-3" },
+      "area-2": { slug: "area", reuses: "ar_area" },
+    });
+    const bySlug = placeGroups(plan, { areas: [area("area", "Кухня")], projects: [] });
+    expect(bySlug.areas.get("area")).toEqual({ slug: "area", reuses: "ar_area" });
+  });
+
+  test("a group an earlier import landed goes back to that group, whatever its title and slug; the token pins the record", () => {
+    // Two areas of one identity in the space: only the record tells which is which.
+    const { plan } = small({
+      todo: "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->\n",
+      metadata: JSON.stringify({
+        a: { category: "Home", project: "Admin" },
+        b: { category: "Work", project: "Admin" },
+      }),
+    });
+    const [home, work] = plan.areas;
+    const [homeAdmin, workAdmin] = plan.projects;
+    if (home === undefined || work === undefined || homeAdmin === undefined)
+      throw new Error("plan");
+    if (workAdmin === undefined) throw new Error("plan");
+    const areas = [
+      { slug: "home", id: "a_one", version: 1, title: "Renamed by the person" },
+      { slug: "work", id: "a_two", version: 1, title: "Home" },
+    ];
+    const projects = [
+      { slug: "admin", id: "p_one", version: 1, area: "work", title: "Admin" },
+      { slug: "admin-2", id: "p_two", version: 1, area: "home", title: "Admin" },
+    ];
+    const landed = {
+      areas: new Map([
+        [home.key, "a_one"],
+        [work.key, "a_two"],
+      ]),
+      projects: new Map([
+        [homeAdmin.key, "p_two"],
+        [workAdmin.key, "p_one"],
+      ]),
+    };
+    const placed = placeGroups(plan, { areas, projects, landed });
+    expect(Object.fromEntries(placed.areas)).toEqual({
+      home: { slug: "home", reuses: "a_one" },
+      work: { slug: "work", reuses: "a_two" },
+    });
+    expect(Object.fromEntries(placed.projects)).toEqual({
+      admin: { slug: "admin-2", reuses: "p_two" },
+      "admin-2": { slug: "admin", reuses: "p_one" },
+    });
+    // Without the records, the identity rule takes the area titled Home for Home.
+    expect(placeGroups(plan, { areas, projects }).areas.get("home")).toEqual({
+      slug: "work",
+      reuses: "a_two",
+    });
+    // A group whose recorded group is gone is made anew, never a live group of its title or slug.
+    const gone = placeGroups(plan, { areas: areas.slice(1), projects: [], landed });
+    expect(gone.areas.get("home")).toEqual({ slug: "home" });
+    const lost = placeGroups(plan, {
+      areas: [
+        { slug: "home", id: "a_three", version: 1, title: "Home" },
+        { slug: "work", id: "a_two", version: 1, title: "Work" },
+      ],
+      projects: [{ slug: "admin", id: "p_three", version: 1, area: "home", title: "Admin" }],
+      landed,
+    });
+    expect(Object.fromEntries(lost.areas)).toEqual({
+      home: { slug: "home-2" },
+      work: { slug: "work", reuses: "a_two" },
+    });
+    expect(lost.projects.get("admin")).toEqual({ slug: "admin-3" });
+
+    // The token pins each record and whether its group is live.
+    const at = (more: Partial<PreviewRun["space"]>) =>
+      runOf({ space: { ...space, areas, projects, ...more } });
+    const token = previewToken(plan, at({ landed }));
+    expect(previewToken(plan, at({}))).not.toBe(token);
+    const swapped = { ...landed, areas: new Map([[home.key, "a_two"]]) };
+    expect(previewToken(plan, at({ landed: swapped }))).not.toBe(token);
+    expect(previewToken(plan, at({ landed, areas: areas.slice(1) }))).not.toBe(token);
+  });
+
   test("a project slug of another area is not reused: the next free number, pinned by the token", () => {
     const { parse, plan } = small({ todo: TODO, metadata: META });
     expect(plan.projects.map((p) => [p.slug, p.area])).toEqual([["portal", "lumen"]]);
@@ -396,6 +516,27 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     expect(
       placeProjects(plan, [portal("home"), portal(null, "portal-2")]).placements.get("portal"),
     ).toEqual({ slug: "portal-3" });
+    // A numbered slug a project of the same area holds is that project: a re-import finds the
+    // project its first import numbered (M7.05).
+    expect(
+      placeProjects(plan, [portal("home"), portal("lumen", "portal-2")]).placements.get("portal"),
+    ).toEqual({ slug: "portal-2", reuses: "pr_portal-2" });
+    // A reused area and project keep their own titles in the report.
+    const titled = previewOf(
+      parse,
+      plan,
+      runOf({
+        space: {
+          ...space,
+          areas: [{ ...lumen, title: "Lumen Clinic" }],
+          projects: [{ ...portal("lumen"), title: "Patient portal" }],
+        },
+      }),
+    ).report;
+    expect(titled.tasks.find((t) => t.legacy_id === "a")).toMatchObject({
+      area: "Lumen Clinic",
+      project: "Patient portal",
+    });
 
     // The slugs the placement looked at are pinned: a project that later takes portal-2 changes
     // the token, and a project elsewhere does not.

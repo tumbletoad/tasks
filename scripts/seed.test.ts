@@ -43,6 +43,13 @@ describe("[A7.3.3.seed.deterministic] pnpm seed", () => {
     expect(digests).toEqual([digest, digest]);
   }, 60_000);
 
+  test("makes the --out folder when it is not there", () => {
+    const out = join(temp(), "new", "folder");
+    const result = seed(["--out", out, "--tasks", "1"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readdirSync(out)).toEqual(["mira"]);
+  }, 60_000);
+
   test("builds the largest size it accepts", () => {
     // The reviewer's case: --seed fixed --tasks 2000 failed on a duplicate source key.
     const out = temp();

@@ -109,6 +109,7 @@ import {
   readPlacedAny,
   readReceipt,
   readScriptChange,
+  readUndoTarget,
   readSpacePreferences,
   readLaunchTask,
   readSiblings,
@@ -128,7 +129,7 @@ import {
 } from "./read.ts";
 import { duplicateWarning } from "./similar.ts";
 import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
-import { planningPreview } from "./import-planning.ts";
+import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -150,6 +151,8 @@ export interface ServedSpace {
   readonly reader: WorkerConnection | undefined;
   /** The space's folder on this machine: where an import's run folder goes (A7 3.15.1). */
   readonly folder?: string;
+  /** The space's machine-local backup folder, when one is set: an import's barrier backup. */
+  readonly backupDir?: string;
 }
 
 /** What the request path needs from its host. */
@@ -685,7 +688,7 @@ async function submit(
     throw storageFailure(error);
   }
   if (result.status === "conflict" || result.status === "rejected") {
-    throw resultFailure(result, options.hints, options.wrapUp);
+    throw resultFailure(result, options.hints, options.wrapUp, principal.origin);
   }
   call.applied = true;
   return result;
@@ -1838,10 +1841,75 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
   },
 
+  // A7 3.15.5: the user's apply of a dry run, behind a verified backup, as the import actor.
+  "import.planning.apply": async (call) => {
+    const writer = writerOf(call.space);
+    const reader = readerOf(call.space);
+    const folder = call.space.folder;
+    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
+    let principal: Id<"ac">;
+    try {
+      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+      principal = await actorOf(writer, call.principal);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    try {
+      return await planningApply({
+        folder,
+        reader,
+        writer,
+        input: call.input,
+        roots: call.host.roots?.() ?? [],
+        platform: call.host.platform ?? process.platform,
+        principal,
+        importer: () => writer.actor("import", "import"),
+        scope: call.principal.scope,
+        ...(call.principal.earlierScope === undefined
+          ? {}
+          : { earlierScope: call.principal.earlierScope }),
+        machine: call.host.machine.id as Id<"m">,
+        ...(call.space.backupDir === undefined ? {} : { backupDir: call.space.backupDir }),
+        ...(call.host.now === undefined ? {} : { now: call.host.now }),
+      });
+    } catch (error) {
+      throw storageFailure(error);
+    }
+  },
+
+  // A7 3.15.5: the undo of an applied import, partial by design, never on the undo stack.
+  "import.planning.undo": async (call) => {
+    const writer = writerOf(call.space);
+    const reader = readerOf(call.space);
+    let principal: Id<"ac">;
+    try {
+      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+      principal = await actorOf(writer, call.principal);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    return await planningUndo({
+      ...(call.space.folder === undefined ? {} : { folder: call.space.folder }),
+      reader,
+      writer,
+      input: call.input,
+      principal,
+      scope: call.principal.scope,
+      ...(call.principal.earlierScope === undefined
+        ? {}
+        : { earlierScope: call.principal.earlierScope }),
+      machine: call.host.machine.id as Id<"m">,
+      origin: call.principal.origin,
+    });
+  },
+
   // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by
   // provenance in the writer, so no base; a conflict comes back as `conflict` with A1's cause.
   "history.undo": async (call) => {
     const { input } = call;
+    if (input["check_script"] === true && input["commit"] === undefined) {
+      await refuseBehindScript(call);
+    }
     const op: Operation = {
       kind: "undo",
       ...namedCommit(input),
@@ -2195,6 +2263,56 @@ function namedCommit(input: Record<string, unknown>): { commit?: Id<"op"> } {
     throw invalid("commit", "Expected a change's commit ID", "Copy it from the change's history.");
   }
   return { commit };
+}
+
+/** A conflict's `reason` when an undo with `check_script` found a newer change by a script. */
+export const SCRIPT_CHANGE_AFTER = "script_change_after";
+
+/**
+ * `check_script`: the person's newest change is older than a change a script of theirs made, which
+ * no undo reaches. Undoing now would take back the older change, which is rarely what someone who
+ * just ran a script and then `undo` means, so nothing is undone and the conflict names both: the
+ * change that would be undone (its commit, which a confirmed undo passes) and the script's. A
+ * retry of an undo that applied finds its receipt and replays it instead.
+ */
+async function refuseBehindScript(call: Call): Promise<void> {
+  const reader = readerOf(call.space);
+  const { principal } = call;
+  let found;
+  try {
+    const stored = await readReceipt(reader, {
+      scope_id: principal.scope,
+      ...(principal.earlierScope === undefined ? {} : { earlier_scope_id: principal.earlierScope }),
+      request_id: String(call.input["request_id"]),
+    });
+    if (receiptResult(stored).found) return;
+    const target = await readUndoTarget(reader, await actorOf(writerOf(call.space), principal));
+    if (target === undefined) return;
+    const scripted = await readScriptChange(reader, {
+      scope: principalOf("cli-script", call.host.machine.id).scope,
+      undone: target.commit,
+      seq: Number.MAX_SAFE_INTEGER,
+    });
+    if (scripted === undefined) return;
+    found = { target, scripted };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw storageFailure(error);
+  }
+  const { target, scripted } = found;
+  throw new AppError({
+    code: "conflict",
+    message: `A script changed ${scripted.task} after your newest change, so nothing was undone: an undo now would take back your older change${target.tasks.length === 0 ? "" : ` to ${target.tasks.join(", ")}`}.`,
+    hint: "Undo it anyway with --yes, or leave it.",
+    data: {
+      reason: SCRIPT_CHANGE_AFTER,
+      commit: target.commit,
+      ...(target.change === undefined ? {} : { change: target.change }),
+      tasks: target.tasks,
+      task_count: target.count,
+      script_change: scripted,
+    },
+  });
 }
 
 /**
