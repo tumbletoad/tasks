@@ -10,6 +10,7 @@ export {
   type LaunchServiceOptions,
   type TerminalSeams,
   type TerminalStart,
+  type TerminalView,
 } from "./service.ts";
 export {
   LaunchFolderUnavailable,

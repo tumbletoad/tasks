@@ -77,6 +77,7 @@ import {
 } from "./lock.ts";
 import { Logger, MANAGERS, type Level, type Manager } from "./log.ts";
 import { DefaultSpace } from "./default-space.ts";
+import { MachineSettings } from "./machine-settings.ts";
 import { loadOrCreateMachine, MACHINE_FILE, MachineFileInvalid } from "./machine.ts";
 import { Maintenance } from "./maintenance.ts";
 import {
@@ -826,6 +827,20 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ...(accountHome === undefined ? {} : { home: accountHome }),
     });
     launching.service = launches;
+    // Settings for this computer (M5.11): the page's theme and keys, and Open's terminal.
+    const machineSettings = new MachineSettings({
+      configDir: layout.config,
+      platform,
+      log,
+      preferences: config.preferences,
+      terminal: {
+        view: () => launches.terminalView(),
+        settings: () => launches.terminals.settings,
+        apply: (next) => {
+          launches.terminals.settings = next;
+        },
+      },
+    });
     const listen = options.listen ?? listenEndpoint;
     let bound: { kind: "unix" | "pipe"; path: string } | undefined;
     let socketIdentity: { dev: bigint; ino: bigint } | undefined;
@@ -902,6 +917,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         build: BUILD,
         ops: hub.ops,
         defaults,
+        machine: machineSettings,
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,

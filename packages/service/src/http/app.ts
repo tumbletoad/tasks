@@ -16,6 +16,8 @@
 //   POST /api/v1/launch/list    a task's launch receipts (launches.ts)
 //   POST /api/v1/space/list     this machine's spaces and its default space (the space switcher)
 //   POST /api/v1/space/default  Make default: machine.toml's `[service] default_space`
+//   POST /api/v1/machine/pref    Settings: set or reset a machine preference of the page's
+//   POST /api/v1/machine/terminal  Settings: Open's terminal, and with `app` the choice of one
 //
 // A connection counts as unauthenticated until a request on it presents a live token (or its
 // upgrade a live ticket); then it counts against that token, and a revocation of the token closes
@@ -25,7 +27,14 @@ import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { httpHeader, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { httpRoutes } from "@tasks/contracts/generated/http-routes.ts";
-import { ERROR_CODES, AppError, findEntry, type ErrorBody, type ErrorCode } from "@tasks/contracts";
+import {
+  ERROR_CODES,
+  AppError,
+  findEntry,
+  type ErrorBody,
+  type ErrorCode,
+  type PreferenceRead,
+} from "@tasks/contracts";
 import { hasControl } from "@tasks/launch";
 import { WebSocketServer } from "ws";
 import { copyOf, isAmbiguity } from "../ops/copies.ts";
@@ -45,6 +54,7 @@ import {
   bearerOf,
   checkRequest,
   LAUNCH_PREFIX,
+  MACHINE_PREFIX,
   OP_PREFIX,
   SPACE_PREFIX,
   repeatedHeader,
@@ -56,7 +66,7 @@ import type { Visibility } from "./feed.ts";
 import type { RedeemCheck } from "./holders.ts";
 import { UiLaunches, type UiLaunchPort } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
-import { NONCE_PLACEHOLDER, type UiBundle } from "./page.ts";
+import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
 import { FeedHub, WS_CLOSE } from "./ws.ts";
 
@@ -88,6 +98,21 @@ export interface AppOptions {
   readonly launch?: UiLaunchPort;
   /** The machine's default space (hub/default-space.ts). None: the page cannot change it. */
   readonly defaults?: UiDefaultSpace;
+  /** This computer's settings (hub/machine-settings.ts). None: Settings changes nothing here. */
+  readonly machine?: UiMachine;
+}
+
+/**
+ * This computer's settings as the page reads and changes them: the theme and the single-letter
+ * keys, which every tab's feed carries, and the terminal Open uses.
+ */
+export interface UiMachine {
+  preferences(): readonly PreferenceRead[];
+  theme(): string;
+  setPreference(key: unknown, value: unknown): Promise<PreferenceRead>;
+  terminal(): Promise<unknown>;
+  setTerminal(app: unknown): Promise<unknown>;
+  onChange(listener: () => void): () => void;
 }
 
 /** The machine's default space, as Make default reads and changes it (A2 3.1). */
@@ -181,6 +206,7 @@ export class HttpApp {
   readonly #sockets = new Map<Socket, SocketState>();
   readonly #routes: RouteTable;
   readonly #unrevoke: () => void;
+  readonly #unmachine: () => void;
   #conn = 0;
   #blocked = false;
 
@@ -221,6 +247,9 @@ export class HttpApp {
       now: options.now,
       live: (grant) => this.#live(options.grants.get(grant)) !== undefined,
       instances: () => this.launches.instances(),
+      ...(options.machine === undefined
+        ? {}
+        : { machine: () => options.machine?.preferences() ?? [] }),
       ...(options.visible === undefined ? {} : { visible: options.visible }),
     });
     const ops = new Set<string>(httpRoutes.map((r) => r.entry));
@@ -231,6 +260,10 @@ export class HttpApp {
     this.#unrevoke = options.grants.onRevoke((grantId) => {
       this.#closeGrant(grantId);
     });
+    this.#unmachine =
+      options.machine?.onChange(() => {
+        this.feed.machineChanged();
+      }) ?? (() => undefined);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -331,6 +364,7 @@ export class HttpApp {
     this.feed.closeAll(WS_CLOSE.shutdown, "shutdown");
     for (const socket of this.#sockets.keys()) socket.destroy();
     this.#unrevoke();
+    this.#unmachine();
   }
 
   #date(): Date {
@@ -517,7 +551,7 @@ export class HttpApp {
             res,
             port,
             200,
-            this.options.ui.index.replaceAll(NONCE_PLACEHOLDER, nonce),
+            shellFor(this.options.ui.index, nonce, this.options.machine?.theme() ?? "sumi"),
             "text/html; charset=utf-8",
             { nonce },
           );
@@ -596,6 +630,7 @@ export class HttpApp {
         case "ws_ticket":
         case "launch":
         case "space":
+        case "machine":
         case "op": {
           const grant = this.#grantOf(req);
           if (grant === undefined) {
@@ -627,6 +662,11 @@ export class HttpApp {
           if (route === "space") {
             const input = await this.#readBody(req, res);
             await this.#space(res, port, path.slice(SPACE_PREFIX.length), input);
+            return;
+          }
+          if (route === "machine") {
+            const input = await this.#readBody(req, res);
+            await this.#machine(res, port, path.slice(MACHINE_PREFIX.length), input);
             return;
           }
           const name = path.slice(OP_PREFIX.length);
@@ -753,6 +793,45 @@ export class HttpApp {
         });
       }
       this.#json(res, port, 200, { result: await defaults.make(input["space"], "ui") });
+    } catch (error) {
+      const body: ErrorBody =
+        error instanceof AppError
+          ? error.toBody()
+          : { code: "internal", message: "The service failed. The details are in its log." };
+      this.#error(res, port, ERROR_CODES[body.code].http, body);
+    }
+  }
+
+  /**
+   * `POST /api/v1/machine/<action>`: Settings for this computer. The UI's grant is the person,
+   * the only one who changes these. `pref` sets `{key, value}` (null resets it); `terminal` reads
+   * Open's terminal, and with `{app}` chooses it (`auto`: the operating system's default).
+   */
+  async #machine(
+    res: ServerResponse,
+    port: number,
+    action: string,
+    input: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const machine = this.options.machine;
+      if (machine === undefined) {
+        throw new AppError({
+          code: "service_unavailable",
+          message: "This service cannot change this computer's settings.",
+          data: { reason: "ui_unavailable", retryable: false },
+        });
+      }
+      if (action === "pref") {
+        const read = await machine.setPreference(input["key"], input["value"]);
+        this.#json(res, port, 200, { result: read });
+        return;
+      }
+      const terminal =
+        input["app"] === undefined
+          ? await machine.terminal()
+          : await machine.setTerminal(input["app"]);
+      this.#json(res, port, 200, { result: { terminal } });
     } catch (error) {
       const body: ErrorBody =
         error instanceof AppError

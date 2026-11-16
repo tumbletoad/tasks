@@ -44,6 +44,9 @@ export const LAUNCH_ACTIONS: readonly string[] = ["list"];
 /** The page's space switcher (M5.01): this machine's spaces, and Make default. */
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default"];
+/** Settings (M5.11): this computer's preferences the page sets, and Open's terminal. */
+export const MACHINE_PREFIX = "/api/v1/machine/";
+export const MACHINE_ACTIONS: readonly string[] = ["pref", "terminal"];
 export const HEALTHZ_PATH = "/healthz";
 export const WELL_KNOWN_PATH = "/.well-known/tasks";
 export const ASSET_PREFIX = "/assets/";
@@ -128,6 +131,7 @@ export function routeOf(path: string, files: Pick<RouteTable, "hasFile">): Route
   if (path.startsWith(OP_PREFIX)) return "op";
   if (path.startsWith(LAUNCH_PREFIX)) return "launch";
   if (path.startsWith(SPACE_PREFIX)) return "space";
+  if (path.startsWith(MACHINE_PREFIX)) return "machine";
   if (path.startsWith(API_PREFIX) || path === "/api") return "api_other";
   if (path === HEALTHZ_PATH) return "healthz";
   if (path === WELL_KNOWN_PATH) return "well_known";
@@ -145,6 +149,7 @@ const isApi = (route: Route): boolean =>
   route === "op" ||
   route === "launch" ||
   route === "space" ||
+  route === "machine" ||
   route === "api_other";
 
 /** The origins this listener belongs to. `tasks open` always uses the first. */
@@ -213,7 +218,8 @@ export function checkRequest(port: number, facts: RequestFacts, table: RouteTabl
     route === "ws_ticket" ||
     route === "op" ||
     route === "launch" ||
-    route === "space";
+    route === "space" ||
+    route === "machine";
   if (route === "api_other") {
     if (facts.method !== "GET" && facts.method !== "POST") return refuse(route, 405, "method");
   } else if (post ? facts.method !== "POST" : facts.method !== "GET") {
@@ -225,6 +231,7 @@ export function checkRequest(port: number, facts: RequestFacts, table: RouteTabl
     route === "op" ||
     route === "launch" ||
     route === "space" ||
+    route === "machine" ||
     route === "api_other";
   if (bearer && !facts.bearer) return refuse(route, 401, "token");
   if (route === "ws" && !facts.upgrade) return refuse(route, 426, "upgrade");
@@ -238,6 +245,9 @@ export function checkRequest(port: number, facts: RequestFacts, table: RouteTabl
     return refuse(route, 404, "not_found");
   }
   if (route === "space" && !SPACE_ACTIONS.includes(facts.path.slice(SPACE_PREFIX.length))) {
+    return refuse(route, 404, "not_found");
+  }
+  if (route === "machine" && !MACHINE_ACTIONS.includes(facts.path.slice(MACHINE_PREFIX.length))) {
     return refuse(route, 404, "not_found");
   }
   return { ok: true, route };

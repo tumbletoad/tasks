@@ -421,6 +421,21 @@ export function autoChoice(host: TerminalHost): TerminalChoice {
   };
 }
 
+/**
+ * The terminals a person can choose here: each adapter whose program is found, in the order
+ * `auto` tries them when no default names one, and the custom command when machine.toml has one.
+ */
+export function installedTerminals(settings: TerminalSettings, host: TerminalHost): AdapterApp[] {
+  const apps: AdapterApp[] =
+    host.platform === "win32"
+      ? ["wt", "console"]
+      : host.platform === "linux"
+        ? [...LINUX_ORDER, "x-terminal-emulator"]
+        : [];
+  const found = apps.filter((app) => entryFor(host, app, "installed").program !== undefined);
+  return settings.custom === undefined ? found : [...found, "custom"];
+}
+
 /** The terminals `auto` would pick, best first, that are installed here. */
 export function autoOrder(host: TerminalHost): ChainEntry[] {
   return autoChoice(host).chain;

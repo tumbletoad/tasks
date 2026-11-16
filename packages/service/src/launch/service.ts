@@ -118,6 +118,22 @@ export interface LaunchInstance {
   readonly route: Route;
 }
 
+/** Open's terminal as Settings shows it (LaunchService.terminalView): fixed words only. */
+export interface TerminalView {
+  /** machine.toml's `[terminal] app`: `auto` follows the operating system's default. */
+  readonly chosen: TerminalSettings["app"];
+  /** The terminal a launch now opens first, why, and whether its program is there. */
+  readonly used: {
+    readonly app: string;
+    readonly source: string;
+    readonly found: boolean;
+  } | null;
+  readonly unsupported: string | null;
+  readonly unread: "windows" | "desktop" | null;
+  /** The terminals found here, which a person can choose. */
+  readonly installed: readonly string[];
+}
+
 /** A reference of a launch reference's length, for deciding a brief's budget before the click. */
 const REFERENCE_LENGTH_STAND_IN = "L00000";
 
@@ -351,11 +367,10 @@ export class LaunchService {
           reg: regPath(options.env),
           env: helperEnv(options.env),
         }));
-    const settings = options.terminalSettings ?? DEFAULT_TERMINAL;
     const readDesktop = desktopReader();
     this.terminals = new TerminalLauncher({
       platform: options.platform,
-      settings,
+      settings: options.terminalSettings ?? DEFAULT_TERMINAL,
       install: options.install ?? "",
       shimCommand: options.shimCommand ?? defaultShimCommand(options),
       host: async (session) => {
@@ -384,13 +399,13 @@ export class LaunchService {
             ...input,
             powershell: powershellPath(options.env),
             // Read at each launch that needs it: the person may change it at any time.
-            delegation: needsDefault(settings)
+            delegation: needsDefault(this.terminals.settings)
               ? await delegation().catch(() => undefined)
               : undefined,
           });
         }
         const desktop = await readDesktopTexts(
-          settings,
+          this.terminals.settings,
           osTerminalHost(input),
           readDesktop,
           DESKTOP_READ_MS,
@@ -491,6 +506,29 @@ export class LaunchService {
       found: first?.program !== undefined,
       unsupported: choice.unsupported ?? null,
       unread: choice.unread ?? null,
+    };
+  }
+
+  /**
+   * What Settings shows of Open's terminal: what machine.toml chooses (`auto` for the system's
+   * default), the terminal a launch now opens first and why, and the terminals a person can choose
+   * here. Null where this service opens no terminal. Words only, never a path.
+   */
+  async terminalView(): Promise<TerminalView | null> {
+    if (!this.terminals.ready()) return null;
+    const session = await this.environment.session().catch(() => ({}));
+    const found = await this.terminals.options(session).catch(() => undefined);
+    if (found === undefined) return null;
+    const first = found.choice.chain[0];
+    return {
+      chosen: this.terminals.settings.app,
+      used:
+        first === undefined
+          ? null
+          : { app: first.app, source: first.source, found: first.program !== undefined },
+      unsupported: found.choice.unsupported ?? null,
+      unread: found.choice.unread ?? null,
+      installed: found.installed,
     };
   }
 
@@ -642,7 +680,7 @@ export class LaunchService {
           place,
           env: chosen.env,
           title: `${task.ref} ${title}`,
-          afterExit: (this.#options.terminalSettings ?? DEFAULT_TERMINAL).afterExit,
+          afterExit: this.terminals.settings.afterExit,
           ...(chosen.viaLoginShell && platform !== "win32" ? { loginShell: true } : {}),
           ...(built.folderArgs.length === 0 ? {} : { folderArgs: built.folderArgs }),
           ...(codexHome === undefined ? {} : { match: { home: codexHome } }),

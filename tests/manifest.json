@@ -3648,6 +3648,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-11.machine-settings",
+      "title": "The theme and the single-letter keys are set and reset in machine.toml over the page's route with the person's own lines kept, every open tab's feed and a new one follow, the shell paints the theme, a restart reads them; Open's terminal says which one and why, chooses among those found (taking the old one's path out) and goes back to the default",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-01.e2e.task-links",
       "title": "In Chromium and Firefox: a task link opened on a machine without a default keeps its task through the space chooser, and a navigation from one task's route to another's, and Back, expands the task each route names",
       "source": "A5 3.3, A2 3.1, A7 3.12 M5.01",

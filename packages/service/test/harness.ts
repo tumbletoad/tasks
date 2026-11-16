@@ -18,6 +18,7 @@ import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PRODUCT_ID } from "@tasks/brand";
 import { openRpc, parseKey, type RpcSession } from "@tasks/bridge/protocol";
+import type { TerminalHost } from "@tasks/launch";
 import { newId, readManifest } from "@tasks/storage";
 import { applyEdits, type Edit } from "../src/config/edit.ts";
 import { canonicalStatePath, installId, RUN_USER_BASE } from "../src/hub/paths.ts";
@@ -235,6 +236,25 @@ export function instanceToml(
               .join(", ")} }`;
   const lines = Object.entries(fields).map(([k, v]) => `${k} = ${value(v)}`);
   return `\n[[instance]]\n${lines.join("\n")}\n`;
+}
+
+/**
+ * A Linux desktop where Ghostty and kitty are installed and no default names a terminal, the same
+ * on every OS the tests run on: `auto` opens Ghostty, the first of Tasks' own order. Detection
+ * only: nothing it names is ever started.
+ */
+export function twoTerminalsHost(): TerminalHost {
+  const programs = ["/usr/bin/ghostty", "/usr/bin/kitty"];
+  return {
+    platform: "linux",
+    path: ["/usr/bin"],
+    terminalVar: undefined,
+    home: "/home/person",
+    windowsApps: undefined,
+    executable: (path) => programs.includes(path),
+    readText: () => undefined,
+    realpath: () => undefined,
+  };
 }
 
 export function readServiceJson(home: string): ServiceJson | undefined {

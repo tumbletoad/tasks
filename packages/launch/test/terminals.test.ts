@@ -16,6 +16,7 @@ import {
   delegationChoice,
   DESKTOP_READ_MS,
   desktopReader,
+  installedTerminals,
   linkKindOf,
   listedIds,
   osTerminalHost,
@@ -421,6 +422,32 @@ const settings = (over: Partial<TerminalSettings> = {}): TerminalSettings => ({
 const apps = (chain: readonly ChainEntry[]): string[] => chain.map((e) => e.app);
 
 describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
+  test("the terminals a person can choose are the ones found here, and the custom command when set", () => {
+    const linux = fakeHost("linux", [
+      "/usr/bin/kitty",
+      "/usr/bin/gnome-terminal",
+      "/usr/bin/x-terminal-emulator",
+    ]);
+    expect(installedTerminals(settings(), linux)).toEqual([
+      "kitty",
+      "gnome-terminal",
+      "x-terminal-emulator",
+    ]);
+    expect(installedTerminals(settings({ custom: ["{terminal}", "{shim}"] }), linux)).toEqual([
+      "kitty",
+      "gnome-terminal",
+      "x-terminal-emulator",
+      "custom",
+    ]);
+    const alias = "C:\\Apps\\wt.exe";
+    const ps = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    const windows = (programs: string[]) =>
+      fakeHost("win32", programs, { windowsApps: "C:\\Apps", powershell: ps });
+    expect(installedTerminals(settings(), windows([alias, ps]))).toEqual(["wt", "console"]);
+    expect(installedTerminals(settings(), windows([ps]))).toEqual(["console"]);
+    expect(installedTerminals(settings(), fakeHost("darwin", []))).toEqual([]);
+  });
+
   test("a chosen terminal with its configured fallbacks; with none configured, the other installed ones", () => {
     const host = fakeHost("linux", ["/usr/bin/gnome-terminal", "/usr/bin/kitty"]);
     expect(

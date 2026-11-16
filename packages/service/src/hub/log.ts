@@ -245,6 +245,13 @@ export const EVENTS = {
   "config.instances_changed": { lvl: "info", c: "hub", fields: { added: "int", removed: "int" } },
   // Make default or `tasks space use` (M5.01): the machine's default space changed. No ID.
   "config.default_space_set": { lvl: "info", c: "hub", fields: { source: ["ui", "cli"] } },
+  // Settings (M5.11): a machine preference or Open's terminal changed. The key or adapter word only.
+  "config.preference_set": {
+    lvl: "info",
+    c: "hub",
+    fields: { key: ["ui.theme", "ui.single_keys"], reset: "bool" },
+  },
+  "config.terminal_set": { lvl: "info", c: "hub", fields: { app: ["auto", ...TERMINAL_ADAPTERS] } },
   // A space verb recorded what it did in [[spaces]] (space-records.ts), or could not. No ID, no path.
   "config.spaces_changed": { lvl: "info", c: "hub", fields: { enabled: "bool", edits: "int" } },
   // `tasks space forget` took a space's entry out of [[spaces]]. No ID, no path.
