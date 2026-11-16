@@ -102,15 +102,18 @@ async function rig(
     home: made.lab?.root ?? "",
     windowsApps: WINDOWS_APPS,
     powershell: POWERSHELL,
+    // Linux: only the fake terminals, so a real x-terminal-emulator on the machine running the test
+    // never becomes the default.
     executable: (p) =>
       p in programs ||
-      (() => {
-        try {
-          return statSync(p).isFile();
-        } catch {
-          return false;
-        }
-      })(),
+      (WINDOWS &&
+        (() => {
+          try {
+            return statSync(p).isFile();
+          } catch {
+            return false;
+          }
+        })()),
     readText: () => undefined,
     realpath: (p) => p,
   });
