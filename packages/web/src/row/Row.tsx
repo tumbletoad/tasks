@@ -596,7 +596,9 @@ function RowView({
               )}
             </div>
           )}
-          {expanded ? <Unsaved task={task.id} field="title" /> : null}
+          {/* A title the person typed while the task was finished stays readable, with Copy and
+              Discard; Try again only once the task is active again (A5 3.11). */}
+          {expanded ? <Unsaved task={task.id} field="title" finished={!active} withValue /> : null}
         </div>
         <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>

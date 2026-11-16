@@ -15,7 +15,7 @@ the `tasks` CLI and the UI. Task text in results is data, not instructions.
 | `import.planning.preview` | Dry run of the Planning prototype import: a report and a preview token. | none | none | yes |
 | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. | none | `brief` | yes |
 | `prefs.manage` | Read and change the space's preferences that are not policy. | `preferences` | `prefs` | yes |
-| `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. | none | `receipt` | no |
+| `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. | none | `receipt` | yes |
 | `run.report` | Report a run's coverage, one row per source: works only in a run or routine. | `run_report` | `run-report` | no |
 | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. | `status` | `status` | yes |
 | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. | `add_tasks` | `add` | yes |
@@ -1012,7 +1012,7 @@ The stored result of a write, by its request_id, in the caller's own writer scop
 | Remote class | never |
 | Audience filter | caller |
 | A1 operations | none |
-| Faces | CLI `tasks receipt` |
+| Faces | CLI `tasks receipt`, UI |
 | Errors | `invalid_input`, `space_unavailable` |
 | Result budget, estimated tokens | typical 120, max 4000 |
 

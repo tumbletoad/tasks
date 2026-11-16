@@ -88,6 +88,11 @@ export class Live {
     void this.#connect();
   }
 
+  /** The tab stopped (closed, or signed out): nothing more is asked of the service. */
+  get stopped(): boolean {
+    return this.#stopped;
+  }
+
   stop(): void {
     this.#stopped = true;
     clearTimeout(this.#retry);
