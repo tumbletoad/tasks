@@ -77,6 +77,11 @@ const SAMPLE = {
   restore: "P3",
   field: "the due date",
   at: Date.UTC(2026, 10, 12, 9, 40),
+  filters: "status:open p<=2",
+  message: "Unknown filter colour.",
+  open: 3,
+  done: 1,
+  more: "yes",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

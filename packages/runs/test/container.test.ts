@@ -105,8 +105,15 @@ async function holdJob(name: string) {
     stdio: ["pipe", "pipe", "ignore"],
     windowsHide: true,
   });
+  const ended = new Promise<void>((resolve) => {
+    hold.once("exit", () => {
+      resolve();
+    });
+  });
+  // Resolves once the holder is gone: its program file is in the folder the suite removes.
   const release = () => {
     hold.stdin.end();
+    return ended;
   };
   try {
     await new Promise<void>((resolve, reject) => {
@@ -119,7 +126,7 @@ async function holdJob(name: string) {
       });
     });
   } catch (error) {
-    release();
+    await release();
     throw error;
   }
   return release;
@@ -333,19 +340,28 @@ describe("[A4.3.11.8.container.crash] killing the service by force leaves nothin
     if (!windows) ctx.skip("job handles exist on Windows only");
     need(ctx);
     const service = await startService(`hold-${newToken()}`);
-    const { token, name } = await start(service, "ignore-stop");
-    await waitForCensus(token, (pids) => pids.length === 2);
+    const { token, name } = await start(service, "handles");
+    const said = await waitFor(
+      "output",
+      () => output(service, name),
+      (o) => o.head.includes("\n"),
+    );
+    const helper = Number(/^parent (\d+)$/m.exec(said.head)?.[1]);
+    expect(helper).toBeGreaterThan(0);
     const release = await holdJob(name);
     try {
+      // A helper that reads the end of the service's pipe ends the job itself, and whether it gets
+      // to that before the service's death takes it along is a race. Killed first, it cannot.
+      process.kill(helper, "SIGKILL");
+      await service.request<AgentExit>("exited", { name }, 15_000);
       await service.crash();
-      await sleep(500);
-      expect(census(token)).toHaveLength(2);
+      expect(census(token)).toHaveLength(1);
       const fresh = new WindowsContainers({ helper: natives?.helper ?? "" });
       expect(await fresh.confirmEmpty(name)).toMatchObject({ state: "occupied" });
       expect(await fresh.recover(name)).toEqual(EMPTY);
       expect(census(token)).toEqual([]);
     } finally {
-      release();
+      await release();
     }
   });
 });
@@ -415,7 +431,7 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
         expect(await service.request("recover", { name })).toEqual(EMPTY);
         expect(census(token)).toEqual([]);
       } finally {
-        release();
+        await release();
       }
     } finally {
       await service.close();

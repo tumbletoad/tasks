@@ -48,6 +48,7 @@ Usage: `tasks add <title> [flags]`
 | `--effort` | `tasks[].effort` | string | Effort, such as S, M or L |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
+| `--focus` | `tasks[].focus` | boolean | Star it for today, only when the user asks |
 | `--place` | `tasks[].place` | string | Its folder: "cwd", an absolute folder, or root and path |
 | `--context` | `tasks[].context` | string | Markdown context |
 | `--log` | `tasks[].log` | string | Log entry; also added to a matched task |

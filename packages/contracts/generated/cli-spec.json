@@ -206,6 +206,14 @@
           "type": "string"
         },
         {
+          "field": "tasks[].focus",
+          "flag": "--focus",
+          "help": "Star it for today, only when the user asks",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
+        },
+        {
           "field": "tasks[].place",
           "flag": "--place",
           "help": "Its folder: \"cwd\", an absolute folder, or root and path",

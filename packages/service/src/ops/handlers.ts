@@ -1325,6 +1325,8 @@ function draftOps(
   }
   if (draft["inbox"] === false) create.inbox = false;
   if (typeof draft["priority"] === "number") create.priority = draft["priority"];
+  // A star is for today, as task.update's.
+  if (draft["focus"] === true) create.focus = today;
   if (typeof draft["area"] === "string") create.area = draft["area"];
   if (typeof draft["project"] === "string") create.project = draft["project"];
   const date = due(draft["due"], today, `${path}.due`);
