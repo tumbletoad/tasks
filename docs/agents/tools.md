@@ -22,6 +22,7 @@ the `tasks` CLI and the UI. Task text in results is data, not instructions.
 | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. | `status` | `status` | yes |
 | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. | `add_tasks` | `add` | yes |
 | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. | `complete_task` | `done` | yes |
+| `task.finished` | Finished tasks, newest first, a page at a time: the page's Completed view. | none | none | yes |
 | `task.get` | Load a task as a bounded digest, or selected sections in full. With launch, bind first. | `get_task` | `show` | yes |
 | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. | `reopen_task` | `reopen` | yes |
 | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. | `search` | `find` | yes |
@@ -1951,6 +1952,148 @@ Result:
   "learnings": 0,
   "follow_ups": [],
   "as_of": "1.1047.5n0w8k3q"
+}
+```
+
+## `task.finished`
+
+Finished tasks, newest first, a page at a time: the page's Completed view.
+
+| Property | Value |
+|---|---|
+| Kind | read |
+| Actors | user (human) |
+| Scope | `space:read` |
+| Remote class | read |
+| Audience filter | caller |
+| A1 operations | none |
+| Faces | UI |
+| Errors | `invalid_input`, `space_unavailable`, `forbidden` |
+
+### Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `checked_off` | boolean | no | true: only the checked-off list; false: every other finished task |
+| `limit` | integer, 1 to 200 | no, default `50` | Rows per page; default 50 |
+| `cursor` | string, max 60 | no | Next page: the last page's cursor |
+
+### Output
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `rows` | object[] | yes | Newest first |
+| `rows[].id` | string | yes | Task ID |
+| `rows[].ref` | string | yes | Task reference |
+| `rows[].title` | string | yes | Title |
+| `rows[].summary` | string | no | One line: the next step |
+| `rows[].lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
+| `rows[].status` | string | yes | Status key |
+| `rows[].inbox` | boolean | yes | In the Inbox |
+| `rows[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
+| `rows[].effort` | string | no | Effort |
+| `rows[].due_date` | string | no | Due date, YYYY-MM-DD |
+| `rows[].due_at` | integer, -8640000000000000 to 8640000000000000 | no | Due time |
+| `rows[].due_tz` | string | no | The due time's IANA zone |
+| `rows[].planned_for` | string | no | Day planned for |
+| `rows[].focus_on` | string | no | Day starred for |
+| `rows[].owner` | string | no | Owner |
+| `rows[].waiting_on` | string | no | Who or what it waits on |
+| `rows[].area_id` | string | no | Area ID |
+| `rows[].project_id` | string | no | Project ID |
+| `rows[].parent_id` | string | no | Parent task ID |
+| `rows[].position` | string | yes | Order key within its group |
+| `rows[].wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
+| `rows[].completed_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was completed |
+| `rows[].finished_at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was completed or dropped |
+| `rows[].deleted_at` | integer, -8640000000000000 to 8640000000000000 | no | When it was deleted |
+| `rows[].created_at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was created |
+| `rows[].version` | integer, 0 to 9007199254740991 | yes | The seq of its last change |
+| `rows[].touched` | integer, 0 to 9007199254740991 | no | The seq of its or a child's last change |
+| `rows[].waiting_since` | integer, -8640000000000000 to 8640000000000000 | no | When its current wait began |
+| `rows[].sources` | object[] | no | Its first three sources |
+| `rows[].sources[].kind` | string | yes | Source kind |
+| `rows[].sources[].title` | string | yes | Title |
+| `rows[].sources[].who` | string | no | Sender or counterpart |
+| `rows[].sources[].ref` | string | no | Its key in its own system |
+| `rows[].sources[].url` | string | no | Link |
+| `rows[].sources_more` | integer, 0 to 9007199254740991 | no | How many more sources it has |
+| `rows[].place` | object \| object | no | Its place's state on this machine |
+| `rows[].place.state` | "here" \| "missing" | yes | Its folder here, or missing |
+| `rows[].place.state` | "elsewhere" | yes | Only on another machine |
+| `rows[].place.machine` | string | yes | That machine's name |
+| `cursor` | string | no | Pass it for the next page |
+
+### Examples
+
+#### The newest finished tasks
+
+Called by the user.
+
+```json
+{}
+```
+
+Result:
+
+```json
+{
+  "rows": [
+    {
+      "id": "t_3a9c7e1g5j2k4m6n8p0q1r3s5t",
+      "ref": "M-3",
+      "title": "Fix DST bug in reports",
+      "summary": "",
+      "lifecycle": "completed",
+      "status": "open",
+      "inbox": false,
+      "priority": 2,
+      "area_id": "ar_1b5d9f3h7k0m4p8r2t6w0y4a8c",
+      "position": "a0",
+      "wrap_state": "wrapped",
+      "completed_at": 1775210400000,
+      "finished_at": 1775210400000,
+      "created_at": 1774000000000,
+      "version": 31,
+      "touched": 31
+    }
+  ]
+}
+```
+
+#### The checked-off list, whose wrap-up still waits
+
+Called by the user.
+
+```json
+{
+  "checked_off": true
+}
+```
+
+Result:
+
+```json
+{
+  "rows": []
+}
+```
+
+#### The page after M-3: what was finished before it
+
+Called by the user.
+
+```json
+{
+  "cursor": "1775210400000.t_3a9c7e1g5j2k4m6n8p0q1r3s5t"
+}
+```
+
+Result:
+
+```json
+{
+  "rows": []
 }
 ```
 

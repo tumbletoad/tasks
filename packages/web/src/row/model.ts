@@ -144,7 +144,7 @@ export interface RowModel {
   readonly id: string;
   readonly ref: string;
   readonly title: string;
-  /** The checkbox's name: "Done: <title>". */
+  /** The checkbox's name: "Done: <title>", or "Dropped: <title>" for a dropped task. */
   readonly done: Msg;
   readonly marker?: { readonly kind: "changed" | "needs_input"; readonly tip: Msg };
   /** The inline status chip, when the view does not imply the status. */
@@ -326,29 +326,34 @@ function ageOf(
       };
 }
 
-/** The day a finished task was completed: its instant on the viewer's calendar, or its read's day. */
-export function completedDayOf(task: TaskRow, timeZone: string): string | undefined {
-  if (task.completed_at !== undefined) return localDate(task.completed_at, timeZone);
+/**
+ * The day a finished task was completed or dropped: its instant on the viewer's calendar, or the
+ * day a search gave for it.
+ */
+export function finishedDayOf(task: TaskRow, timeZone: string): string | undefined {
+  const at = task.finished_at ?? task.completed_at;
+  if (at !== undefined) return localDate(at, timeZone);
   return task.completed_on !== undefined && dayNumber(task.completed_on) !== undefined
     ? task.completed_on
     : undefined;
 }
 
-/** Completed's due column: the completion date (A5 3.5), never a due date. */
+/** Completed's due column: the day it was completed or dropped (A5 3.5), never a due date. */
 function completedOf(
   task: TaskRow,
   ctx: RowContext,
 ): { model: DueModel; describe: Msg } | undefined {
-  const day = completedDayOf(task, ctx.clock.timeZone);
+  const day = finishedDayOf(task, ctx.clock.timeZone);
   if (day === undefined) return undefined;
   const full = fullDate(day, ctx.clock);
+  const dropped = task.lifecycle === "archived";
   return {
     model: {
       text: compactDay(day, ctx.clock).text,
       tone: "done",
-      tip: msg("row.completedTip", { date: full }),
+      tip: msg(dropped ? "row.droppedTip" : "row.completedTip", { date: full }),
     },
-    describe: msg("row.desc.completed", { date: full }),
+    describe: msg(dropped ? "row.desc.dropped" : "row.desc.completed", { date: full }),
   };
 }
 
@@ -526,7 +531,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     id: task.id,
     ref: task.ref,
     title: task.title,
-    done: msg("row.done", { title: task.title }),
+    done: msg(task.lifecycle === "archived" ? "row.dropped" : "row.done", { title: task.title }),
     ...(marker === undefined ? {} : { marker }),
     ...(chip === undefined ? {} : { chip }),
     ...(prefix === undefined ? {} : { prefix }),

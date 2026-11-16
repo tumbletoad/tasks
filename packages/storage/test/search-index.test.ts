@@ -36,7 +36,7 @@ let plain: Fixture;
 beforeAll(async () => {
   fx = await writeFixture(temp.make());
   plain = await writeFixture(temp.make(), { steps: STEPS_0_3 });
-}, 60_000);
+});
 
 afterAll(() => {
   fx.close();

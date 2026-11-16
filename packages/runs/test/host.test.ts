@@ -355,7 +355,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
     const after = await host.ended(id);
     expect(after).toMatchObject({ state: "succeeded", result: { text: "Done at once." } });
     expect(saved.get(id)?.text).toBe("Done at once.");
-  }, 30_000);
+  });
 
   test("Stop while the agent's command is still being prepared: cancelled at once, and nothing starts", async () => {
     let starts = 0;

@@ -154,7 +154,7 @@ describe("[A4.5.execution-store.contract] the space database's store through a s
     } finally {
       await close();
     }
-  }, 60_000);
+  });
 });
 
 describe("[A4.5.execution-store.contract] a launch row read back from the space", () => {

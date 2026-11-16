@@ -273,5 +273,5 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     await expect(
       service.runs.start(spaceId, input(task), "runs-service-run-000003", agent(ANSWERS, home)),
     ).rejects.toBeInstanceOf(RunsUnavailable);
-  }, 120_000);
+  });
 });

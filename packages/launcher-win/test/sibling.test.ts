@@ -107,7 +107,7 @@ describe.runIf(windows)(
       const again = run(stable(root), ["version"]);
       expect(again.status).toBe(0);
       expect(again.stderr).toBe("");
-    }, 60_000);
+    });
 
     test("tasksw.exe puts back a missing tasks.exe, with arguments and as the supervisor", () => {
       const root = install(OLD);
@@ -125,7 +125,7 @@ describe.runIf(windows)(
       expect(supervised.status).toBe(0);
       expect(bytes(bin(root, "tasks.exe"))).toEqual(bytes(own(root, OLD, "tasks.exe")));
       expect(readdirSync(join(root, "bin")).sort()).toEqual(["tasks.exe", "tasksw.exe"]);
-    }, 60_000);
+    });
 
     test("with nothing it may copy, it places nothing and the launcher goes on as it would have", () => {
       const cases: [label: string, setUp: (root: string) => void, status: number][] = [
@@ -170,7 +170,7 @@ describe.runIf(windows)(
           expect(ran.stderr.trim().split("\n"), label).toHaveLength(1);
         }
       }
-    }, 60_000);
+    });
 
     test("without an update's journal a missing sibling is left missing and nothing is said: no update is under way, and what manages bin then (install --finish and its undo, an uninstall) is not raced", () => {
       const cases: [label: string, setUp: (root: string) => void][] = [
@@ -208,7 +208,7 @@ describe.runIf(windows)(
         expect(ran.stderr, label).toBe("");
         expect(readdirSync(join(root, "bin")), label).toEqual(["tasks.exe"]);
       }
-    }, 60_000);
+    });
 
     test("a present sibling, a folder at its name, a version-local launcher and a launcher outside bin are left alone", () => {
       // A sibling of another version (an update cut off after the first launcher was swapped)
@@ -241,7 +241,7 @@ describe.runIf(windows)(
       });
       expect(ran.status, ran.stderr).toBe(0);
       expect(readdirSync(join(outside, "tools"))).toEqual(["tasks.exe"]);
-    }, 60_000);
+    });
 
     test("from the daily install's command folder the journal is the data folder's, and share must be a plain folder", () => {
       // The daily layout: <base>\share\tasks with the stable launchers in <base>\bin, and a
@@ -282,6 +282,6 @@ describe.runIf(windows)(
       ran = start();
       expect(ran.status).toBe(70);
       expect(readdirSync(command)).toEqual(["tasks.exe"]);
-    }, 60_000);
+    });
   },
 );

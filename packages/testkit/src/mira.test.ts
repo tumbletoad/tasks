@@ -305,7 +305,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
     } finally {
       conn.close();
     }
-  }, 60_000);
+  });
 });
 
 describe("[A1.5.write.receipts] the sample's receipts are receipt.get's results", () => {

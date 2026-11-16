@@ -48,7 +48,7 @@ afterAll(async () => {
   for (const service of services) await service.close();
   if (process.platform === "linux" && place.ok) stopTestUnits(units);
   if (work !== "") rmSync(work, { recursive: true, force: true });
-}, 120_000);
+});
 
 function need(ctx: TestContext): void {
   if (!place.ok) ctx.skip(place.reason);
@@ -150,7 +150,7 @@ describe("[A4.3.11.8.run.stop] on a real container, Stop ends the agent and ever
       } finally {
         await service.close();
       }
-    }, 120_000);
+    });
   }
 });
 
@@ -176,7 +176,7 @@ describe("[A4.3.11.5.run.answer] on a real container, the answer is kept whole u
     } finally {
       await service.close();
     }
-  }, 120_000);
+  });
 
   test("an answer longer than 1 MiB is cut on a code point and flagged, and the run succeeds", async (ctx) => {
     need(ctx);
@@ -195,7 +195,7 @@ describe("[A4.3.11.5.run.answer] on a real container, the answer is kept whole u
     } finally {
       await service.close();
     }
-  }, 120_000);
+  });
 });
 
 describe("[A4.3.11.9.run.crash] the service killed by force mid run and mid answer write leaves nothing running, and the next start ends each run with its last saved answer", () => {
@@ -235,7 +235,7 @@ describe("[A4.3.11.9.run.crash] the service killed by force mid run and mid answ
     } finally {
       await next.close();
     }
-  }, 120_000);
+  });
 
   test("killed while answers are being saved: the record holds the last whole one", async (ctx) => {
     need(ctx);
@@ -262,5 +262,5 @@ describe("[A4.3.11.9.run.crash] the service killed by force mid run and mid answ
     } finally {
       await next.close();
     }
-  }, 120_000);
+  });
 });

@@ -115,6 +115,25 @@
   transform: rotate(45deg);
 }
 
+/* A dropped task (finished as not done): the open ring with a dash, never the check of work done. */
+.box[data-dropped]:checked {
+  background: radial-gradient(
+    circle,
+    transparent 6.5px,
+    var(--k-control) 6.75px 8px,
+    transparent 8.25px
+  );
+}
+
+.box[data-dropped]:checked::after {
+  width: 7px;
+  height: 0;
+  margin: 11px auto 0;
+  border-color: var(--k-muted);
+  border-width: 1.5px 0 0;
+  transform: none;
+}
+
 .row[data-done="true"] .title,
 .row[data-done="true"] .summary {
   color: var(--k-muted);
