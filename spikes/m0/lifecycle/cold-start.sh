@@ -1,5 +1,5 @@
 #!/bin/sh
-# Lab session 3 (M0.07), rows B01, B06 and B07 cold after a reboot, on the Linux lab machine.
+# Lab session 3 (M0.07), rows B01, B06 and B07 cold after a reboot, on Linux.
 #
 # A supervisor that is not Node: it times the installed launcher directly, so nothing warms the
 # Node runtime before the timed start. Run it right after the reboot, over SSH,

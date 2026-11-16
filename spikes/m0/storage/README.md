@@ -5,7 +5,7 @@ Lab code for rows R02 to R06 of A7 3.7. It is never shipped and nothing outside 
 ## Run it
 
 ```text
-pnpm exec node spikes/m0/storage/run.ts --scale <n> --out <folder> [--work <folder>] [--machine desktop|laptop]
+pnpm exec node spikes/m0/storage/run.ts --scale <n> --out <folder> [--work <folder>] [--machine windows|linux]
 ```
 
 | Option | Meaning |
@@ -13,7 +13,7 @@ pnpm exec node spikes/m0/storage/run.ts --scale <n> --out <folder> [--work <fold
 | `--scale` | 1 = full scale (the lab), 0.01 = CI. Counts scale with it. R03 keeps at least 50 patches, R05 at least 50 queries |
 | `--out` | Folder for the result files: a new or empty folder per run, created if missing. The bench refuses a folder that already holds files, so a failed rerun can never leave an earlier run's complete results behind |
 | `--work` | An existing folder. The bench creates a temporary `tasks-storage-bench-*` folder inside it for the databases and removes it at the end. It never creates `--work` itself. Default: inside `--out` |
-| `--machine` | Which R03 and R05 thresholds apply. Default: `desktop` on Windows, `laptop` elsewhere |
+| `--machine` | Which R03 and R05 thresholds apply. Default: `windows` on Windows, `linux` elsewhere |
 | `--seed` | Seed of the generators. Default `mira`. The same seed gives the same corpus on every machine |
 | `--text` | Text profile: `default` (the calibrated corpus of the first runs) or `heavy` (longer and more notes and log entries, see below) |
 | `--r04-seconds` | R04 duration. Default 300 at full scale, 3 at 1 %. A shorter run is indicative only |
@@ -21,22 +21,22 @@ pnpm exec node spikes/m0/storage/run.ts --scale <n> --out <folder> [--work <fold
 | `--keep` | Keep the temporary folder for inspection |
 | `--inject-fault generate` | Test hook: fail inside the primary's generation, to check the cleanup |
 
-The CI test (`storage-bench.test.ts`) runs the whole bench at 1 % with `--layout` in a temporary folder in about 6 seconds on the Windows lab machine, and kills it if it passes its 90-second budget.
+The CI test (`storage-bench.test.ts`) runs the whole bench at 1 % with `--layout` in a temporary folder in about 6 seconds on Windows 11, and kills it if it passes its 90-second budget.
 
 **Failures.** Every database connection and worker is closed on every path, so a failed run never keeps a file open. The run folder is removed after a failure too. If removing it also fails, both errors are printed, the original first, with the folder to remove by hand.
 
 ## How M0.05 runs it
 
-Run from a checkout of the merged commit after `pnpm install --frozen-lockfile`. Only fixture data is involved, so the bench is safe on a managed machine. A default full-scale run needs about 2.5 GB free in `--work` and takes about 4 minutes plus the 5 minutes of R04 on the Windows lab machine. The heavy profile needs about 4 GB.
+Run from a checkout of the merged commit after `pnpm install --frozen-lockfile`. Only fixture data is involved, so the bench is safe on a managed machine. A default full-scale run needs about 2.5 GB free in `--work` and takes about 4 minutes plus the 5 minutes of R04 on Windows 11. The heavy profile needs about 4 GB.
 
-- **Windows lab machine (Windows 11, PowerShell):** confirm Defender real-time protection is on (`(Get-MpComputerStatus).RealTimeProtectionEnabled`), then
-  `pnpm exec node spikes/m0/storage/run.ts --scale 1 --machine desktop --layout --work $HOME\Tasks --out <results>\desktop`
+- **Windows 11 (PowerShell):** confirm Defender real-time protection is on (`(Get-MpComputerStatus).RealTimeProtectionEnabled`), then
+  `pnpm exec node spikes/m0/storage/run.ts --scale 1 --machine windows --layout --work $HOME\Tasks --out <results>\windows`
   and the heavy profile into its own folder:
-  `pnpm exec node spikes/m0/storage/run.ts --scale 1 --machine desktop --text heavy --layout --work $HOME\Tasks --out <results>\desktop-heavy`
-- **Linux lab machine (Ubuntu 24.04):** the same two commands with `--machine laptop --work ~/Tasks --out <results>/laptop` and `<results>/laptop-heavy`.
-- **Repeating a run:** give it a new `--out` folder (for example `<results>\desktop-2`). The bench refuses a folder that already holds files.
+  `pnpm exec node spikes/m0/storage/run.ts --scale 1 --machine windows --text heavy --layout --work $HOME\Tasks --out <results>\windows-heavy`
+- **Ubuntu 24.04:** the same two commands with `--machine linux --work ~/Tasks --out <results>/linux` and `<results>/linux-heavy`.
+- **Repeating a run:** give it a new `--out` folder (for example `<results>\windows-2`). The bench refuses a folder that already holds files.
 
-The row records come from the default profile, so they stay comparable with the first runs. The heavy profile's R03 to R05 are recorded beside them. R03 is defined in `~/Tasks` (A1 M0 item 2), so `--work` points there. The bench refuses a missing `--work` folder and never creates `~/Tasks`. Whether `~/Tasks` may exist yet on the Linux lab machine is M0.05's call (it has only `TASKS_HOME` test installs until the real-use point). If it does not exist, use another folder in the home directory on the same disk and record that in the row. Copy `--out` back as the row's evidence. The result files hold numbers and machine facts only: no paths, host names or task text.
+The row records come from the default profile, so they stay comparable with the first runs. The heavy profile's R03 to R05 are recorded beside them. R03 is defined in `~/Tasks` (A1 M0 item 2), so `--work` points there. The bench refuses a missing `--work` folder and never creates `~/Tasks`. If it does not exist, use another folder in the home directory on the same disk and record that in the row. Copy `--out` back as the row's evidence. The result files hold numbers and machine facts only: no paths, host names or task text.
 
 ## What each number decides
 
@@ -86,7 +86,7 @@ The bench's schema does not change: A1 owns it, and the layout decision goes to 
 
 ## Indicative Windows runs (not the lab rows)
 
-All on the Windows lab machine (Windows 11, Defender on), default text profile. M0.05 records the real rows. R03, R04 and R06 now time more work than in the first run and the review run below (random A1 IDs, session metadata, projection bookkeeping), so those two runs' numbers are historical and not comparable with later runs.
+All on Windows 11 with Defender on, default text profile. M0.05 records the real rows. R03, R04 and R06 now time more work than in the first run and the review run below (random A1 IDs, session metadata, projection bookkeeping), so those two runs' numbers are historical and not comparable with later runs.
 
 **First run, 2026-11-12, by the bench's author,** with R04 shortened to 20 s, to check the bench works at full scale:
 
@@ -96,7 +96,7 @@ All on the Windows lab machine (Windows 11, Defender on), default text profile. 
 | R02 | Works. Backup 2.0 s plus integrity check 3.9 s. Reader get-by-reference p95 0.31 ms, open view p95 36 ms |
 | R03 | p50 0.66 ms, p95 1.19 ms, p99 19 ms. Receipt-only p95 0.49 ms |
 | R04 | p95 3.0 ms, none overloaded |
-| R05 | p95 50.1 ms, just over the `desktop` role's limit. Trigram 1.7 times the unicode61 tables, 2.2 times its index pages. Stress corpus p95 103 ms |
+| R05 | p95 50.1 ms, just over the `windows` role's limit. Trigram 1.7 times the unicode61 tables, 2.2 times its index pages. Stress corpus p95 103 ms |
 | R06 | 27.1 s for 55,000 files |
 
 **Review run, 2026-11-12, by the independent reviewer,** full scale with a full R04, before the fixes in this revision (sequential commit IDs, no session IDs, R06 without bookkeeping). Indicative, not the lab run:
@@ -106,7 +106,7 @@ All on the Windows lab machine (Windows 11, Defender on), default text profile. 
 | R02 | 6.93 s backup plus integrity check |
 | R03 | p95 1.044 ms |
 | R04 | p95 1.910 ms |
-| R05 | p95 52.806 ms: fails the 50 ms limit of the `desktop` role. Trigram 1.701 times unicode61 with shadow tables, 2.178 times its index pages, 2.701 combined |
+| R05 | p95 52.806 ms: fails the 50 ms limit of the `windows` role. Trigram 1.701 times unicode61 with shadow tables, 2.178 times its index pages, 2.701 combined |
 | R06 | 22.37 s |
 | History | 409.6 MB. In `changes`, 20,336 overflow pages (83.3 MB) held 13.5 MB of payload. Controlled copies of the same rows and indexes: 200.8 MB `WITHOUT ROWID`, 139.2 MB with a rowid |
 

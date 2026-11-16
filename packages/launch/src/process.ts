@@ -9,7 +9,7 @@
 // - Windows: the creation time the kernel records (GetProcessTimes), as a FILETIME: 100 ns since
 //   1601, absolute, so unique per PID. Node exposes no Win32 call, so Windows PowerShell 5.1, which
 //   every Windows has, reads `Process.StartTime.ToFileTimeUtc()` (GetProcessTimes underneath) for
-//   a batch of PIDs at once: about 170 ms per call on the Windows reference machine. A PID that `process.kill(pid,
+//   a batch of PIDs at once: about 170 ms per call on Windows 11. A PID that `process.kill(pid,
 //   0)` finds gone skips it. PowerShell is started by its full path under SystemRoot, without a
 //   shell, and its script holds only integers checked here.
 // - macOS (no Mac yet, not built and not tested): the exact start time is `proc_pidinfo` with

@@ -71,7 +71,7 @@ if (scratchArg === undefined) {
 const sc = openScratch(scratchArg);
 const scratch: string = sc.root;
 const results = option(args, "--results") ?? join(scratch, "results");
-const machine = WIN ? "desktop" : "laptop";
+const machine = WIN ? "windows" : "linux";
 const work = sc.mkdir(join(scratch, "work"));
 mkdirSync(results, { recursive: true });
 const TICKET = `kt_${randomUUID().replaceAll("-", "")}`;
@@ -96,9 +96,9 @@ const saveLedger = () => {
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 const ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Claude Code sessions on Linux only in a lab session with the maintainer (lab session 2, A7 3.7).
-const LAPTOP_CLAUDE = !WIN && process.env["TASKS_M0_LAPTOP_CLAUDE"] === "1";
+const LINUX_CLAUDE = !WIN && process.env["TASKS_M0_LINUX_CLAUDE"] === "1";
 // Windows: the first run's 40 Claude sessions plus the A08 repeat's 60; Codex 25 plus A06's 12.
-const LIMITS = WIN ? { claude: 100, codex: 40 } : { claude: LAPTOP_CLAUDE ? 10 : 0, codex: 10 };
+const LIMITS = WIN ? { claude: 100, codex: 40 } : { claude: LINUX_CLAUDE ? 10 : 0, codex: 10 };
 
 let clisFound: Clis | undefined;
 const clis = (): Clis => (clisFound ??= findClis());
@@ -840,7 +840,7 @@ const A06_PROMPT =
 async function a06(): Promise<void> {
   const out = join(scratch, "probe", "a06");
   const runs: JsonObject[] = [];
-  if (WIN || LAPTOP_CLAUDE) {
+  if (WIN || LINUX_CLAUDE) {
     for (const model of ["haiku", null] as const) {
       const label = `a06-claude-${model ?? "default"}`;
       const r = await claudeSession({
@@ -1259,7 +1259,7 @@ async function e02(): Promise<void> {
         session: codexFacts(r),
         service: serviceEvents(state, t1),
       });
-      if ((WIN || LAPTOP_CLAUDE) && process.env["TASKS_M0_E02_CLAUDE"] !== "0") {
+      if ((WIN || LINUX_CLAUDE) && process.env["TASKS_M0_E02_CLAUDE"] !== "0") {
         const t2 = Date.now();
         const c = await claudeSession({
           label: `e02-claude-${mode}`,

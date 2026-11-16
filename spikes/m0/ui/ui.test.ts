@@ -238,7 +238,7 @@ describe("[A7.3.7.m0-ui.self-test] the M0 spike page", () => {
     });
     const out = join(work, "results");
     const written = writeResults(out, report, {
-      machine: "laptop",
+      machine: "linux",
       date: "2026-11-12",
       mode: "headless",
       size: "1440x900",
