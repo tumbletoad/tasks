@@ -689,6 +689,19 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       if (view.state !== "read_only" || view.reason !== "read_only_copy") {
         throw notClaimable(view);
       }
+      // The copy shares its original's space ID, and one space takes writes in one place: an
+      // original still open here holds them.
+      const id = view.id ?? view.registered;
+      const original = manager
+        .list()
+        .find((other) => other.entry !== view.entry && other.id === id && other.state === "open");
+      if (original !== undefined) {
+        throw new AppError({
+          code: "invalid_input",
+          message: `The original of this copy is open on this computer. Close it first, then claim the copy again: ${command(["space", "close", manager.folderOf(original.entry)], "space close <folder>")}`,
+          data: { issues: [{ path: "space", message: "Its original is open" }] },
+        });
+      }
       let change;
       try {
         change = await manager.claim(view.entry);

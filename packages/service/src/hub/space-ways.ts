@@ -30,7 +30,9 @@ const WAYS: Partial<Record<SpaceReason, string>> = {
     "This folder holds another space than the one this computer opened there, so it is not " +
     "opened. Put the original folder back, or change the space's entry in machine.toml.",
   not_authority: "Another computer owns this space, so it is read-only here. Change it there.",
-  read_only_copy: `This is a restored copy, read-only until you make it this computer's: ${CLI_NAME} space claim <folder>.`,
+  read_only_copy:
+    "This is a restored copy, read-only until you make it this computer's. Close its original " +
+    `first if it is open here, then run: ${CLI_NAME} space claim <folder>.`,
 };
 
 /** The way out of `state` for `reason`, or undefined for a space that is open or opening. */

@@ -128,7 +128,14 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
       read_only_copy: true,
       space: { state: "read_only", reason: "read_only_copy" },
     });
-    // The copy has the original's space ID: the original closes before the copy is claimed.
+    // The copy has the original's space ID: the original closes before the copy is claimed, and
+    // a claim before that says so.
+    const early = await user(["space", "claim", copyFolder, "--json"]);
+    expect(early.code).toBe(2);
+    const said = String((parsed(early.stdout)["error"] as Record<string, unknown>)["message"]);
+    expect(said).toMatch(/^The original of this copy is open on this computer\. /u);
+    expect(said).toContain(`${CLI_NAME} space close `);
+    expect(said).toContain(world.spaceFolder);
     // Two copies are called Mira now: the name means the writable one, the original (A2 3.10.5).
     const closedOriginal = await user(["space", "close", "Mira", "--json"]);
     expect(closedOriginal.code, closedOriginal.stdout).toBe(0);
