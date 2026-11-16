@@ -75,9 +75,9 @@ const schemaOf = (conn: Connection): unknown[] =>
     )
     .all();
 
-/** The search documents without their numbers and seqs, which a rebuild gives anew. */
-function documents(conn: Connection): SearchDocument[] {
-  return [...storedDocuments(conn).docs.values()]
+/** Documents without their numbers and seqs, which a rebuild gives anew, in entity order. */
+function plain(docs: Iterable<SearchDocument>): SearchDocument[] {
+  return [...docs]
     .map(({ kind, entityId, taskId, lifecycle, audience, title, body, extra }) => ({
       kind,
       entityId,
@@ -91,6 +91,10 @@ function documents(conn: Connection): SearchDocument[] {
     .sort((a, b) => a.entityId.localeCompare(b.entityId));
 }
 
+/** The search documents the index holds. */
+const documents = (conn: Connection): SearchDocument[] =>
+  plain(storedDocuments(conn).docs.values());
+
 interface Facts {
   digest: string;
   schema: unknown[];
@@ -98,7 +102,6 @@ interface Facts {
   lastSeq: number;
   counts: Record<string, number>;
   rows: Record<string, unknown[]>;
-  documents: SearchDocument[];
 }
 
 async function factsOf(folder: string): Promise<Facts> {
@@ -120,7 +123,6 @@ async function factsOf(folder: string): Promise<Facts> {
       lastSeq: space.lastSeq,
       counts: Object.fromEntries(tables.map((t) => [t, rows[t]?.length ?? 0])),
       rows,
-      documents: documents(conn),
     };
   } finally {
     conn.close();
@@ -258,11 +260,10 @@ describe("[A1.5.migration.from-0.4] the 0.4 fixture migrates to 0.5 behind its v
         .prepare("SELECT count(*) AS n FROM changes WHERE entity = 'places'")
         .get<{ n: number }>();
       expect(placeChanges?.n).toBeGreaterThan(0);
-      // The search index is the same documents, remade after the step.
-      expect(documents(conn)).toEqual(before.documents);
+      // The search index is remade after the step: a rebuild of the space.
       const stored = storedDocuments(conn);
       expect(stored.stray).toBe(0);
-      expect([...stored.docs.keys()].sort()).toEqual([...expectedDocuments(conn).keys()].sort());
+      expect(documents(conn)).toEqual(plain(expectedDocuments(conn).values()));
       migratedSchema = schemaOf(conn);
       expect(digestSchema(conn)).toBe(RELEASED_SCHEMAS["0.5"]);
     } finally {

@@ -228,7 +228,8 @@ describe("[A1.5.migration.from-0.3] the 0.3 fixture migrates to 0.4 behind its v
     }
 
     const checked = await checkedDriver();
-    const opened = openSpace(checked, folder, { role: "reader" });
+    // Read as a 0.4 build reads it: this build would read a 0.4 space as older than its own.
+    const opened = openSpaceAt(checked, folder, { role: "reader" }, STEPS_0_4);
     let migratedSchema: unknown[];
     try {
       const { conn } = opened;
