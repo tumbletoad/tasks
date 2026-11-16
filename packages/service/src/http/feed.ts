@@ -140,11 +140,21 @@ const SPACE_SQL =
   "SELECT space_id, name, ref_prefix, authority_epoch, authority_incarnation, last_seq " +
   "FROM space WHERE one = 1";
 
+/**
+ * When a finished task was finished: its completion, or for a dropped task, which keeps no
+ * completion time, the commit that last changed its lifecycle. A task that was never changed
+ * after it was made (one an import created finished) was finished when it was made.
+ */
+const FINISHED_AT =
+  "COALESCE(t.completed_at, (SELECT c.at FROM commits c WHERE c.seq = " +
+  "json_extract(t.fv, '$.lifecycle')), t.created_at)";
+
 const TASK_COLUMNS =
   "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
   "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
   "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
   "t.created_at, t.version, t.touched, " +
+  `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT} END AS finished_at, ` +
   // When a waiting task's wait began (the Waiting view's age): the commit that last changed its
   // status, or its creation. A new person waited on is the same wait.
   "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
@@ -387,6 +397,58 @@ export async function readSnapshot(
     projects: (projects as Row[]).map((row) => compact(row)),
     preferences: spacePreferencesOf(preferences as Row[]),
   };
+}
+
+/** A page of finished tasks: which of them, how many, and the last row of the page before. */
+export interface FinishedRequest {
+  /** Only the checked-off list (true), every other finished task (false), or all of them. */
+  readonly checkedOff?: boolean | undefined;
+  readonly limit: number;
+  readonly after?: { readonly at: number; readonly id: string } | undefined;
+}
+
+const CHECKED_OFF = "(t.lifecycle = 'completed' AND t.wrap_state IS 'pending')";
+
+/**
+ * Finished tasks newest first, from a key. The page's keys are chosen first and the rows built
+ * only for them: a row's sources and place cost a read each, and a space finishes tasks for years.
+ */
+function finishedSql(request: FinishedRequest): string {
+  const where = ["t.lifecycle IN ('completed', 'archived')", "t.deleted_at IS NULL"];
+  if (request.checkedOff === true) where.push(CHECKED_OFF);
+  if (request.checkedOff === false) where.push(`NOT ${CHECKED_OFF}`);
+  const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
+  return (
+    `SELECT ${TASK_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT t.id AS id, ${FINISHED_AT} ` +
+    `AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
+    "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
+  );
+}
+
+/**
+ * A page of the space's finished tasks (completed or dropped, not deleted), newest first by the
+ * time each was finished, then by ID: up to `limit` compact rows, and whether more follow.
+ */
+export async function readFinished(
+  reader: WorkerConnection,
+  request: FinishedRequest,
+  here?: FeedHere,
+): Promise<{ rows: CompactRow[]; more: boolean }> {
+  const [space, rows] = await reader.transaction("deferred", [
+    { sql: SPACE_SQL, mode: "get" },
+    {
+      sql: finishedSql(request),
+      mode: "all",
+      params: {
+        limit: request.limit + 1,
+        machine: machineOf(here),
+        ...(request.after === undefined ? {} : { at: request.after.at, id: request.after.id }),
+      },
+    },
+  ]);
+  const found = rows as Row[];
+  const page = await taskRows(found.slice(0, request.limit), headOf(space).ref_prefix, here);
+  return { rows: page, more: found.length > request.limit };
 }
 
 /**

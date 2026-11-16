@@ -50,6 +50,8 @@ export function createClient(transport: ClientTransport) {
       add: (input: InputOf<"task.add">): Promise<OutputOf<"task.add">> => call("task.add", input),
       /** Finish or abandon a task with an outcome and learnings, and create its follow-ups. */
       finish: (input: InputOf<"task.finish">): Promise<OutputOf<"task.finish">> => call("task.finish", input),
+      /** Finished tasks, newest first, a page at a time: the page's Completed view. */
+      finished: (input: InputOf<"task.finished">): Promise<OutputOf<"task.finished">> => call("task.finished", input),
       /** Load a task as a bounded digest, or selected sections in full. With launch, bind first. */
       get: (input: InputOf<"task.get">): Promise<OutputOf<"task.get">> => call("task.get", input),
       /** Reopen a completed or archived task. Its earlier outcome and learnings stay. */

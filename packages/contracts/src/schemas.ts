@@ -269,6 +269,72 @@ export const TaskRow = z.strictObject({
   project: z.string().describe("Project name").optional(),
 });
 
+/** An instant in milliseconds since the epoch. */
+const Millis = z.int().min(-8_640_000_000_000_000).max(8_640_000_000_000_000);
+/** A commit's sequence number, or a count. */
+const Count = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
+
+/**
+ * A task's compact row: the change feed's form, which the page's lists draw. A column that is null
+ * in the space is left out. It carries no long text (context, outcome, notes), only what a row
+ * shows of its children: its first three sources, how many more, and its place's state.
+ */
+export const CompactTaskRow = z.strictObject({
+  id: TaskId,
+  ref: TaskRef,
+  title: z.string().describe("Title"),
+  summary: z.string().describe("One line: the next step").optional(),
+  lifecycle: Lifecycle,
+  status: z.string().describe("Status key"),
+  inbox: z.boolean().describe("In the Inbox"),
+  priority: z.int().min(1).max(4).describe("1 highest, 4 none").optional(),
+  effort: z.string().describe("Effort").optional(),
+  due_date: z.string().describe("Due date, YYYY-MM-DD").optional(),
+  due_at: Millis.describe("Due time").optional(),
+  due_tz: z.string().describe("The due time's IANA zone").optional(),
+  planned_for: z.string().describe("Day planned for").optional(),
+  focus_on: z.string().describe("Day starred for").optional(),
+  owner: z.string().describe("Owner").optional(),
+  waiting_on: z.string().describe("Who or what it waits on").optional(),
+  area_id: z.string().describe("Area ID").optional(),
+  project_id: z.string().describe("Project ID").optional(),
+  parent_id: z.string().describe("Parent task ID").optional(),
+  position: z.string().describe("Order key within its group"),
+  wrap_state: WrapState.optional(),
+  completed_at: Millis.describe("When it was completed").optional(),
+  finished_at: Millis.describe("When it was completed or dropped").optional(),
+  deleted_at: Millis.describe("When it was deleted").optional(),
+  created_at: Millis.describe("When it was created"),
+  version: Count.describe("The seq of its last change"),
+  touched: Count.describe("The seq of its or a child's last change").optional(),
+  waiting_since: Millis.describe("When its current wait began").optional(),
+  sources: z
+    .array(
+      z.strictObject({
+        kind: z.string().describe("Source kind"),
+        title: z.string().describe("Title"),
+        who: z.string().describe("Sender or counterpart").optional(),
+        ref: z.string().describe("Its key in its own system").optional(),
+        url: z.string().describe("Link").optional(),
+      }),
+    )
+    .describe("Its first three sources")
+    .optional(),
+  sources_more: Count.describe("How many more sources it has").optional(),
+  place: z
+    .union([
+      z.strictObject({
+        state: z.enum(["here", "missing"]).describe("Its folder here, or missing"),
+      }),
+      z.strictObject({
+        state: z.literal("elsewhere").describe("Only on another machine"),
+        machine: z.string().describe("That machine's name"),
+      }),
+    ])
+    .describe("Its place's state on this machine")
+    .optional(),
+});
+
 export const SourceOutput = z.strictObject({
   key: z.string().describe("Source key").optional(),
   kind: z.enum(SOURCE_KINDS).describe("Source kind"),

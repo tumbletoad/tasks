@@ -3785,6 +3785,304 @@
     },
     {
       "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_off": {
+            "description": "true: only the checked-off list; false: every other finished task",
+            "type": "boolean"
+          },
+          "cursor": {
+            "description": "Next page: the last page's cursor",
+            "maxLength": 60,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Rows per page; default 50",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "task.finished",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pass it for the next page",
+            "pattern": "^[0-9]{1,16}\\.t_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Newest first",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area_id": {
+                  "description": "Area ID",
+                  "type": "string"
+                },
+                "completed_at": {
+                  "description": "When it was completed",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "created_at": {
+                  "description": "When it was created",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "deleted_at": {
+                  "description": "When it was deleted",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "due_at": {
+                  "description": "Due time",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "due_date": {
+                  "description": "Due date, YYYY-MM-DD",
+                  "type": "string"
+                },
+                "due_tz": {
+                  "description": "The due time's IANA zone",
+                  "type": "string"
+                },
+                "effort": {
+                  "description": "Effort",
+                  "type": "string"
+                },
+                "finished_at": {
+                  "description": "When it was completed or dropped",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "focus_on": {
+                  "description": "Day starred for",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Task ID",
+                  "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "inbox": {
+                  "description": "In the Inbox",
+                  "type": "boolean"
+                },
+                "lifecycle": {
+                  "description": "Lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "owner": {
+                  "description": "Owner",
+                  "type": "string"
+                },
+                "parent_id": {
+                  "description": "Parent task ID",
+                  "type": "string"
+                },
+                "place": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "state": {
+                          "description": "Its folder here, or missing",
+                          "enum": [
+                            "here",
+                            "missing"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "machine": {
+                          "description": "That machine's name",
+                          "type": "string"
+                        },
+                        "state": {
+                          "const": "elsewhere",
+                          "description": "Only on another machine",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "machine"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "description": "Its place's state on this machine"
+                },
+                "planned_for": {
+                  "description": "Day planned for",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "Order key within its group",
+                  "type": "string"
+                },
+                "priority": {
+                  "description": "1 highest, 4 none",
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "project_id": {
+                  "description": "Project ID",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "sources": {
+                  "description": "Its first three sources",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "description": "Source kind",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "Its key in its own system",
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Title",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Link",
+                        "type": "string"
+                      },
+                      "who": {
+                        "description": "Sender or counterpart",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "sources_more": {
+                  "description": "How many more sources it has",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "status": {
+                  "description": "Status key",
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "One line: the next step",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title",
+                  "type": "string"
+                },
+                "touched": {
+                  "description": "The seq of its or a child's last change",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "version": {
+                  "description": "The seq of its last change",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "waiting_on": {
+                  "description": "Who or what it waits on",
+                  "type": "string"
+                },
+                "waiting_since": {
+                  "description": "When its current wait began",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "wrap_state": {
+                  "description": "Wrap-up state",
+                  "enum": [
+                    "pending",
+                    "wrapped"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ref",
+                "title",
+                "lifecycle",
+                "status",
+                "inbox",
+                "position",
+                "finished_at",
+                "created_at",
+                "version"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "Finished tasks, newest first, a page at a time: the page's Completed view."
+    },
+    {
+      "actorKinds": [
         "human",
         "agent",
         "routine"

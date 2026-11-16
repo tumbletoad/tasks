@@ -69,6 +69,13 @@ export { spaceStatus, SpaceStatusInput, SpaceStatusResult } from "./entries/spac
 export { taskAdd, TaskAddInput, TaskAddResult } from "./entries/task-add.ts";
 export { taskFinish, TaskFinishInput, TaskFinishResult } from "./entries/task-finish.ts";
 export {
+  FINISHED_CURSOR,
+  FinishedRow,
+  taskFinished,
+  TaskFinishedInput,
+  TaskFinishedResult,
+} from "./entries/task-finished.ts";
+export {
   TaskDetail,
   taskGet,
   TaskGetInput,

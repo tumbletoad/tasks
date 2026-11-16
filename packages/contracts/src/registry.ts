@@ -13,6 +13,7 @@ import { runReport } from "./entries/run-report.ts";
 import { spaceStatus } from "./entries/space-status.ts";
 import { taskAdd } from "./entries/task-add.ts";
 import { taskFinish } from "./entries/task-finish.ts";
+import { taskFinished } from "./entries/task-finished.ts";
 import { taskGet } from "./entries/task-get.ts";
 import { taskReopen } from "./entries/task-reopen.ts";
 import { taskSearch } from "./entries/task-search.ts";
@@ -25,6 +26,8 @@ import { taskUpdate } from "./entries/task-update.ts";
 export const registry = [
   spaceStatus,
   taskGet,
+  // Before the examples that finish or reopen a task: it reads the world's finished tasks.
+  taskFinished,
   taskAdd,
   taskUpdate,
   entryAdd,
