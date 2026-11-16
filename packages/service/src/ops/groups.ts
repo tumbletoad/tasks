@@ -4,9 +4,9 @@
 // name that matches nothing but lies within edit distance 2 of a group's name or slug, and
 // less than half that name's length from it, is `invalid_input` with the close names in
 // `data.suggestions` (stored names never reach a message, A3 3.5): "Client wrok" is a typo of
-// "Client work", while "UX" is no typo of "QA". Any other new name is created under autonomy once
-// A1's `area.create` and `project.create` exist (M4.01b); until then it is refused naming that
-// step. Where a name only looks a group up (organize's list), an unknown one is `not_found`.
+// "Client work", while "UX" is no typo of "QA". Any other name is a new group, which the caller
+// creates (`area.create`, `project.create`) in the same request. Where a name only looks a group
+// up (organize's list), an unknown one is `not_found`.
 import { AppError } from "@tasks/contracts";
 import type { GroupName, GroupNames } from "./read.ts";
 
