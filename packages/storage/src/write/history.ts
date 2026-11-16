@@ -45,6 +45,14 @@ import { formatTaskRef } from "../refs.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
 import {
+  decodeFolder,
+  FOLDER_SQL,
+  folderKey,
+  machineOs,
+  type FolderOs,
+  type FolderRow,
+} from "./folders.ts";
+import {
   CHILD_FIELDS,
   columnsValue,
   EXT_TABLES,
@@ -71,7 +79,8 @@ export type InvertibleEntity =
   | "task_sources"
   | "places"
   | "areas"
-  | "projects";
+  | "projects"
+  | "folders";
 
 interface Table {
   readonly fields: Readonly<Record<string, readonly string[]>>;
@@ -95,9 +104,9 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
     where: "task_id = $task AND source_id = $source",
   },
   places: { fields: CHILD_FIELDS.places, tombstone: "deleted", where: BY_ID },
-  // An import's areas and projects (A7 3.15.5): their tombstone is their one field so far.
   areas: { fields: CHILD_FIELDS.areas, tombstone: "deleted", where: BY_ID },
   projects: { fields: CHILD_FIELDS.projects, tombstone: "deleted", where: BY_ID },
+  folders: { fields: CHILD_FIELDS.folders, tombstone: "deleted", where: BY_ID },
 };
 
 /**
@@ -221,6 +230,7 @@ const TASK_CHILDREN: readonly Child[] = [
     column: null,
     since: true,
   },
+  folderChild("task", "owner_id"),
 ];
 
 /** A source's links: a source another task links to stays. */
@@ -236,6 +246,21 @@ const SOURCE_CHILDREN: readonly Child[] = [
     column: "removed_at",
   },
 ];
+
+/** An owner's folders (schema 0.5): a folder another commit set keeps its owner's create. */
+function folderChild(kind: "task" | "project", task: string): Child {
+  return {
+    entity: "folders",
+    key: "id",
+    task,
+    parent: "owner_id",
+    where: ` AND owner_kind = '${kind}'`,
+    fields: CHILD_FIELDS.folders,
+    field: "deleted",
+    column: "deleted_at",
+    since: true,
+  };
+}
 
 /** A group's places: a place another commit bound to it keeps it. */
 const groupPlaces = (kind: "area" | "project"): Child => ({
@@ -276,7 +301,11 @@ const AREA_CHILDREN: readonly Child[] = [
   },
   groupPlaces("area"),
 ];
-const PROJECT_CHILDREN: readonly Child[] = [groupTasks("project_id"), groupPlaces("project")];
+const PROJECT_CHILDREN: readonly Child[] = [
+  groupTasks("project_id"),
+  groupPlaces("project"),
+  folderChild("project", "NULL"),
+];
 
 const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = {
   tasks: TASK_CHILDREN,
@@ -361,6 +390,11 @@ const SQL = {
     "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
   areaTaken: "SELECT * FROM areas WHERE slug = $slug AND deleted_at IS NULL AND id <> $id",
   projectTaken: "SELECT * FROM projects WHERE slug = $slug AND deleted_at IS NULL AND id <> $id",
+  folderTaken:
+    "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
+    "AND machine_id = $machine AND deleted_at IS NULL AND id <> $id",
+  liveFoldersOfProject:
+    "SELECT id FROM folders WHERE owner_kind = 'project' AND owner_id = $id AND deleted_at IS NULL",
   /**
    * The active holders, as they stand, of the keyed sources in `$sources` and of those the tasks
    * in `$tasks` link to (A1 3.6): an active task that is not deleted, with a live link to the live
@@ -791,6 +825,15 @@ function takenBy(
     found = conn
       .prepare(entity === "areas" ? SQL.areaTaken : SQL.projectTaken)
       .get({ slug: raw["slug"] as string, id: raw["id"] as string });
+  } else if (entity === "folders") {
+    // One live folder per owner and machine. Two live projects on one folder is a rule across
+    // rows, decided on the state the inversion makes (applyInversions).
+    found = conn.prepare(SQL.folderTaken).get({
+      kind: raw["owner_kind"] as string,
+      owner: raw["owner_id"] as string,
+      machine: raw["machine_id"] as string,
+      id: raw["id"] as string,
+    });
   }
   if (found === undefined) return undefined;
   const r = new RowReader(entity, found);
@@ -1010,56 +1053,119 @@ export interface Applied {
  *   every task the plan brought a learning back to. A task over the limit gets none of them back,
  *   and the conflict names each live learning the plan did not bring back, with who wrote it.
  *
+ * - **Two live projects never share one folder on one machine.** The statement reads the live
+ *   project folders of every machine whose folder the plan brought back or set back. A folder of
+ *   the plan's that another live project's folder holds by the machine's case rule does not come
+ *   back, and the conflict names that other folder's path, with who set it.
+ *
  * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
- * before the plan, and a partial inversion applies the rest: leaving a restore out only takes
- * holders and learnings away, so the rest breaks neither rule. A full inversion then applies
- * nothing and returns undefined, and `plan.conflicts` says why.
+ * before the plan, and a partial inversion applies the rest, checked again, since a folder left
+ * where it is can meet another the plan moves. A full inversion then applies nothing and returns
+ * undefined, and `plan.conflicts` says why.
  */
 export function applyInversions(
   conn: Connection,
   plan: InversionPlan,
   options: ApplyOptions,
 ): Applied | undefined {
-  const restores = restoresOf(plan.inversions);
-  if (restores.size === 0) return writeInversions(conn, plan.inversions, options);
-  conn.exec("SAVEPOINT restores");
-  const applied = writeInversions(conn, plan.inversions, options);
-  const broken: Broken = { undone: new Set(), named: [] };
-  brokenKeys(conn, restores, broken);
-  tooManyLearnings(conn, restores, broken);
-  if (broken.undone.size === 0) {
+  const checked = (inversions: readonly Inversion[]): boolean =>
+    restoresOf(inversions).size > 0 ||
+    inversions.some((i) => i.entity === "folders" || i.entity === "projects");
+  if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
+  for (;;) {
+    conn.exec("SAVEPOINT restores");
+    const applied = writeInversions(conn, plan.inversions, options);
+    const restores = restoresOf(plan.inversions);
+    const broken: Broken = { undone: new Set(), named: [] };
+    brokenKeys(conn, restores, broken);
+    tooManyLearnings(conn, restores, broken);
+    sharedFolders(conn, plan.inversions, broken);
+    if (broken.undone.size === 0) {
+      conn.exec("RELEASE restores");
+      return applied;
+    }
+    conn.exec("ROLLBACK TO restores");
+    const conflict = namer(conn, options);
+    const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
+    for (const n of broken.named) {
+      if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;
+      named.add(`${n.entity}|${n.id}|${n.field}`);
+      const row = readRow(conn, n.entity, n.id);
+      if (row === undefined) throw misuse("A row the plan read has gone");
+      plan.conflicts.push(
+        conflict(
+          {
+            entity: n.entity,
+            id: n.id,
+            ...(n.task === null ? {} : { task: n.task }),
+            field: n.field,
+            value: valueIn(n.entity, row.raw, n.field),
+          },
+          versionOf(row, n.field),
+        ),
+      );
+    }
+    plan.inversions = plan.inversions.filter((i) => !broken.undone.has(i));
     conn.exec("RELEASE restores");
-    return applied;
+    if (!options.partial) return undefined;
+    if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
   }
-  conn.exec("ROLLBACK TO restores");
-  const conflict = namer(conn, options);
-  const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
-  for (const n of broken.named) {
-    if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;
-    named.add(`${n.entity}|${n.id}|${n.field}`);
-    const row = readRow(conn, n.entity, n.id);
-    if (row === undefined) throw misuse("A row the plan read has gone");
-    plan.conflicts.push(
-      conflict(
-        {
-          entity: n.entity,
-          id: n.id,
-          task: n.task,
-          field: n.field,
-          value: columnsValue(row.raw, TABLES[n.entity].fields[n.field] ?? []),
-        },
-        versionOf(row, n.field),
-      ),
+}
+
+/**
+ * Two live projects on one folder of one machine (applyInversions): each folder row the plan wrote
+ * that is now a live project's live folder, compared with every other live project folder of its
+ * machine by that machine's case rule. On a clash the plan's inversions of that row stay undone,
+ * and the other row is named by its path.
+ */
+function sharedFolders(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
+  const mine = new Map<string, Inversion[]>();
+  const add = (id: string, inversion: Inversion): void => {
+    const list = mine.get(id);
+    if (list === undefined) mine.set(id, [inversion]);
+    else list.push(inversion);
+  };
+  for (const i of inversions) {
+    if (i.entity === "folders") add(i.id, i);
+    // A project brought back brings its live folders back into the rule.
+    if (i.entity === "projects" && i.field === "deleted") {
+      for (const row of conn.prepare(SQL.liveFoldersOfProject).all({ id: i.id })) {
+        add(String(row["id"]), i);
+      }
+    }
+  }
+  if (mine.size === 0) return;
+  const machines = new Map<string, { os: FolderOs; rows: FolderRow[] }>();
+  const machineRows = (machine: string) => {
+    let found = machines.get(machine);
+    if (found === undefined) {
+      const os = machineOs(conn, machine);
+      if (os === undefined) throw invalidValue("folders", "machine_id");
+      found = {
+        os,
+        rows: conn.prepare(FOLDER_SQL.liveProjectFolders).all({ machine }).map(decodeFolder),
+      };
+      machines.set(machine, found);
+    }
+    return found;
+  };
+  for (const [id, made] of mine) {
+    const row = conn.prepare(FOLDER_SQL.folder).get({ id });
+    if (row === undefined) throw misuse("A folder the plan wrote has gone");
+    const folder = decodeFolder(row);
+    if (folder.deleted || folder.ownerKind !== "project") continue;
+    const { os, rows } = machineRows(folder.machineId);
+    const key = folderKey(folder.path, os);
+    const other = rows.find(
+      (r) => r.id !== folder.id && r.ownerId !== folder.ownerId && folderKey(r.path, os) === key,
     );
+    if (other === undefined) continue;
+    // The folder's own inversions stay undone; a project's restore comes back without it.
+    const own = made.filter((i) => i.entity === "folders");
+    if (own.length === 0) continue;
+    for (const i of own) broken.undone.add(i);
+    broken.named.push({ entity: "folders", id: other.id, task: null, field: "path" });
   }
-  plan.inversions = plan.inversions.filter((i) => !broken.undone.has(i));
-  if (!options.partial) {
-    conn.exec("RELEASE restores");
-    return undefined;
-  }
-  const rest = writeInversions(conn, plan.inversions, options);
-  conn.exec("RELEASE restores");
-  return rest;
 }
 
 /** The entities whose restores a rule across rows counts. */
@@ -1078,11 +1184,11 @@ function restoresOf(inversions: readonly Inversion[]): Map<string, Inversion> {
 /** What the rules across rows found: the restores that stay undone, and the rows that block them. */
 interface Broken {
   undone: Set<Inversion>;
-  /** A standing holder's link, a holder's lifecycle, or a live learning. */
+  /** A standing holder's link, a holder's lifecycle, a live learning, or another's folder. */
   named: {
-    entity: "tasks" | "task_sources" | "learnings";
+    entity: "tasks" | "task_sources" | "learnings" | "folders";
     id: string;
-    task: Id<"t">;
+    task: Id<"t"> | null;
     field: string;
   }[];
 }

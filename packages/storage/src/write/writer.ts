@@ -62,6 +62,15 @@ import {
   type PatchableField,
   type TaskField,
 } from "./fields.ts";
+import {
+  decodeFolder,
+  FOLDER_SQL,
+  folderHolder,
+  folderProblem,
+  machineOs,
+  rebased,
+  type FolderOs,
+} from "./folders.ts";
 import { planImportRevert, recomputeToken } from "./imports.ts";
 import {
   applyInversions,
@@ -109,6 +118,7 @@ import {
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 import {
   checkRequest,
+  FOLDER_OPERATIONS,
   formatAsOf,
   incarnationTag,
   isHistoryOperation,
@@ -219,11 +229,20 @@ export interface OpsEntry {
 /**
  * The text of `commits.ops`, the one place the writer serialises it. Every text in it comes from
  * a checked request or machine record, which normaliseStored normalised as the rows hold it. Text
- * that did not would make the history differ from the rows, so it is refused as a bug.
+ * that did not would make the history differ from the rows, so it is refused as a bug. A folder's
+ * path is the one exception: the row holds it exactly as sent, and so does its operation.
  */
 function opsText(entries: readonly OpsEntry[]): string {
-  return JSON.stringify(entries, (_key, value: unknown) => {
-    if (typeof value === "string" && normaliseStored(value) !== value) {
+  const raw = new Set<unknown>();
+  for (const entry of entries) {
+    if (FOLDER_OPERATIONS.has(entry.op as Operation["kind"])) raw.add(entry.input["path"]);
+  }
+  return JSON.stringify(entries, (key, value: unknown) => {
+    if (
+      typeof value === "string" &&
+      normaliseStored(value) !== value &&
+      !(key === "path" && raw.has(value))
+    ) {
       throw misuse("Text reached commits.ops without its normalisation");
     }
     return value;
@@ -264,7 +283,8 @@ type Entity =
   | "projects"
   | "aliases"
   | "exchanges"
-  | "exchange_items";
+  | "exchange_items"
+  | "folders";
 
 /** A task row as the write path needs it, checked against its domain. */
 interface TaskRow extends RowState {
@@ -302,7 +322,10 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
           entity === "runs" ||
           entity === "learnings" ||
           entity === "preferences" ||
-          entity === "aliases"
+          entity === "aliases" ||
+          entity === "areas" ||
+          entity === "projects" ||
+          entity === "folders"
         ? CHILD_FIELDS[entity]
         : undefined;
   const columns = fields?.[field];
@@ -394,6 +417,12 @@ interface StagedOp {
    * it as it is (`found`), or moves an alias from a deleted task (`move`).
    */
   upsert?: "create" | "found" | "move";
+  /** A folder operation: the request's machine and its OS, whose case rule compares paths. */
+  folder?: { machine: Id<"m">; os: FolderOs };
+  /** `area.create` and `project.create`: the slug the new group takes. */
+  slug?: string;
+  /** `project.move`: the project's new area. */
+  area?: Id<"a"> | null;
 }
 
 interface Plan {
@@ -444,6 +473,11 @@ interface Execution {
   opWrites: Map<number, { key: string; field: string | null }[]>;
   /** `source.add` on an existing source: the fields the input gives otherwise. */
   differs: Map<number, string[]>;
+  /**
+   * What an applied request left as it found it, and why: a folder a project's restore did not
+   * bring back because another live project holds that folder now.
+   */
+  conflicts: FieldConflict[];
 }
 
 interface ChangeRow {
@@ -659,7 +693,43 @@ const SQL = {
     "$actor_kind, $principal, $author, $scope, $machine, $session, $run, $origin, $request, " +
     "'revert', $ops, $affected, $reason, NULL, NULL, NULL, NULL, NULL, $revert_of, NULL, 0)",
   markReverted: "UPDATE commits SET reverted_by = $seq WHERE seq = $target",
+  // Areas and projects (A1 3.6): their fields, by the column names of fields.ts.
+  areaBySlugAny: "SELECT id FROM areas WHERE slug = $slug AND deleted_at IS NULL",
+  projectSlugTaken: "SELECT id FROM projects WHERE slug = $slug AND deleted_at IS NULL",
+  deletedProjectsBySlug: "SELECT id FROM projects WHERE slug = $slug AND deleted_at IS NOT NULL",
+  insertAreaWith:
+    "INSERT INTO areas (id, slug, title, position, color, brief, lifecycle, created_at, " +
+    "created_by, deleted_at, created_seq, version, fv, fp, ext) VALUES ($id, $slug, $title, " +
+    "$position, $color, $brief, 'active', $at, $author, NULL, $seq, $seq, '{}', '{}', '{}')",
+  insertProjectWith:
+    "INSERT INTO projects (id, area_id, slug, title, position, color, brief, defaults, lifecycle, " +
+    "created_at, created_by, deleted_at, created_seq, version, fv, fp, ext) VALUES ($id, $area, " +
+    "$slug, $title, $position, $color, $brief, '{}', 'active', $at, $author, NULL, $seq, $seq, " +
+    "'{}', '{}', '{}')",
+  areaVersions: "UPDATE areas SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
+  projectVersions: "UPDATE projects SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
+  tasksOfProject: "SELECT id FROM tasks WHERE project_id = $id ORDER BY id",
+  liveTaskIn:
+    "SELECT 1 AS found FROM tasks WHERE project_id = $id AND deleted_at IS NULL LIMIT 1",
+  taskArea: "UPDATE tasks SET area_id = $area WHERE id = $id",
+  // Folders (schema 0.5): one live folder per owner and machine.
+  insertFolder:
+    "INSERT INTO folders (id, owner_kind, owner_id, machine_id, path, created_at, deleted_at, " +
+    "created_seq, version, fv, fp) VALUES ($id, $kind, $owner, $machine, $path, $at, NULL, $seq, " +
+    "$seq, '{}', '{}')",
+  folderPath: "UPDATE folders SET path = $path WHERE id = $id",
+  folderDeleted: "UPDATE folders SET deleted_at = $at WHERE id = $id",
+  folderVersions: "UPDATE folders SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
 } as const;
+
+/** `UPDATE <areas|projects> SET <columns> WHERE id = $id`, for the columns of their fields only. */
+function updateGroupSql(entity: "areas" | "projects", columns: readonly string[]): string {
+  const known = new Set<string>(Object.values(CHILD_FIELDS[entity]).flat());
+  if (columns.length === 0 || columns.some((c) => !known.has(c))) {
+    throw misuse("A group update names only the columns of its fields");
+  }
+  return `UPDATE ${entity} SET ${columns.map((c) => `${c} = $${c}`).join(", ")} WHERE id = $id`;
+}
 
 /** A new commit's instant: `now`, or the newest commit's when the clock stepped back (A1 3.9). */
 function commitInstant(conn: Connection, now: number): number {
@@ -767,6 +837,7 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
       areas: SQL.areaRow,
       projects: SQL.projectRow,
       exchanges: SQL.exchangeRow,
+      folders: FOLDER_SQL.folder,
     }[entity];
     row = conn.prepare(sql).get({ id });
   }
@@ -796,6 +867,12 @@ function setVersions(
   } else if (row.entity === "task_sources") {
     const [task, source] = row.id.split("|");
     conn.prepare(SQL.linkVersions).run({ ...maps, task: task ?? "", source: source ?? "" });
+  } else if (row.entity === "areas") {
+    conn.prepare(SQL.areaVersions).run({ ...maps, id: row.id });
+  } else if (row.entity === "projects") {
+    conn.prepare(SQL.projectVersions).run({ ...maps, id: row.id });
+  } else if (row.entity === "folders") {
+    conn.prepare(SQL.folderVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "aliases") {
     // An alias has no versions: its change rows are its history (fields.ts).
   } else throw misuse("No operation of this build changes that row after its create");
@@ -1295,12 +1372,64 @@ export class SpaceWriter {
     const draftAliases = new Set<string>();
     /** Exchanges earlier operations create. */
     const draftExchanges = new Set<string>();
+    /** Areas and projects earlier operations create: they have no row before the request. */
+    const createdGroups = new Set<string>();
+    /** Slugs earlier operations give new areas and projects. */
+    const draftSlugs = { areas: new Set<string>(), projects: new Set<string>() };
+    /** Projects earlier operations move, with their new area: tasks filed into them follow it. */
+    const movedProjects = new Map<string, Id<"a"> | null>();
+    /** The owners whose folder earlier operations set or clear, by `kind|id`, and new folders. */
+    const boundFolders = new Set<string>();
+    const clearedFolders = new Set<string>();
+    const draftFolders = new Map<string, Id<"fo">>();
 
     const ops = request.ops.map((op, i): StagedOp => {
       /** An area or project by ID or slug: first those the request upserts, then the space's. */
       const areaOf = (ref: string): Id<"a"> => draftAreas.get(ref) ?? resolveArea(conn, ref, i);
-      const projectOf = (ref: string): { id: Id<"p">; areaId: Id<"a"> | null } =>
-        draftProjects.get(ref) ?? resolveProject(conn, ref, i);
+      const projectOf = (ref: string): { id: Id<"p">; areaId: Id<"a"> | null } => {
+        const found = draftProjects.get(ref) ?? resolveProject(conn, ref, i);
+        const moved = movedProjects.get(found.id);
+        return moved === undefined ? found : { id: found.id, areaId: moved };
+      };
+      /**
+       * The touches of `fields` of an existing area or project, whose start state the base covers.
+       * One the request creates has no start: an earlier operation of the request wrote it whole.
+       */
+      const groupTouches = (entity: "areas" | "projects", id: string, fields: string[]) => {
+        if (createdGroups.has(id)) return [];
+        const key = rowKey(entity, id);
+        if (!starts.has(key)) {
+          const row = conn.prepare(entity === "areas" ? SQL.areaRow : SQL.projectRow).get({ id });
+          if (row === undefined) throw misuse("A group staging resolved has gone");
+          starts.set(key, rowState(entity, row, CHILD_FIELDS[entity]));
+        }
+        return fields.map((field): Touch => ({ entity, id, field, task: null }));
+      };
+      /** An existing folder row the operation writes, whose start state the base covers. */
+      const folderTouches = (row: Row, fields: string[], task: Id<"t"> | null): Touch[] => {
+        const id = new RowReader("folders", row).id("id", "fo");
+        const key = rowKey("folders", id);
+        if (!starts.has(key)) starts.set(key, rowState("folders", row, CHILD_FIELDS.folders));
+        return fields.map((field) => ({ entity: "folders", id, field, task }));
+      };
+      /** A folder operation's machine, which must have its record, and the path's form there. */
+      const folderMachine = (path?: string): { machine: Id<"m">; os: FolderOs } => {
+        const machine = request.actor.machine_id;
+        const os = machineOs(conn, machine);
+        if (os === undefined) {
+          return problem(
+            "VALIDATION_FAILED",
+            "The request's machine has no record in this space",
+            i,
+            "actor.machine_id",
+          );
+        }
+        if (path !== undefined) {
+          const wrong = folderProblem(path, os);
+          if (wrong !== undefined) problem("VALIDATION_FAILED", wrong, i, "path");
+        }
+        return { machine, os };
+      };
       const values: TaskValues =
         op.kind === "task.create" ? op : op.kind === "task.patch" ? (op.set ?? {}) : {};
       if (values.status !== undefined && !statuses.includes(values.status)) {
@@ -1393,6 +1522,7 @@ export class SpaceWriter {
       const match = named === undefined ? undefined : matched.get(named);
       if (match !== undefined && !follows(op, match)) {
         if (op.kind === "place.set") placeMachine();
+        if (op.kind === "task.folder_set") folderMachine(op.path);
         return {
           i,
           op,
@@ -2122,6 +2252,223 @@ export class SpaceWriter {
             record: { ...inputOf(op, "items"), items: resolved },
           };
         }
+        case "area.create":
+        case "project.create": {
+          const entity = op.kind === "area.create" ? "areas" : "projects";
+          const prefix = op.kind === "area.create" ? "a" : "p";
+          const id = op.id ?? newId(prefix, random);
+          const taken =
+            createdGroups.has(id) ||
+            conn
+              .prepare(entity === "areas" ? SQL.areaById : SQL.projectById)
+              .get({ id }) !== undefined;
+          if (taken) problem("VALIDATION_FAILED", "A group with this ID exists", i, "id");
+          const drafted = draftSlugs[entity];
+          const held = (slug: string): boolean =>
+            drafted.has(slug) ||
+            conn
+              .prepare(entity === "areas" ? SQL.areaBySlugAny : SQL.projectSlugTaken)
+              .get({ slug }) !== undefined;
+          let slug = op.slug;
+          if (slug !== undefined && held(slug)) {
+            problem("VALIDATION_FAILED", "A live group of this kind holds this slug", i, "slug");
+          }
+          slug ??= freeSlug(op.title, op.kind === "area.create" ? "area" : "project", held);
+          drafted.add(slug);
+          createdGroups.add(id);
+          const record: Record<string, unknown> = { ...inputOf(op, "area"), id, slug };
+          if (op.kind === "area.create") {
+            draftAreas.set(slug, id as Id<"a">);
+            draftAreas.set(id, id as Id<"a">);
+            return { i, op, target: id, task: null, touches: [], record, slug };
+          }
+          const areaId = op.area === undefined || op.area === null ? null : areaOf(op.area);
+          if (op.area !== undefined) record["area"] = areaId;
+          const project = { id: id as Id<"p">, areaId };
+          draftProjects.set(slug, project);
+          draftProjects.set(id, project);
+          return { i, op, target: id, task: null, touches: [], record, slug, area: areaId };
+        }
+        case "area.patch": {
+          const id = areaOf(op.area);
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: groupTouches("areas", id, Object.keys(op.set)),
+            record: { area: id, set: op.set },
+          };
+        }
+        case "project.patch": {
+          const id = projectOf(op.project).id;
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: groupTouches("projects", id, Object.keys(op.set)),
+            record: { project: id, set: op.set },
+          };
+        }
+        case "project.move": {
+          const id = projectOf(op.project).id;
+          const area = op.area === null ? null : areaOf(op.area);
+          movedProjects.set(id, area);
+          // Its tasks are in its area, so they move with it: each one counts for the brake.
+          for (const row of conn.prepare(SQL.tasksOfProject).all({ id })) {
+            const task = new RowReader("tasks", row).id("id", "t");
+            if (tombstones.get(task) !== true) affected.add(task);
+          }
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: groupTouches("projects", id, ["grouping"]),
+            record: { project: id, area },
+            area,
+          };
+        }
+        case "area.archive":
+        case "area.unarchive": {
+          const id = areaOf(op.area ?? "");
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: groupTouches("areas", id, ["lifecycle"]),
+            record: { area: id },
+          };
+        }
+        case "project.archive":
+        case "project.unarchive": {
+          const id = projectOf(op.project ?? "").id;
+          return {
+            i,
+            op,
+            target: id,
+            task: null,
+            touches: groupTouches("projects", id, ["lifecycle"]),
+            record: { project: id },
+          };
+        }
+        case "project.delete": {
+          const id = projectOf(op.project).id;
+          // The base covers the folders the caller saw, which the delete removes with it.
+          const touches = groupTouches("projects", id, ["deleted"]);
+          if (!createdGroups.has(id)) {
+            for (const row of conn
+              .prepare(FOLDER_SQL.liveOfOwner)
+              .all({ kind: "project", owner: id })) {
+              touches.push(...folderTouches(row, ["deleted"], null));
+            }
+          }
+          return { i, op, target: id, task: null, touches, record: { project: id } };
+        }
+        case "project.restore": {
+          const id = deletedProject(conn, op.project, i);
+          const touches = groupTouches("projects", id, ["deleted"]);
+          // The folders its delete removed: tombstoned by the commit that tombstoned the project.
+          const start = must(starts.get(rowKey("projects", id)), "A staged group has a start");
+          const gone = provenanceOf(start, "deleted");
+          for (const row of conn
+            .prepare(FOLDER_SQL.allOfOwner)
+            .all({ kind: "project", owner: id })) {
+            const state = rowState("folders", row, CHILD_FIELDS.folders);
+            if (row["deleted_at"] !== null && provenanceOf(state, "deleted") === gone) {
+              touches.push(...folderTouches(row, ["deleted"], null));
+            }
+          }
+          return { i, op, target: id, task: null, touches, record: { project: id } };
+        }
+        case "project.folder_set":
+        case "task.folder_set": {
+          const owner =
+            op.kind === "task.folder_set"
+              ? { kind: "task" as const, id: task(op.task ?? "", "task") as string }
+              : { kind: "project" as const, id: projectOf(op.project ?? "").id as string };
+          const folder = folderMachine(op.path);
+          const key = `${owner.kind}|${owner.id}`;
+          if (clearedFolders.has(key)) {
+            problem("VALIDATION_FAILED", "A folder is set and cleared in one request", i, "path");
+          }
+          boundFolders.add(key);
+          const parent = owner.kind === "task" ? (owner.id as Id<"t">) : null;
+          const fresh = drafts.has(owner.id as Id<"t">) || createdGroups.has(owner.id);
+          const row = fresh
+            ? undefined
+            : conn
+                .prepare(FOLDER_SQL.liveOf)
+                .get({ kind: owner.kind, owner: owner.id, machine: folder.machine });
+          let target = draftFolders.get(key);
+          const touches: Touch[] = [];
+          if (row !== undefined) {
+            // Another folder for the one there: the base covers the folder the caller saw, and
+            // the task folders inside it that move along with a project's.
+            const found = decodeFolder(row);
+            target = found.id;
+            touches.push(...folderTouches(row, ["path"], parent));
+            if (owner.kind === "project") {
+              for (const inside of conn
+                .prepare(FOLDER_SQL.taskFoldersOfProject)
+                .all({ machine: folder.machine, project: owner.id })) {
+                const moved = decodeFolder(inside);
+                if (rebased(moved.path, found.path, op.path, folder.os) === undefined) continue;
+                touches.push(...folderTouches(inside, ["path"], moved.ownerId as Id<"t">));
+              }
+            }
+          } else if (target === undefined) {
+            target = newId("fo", random);
+            draftFolders.set(key, target);
+          }
+          return {
+            i,
+            op,
+            target,
+            task: parent,
+            touches,
+            record: { [owner.kind]: owner.id, path: op.path },
+            owner,
+            folder,
+          };
+        }
+        case "project.folder_clear":
+        case "task.folder_clear": {
+          const owner =
+            op.kind === "task.folder_clear"
+              ? { kind: "task" as const, id: task(op.task ?? "", "task") as string }
+              : { kind: "project" as const, id: projectOf(op.project ?? "").id as string };
+          const folder = folderMachine();
+          const key = `${owner.kind}|${owner.id}`;
+          if (boundFolders.has(key)) {
+            problem("VALIDATION_FAILED", "A folder is set and cleared in one request", i, "task");
+          }
+          clearedFolders.add(key);
+          const parent = owner.kind === "task" ? (owner.id as Id<"t">) : null;
+          const fresh = drafts.has(owner.id as Id<"t">) || createdGroups.has(owner.id);
+          const row = fresh
+            ? undefined
+            : conn
+                .prepare(FOLDER_SQL.liveOf)
+                .get({ kind: owner.kind, owner: owner.id, machine: folder.machine });
+          const record = { [owner.kind]: owner.id };
+          if (row === undefined) {
+            // Nothing is there on this machine: the clear changes nothing.
+            return { i, op, target: owner.id, task: parent, touches: [], record, owner, folder };
+          }
+          return {
+            i,
+            op,
+            target: decodeFolder(row).id,
+            task: parent,
+            touches: folderTouches(row, ["path", "deleted"], parent),
+            record,
+            owner: { ...owner, bound: true },
+            folder,
+          };
+        }
         case "import.undo":
           // A request of its own (request.ts), which #importUndo decides.
           throw misuse("An import's undo is never staged");
@@ -2162,6 +2509,7 @@ export class SpaceWriter {
       rows: new Map(),
       opWrites: new Map(),
       differs: new Map(),
+      conflicts: [],
     };
     const commitId = newId("op", this.#random);
     const { actor } = request;
@@ -2224,6 +2572,7 @@ export class SpaceWriter {
       ...accepted("applied", { ...asOf, seq }),
       commit: commitId,
       results: opResults(conn, run, changes),
+      conflicts: run.conflicts,
     };
   }
 
@@ -2643,6 +2992,51 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           version: new RowReader(entity, row).int("version", "seq"),
         };
       }
+      case "area.create":
+      case "area.patch":
+      case "area.archive":
+      case "area.unarchive":
+      case "project.create":
+      case "project.patch":
+      case "project.move":
+      case "project.archive":
+      case "project.unarchive":
+      case "project.delete":
+      case "project.restore": {
+        const entity = op.kind.startsWith("area.") ? "areas" : "projects";
+        const row = readRow(conn, entity, staged.target);
+        return {
+          i,
+          status,
+          id: staged.target,
+          version: new RowReader(entity, row).int("version", "seq"),
+        };
+      }
+      case "project.folder_set":
+      case "task.folder_set":
+      case "project.folder_clear":
+      case "task.folder_clear": {
+        const owner = must(staged.owner, "A folder has an owner");
+        const task = staged.task;
+        // The folder, or the owner when nothing was there on this machine to clear.
+        const cleared = op.kind === "project.folder_clear" || op.kind === "task.folder_clear";
+        const version =
+          !cleared || owner.bound === true
+            ? new RowReader("folders", readRow(conn, "folders", staged.target)).int("version", "seq")
+            : owner.kind === "task"
+              ? readTask(conn, staged.target as Id<"t">).version
+              : new RowReader("projects", readRow(conn, "projects", staged.target)).int(
+                  "version",
+                  "seq",
+                );
+        return {
+          i,
+          status,
+          id: staged.target,
+          ...(task === null ? {} : { task, ref: refOf(task) }),
+          version,
+        };
+      }
       case "alias.add": {
         // An alias has no ID and no version: the result names its task, as a receipt names rows.
         const task = must(staged.task, "An alias names its task");
@@ -2894,6 +3288,48 @@ function resolveGroupRow(conn: Connection, kind: "area" | "project", ref: string
   if (row === undefined) return problem("NOT_FOUND", `No ${kind} has this ID or slug`, op, kind);
   if (row["deleted_at"] !== null) return problem("DELETED", `The ${kind} is deleted`, op, kind);
   return row;
+}
+
+/** The longest slug the writer makes from a title, before its number. */
+const SLUG_FROM_TITLE = 48;
+
+/**
+ * A slug for a new group from its title: lower-case ASCII letters and digits with `-` between,
+ * `kind` when nothing is left, and `-2`, `-3`, … after it while `held` says another group has it.
+ */
+function freeSlug(title: string, kind: string, held: (slug: string) => boolean): string {
+  const base =
+    title
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+/, "")
+      .slice(0, SLUG_FROM_TITLE)
+      .replace(/-+$/, "") || kind;
+  if (!held(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const slug = `${base}-${String(n)}`;
+    if (!held(slug)) return slug;
+  }
+}
+
+/**
+ * The deleted project a restore names: by ID, else by the slug it had when exactly one deleted
+ * project had it. A project that is not deleted is INVALID_TRANSITION.
+ */
+function deletedProject(conn: Connection, ref: string, op: number): Id<"p"> {
+  let row = isId(ref, "p") ? conn.prepare(SQL.projectById).get({ id: ref }) : undefined;
+  if (row === undefined && !isId(ref, "p")) {
+    const live = conn.prepare(SQL.projectBySlug).get({ slug: ref });
+    const deleted = conn.prepare(SQL.deletedProjectsBySlug).all({ slug: ref });
+    row = live ?? (deleted.length === 1 ? deleted[0] : undefined);
+  }
+  if (row === undefined) return problem("NOT_FOUND", "No project has this ID or slug", op, "project");
+  if (row["deleted_at"] === null) {
+    problem("INVALID_TRANSITION", "Only a deleted project can be restored", op, "project");
+  }
+  return new RowReader("projects", row).id("id", "p");
 }
 
 function resolveArea(conn: Connection, ref: string, op: number): Id<"a"> {
@@ -3693,11 +4129,272 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       }
       return;
     }
+    case "area.create": {
+      const last = conn.prepare(SQL.lastArea).get()?.["p"] ?? undefined;
+      if (last !== undefined && !isPosition(last)) throw invalidValue("areas", "position");
+      conn.prepare(SQL.insertAreaWith).run({
+        id: staged.target,
+        slug: must(staged.slug, "A new area has its slug"),
+        title: op.title,
+        position: positionBetween(last, undefined),
+        color: op.color ?? null,
+        brief: op.brief ?? "",
+        at: run.at,
+        author,
+        seq: run.seq,
+      });
+      wrote(run, i, "areas", staged.target, null, null);
+      return;
+    }
+    case "project.create": {
+      const area = staged.area ?? null;
+      const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
+      if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");
+      conn.prepare(SQL.insertProjectWith).run({
+        id: staged.target,
+        area,
+        slug: must(staged.slug, "A new project has its slug"),
+        title: op.title,
+        position: positionBetween(last, undefined),
+        color: op.color ?? null,
+        brief: op.brief ?? "",
+        at: run.at,
+        author,
+        seq: run.seq,
+      });
+      wrote(run, i, "projects", staged.target, null, null);
+      return;
+    }
+    case "area.patch":
+    case "project.patch": {
+      const entity = op.kind === "area.patch" ? "areas" : "projects";
+      const values: Record<string, SqlValue> = {};
+      for (const [field, value] of Object.entries(op.set)) {
+        values[field] = (value ?? null) as SqlValue;
+      }
+      conn.prepare(updateGroupSql(entity, Object.keys(values))).run({ ...values, id: staged.target });
+      groupWrote(conn, run, i, entity, staged.target, Object.keys(values));
+      return;
+    }
+    case "project.move": {
+      const area = staged.area ?? null;
+      const row = readRow(conn, "projects", staged.target);
+      if (row["area_id"] !== area) {
+        // At the end of its new area's projects.
+        const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
+        if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");
+        conn
+          .prepare(updateGroupSql("projects", ["area_id", "position"]))
+          .run({ id: staged.target, area_id: area, position: positionBetween(last, undefined) });
+        groupWrote(conn, run, i, "projects", staged.target, ["grouping"]);
+      }
+      // Its tasks are in its area: every one of them, whatever its state.
+      for (const found of conn.prepare(SQL.tasksOfProject).all({ id: staged.target })) {
+        const task = new RowReader("tasks", found).id("id", "t");
+        if (readTask(conn, task).areaId === area) continue;
+        ensureStart(conn, run, "tasks", task);
+        conn.prepare(SQL.taskArea).run({ id: task, area });
+        wrote(run, i, "tasks", task, task, ["grouping"]);
+      }
+      return;
+    }
+    case "area.archive":
+    case "area.unarchive":
+    case "project.archive":
+    case "project.unarchive": {
+      const entity = op.kind.startsWith("area.") ? "areas" : "projects";
+      const lifecycle = op.kind.endsWith(".archive") ? "archived" : "active";
+      const current = readRow(conn, entity, staged.target)["lifecycle"];
+      // Archiving an archived group, or the other way, leaves it as it is. A completed project
+      // counts as not archived.
+      if (current === lifecycle || (lifecycle === "active" && current !== "archived")) return;
+      conn.prepare(updateGroupSql(entity, ["lifecycle"])).run({ id: staged.target, lifecycle });
+      groupWrote(conn, run, i, entity, staged.target, ["lifecycle"]);
+      return;
+    }
+    case "project.delete": {
+      // A deleted project's tasks would be filed nowhere a person looks: they move or go first.
+      if (conn.prepare(SQL.liveTaskIn).get({ id: staged.target }) !== undefined) {
+        problem(
+          "VALIDATION_FAILED",
+          "The project holds tasks: move or delete them first",
+          i,
+          "project",
+        );
+      }
+      conn
+        .prepare(updateGroupSql("projects", ["deleted_at"]))
+        .run({ id: staged.target, deleted_at: run.at });
+      groupWrote(conn, run, i, "projects", staged.target, ["deleted"]);
+      for (const row of conn
+        .prepare(FOLDER_SQL.liveOfOwner)
+        .all({ kind: "project", owner: staged.target })) {
+        const folder = decodeFolder(row);
+        ensureStart(conn, run, "folders", folder.id);
+        conn.prepare(SQL.folderDeleted).run({ id: folder.id, at: run.at });
+        wrote(run, i, "folders", folder.id, null, ["deleted"]);
+      }
+      return;
+    }
+    case "project.restore": {
+      const start = must(run.plan.starts.get(rowKey("projects", staged.target)), "No start");
+      const gone = provenanceOf(start, "deleted");
+      const slug = String(start.raw["slug"]);
+      if (conn.prepare(SQL.projectSlugTaken).get({ slug }) !== undefined) {
+        problem("VALIDATION_FAILED", "Another live project holds its slug now", i, "project");
+      }
+      conn
+        .prepare(updateGroupSql("projects", ["deleted_at"]))
+        .run({ id: staged.target, deleted_at: null });
+      groupWrote(conn, run, i, "projects", staged.target, ["deleted"]);
+      for (const row of conn
+        .prepare(FOLDER_SQL.allOfOwner)
+        .all({ kind: "project", owner: staged.target })) {
+        const folder = decodeFolder(row);
+        const state = rowState("folders", row, CHILD_FIELDS.folders);
+        if (!folder.deleted || provenanceOf(state, "deleted") !== gone) continue;
+        const os = machineOs(conn, folder.machineId);
+        if (os === undefined) throw invalidValue("folders", "machine_id");
+        // A folder another live project took meanwhile stays removed: that project's is named.
+        const holder = folderHolder(conn, folder.machineId, folder.path, os, staged.target);
+        if (holder !== undefined) {
+          run.conflicts.push(rowConflict(conn, i, "folders", holder.id, "path", null));
+          continue;
+        }
+        ensureStart(conn, run, "folders", folder.id);
+        conn.prepare(SQL.folderDeleted).run({ id: folder.id, at: null });
+        wrote(run, i, "folders", folder.id, null, ["deleted"]);
+      }
+      return;
+    }
+    case "project.folder_set":
+    case "task.folder_set": {
+      const owner = must(staged.owner, "A folder has an owner");
+      const { machine, os } = must(staged.folder, "A folder has its machine");
+      const kind = owner.kind === "task" ? "task" : "project";
+      const row = conn.prepare(FOLDER_SQL.liveOf).get({ kind, owner: owner.id, machine });
+      if (row === undefined) {
+        conn.prepare(SQL.insertFolder).run({
+          id: staged.target,
+          kind,
+          owner: owner.id,
+          machine,
+          path: op.path,
+          at: run.at,
+          seq: run.seq,
+        });
+        wrote(run, i, "folders", staged.target, staged.task, null);
+      } else {
+        const found = decodeFolder(row);
+        if (found.id !== staged.target) throw misuse("A folder is not the one staging found");
+        if (found.path !== op.path) {
+          conn.prepare(SQL.folderPath).run({ id: found.id, path: op.path });
+          wrote(run, i, "folders", found.id, staged.task, ["path"]);
+          // The project's tasks' folders inside its old folder move along, the rest of each path
+          // as it is: one change, one undo.
+          if (kind === "project") {
+            for (const inside of conn
+              .prepare(FOLDER_SQL.taskFoldersOfProject)
+              .all({ machine, project: owner.id })) {
+              const task = decodeFolder(inside);
+              const moved = rebased(task.path, found.path, op.path, os);
+              if (moved === undefined || moved === task.path) continue;
+              ensureStart(conn, run, "folders", task.id);
+              conn.prepare(SQL.folderPath).run({ id: task.id, path: moved });
+              wrote(run, i, "folders", task.id, task.ownerId as Id<"t">, ["path"]);
+            }
+          }
+        }
+      }
+      // Two live projects never share one folder on one machine, by the machine's case rule.
+      if (kind === "project" && folderHolder(conn, machine, op.path, os, owner.id) !== undefined) {
+        problem("FOLDER_TAKEN", "Another live project has this folder on this machine", i, "path");
+      }
+      return;
+    }
+    case "project.folder_clear":
+    case "task.folder_clear": {
+      const owner = must(staged.owner, "A folder has an owner");
+      if (owner.bound !== true) return;
+      // A second clear of the same folder in the request finds it cleared: nothing more to do.
+      if (readRow(conn, "folders", staged.target)["deleted_at"] !== null) return;
+      conn.prepare(SQL.folderDeleted).run({ id: staged.target, at: run.at });
+      wrote(run, i, "folders", staged.target, staged.task, ["deleted"]);
+      return;
+    }
     case "import.undo":
     case "undo":
     case "redo":
       throw misuse("A request of its own is never executed here");
   }
+}
+
+/**
+ * Records that operation `i` wrote `fields` of an area or a project. One the request created is
+ * written whole by its create row; an existing one has its start from staging.
+ */
+function groupWrote(
+  conn: Connection,
+  run: Execution,
+  i: number,
+  entity: "areas" | "projects",
+  id: string,
+  fields: readonly string[],
+): void {
+  ensureStart(conn, run, entity, id);
+  wrote(run, i, entity, id, null, fields);
+}
+
+/**
+ * Gives a row the request writes a start state when staging gave it none: a row no earlier write
+ * of the request touched is as the request found it, so its live state is its start.
+ */
+function ensureStart(
+  conn: Connection,
+  run: Execution,
+  entity: "tasks" | "areas" | "projects" | "folders",
+  id: string,
+): void {
+  const key = rowKey(entity, id);
+  if (run.rows.has(key) || run.plan.starts.has(key)) return;
+  const row = readRow(conn, entity, id);
+  run.plan.starts.set(
+    key,
+    entity === "tasks" ? decodeTask(row) : rowState(entity, row, CHILD_FIELDS[entity]),
+  );
+}
+
+/** A conflict that names a row as it stands: its field's value, who wrote it and when. */
+function rowConflict(
+  conn: Connection,
+  op: number,
+  entity: "folders",
+  id: string,
+  field: string,
+  task: Id<"t"> | null,
+): FieldConflict {
+  const row = readRow(conn, entity, id);
+  const state = rowState(entity, row, CHILD_FIELDS[entity]);
+  const version = versionOf(state, field);
+  const by = conn.prepare(SQL.commitAuthor).get({ seq: version });
+  if (by === undefined) throw invalidValue(entity, "fv");
+  const r = new RowReader("commits", by);
+  return {
+    op,
+    entity,
+    id,
+    ...(task === null ? {} : { task }),
+    field,
+    value: valueOf(entity, row, field),
+    version,
+    by: {
+      actor: r.id("actor", "ac"),
+      kind: r.text("kind"),
+      label: r.text("label"),
+      origin: r.text("origin"),
+    },
+    at: r.int("at", "instant"),
+  };
 }
 
 /**
