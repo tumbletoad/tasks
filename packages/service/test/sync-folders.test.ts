@@ -66,7 +66,7 @@ const synced = (check: FolderCheck) => ({
   rule: check.signals.find((s) => s.kind === "synced")?.rule,
 });
 
-/** Drive for desktop's SyncTargets value as the Windows reference machine showed its layout: protobuf-like fields. */
+/** Drive for desktop's SyncTargets value as Windows 11 showed its layout: protobuf-like fields. */
 function syncTargets(paths: readonly string[], utf16 = false): string {
   const parts: Buffer[] = [];
   for (const path of paths) {

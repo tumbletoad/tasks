@@ -541,18 +541,18 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
     ]);
   });
 
-  // ---- The machine rule is code (review finding 4). ----
+  // ---- The machine rule is code. ----
 
-  it("refuses desktop-only commands and full access off Windows, before anything starts", () => {
+  it("refuses Windows-only commands and full access off Windows, before anything starts", () => {
     for (const c of ["build-helper", "n01", "n02", "n03", "n03-detached", "repeats", "cleanup"]) {
       expect(() => {
         guardCommand(c, false);
-      }).toThrow(/desktop-only/);
+      }).toThrow(/Windows-only/);
       expect(() => {
         guardCommand(c, true);
       }).not.toThrow();
     }
-    for (const c of ["n02-laptop", "n05", "resanitise", "keys"]) {
+    for (const c of ["n02-linux", "n05", "resanitise", "keys"]) {
       expect(() => {
         guardCommand(c, false);
       }).not.toThrow();
@@ -566,7 +566,7 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
     }).not.toThrow();
     expect(() => {
       guardRun("claude", ["-p"], false);
-    }).toThrow(/desktop-only/);
+    }).toThrow(/Windows-only/);
     expect(() => {
       guardRun("codex", full, true);
     }).not.toThrow();
@@ -576,7 +576,7 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
     const sc = join(scratch, "guard-scratch");
     const r = spawnSync(process.execPath, [LAB, "n02", "--scratch", sc], { encoding: "utf8" });
     expect(r.status).toBe(1);
-    expect(r.stderr).toBe("error: a desktop-only command on a non-Windows host\n");
+    expect(r.stderr).toBe("error: a Windows-only command on a non-Windows host\n");
     expect(existsSync(sc)).toBe(false);
   });
 
@@ -653,7 +653,7 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
     const sc = ["--scratch", join(root, "scratch"), "--results", results];
     const runs = WIN
       ? [lab("build-helper", ...sc), lab("n01", ...sc), lab("n02", ...sc)]
-      : [lab("n02-laptop", ...sc)];
+      : [lab("n02-linux", ...sc)];
     runs.push(lab("n05", ...sc, "--fixtures", fixtures));
     for (const r of runs) expect(r.stderr, r.stdout).toBe("");
     for (const r of runs) expect(r.status).toBe(0);

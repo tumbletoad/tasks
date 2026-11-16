@@ -19,8 +19,8 @@ import {
   regKey,
 } from "./registry.ts";
 
-// An export in the format `reg export` wrote for a scratch key on the Windows reference machine (Windows 11,
-// 2026-11-13), as UTF-16 decoded to text, extended by hand to every value type and escape.
+// An export in the format `reg export` wrote for a scratch key on Windows 11 (2026-11-13), as
+// UTF-16 decoded to text, extended by hand to every value type and escape.
 const EXPORT = [
   "\uFEFFWindows Registry Editor Version 5.00",
   "",
