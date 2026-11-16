@@ -55,6 +55,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
           size: sidecar.size,
           compressed_size: sidecar.compressed_size,
         },
+        ...(record.searchIndexRemade === true ? { searchIndexDamaged: true as const } : {}),
       };
     }
     case "export": {

@@ -110,7 +110,7 @@ export interface AcceptInput {
    * missing program would show only as the scope's non-zero exit, which a handoff cannot tell from
    * an ambiguous one.
    */
-  readonly ready: (program: string) => boolean;
+  readonly ready: (program: string) => boolean | Promise<boolean>;
   readonly spawn: Spawner;
   readonly tickets: TicketControl;
   readonly cwd: string;
@@ -145,7 +145,7 @@ export async function acceptTerminal(
       attempts.push({ app: entry.app, result: command.refused });
       continue;
     }
-    if (!input.ready(command.program)) {
+    if (!(await input.ready(command.program))) {
       attempts.push({ app: entry.app, kind: command.kind, result: "no_program" });
       continue;
     }
