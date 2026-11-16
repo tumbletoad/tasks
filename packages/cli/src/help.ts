@@ -109,9 +109,9 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   },
   {
     name: "service",
-    summary: "Install, uninstall, start, stop or show the service, or move the UI's port",
+    summary: "Install, uninstall, start, stop, restart or show the service, or move the UI's port",
     help: SERVICE_HELP,
-    subcommands: ["install", "uninstall", "start", "stop", "status", "port"],
+    subcommands: ["install", "uninstall", "start", "stop", "restart", "status", "port"],
   },
   {
     name: "space",

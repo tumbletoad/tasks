@@ -1,4 +1,4 @@
-// `tasks service install|uninstall|start|stop|status` (A2 3.3.5) as functions over a
+// `tasks service install|uninstall|start|stop|restart|status` (A2 3.3.5) as functions over a
 // ServiceContext.
 //
 // install and uninstall first make a plan: the exact steps, which the entry shows as the preview
@@ -48,6 +48,7 @@ import {
 } from "../hub/files.ts";
 import { unsafeMessage } from "../hub/permissions.ts";
 import { readUmask, umaskRefusal } from "../hub/umask.ts";
+import { currentVersion } from "../version/switch.ts";
 import { liveRecord, type Probe, type ProbeReason, type ServiceContext } from "./context.ts";
 import { ServiceCommandError } from "./errors.ts";
 import { TOOL_TIMEOUT_MS, type Runner, type RunResult } from "./process.ts";
@@ -1666,6 +1667,59 @@ export async function stopService(
   return { outcome: "stopped", via };
 }
 
+export interface RestartOutcome {
+  /** `started`: no service ran, so there was nothing to stop. */
+  readonly outcome: "restarted" | "started";
+  /** The version that answered before the stop, when one did. */
+  readonly was: string | null;
+  readonly stop: StopOutcome;
+  readonly start: StartOutcome;
+}
+
+/**
+ * `tasks service restart`: stop, then start, as a person would run them, so the service comes up
+ * on what `current` names now, under the supervisor `<root>/bin` holds now. Who may run it is
+ * stop's rule: not an agent's shell.
+ */
+export async function restartService(ctx: ServiceContext): Promise<RestartOutcome> {
+  refuseIdentity(ctx, "restart", { operator: true });
+  // What start needs and can be known now is checked before the stop, so that a restart does not
+  // stop a service it then cannot start.
+  needProgram(ctx);
+  if (ctx.platform === "darwin" && (await readEntry(ctx)).info.state !== "ours") {
+    throw notInstalled();
+  }
+  const before = await ctx.probe();
+  const was = before.answers ? before.status.version : null;
+  const stop = await stopService(ctx);
+  let start: StartOutcome;
+  try {
+    start = await startService(ctx);
+  } catch (error) {
+    if (stop.outcome !== "stopped" || !(error instanceof ServiceCommandError)) throw error;
+    throw new ServiceCommandError(
+      error.errorClass,
+      error.code,
+      `${PRODUCT_NAME}'s service stopped for the restart, and the start failed: ${error.message}`,
+      error.hint ?? `${CLI_NAME} service start`,
+    );
+  }
+  return {
+    outcome: stop.outcome === "not_running" ? "started" : "restarted",
+    was,
+    stop,
+    start,
+  };
+}
+
+/**
+ * The version `current` names in this install, or null where there is none (a run from source),
+ * as the service started next would run it.
+ */
+export function installedVersion(ctx: Pick<ServiceContext, "layout" | "platform">): string | null {
+  return currentVersion(ctx.layout.root, ctx.platform) ?? null;
+}
+
 /**
  * Install's takeover on Linux (A2 3.3.3), decided when its step runs: a service of this install
  * that the unit does not run (started by hand, or still starting so) is stopped, so that the unit's
@@ -1760,6 +1814,8 @@ export interface StatusReport {
   readonly entry: EntryInfo;
   readonly autostart: Autostart;
   readonly service: ServiceAnswer;
+  /** The version `current` names, which the next start runs; null without one. */
+  readonly installed: string | null;
 }
 
 const answer = (probe: Probe): ServiceAnswer =>
@@ -1819,5 +1875,6 @@ export async function serviceStatus(ctx: ServiceContext): Promise<StatusReport> 
     entry: wanted.info,
     autostart,
     service: answer(await ctx.probe()),
+    installed: installedVersion(ctx),
   };
 }

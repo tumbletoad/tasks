@@ -24,7 +24,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     const none = scopesCheck(false);
     expect(none.status).toBe("warn");
     expect(none.detail).toContain("may end the agent sessions");
-    expect(none.detail).toContain("service stop, then tasks service start");
+    expect(none.detail).toContain("tasks service restart");
     expect(scopesCheck(null).status).toBe("skip");
   });
 
