@@ -185,7 +185,7 @@ export function SpaceSwitcher({
                 )}
                 {troubles.map((trouble) => (
                   <p
-                    key={trouble.name}
+                    key={trouble.id}
                     className={styles.note}
                     data-part="backup-trouble"
                     data-why={trouble.why}

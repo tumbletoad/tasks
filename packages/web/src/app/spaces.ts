@@ -59,6 +59,7 @@ export function notOpen(list: SpaceList): NotOpen[] {
 
 /** An open space whose backups are not working, and the word that picks what to tell them. */
 export interface BackupTrouble {
+  readonly id: string;
   readonly name: string;
   readonly why: string;
 }
@@ -66,7 +67,7 @@ export interface BackupTrouble {
 /** The open spaces of `list` whose backups are not working. */
 export const backupTrouble = (list: SpaceList): BackupTrouble[] =>
   list.spaces.flatMap((s) =>
-    s.state === "open" && s.backup !== undefined ? [{ name: s.name, why: s.backup }] : [],
+    s.state === "open" && s.backup !== undefined ? [{ id: s.id, name: s.name, why: s.backup }] : [],
   );
 
 async function result(api: Api, path: string, input: unknown): Promise<unknown> {

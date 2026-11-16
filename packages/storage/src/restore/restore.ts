@@ -353,8 +353,8 @@ function liveIdentity(
 }
 
 /**
- * The live database's next task reference when the space does not open (a damaged space.json, a
- * schema it does not know): read-only, from the space row alone. Undefined when even that fails.
+ * The live database's next task reference when the space does not open (a space row that fails its
+ * checks, say): read-only, from that one column. Undefined when even that cannot be read.
  */
 function rawNextRef(
   checked: CheckedDriver,
