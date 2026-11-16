@@ -98,12 +98,22 @@ type Result = Record<string, unknown>;
 
 const replay = (r: Result) => (r["replayed"] === true ? " (replayed)" : "");
 
+/**
+ * A finished task's state as a person says it: completed, or dropped for an archived one.
+ * Undefined while the task is active, whose state is its status.
+ */
+function finished(lifecycle: unknown): string | undefined {
+  if (lifecycle === "completed") return "completed";
+  if (lifecycle === "archived") return "dropped";
+  return undefined;
+}
+
+/** One task: its one state (the status while it is active), its priority, due date and inbox. */
 function taskLine(task: Result): string {
-  const parts = [str(task["status"]), `p${str(task["priority"])}`];
+  const parts = [finished(task["lifecycle"]) ?? str(task["status"]), `p${str(task["priority"])}`];
   const due = task["due"];
   if (typeof due === "string") parts.push(`due ${due}`);
   if (task["inbox"] === true) parts.push("inbox");
-  if (task["lifecycle"] !== "active") parts.push(String(task["lifecycle"]));
   return `${String(task["ref"])}  ${String(task["title"])}  (${parts.join(", ")})`;
 }
 
@@ -118,9 +128,9 @@ function dueText(due: unknown): string {
 }
 
 /**
- * A search page (A3 3.9.4): a header with the positions, the scope, how the query was read and the
- * page's as_of, then one line per row. A row changed since the search ran ends with `*`; one
- * deleted or redacted since keeps its place without its content.
+ * A search page: a header with the positions, the scope and how the query was read, then one line
+ * per row. A row changed since the search ran ends with `*`; one deleted or redacted since keeps its
+ * place without its content. The page's `as_of` is for a script, in --json.
  */
 function searchLines(result: Result): string[] {
   const rows = (result["rows"] as Result[] | undefined) ?? [];
@@ -129,7 +139,7 @@ function searchLines(result: Result): string[] {
   const parsed = str(result["parsed"]);
   const lines = [
     `${span} of ${str(result["total"])} · scope ${str(result["scope"])}` +
-      `${parsed === "" ? "" : ` · parsed: ${parsed}`} · as of ${str(result["as_of"])}`,
+      `${parsed === "" ? "" : ` · parsed: ${parsed}`}`,
   ];
   for (const row of rows) {
     const mark = row["changed"] === true ? " *" : "";
@@ -147,10 +157,11 @@ function searchLines(result: Result): string[] {
         );
         break;
       default: {
+        const ended = finished(row["lifecycle"]);
         const state =
-          row["lifecycle"] === "active"
+          ended === undefined
             ? str(row["status"])
-            : `${str(row["lifecycle"])}${typeof row["completed"] === "string" ? ` ${row["completed"]}` : ""}`;
+            : `${ended}${typeof row["completed"] === "string" ? ` ${row["completed"]}` : ""}`;
         const parts = [
           str(row["ref"]),
           state,
@@ -311,7 +322,6 @@ export function render(entry: string, result: Result, space: string): string {
       if (typeof result["before"] === "string") {
         lines.push(`More: the same command with --before ${result["before"]}`);
       }
-      lines.push(`as of ${String(result["as_of"])}`);
       break;
     }
     case "space.status": {
@@ -335,7 +345,6 @@ export function render(entry: string, result: Result, space: string): string {
         for (const task of (section["tasks"] as Result[] | undefined) ?? [])
           lines.push(`  ${taskLine(task)}`);
       }
-      lines.push(`as of ${String(result["as_of"])}`);
       break;
     }
     case "receipt.get":
@@ -361,7 +370,6 @@ export function render(entry: string, result: Result, space: string): string {
       }
       const loose = (result["projects"] as Result[] | undefined) ?? [];
       if (loose.length > 0) lines.push(`No area: ${loose.map(named).join(" · ")}`);
-      lines.push(`as of ${str(result["as_of"])}`);
       break;
     }
     case "prefs.manage":
@@ -373,7 +381,6 @@ export function render(entry: string, result: Result, space: string): string {
             : `${JSON.stringify(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
         lines.push(`${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}`);
       }
-      lines.push(`as of ${str(result["as_of"])}`);
       break;
     case "launch.open": {
       // `tasks brief`: the pointer brief itself, ready to paste, or how the launch stands.

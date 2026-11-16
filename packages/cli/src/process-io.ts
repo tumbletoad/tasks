@@ -31,5 +31,17 @@ export function processIo(): Io {
         return Buffer.concat(chunks).toString("utf8");
       })()),
     readFile: (path) => readFile(path, "utf8"),
+    ...(isTty(process.stdin) ? { ask: terminalAsk } : {}),
   };
+}
+
+/** A yes-or-no question: on stderr, so output piped elsewhere stays clean. No is the default. */
+async function terminalAsk(question: string): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return /^(y|yes)$/i.test((await rl.question(question)).trim());
+  } finally {
+    rl.close();
+  }
 }

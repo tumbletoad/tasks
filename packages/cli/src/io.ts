@@ -26,6 +26,11 @@ export interface Io {
   stderr(text: string): void;
   /** All of stdin, as text, read once. */
   readStdin(): Promise<string>;
+  /**
+   * Asks the person a yes-or-no question on the terminal: the question on stderr, the answer from
+   * stdin. Absent when stdin is no terminal, where no one can answer.
+   */
+  readonly ask?: (question: string) => Promise<boolean>;
   /** A file's text (`--input <file>`). */
   readFile(path: string): Promise<string>;
 }

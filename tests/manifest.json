@@ -3194,6 +3194,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.actors.script-undo-check",
+      "title": "history.undo with check_script undoes nothing when a script changed the space after the person's newest change, and names that change (commit, tasks, kind) and the script's; the named commit then undoes it; a retry of an undo that applied replays it",
+      "source": "A3 3.7.4, A1 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.1.hub.space-forget",
       "title": "A closed space keeps its name after a restart; space forget refuses an open space with the words to close it, takes a closed one off the list and out of machine.toml, touches no file of it, clears the default that named it, and space open of its folder lists it again",
       "source": "A2 3.1, A2 3.2.4, A2 3.10.1",

@@ -109,6 +109,7 @@ import {
   readPlacedAny,
   readReceipt,
   readScriptChange,
+  readUndoTarget,
   readSpacePreferences,
   readLaunchTask,
   readSiblings,
@@ -673,7 +674,7 @@ async function submit(
     throw storageFailure(error);
   }
   if (result.status === "conflict" || result.status === "rejected") {
-    throw resultFailure(result, options.hints, options.wrapUp);
+    throw resultFailure(result, options.hints, options.wrapUp, principal.origin);
   }
   return result;
 }
@@ -1805,6 +1806,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   // provenance in the writer, so no base; a conflict comes back as `conflict` with A1's cause.
   "history.undo": async (call) => {
     const { input } = call;
+    if (input["check_script"] === true && input["commit"] === undefined) {
+      await refuseBehindScript(call);
+    }
     const op: Operation = {
       kind: "undo",
       ...namedCommit(input),
@@ -2162,6 +2166,56 @@ function namedCommit(input: Record<string, unknown>): { commit?: Id<"op"> } {
     throw invalid("commit", "Expected a change's commit ID", "Copy it from the change's history.");
   }
   return { commit };
+}
+
+/** A conflict's `reason` when an undo with `check_script` found a newer change by a script. */
+export const SCRIPT_CHANGE_AFTER = "script_change_after";
+
+/**
+ * `check_script`: the person's newest change is older than a change a script of theirs made, which
+ * no undo reaches. Undoing now would take back the older change, which is rarely what someone who
+ * just ran a script and then `undo` means, so nothing is undone and the conflict names both: the
+ * change that would be undone (its commit, which a confirmed undo passes) and the script's. A
+ * retry of an undo that applied finds its receipt and replays it instead.
+ */
+async function refuseBehindScript(call: Call): Promise<void> {
+  const reader = readerOf(call.space);
+  const { principal } = call;
+  let found;
+  try {
+    const stored = await readReceipt(reader, {
+      scope_id: principal.scope,
+      ...(principal.earlierScope === undefined ? {} : { earlier_scope_id: principal.earlierScope }),
+      request_id: String(call.input["request_id"]),
+    });
+    if (receiptResult(stored)["found"] === true) return;
+    const target = await readUndoTarget(reader, await actorOf(writerOf(call.space), principal));
+    if (target === undefined) return;
+    const scripted = await readScriptChange(reader, {
+      scope: principalOf("cli-script", call.host.machine.id).scope,
+      undone: target.commit,
+      seq: Number.MAX_SAFE_INTEGER,
+    });
+    if (scripted === undefined) return;
+    found = { target, scripted };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw storageFailure(error);
+  }
+  const { target, scripted } = found;
+  throw new AppError({
+    code: "conflict",
+    message: `A script changed ${scripted.task} after your newest change, so nothing was undone: an undo now would take back your older change${target.tasks.length === 0 ? "" : ` to ${target.tasks.join(", ")}`}.`,
+    hint: "Undo it anyway with --yes, or leave it.",
+    data: {
+      reason: SCRIPT_CHANGE_AFTER,
+      commit: target.commit,
+      ...(target.change === undefined ? {} : { change: target.change }),
+      tasks: target.tasks,
+      task_count: target.count,
+      script_change: scripted,
+    },
+  });
 }
 
 /**

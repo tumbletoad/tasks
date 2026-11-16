@@ -1,8 +1,9 @@
 // A generated verb (A2 3.10.1, A3 3.4.13): its arguments into the entry's input, the fields the CLI
 // fills itself (A3 3.2.2's `auto`), one `op/call`, and the result printed.
 //
-// Retries (A3 3.4.1, A2 3.10.2). A write gets a request ID from --request-id, or a new one that the
-// CLI prints on stderr so a retry can pass it. A write that needs a base reads one only when no
+// Retries. A write gets a request ID from --request-id, or a new one that the CLI prints on stderr
+// with --json, and on a failure that a retry may fix, so a retry can pass it. A write that needs a
+// base reads one only when no
 // receipt exists: with --request-id the CLI first asks for the receipt in its own writer scope
 // (`receipt.get`), and when there is one it sends the same input with the receipt's `as_of` as
 // base. The receipt's fingerprint covers the input without the base, so the service replays the
@@ -11,6 +12,7 @@
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
 import { LocalError } from "@tasks/bridge/protocol";
+import type { ErrorBody } from "@tasks/contracts";
 import {
   isRequestId,
   parseVerb,
@@ -113,6 +115,21 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
   );
 }
 
+/** What a verb adds to the generic path: `tasks undo`'s check and question. */
+export interface VerbHooks {
+  /** Fills fields of the input that the verb's arguments do not give. */
+  readonly input?: (input: Record<string, unknown>) => void;
+  /**
+   * A failure the verb answers itself: its exit code, or undefined to print it as any other.
+   * `again` sends the call once more with `changes` over the input and a new request ID, and
+   * prints what it returns.
+   */
+  readonly failed?: (
+    body: ErrorBody,
+    again: (changes: Record<string, unknown>) => Promise<number>,
+  ) => Promise<number | undefined>;
+}
+
 export async function runVerb(
   io: Io,
   given: Globals,
@@ -120,6 +137,7 @@ export async function runVerb(
   args: readonly string[],
   options: ConnectOptions,
   present?: (result: Record<string, unknown>, printed: string) => Promise<void>,
+  hooks?: VerbHooks,
 ): Promise<number> {
   // `--space` may name a folder, as the space verbs' <space> does: sent absolute, it names that
   // copy of a space, a read-only copy beside its original too (A2 3.10.5).
@@ -145,6 +163,7 @@ export async function runVerb(
   const write = writes(verb, input);
   if (verb.auto.includes("cwd") && input["cwd"] === undefined) input["cwd"] = io.cwd;
   absolutePlaces(input, io.cwd);
+  hooks?.input?.(input);
   let generated = false;
   if (write && verb.auto.includes("request_id")) {
     const given = input["request_id"];
@@ -160,7 +179,9 @@ export async function runVerb(
     }
   }
   const requestId = isRequestId(input["request_id"]) ? input["request_id"] : undefined;
-  if (write && generated && requestId !== undefined && !globals.quiet) {
+  // A script (--json) keeps the ID it can retry with. A person reads it only when a retry is the
+  // way out: the failure below names it.
+  if (write && generated && requestId !== undefined && globals.json && !globals.quiet) {
     io.stderr(`request ${requestId}\n`);
   }
 
@@ -186,24 +207,47 @@ export async function runVerb(
         if (typeof read.as_of === "string") input["base"] = read.as_of;
       }
     }
-    const result = (await opCall(session, globals, verb.entry, input)) as Record<string, unknown>;
-    const printed = globals.json
-      ? `${JSON.stringify(result)}\n`
-      : !globals.quiet || !write
-        ? render(verb.entry, result, spaceName(session, globals, result))
-        : "";
-    // A verb with its own output (`tasks brief --copy`) is given the result and what it would print.
-    if (present !== undefined) await present(result, printed);
-    else io.stdout(printed);
-    return 0;
-  } catch (error) {
-    const body = bodyOf(asAppError(error));
-    // A write that may have applied is retried with its request ID, also a generated one.
-    if (write && requestId !== undefined && body.data?.["retryable"] === true && !globals.quiet) {
-      io.stderr(`Retry with: --request-id ${requestId}\n`);
+    const open = session;
+    const send = async (sent: Record<string, unknown>): Promise<number> => {
+      const result = (await opCall(open, globals, verb.entry, sent)) as Record<string, unknown>;
+      const printed = globals.json
+        ? `${JSON.stringify(result)}\n`
+        : !globals.quiet || !write
+          ? render(verb.entry, result, spaceName(open, globals, result))
+          : "";
+      // A verb with its own output (`tasks brief --copy`) is given the result and what it would
+      // print.
+      if (present !== undefined) await present(result, printed);
+      else io.stdout(printed);
+      return 0;
+    };
+    try {
+      return await send(input);
+    } catch (error) {
+      const body = bodyOf(asAppError(error));
+      const answered = await hooks?.failed?.(body, async (changes) => {
+        const again = { ...input, ...changes, request_id: newRequestId() };
+        try {
+          return await send(again);
+        } catch (failed) {
+          return failure(failed, String(again["request_id"]));
+        }
+      });
+      if (answered !== undefined) return answered;
+      throw error;
     }
-    return printError(io, globals.json, body);
+  } catch (error) {
+    return failure(error, requestId);
   } finally {
     session?.close();
+  }
+
+  function failure(error: unknown, id: string | undefined): number {
+    const body = bodyOf(asAppError(error));
+    // A write that may have applied is retried with its request ID, also a generated one.
+    if (write && id !== undefined && body.data?.["retryable"] === true && !globals.quiet) {
+      io.stderr(`Retry with: --request-id ${id}\n`);
+    }
+    return printError(io, globals.json, body);
   }
 }

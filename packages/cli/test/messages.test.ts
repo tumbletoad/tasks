@@ -41,8 +41,10 @@ describe("[A3.3.4.finish.already-wrapped] tasks done on a finished task", () => 
       const other = await tasks(["done", "M-1", "--outcome", "Fixture outcome two"]);
       expect(other.code).toBe(EXIT_CODES.conflict);
       expect(other.stdout).toBe("");
+      // The way out in the commands a person types, never an agent's tools, and no request ID:
+      // a retry would not help.
       expect(other.stderr).toMatch(
-        /^request \S+\nerror conflict: The task is already wrapped up with another outcome or other learnings, so nothing was changed\. To add to it, log an entry: add_entry \(tasks log\)\. To finish it again, reopen it first: reopen_task \(tasks reopen\)\.\n {2}M-1 wrap: user at \S+\n$/,
+        /^error conflict: The task is already wrapped up with another outcome or other learnings, so nothing was changed\. To add to it, log an entry: tasks log M-1 <text>\. To finish it again, reopen it first: tasks reopen M-1 --reason <why>\.\n {2}M-1 wrap: user at \S+\n$/,
       );
       expect(other.stderr).not.toContain("base");
     },
@@ -73,7 +75,7 @@ describe("[A3.3.5.error-text] a required flag left out", () => {
 
 describe("[A3.3.7.actors.script-undo-note] tasks undo after a script's change", () => {
   test(
-    "the person's own change is undone, and a newer change by a script is named in one line",
+    "undo asks before it takes back an older change of the person's, and names the script's newer one",
     async () => {
       expect((await tasks(["add", "Fixture second task"])).stdout).toBe("Added M-2 to Mira\n");
       expect((await tasks(["add", "Fixture third task"])).stdout).toBe("Added M-3 to Mira\n");
@@ -82,18 +84,66 @@ describe("[A3.3.7.actors.script-undo-note] tasks undo after a script's change", 
       const scripted = await tasks(["done", "M-3", "--outcome", "Fixture script outcome"], false);
       expect(scripted.code).toBe(0);
 
-      const undone = await tasks(["undo"]);
-      expect(undone.code).toBe(0);
+      // No one to ask: nothing is undone, and the conflict names both changes and --yes.
+      const refused = await tasks(["undo"]);
+      expect(refused.code).toBe(EXIT_CODES.conflict);
+      expect(refused.stderr).toBe(
+        "error conflict: A script changed M-3 after your newest change, so nothing was undone: an undo now would take back your older change to M-2. Undo it anyway with --yes, or leave it.\n",
+      );
+      const json = await tasks(["undo", "--json"]);
+      expect(JSON.parse(json.stdout)).toMatchObject({
+        error: {
+          code: "conflict",
+          data: {
+            reason: "script_change_after",
+            tasks: ["M-2"],
+            change: "task.patch",
+            script_change: { task: "M-3", change: "task.complete" },
+          },
+        },
+      });
+
+      // Asked on the terminal: no undoes nothing; yes undoes the change the question named.
+      const questions: string[] = [];
+      const answering = (answer: boolean) =>
+        runMain(["undo"], {
+          home: w.home,
+          tty: true,
+          main: {
+            ask: (question) => {
+              questions.push(question);
+              return Promise.resolve(answer);
+            },
+          },
+        });
+      const declined = await answering(false);
+      expect(declined.code).toBe(EXIT_CODES.conflict);
+      expect(declined.stderr).toBe("Nothing was undone.\n");
+      expect(questions).toEqual([
+        "A script completed M-3 after your newest change, and undo never takes back a script's change. Undo your change to M-2 (changed) instead? [y/N] ",
+      ]);
+      const undone = await answering(true);
+      expect(undone.code, undone.stderr).toBe(0);
       expect(undone.stdout).toBe(
         "Undid your change to M-2 in Mira\n" +
           "Not undone: a script completed M-3 after that, and a script's changes are not on your undo stack.\n",
       );
 
+      // --yes undoes without asking.
+      expect((await tasks(["set", "M-2", "priority=1"])).code).toBe(0);
+      expect((await tasks(["add", "Fixture script task"], false)).code).toBe(0);
+      const yes = await tasks(["undo", "--yes"]);
+      expect(yes.code, yes.stderr).toBe(0);
+      expect(yes.stdout).toBe(
+        "Undid your change to M-2 in Mira\n" +
+          "Not undone: a script added M-4 after that, and a script's changes are not on your undo stack.\n",
+      );
+
       // A change of the person's after the script's: its undo has nothing more to say.
       expect((await tasks(["set", "M-2", "priority=2"])).code).toBe(0);
-      const json = await tasks(["undo", "--json"]);
-      expect(json.code).toBe(0);
-      const result = JSON.parse(json.stdout) as Record<string, unknown>;
+      const last = await tasks(["undo", "--json"]);
+      expect(last.code).toBe(0);
+      const result = JSON.parse(last.stdout) as Record<string, unknown>;
       expect(result).toMatchObject({ result: "undone", tasks: ["M-2"] });
       expect(result).not.toHaveProperty("script_change");
       // The script's completion still stands.
