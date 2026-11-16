@@ -29,7 +29,14 @@ import { defaultServiceContext, isTty, type ServiceContext } from "./context.ts"
 import { ServiceCommandError } from "./errors.ts";
 import { RegExportError, RegistryError } from "./registry.ts";
 
-export const SERVICE_VERBS = ["install", "uninstall", "start", "stop", "restart", "status"] as const;
+export const SERVICE_VERBS = [
+  "install",
+  "uninstall",
+  "start",
+  "stop",
+  "restart",
+  "status",
+] as const;
 export type ServiceVerb = (typeof SERVICE_VERBS)[number];
 
 export const isServiceVerb = (value: string): value is ServiceVerb =>
