@@ -22,6 +22,8 @@ import {
   cliArgv,
   codexToolEnv,
   DEFAULT_TERMINAL,
+  DESKTOP_READ_MS,
+  desktopReader,
   ExecutionRefused,
   expandUrl,
   findOnPosixPath,
@@ -33,6 +35,7 @@ import {
   LaunchMachine,
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
+  needsDefault,
   openUrl,
   osProbe,
   osSpawner,
@@ -40,6 +43,7 @@ import {
   powershellPath,
   presetSession,
   readDelegation,
+  readDesktopTexts,
   ReferenceMatch,
   REFUSED,
   regPath,
@@ -347,9 +351,11 @@ export class LaunchService {
           reg: regPath(options.env),
           env: helperEnv(options.env),
         }));
+    const settings = options.terminalSettings ?? DEFAULT_TERMINAL;
+    const readDesktop = desktopReader();
     this.terminals = new TerminalLauncher({
       platform: options.platform,
-      settings: options.terminalSettings ?? DEFAULT_TERMINAL,
+      settings,
       install: options.install ?? "",
       shimCommand: options.shimCommand ?? defaultShimCommand(options),
       host: async (session) => {
@@ -359,7 +365,7 @@ export class LaunchService {
         if (seams.host !== undefined) return seams.host(session, path);
         // The session's variables first: a service started at boot may lack the desktop's.
         const variable = (name: string): string | undefined => session[name] ?? options.env[name];
-        return osTerminalHost({
+        const input = {
           platform: options.platform,
           path,
           terminalVar: session["TERMINAL"],
@@ -372,14 +378,24 @@ export class LaunchService {
           },
           home,
           windowsApps: windowsAppsOf(options.env),
-          ...(options.platform === "win32"
-            ? {
-                powershell: powershellPath(options.env),
-                // Read at each launch: the person may change it at any time. No answer is none.
-                delegation: await delegation().catch(() => undefined),
-              }
-            : {}),
-        });
+        };
+        if (options.platform === "win32") {
+          return osTerminalHost({
+            ...input,
+            powershell: powershellPath(options.env),
+            // Read at each launch that needs it: the person may change it at any time.
+            delegation: needsDefault(settings)
+              ? await delegation().catch(() => undefined)
+              : undefined,
+          });
+        }
+        const desktop = await readDesktopTexts(
+          settings,
+          osTerminalHost(input),
+          readDesktop,
+          DESKTOP_READ_MS,
+        );
+        return osTerminalHost({ ...input, desktop });
       },
       systemdRun,
       ...(seams.trueProgram === undefined
@@ -462,7 +478,8 @@ export class LaunchService {
 
   /**
    * The terminal a launch now would try first: its adapter, why, whether its program
-   * was found, and a default the person set that Tasks cannot open. Words only, never a path.
+   * was found, a default the person set that Tasks cannot open, and whether the operating
+   * system's setting could not be read. Words only, never a path.
    */
   async #terminalFacts(session: Readonly<Record<string, string>>): Promise<JsonObject | null> {
     const choice = await this.terminals.choose(session).catch(() => undefined);
@@ -473,6 +490,7 @@ export class LaunchService {
       source: first?.source ?? null,
       found: first?.program !== undefined,
       unsupported: choice.unsupported ?? null,
+      unread: choice.unread ?? null,
     };
   }
 

@@ -102,6 +102,8 @@ async function rig(
     home: made.lab?.root ?? "",
     windowsApps: WINDOWS_APPS,
     powershell: POWERSHELL,
+    // Windows: "Let Windows decide".
+    delegation: { console: undefined, terminal: undefined },
     // Linux: only the fake terminals, so a real x-terminal-emulator on the machine running the test
     // never becomes the default.
     executable: (p) =>

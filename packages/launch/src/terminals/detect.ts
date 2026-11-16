@@ -1,7 +1,9 @@
 // Which terminal a launch uses, and which after it: machine.toml's `[terminal]` over the
-// operating system's default terminal. Detection reads names on PATH, small text files, a link's
-// target and, on Windows, the values the service read from the registry before (windows-default.ts);
-// it starts nothing. The choice is a pure function of what was found: tests pass a fake host.
+// operating system's default terminal. Detection reads names on PATH, a link's target, the desktop's
+// small text files the service read before (readDesktopTexts) and, on Windows, the values it read
+// from the registry before (windows-default.ts); it starts nothing. The choice is a pure function of
+// what was found: tests pass a fake host. When `[terminal]` names the terminal and its fallbacks,
+// no default is looked up.
 //
 // `auto`, Linux: the first of these that names an installed terminal Tasks has an adapter for.
 //   1. `$TERMINAL`.
@@ -20,7 +22,8 @@
 // installed terminals in the auto order. On Windows the console is always last: its starter,
 // Windows PowerShell, is part of every Windows. Once one terminal counts as Dispatched no other is
 // tried (accept.ts), so a longer chain only matters for errors before activation.
-import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
+import { open, type FileHandle } from "node:fs/promises";
 import { basename, posix, win32 } from "node:path";
 import type { TerminalSettings } from "../sections.ts";
 import { linkKindOf, type AdapterApp, type TerminalKind } from "./commands.ts";
@@ -66,6 +69,11 @@ export interface TerminalChoice {
    * Windows terminal Tasks does not know.
    */
   readonly unsupported?: string;
+  /**
+   * The operating system's setting could not be read (Windows' registry did not answer, the
+   * desktop's files not in time), so the chain is Tasks' own order.
+   */
+  readonly unread?: "windows" | "desktop";
 }
 
 /** The session's XDG variables (Linux), as the session layer or the service has them. */
@@ -92,11 +100,13 @@ export interface TerminalHost {
   readonly windowsApps: string | undefined;
   /** Windows: Windows PowerShell, which starts the console fallback (commands.ts). */
   readonly powershell?: string | undefined;
-  /** Windows: the "Default terminal application" values, as read; undefined when none were. */
+  /** Windows: the "Default terminal application" values, as read; undefined when none could be. */
   readonly delegation?: WindowsDelegation | undefined;
+  /** Linux: the desktop's files could not all be read in time, so none are used. */
+  readonly desktopUnread?: boolean | undefined;
   /** A file the account may run (Windows: one that exists, an app execution alias included). */
   executable(path: string): boolean;
-  /** A small text file, or undefined. */
+  /** A small text file of the desktop's, as read before; undefined when there is none. */
   readText(path: string): string | undefined;
   /** A link's final target, or undefined. */
   realpath(path: string): string | undefined;
@@ -252,14 +262,29 @@ export function listedIds(host: TerminalHost): string[] {
   return out;
 }
 
-/** Whether a desktop entry with this ID is installed (`applications` in the XDG data folders). */
-function desktopEntryExists(host: TerminalHost, id: string): boolean {
+/**
+ * Whether the desktop entry with this ID is installed and not hidden. The first one found in the
+ * XDG data folders' `applications` is the one that counts: the person's own overrides the
+ * system's, and `Hidden=true` in its `[Desktop Entry]` group means it is deleted.
+ */
+function desktopEntryShown(host: TerminalHost, id: string): boolean {
   const xdg = host.xdg ?? {};
   const dirs = [
     folder(xdg.dataHome, posix.join(host.home, ".local", "share")),
     ...folders(xdg.dataDirs, ["/usr/local/share", "/usr/share"]),
   ];
-  return dirs.some((dir) => host.readText(posix.join(dir, "applications", id)) !== undefined);
+  for (const dir of dirs) {
+    const text = host.readText(posix.join(dir, "applications", id));
+    if (text === undefined) continue;
+    let main = false;
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (line.startsWith("[")) main = line === "[Desktop Entry]";
+      else if (main && /^Hidden\s*=\s*true$/.test(line)) return false;
+    }
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -333,12 +358,11 @@ function linuxDefaults(host: TerminalHost): { source: TerminalSource; candidate:
     }
   }
   for (const id of listedIds(host)) {
+    // An entry that is missing or hidden is skipped, as the specification discards it, even when
+    // a program of that name exists: a stale line must not beat a terminal that is installed.
+    if (!desktopEntryShown(host, id)) continue;
     const app = DESKTOP_IDS[id];
-    if (app !== undefined) out.push({ source: "desktop", candidate: { app } });
-    // An entry that is not installed is skipped, as the specification discards it; one that is
-    // installed but has no adapter is what doctor names.
-    else if (desktopEntryExists(host, id))
-      out.push({ source: "desktop", candidate: { unsupported: id } });
+    out.push({ source: "desktop", candidate: app === undefined ? { unsupported: id } : { app } });
   }
   out.push({ source: "distribution", candidate: { app: "x-terminal-emulator" } });
   return out;
@@ -348,8 +372,10 @@ function linuxDefaults(host: TerminalHost): { source: TerminalSource; candidate:
 export function autoChoice(host: TerminalHost): TerminalChoice {
   if (host.platform === "win32") {
     const wt = windowsTerminalAlias(host);
+    // Unread, the order is what "Let Windows decide" would give, but it is Tasks' choice.
+    const unread = host.delegation === undefined;
     const decided = delegationChoice(host.delegation);
-    const source: TerminalSource = decided === "other" ? "installed" : "windows";
+    const source: TerminalSource = decided === "other" || unread ? "installed" : "windows";
     const first: ChainEntry =
       decided === "console" || wt === undefined
         ? { app: "console", program: host.powershell, source }
@@ -359,6 +385,7 @@ export function autoChoice(host: TerminalHost): TerminalChoice {
       chain.push({ app: "wt", program: wt, source: "fallback" });
     if (first.app === "wt")
       chain.push({ app: "console", program: host.powershell, source: "fallback" });
+    if (unread) return { chain, unread: "windows" };
     return decided === "other" ? { chain, unsupported: "other" } : { chain };
   }
   if (host.platform !== "linux") return { chain: [] };
@@ -387,7 +414,11 @@ export function autoChoice(host: TerminalHost): TerminalChoice {
   const chain = dedupe(found).map((entry, i) =>
     i === 0 ? entry : { ...entry, source: "fallback" as const },
   );
-  return unsupported === undefined ? { chain } : { chain, unsupported };
+  return {
+    chain,
+    ...(unsupported === undefined ? {} : { unsupported }),
+    ...(host.desktopUnread === true ? { unread: "desktop" as const } : {}),
+  };
 }
 
 /** The terminals `auto` would pick, best first, that are installed here. */
@@ -404,9 +435,14 @@ function dedupe(entries: readonly ChainEntry[]): ChainEntry[] {
   });
 }
 
+/** Whether the operating system's default matters: `[terminal]` leaves the terminal or its fallbacks to it. */
+export function needsDefault(settings: TerminalSettings): boolean {
+  return settings.app === "auto" || settings.fallbacks.length === 0;
+}
+
 /** The chain of terminals a launch tries, in order, and a default it could not use (head). */
 export function terminalChoice(settings: TerminalSettings, host: TerminalHost): TerminalChoice {
-  const auto = autoChoice(host);
+  const auto: TerminalChoice = needsDefault(settings) ? autoChoice(host) : { chain: [] };
   const chosen =
     settings.app === "auto"
       ? auto.chain.slice(0, 1)
@@ -422,10 +458,13 @@ export function terminalChoice(settings: TerminalSettings, host: TerminalHost): 
   const chain = dedupe([...chosen, ...rest]);
   if (host.platform === "win32" && !chain.some((e) => e.app === "console"))
     chain.push({ app: "console", program: host.powershell, source: "fallback" });
-  // A default Tasks cannot open matters only when `auto` decided.
-  return settings.app === "auto" && auto.unsupported !== undefined
-    ? { chain, unsupported: auto.unsupported }
-    : { chain };
+  // A default Tasks cannot open or read matters only when `auto` decided.
+  if (settings.app !== "auto") return { chain };
+  return {
+    chain,
+    ...(auto.unsupported === undefined ? {} : { unsupported: auto.unsupported }),
+    ...(auto.unread === undefined ? {} : { unread: auto.unread }),
+  };
 }
 
 /** The chain of terminals a launch tries, in order (head of this file). */
@@ -433,7 +472,109 @@ export function terminalChain(settings: TerminalSettings, host: TerminalHost): C
   return terminalChoice(settings, host).chain;
 }
 
-/** The host of this machine: the file system, PATH entries and variables as given. */
+/** The desktop's files as read before a choice: all of them, or none when time ran out. */
+export interface DesktopTexts {
+  readonly texts: ReadonlyMap<string, string>;
+  readonly complete: boolean;
+}
+
+/** How long the desktop's files may take to read before Open goes on without them. */
+export const DESKTOP_READ_MS = 1_000;
+
+/**
+ * Reads the desktop's files the choice for `settings` would look at, without blocking the
+ * service: a home folder on a stalled network share must not hold up an Open. It runs the choice
+ * against what was read so far, reads the files it asked for, and repeats until it asks for no new
+ * one (the lists name the desktop entries to read next). When the deadline passes first, nothing
+ * read is used, so the choice is Tasks' own order and says so.
+ */
+export async function readDesktopTexts(
+  settings: TerminalSettings,
+  host: TerminalHost,
+  read: (path: string) => Promise<string | undefined>,
+  deadlineMs: number,
+): Promise<DesktopTexts> {
+  const texts = new Map<string, string>();
+  if (host.platform !== "linux" || !needsDefault(settings)) return { texts, complete: true };
+  const seen = new Set<string>();
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => {
+      resolve("late");
+    }, deadlineMs);
+    timer.unref();
+  });
+  try {
+    for (;;) {
+      const asked: string[] = [];
+      terminalChoice(settings, {
+        ...host,
+        readText: (path) => {
+          if (!seen.has(path)) asked.push(path);
+          return texts.get(path);
+        },
+      });
+      if (asked.length === 0) return { texts, complete: true };
+      // One at a time: a stalled share then holds one of Node's file threads, not all of them.
+      for (const path of asked) {
+        if (seen.has(path)) continue;
+        seen.add(path);
+        const text = await Promise.race([read(path).catch(() => undefined), late]);
+        if (text === "late") return { texts: new Map(), complete: false };
+        if (text !== undefined) texts.set(path, text);
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A regular file of at most 64 KiB, as UTF-8 text; undefined for anything else. */
+export async function readSmallText(path: string): Promise<string | undefined> {
+  const limit = 64 * 1024;
+  let file: FileHandle;
+  try {
+    file = await open(path, "r");
+  } catch {
+    return undefined;
+  }
+  try {
+    const found = await file.stat();
+    if (!found.isFile() || found.size > limit) return undefined;
+    const buffer = Buffer.alloc(limit + 1);
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+    return bytesRead > limit ? undefined : buffer.subarray(0, bytesRead).toString("utf8");
+  } catch {
+    return undefined;
+  } finally {
+    await file.close().catch(() => undefined);
+  }
+}
+
+/**
+ * A reader for readDesktopTexts that shares a read still under way: when a share stalls, every
+ * later Open waits on the same read instead of starting another that stalls too.
+ */
+export function desktopReader(
+  read: (path: string) => Promise<string | undefined> = readSmallText,
+): (path: string) => Promise<string | undefined> {
+  const pending = new Map<string, Promise<string | undefined>>();
+  return (path) => {
+    let reading = pending.get(path);
+    if (reading === undefined) {
+      reading = read(path)
+        .catch(() => undefined)
+        .finally(() => pending.delete(path));
+      pending.set(path, reading);
+    }
+    return reading;
+  };
+}
+
+/**
+ * The host of this machine: PATH entries and variables as given, the file system for programs and
+ * links, and the desktop's files only as `desktop` holds them.
+ */
 export function osTerminalHost(input: {
   platform: NodeJS.Platform;
   path: readonly string[];
@@ -443,9 +584,13 @@ export function osTerminalHost(input: {
   windowsApps: string | undefined;
   powershell?: string | undefined;
   delegation?: WindowsDelegation | undefined;
+  desktop?: DesktopTexts | undefined;
 }): TerminalHost {
+  const { desktop, ...rest } = input;
   return {
-    ...input,
+    ...rest,
+    desktopUnread: desktop?.complete === false,
+    readText: (path) => desktop?.texts.get(path),
     executable: (path) => {
       try {
         if (input.platform === "win32") {
@@ -457,15 +602,6 @@ export function osTerminalHost(input: {
         return found.isFile() && (found.mode & 0o111) !== 0;
       } catch {
         return false;
-      }
-    },
-    readText: (path) => {
-      try {
-        const found = statSync(path);
-        if (!found.isFile() || found.size > 64 * 1024) return undefined;
-        return readFileSync(path, "utf8");
-      } catch {
-        return undefined;
       }
     },
     realpath: (path) => {

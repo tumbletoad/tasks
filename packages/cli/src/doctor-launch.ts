@@ -5,7 +5,8 @@
 //   launch.scopes   Linux: terminals start without a systemd scope, so a restart or update of the
 //                   service may end the sessions in them (warn)
 //   launch.terminal the terminal a launch opens first and why: warn when it was not
-//                   found, or when the default the person set is one Tasks cannot open
+//                   found, when the default the person set is one Tasks cannot open, or when
+//                   the operating system's setting could not be read
 //   launch.env     the person's environment as a launch reads it: on Linux and macOS the last
 //                   login-shell snapshot the service attempted did not succeed, with the age of the
 //                   one in use or none (warn); `--live` takes one now first, so plain doctor never
@@ -127,6 +128,18 @@ export function terminalCheck(terminal: unknown): Check {
         app === undefined
           ? `No terminal ${PRODUCT_NAME} can open was found, so Open in a terminal app fails. Install one, or set [terminal] app in machine.toml.`
           : `${app} (${source ?? "chosen"}) was not found, so Open tries the next terminal. Install it, or change [terminal] in machine.toml.`,
+    };
+  }
+  const unread = terminal["unread"];
+  if (unread === "windows" || unread === "desktop") {
+    const what =
+      unread === "windows"
+        ? "your default terminal in Windows' settings"
+        : "your desktop's default terminal in time";
+    return {
+      id,
+      status: "warn",
+      detail: `${PRODUCT_NAME} could not read ${what}, so terminals open in ${app}, its fallback. ${set}`,
     };
   }
   const unsupported = terminal["unsupported"];

@@ -14,11 +14,15 @@ import {
   CONSOLE_SCRIPT,
   DEFAULT_TERMINAL,
   delegationChoice,
+  DESKTOP_READ_MS,
+  desktopReader,
   linkKindOf,
   listedIds,
   osTerminalHost,
   parseDelegation,
   readDelegation,
+  readDesktopTexts,
+  readSmallText,
   regPath,
   scopeCommand,
   scopeProbe,
@@ -401,7 +405,9 @@ function fakeHost(
     windowsApps: extra.windowsApps,
     powershell: extra.powershell,
     xdg: extra.xdg,
-    delegation: extra.delegation,
+    // Windows: "Let Windows decide" unless a test sets the values, or none were read.
+    delegation:
+      "delegation" in extra ? extra.delegation : { console: undefined, terminal: undefined },
     executable: (path) => programs.includes(path),
     readText: (path) => extra.files?.[path],
     realpath: (path) => extra.links?.[path] ?? path,
@@ -484,6 +490,10 @@ const KITTY = "/usr/bin/kitty";
 const GHOSTTY = "/usr/bin/ghostty";
 const KONSOLE = "/usr/bin/konsole";
 const XTE = "/usr/bin/x-terminal-emulator";
+const ENTRY = "[Desktop Entry]\nName=x\n";
+/** Installed desktop entries, in the system's applications folder. */
+const entries = (...ids: string[]): Record<string, string> =>
+  Object.fromEntries(ids.map((id) => [`/usr/share/applications/${id}`, ENTRY]));
 
 describe("[A4.5.terminal.default] auto opens the operating system's default terminal first", () => {
   interface Row {
@@ -529,6 +539,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       files: {
         "/home/mira/.config/ubuntu-xdg-terminals.list": "# mine\nkitty.desktop\n",
         "/etc/xdg/ubuntu-xdg-terminals.list": "org.kde.konsole.desktop\n",
+        ...entries("kitty.desktop", "org.kde.konsole.desktop"),
       },
       apps: ["kitty", "konsole", "x-terminal-emulator", "gnome-terminal"],
       source: "desktop",
@@ -541,6 +552,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
         "/home/mira/.config/xdg-terminals.list": "kitty.desktop\n",
         "/home/mira/.config/gnome-xdg-terminals.list": "org.kde.konsole.desktop\n",
         "/home/mira/.config/ubuntu-xdg-terminals.list": "org.gnome.Terminal.desktop\n",
+        ...entries("kitty.desktop", "org.kde.konsole.desktop", "org.gnome.Terminal.desktop"),
       },
       apps: ["gnome-terminal", "konsole", "kitty"],
       source: "desktop",
@@ -549,7 +561,10 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       name: "a desktop's list is read only on that desktop",
       programs: [GNOME, KITTY],
       xdg: { currentDesktop: "GNOME" },
-      files: { "/home/mira/.config/ubuntu-xdg-terminals.list": "kitty.desktop\n" },
+      files: {
+        "/home/mira/.config/ubuntu-xdg-terminals.list": "kitty.desktop\n",
+        ...entries("kitty.desktop"),
+      },
       apps: ["kitty", "gnome-terminal"],
       source: "installed",
     },
@@ -560,6 +575,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       files: {
         "/usr/share/xdg-terminal-exec/gnome-xdg-terminals.list": "kitty.desktop\n",
         "/etc/xdg/xdg-terminals.list": "org.kde.konsole.desktop\n",
+        ...entries("kitty.desktop", "org.kde.konsole.desktop"),
       },
       apps: ["konsole", "kitty", "gnome-terminal"],
       source: "desktop",
@@ -576,6 +592,8 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
         "/home/mira/.config/xdg-terminals.list": "kitty.desktop\n",
         "/opt/xdg/xdg-terminals.list": "org.kde.konsole.desktop\n",
         "/opt/share/xdg-terminal-exec/xdg-terminals.list": "kitty.desktop\n",
+        "/opt/share/applications/kitty.desktop": ENTRY,
+        "/opt/share/applications/org.kde.konsole.desktop": ENTRY,
       },
       apps: ["konsole", "kitty", "gnome-terminal"],
       source: "desktop",
@@ -587,6 +605,12 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
         "/home/mira/.config/xdg-terminals.list":
           "-kitty.desktop\n+org.kde.konsole.desktop\n/execarg_default:-e\n" +
           "com.mitchellh.ghostty.desktop\n  org.gnome.Terminal.desktop:new-window  \n",
+        ...entries(
+          "kitty.desktop",
+          "org.kde.konsole.desktop",
+          "com.mitchellh.ghostty.desktop",
+          "org.gnome.Terminal.desktop",
+        ),
       },
       apps: ["gnome-terminal", "kitty"],
       source: "desktop",
@@ -610,6 +634,34 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       source: "installed",
     },
     {
+      name: "a listed terminal whose desktop entry is missing is skipped, though its program exists",
+      programs: [GNOME, KITTY],
+      files: {
+        "/home/mira/.config/xdg-terminals.list": "org.gnome.Terminal.desktop\nkitty.desktop\n",
+        ...entries("kitty.desktop"),
+      },
+      apps: ["kitty", "gnome-terminal"],
+      source: "desktop",
+    },
+    {
+      name: "a hidden entry is skipped: the person's own entry overrides the system's",
+      programs: [GNOME, KITTY],
+      files: {
+        "/home/mira/.config/xdg-terminals.list":
+          "org.gnome.Terminal.desktop\norg.gnome.Ptyxis.desktop\nkitty.desktop\n",
+        ...entries("org.gnome.Terminal.desktop", "org.gnome.Ptyxis.desktop"),
+        "/home/mira/.local/share/applications/org.gnome.Terminal.desktop":
+          "[Desktop Entry]\nName=x\nHidden=true\n",
+        "/home/mira/.local/share/applications/org.gnome.Ptyxis.desktop":
+          "[Desktop Entry]\nHidden = true\n",
+        // Hidden in an action's group hides only that action.
+        "/usr/share/applications/kitty.desktop":
+          "[Desktop Entry]\nName=kitty\n\n[Desktop Action new]\nHidden=true\n",
+      },
+      apps: ["kitty", "gnome-terminal"],
+      source: "desktop",
+    },
+    {
       name: "KDE: its own setting before the lists, TerminalService over TerminalApplication",
       programs: [KONSOLE, KITTY, GHOSTTY],
       xdg: { currentDesktop: "KDE" },
@@ -617,6 +669,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
         "/home/mira/.config/kdeglobals":
           "[General]\nTerminalApplication=ghostty\nTerminalService=kitty.desktop\n[KDE]\nx=1\n",
         "/home/mira/.config/xdg-terminals.list": "org.kde.konsole.desktop\n",
+        ...entries("org.kde.konsole.desktop"),
       },
       apps: ["kitty", "konsole", "ghostty"],
       source: "desktop",
@@ -768,16 +821,38 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       const host = fakeHost("win32", installed ? [alias] : [], {
         windowsApps,
         powershell: POWERSHELL,
-        ...(console === undefined && terminal === undefined
-          ? {}
-          : { delegation: { console, terminal } }),
+        delegation: { console, terminal },
       });
       const choice = terminalChoice(settings(), host);
       expect(apps(choice.chain)).toEqual(expected);
       expect(choice.chain[0]?.source).toBe(source);
       expect(choice.unsupported).toBe(unsupported);
+      expect(choice.unread).toBeUndefined();
     },
   );
+
+  test("Windows: a setting that could not be read is not called Windows' default", () => {
+    for (const [installed, expected] of [
+      [true, ["wt", "console"]],
+      [false, ["console"]],
+    ] as const) {
+      const host = fakeHost("win32", installed ? [alias] : [], {
+        windowsApps,
+        powershell: POWERSHELL,
+        delegation: undefined,
+      });
+      const choice = terminalChoice(settings(), host);
+      expect(apps(choice.chain)).toEqual(expected);
+      expect(choice.chain[0]?.source).toBe("installed");
+      expect(choice.unread).toBe("windows");
+    }
+    // An explicit terminal does not need Windows' setting, so nothing is said about it.
+    const explicit = terminalChoice(
+      settings({ app: "wt", fallbacks: ["console"] }),
+      fakeHost("win32", [alias], { windowsApps, powershell: POWERSHELL, delegation: undefined }),
+    );
+    expect(explicit.unread).toBeUndefined();
+  });
 
   test("macOS: no adapter yet, so auto chooses nothing", () => {
     expect(terminalChoice(settings(), fakeHost("darwin", ["/usr/bin/true"]))).toEqual({
@@ -785,7 +860,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
     });
   });
 
-  test("the real file reader over fixture folders: the lists, kdeglobals and desktop entries", () => {
+  test("the real file reader over fixture folders: the lists, kdeglobals and desktop entries", async () => {
     const root = mkdtempSync(join(tmpdir(), "tasks-term-default-"));
     try {
       const at = (...parts: string[]) => join(root, ...parts);
@@ -795,6 +870,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       mkdirSync(at("share", "applications"), { recursive: true });
       writeFileSync(at("config", "gnome-xdg-terminals.list"), "org.gnome.Ptyxis.desktop\n");
       writeFileSync(at("share", "applications", "org.gnome.Ptyxis.desktop"), "[Desktop Entry]\n");
+      writeFileSync(at("share", "applications", "kitty.desktop"), "[Desktop Entry]\n");
       writeFileSync(at("etc", "xdg-terminals.list"), "kitty.desktop\n");
       writeFileSync(
         at("share", "xdg-terminal-exec", "xdg-terminals.list"),
@@ -805,7 +881,11 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       // The Linux rules join POSIX paths: the fixture's folders are named `/fixture/…`, and each
       // read goes to the same place in the temporary folder through the real reader, so this runs
       // the same on every OS and drive.
-      const real = osTerminalHost({
+      const inRoot = (path: string): string =>
+        path.startsWith("/fixture/")
+          ? at(...path.slice("/fixture/".length).split("/"))
+          : at("none");
+      const input = {
         platform: "linux",
         path: ["/usr/bin"],
         terminalVar: undefined,
@@ -817,17 +897,20 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
         },
         home: "/fixture/home",
         windowsApps: undefined,
-      });
-      const inRoot = (path: string): string =>
-        path.startsWith("/fixture/")
-          ? at(...path.slice("/fixture/".length).split("/"))
-          : at("none");
+      } as const;
       // Programs are the fixture's, never this machine's.
-      const host: TerminalHost = {
-        ...real,
-        readText: (path) => real.readText(inRoot(path)),
+      const fixture = (host: TerminalHost): TerminalHost => ({
+        ...host,
         executable: (p) => [GNOME, KITTY].includes(p),
-      };
+      });
+      const desktop = await readDesktopTexts(
+        settings(),
+        fixture(osTerminalHost(input)),
+        (path) => readSmallText(inRoot(path)),
+        DESKTOP_READ_MS,
+      );
+      expect(desktop.complete).toBe(true);
+      const host = fixture(osTerminalHost({ ...input, desktop }));
       expect(listedIds(host)).toEqual([
         "org.gnome.Ptyxis.desktop",
         "kitty.desktop",
@@ -840,9 +923,86 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
         ],
         unsupported: "org.gnome.Ptyxis.desktop",
       });
+      // Without what was read, the host reads nothing itself.
+      expect(listedIds(fixture(osTerminalHost(input)))).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("a terminal and its fallbacks set in machine.toml: nothing of the desktop is read", async () => {
+    const read: string[] = [];
+    const host: TerminalHost = {
+      ...fakeHost("linux", [KITTY, GNOME], { xdg: { currentDesktop: "KDE" } }),
+      readText: (path) => {
+        read.push(path);
+        return undefined;
+      },
+    };
+    const decided = settings({ app: "kitty", fallbacks: ["gnome-terminal"] });
+    expect(apps(terminalChain(decided, host))).toEqual(["kitty", "gnome-terminal"]);
+    const reads: string[] = [];
+    const desktop = await readDesktopTexts(
+      decided,
+      host,
+      (path) => {
+        reads.push(path);
+        return Promise.resolve(undefined);
+      },
+      DESKTOP_READ_MS,
+    );
+    expect([read, reads, desktop.complete]).toEqual([[], [], true]);
+    // With no fallbacks set, the desktop's order still gives them.
+    await readDesktopTexts(
+      settings({ app: "kitty" }),
+      host,
+      (path) => {
+        reads.push(path);
+        return Promise.resolve(undefined);
+      },
+      DESKTOP_READ_MS,
+    );
+    expect(reads.length).toBeGreaterThan(0);
+  });
+
+  test("a stalled read cannot hold up Open: after the deadline it goes on with the terminals it knows", async () => {
+    const base = {
+      platform: "linux",
+      path: ["/usr/bin"],
+      terminalVar: undefined,
+      xdg: { configHome: "/stalled/config" },
+      home: "/home/mira",
+      windowsApps: undefined,
+    } as const;
+    const fixture = (host: TerminalHost): TerminalHost => ({
+      ...host,
+      executable: (p) => [GNOME, KITTY].includes(p),
+      realpath: (p) => p,
+    });
+    let calls = 0;
+    // The first list is on a share that never answers; the second would name GNOME Terminal.
+    const stalled = desktopReader((path) => {
+      calls += 1;
+      if (path.startsWith("/stalled/")) return new Promise<undefined>(() => undefined);
+      return Promise.resolve(
+        path === "/etc/xdg/xdg-terminals.list" ? "org.gnome.Terminal.desktop\n" : undefined,
+      );
+    });
+    const desktop = await readDesktopTexts(settings(), fixture(osTerminalHost(base)), stalled, 50);
+    expect(desktop.complete).toBe(false);
+    const choice = terminalChoice(settings(), fixture(osTerminalHost({ ...base, desktop })));
+    expect(choice).toEqual({
+      chain: [
+        { app: "kitty", program: KITTY, source: "installed" },
+        { app: "gnome-terminal", program: GNOME, source: "fallback" },
+      ],
+      unread: "desktop",
+    });
+    // A second Open while that read still hangs waits on the same read, not on another one.
+    const before = calls;
+    const again = await readDesktopTexts(settings(), fixture(osTerminalHost(base)), stalled, 50);
+    expect(again.complete).toBe(false);
+    expect(calls).toBe(before);
   });
 });
 

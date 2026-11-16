@@ -58,6 +58,25 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(
       row({ app: "kitty", source: "installed", found: true, unsupported: "/home/x/../y" }).detail,
     ).not.toContain("/home");
+    // A setting that could not be read: the terminal is Tasks' fallback, not the default.
+    const unreadWindows = row({ app: "wt", source: "installed", found: true, unread: "windows" });
+    expect(unreadWindows.status).toBe("warn");
+    expect(unreadWindows.detail).toContain(
+      "could not read your default terminal in Windows' settings",
+    );
+    expect(unreadWindows.detail).toContain("Windows Terminal, its fallback");
+    expect(unreadWindows.detail).not.toContain("Windows' default terminal");
+    const unreadDesktop = row({
+      app: "kitty",
+      source: "installed",
+      found: true,
+      unread: "desktop",
+    });
+    expect(unreadDesktop.status).toBe("warn");
+    expect(unreadDesktop.detail).toContain(
+      "could not read your desktop's default terminal in time",
+    );
+    expect(unreadDesktop.detail).toContain("kitty, its fallback");
     expect(row({ app: "wezterm", source: "configured", found: false }).status).toBe("warn");
     expect(row({ app: null, source: null, found: false }).detail).toContain("No terminal");
     expect(row(null).status).toBe("skip");

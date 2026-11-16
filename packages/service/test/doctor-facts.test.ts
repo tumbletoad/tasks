@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
+  DEFAULT_TERMINAL,
   MemoryT3Files,
   newGrantId,
   writePairing,
@@ -16,6 +17,7 @@ import {
   type EnvironmentSource,
   type SpawnRequest,
   type Spawner,
+  type TerminalSettings,
 } from "@tasks/launch";
 import { sessionFacts } from "../src/binding/index.ts";
 import type { Logger } from "../src/hub/log.ts";
@@ -110,6 +112,7 @@ const GNOME_INSTALLED = {
   source: "installed",
   found: true,
   unsupported: null,
+  unread: null,
 };
 
 describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows", () => {
@@ -162,9 +165,56 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     expect(await windows.service.doctor(false)).toEqual({
       scopes: null,
       environment: { kind: "registry", read: false },
-      terminal: { app: "console", source: "windows", found: true, unsupported: null },
+      terminal: {
+        app: "console",
+        source: "windows",
+        found: true,
+        unsupported: null,
+        unread: null,
+      },
     });
     expect(windows.probes).toEqual([]);
+  });
+
+  test("doctor/launch: Windows' setting is read only when [terminal] leaves the choice to it, and an unread one is said", async () => {
+    const service = (terminalSettings: TerminalSettings) => {
+      const reads = { count: 0 };
+      const made = new LaunchService({
+        machine: "m_7c0hq2m4w9d8k1r6t3v5x0b2nf",
+        root: join(base, "launch-registry"),
+        stateDir: join(base, "state"),
+        roots: () => [],
+        platform: "win32",
+        env: {},
+        spaces: () => [],
+        log,
+        environment: environment(),
+        shimCommand: ["C:\\tasks\\tasks.exe"],
+        terminalSettings,
+        terminals: {
+          // reg.exe did not answer.
+          delegation: () => {
+            reads.count += 1;
+            return Promise.resolve(undefined);
+          },
+        },
+      });
+      return { made, reads };
+    };
+    const decided = service({ ...DEFAULT_TERMINAL, app: "wt", fallbacks: ["console"] });
+    expect((await decided.made.doctor(false))["terminal"]).toMatchObject({
+      app: "wt",
+      source: "configured",
+      unread: null,
+    });
+    expect(decided.reads.count).toBe(0);
+    const auto = service(DEFAULT_TERMINAL);
+    expect((await auto.made.doctor(false))["terminal"]).toMatchObject({
+      app: "console",
+      source: "installed",
+      unread: "windows",
+    });
+    expect(auto.reads.count).toBe(1);
   });
 
   test("t3/status: the token's expiry and whether the pairing renews it, also while T3 is not running", async () => {

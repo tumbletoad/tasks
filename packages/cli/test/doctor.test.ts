@@ -37,7 +37,13 @@ beforeAll(async () => {
     });
     env = { PATH: `${bin}:${process.env["PATH"] ?? "/usr/bin:/bin"}` };
   }
-  world = await startWorld("dr", env === undefined ? {} : { env });
+  // A terminal and its fallback set in machine.toml, so the service looks up none of this
+  // machine's defaults and the row does not depend on the machine that runs the test.
+  const machineToml =
+    process.platform === "win32"
+      ? '[terminal]\napp = "wt"\npath = \'C:\\fixture\\wt.exe\'\nfallbacks = ["console"]\n'
+      : '[terminal]\napp = "kitty"\npath = \'/opt/fixture/kitty\'\nfallbacks = ["konsole"]\n';
+  world = await startWorld("dr", { machineToml, ...(env === undefined ? {} : { env }) });
 }, 180_000);
 
 afterAll(async () => {
@@ -129,6 +135,13 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
       expect(status(report, "launch.scopes")).toBe("ok");
       expect(readFileSync(probes, "utf8")).toMatch(/^--user --scope .* -- \S+$/m);
     } else expect(status(report, "launch.scopes")).toBe("skip");
+    if (process.platform !== "darwin") {
+      expect(report.checks.find((c) => c.id === "launch.terminal")).toMatchObject({
+        id: "launch.terminal",
+        status: "ok",
+        detail: `Terminals open in ${process.platform === "win32" ? "Windows Terminal" : "kitty"}: set in machine.toml.`,
+      });
+    }
 
     // A service whose status answers while its operations fail does not pass.
     const broken = await runMain(["doctor", "--self-test", "--json"], {
