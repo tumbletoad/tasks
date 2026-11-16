@@ -68,15 +68,9 @@ const RULES: Rule[] = [
       /\b(?:maintainer|owner)['’]?s\s+(?:own\s+)?(?:machine|computer|laptop|desktop|pc)s?\b/giu,
     advice: `${PLATFORM} Where a step needs a person, say what it needs ("by hand, outside CI").`,
   },
-  { pattern: /\bthe\s+laptop\b/giu, advice: PLATFORM },
-  // "the desktop" is product language on Linux (the desktop's default terminal, the desktop
-  // session, a desktop entry) and on Windows (a program started from the desktop). Only these
-  // forms stand for one computer.
-  {
-    pattern:
-      /\bon\s+the\s+desktop\b(?!['’]s|\s+(?:session|app|apps|entry|entries|environment)\b)|\bthe\s+desktop\s+(?:machine|computer|pc)\b|\bdesktop[-\s]only\b/giu,
-    advice: PLATFORM,
-  },
+  // "the laptop" and "on the desktop" alone are not checked: they are ordinary words in help text
+  // (a laptop's lid, a notification on the desktop) and in task examples.
+  { pattern: /\bthe\s+(?:desktop|laptop)\s+(?:machine|computer|pc)s?\b/giu, advice: PLATFORM },
   { pattern: /~[\\/]Dev[\\/]/gu, advice: PATH },
   { pattern: new RegExp(`(?<![\\w.~-])/home/${HOME_NAME}`, "gu"), advice: PATH, home: true },
   { pattern: new RegExp(`(?<![\\w.~-])/Users/${HOME_NAME}`, "gu"), advice: PATH, home: true },
@@ -90,22 +84,29 @@ const RULES: Rule[] = [
       /(?:%USERPROFILE%|\$env:USERPROFILE|\$HOME|~)[\\/]+tasks-test\b|\btasks-test[\\/]+m0-/giu,
     advice: PATH,
   },
+  // The version line a Windows machine prints. A build named in words ("Windows 11 build 26100 or
+  // later") is a requirement a person may need to read, so it passes.
   {
-    pattern: /\b(?:OS\s+|Windows\s+(?:11\s+)?)?build\s+\d{5}\b|\b10\.0\.2\d{4}\b/giu,
+    pattern: /\b10\.0\.2\d{4}\b/gu,
     advice: `An OS build number describes one machine. ${PLATFORM}`,
   },
 ];
 
-/** Every comment marker a line may start with: `//`, `/*`, `*`, `#`, `>`, `<!--`, `--`, `;`, `rem`. */
-const LEADING_MARKER = /^\s*(?:\/\/+|\/\*+|\*+\/?|#+|>+|<!--|--|;+|rem\b)?\s*/iu;
+/** The comment markers a line may start with, also nested (`> //`): `//`, `/*`, `*`, `#`, `>`, `<!--`, `--`, `;`, `rem`. */
+const LEADING_MARKERS = /^\s*(?:(?:\/\/+|\/\*+|\*+\/?|#+|>+|<!--|--|;+|rem\b)\s*)*/iu;
 
-/** Folds a text's lines into one, each line's leading comment marker removed. */
+/**
+ * Folds a text's lines into one, each line's leading comment markers removed. A line left empty
+ * ends a paragraph: it folds to a mark that no rule reads across, so a heading and the paragraph
+ * under it never form a phrase.
+ */
 export function fold(text: string): { folded: string; starts: number[] } {
   const starts: number[] = [];
   let folded = "";
   for (const line of text.split(/\r?\n/)) {
     starts.push(folded.length);
-    folded += line.replace(LEADING_MARKER, "").trimEnd() + " ";
+    const content = line.replace(LEADING_MARKERS, "").trimEnd();
+    folded += content === "" ? "¶ " : `${content} `;
   }
   return { folded, starts };
 }
