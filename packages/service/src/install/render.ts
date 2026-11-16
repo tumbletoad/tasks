@@ -154,6 +154,8 @@ export function renderUnit(input: UnitInput): string {
     "RestartPreventExitStatus=64 73",
     "KillMode=mixed",
     "TimeoutStopSec=15",
+    "# Background runs: each in a child cgroup of this unit, which the service manages itself.",
+    "Delegate=yes",
     "# No ProtectHome, PrivateTmp or NoNewPrivileges: launched agents need the user's full home and tools.",
     "",
     "[Install]",
@@ -340,6 +342,7 @@ const UNIT_SETTINGS: Readonly<Record<string, readonly string[]>> = {
     "RestartPreventExitStatus",
     "KillMode",
     "TimeoutStopSec",
+    "Delegate",
   ],
   Install: ["WantedBy"],
 };

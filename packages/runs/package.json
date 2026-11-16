@@ -10,9 +10,11 @@
   "dependencies": {
     "@tasks/brand": "workspace:*",
     "@tasks/contracts": "workspace:*",
+    "@tasks/files": "workspace:*",
     "@tasks/launch": "workspace:*"
   },
   "devDependencies": {
+    "@tasks/launcher-win": "workspace:*",
     "@tasks/testkit": "workspace:*",
     "fast-check": "4.10.2",
     "vitest": "5.1.0"
