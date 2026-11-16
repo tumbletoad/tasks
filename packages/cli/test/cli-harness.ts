@@ -199,14 +199,15 @@ export async function startWorld(
 
 /**
  * Runs `tasks <argv>` in this process with a recorded Io. `tty` makes the connection a person's
- * (`cli-interactive`), as a terminal would: the class is decided by the service from it.
+ * (`cli-interactive`), as a terminal would: the class is decided by the service from it. `true`
+ * is a terminal on every stream; an object names each stream, as a pipe or a redirect leaves them.
  */
 export async function runMain(
   argv: readonly string[],
   options: {
     home: string;
     cwd?: string;
-    tty?: boolean;
+    tty?: boolean | { stdin: boolean; stdout: boolean; stderr: boolean };
     env?: Record<string, string>;
     stdin?: string;
     main?: MainOptions;
@@ -219,7 +220,10 @@ export async function runMain(
     env: cliEnv(options.home, options.env),
     cwd: options.cwd ?? options.home,
     platform: process.platform,
-    tty: { stdin: options.tty === true, stdout: options.tty === true },
+    tty:
+      typeof options.tty === "object"
+        ? options.tty
+        : { stdin: options.tty === true, stdout: options.tty === true, stderr: options.tty === true },
     pid: process.pid,
     stdout: (text) => {
       stdout += text;

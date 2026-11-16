@@ -21,7 +21,7 @@ function recorder(
     env,
     cwd: process.cwd(),
     platform: process.platform,
-    tty: { stdin: false, stdout: false },
+    tty: { stdin: false, stdout: false, stderr: false },
     pid: process.pid,
     out: "",
     err: "",

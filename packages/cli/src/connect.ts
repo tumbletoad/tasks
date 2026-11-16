@@ -175,7 +175,7 @@ export async function connectService(io: Io, options: ConnectOptions = {}): Prom
         build: CLI_BUILD.build,
         pid: io.pid,
         package: pkg === undefined || pkg === "" ? null : pkg,
-        tty: { stdin: io.tty.stdin, stdout: io.tty.stdout },
+        tty: { stdin: io.tty.stdin, stdout: io.tty.stdout, stderr: io.tty.stderr },
       },
       context: { env: rpcContextEnv(io.env) },
       connectTimeoutMs: CONNECT_MS,

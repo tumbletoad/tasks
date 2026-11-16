@@ -12,7 +12,11 @@ export function processIo(): Io {
     env: process.env,
     cwd: process.cwd(),
     platform: process.platform,
-    tty: { stdin: isTty(process.stdin), stdout: isTty(process.stdout) },
+    tty: {
+      stdin: isTty(process.stdin),
+      stdout: isTty(process.stdout),
+      stderr: isTty(process.stderr),
+    },
     pid: process.pid,
     stdout: (text) => {
       process.stdout.write(text);

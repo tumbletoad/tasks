@@ -58,8 +58,32 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
         });
       }
     }
-    // Listing is not user-only.
+    // Listing a space and its backups only reads: not user-only.
     expect((await world.tasks(["space", "list", "--json"])).code).toBe(0);
+    const backups = await world.tasks(["space", "backups", "Mira", "--json"]);
+    expect(backups.code, backups.stdout + backups.stderr).toBe(0);
+    // A refusal says why in plain words and how to run the command.
+    const refused = await world.tasks(["space", "backup", "Mira"]);
+    expect(refused.code).toBe(5);
+    expect(refused.stderr).toContain("ssh -t");
+    expect(refused.stderr).not.toContain("cannot call this method");
+  }, 180_000);
+
+  test("a person who pipes or redirects the output is still the person at the terminal", async () => {
+    // `tasks space backup | cat`, `x=$(tasks space backup)`: the input and errors are a terminal.
+    const piped = await runMain(["space", "backup", "Mira", "--json"], {
+      home: world.home,
+      cwd: world.root,
+      tty: { stdin: true, stdout: false, stderr: true },
+    });
+    expect(piped.code, piped.stdout + piped.stderr).toBe(0);
+    // `echo y | tasks … > file`: only the errors are a terminal.
+    const redirected = await runMain(["space", "backup", "Mira", "--json"], {
+      home: world.home,
+      cwd: world.root,
+      tty: { stdin: false, stdout: false, stderr: true },
+    });
+    expect(redirected.code, redirected.stdout + redirected.stderr).toBe(0);
   }, 180_000);
 
   test("--help prints the help and runs nothing", async () => {
@@ -173,9 +197,10 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     expect(parsed(reopened.stdout)["space"]).toMatchObject({ name: "Life", state: "open" });
   }, 300_000);
 
-  test("recover refuses a space that needs none, with a usage error", async () => {
-    const ran = await user(["space", "recover", "Life", "--json"]);
-    expect(ran.code, ran.stdout).toBe(2);
+  test("recover of a space that needs none says so and changes nothing", async () => {
+    const ran = await user(["space", "recover", "Life"]);
+    expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+    expect(ran.stdout).toBe("Life needs no recovery.\n");
   }, 180_000);
 
   test("a folder is never a name, and the space verbs take TASKS_SPACE", async () => {
@@ -580,17 +605,18 @@ describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names
     expect(there.stderr).toContain("A space is already in that folder. Open it with: ");
     expect(there.stderr).toContain(`${CLI_NAME} space open `);
 
-    // `tasks recover` is the same command: the same refusal for a space that needs none.
+    // `tasks recover` is the same command: a space that needs none is said so, and is no error.
     for (const argv of [
-      ["recover", world.spaceFolder, "--json"],
-      ["space", "recover", world.spaceFolder, "--json"],
+      ["recover", world.spaceFolder],
+      ["space", "recover", world.spaceFolder],
     ]) {
       const ran = await user(argv);
-      expect(ran.code, argv.join(" ")).toBe(2);
-      expect(parsed(ran.stdout)).toMatchObject({
-        error: { message: "The space needs no recovery." },
-      });
+      expect(ran.code, argv.join(" ")).toBe(0);
+      expect(ran.stdout).toMatch(/^\S+ needs no recovery\.\n$/u);
     }
+    expect(parsed((await user(["recover", world.spaceFolder, "--json"])).stdout)).toMatchObject({
+      recovered: false,
+    });
     expect((await user(["help", "recover"])).stdout).toMatch(
       new RegExp(`^Usage: ${CLI_NAME} recover \\[<space>\\]\\n[\\s\\S]*${CLI_NAME} space recover`),
     );

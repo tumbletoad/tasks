@@ -28,7 +28,6 @@
 // start the agent in. They meet at the instance ID: an instance written here is the ID setup agents
 // gives that home's entry, and a home setup agents registered first keeps its ID here.
 import { createHash } from "node:crypto";
-import { isAgentMarker } from "@tasks/bridge/protocol";
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import {
@@ -59,7 +58,7 @@ import {
 } from "@tasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
-import type { Io } from "./io.ts";
+import { personAtTerminal, type Io } from "./io.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
@@ -111,12 +110,6 @@ function parse(args: readonly string[]): Parsed {
     );
   }
   return { mode: chosen, instance, plan };
-}
-
-/** A person at a terminal (A2 3.6.5's `cli-interactive`): no agent marker, both ends a TTY. */
-function userAtTerminal(io: Io): boolean {
-  const agent = Object.entries(io.env).some(([n, v]) => v !== undefined && isAgentMarker(n));
-  return !agent && io.tty.stdin && io.tty.stdout;
 }
 
 const forbidden = (): AppError =>
@@ -296,7 +289,7 @@ export async function instancesCommand(
   };
   try {
     const parsed = parse(args);
-    if (parsed.mode !== "preview" && !userAtTerminal(io)) throw forbidden();
+    if (parsed.mode !== "preview" && !personAtTerminal(io)) throw forbidden();
     if (parsed.mode === "remove") {
       const result = await call("instances/remove", {
         ...(parsed.instance === undefined ? {} : { ids: [parsed.instance] }),

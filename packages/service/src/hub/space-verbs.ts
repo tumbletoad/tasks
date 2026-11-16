@@ -1,7 +1,8 @@
 // The service's side of `tasks space` (A2 3.10.1, A1 3.18): rpc
-// methods `space/*`, registered in the handler table (endpoint.ts). Every one but `space/list` is
-// a user-only operation: the method table lets only `cli-interactive` call them (A2 3.6.5), and
-// each checks the class again, so another transport that reaches them refuses agents too.
+// methods `space/*`, registered in the handler table (endpoint.ts). Every one but those that only
+// read (`space/list`, `space/backups`) is a user-only operation: the method table lets only
+// `cli-interactive` call them, and each checks the class again, so another transport that reaches
+// them refuses agents too.
 //
 //   space/list      the registered spaces with their state and folder, and the default space
 //   space/create    a new space folder, then served          (createSpace, in a worker)
@@ -506,8 +507,7 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       }
     },
 
-    "space/backups": (params, cls) => {
-      userOnly(cls);
+    "space/backups": (params) => {
       const view = find(required(params, "space"));
       const dir = backupDirOf(view);
       try {
@@ -720,12 +720,9 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
     "space/recover": async (params, cls) => {
       userOnly(cls);
       const view = find(required(params, "space"));
+      // Nothing to do is not a failure: the answer says so, and nothing is changed or recorded.
       if (view.state !== "unavailable" || view.reason !== "needs_recovery") {
-        throw new AppError({
-          code: "invalid_input",
-          message: "The space needs no recovery.",
-          data: { issues: [{ path: "space", message: "Not refused with a rollback journal" }] },
-        });
+        return { space: describe(view), recovered: false };
       }
       // The folder must still hold the space its entry names. Its database cannot be read before
       // the journal is played back, so its space.json is what is checked, when it is there; the
