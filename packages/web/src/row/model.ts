@@ -157,6 +157,8 @@ export interface RowModel {
   /** The summary line's prefix on views that mix areas: the area dot and the project or area. */
   readonly prefix?: { readonly slot?: number; readonly text: string };
   readonly summary?: string;
+  /** Completed's line in the place of the summary: how the task ended (`TaskRow.ending`). */
+  readonly ending?: string;
   readonly due?: {
     readonly text: Msg;
     readonly tone: DueTone;
@@ -527,6 +529,8 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
   if (launch.state !== "ready" && launch.state !== "none") description.push(tip);
 
   const summary = task.summary !== undefined && task.summary !== "" ? task.summary : undefined;
+  const ending =
+    finished && task.ending !== undefined && task.ending !== "" ? task.ending : undefined;
   return {
     id: task.id,
     ref: task.ref,
@@ -536,6 +540,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     ...(chip === undefined ? {} : { chip }),
     ...(prefix === undefined ? {} : { prefix }),
     ...(summary === undefined ? {} : { summary }),
+    ...(ending === undefined ? {} : { ending }),
     ...(due === undefined ? {} : { due: due.model }),
     ...(age === undefined ? {} : { age: age.model }),
     ...(priority === undefined ? {} : { priority }),
