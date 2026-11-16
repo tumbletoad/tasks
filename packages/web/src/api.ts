@@ -7,7 +7,6 @@
 // are A4's `launch.open`. A task's receipts have a route of their own (`/api/v1/launch/list`).
 import { httpHeader } from "@tasks/brand";
 import { createClient, type Client } from "@tasks/contracts/generated/client.ts";
-import type { MachinePreference } from "./store/rows.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -180,8 +179,11 @@ export class Api {
   }
 
   /** Sets one of this computer's settings of the page, or resets it with null. */
-  async setMachinePreference(key: string, value: unknown): Promise<MachinePreference> {
-    return this.#result<MachinePreference>("/api/v1/machine/pref", { key, value });
+  async setMachinePreference(
+    key: string,
+    value: unknown,
+  ): Promise<{ readonly key: string; readonly value: unknown; readonly state: string }> {
+    return this.#result("/api/v1/machine/pref", { key, value });
   }
 
   /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */
