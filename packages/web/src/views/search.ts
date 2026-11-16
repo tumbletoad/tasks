@@ -1,0 +1,254 @@
+// Search results from the top field: the pure parts, so the paging, the rows and the groups are
+// unit tests. Open tasks and finished ones are two searches over `task.search`, each frozen at its
+// first page by the service's cursor (queries.ts treats them as frozen), shown as two groups of
+// one list: To do, then Completed. Every open match is read at once, because the space's open
+// tasks are the live store's anyway; finished ones come a page at a time with "Show more".
+//
+// A row keeps the group it was found in. A task checked off from the results stays under To do,
+// checked, until the person refreshes: results do not move under the pointer.
+import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Group } from "../groups.ts";
+import type { MessageId } from "../i18n/intl.tsx";
+import type { Page, PageSource } from "../store/queries.ts";
+import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import { rowOfSearch } from "./completed.ts";
+import type { HeldRow } from "./TaskList.tsx";
+
+type SearchResult = Awaited<ReturnType<Client["task"]["search"]>>;
+export type SearchRow = SearchResult["rows"][number];
+type SearchInput = Parameters<Client["task"]["search"]>[0];
+export type Search = (input: SearchInput) => Promise<SearchResult>;
+
+/** The most rows one call returns: the service's own limit. */
+export const SEARCH_PAGE = 50;
+
+/** Which of the two searches a row was found by. */
+export type Found = "open" | "finished";
+
+/** A task row as a search found it. `found` survives the feed's updates (`withTaskRow`). */
+export type FoundRow = TaskRow & { readonly found: Found };
+
+/**
+ * A search row as a task row, as Completed reads it (`rowOfSearch`): its area and project found by
+ * name among the live ones, older than any feed row so the feed's row replaces it. A task deleted
+ * or redacted since the search ran keeps its place in the service's list, but has nothing to show.
+ */
+export function rowOfFound(
+  row: SearchRow,
+  found: Found,
+  areas: ReadonlyMap<string, AreaRow>,
+  projects: ReadonlyMap<string, ProjectRow>,
+): FoundRow | undefined {
+  const task = rowOfSearch(row, areas, projects, false);
+  return task === undefined ? undefined : { ...task, found };
+}
+
+export interface SourceOptions {
+  readonly search: Search;
+  readonly q: string;
+  readonly found: Found;
+  readonly rowOf: (row: SearchRow, found: Found) => FoundRow | undefined;
+  /** Read every page at once (the open tasks), else one page per call. */
+  readonly all?: boolean;
+}
+
+/** A paged source over one search: at least `limit` rows per page while there are more. */
+export function searchSource(options: SourceOptions): PageSource<FoundRow> {
+  const { search, q, found, rowOf } = options;
+  const scope = found === "open" ? "active" : "finished";
+  return async ({ after, limit }): Promise<Page<FoundRow>> => {
+    const rows: FoundRow[] = [];
+    let cursor = after;
+    let first = after === undefined;
+    // A page of the service holds the first page's limit; a refresh that shows more rows than
+    // one page reads on until it has them.
+    while (first || cursor !== undefined) {
+      const page: SearchResult = first
+        ? await search({ q, scope, limit: SEARCH_PAGE })
+        : await search({ cursor: cursor });
+      first = false;
+      cursor = page.cursor;
+      for (const row of page.rows) {
+        const shown = rowOf(row, found);
+        if (shown !== undefined) rows.push(shown);
+      }
+      if (options.all !== true && rows.length >= limit) break;
+    }
+    return cursor === undefined ? { rows } : { rows, next: cursor };
+  };
+}
+
+/** Whether an error is the service saying a search cursor expired: the search starts again. */
+export const isExpired = (error: unknown): boolean => codeOf(error) === "cursor_expired";
+
+/** Whether an error is the service saying the space has no word index (an older space). */
+export const isUnindexed = (error: unknown): boolean =>
+  codeOf(error) === "space_unavailable" && dataOf(error)?.["reason"] === "not_indexed";
+
+function codeOf(error: unknown): unknown {
+  return typeof error === "object" && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
+function dataOf(error: unknown): Readonly<Record<string, unknown>> | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const data = (error as { data?: unknown }).data;
+  return typeof data === "object" && data !== null ? (data as Record<string, unknown>) : undefined;
+}
+
+/** The terms of a query as the service splits them: words, "phrases", filters and OR. */
+interface Term {
+  readonly text: string;
+  readonly filter: boolean;
+}
+
+const FILTER = /^-?[A-Za-z]+(?::|<=|>=|<|>)/u;
+
+function termsOf(q: string): Term[] {
+  const terms: Term[] = [];
+  let i = 0;
+  while (i < q.length) {
+    if (/\s/u.test(q[i] ?? "")) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    // A word runs to the next blank; a quote, at its start or after a filter's operator, runs to
+    // the next quote ("" inside is one quote) or to the end.
+    while (i < q.length && !/\s/u.test(q[i] ?? "")) {
+      if (q[i] === '"') {
+        i += 1;
+        while (i < q.length) {
+          if (q[i] === '"' && q[i + 1] === '"') i += 2;
+          else if (q[i] === '"') break;
+          else i += 1;
+        }
+      }
+      i += 1;
+    }
+    const text = q.slice(start, i);
+    terms.push({ text, filter: FILTER.test(text) });
+  }
+  return terms;
+}
+
+/** Whether a query has words besides its filters: the part an older space cannot search. */
+export function hasWords(q: string): boolean {
+  return termsOf(q).some((term) => !term.filter && term.text !== "OR");
+}
+
+/** The query's filters alone, for a space without the word index. */
+export function filtersOnly(q: string): string {
+  const terms = termsOf(q);
+  const kept: string[] = [];
+  terms.forEach((term, i) => {
+    if (term.filter) kept.push(term.text);
+    else if (term.text === "OR" && terms[i - 1]?.filter === true && terms[i + 1]?.filter === true) {
+      kept.push(term.text);
+    }
+  });
+  return kept.join(" ");
+}
+
+/** A filter's key, as the service reads it, and the logical task fields it reads (A1's names). */
+const FIELDS_OF: Readonly<Record<string, readonly string[]>> = {
+  status: ["status"],
+  state: ["status"],
+  p: ["priority"],
+  prio: ["priority"],
+  pri: ["priority"],
+  priority: ["priority"],
+  effort: ["effort"],
+  due: ["due"],
+  area: ["area", "grouping"],
+  project: ["project", "grouping"],
+  proj: ["project", "grouping"],
+  is: ["inbox", "focus", "due", "wrap"],
+  on: ["grouping"],
+  updated: ["*"],
+  modified: ["*"],
+  changed: ["*"],
+};
+
+/** Every logical field a task has: what a filter on any change reads. */
+const EVERY_FIELD = [
+  "title",
+  "summary",
+  "context",
+  "status",
+  "inbox",
+  "priority",
+  "effort",
+  "planned_for",
+  "focus",
+  "owner",
+  "waiting_on",
+  "due",
+  "grouping",
+  "lifecycle",
+  "wrap",
+  "deleted",
+];
+
+/**
+ * The task fields a search filters or sorts on, besides its text (`QueryDef.fields`): a change to
+ * one of them may change what matches or its order, so the results offer a refresh. A query
+ * without words is ordered by due date and priority.
+ */
+export function searchFields(q: string): readonly string[] {
+  const fields = new Set<string>();
+  const terms = termsOf(q);
+  for (const term of terms) {
+    if (!term.filter) continue;
+    const key = /^-?([A-Za-z]+)/u.exec(term.text)?.[1]?.toLowerCase() ?? "";
+    for (const field of FIELDS_OF[key] ?? []) {
+      if (field === "*") for (const each of EVERY_FIELD) fields.add(each);
+      else fields.add(field);
+    }
+  }
+  if (!terms.some((term) => !term.filter && term.text !== "OR")) {
+    fields.add("due");
+    fields.add("priority");
+  }
+  return [...fields];
+}
+
+const LABEL: Readonly<Record<Found, MessageId>> = {
+  open: "search.tasks",
+  finished: "search.completed",
+};
+
+/**
+ * The results as the list's groups: To do, then Completed, each hidden when empty. A row the live
+ * store holds is shown with the store's row, which carries the person's edits at once; another
+ * with the search's row, which the feed keeps current. `held` is the expanded task, kept at its
+ * place when a refresh no longer finds it.
+ */
+export function searchGroups(
+  open: readonly FoundRow[],
+  finished: readonly FoundRow[],
+  live: ReadonlyMap<string, TaskRow>,
+  held?: HeldRow,
+): Group[] {
+  // The two searches are separate snapshots, so one task can be in both (checked off from the
+  // results, then Completed read again): it stays where the person saw it first.
+  const inOpen = new Set(open.map((row) => row.id));
+  const lists: Record<Found, TaskRow[]> = {
+    open: open.map((row) => live.get(row.id) ?? row),
+    finished: finished.filter((row) => !inOpen.has(row.id)).map((row) => live.get(row.id) ?? row),
+  };
+  if (held !== undefined && ![...open, ...finished].some((row) => row.id === held.task.id)) {
+    const into: Found = held.group === "s:finished" ? "finished" : "open";
+    const list = lists[into];
+    list.splice(Math.min(held.index ?? 0, list.length), 0, held.task);
+  }
+  return (["open", "finished"] as const)
+    .filter((found) => lists[found].length > 0)
+    .map((found): Group => ({
+      key: `s:${found}`,
+      kind: "section",
+      label: LABEL[found],
+      sections: [{ key: `s:${found}`, tasks: lists[found] }],
+    }));
+}
