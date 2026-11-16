@@ -731,6 +731,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           forget: (entry: number) => {
             spaceManager().forget(entry);
           },
+          forgettable: (entry: number) => spaceManager().forgettable(entry),
           claim: (entry: number) => spaceManager().claim(entry),
           restoreInPlace: (entry: number, file: string) =>
             spaceManager().restoreInPlace(entry, file),

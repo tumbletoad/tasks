@@ -31,6 +31,11 @@ export interface Io {
    * stdin. Absent when stdin is no terminal, where no one can answer.
    */
   readonly ask?: (question: string) => Promise<boolean>;
+  /**
+   * What to print on stderr if the person presses Ctrl+C from now on, or undefined for nothing: a
+   * write that may already have gone through says how to retry it without doing it twice.
+   */
+  readonly onInterrupt?: (note: string | undefined) => void;
   /** A file's text (`--input <file>`). */
   readFile(path: string): Promise<string>;
 }

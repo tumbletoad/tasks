@@ -18,13 +18,15 @@ export interface RunOptions extends Pick<MainOptions, "versionFolder"> {
 
 /** Runs `tasks` in this process and resolves with its exit code. */
 export async function run(options: RunOptions = {}): Promise<number> {
+  const io = processIo();
   process.on("SIGINT", () => {
+    io.interrupted();
     process.exit(130);
   });
   const { uiFolder, ...rest } = options;
   const ui =
     uiFolder !== undefined && existsSync(join(uiFolder, "index.html")) ? uiFolder : undefined;
-  return main(processIo(), {
+  return main(io, {
     ...rest,
     // `tasks serve` ends the process with its own exit code (A2 3.3.1), whatever is still open.
     serve: async () => {

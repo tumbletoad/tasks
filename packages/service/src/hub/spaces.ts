@@ -735,11 +735,22 @@ export class SpaceManager {
    * is touched, and `open` of the folder brings it back.
    */
   forget(entry: number): void {
-    const space = this.#space(entry);
-    if (space.state !== "closed" && space.state !== "unavailable") {
+    if (!this.forgettable(entry)) {
       throw new StorageError("STORAGE_MISUSE", "Only a closed space is forgotten");
     }
-    space.forgotten = true;
+    this.#space(entry).forgotten = true;
+  }
+
+  /**
+   * Whether `forget` takes the entry now: closed or unavailable, and no restore in place, claim or
+   * recovery running. Those leave the space closed for a while and then open it again, which would
+   * serve a space that is off the list.
+   */
+  forgettable(entry: number): boolean {
+    const space = this.#space(entry);
+    return (
+      (space.state === "closed" || space.state === "unavailable") && space.replacing === undefined
+    );
   }
 
   /** Reads the served space's name and prefix through its reader, for people's output. */

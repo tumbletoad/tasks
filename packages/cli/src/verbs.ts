@@ -2,8 +2,8 @@
 // fills itself (A3 3.2.2's `auto`), one `op/call`, and the result printed.
 //
 // Retries. A write gets a request ID from --request-id, or a new one that the CLI prints on stderr
-// with --json, and on a failure that a retry may fix, so a retry can pass it. A write that needs a
-// base reads one only when no
+// with --json, and on a failure or a Ctrl+C after which the write may have applied, so a retry can
+// pass it. A write that needs a base reads one only when no
 // receipt exists: with --request-id the CLI first asks for the receipt in its own writer scope
 // (`receipt.get`), and when there is one it sends the same input with the receipt's `as_of` as
 // base. The receipt's fingerprint covers the input without the base, so the service replays the
@@ -122,11 +122,12 @@ export interface VerbHooks {
   /**
    * A failure the verb answers itself: its exit code, or undefined to print it as any other.
    * `again` sends the call once more with `changes` over the input and a new request ID, and
-   * prints what it returns.
+   * prints what it returns. `retry` is what a person adds to the same command to send `changes`,
+   * for the retry line of a write that may have applied.
    */
   readonly failed?: (
     body: ErrorBody,
-    again: (changes: Record<string, unknown>) => Promise<number>,
+    again: (changes: Record<string, unknown>, retry: readonly string[]) => Promise<number>,
   ) => Promise<number | undefined>;
 }
 
@@ -222,32 +223,51 @@ export async function runVerb(
       return 0;
     };
     try {
+      interruptible(requestId, []);
       return await send(input);
     } catch (error) {
+      // The call ended: a failure after which it may have applied prints its retry line below, and
+      // Ctrl+C at a question that follows (undo's) has nothing in doubt.
+      io.onInterrupt?.(undefined);
       const body = bodyOf(asAppError(error));
-      const answered = await hooks?.failed?.(body, async (changes) => {
+      const answered = await hooks?.failed?.(body, async (changes, retry) => {
         const id = newRequestId();
         try {
+          interruptible(id, retry);
           return await send({ ...input, ...changes, request_id: id });
         } catch (failed) {
-          return failure(failed, id);
+          return failure(failed, id, retry);
         }
       });
       if (answered !== undefined) return answered;
       throw error;
     }
   } catch (error) {
-    return failure(error, requestId);
+    return failure(error, requestId, []);
   } finally {
+    io.onInterrupt?.(undefined);
     session?.close();
   }
 
-  function failure(error: unknown, id: string | undefined): number {
+  /**
+   * How to retry a write that may have applied without doing it twice: the same command with these
+   * arguments. Undefined for a read, or with --quiet.
+   */
+  function retryLine(id: string | undefined, retry: readonly string[]): string | undefined {
+    return write && id !== undefined && !globals.quiet
+      ? `Retry with: ${[...retry, "--request-id", id].join(" ")}\n`
+      : undefined;
+  }
+
+  /** Ctrl+C while a write is sent leaves the person not knowing whether it applied. */
+  function interruptible(id: string | undefined, retry: readonly string[]): void {
+    io.onInterrupt?.(retryLine(id, retry));
+  }
+
+  function failure(error: unknown, id: string | undefined, retry: readonly string[]): number {
     const body = bodyOf(asAppError(error));
-    // A write that may have applied is retried with its request ID, also a generated one.
-    if (write && id !== undefined && body.data?.["retryable"] === true && !globals.quiet) {
-      io.stderr(`Retry with: --request-id ${id}\n`);
-    }
+    const line = retryLine(id, retry);
+    if (line !== undefined && body.data?.["retryable"] === true) io.stderr(line);
     return printError(io, globals.json, body);
   }
 }

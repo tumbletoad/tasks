@@ -103,12 +103,17 @@ describe("[A3.3.7.actors.script-undo-note] tasks undo after a script's change", 
         },
       });
 
+      const named = (JSON.parse(json.stdout) as { error: { data: { commit: string } } }).error.data
+        .commit;
+
       // Asked on the terminal: no undoes nothing; yes undoes the change the question named.
       const questions: string[] = [];
+      const interrupts: (string | undefined)[] = [];
       const answering = (answer: boolean) =>
         runMain(["undo"], {
           home: w.home,
           tty: true,
+          interrupts,
           main: {
             ask: (question) => {
               questions.push(question);
@@ -122,12 +127,39 @@ describe("[A3.3.7.actors.script-undo-note] tasks undo after a script's change", 
       expect(questions).toEqual([
         "A script completed M-3 after your newest change, and undo never takes back a script's change. Undo your change to M-2 (changed) instead? [y/N] ",
       ]);
+      // While the question waits, Ctrl+C has no write in doubt to name.
+      expect(interrupts.at(-1)).toBeUndefined();
+      expect(interrupts.slice(0, 2)).toEqual([
+        expect.stringMatching(/^Retry with: --request-id \S+\n$/u),
+        undefined,
+      ]);
+      interrupts.length = 0;
       const undone = await answering(true);
       expect(undone.code, undone.stderr).toBe(0);
+      // Ctrl+C while the confirmed undo is sent names the change, so the retry replays it.
+      expect(interrupts).toContainEqual(
+        expect.stringMatching(
+          new RegExp(`^Retry with: --commit ${named} --request-id \\S+\\n$`, "u"),
+        ),
+      );
+      expect(interrupts.at(-1)).toBeUndefined();
       expect(undone.stdout).toBe(
         "Undid your change to M-2 in Mira\n" +
           "Not undone: a script completed M-3 after that, and a script's changes are not on your undo stack.\n",
       );
+      const retryId = /--request-id (\S+)/u.exec(
+        interrupts.find((note) => note?.includes("--commit") === true) ?? "",
+      )?.[1];
+      const retried = await tasks([
+        "undo",
+        "--commit",
+        named,
+        "--request-id",
+        retryId ?? "-",
+        "--json",
+      ]);
+      expect(retried.code, retried.stdout + retried.stderr).toBe(0);
+      expect(JSON.parse(retried.stdout)).toMatchObject({ replayed: true, commit: named });
 
       // --yes undoes without asking.
       expect((await tasks(["set", "M-2", "priority=1"])).code).toBe(0);

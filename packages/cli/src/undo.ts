@@ -78,7 +78,8 @@ export async function undoCommand(
       // The change the question named, and no other: a newer change of the person's made
       // meanwhile stands before it, and the service refuses it then. JSON leaves out the
       // undefined check.
-      return again({ commit: data["commit"], check_script: undefined });
+      const commit = str(data["commit"]);
+      return again({ commit, check_script: undefined }, ["--commit", commit]);
     },
   });
 }

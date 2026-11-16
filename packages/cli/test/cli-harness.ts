@@ -211,6 +211,8 @@ export async function runMain(
     env?: Record<string, string>;
     stdin?: string;
     main?: MainOptions;
+    /** Records what Ctrl+C would print, each time the command changes it. */
+    interrupts?: (string | undefined)[];
   },
 ): Promise<Ran> {
   let stdout = "";
@@ -237,6 +239,13 @@ export async function runMain(
     },
     readStdin: () => Promise.resolve(options.stdin ?? ""),
     readFile: (path) => readFile(path, "utf8"),
+    ...(options.interrupts === undefined
+      ? {}
+      : {
+          onInterrupt: (note: string | undefined) => {
+            options.interrupts?.push(note);
+          },
+        }),
   };
   const code = await main(io, options.main);
   return { code, stdout, stderr };

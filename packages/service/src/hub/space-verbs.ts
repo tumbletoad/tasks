@@ -84,6 +84,7 @@ export interface SpaceVerbsHost {
     | "open"
     | "close"
     | "forget"
+    | "forgettable"
     | "claim"
     | "restoreInPlace"
     | "recover"
@@ -495,6 +496,15 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           message: "Only a closed space is forgotten, and this one is open.",
           hint: `Close it first: ${command(["space", "close", folder], "space close <folder>")}`,
           data: { issues: [{ path: "space", message: "Open" }] },
+        });
+      }
+      if (!manager.forgettable(view.entry)) {
+        throw new AppError({
+          code: "invalid_input",
+          message:
+            "The space is being restored, claimed or recovered now, so it was not forgotten.",
+          hint: "Forget it once that is done.",
+          data: { issues: [{ path: "space", message: "Changing" }] },
         });
       }
       // machine.toml first: when the entry cannot be taken out, the space would come back at the
