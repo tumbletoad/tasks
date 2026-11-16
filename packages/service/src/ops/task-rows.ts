@@ -43,12 +43,12 @@ export const ROW_SOURCES = 3;
 
 /**
  * When a finished task was finished: its completion, or for a dropped task, which keeps no
- * completion time, the commit that last changed its lifecycle. A task that was never changed
- * after it was made (one an import created finished) was finished when it was made.
+ * completion time, the commit whose write its lifecycle holds (its provenance, else its create),
+ * so an undo that brings a drop back keeps the drop's own time.
  */
 const FINISHED_AT =
   "COALESCE(t.completed_at, (SELECT c.at FROM commits c WHERE c.seq = " +
-  "json_extract(t.fv, '$.lifecycle')), t.created_at)";
+  "COALESCE(json_extract(t.fp, '$.lifecycle'), t.created_seq)), t.created_at)";
 
 export const TASK_COLUMNS =
   "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +

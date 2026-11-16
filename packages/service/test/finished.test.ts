@@ -88,9 +88,13 @@ async function all(input: Record<string, unknown>): Promise<Result["rows"]> {
   return rows;
 }
 
-function submit(ops: Operation[], at: number): WriteResult {
+/** `undoable`: the person's own change, on their undo stack. An undo itself carries no base. */
+function submit(ops: Operation[], at: number, undoable = false): WriteResult {
   clock = at;
-  const result = fx.writer.submit(fx.request(fx.human, ops, { base: fx.base() }));
+  const undo = ops.some((op) => op.kind === "undo");
+  const result = fx.writer.submit(
+    fx.request(fx.human, ops, undo ? {} : { base: fx.base(), ...(undoable ? { undoable } : {}) }),
+  );
   if (result.status !== "applied") throw new Error(JSON.stringify(result.error));
   return result;
 }
@@ -210,6 +214,19 @@ describe("[A5.3.5.service.finished] the read of finished tasks behind Completed"
     // A finished task in the Trash is not in the list.
     submit([{ kind: "task.delete", task: kept }], Date.UTC(2026, 10, 26, 12));
     expect((await finished({ checked_off: false, limit: 1 })).rows[0]?.id).not.toBe(kept);
+  });
+
+  test("an undone reopen puts a dropped task back at the time it was dropped, not the undo's", async () => {
+    const [task] = finish(1, Date.UTC(2026, 10, 26, 13), "dropped", "Fixture dropped, reopened");
+    if (task === undefined) throw new Error("no task");
+    submit([{ kind: "task.reopen", task }], Date.UTC(2026, 10, 26, 15), true);
+    submit([{ kind: "undo" }], Date.UTC(2026, 10, 26, 16));
+    const rows = await all({ checked_off: false, limit: 200 });
+    expect(rows.find((r) => r.id === task)).toMatchObject({
+      lifecycle: "archived",
+      finished_at: Date.UTC(2026, 10, 26, 13),
+    });
+    expect(ordered(rows)).toBe(true);
   });
 
   test("a task finished or reopened while the list is open neither repeats nor skips a row", async () => {
