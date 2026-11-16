@@ -56,7 +56,7 @@ beforeAll(async () => {
   plain = await writeFixture(join(temp.root, "plain"), { steps: STEPS_0_3 });
   edited = await writeFixture(join(temp.root, "edited"));
   organized = await writeFixture(join(temp.root, "organized"));
-}, 60_000);
+});
 
 afterAll(() => {
   fx.close();

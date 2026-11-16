@@ -518,7 +518,7 @@ describe("[A1.3.15.places.race] the tree changes while resolve() reads it, and t
     const calls = await run(build, [], seen);
     await run(build, [calls + 1], seen);
     expect(seen.get("ok, accepted")).toBe(2);
-  }, 60_000);
+  });
 });
 
 describe("[A1.3.15.places.race] the remote is read step by step", () => {

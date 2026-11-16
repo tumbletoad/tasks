@@ -20,7 +20,7 @@ beforeAll(async () => {
   const folder = join(temp.root, "space");
   mkdirSync(folder);
   fx = await writeFixture(folder);
-}, 60_000);
+});
 
 afterAll(() => {
   fx.close();
