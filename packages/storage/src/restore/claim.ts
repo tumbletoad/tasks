@@ -98,9 +98,7 @@ export function claimInTransaction(conn: Connection, options: ClaimOptions): Cla
   const floor = options.refFloor;
   if (
     floor !== undefined &&
-    (!Number.isSafeInteger(floor) ||
-      floor < RANGES.taskRef.min ||
-      floor > RANGES.taskRef.max + 1)
+    (!Number.isSafeInteger(floor) || floor < RANGES.taskRef.min || floor > RANGES.taskRef.max + 1)
   ) {
     throw misuse("A reference floor is a next task reference");
   }
