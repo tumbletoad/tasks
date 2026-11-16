@@ -66,6 +66,11 @@ export interface OpenedSpaceInfo {
   manifestRebuilt: boolean;
   /** The migration the writer's open ran before it attached the write path (A1 3.17). */
   migration?: MigrationReport;
+  /**
+   * The writer found the search index damaged and made it again (`remade`), or could not
+   * (`damaged`). Absent when it was sound.
+   */
+  searchIndex?: "remade" | "damaged";
   /** A claim's result. The worker closed the connection after the claim. */
   claim?: Claim;
   /** The space's authority (A1 3.1, A6 3.5): only this machine's writer writes. */
@@ -215,6 +220,8 @@ export interface Calls {
   projected: { args: { handle: number; batch: ProjectedBatch }; result: number };
   /** Tasks queued for the projection: every one (a full rebuild), or `keys`. The tasks queued. */
   queueProjection: { args: { handle: number; keys?: string[] }; result: number };
+  /** Checks a writer's search index and makes it again when it is damaged (search/remake.ts). */
+  repairSearchIndex: { args: { handle: number }; result: "sound" | "remade" | "damaged" };
   /** A run record (A4 3.16.1), or null. */
   run: { args: { handle: number; run: string }; result: RunRow | null };
   /** A machine's runs that are not final: the execution store's `openWork`. */

@@ -10,6 +10,8 @@
 // (@tasks/runs) a RunStore. Sessions (`upsertSession`, with the session move of A4 3.10) and
 // occurrences (`decideOccurrence`, M9) join it with the steps that write those records.
 import {
+  ANSWER_CAP_BYTES,
+  cutRunAnswer,
   cutRunText,
   FINAL_RUN_STATES,
   isRunEdge,
@@ -188,8 +190,8 @@ export interface RunStore {
   /** The run as it is now, or undefined. */
   readRun(id: string): Promise<RunRecord | undefined>;
   /**
-   * Every run of that machine that is not final (OPEN_RUN_STATES), and every `unknown` one that
-   * awaits its exit (`awaitsExit`), oldest first.
+   * Every run of that machine that is not final (OPEN_RUN_STATES), and every `unknown` one not yet
+   * confirmed ended (`awaitsConfirmation`), oldest first.
    */
   openWork(machine: string): Promise<{ runs: RunRecord[] }>;
 }
@@ -535,15 +537,16 @@ export function runEvidenceProblem(evidence: unknown): string | undefined {
   return undefined;
 }
 
-const isText = (value: unknown): value is string | null =>
-  value === null || (typeof value === "string" && utf8(value) <= TEXT_CAP_BYTES);
+const isText = (value: unknown, cap: number): value is string | null =>
+  value === null || (typeof value === "string" && utf8(value) <= cap);
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_COUNT;
 
 /**
- * The problem with a run result as a path, or undefined. Texts within TEXT_CAP_BYTES. Every object
- * it reads is a plain object, never a list, as the writer reads it: a list is an object with no
- * keys to refuse, which one store would keep as a list and another as an empty object.
+ * The problem with a run result as a path, or undefined. The answer within ANSWER_CAP_BYTES, the
+ * error within TEXT_CAP_BYTES. Every object it reads is a plain object, never a list, as the writer
+ * reads it: a list is an object with no keys to refuse, which one store would keep as a list and
+ * another as an empty object.
  */
 export function runResultProblem(result: unknown): string | undefined {
   if (typeof result !== "object" || result === null || Array.isArray(result)) {
@@ -557,6 +560,8 @@ export function runResultProblem(result: unknown): string | undefined {
     "signal",
     "nativeId",
     "text",
+    "textCut",
+    "textFinal",
     "error",
     "usage",
     "appTools",
@@ -589,8 +594,11 @@ export function runResultProblem(result: unknown): string | undefined {
   if (nativeId !== null && (typeof nativeId !== "string" || !RUN_EVIDENCE_ID.test(nativeId))) {
     return "patch.result.nativeId";
   }
-  if (!isText(r["text"])) return "patch.result.text";
-  if (!isText(r["error"])) return "patch.result.error";
+  if (!isText(r["text"], ANSWER_CAP_BYTES)) return "patch.result.text";
+  for (const flag of ["textCut", "textFinal"]) {
+    if (r[flag] !== undefined && typeof r[flag] !== "boolean") return `patch.result.${flag}`;
+  }
+  if (!isText(r["error"], TEXT_CAP_BYTES)) return "patch.result.error";
   const usage = r["usage"];
   if (usage !== null) {
     if (typeof usage !== "object" || Array.isArray(usage)) return "patch.result.usage";
@@ -711,12 +719,25 @@ export function checkRunTransition(
   };
 }
 
-/** A result with its text and error normalised and cut to TEXT_CAP_BYTES (`cutRunText`). */
-function cutResultTexts(result: unknown): RunResult {
+/**
+ * A result with its answer and error normalised and cut (`cutRunText`): the answer to
+ * ANSWER_CAP_BYTES, flagged `textCut` when that cut it, the error to TEXT_CAP_BYTES.
+ */
+export function cutResultTexts(result: unknown): RunResult {
   if (typeof result !== "object" || result === null || Array.isArray(result)) {
     return result as RunResult;
   }
   const r = result as Record<string, unknown>;
-  const cut = (value: unknown): unknown => (typeof value === "string" ? cutRunText(value) : value);
-  return { ...r, text: cut(r["text"]), error: cut(r["error"]) } as unknown as RunResult;
+  const text = r["text"];
+  const error = r["error"];
+  if (typeof text !== "string") {
+    return { ...r, error: typeof error === "string" ? cutRunText(error) : error } as RunResult;
+  }
+  const answer = cutRunAnswer(text);
+  return {
+    ...r,
+    text: answer.text,
+    ...(answer.cut ? { textCut: true } : {}),
+    error: typeof error === "string" ? cutRunText(error) : error,
+  } as unknown as RunResult;
 }

@@ -666,6 +666,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.search.repair",
+      "title": "A space whose search index alone is damaged still backs up and its backup restores whole; a writer's open makes the index again from the tasks, and leaves a sound one as it is",
+      "source": "A1 3.12, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.read-only-copy",
       "title": "A backup restored into a new folder is a read-only copy until claimed: a writer is refused with SPACE_READ_ONLY_COPY, a reader reads, the mark lives in the database so a copy of the folder or the database and a missing or damaged space.json keep it, and a claim gives a new epoch and incarnation in one commit and leaves the original untouched",
       "source": "A1 3.18, A6 3.5",
@@ -1219,7 +1227,7 @@
     },
     {
       "id": "A2.3.1.hub.migration-timeout",
-      "title": "An open whose migration runs past the open's bound stops its worker before it reads the space again: a migration that fails, or still runs within the close's bound and fails, leaves the space unchanged and read-only (ETIMEDOUT) with no failure record; one that succeeds within the close's bound leaves it at the new revision and served for writing, never reported unchanged; one still running when the close's bound passes serves no reader, the space is unavailable, and the next start finds the state it left intact",
+      "title": "A migration that runs past the open's bound is waited for: one that succeeds leaves the space open for writing at the new revision without a restart, with the revisions and the backup from before it recorded for the space list; one that fails is a failed migration like any other, the space unchanged and read-only with its failure recorded",
       "source": "A1 3.17, A2 3.1, A7 3.10 M3.01",
       "owner": "M3",
       "kind": "ci",
@@ -1306,8 +1314,16 @@
     },
     {
       "id": "A4.5.parsers.tolerance",
-      "title": "Truncated, unknown and 1 MB lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
+      "title": "Truncated, unknown and over-long lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
       "source": "A4 3.11.4, A4 5.1, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.answer",
+      "title": "The agent's answer is kept whole up to 1 MiB after 50 MB of other output and when escaping makes its line far longer, is cut with a flag beyond 1 MiB, never refused, and is reported as answer events, final only once the agent finished its turn",
+      "source": "A4 3.11.4, A4 3.11.5",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -1369,16 +1385,16 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.run.state-machine",
-      "title": "Property test of the run state machine with cancels in every state and the service killed at every boundary (a store write or an external step, before or after it takes effect, recovery included) and restarted, with claims repeated also after their reply, agents started and exiting with every outcome and the shim's timeouts, shims dying without exit.json, shims ending while the service is down, start failures (also reported while a sweep finds the shim gone, so they arrive after it settled the run) and wall clock steps, a fifth of the scenarios starting from a claimed, stopped, stop-timed-out, started or ended run: at most one spawn and one claim reply per run, no agent without a durable claim its shim was replied with, final states that match what the processes did, and every run final or still queued once every window has passed, never unknown when its shim left exit.json or a heard start failure, cancels shown to reach every state a v1 run can be in, and late start failures shown to arrive after a sweep settled the run lost, with and without a Stop, on the in-memory store and on the space database",
+      "id": "A4.5.run.lifecycle-model",
+      "title": "Property test of the run host with fake containers and a fake clock: runs started, starts refused or hanging past the start time and answering late, agents that talk, fork, exit, obey or ignore an interrupt, Stop at every moment, the wall and idle limits, containers that refuse to empty, End by force, and the service crashed at any boundary (a store write, a container call or an answer save, before or after it takes effect) and started again: a final run's container is empty and no start of it is pending, a stopped run ends cancelled or unknown and never runs again, an answer in a record is one its agent gave whole (the last it finished with, else its last message, or after a restart the one saved last), every run is final or unknown once every limit passed, and the next start settles every run that is not queued, on the in-memory store and on the space database",
       "source": "A4 3.11.2, A4 3.11.9, A4 5.1, A4 5.2, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.run.machine",
-      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep applying recovery's rule to every open run, a start failure after a Stop and one that arrives after a sweep settled the run lost (failed, or cancelled after a Stop, also after the stop timed out, on the in-memory store and the space database), and the claim window on the monotonic and the wall clock",
+      "id": "A4.5.run.host",
+      "title": "The run host's rules one by one: Stop on a queued run, while the agent runs (an agent that obeys gives its answer, one that ignores it is killed after the grace time), before the agent's PID (recorded, never running) and after the agent exited, a container that refuses to empty (unknown, End by force once it is empty), a start past its time whose late container is ended, a refused start, the idle and wall limits, and the next start after a crash (interrupted with the last saved answer, cancelled after a Stop, unknown while a process refuses to end)",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
@@ -1420,6 +1436,38 @@
       "id": "A4.3.11.8.container.probe",
       "title": "The container probe names why runs cannot be contained (no systemd, no cgroup v2, no user manager, not a service, no Delegate=yes, no cgroup.kill, no tasks-run.exe, another platform), and start refuses there",
       "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.run.stop",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), Stop for a stand-in agent that ignores it, starts children late, or detached a child and a daemon ends the agent and everything it started, counted from the operating system, and the run is cancelled, with the answer an agent gave on the interrupt",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.5.run.answer",
+      "title": "On a real container, a 1 MiB answer that escaping makes far longer, after 50 MB of other output, is kept whole in the run's record and its saved answer, and an answer longer than 1 MiB is cut on a code point and flagged while the run succeeds",
+      "source": "A4 3.11.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.crash",
+      "title": "On a real container, the stand-in service killed by force mid run, and while answers are being saved, leaves nothing of the run alive, and the next start ends the run failed (service_ended) with the last whole saved answer",
+      "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.service",
+      "title": "The service probes its containers at start and says why runs cannot be contained where they cannot, refusing its internal call to start one there; on Windows it hosts a run started through that call to its answer, and a run left open by a stopped service ends at the next start as interrupted with its last saved answer",
+      "source": "A4 3.11.9",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2977,8 +3025,40 @@
     },
     {
       "id": "A2.3.12.8.build.release-script",
-      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder and no terminal",
+      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder, a development version, archives that trust another key and no terminal",
       "source": "A2 3.12.8, A7 2 P9, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-ci-sign",
+      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any event but a manual dispatch, any ref but main, a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment first and appear in no message or child process",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-rehearsal",
+      "title": "A rehearsal signs rehearsal versions only, with a key made for the call, marks its folder and install scripts as a test build, signs only archives that trust the committed release keys, and its archive is refused by the product's updater, by release signing and by publishing",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-version",
+      "title": "A release's version is package.json's at a commit on main, dev and rehearsal versions are never released, a draft is created, resumed or left as it is, and a tag on another commit, other bytes, a draft for another commit or a change to a published release are refused",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-files",
+      "title": "The signing job gathers one archive per released platform, each matching its own build's SHA256SUMS, and a release's files are published only when SHA256SUMS is signed by a pinned key in both formats, every archive passes the updater's own check, and no other file is there",
+      "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]

@@ -1,0 +1,367 @@
+name: release
+
+# A release, made the same way every time: each platform's archive is built once from one commit
+# on main and checked there (the runtime gate, a second build compared byte for byte), the
+# signing job signs exactly those bytes with the release key from the protected `release`
+# environment, fresh machines install the signed files with the release's own install scripts,
+# GitHub attestations are made for every file, and a DRAFT release gets them. Publishing the draft
+# is a separate run (mode `publish`), which downloads the draft and checks every file first.
+#
+# A rehearsal runs the same path without any secret and publishes nothing: the signing key is made
+# in memory in the signing job, the versions are `-rehearsal.<run>.<n>`, the install scripts are
+# test builds, there are no attestations and no release. It also builds the commit it upgrades
+# from (a pull request's base, else the newest release tag before the commit), installs that, and
+# upgrades it to the rehearsal's build. Every pull request that changes the release path runs one.
+#
+# This repository is public: its logs and artifacts are too. Only the `sign` job sees a secret,
+# and only in its signing step.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "rehearsal (no secret, publishes nothing), release (a draft) or publish (the draft of `version`)"
+        type: choice
+        options: [rehearsal, release, publish]
+        default: rehearsal
+      version:
+        description: "publish only: the version whose draft to publish"
+        type: string
+        required: false
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/release/**
+      - scripts/build/**
+      - scripts/install/**
+      - packages/service/src/version/**
+
+permissions: {}
+
+concurrency:
+  # Releases and publishing queue one after another; a pull request's rehearsal gives way to its
+  # next push.
+  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.event.pull_request.number) || (inputs.mode == 'rehearsal' && format('release-rehearsal-{0}', github.run_id) || 'release') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode != 'publish')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+      commit: ${{ steps.plan.outputs.commit }}
+      version: ${{ steps.plan.outputs.version }}
+      previous_commit: ${{ steps.plan.outputs.previous_commit }}
+      previous_version: ${{ steps.plan.outputs.previous_version }}
+      builds: ${{ steps.plan.outputs.builds }}
+    steps:
+      - id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          MODE: ${{ inputs.mode }}
+          REF_NAME: ${{ github.ref }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then mode=rehearsal; else mode="$MODE"; fi
+          if [ "$mode" = release ] && [ "$REF_NAME" != refs/heads/main ]; then
+            echo "A release runs only from main, not $REF_NAME." >&2
+            exit 1
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The plan reads package.json at the commit and at the build it upgrades from, checks
+          # that a release's commit is on main, and that its version has no tag yet.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - id: plan
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          # The commit the run is on: GitHub's attestations name it as the source.
+          REF: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          RUN: ${{ github.run_number }}
+        run: |
+          if [ -n "$BASE" ]; then
+            pnpm release plan --mode "$MODE" --ref "$REF" --base "$BASE" --run "$RUN"
+          else
+            pnpm release plan --mode "$MODE" --ref "$REF" --run "$RUN"
+          fi
+
+  # Each archive is built once, from the commit, by that commit's own `pnpm build`: the runtime
+  # gate runs on its own platform, and the release's build is made a second time and compared byte
+  # for byte. Nothing here holds a secret.
+  build:
+    needs: plan
+    name: build (${{ matrix.which }}, ${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.commit }}
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build ${{ matrix.version }}
+        env:
+          VERSION: ${{ matrix.version }}
+          PLATFORM: ${{ matrix.platform }}
+          REPRODUCIBLE: ${{ matrix.which == 'current' && '--check-reproducible' || '' }}
+        run: pnpm build --platform "$PLATFORM" --version "$VERSION" $REPRODUCIBLE --dist "$RUNNER_TEMP/dist" --work "$RUNNER_TEMP/work"
+        shell: bash
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-${{ matrix.which }}-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/dist/tasks-*-${{ matrix.platform }}.*
+            ${{ runner.temp }}/dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  # A rehearsal's signing: a key made in memory for this step, gone when it ends.
+  rehearse:
+    needs: [plan, build]
+    if: needs.plan.outputs.mode == 'rehearsal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.commit }}
+          # The archives it upgrades from trust the release keys of their own commit.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: unsigned-*
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Sign the rehearsal's builds with a key made for this step
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          PREVIOUS_VERSION: ${{ needs.plan.outputs.previous_version }}
+          PREVIOUS_COMMIT: ${{ needs.plan.outputs.previous_commit }}
+        run: |
+          pnpm release gather --from "$RUNNER_TEMP/unsigned" --prefix unsigned-current- --version "$VERSION" --out "$RUNNER_TEMP/signed/current"
+          pnpm release rehearse --dist "$RUNNER_TEMP/signed/current"
+          if [ -n "$PREVIOUS_VERSION" ]; then
+            pnpm release gather --from "$RUNNER_TEMP/unsigned" --prefix unsigned-previous- --version "$PREVIOUS_VERSION" --out "$RUNNER_TEMP/signed/previous"
+            pnpm release rehearse --dist "$RUNNER_TEMP/signed/previous" --trust-from "$PREVIOUS_COMMIT"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+          if-no-files-found: error
+          retention-days: 7
+
+  # The release's signing, the only job that holds a secret. It runs only for a dispatch from main
+  # in the `release` environment, whose secrets RELEASE_KEY and RELEASE_KEY_PASSPHRASE only this
+  # step sees. It runs the release scripts of the commit it releases (on main, reviewed), with
+  # dependencies from the lockfile and no cache; the workspace runs no dependency's install script
+  # (pnpm-workspace.yaml). sign-ci refuses again by itself anything but this job.
+  sign:
+    needs: [plan, build]
+    if: needs.plan.outputs.mode == 'release' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.commit }}
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: unsigned-current-*
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Gather the checked archives
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: pnpm release gather --from "$RUNNER_TEMP/unsigned" --prefix unsigned-current- --version "$VERSION" --out "$RUNNER_TEMP/signed/current"
+
+      - name: Sign them with the release key
+        env:
+          RELEASE_KEY: ${{ secrets.RELEASE_KEY }}
+          RELEASE_KEY_PASSPHRASE: ${{ secrets.RELEASE_KEY_PASSPHRASE }}
+        run: pnpm release sign-ci --dist "$RUNNER_TEMP/signed/current"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+          if-no-files-found: error
+          retention-days: 7
+
+  # A fresh machine of each platform installs the signed files with the release's own install
+  # script, upgrades the previous build with it (a rehearsal), and has the installed product check
+  # the archive itself. Installs go into the runner's home folder: the install script refuses a
+  # root below a folder that another account may rename.
+  install:
+    needs: [plan, rehearse, sign]
+    if: always() && needs.plan.result == 'success' && (needs.rehearse.result == 'success' || needs.sign.result == 'success')
+    name: install (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, platform: linux-x64 }
+          - { os: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { os: windows-2025, platform: win-x64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.commit }}
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+
+      - name: Install fresh and verify with the installed product
+        if: needs.plan.outputs.previous_version == ''
+        run: pnpm release check-install --dist "${{ runner.temp }}/signed/current" --work "$HOME/tasks-release-check"
+
+      - name: Install fresh, upgrade the previous build, and verify with the installed product
+        if: needs.plan.outputs.previous_version != ''
+        run: pnpm release check-install --dist "${{ runner.temp }}/signed/current" --from "${{ runner.temp }}/signed/previous" --work "$HOME/tasks-release-check"
+
+  # GitHub's build provenance for every file of the release, signed through Sigstore's public
+  # instance. Not for a rehearsal: its files must never carry this repository's attestation.
+  attest:
+    needs: [plan, sign, install]
+    if: always() && needs.plan.outputs.mode == 'release' && needs.sign.result == 'success' && needs.install.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/signed/current/*
+
+  # The draft release with every file. A rerun uploads only what an earlier run did not; a file
+  # GitHub already has must be these bytes, and a published release is never changed.
+  draft:
+    needs: [plan, attest]
+    if: always() && needs.plan.outputs.mode == 'release' && needs.attest.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.commit }}
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+
+      - name: Create or resume the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+        run: pnpm release draft --dist "$RUNNER_TEMP/signed/current" --version "$VERSION" --commit "$COMMIT"
+
+  # Publishing, as its own run: the draft's files downloaded from GitHub and checked as a person's
+  # machine checks them, with the release keys of main, its commit checked against main and the
+  # tag, then the draft published.
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Publishing checks that the draft's commit is on main.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the draft's files and publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: pnpm release publish --version "$VERSION" --work "$RUNNER_TEMP/published"

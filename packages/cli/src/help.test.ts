@@ -109,6 +109,12 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     expect(lines.find((line) => line.startsWith("  --reason"))).toMatch(/ \(required\)$/);
   });
 
+  test("tasks --version prints the version, as tasks version does", async () => {
+    const version = await helpOf(["version"]);
+    expect(version).toMatch(/\d+\.\d+\.\d+/);
+    expect(await helpOf(["--version"])).toBe(version);
+  });
+
   test("the description column of each help lines up", () => {
     for (const command of LOCAL_COMMANDS) {
       const columns = new Set<number>();

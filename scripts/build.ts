@@ -6,7 +6,7 @@
 // build.ts lists the steps. The platform defaults to this machine's; win-x64 builds on Windows only.
 // The version defaults to `<package.json version>-dev.<commits>`, the build label to the commit.
 // `--sign test` signs SHA256SUMS with a throwaway key made for this run (CI); a release is signed
-// by hand by the owner with `pnpm release sign` (scripts/release/). This needs the network: pnpm
+// by the release workflow or by the owner (scripts/release/). This needs the network: pnpm
 // verify never runs it. Its fast parts are tested there (scripts/build/*.test.ts).
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -48,7 +48,7 @@ async function main(argv: readonly string[]): Promise<number> {
   }
   if (values.sign !== undefined && values.sign !== "test") {
     console.error(
-      "--sign takes only `test`. A release is signed by hand by the owner: pnpm release sign.",
+      "--sign takes only `test`. A release is signed by the release workflow, or by the owner with pnpm release sign.",
     );
     return 2;
   }

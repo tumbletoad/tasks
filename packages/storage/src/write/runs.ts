@@ -66,6 +66,8 @@ export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>>
     "not_claimed",
     "verify_failed",
     "spawn_failed",
+    "start_timed_out",
+    "service_ended",
     "agent_error",
     "interrupted",
     "max_turns",
@@ -106,8 +108,11 @@ export const RUN_OUTCOMES = [
 
 export const RUN_APP_TOOLS = ["connected", "not-connected", "absent"] as const;
 
-/** A run's result text and error, each at most this many UTF-8 bytes (A4 3.11.5). */
+/** A run's error, at most this many UTF-8 bytes (A4 3.11.5). */
 export const RUN_TEXT_MAX_BYTES = 8 * 1024;
+
+/** A run's answer (its result's text), at most this many UTF-8 bytes. */
+export const RUN_RESULT_TEXT_MAX_BYTES = 1024 * 1024;
 
 /** The person's instruction for a run, at most this many UTF-8 bytes (a note's size, A1 3.7). */
 export const RUN_REQUEST_MAX_BYTES = 64 * 1024;
@@ -145,6 +150,10 @@ export interface RunResultRow {
   signal: string | null;
   native_id: string | null;
   text: string | null;
+  /** The answer was cut to RUN_RESULT_TEXT_MAX_BYTES. Absent means false. */
+  text_cut?: boolean;
+  /** The agent finished its turn with this answer. Absent means false. */
+  text_final?: boolean;
   error: string | null;
   usage: Record<string, number> | null;
   app_tools: string | null;

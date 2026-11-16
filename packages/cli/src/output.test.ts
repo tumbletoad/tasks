@@ -313,6 +313,7 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
             inbox: false,
             priority: 4,
             due: { at: "2026-11-13T09:30:00.000Z", tz: "Europe/Lisbon" },
+            snippet: "Call the clinic",
           },
           { kind: "deleted", id: "t_7d3n9p1q5s0v2w4x6y8z0a2b4c", ref: "M-22" },
           { kind: "redacted", id: "t_2h6k0m4p8r1t5v9x3z7b1d5f9g", ref: "M-9" },

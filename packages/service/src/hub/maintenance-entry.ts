@@ -31,11 +31,13 @@ try {
   const leftovers = job.cleanup ? removeBackupLeftovers(listing, { now: job.now }).length : 0;
   if (leftovers > 0) listing = listBackups(dir);
   const due = dailyBackupDue(listing, clock, { atStart: job.atStart, spaceId: job.spaceId });
+  let searchIndexDamaged = false;
   if (due) {
-    await backupSpace(checked, job.folder, {
+    const taken = await backupSpace(checked, job.folder, {
       kind: "daily",
       ...(job.backupDir === undefined ? {} : { backupDir: job.backupDir }),
     });
+    searchIndexDamaged = taken.searchIndexRemade === true;
     listing = listBackups(dir);
   }
   // Retention verifies the newest backups in full, so it runs at the start and after a backup only.
@@ -54,6 +56,7 @@ try {
       backup: due ? "taken" : "not_due",
       removed: retention?.removed.length ?? 0,
       unverified: retention?.unverified.length ?? 0,
+      ...(searchIndexDamaged ? { searchIndexDamaged: true as const } : {}),
     },
   });
 } catch (error) {

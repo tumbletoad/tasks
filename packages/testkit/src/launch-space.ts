@@ -56,11 +56,19 @@ export interface WorkerLaunchSpace extends Fixture<SpaceWriterHandle> {
   close(): Promise<void>;
 }
 
-async function created(parent: string): Promise<{
+/** A fixture space on disk, without a writer: another process may open it (openLaunchSpaceAt). */
+export interface LaunchSpaceFolder {
   folder: string;
   spaceId: Id<"sp">;
   credential: Credential;
-}> {
+}
+
+/** Creates a fixture space under `parent` and opens no writer. */
+export function createLaunchSpace(parent: string): Promise<LaunchSpaceFolder> {
+  return created(parent);
+}
+
+async function created(parent: string): Promise<LaunchSpaceFolder> {
   const space = createSpace(await checkedDriver(), join(parent, "mira"), {
     name: "Mira",
     ownerLabel: "Mira Okafor",
@@ -120,7 +128,14 @@ export async function openLaunchSpace(
   parent: string,
   options: { now?: () => number } = {},
 ): Promise<LaunchSpace> {
-  const base = await created(parent);
+  return openLaunchSpaceAt(await created(parent), options);
+}
+
+/** A writer in this thread on a fixture space createLaunchSpace made, maybe in another process. */
+export async function openLaunchSpaceAt(
+  base: LaunchSpaceFolder,
+  options: { now?: () => number } = {},
+): Promise<LaunchSpace> {
   const checked = await checkedDriver();
   let time = Date.UTC(2026, 10, 13, 9, 0, 0);
   const now = options.now ?? (() => (time += 1));

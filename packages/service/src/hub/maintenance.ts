@@ -33,6 +33,8 @@ export interface MaintenanceReport {
   readonly backup: "taken" | "not_due";
   readonly removed: number;
   readonly unverified: number;
+  /** The backup found the space's search index damaged: the space's writer repairs it. */
+  readonly searchIndexDamaged?: true;
 }
 
 export type MaintenanceReply =

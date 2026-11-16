@@ -56,6 +56,11 @@ export interface TerminalLauncherOptions {
   readonly host: (
     session: Readonly<Record<string, string>>,
   ) => TerminalHost | Promise<TerminalHost>;
+  /**
+   * Whether the program a command runs is there, right before its spawn, without blocking the
+   * service (detect.ts fileProbe). Default: the host's answer.
+   */
+  readonly executable?: (path: string) => Promise<boolean>;
   /** `systemd-run`, absolute, or undefined (no user manager, or not Linux). */
   readonly systemdRun: string | undefined;
   /** `true`, absolute, for the scope probe. */
@@ -195,8 +200,11 @@ export class TerminalLauncher {
       const built: BuiltCommand = { ...command, argv, program };
       return built;
     };
-    const ready = (program: string): boolean =>
-      (this.#o.platform === "win32" || posix.isAbsolute(program)) && host.executable(program);
+    const ready = async (program: string): Promise<boolean> =>
+      (this.#o.platform === "win32" || posix.isAbsolute(program)) &&
+      (this.#o.executable === undefined
+        ? host.executable(program)
+        : await this.#o.executable(program));
     const result = await acceptTerminal({
       chain,
       build,

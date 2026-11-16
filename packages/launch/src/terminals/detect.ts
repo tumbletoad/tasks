@@ -22,8 +22,7 @@
 // installed terminals in the auto order. On Windows the console is always last: its starter,
 // Windows PowerShell, is part of every Windows. Once one terminal counts as Dispatched no other is
 // tried (accept.ts), so a longer chain only matters for errors before activation.
-import { lstatSync, realpathSync, statSync } from "node:fs";
-import { open, type FileHandle } from "node:fs/promises";
+import { lstat, open, realpath, stat, type FileHandle } from "node:fs/promises";
 import { basename, posix, win32 } from "node:path";
 import type { TerminalSettings } from "../sections.ts";
 import { linkKindOf, type AdapterApp, type TerminalKind } from "./commands.ts";
@@ -586,9 +585,148 @@ export function desktopReader(
   };
 }
 
+/** How long one look at a program or a link may take before its folder counts as stalled. */
+export const PROBE_MS = 250;
+
+/** Looks at programs and links without blocking the service. */
+export interface FileProbe {
+  /** A file the account may run (Windows: one that exists, an app execution alias included). */
+  executable(path: string): Promise<boolean>;
+  /** A link's final target, or undefined. */
+  realpath(path: string): Promise<string | undefined>;
+}
+
+/** The file system's own answers for `platform`, unbounded. */
+export function osProbeFiles(platform: NodeJS.Platform): FileProbe {
+  return {
+    executable: async (path) => {
+      try {
+        if (platform === "win32") {
+          // An app execution alias is a reparse point that stat cannot follow: lstat finds it.
+          const found = await lstat(path);
+          return found.isFile() || found.isSymbolicLink();
+        }
+        const found = await stat(path);
+        return found.isFile() && (found.mode & 0o111) !== 0;
+      } catch {
+        return false;
+      }
+    },
+    realpath: async (path) => {
+      try {
+        return await realpath(path);
+      } catch {
+        return undefined;
+      }
+    },
+  };
+}
+
 /**
- * The host of this machine: PATH entries and variables as given, the file system for programs and
- * links, and the desktop's files only as `desktop` holds them.
+ * A probe that answers within `ms` per look. A folder on PATH whose look did not answer in time (a
+ * stalled network share) counts as empty until that look ends, so later looks there, by this Open
+ * or the next, cost nothing and hold no more of Node's file threads. A look still under way is
+ * shared, never started twice.
+ */
+export function fileProbe(
+  platform: NodeJS.Platform,
+  files: FileProbe = osProbeFiles(platform),
+  ms: number = PROBE_MS,
+): FileProbe {
+  const folderOf = platform === "win32" ? win32.dirname : posix.dirname;
+  const pending = new Map<string, Promise<unknown>>();
+  const stalled = new Map<string, number>();
+  const look = <T>(key: string, path: string, run: () => Promise<T>, none: T): Promise<T> => {
+    const folder = folderOf(path);
+    if ((stalled.get(folder) ?? 0) > 0) return Promise.resolve(none);
+    let running = pending.get(key) as Promise<T> | undefined;
+    if (running === undefined) {
+      const started = run()
+        .catch(() => none)
+        .finally(() => pending.delete(key));
+      running = started;
+      pending.set(key, started);
+      let late = false;
+      const timer = setTimeout(() => {
+        late = true;
+        stalled.set(folder, (stalled.get(folder) ?? 0) + 1);
+      }, ms);
+      timer.unref();
+      void started.finally(() => {
+        clearTimeout(timer);
+        if (!late) return;
+        const left = (stalled.get(folder) ?? 1) - 1;
+        if (left > 0) stalled.set(folder, left);
+        else stalled.delete(folder);
+      });
+    }
+    const answer = running;
+    return new Promise<T>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(none);
+      }, ms);
+      timer.unref();
+      void answer.then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      });
+    });
+  };
+  return {
+    executable: (path) => look(`x\n${path}`, path, () => files.executable(path), false),
+    realpath: (path) =>
+      look<string | undefined>(`r\n${path}`, path, () => files.realpath(path), undefined),
+  };
+}
+
+/** What a choice found out about programs and links, read before it through a probe. */
+export interface ProgramFacts {
+  readonly executable: ReadonlyMap<string, boolean>;
+  readonly realpath: ReadonlyMap<string, string | undefined>;
+}
+
+/**
+ * Looks at every program and link the choice for `settings` asks about, through `probe`, without
+ * blocking the service: a stalled folder on PATH must not hold up an Open, or anything else the
+ * service does meanwhile. It runs the choice against what was found so far, looks at the first thing
+ * it asked for and did not know, and repeats until it asks for nothing new: the same looks, in the
+ * same order, as a choice that waited for each answer, and then the terminals a person can choose.
+ */
+export async function readProgramFacts(
+  settings: TerminalSettings,
+  host: TerminalHost,
+  probe: FileProbe,
+): Promise<ProgramFacts> {
+  const executable = new Map<string, boolean>();
+  const real = new Map<string, string | undefined>();
+  for (;;) {
+    const ask: { next?: { path: string; kind: "x" | "r" } } = {};
+    const asking: TerminalHost = {
+      ...host,
+      executable: (path) => {
+        if (!executable.has(path)) ask.next ??= { path, kind: "x" };
+        return executable.get(path) ?? false;
+      },
+      realpath: (path) => {
+        if (!real.has(path)) ask.next ??= { path, kind: "r" };
+        return real.get(path);
+      },
+    };
+    terminalChoice(settings, asking);
+    // Then the terminals Settings offers, which a configured choice alone does not look for.
+    if (ask.next === undefined) installedTerminals(settings, asking);
+    const next = ask.next;
+    if (next === undefined) return { executable, realpath: real };
+    // Only the first unknown: what the choice asks after it depends on its answer, so a folder
+    // later on PATH is looked at only when the earlier ones do not have the program.
+    if (next.kind === "x") executable.set(next.path, await probe.executable(next.path));
+    else real.set(next.path, await probe.realpath(next.path));
+  }
+}
+
+/**
+ * The host of this machine: PATH entries and variables as given, and the desktop's files, programs
+ * and links only as `desktop` and `programs` hold them: it reads nothing itself.
  */
 export function osTerminalHost(input: {
   platform: NodeJS.Platform;
@@ -600,31 +738,14 @@ export function osTerminalHost(input: {
   powershell?: string | undefined;
   delegation?: WindowsDelegation | undefined;
   desktop?: DesktopTexts | undefined;
+  programs?: ProgramFacts | undefined;
 }): TerminalHost {
-  const { desktop, ...rest } = input;
+  const { desktop, programs, ...rest } = input;
   return {
     ...rest,
     desktopUnread: desktop?.complete === false,
     readText: (path) => desktop?.texts.get(path),
-    executable: (path) => {
-      try {
-        if (input.platform === "win32") {
-          // An app execution alias is a reparse point that stat cannot follow: lstat finds it.
-          const found = lstatSync(path);
-          return found.isFile() || found.isSymbolicLink();
-        }
-        const found = statSync(path);
-        return found.isFile() && (found.mode & 0o111) !== 0;
-      } catch {
-        return false;
-      }
-    },
-    realpath: (path) => {
-      try {
-        return realpathSync(path);
-      } catch {
-        return undefined;
-      }
-    },
+    executable: (path) => programs?.executable.get(path) ?? false,
+    realpath: (path) => programs?.realpath.get(path),
   };
 }

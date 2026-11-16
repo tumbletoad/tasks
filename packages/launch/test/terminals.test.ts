@@ -1,7 +1,7 @@
 // Terminal command lines, the chain and the acceptance rule of each adapter (A4 3.6.1, 3.6.2, 3.7;
 // A7 3.9 M2.09; SL-09). Pure functions and a recording spawner: no terminal starts.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -16,6 +16,7 @@ import {
   delegationChoice,
   DESKTOP_READ_MS,
   desktopReader,
+  fileProbe,
   installedTerminals,
   linkKindOf,
   listedIds,
@@ -23,6 +24,7 @@ import {
   parseDelegation,
   readDelegation,
   readDesktopTexts,
+  readProgramFacts,
   readSmallText,
   regPath,
   scopeCommand,
@@ -1030,6 +1032,97 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
     const again = await readDesktopTexts(settings(), fixture(osTerminalHost(base)), stalled, 50);
     expect(again.complete).toBe(false);
     expect(calls).toBe(before);
+  });
+
+  test("a stalled folder on PATH cannot hold up Open: its programs count as missing while it hangs", async () => {
+    const input = {
+      platform: "linux",
+      path: ["/stalled/bin", "/usr/bin"],
+      terminalVar: undefined,
+      home: "/home/mira",
+      windowsApps: undefined,
+    } as const;
+    const looked: string[] = [];
+    let release = (): void => undefined;
+    const hung = new Promise<boolean>((resolve) => {
+      release = () => {
+        resolve(false);
+      };
+    });
+    const probe = fileProbe(
+      "linux",
+      {
+        executable: (path) => {
+          looked.push(path);
+          if (path.startsWith("/stalled/")) return hung;
+          return Promise.resolve([GNOME, KITTY].includes(path));
+        },
+        realpath: (path) => Promise.resolve(path),
+      },
+      20,
+    );
+    const programs = await readProgramFacts(settings(), osTerminalHost(input), probe);
+    expect(apps(terminalChain(settings(), osTerminalHost({ ...input, programs })))).toEqual([
+      "kitty",
+      "gnome-terminal",
+    ]);
+    // One look into the stalled folder, by this Open and the next, while it hangs.
+    await readProgramFacts(settings(), osTerminalHost(input), probe);
+    expect(looked.filter((path) => path.startsWith("/stalled/"))).toHaveLength(1);
+    expect(await probe.executable("/stalled/bin/kitty")).toBe(false);
+    // Once it answers, the folder is looked at again.
+    release();
+    await hung;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await probe.executable("/stalled/bin/ghostty");
+    expect(looked).toContain("/stalled/bin/ghostty");
+  });
+
+  test("a folder later on PATH is looked at only when the earlier ones lack the program", async () => {
+    const input = {
+      platform: "linux",
+      path: ["/usr/bin", "/later/bin"],
+      terminalVar: undefined,
+      home: "/home/mira",
+      windowsApps: undefined,
+    } as const;
+    const looked: string[] = [];
+    const probe = fileProbe("linux", {
+      executable: (path) => {
+        looked.push(path);
+        return Promise.resolve(path === KITTY);
+      },
+      realpath: (path) => Promise.resolve(path),
+    });
+    const programs = await readProgramFacts(settings(), osTerminalHost(input), probe);
+    expect(apps(terminalChain(settings(), osTerminalHost({ ...input, programs })))).toEqual([
+      "kitty",
+    ]);
+    expect(looked).not.toContain("/later/bin/kitty");
+    expect(new Set(looked).size).toBe(looked.length);
+    // A terminal set with its fallbacks needs no default, yet Settings still offers every one found.
+    const chosen = settings({ app: "gnome-terminal", fallbacks: ["konsole"] });
+    const found = await readProgramFacts(chosen, osTerminalHost(input), probe);
+    expect(installedTerminals(chosen, osTerminalHost({ ...input, programs: found }))).toEqual([
+      "kitty",
+    ]);
+  });
+
+  test("the probe reads the real file system: a program, a missing one and a link", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tasks-term-probe-"));
+    try {
+      const program = join(root, "program");
+      writeFileSync(program, "", { mode: 0o755 });
+      const probe = fileProbe(process.platform);
+      expect(await probe.executable(program)).toBe(true);
+      expect(await probe.executable(join(root, "missing"))).toBe(false);
+      expect(await probe.executable(root)).toBe(false);
+      expect(await probe.realpath(join(root, "missing"))).toBeUndefined();
+      // The native resolution, as fs.promises.realpath does: it expands Windows' short names.
+      expect(await probe.realpath(program)).toBe(realpathSync.native(program));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -62,7 +62,6 @@ interface FinalResult {
   failed: boolean;
   subtype: string | undefined;
   terminalReason: string | undefined;
-  text: string | null;
 }
 
 class ClaudeReader implements CliReader {
@@ -143,14 +142,9 @@ class ClaudeReader implements CliReader {
     // and the verdict are read from this one decision, so they cannot disagree.
     const failed = isError ?? subtype !== "success";
     const text = string(event["result"]);
+    this.final = { failed, subtype, terminalReason: string(event["terminal_reason"]) };
     // On a failure, `result` holds the error text, not an answer.
-    const answer = failed || text === undefined || text === "" ? null : ctx.cap(text);
-    this.final = {
-      failed,
-      subtype,
-      terminalReason: string(event["terminal_reason"]),
-      text: answer,
-    };
+    if (!failed && text !== undefined) ctx.answer(text, true);
     const errors = array(event["errors"]);
     const firstError = errors?.find((e) => typeof e === "string");
     if (typeof firstError === "string") ctx.error(firstError);
@@ -195,10 +189,6 @@ class ClaudeReader implements CliReader {
     if (f.terminalReason?.startsWith("aborted") === true)
       return { ok: false, reason: "interrupted" };
     return { ok: false, reason: "agent_error" };
-  }
-
-  result(): string | null {
-    return this.final?.text ?? null;
   }
 
   retained(): { keys: number; chars: number } {

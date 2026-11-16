@@ -26,6 +26,7 @@ import {
   desktopReader,
   ExecutionRefused,
   expandUrl,
+  fileProbe,
   findOnPosixPath,
   folderKeyOf,
   FolderRecords,
@@ -44,6 +45,7 @@ import {
   presetSession,
   readDelegation,
   readDesktopTexts,
+  readProgramFacts,
   ReferenceMatch,
   REFUSED,
   regPath,
@@ -368,6 +370,7 @@ export class LaunchService {
           env: helperEnv(options.env),
         }));
     const readDesktop = desktopReader();
+    const probe = fileProbe(options.platform);
     this.terminals = new TerminalLauncher({
       platform: options.platform,
       settings: options.terminalSettings ?? DEFAULT_TERMINAL,
@@ -394,24 +397,33 @@ export class LaunchService {
           home,
           windowsApps: windowsAppsOf(options.env),
         };
-        if (options.platform === "win32") {
-          return osTerminalHost({
-            ...input,
-            powershell: powershellPath(options.env),
-            // Read at each launch that needs it: the person may change it at any time.
-            delegation: needsDefault(this.terminals.settings)
-              ? await delegation().catch(() => undefined)
-              : undefined,
-          });
-        }
-        const desktop = await readDesktopTexts(
+        const known =
+          options.platform === "win32"
+            ? {
+                ...input,
+                powershell: powershellPath(options.env),
+                // Read at each launch that needs it: the person may change it at any time.
+                delegation: needsDefault(this.terminals.settings)
+                  ? await delegation().catch(() => undefined)
+                  : undefined,
+              }
+            : {
+                ...input,
+                desktop: await readDesktopTexts(
+                  this.terminals.settings,
+                  osTerminalHost(input),
+                  readDesktop,
+                  DESKTOP_READ_MS,
+                ),
+              };
+        const programs = await readProgramFacts(
           this.terminals.settings,
-          osTerminalHost(input),
-          readDesktop,
-          DESKTOP_READ_MS,
+          osTerminalHost(known),
+          probe,
         );
-        return osTerminalHost({ ...input, desktop });
+        return osTerminalHost({ ...known, programs });
       },
+      ...(seams.host === undefined ? { executable: (path: string) => probe.executable(path) } : {}),
       systemdRun,
       ...(seams.trueProgram === undefined
         ? options.platform === "linux"
