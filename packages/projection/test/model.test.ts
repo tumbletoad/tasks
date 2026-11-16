@@ -1094,6 +1094,9 @@ async function run(actions: readonly Action[]): Promise<void> {
   }
 }
 
+/** Fresh random runs after the fixed seed's. */
+const RUNS = Number(process.env["PROJECTION_MODEL_RUNS"] ?? "20");
+
 const quietRun = {
   kind: "run",
   steps: 1,
@@ -1141,28 +1144,32 @@ const COUNTEREXAMPLES: [Action[]][] = [
 ];
 
 describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at every act and faults in what the projection writes outside the tree, against the projection's invariants", () => {
-  test("no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told", async () => {
-    const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
-    // A counterexample replays alone: PROJECTION_MODEL_SEED and PROJECTION_MODEL_PATH from its report.
-    const replay = process.env["PROJECTION_MODEL_SEED"];
-    if (replay !== undefined) {
-      const path = process.env["PROJECTION_MODEL_PATH"];
-      await fc.assert(property, {
-        seed: Number(replay),
-        numRuns: Number(process.env["PROJECTION_MODEL_RUNS"] ?? "20"),
-        ...(path === undefined ? {} : { path, endOnFailure: true }),
-        verbose: 2,
-      });
-      return;
-    }
-    // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
-    await fc.assert(property, { numRuns: 80, seed: 20261114, examples: COUNTEREXAMPLES });
-    for (const [what, least] of Object.entries(LEAST)) {
-      expect(seen[what as keyof typeof seen], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(
-        least,
-      );
-    }
-    // More for a soak run: PROJECTION_MODEL_RUNS=500.
-    await fc.assert(property, { numRuns: Number(process.env["PROJECTION_MODEL_RUNS"] ?? "20") });
-  }, 600_000);
+  test(
+    "no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told",
+    async () => {
+      const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
+      // A counterexample replays alone: PROJECTION_MODEL_SEED and PROJECTION_MODEL_PATH from its report.
+      const replay = process.env["PROJECTION_MODEL_SEED"];
+      if (replay !== undefined) {
+        const path = process.env["PROJECTION_MODEL_PATH"];
+        await fc.assert(property, {
+          seed: Number(replay),
+          numRuns: RUNS,
+          ...(path === undefined ? {} : { path, endOnFailure: true }),
+          verbose: fc.VerbosityLevel.VeryVerbose,
+        });
+        return;
+      }
+      // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
+      await fc.assert(property, { numRuns: 80, seed: 20261114, examples: COUNTEREXAMPLES });
+      for (const [what, least] of Object.entries(LEAST)) {
+        expect(seen[what as keyof typeof seen], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(
+          least,
+        );
+      }
+      // More for a soak run: PROJECTION_MODEL_RUNS=2000.
+      await fc.assert(property, { numRuns: RUNS });
+    },
+    600_000 + RUNS * 2_000,
+  );
 });
