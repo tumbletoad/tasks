@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 70 of 110, and M2.04b and M4.05b outside the base count.
+**Done so far:** 73 of 110, and M2.04b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 11 · total 110. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -20,7 +20,7 @@ One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14).
 | `blocked` | Waiting on a gate, a real-machine session or a decision. The row says which. |
 | `conditional` | Applies only when an M0 measurement calls for it. Not in the base count. |
 
-**Sizes.** `S` is one focused session, `M` one long session. `RM` marks a step that ends with a check on a real machine. A step that turns out larger than its size is split before work starts, and the split is recorded here (A7 3.4).
+**Sizes.** `S` is one focused session, `M` one long session. `RM` marks a step that ends with a check on a real machine. A step that turns out larger than its size is split before work starts, and the split is recorded here.
 
 **Taking a step.** Pick a `ready` row, set it to `doing` in your branch and name the step in your pull request. "Needs" names the code a step builds on, not a milestone: a step can start on top of an unmerged branch it needs. Rows keep their IDs: never renumber or reuse one.
 
@@ -162,8 +162,8 @@ M4.05b and M4.01b are not in the base count.
 | M5.07 | Composer and action strip | M5.06 | S | ready |
 | M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | done |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
-| M5.10 | Quick capture and search | M5.03, M3.05 | S | doing |
-| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | ready |
+| M5.10 | Quick capture and search | M5.03, M3.05 | S | done |
+| M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | doing |
 | M5.12 | First-run setup | M5.11, M4.05 | S | todo |
 | M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
 | M5.14 | Add project and folders in the page | M4.09, M6.16, M5.06 | M | todo |
@@ -173,9 +173,9 @@ M4.05b and M4.01b are not in the base count.
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
 | M6.01 | Run records and states | M2.05 | M | done |
-| M6.02 | Supervisor and limits | M6.01 | M | ready |
-| M6.03 | Run shim | M6.01, M2.08 | M | doing |
-| M6.04 | Cancellation | M6.03 | M | doing |
+| M6.02 | Supervisor and limits | M6.01 | M | doing |
+| M6.03 | Run shim | M6.01, M2.08 | M | done |
+| M6.04 | Cancellation | M6.03 | M | done |
 | M6.05 | Stream parsers | M0.11 | S | done |
 | M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | todo |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
