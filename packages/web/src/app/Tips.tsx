@@ -1,7 +1,8 @@
 // The page's one tooltip: the small label an element carries in `data-tip`, shown beside it after a
 // short rest of the mouse, and at once when the keyboard brings focus to it. It is never the only
-// way to learn what a control does: the element's accessible name or description says the same,
-// so the label itself is hidden from assistive technology. Escape closes it (WCAG 1.4.13): a label
+// way to learn what a control does: the element's accessible name, or its `aria-description` when
+// the label says more than the name, carries the same words, so the label itself is hidden from
+// assistive technology. Escape closes it (WCAG 1.4.13): a label
 // the mouse brought, and nothing else; a label of the focused control goes with what Escape closes
 // there, so one press still closes the task or the editor. The pointer may move onto a label, and
 // it stays while the pointer is on either.

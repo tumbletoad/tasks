@@ -117,7 +117,14 @@ function SourceLine({
     link === undefined ? (
       <span dir="auto">{own}</span>
     ) : (
-      <a href={link.href} target="_blank" rel={LINK_REL} data-tip={tip} dir="auto">
+      <a
+        href={link.href}
+        target="_blank"
+        rel={LINK_REL}
+        data-tip={tip}
+        aria-description={tip}
+        dir="auto"
+      >
         {own}
       </a>
     );
@@ -333,6 +340,7 @@ function Strip({ task, receipts, instances, actions }: ExpandedProps) {
         type="button"
         className={styles.button}
         aria-label={t("row.copyFor", { title: task.title })}
+        aria-description={t("row.copyTip")}
         data-tip={t("row.copyTip")}
         onClick={(event) => {
           actions.copy(task, event.shiftKey);
