@@ -16,7 +16,9 @@ import { PRODUCT_NAME } from "@tasks/brand";
 import { hostFacts } from "@tasks/service/paths";
 import type { UpdateResult } from "@tasks/service/version-update";
 import type { Globals } from "./args.ts";
+import { readServiceRecord, stateDir } from "./connect.ts";
 import type { Io } from "./io.ts";
+import { migrationLines } from "./migrations.ts";
 import { printUsage } from "./output.ts";
 
 export const UPDATE_USAGE =
@@ -129,6 +131,7 @@ export async function updateCommand(
     },
     runs: { decide },
   };
+  const began = Date.now();
   let result: UpdateResult;
   try {
     result =
@@ -141,13 +144,20 @@ export async function updateCommand(
     if (error instanceof update.UpdateError) return fail(error.message, error.exitCode);
     throw error;
   }
+  // A restarted service opens the spaces again and migrates those at an older schema: what it did,
+  // and the backup from just before, so a person who misses something knows where to go back to.
   if (globals.json) {
     io.stdout(`${JSON.stringify({ ok: true, ...summary(result) })}\n`);
     return 0;
   }
+  const migrations =
+    result.outcome === "updated" && readServiceRecord(stateDir(io)) !== undefined
+      ? await migrationLines(io, {}, began)
+      : [];
   switch (result.outcome) {
     case "updated":
       io.stdout(`${PRODUCT_NAME} ${result.to} is current (was ${result.from}).\n`);
+      for (const line of migrations) io.stdout(`${line}\n`);
       break;
     case "current":
       break;

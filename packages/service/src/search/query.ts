@@ -5,7 +5,8 @@
 // - Words are ANDed. `OR` (upper case, alone) joins its two neighbours. A leading `-` negates. A
 //   quote starts a phrase, which runs to the next quote (`""` inside is one quote) or to the end.
 // - `key:value` and `key<value` (also `<=`, `>`, `>=`) are filters. A key is letters only, so
-//   `10:30` stays a word; an unknown key fails with a suggestion. A value may be quoted.
+//   `10:30` stays a word; an unknown key fails with a suggestion. A value may be quoted. A known
+//   key with `=` (`p=3`) is read as `p:3`.
 // - OR joins words with words or filters with filters, and never a negated term.
 // - At most 500 characters and 20 terms.
 //
@@ -267,7 +268,7 @@ function checkValue(key: Key, op: Op, value: string): void {
 // Parsing
 
 const SPACE = /\s/u;
-const FILTER = /^([A-Za-z]+)(<=|>=|:|<|>)/;
+const FILTER = /^([A-Za-z]+)(<=|>=|:|<|>|=)/;
 
 /** A quoted string from the quote at `at`: its text and the index after its closing quote. */
 function readQuoted(text: string, at: number): [string, number] {
@@ -314,10 +315,12 @@ function tokens(text: string): Token[] {
     while (end < text.length && !SPACE.test(text[end] ?? "")) end += 1;
     const word = text.slice(i, end);
     const filter = FILTER.exec(word);
-    if (filter !== null) {
-      const key = lower(filter[1] ?? "");
-      const op = filter[2] as Op;
-      if (!(KEYS as readonly string[]).includes(key)) {
+    const key = lower(filter?.[1] ?? "");
+    const known = (KEYS as readonly string[]).includes(key);
+    // `p=3` is how many other tools write `p:3`. Behind any other word `=` is text, as in `x=1`.
+    if (filter !== null && (filter[2] !== "=" || known)) {
+      const op = (filter[2] === "=" ? ":" : filter[2]) as Op;
+      if (!known) {
         const found = suggest(key, KEYS, KEY_ALIASES);
         throw queryProblem("The query has an unknown key", didYouMean(found), found);
       }

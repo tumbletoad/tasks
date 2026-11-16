@@ -524,6 +524,26 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(next.rows[0]).not.toHaveProperty("snippet_from");
   });
 
+  test("a snippet shows where the task's own text matched, never its title again", async () => {
+    const [bare = "", summed = ""] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Onlytitleword bare" },
+        { kind: "task.create", title: "Onlytitleword summed", summary: "Summary words." },
+      ]),
+    );
+    // The note's document holds the task's title too; its body does not match.
+    submit(fx, [{ kind: "note.add", task: bare, body: "Unrelated note text." }]);
+    const rows = (await search({ q: "onlytitleword", limit: 50 })).rows;
+    const row = (id: string) => rows.find((r) => r["id"] === id);
+    expect(row(bare)).not.toHaveProperty("snippet");
+    expect(row(summed)).toMatchObject({ snippet: "Summary words." });
+    expect(row(summed)).not.toHaveProperty("snippet_from");
+    // A match in the body shows that part, without any mark of the match.
+    submit(fx, [{ kind: "note.add", task: bare, body: "Before bodyhitword after." }]);
+    const hit = (await search({ q: "bodyhitword" })).rows.find((r) => r["id"] === bare);
+    expect(hit).toMatchObject({ snippet: "Before bodyhitword after.", snippet_from: "note" });
+  });
+
   test("titles are cut at 90 characters and snippets at 100", async () => {
     const long = `Cutword ${"x".repeat(120)}`;
     const [task] = created(

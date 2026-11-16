@@ -62,6 +62,17 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(parseQuery("").groups).toEqual([]);
   });
 
+  test("a known key written with = is its filter, and = behind any other word is text", () => {
+    const q = parseQuery("p=3 -status=open x=1");
+    expect(q.groups.flat()).toEqual([
+      { type: "filter", key: "p", op: ":", value: "3", negated: false },
+      { type: "filter", key: "status", op: ":", value: "open", negated: true },
+      { type: "text", text: "x=1", phrase: false, negated: false },
+    ]);
+    expect(printQuery(q)).toBe("p:3 -status:open x=1");
+    expect(refusal(() => parseQuery("p=9")).hint).toBe("Use p:1 or p<=2.");
+  });
+
   test("an unknown key fails with a suggestion and never quotes the query", () => {
     const error = refusal(() => parseQuery("prio:1 secret-word"));
     expect(error.code).toBe("invalid_input");

@@ -75,7 +75,7 @@ run ${CLI_NAME} service start.
 
 const VERSION_HELP = `Usage: ${CLI_NAME} version
 
-Prints this command's version and build.
+Prints this command's version and build. ${CLI_NAME} --version does the same.
 `;
 
 const MCP_HELP = `Usage: ${CLI_NAME} mcp [--space <space-id>] [--instance <id>] [--app <name>]

@@ -16,11 +16,15 @@ import {
   storedDocuments,
   type SearchDocument,
 } from "../src/search/documents.ts";
+import { repairSearchIndex, searchIndexSound } from "../src/search/remake.ts";
 import { hasSearchTables } from "../src/search/tables.ts";
 import { openSpace } from "../src/space.ts";
+import { StorageWorker } from "../src/worker/client.ts";
+import { SCHEMA_STEPS } from "../migrations/index.ts";
 import { rawWriter, writeCommits } from "./backup-helpers.ts";
 import { STEPS_0_3 } from "./revisions.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
+import { MACHINE } from "./write-helpers.ts";
 
 const folders = tempFolders("search-restore");
 
@@ -226,5 +230,64 @@ describe("[A1.5.restore.search-derived] a restore makes the search index again f
         conn.prepare("SELECT count(*) AS n FROM search_docs WHERE entity_id = 't_stray'").get(),
       ).toEqual({ n: 0 });
     });
+  });
+});
+
+/** Damages the closed space's search index as a failing disk or another program could. */
+function damageIndex(folder: string): void {
+  const conn = new DatabaseSync(join(folder, DATABASE_FILE), { defensive: false });
+  try {
+    conn.exec("DELETE FROM search_fts_content WHERE id = (SELECT min(id) FROM search_fts_content)");
+  } finally {
+    conn.close();
+  }
+}
+
+describe("[A1.5.search.repair] a damaged search index is made again and never costs a backup", () => {
+  test("a space whose index alone is damaged still backs up, and the backup restores whole", async () => {
+    const checked = await checkedDriver();
+    const folder = await indexedSpace("broken");
+    damageIndex(folder);
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    expect(backup.searchIndexRemade).toBe(true);
+    await expectRestoresWithIndex(folder, backup, "broken2");
+  });
+
+  test("a writer's open repairs the index, and a sound one is left as it is", async () => {
+    const folder = await indexedSpace("heal");
+    damageIndex(folder);
+    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    try {
+      const writer = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      expect(writer.searchIndex).toBe("remade");
+      expect(await writer.repairSearchIndex()).toBe("sound");
+      await writer.close();
+      const again = await worker.openSpaceWriter(folder, { machine: MACHINE });
+      expect(again.searchIndex).toBeUndefined();
+      await again.close();
+    } finally {
+      await worker.close();
+    }
+    await read(folder, (conn) => {
+      expectIndexOfTasks(conn);
+      expect(matching(conn, "heal1")).toEqual(titled(conn, "heal1"));
+    });
+  });
+
+  test("a text that no document names counts as damage, and the repair removes it", async () => {
+    const checked = await checkedDriver();
+    const folder = await indexedSpace("live");
+    const conn = await rawWriter(folder);
+    try {
+      expect(repairSearchIndex(checked, conn, SCHEMA_STEPS)).toBe("sound");
+      conn.exec(
+        "INSERT INTO search_fts (rowid, title, body, extra) VALUES (900002, 'x', 'y', 'z')",
+      );
+      expect(searchIndexSound(conn)).toBe(false);
+      expect(repairSearchIndex(checked, conn, SCHEMA_STEPS)).toBe("remade");
+      expectIndexOfTasks(conn);
+    } finally {
+      conn.close();
+    }
   });
 });

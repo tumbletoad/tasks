@@ -1,4 +1,4 @@
-// Every wait in the hub has a bound (A2 3.3.1, 3.4).
+// Every wait in the hub has a bound, but the wait for a migration (spaces.ts).
 
 export class Timeout extends Error {
   override readonly name = "Timeout";

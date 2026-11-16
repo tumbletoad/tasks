@@ -91,7 +91,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
     throw error;
   }
   const { globals, rest } = split;
-  const [command, ...args] = rest;
+  const [typed, ...args] = rest;
+  // `--version` is how every command-line program is asked for its version.
+  const command = typed === "--version" ? "version" : typed;
   try {
     if (command === undefined) {
       io.stdout(`${serviceLine(io)}\n\n${shortHelp()}`);
