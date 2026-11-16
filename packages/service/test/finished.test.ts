@@ -277,4 +277,56 @@ describe("[A5.3.5.service.finished] the read of finished tasks behind Completed"
       finished_at: Date.UTC(2026, 10, 28, 9),
     });
   });
+
+  test("a row says how the task ended: its outcome's first line, or why it was dropped", async () => {
+    const [shipped, heading, long, again, why, droppedWrapped, plain] = Array.from(
+      { length: 7 },
+      () => newId("t"),
+    ) as [Id<"t">, Id<"t">, Id<"t">, Id<"t">, Id<"t">, Id<"t">, Id<"t">];
+    const ids = [shipped, heading, long, again, why, droppedWrapped, plain];
+    const create = (id: Id<"t">, i: number): Operation => ({
+      kind: "task.create",
+      id,
+      title: `Fixture ending ${String(i)}`,
+      summary: `Fixture summary ${String(i)}`,
+      area: fx.areas.home,
+    });
+    const at = Date.UTC(2026, 10, 29, 9);
+    submit(
+      [
+        ...ids.map(create),
+        {
+          kind: "task.complete",
+          task: shipped,
+          outcome: "Shipped the fix.\nEvidence: the nightly report balances.",
+        },
+        { kind: "task.complete", task: heading, outcome: "\n\n## Moved to the new host  \nDone." },
+        { kind: "task.complete", task: long, outcome: "x".repeat(4_000) },
+        { kind: "task.complete", task: again, outcome: "An earlier result." },
+        { kind: "task.archive", task: why, reason: "Not needed after all." },
+        { kind: "task.archive", task: droppedWrapped },
+        { kind: "task.wrap_up", task: droppedWrapped, outcome: "Superseded by the new plan." },
+        { kind: "task.archive", task: plain },
+      ],
+      at,
+    );
+    // Reopened and checked off again: the earlier outcome is the previous result, not this ending.
+    submit([{ kind: "task.reopen", task: again }], at + 1);
+    submit([{ kind: "task.complete", task: again }], at + 2);
+
+    const rows = await all({ limit: 200 });
+    const of = (id: string | undefined) => rows.find((r) => r.id === id);
+    expect(of(shipped)?.ending).toBe("Shipped the fix.");
+    expect(of(heading)?.ending).toBe("Moved to the new host");
+    const cut = of(long)?.ending ?? "";
+    expect(cut.length).toBeLessThanOrEqual(300);
+    expect(cut.endsWith("…")).toBe(true);
+    expect(of(again)).toMatchObject({ wrap_state: "pending", summary: "Fixture summary 3" });
+    expect(of(again)).not.toHaveProperty("ending");
+    expect(of(why)?.ending).toBe("Not needed after all.");
+    expect(of(droppedWrapped)?.ending).toBe("Superseded by the new plan.");
+    expect(of(plain)).not.toHaveProperty("ending");
+    expect(of(plain)?.summary).toBe("Fixture summary 6");
+    for (const id of ids) expect(FinishedRow.safeParse(of(id)).success).toBe(true);
+  });
 });

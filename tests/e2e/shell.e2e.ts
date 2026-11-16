@@ -4,8 +4,8 @@
 // Verify line: No style is blocked under the strict CSP. Switching space in one tab leaves another
 // tab on its space, and a new tab opens the default space. (The contrast and the lint are unit
 // tests: packages/web/src/theme/contrast.test.ts, scripts/lint-rules.test.ts.)
-import { expect, type Page } from "@playwright/test";
-import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import { expect, type Page, type WebSocketRoute } from "@playwright/test";
+import { APP_NAME, CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -460,5 +460,57 @@ test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so ca
     await expect(note).toContainText(`${world.mira.name}: the daily backup failed`);
     await expect(note).toContainText(`${CLI_NAME} space backup`);
     await page.screenshot({ path: test.info().outputPath("switcher-backup-note.png") });
+  });
+});
+
+test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart into it", () => {
+  test("the page names the installed version and the restart; after the restart it offers a reload and does not call the service down", async ({
+    page,
+    world,
+  }) => {
+    // The service's hello names an installed version newer than its own, as one whose install
+    // put another version in place says it.
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/v1\/ws/, (ws) => {
+      const server = ws.connectToServer();
+      sockets.push(ws);
+      server.onMessage((message) => {
+        const parsed = JSON.parse(String(message)) as Record<string, unknown>;
+        ws.send(
+          parsed["type"] === "hello" ? JSON.stringify({ ...parsed, installed: "99.0.0" }) : message,
+        );
+      });
+    });
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
+    const row = page.locator(`li[data-task="${world.task.ref}"]`);
+    await expect(row).toBeVisible();
+    const installed = page.locator('[data-part="installed"]');
+    await expect(installed).toContainText(`${APP_NAME} 99.0.0 is installed.`);
+    await expect(installed).toContainText(`${CLI_NAME} service restart`);
+    await page.screenshot({ path: test.info().outputPath("installed-newer.png") });
+
+    // The service restarts into another build: the page's feed closes, and the service refuses
+    // the page's build when it asks to come back.
+    await page.route("**/api/v1/ws-ticket", (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "service_unavailable",
+            message: `${PRODUCT_NAME} was updated. Reload the page.`,
+            data: { reason: "build" },
+          },
+        }),
+      }),
+    );
+    await sockets.at(-1)?.close({ code: 1001 });
+    await expect(page.getByText(`${APP_NAME} was updated.`)).toBeVisible({ timeout: SLOW_MS });
+    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+    await expect(page.getByText(`${APP_NAME}'s service is not running`)).toHaveCount(0);
+    await expect(installed).toHaveCount(0);
+    // The rows it had stay on screen until the person reloads.
+    await expect(row).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("installed-restarted.png") });
   });
 });

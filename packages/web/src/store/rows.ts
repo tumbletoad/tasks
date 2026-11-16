@@ -42,6 +42,11 @@ export interface TaskRow {
    * age. Absent until the service's compact row carries it.
    */
   readonly waiting_since?: number;
+  /**
+   * How a finished task ended, one line: why it was dropped, or its outcome once wrapped up. Only
+   * the read of finished tasks gives it; the feed's rows never carry it, so a feed row leaves it.
+   */
+  readonly ending?: string;
   readonly deleted_at?: number;
   readonly created_at: number;
   readonly version: number;
@@ -209,9 +214,24 @@ export interface ErrorMessage {
 export interface HelloMessage {
   readonly type: "hello";
   readonly build: string;
+  /** The service's version. */
+  readonly version: string | undefined;
+  /** The installed version, when the service runs another one. */
+  readonly installed: string | undefined;
 }
 
-export type FeedMessage = SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage;
+/** The install's version changed while the service runs: undefined when it is the service's again. */
+export interface InstalledMessage {
+  readonly type: "installed";
+  readonly version: string | undefined;
+}
+
+export type FeedMessage =
+  SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage | InstalledMessage;
+
+const VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
+const versionOf = (value: unknown): string | undefined =>
+  isString(value) && VERSION.test(value) ? value : undefined;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -262,6 +282,7 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["touched"], isNumber) ||
     !optional(v["waiting_since"], isNumber) ||
     !optional(v["finished_at"], isNumber) ||
+    !optional(v["ending"], isString) ||
     !optional(v["sources"], isSources) ||
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace)
@@ -410,7 +431,14 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
   if (!isRecord(value)) return undefined;
   switch (value["type"]) {
     case "hello":
-      return { type: "hello", build: isString(value["build"]) ? value["build"] : "" };
+      return {
+        type: "hello",
+        build: isString(value["build"]) ? value["build"] : "",
+        version: versionOf(value["version"]),
+        installed: versionOf(value["installed"]),
+      };
+    case "installed":
+      return { type: "installed", version: versionOf(value["version"]) };
     case "error":
       return { type: "error", code: isString(value["code"]) ? value["code"] : "" };
     case "snapshot": {

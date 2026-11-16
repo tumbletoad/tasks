@@ -1,8 +1,9 @@
 // A task's compact row: the form the change feed carries and the page's lists draw (A5 3.6,
 // 3.15), and the read of finished tasks behind the page's Completed view, which gives the same
-// rows. A column that is null in the space is left out. No body of a note or log entry, no
-// context, outcome or other long text is in it: only what a row shows of the task's children,
-// its first three sources and its place's state on the machine that serves it.
+// rows and one line of how each task ended. A column that is null in the space is left out. No
+// body of a note or log entry, no context, outcome or other long text is in it: only what a row
+// shows of the task's children, its first three sources and its place's state on the machine
+// that serves it.
 import type { Row, WorkerConnection } from "@tasks/storage";
 import type { Root } from "@tasks/launch";
 import { placeState } from "./here.ts";
@@ -56,10 +57,11 @@ export const TASK_COLUMNS =
   "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
   "t.created_at, t.version, t.touched, " +
   `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT} END AS finished_at, ` +
-  // When a waiting task's wait began (the Waiting view's age): the commit that last changed its
-  // status, or its creation. A new person waited on is the same wait.
+  // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
+  // holds (its provenance, which an undo sets back), or its creation. Not the last write (`fv`):
+  // an undo that brings a wait back would restart its age. A new person waited on is the same wait.
   "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
-  "json_extract(t.fv, '$.status')), t.created_at) END AS waiting_since, " +
+  "json_extract(t.fp, '$.status') AND c.seq <> t.created_seq), t.created_at) END AS waiting_since, " +
   // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
   // and `place` by `taskRows`. A `$machine` of null (no machine given) matches no place.
   "(SELECT json_group_array(json_object('p', x.position, 'kind', x.kind, 'title', x.title, " +
@@ -184,6 +186,7 @@ export async function taskRows(
         x_source_count: count,
         x_place_here: placeHere,
         x_place_elsewhere: elsewhere,
+        x_ending: ending,
         ref,
         ...own
       } = row;
@@ -195,6 +198,8 @@ export async function taskRows(
       if (shown.length > 0) out["sources"] = shown;
       const more = Number(count ?? 0) - shown.length;
       if (more > 0) out["sources_more"] = more;
+      const ended = endingOf(ending);
+      if (ended !== undefined) out["ending"] = ended;
       const place = parsed(placeHere);
       if (here !== undefined && isPlain(place)) {
         out["place"] = { state: await resolve(place as unknown as HerePlace) };
@@ -220,6 +225,41 @@ export interface FinishedRequest {
 const CHECKED_OFF = "(t.lifecycle = 'completed' AND t.wrap_state IS 'pending')";
 
 /**
+ * The text a finished task's row says it ended with: why it was dropped, else its outcome once it
+ * is wrapped up. A reopen keeps the outcome as the previous result and clears the wrap state, so an
+ * outcome without one is an earlier finish's, not this one's. Only its start is read: a row shows
+ * one line of it.
+ */
+const ENDING =
+  "substr(CASE WHEN t.lifecycle = 'archived' AND trim(t.archived_reason) <> '' THEN " +
+  "t.archived_reason WHEN t.wrap_state = 'wrapped' THEN t.outcome END, 1, 2000)";
+
+/** The most UTF-16 code units of an ending a row carries, its ellipsis included. */
+export const ENDING_MAX = 300;
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * The ending's first line with text, without a Markdown heading, list or quote mark, cut to
+ * `ENDING_MAX` with an ellipsis between two characters, never inside one.
+ */
+export function endingOf(text: unknown): string | undefined {
+  if (typeof text !== "string") return undefined;
+  for (const raw of text.split(/\r?\n/u)) {
+    const line = raw.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|>\s*)?/u, "").trim();
+    if (line === "") continue;
+    if (line.length <= ENDING_MAX) return line;
+    let cut = "";
+    for (const { segment } of graphemes.segment(line)) {
+      if (cut.length + segment.length > ENDING_MAX - 1) break;
+      cut += segment;
+    }
+    return `${cut.trimEnd()}…`;
+  }
+  return undefined;
+}
+
+/**
  * Finished tasks newest first, from a key. The page's keys are chosen first and the rows built
  * only for them: a row's sources and place cost a read each, and a space finishes tasks for years.
  */
@@ -229,8 +269,8 @@ function finishedSql(request: FinishedRequest): string {
   if (request.checkedOff === false) where.push(`NOT ${CHECKED_OFF}`);
   const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
   return (
-    `SELECT ${TASK_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT t.id AS id, ${FINISHED_AT} ` +
-    `AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
+    `SELECT ${TASK_COLUMNS}, ${ENDING} AS x_ending FROM (SELECT k.id, k.at FROM (SELECT ` +
+    `t.id AS id, ${FINISHED_AT} AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
     "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
   );
 }

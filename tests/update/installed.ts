@@ -405,6 +405,13 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
 
   const other = (version: string): string => (version === versions[0] ? versions[1] : versions[0]);
 
+  /** Installs `version` over this install with its own install script, as a person upgrades. */
+  const install = (version: string) => {
+    const release = releases[version];
+    if (release === undefined) throw new Error(`no release ${version}`);
+    return runInstaller(release, { env: { [HOME_VAR]: root }, within: work });
+  };
+
   /** Stops the service and every process this install's tests started, then removes the folder. */
   const close = async (): Promise<void> => {
     let failure: Error | undefined;
@@ -453,6 +460,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
     runChild,
     expectComplete,
     other,
+    install,
     close,
   };
 }

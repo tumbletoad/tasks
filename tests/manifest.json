@@ -1353,7 +1353,7 @@
     },
     {
       "id": "A2.3.3.5.service-install.commands",
-      "title": "tasks service install, uninstall, start, stop and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, and status with the entry, Startup apps, systemd and linger state and the service's answer",
+      "title": "tasks service install, uninstall, start, stop, restart and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, restart as stop then start naming the version that runs, and status with the entry, Startup apps, systemd and linger state, the service's answer and an installed version it does not run",
       "source": "A2 3.3.2, A2 3.3.3, A2 3.3.5, A2 3.5, A2 3.10.3, A7 3.8 M1.12",
       "owner": "M1",
       "kind": "ci",
@@ -2959,6 +2959,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.5.service.waiting-undo",
+      "title": "A wait an undo brings back keeps the day it began: a task waiting since Monday, taken out of waiting on Wednesday and the change undone on Thursday still shows Monday, and a task made waiting still shows its creation",
+      "source": "A5 3.5, A5 3.6, A1 3.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.9.cli.open",
       "title": "tasks open against a real service: a code minted over the socket, the listener proved by its HMAC probe before the port is trusted, the code only in the URL fragment and redeemable once, --space and --task as the route, --print-url with its warning, an agent shell told to ask the user, A2 message and exit 6 when another user holds the port, the moved line, tasks service port with --reuse for the person only",
       "source": "A2 3.8.2, A2 3.8.4, A2 3.9, A7 3.9 M2.12",
@@ -3488,7 +3496,7 @@
     },
     {
       "id": "A5.3.5.service.finished",
-      "title": "The read of finished tasks against a real space: 2,500 tasks finished in one month all reachable once, newest first by finish time then ID, the checked-off list and the rest apart and together, the feed's compact row with the area's ID, version and creation time, a dropped task at the time it was dropped, a deleted one left out, a task finished or reopened between pages neither repeating nor skipping a row, a foreign cursor refused, and the feed's row of a finished task carrying its finish time",
+      "title": "The read of finished tasks against a real space: 2,500 tasks finished in one month all reachable once, newest first by finish time then ID, the checked-off list and the rest apart and together, the feed's compact row with the area's ID, version and creation time, a dropped task at the time it was dropped, a deleted one left out, a task finished or reopened between pages neither repeating nor skipping a row, a foreign cursor refused, the feed's row of a finished task carrying its finish time, and each row's ending: the outcome's first line without its Markdown mark and cut to 300 characters, why a task was dropped, and none for an outcome a reopen left behind",
       "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
@@ -4403,6 +4411,46 @@
       "title": "The remote command envelope types live in the registry's type package and no transport: no entry or generated face names them, and every action's validity is within the receivers' limit",
       "source": "A6 3.3, A6 3.8.1, A7 3.11 M4.01",
       "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.restart-notice",
+      "title": "The end of an install whose service runs another version: at a terminal one question that says what a restart ends, and a yes restarts it; otherwise, after a no, a failed restart or in an agent's shell, the last lines name the running version and the one restart command, quoted for the shell",
+      "source": "A2 3.12.4, A2 3.3.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.restart",
+      "title": "Through a real install script over a real running service: the script's last lines name the pending restart, service status names the installed version, and service restart brings it up and says so",
+      "source": "A2 3.12.4, A2 3.3.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.8.http.installed",
+      "title": "The feed's hello names an installed version that is not the service's own, and a heartbeat tells an open page of a change once",
+      "source": "A2 3.8.4, A2 3.12.4",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.15.web.installed",
+      "title": "The page holds the installed version a restart switches to from hello and installed messages, ignores one that is no version name, and after a restart into another build is stale, keeps its rows and stops asking",
+      "source": "A5 3.15, A2 3.8.4",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.installed",
+      "title": "In Chromium and Firefox: the page names a newer installed version and the restart command in its status bar; after a restart into another build it offers a reload, keeps its rows and does not say the service is down",
+      "source": "A5 3.3, A2 3.8.4",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     }

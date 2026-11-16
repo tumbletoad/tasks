@@ -113,6 +113,7 @@ import {
   type SessionStore,
 } from "../binding/index.ts";
 import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
+import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { SeenCalls } from "./agent-homes.ts";
@@ -918,6 +919,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     if (options.http !== undefined && grantsDb !== undefined) {
       const running = await startHttp({
         ...options.http,
+        installed:
+          options.http.installed ??
+          (() => {
+            const installed = currentVersion(layout.root, platform);
+            return installed === BUILD.version ? undefined : installed;
+          }),
         stateDir: layout.state,
         configDir: layout.config,
         configured: config.http.port,
