@@ -59,6 +59,7 @@ class CodexReader implements CliReader {
         return true;
       case "turn.completed":
         this.turn = "completed";
+        ctx.answerFinished();
         this.usage(event, ctx);
         return true;
       case "turn.failed": {
@@ -147,10 +148,6 @@ class CodexReader implements CliReader {
       default:
         return { ok: false, reason: "no_result" };
     }
-  }
-
-  result(): string | null {
-    return null;
   }
 
   retained(): { keys: number; chars: number } {

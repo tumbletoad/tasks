@@ -396,6 +396,9 @@ importers:
       '@tasks/projection':
         specifier: workspace:*
         version: link:../projection
+      '@tasks/runs':
+        specifier: workspace:*
+        version: link:../runs
       '@tasks/storage':
         specifier: workspace:*
         version: link:../storage
@@ -415,9 +418,6 @@ importers:
       '@tasks/launcher-win':
         specifier: workspace:*
         version: link:../launcher-win
-      '@tasks/runs':
-        specifier: workspace:*
-        version: link:../runs
       '@tasks/testkit':
         specifier: workspace:*
         version: link:../testkit

@@ -30,6 +30,7 @@ import {
   TERMINAL_APPS,
   TERMINAL_SOURCES,
 } from "@tasks/launch";
+import { RUN_ADAPTERS, RUN_REASONS, RUN_STATES } from "@tasks/contracts/runs";
 import { ID_ALPHABET, STORAGE_ERROR_CODES } from "@tasks/storage";
 import { SECTIONS } from "../config/section-names.ts";
 import { UNAVAILABLE_REASONS } from "../launch/open.ts";
@@ -136,6 +137,18 @@ export const T3_PAIR_FAILURES = [
 ] as const;
 export type T3PairFailure = (typeof T3_PAIR_FAILURES)[number];
 
+/** Why runs cannot be contained (packages/runs: UnavailableReason). */
+const UNAVAILABLE_RUN_REASONS = [
+  "unsupported_platform",
+  "no_systemd",
+  "no_cgroup_v2",
+  "no_user_manager",
+  "not_a_service",
+  "not_delegated",
+  "no_cgroup_kill",
+  "helper_missing",
+  "check_failed",
+] as const;
 /** Every event the service can log. A new event is a new entry here, reviewed as such. */
 export const EVENTS = {
   "service.starting": {
@@ -610,6 +623,29 @@ export const EVENTS = {
     lvl: "info",
     c: "launch",
     fields: { source: ["reference_match"], result: ["matched", "none"] },
+  },
+  // Background runs: whether runs can be contained here, and each run's start and end by its
+  // codes. Never a run's ID, request, answer, folder or command.
+  "runs.probe": {
+    lvl: "info",
+    c: "launch",
+    fields: { available: "bool", kind: ["cgroup", "job"], reason: UNAVAILABLE_RUN_REASONS },
+  },
+  "run.started": { lvl: "info", c: "launch", fields: { adapter: RUN_ADAPTERS } },
+  "run.settled": {
+    lvl: "info",
+    c: "launch",
+    fields: { state: RUN_STATES, reason: Object.values(RUN_REASONS).flat() },
+  },
+  "run.recovered": { lvl: "info", c: "launch", fields: { runs: "int" } },
+  "run.failed": {
+    lvl: "warn",
+    c: "launch",
+    fields: {
+      stage: ["probe", "prepare", "host", "started", "late_start", "answer", "evidence", "settle"],
+      type: "error_type",
+      code: "error_code",
+    },
   },
 } as const satisfies Readonly<Record<string, Spec>>;
 

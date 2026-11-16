@@ -75,8 +75,17 @@ describe("[A4.5.parsers.events] claude-print events", () => {
       "progress",
       "progress",
       "message",
+      "answer",
       "message",
+      "answer",
+      "answer",
       "finished",
+    ]);
+    // Each message is the answer so far; the result event's text is the final one.
+    expect(ofKind(events, "answer").map((e) => [e.text, e.final])).toEqual([
+      ["first", false],
+      ["second", false],
+      ["final", true],
     ]);
     expect(ofKind(events, "progress").map((e) => e.label)).toEqual(["command", "tasks"]);
     expect(ofKind(events, "session")[0]).toEqual({

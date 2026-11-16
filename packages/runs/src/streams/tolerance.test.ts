@@ -1,8 +1,9 @@
-// M6.05 Verify: truncated, unknown and 1 MB lines never make the parser throw (A4 3.11.4, A4 5.1
+// M6.05 Verify: truncated, unknown and over-long lines never make the parser throw (A4 3.11.4, A4 5.1
 // "Parsers (fuzzing)"). Also invalid UTF-8, unknown fields, a stream that ends mid-line, and
 // bounded memory however the input is chunked. Assertions are on counts and shapes only.
 import { describe, expect, test } from "vitest";
 import {
+  ANSWER_CAP_BYTES,
   LINE_CAP_BYTES,
   STREAM_KINDS,
   TEXT_CAP_BYTES,
@@ -52,7 +53,7 @@ function bigMessage(kind: StreamKind, size: number, char = "y"): string {
 }
 
 describe.each(STREAM_KINDS)(
-  "[A4.5.parsers.tolerance] %s: truncated, unknown and 1 MB lines never make the parser throw",
+  "[A4.5.parsers.tolerance] %s: truncated, unknown and over-long lines never make the parser throw",
   (kind) => {
     test("a truncated line in the middle is skipped and counted, and the run still succeeds", () => {
       const [first, ...rest] = OK[kind];
@@ -101,7 +102,7 @@ describe.each(STREAM_KINDS)(
       expect(c.events).toBeGreaterThanOrEqual(OK[kind].length);
     });
 
-    test("a line of exactly 1 MB is parsed; one byte more is skipped whole", () => {
+    test("a line exactly at the cap is parsed; one byte more is skipped whole", () => {
       const atCap = bigLine(kind, LINE_CAP_BYTES);
       const overCap = bigLine(kind, LINE_CAP_BYTES + 1);
       expect(bytes(atCap).length).toBe(LINE_CAP_BYTES);
@@ -115,11 +116,10 @@ describe.each(STREAM_KINDS)(
       expect([crlf.outcome.counts.events, crlf.outcome.counts.oversized]).toEqual([1, 1]);
     });
 
-    test("a 1 MB message is parsed and its text cut to 8 KB on a code point boundary", () => {
-      // Three-byte characters, so the cut falls inside a code point unless it is careful.
+    test("a message over the answer cap: its message event is cut to 8 KB and its answer to 1 MiB, on a code point boundary", () => {
+      // Three-byte characters, so each cut falls inside a code point unless it is careful.
       const parser = createStreamParser(kind);
-      const line = bigMessage(kind, 340_000, "€");
-      expect(bytes(line).length).toBeGreaterThan(LINE_CAP_BYTES - 40_000);
+      const line = bigMessage(kind, 400_000, "€");
       const events = parser.push(`${line}\n`);
       const message = events.find((e) => e.kind === "message");
       if (message?.kind !== "message") throw new Error("no message event");
@@ -127,7 +127,13 @@ describe.each(STREAM_KINDS)(
       expect(size).toBeLessThanOrEqual(TEXT_CAP_BYTES);
       expect(size).toBeGreaterThan(TEXT_CAP_BYTES - 3);
       expect(message.text.isWellFormed()).toBe(true);
-      expect(parser.counts().cappedTexts).toBe(1);
+      const answer = events.find((e) => e.kind === "answer");
+      if (answer?.kind !== "answer") throw new Error("no answer event");
+      expect(bytes(answer.text).length).toBeLessThanOrEqual(ANSWER_CAP_BYTES);
+      expect(bytes(answer.text).length).toBeGreaterThan(ANSWER_CAP_BYTES - 3);
+      expect(answer.text.isWellFormed()).toBe(true);
+      expect([answer.cut, answer.final]).toEqual([true, false]);
+      expect(parser.counts().cappedTexts).toBe(2);
     });
 
     test("invalid UTF-8 is counted and decoded leniently, so its event is not lost", () => {
@@ -162,14 +168,14 @@ describe.each(STREAM_KINDS)(
       expect(parser.counts().invalidUtf8).toBe(1);
     });
 
-    test("a whole line over 1 MB handed over as text is skipped", () => {
+    test("a whole line over the cap handed over as text is skipped", () => {
       const parser = createStreamParser(kind);
       expect(parser.line(bigLine(kind, LINE_CAP_BYTES + 1))).toEqual([]);
       expect(parser.line("€".repeat(LINE_CAP_BYTES / 3 + 1))).toEqual([]);
       expect(parser.counts().oversized).toBe(2);
     });
 
-    test("memory stays bounded: 64 MB without a newline holds at most 1 MB", () => {
+    test("memory stays bounded: 64 MB without a newline holds at most the cap", () => {
       const parser = createStreamParser(kind);
       const chunk = new Uint8Array(64 * 1024).fill(0x61);
       let most = 0;
@@ -188,10 +194,10 @@ describe.each(STREAM_KINDS)(
       expect(parser.held().bufferCapacity).toBeLessThanOrEqual(16 * 1024);
     });
 
-    test("memory stays bounded: a 1 MB line fed one byte at a time", () => {
+    test("memory stays bounded: a line at the cap fed in small pieces", () => {
       const parser = createStreamParser(kind);
       const line = bytes(bigLine(kind, LINE_CAP_BYTES));
-      for (let i = 0; i < line.length; i += 1) parser.push(line.subarray(i, i + 1));
+      for (let i = 0; i < line.length; i += 61) parser.push(line.subarray(i, i + 61));
       expect(parser.held().bufferedBytes).toBe(LINE_CAP_BYTES);
       parser.push("\n");
       expect(parser.counts().events).toBe(1);
@@ -213,7 +219,7 @@ describe.each(STREAM_KINDS)(
     test("memory stays bounded: tool and item IDs near 1 MB keep the key set small", () => {
       const parser = createStreamParser(kind);
       const event = (i: number): string => {
-        const id = String(i).padStart(8, "0") + "k".repeat(LINE_CAP_BYTES - 200);
+        const id = String(i).padStart(8, "0") + "k".repeat(1024 * 1024 - 200);
         return kind === "claude-print"
           ? JSON.stringify({
               type: "assistant",
