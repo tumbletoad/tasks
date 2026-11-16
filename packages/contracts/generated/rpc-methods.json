@@ -2011,6 +2011,11 @@
             "description": "The import's commit it reverted",
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
+          },
+          "unsaved": {
+            "const": true,
+            "description": "The run's undo.json could not be written: tasks beyond those are listed nowhere",
+            "type": "boolean"
           }
         },
         "required": [

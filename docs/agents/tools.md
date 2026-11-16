@@ -882,6 +882,7 @@ Undo an applied import; a task changed since stays as it is and is listed.
 | `kept_more` | integer, 0 to 1000000000 | yes | Tasks beyond those |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
+| `unsaved` | true | no | The run's undo.json could not be written: tasks beyond those are listed nowhere |
 
 ### Examples
 

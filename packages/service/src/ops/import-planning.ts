@@ -13,7 +13,15 @@
 // not usable, a prototype folder that holds the space's run folders, and a run folder parent that
 // is a link are refused before anything is written.
 import { createHash } from "node:crypto";
-import { closeSync, lstatSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
+import {
+  closeSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   AppError,
@@ -171,9 +179,13 @@ function writeNew(path: string, body: string): void {
     const bytes = Buffer.from(body, "utf8");
     let offset = 0;
     while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
-  } finally {
+  } catch (error) {
+    // A cut file would later pass for the whole answer.
     closeSync(fd);
+    rmSync(path, { force: true });
+    throw error;
   }
+  closeSync(fd);
 }
 
 export async function planningPreview(
@@ -1037,19 +1049,24 @@ export async function planningUndo(call: PlanningUndoCall): Promise<ImportPlanni
     ...(result.replayed === true ? { replayed: true } : {}),
   };
   // Every kept task beside the run's report, as apply.json holds every task of the apply; the
-  // entry returns the first 2,000. The undo stands whether or not this file can be written.
+  // entry returns the first 2,000. The undo stands whether or not this file can be written, and
+  // the answer says when it could not.
+  let saved = false;
   if (call.folder !== undefined) {
     try {
       const file = join(runFolderOf(call.folder, run), "undo.json");
       writeNew(file, `${JSON.stringify(answer, null, 2)}\n`);
-    } catch {
-      // No run folder any more, a file there already, or no room: the answer still goes back.
+      saved = true;
+    } catch (error) {
+      // A file there already is this run's earlier undo, the same answer.
+      saved = (error as NodeJS.ErrnoException | null)?.code === "EEXIST";
     }
   }
   return {
     ...answer,
     kept: list.slice(0, PREVIEW_ROWS),
     kept_more: Math.max(0, list.length - PREVIEW_ROWS),
+    ...(saved ? {} : { unsaved: true as const }),
   };
 }
 

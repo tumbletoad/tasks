@@ -280,7 +280,11 @@ export function undoText(r: ImportPlanningUndoResult): string {
     for (const k of r.kept) lines.push(`  ${k.task}  ${k.fields.join(", ")}`);
   }
   if (r.kept_more > 0) {
-    lines.push(`  and ${String(r.kept_more)} more, listed in the run's undo.json`);
+    lines.push(
+      r.unsaved === true
+        ? `  and ${String(r.kept_more)} more, not listed: the run's undo.json could not be written`
+        : `  and ${String(r.kept_more)} more, listed in the run's undo.json`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }

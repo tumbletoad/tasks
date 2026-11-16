@@ -1010,6 +1010,7 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
         ),
       );
       expect(saved.kept).toEqual(undone.kept);
+      expect(undone.unsaved).toBeUndefined();
       expect(undone.removed).toBe(created.length - 2);
       expect(
         world.rows("SELECT deleted_at FROM areas WHERE id = $id", {
@@ -1046,10 +1047,9 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
       ).toEqual({
         undo_status: null,
       });
-      expect(await world.undo(preview.run)).toMatchObject({
-        commit: undone.commit,
-        replayed: true,
-      });
+      const replay = await world.undo(preview.run);
+      expect(replay).toMatchObject({ commit: undone.commit, replayed: true });
+      expect(replay.unsaved).toBeUndefined();
       // The undone run's apply again is no import: a new dry run imports anew.
       expect(await refusal(world.apply(preview.run, preview.token ?? ""))).toMatchObject({
         code: "conflict",
@@ -1156,6 +1156,26 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
       const undone = await world.undo(first.preview.run);
       expect(undone.kept).toEqual([]);
       for (const id of [ta, tb]) expect(task(world, id)["deleted_at"]).not.toBeNull();
+    } finally {
+      world.close();
+    }
+  }, 120_000);
+
+  test("an undo whose undo.json cannot be written stands, and its answer says the file is missing", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      writePrototype(prototype, { tasks: [{ id: "pa", title: "A" }, { id: "pb", title: "B" }] });
+      const first = await importedSynthetic(world, prototype);
+      world.edit([{ kind: "task.patch", task: taskOf(world, "pa"), set: { title: "Mine" } }]);
+      // No run folder to write it into.
+      rmSync(join(world.folder, "exchange", "planning", first.preview.run), {
+        recursive: true,
+        force: true,
+      });
+      const undone = await world.undo(first.preview.run);
+      expect(undone).toMatchObject({ removed: 1, unsaved: true });
+      expect(undone.kept).toHaveLength(1);
+      expect(task(world, taskOf(world, "pb"))["deleted_at"]).not.toBeNull();
     } finally {
       world.close();
     }
