@@ -435,12 +435,17 @@ describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
       "gnome-terminal",
       "x-terminal-emulator",
     ]);
-    expect(installedTerminals(settings({ custom: ["{terminal}", "{shim}"] }), linux)).toEqual([
-      "kitty",
-      "gnome-terminal",
-      "x-terminal-emulator",
-      "custom",
-    ]);
+    const own = ["kitty", "gnome-terminal", "x-terminal-emulator", "custom"];
+    expect(
+      installedTerminals(settings({ custom: ["{terminal}", "{shim}"], path: "/opt/t" }), linux),
+    ).toEqual(own);
+    expect(installedTerminals(settings({ custom: ["/opt/t", "-e", "{shim}"] }), linux)).toEqual(
+      own,
+    );
+    // `{terminal}` without a path has no program to start: it is no choice.
+    expect(installedTerminals(settings({ custom: ["{terminal}", "{shim}"] }), linux)).toEqual(
+      own.slice(0, -1),
+    );
     const alias = "C:\\Apps\\wt.exe";
     const ps = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
     const windows = (programs: string[]) =>
@@ -1225,6 +1230,34 @@ describe("[A4.5.terminal.windows-default] Windows' Default terminal application,
     });
     expect(started.terminal).toEqual({ app: "console", source: "windows" });
     expect(reads).toBe(2);
+  });
+
+  test("a terminal chosen while the service runs is the one the next launch starts", async () => {
+    const wt = "C:\\Apps\\wt.exe";
+    const spawned = recorder({ [POWERSHELL]: { exit: 0 }, [wt]: { exit: 0 } });
+    const launcher = new TerminalLauncher({
+      platform: "win32",
+      settings: settings({ app: "console" }),
+      install: "0123456789",
+      shimCommand: [WIN_TASKS],
+      host: () =>
+        Promise.resolve(
+          fakeHost("win32", [wt, POWERSHELL], { windowsApps: "C:\\Apps", powershell: POWERSHELL }),
+        ),
+      systemdRun: undefined,
+      spawn: spawned.spawn,
+      sleep: instant,
+    });
+    launcher.settings = settings({ app: "wt" });
+    const started = await launcher.start({
+      launch: LAUNCH,
+      folder: "C:\\work",
+      tickets: tickets().control,
+      env: {},
+      session: {},
+    });
+    expect(started.terminal).toEqual({ app: "wt", source: "configured" });
+    expect(spawned.requests[0]?.argv[0]).toBe(wt);
   });
 });
 

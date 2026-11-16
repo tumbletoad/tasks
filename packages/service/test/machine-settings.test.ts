@@ -3,7 +3,7 @@
 // open tab's feed follows a change, a new tab gets them after `hello`, and the shell paints the
 // theme from the first byte. Open's terminal: which one and why, the ones found here, a choice
 // and the way back to the operating system's default.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { send, post } from "./http-client.ts";
@@ -154,7 +154,7 @@ describe("[A7.3.12.m5-11.machine-settings] this computer's settings, kept in mac
       });
 
       // A terminal that is not here is refused, and nothing is written.
-      expect((await terminal({ app: "konsole" })).status).toBe(400);
+      expect((await terminal({ app: "konsole" })).status).toBe(404);
       expect((await terminal({ app: "nonsense" })).status).toBe(400);
       expect(own(machineToml(world))).toBe(MINE);
 
@@ -178,6 +178,16 @@ describe("[A7.3.12.m5-11.machine-settings] this computer's settings, kept in mac
       // Again: nothing to change, nothing written.
       expect((await terminal({ app: "auto" })).status).toBe(200);
       expect(machineToml(world)).toBe(back);
+
+      // An editor puts kitty and its path back while the service runs; Ghostty chosen then takes
+      // that path out too, so it is never started as kitty's program.
+      const file = join(configOf(world.home), "machine.toml");
+      writeFileSync(
+        file,
+        back.replace("[terminal]\n", `[terminal]\napp = "kitty"\npath = '${KITTY}'\n`),
+      );
+      expect((await terminal({ app: "ghostty" })).status).toBe(200);
+      expect(own(machineToml(world))).toBe('# my terminal\n[terminal]\napp = "ghostty"\n');
     },
   );
 });

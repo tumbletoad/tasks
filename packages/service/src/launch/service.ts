@@ -33,6 +33,7 @@ import {
   identityKey,
   isBuiltInTarget,
   isUncPath,
+  customReady,
   LaunchMachine,
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
@@ -531,13 +532,18 @@ export class LaunchService {
     const session = await this.environment.session().catch(() => ({}));
     const found = await this.terminals.options(session).catch(() => undefined);
     if (found === undefined) return null;
+    const settings = this.terminals.settings;
     const first = found.choice.chain[0];
     return {
-      chosen: this.terminals.settings.app,
+      chosen: settings.app,
       used:
         first === undefined
           ? null
-          : { app: first.app, source: first.source, found: first.program !== undefined },
+          : {
+              app: first.app,
+              source: first.source,
+              found: first.app === "custom" ? customReady(settings) : first.program !== undefined,
+            },
       unsupported: found.choice.unsupported ?? null,
       unread: found.choice.unread ?? null,
       installed: found.installed,

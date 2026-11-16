@@ -421,8 +421,17 @@ export function autoChoice(host: TerminalHost): TerminalChoice {
 }
 
 /**
+ * Whether machine.toml's custom command has its program: written in the command, or the `path`
+ * that its `{terminal}` stands for.
+ */
+export function customReady(settings: TerminalSettings): boolean {
+  if (settings.custom === undefined) return false;
+  return !settings.custom.includes("{terminal}") || (settings.path ?? "") !== "";
+}
+
+/**
  * The terminals a person can choose here: each adapter whose program is found, in the order
- * `auto` tries them when no default names one, and the custom command when machine.toml has one.
+ * `auto` tries them when no default names one, and the custom command when it has its program.
  */
 export function installedTerminals(settings: TerminalSettings, host: TerminalHost): AdapterApp[] {
   const apps: AdapterApp[] =
@@ -432,7 +441,7 @@ export function installedTerminals(settings: TerminalSettings, host: TerminalHos
         ? [...LINUX_ORDER, "x-terminal-emulator"]
         : [];
   const found = apps.filter((app) => entryFor(host, app, "installed").program !== undefined);
-  return settings.custom === undefined ? found : [...found, "custom"];
+  return customReady(settings) ? [...found, "custom"] : found;
 }
 
 /** The terminals `auto` would pick, best first, that are installed here. */

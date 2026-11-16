@@ -8,7 +8,8 @@
 // every open tab (the feed's `machine` message).
 import { AppError, preferenceSpec, type PreferenceRead, type PrefValue } from "@tasks/contracts";
 import { TERMINAL_APPS, type TerminalSettings } from "@tasks/launch";
-import { commitEdit, prepareEdit, type Edit, type EditRefusal } from "../config/edit.ts";
+import { commitEdit, prepareEditOf, type Edit, type EditRefusal } from "../config/edit.ts";
+import { parseMachineConfig } from "../config/machine-toml.ts";
 import { setMachinePreference } from "../config/preferences.ts";
 import type { TerminalView } from "../launch/index.ts";
 import type { Logger } from "./log.ts";
@@ -16,6 +17,9 @@ import type { Logger } from "./log.ts";
 /** The machine preferences the page shows and sets. */
 export const PAGE_PREFERENCES = ["ui.theme", "ui.single_keys"] as const;
 type PageKey = (typeof PAGE_PREFERENCES)[number];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isPageKey = (key: unknown): key is PageKey =>
   typeof key === "string" && (PAGE_PREFERENCES as readonly string[]).includes(key);
@@ -177,21 +181,24 @@ export class MachineSettings {
         const view = await port.view();
         if (view === null || !view.installed.includes(chosen)) {
           throw new AppError({
-            code: "invalid_input",
+            code: "not_found",
             message: "That terminal was not found on this computer.",
-            data: { issues: [{ path: "app", message: "Not found here" }] },
           });
         }
       }
-      const changed = chosen !== current.app;
-      const edits: Edit[] =
-        chosen === "auto"
-          ? [{ op: "unset", table: ["terminal"], key: "app" }]
-          : [{ op: "set", table: ["terminal"], key: "app", value: chosen }];
-      if (changed && current.path !== undefined) {
-        edits.push({ op: "unset", table: ["terminal"], key: "path" });
-      }
-      const prepared = prepareEdit(this.#o.configDir, edits);
+      // Decided on the file as it is now, which an editor may have changed since the start.
+      const prepared = prepareEditOf(this.#o.configDir, (doc) => {
+        const table = doc["terminal"];
+        const written = isRecord(table) ? table : {};
+        const edits: Edit[] =
+          chosen === "auto"
+            ? [{ op: "unset", table: ["terminal"], key: "app" }]
+            : [{ op: "set", table: ["terminal"], key: "app", value: chosen }];
+        if ((written["app"] ?? "auto") !== chosen && written["path"] !== undefined) {
+          edits.push({ op: "unset", table: ["terminal"], key: "path" });
+        }
+        return edits;
+      });
       if (!prepared.ok) throw refused(prepared.reason);
       const { before, text } = prepared.edit;
       const same = before === undefined ? text === "" : before.equals(Buffer.from(text, "utf8"));
@@ -199,7 +206,13 @@ export class MachineSettings {
         const edited = commitEdit(prepared.edit);
         if (!edited.ok) throw refused(edited.reason);
       }
-      port.apply({ ...current, app: chosen, path: changed ? undefined : current.path });
+      // The next Open follows the file's app and path; the rest of `[terminal]` waits for a start,
+      // like every other hand edit.
+      const now = parseMachineConfig(
+        text.charCodeAt(0) === 0xfeff ? text.slice(1) : text,
+        this.#o.platform,
+      ).config.terminal;
+      port.apply({ ...current, app: chosen, path: now.path });
       this.#o.log.log("config.terminal_set", { app: chosen });
       return port.view();
     });
