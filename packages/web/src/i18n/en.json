@@ -26,6 +26,8 @@
   "nav.counted": "{view}, {count, plural, =0 {no tasks} one {# task} other {# tasks}}",
 
   "space.switch": "Space {name}. Switch space",
+  "space.switchBackup": "Space {name}. Its backups need attention. Switch space",
+  "space.backupTrouble": "{name}: {why, select, disk_full {the daily backup failed because the disk is nearly full. Free some space, then make a backup now with {cli} space backup.} unverified {the newest backup does not pass a trial restore. Make a new one with {cli} space backup.} other {the daily backup failed. {cli} space list says why. Make a backup now with {cli} space backup.}}",
   "space.list": "Spaces on this machine",
   "space.makeDefault": "Make default",
   "space.makeDefaultFor": "Make {name} the default space",

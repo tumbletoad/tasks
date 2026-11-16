@@ -12,6 +12,8 @@ export interface SpaceItem {
   readonly state: string;
   /** Why it is read-only or unavailable: a fixed word, such as `needs_recovery`. */
   readonly reason?: string;
+  /** Why its backups are not working, while it is open: a fixed word, such as `disk_full`. */
+  readonly backup?: string;
 }
 
 /** A space that never opened: it has no ID or name yet. */
@@ -55,6 +57,18 @@ export function notOpen(list: SpaceList): NotOpen[] {
   ];
 }
 
+/** An open space whose backups are not working, and the word that picks what to tell them. */
+export interface BackupTrouble {
+  readonly name: string;
+  readonly why: string;
+}
+
+/** The open spaces of `list` whose backups are not working. */
+export const backupTrouble = (list: SpaceList): BackupTrouble[] =>
+  list.spaces.flatMap((s) =>
+    s.state === "open" && s.backup !== undefined ? [{ name: s.name, why: s.backup }] : [],
+  );
+
 async function result(api: Api, path: string, input: unknown): Promise<unknown> {
   const reply = await api.post(path, JSON.stringify(input));
   let parsed: unknown;
@@ -76,13 +90,17 @@ export async function listSpaces(api: Api): Promise<SpaceList> {
     const reason = s["reason"];
     return typeof reason === "string" && REASON.test(reason) ? { reason } : {};
   };
+  const backupOf = (s: Record<string, unknown>) => {
+    const backup = s["backup"];
+    return typeof backup === "string" && REASON.test(backup) ? { backup } : {};
+  };
   const spaces = value["spaces"].flatMap((s): SpaceItem[] =>
     isRecord(s) &&
     typeof s["id"] === "string" &&
     SPACE_ID.test(s["id"]) &&
     typeof s["name"] === "string" &&
     typeof s["state"] === "string"
-      ? [{ id: s["id"], name: s["name"], state: s["state"], ...reasonOf(s) }]
+      ? [{ id: s["id"], name: s["name"], state: s["state"], ...reasonOf(s), ...backupOf(s) }]
       : [],
   );
   const unopened = (Array.isArray(value["unopened"]) ? value["unopened"] : []).flatMap(

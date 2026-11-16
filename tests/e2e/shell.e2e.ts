@@ -421,3 +421,42 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
     await page.screenshot({ path: test.info().outputPath("landing-needs-recovery.png") });
   });
 });
+
+test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so calmly in the switcher", () => {
+  test("the switcher carries a mark, and its popover names what to run", async ({
+    page,
+    world,
+  }) => {
+    // The service's answer for an open space whose daily backup failed for want of disk space.
+    await page.route("**/api/v1/space/list", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as {
+        result: { spaces: { id: string }[] } & Record<string, unknown>;
+      };
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          result: {
+            ...body.result,
+            spaces: body.result.spaces.map((s) =>
+              s.id === world.mira.id ? { ...s, backup: "disk_full" } : s,
+            ),
+          },
+        },
+      });
+    });
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    const trigger = page.getByRole("button", {
+      name: `Space ${world.mira.name}. Its backups need attention. Switch space`,
+    });
+    await expect(trigger.locator('[data-part="backup-attention"]')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("switcher-backup-mark.png") });
+    await trigger.click();
+    const note = spaces(page).locator('[data-part="backup-trouble"]');
+    await expect(note).toHaveAttribute("data-why", "disk_full");
+    await expect(note).toContainText(`${world.mira.name}: the daily backup failed`);
+    await expect(note).toContainText(`${CLI_NAME} space backup`);
+    await page.screenshot({ path: test.info().outputPath("switcher-backup-note.png") });
+  });
+});

@@ -2441,6 +2441,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.3.e2e.backup-trouble",
+      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup",
+      "source": "A5 3.3, A1 3.18",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.3.e2e.not-open",
       "title": "In Chromium and Firefox: a computer whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
       "source": "A5 3.3, A2 3.1",

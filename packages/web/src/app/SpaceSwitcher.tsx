@@ -4,10 +4,15 @@
 // view, feed and drafts. Each space has Make default, and the machine's default carries a mark.
 // The default decides only what a new tab (`/`) and an unbound CLI call open.
 //
+// A space whose backups are not working (its daily backup failed, or the newest one does not
+// restore) has a quiet mark on the trigger and a note in the popover that says what to run. The
+// list is read when the switcher appears and each time it opens, so the mark goes once a backup
+// succeeds again.
+//
 // "New space" and "Open folder" need a folder picker and the space verbs over HTTP; they arrive with
 // first-run setup (M5.12). Until then the CLI makes and opens spaces.
 import { Link } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { SignedOut } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -15,12 +20,20 @@ import { useToast } from "./frame.ts";
 import { CheckIcon, ChevronIcon } from "./Icons.tsx";
 import { useAuth, useMachineApi } from "./session.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
-import { isServed, listSpaces, makeDefault, notOpen, type SpaceList } from "./spaces.ts";
+import {
+  backupTrouble,
+  isServed,
+  listSpaces,
+  makeDefault,
+  notOpen,
+  type SpaceList,
+} from "./spaces.ts";
 import css from "./SpaceSwitcher.module.css";
 import { LANDING } from "./views.ts";
 import { classes } from "./css.ts";
 
 const styles = classes(css, [
+  "attention",
   "default",
   "dialog",
   "make",
@@ -67,6 +80,16 @@ export function SpaceSwitcher({
     });
   }, [api, failed]);
 
+  useEffect(load, [load]);
+
+  const troubles = list === undefined || list === "failed" ? [] : backupTrouble(list);
+  const attention =
+    list !== undefined &&
+    list !== "failed" &&
+    list.spaces.some(
+      (item) => item.id === space && item.state === "open" && item.backup !== undefined,
+    );
+
   const make = (id: string, title: string) => {
     setBusy(id);
     makeDefault(api, id)
@@ -90,10 +113,14 @@ export function SpaceSwitcher({
         if (open) load();
       }}
     >
-      <Button className={styles.trigger} aria-label={t("space.switch", { name: name ?? "" })}>
+      <Button
+        className={styles.trigger}
+        aria-label={t(attention ? "space.switchBackup" : "space.switch", { name: name ?? "" })}
+      >
         <span className={styles.name} dir="auto">
           {name ?? ""}
         </span>
+        {attention ? <span className={styles.attention} data-part="backup-attention" /> : null}
         <ChevronIcon />
       </Button>
       <Popover className={styles.popover} placement="bottom start" offset={4}>
@@ -156,6 +183,17 @@ export function SpaceSwitcher({
                 {list === undefined ? null : (
                   <NotOpenNotes spaces={notOpen(list)} className={styles.note} />
                 )}
+                {troubles.map((trouble) => (
+                  <p
+                    key={trouble.name}
+                    className={styles.note}
+                    data-part="backup-trouble"
+                    data-why={trouble.why}
+                    dir="auto"
+                  >
+                    {t("space.backupTrouble", { name: trouble.name, why: trouble.why })}
+                  </p>
+                ))}
               </>
             )
           }
