@@ -1,11 +1,19 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
   detectIdentity,
   integrityLevel,
   INTEGRITY,
   packageIdentity,
-  system32Of,
+  system32,
 } from "./identity.ts";
+
+const WORKERS_ENTRY = fileURLToPath(
+  new URL("../../test/system32-workers-entry.ts", import.meta.url),
+);
 
 // The shape of `whoami /groups /fo csv /nh`: name, type, SID, attributes. Names are localised,
 // SIDs are not.
@@ -58,28 +66,42 @@ describe("[A2.3.3.hub.refusals] who the service runs as", () => {
     expect(typeof identity.root).toBe("boolean");
   });
 
-  test("whoami comes from the System32 the loader used, whatever SystemRoot and windir say", () => {
-    expect(
-      system32Of(["C:\\Program Files\\nodejs\\node.exe", "C:\\WINDOWS\\SYSTEM32\\ntdll.dll"]),
-    ).toBe("C:\\WINDOWS\\SYSTEM32");
-    // Only a module named exactly ntdll.dll counts.
-    expect(system32Of(["C:\\Users\\mira\\ntdll.dll.bak", "C:\\x\\myntdll.dll"])).toBeUndefined();
-    expect(system32Of([])).toBeUndefined();
-    if (process.platform !== "win32") return;
-    // A parent that points the variables elsewhere changes nothing: the check still runs.
-    const identity = detectIdentity(
-      { SystemRoot: "C:\\nowhere", windir: "C:\\nowhere" },
-      process.platform,
-    );
-    expect(typeof identity.elevated).toBe("boolean");
+  test("whoami comes from the system's own System32, whatever SystemRoot and windir say", () => {
+    if (process.platform !== "win32") {
+      expect(system32()).toBeUndefined();
+      return;
+    }
     const saved = { SystemRoot: process.env["SystemRoot"], windir: process.env["windir"] };
+    const real = system32();
+    expect(real).toBeDefined();
+    expect(existsSync(win32.join(real ?? "", "whoami.exe"))).toBe(true);
     try {
+      // A parent that points the variables elsewhere changes nothing: the check still runs.
       process.env["SystemRoot"] = "C:\\nowhere";
       process.env["windir"] = "C:\\nowhere";
+      expect(system32()).toBe(real);
       expect(typeof detectIdentity(process.env, "win32").elevated).toBe("boolean");
     } finally {
       process.env["SystemRoot"] = saved.SystemRoot;
       process.env["windir"] = saved.windir;
     }
   });
+});
+
+describe("[A2.3.3.hub.system32-workers] looking for System32 never ends the process", () => {
+  test("a process whose worker threads start and end while it looks for System32 runs on", async () => {
+    const child = spawn(process.execPath, [WORKERS_ENTRY, "4000"], {
+      stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true,
+      env: { ...process.env, SystemRoot: "C:\\nowhere", windir: "C:\\nowhere" },
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    const code = await new Promise<number | null>((resolve) => {
+      child.once("exit", resolve);
+    });
+    // A diagnostic report raced the threads and broke the heap: exit 0xC0000374, no output. The
+    // folder is the one this process finds, whatever the child's SystemRoot and windir say.
+    expect({ code, stderr }).toEqual({ code: 0, stderr: `system32 ${String(system32())}\n` });
+  }, 60_000);
 });

@@ -239,6 +239,29 @@ describe("[A2.3.2.2.permissions.umask] product code never calls process.umask()"
   });
 });
 
+describe("[A2.3.3.hub.system32-workers] product code takes no diagnostic report", () => {
+  test("getReport and writeReport are refused in product code, the bridge and scripts, and allowed in tests", async () => {
+    const imports = 'import process from "node:process";\n';
+    const refused = [
+      `${imports}export const r = process.report.getReport();\n`,
+      `${imports}export const r = process.report["getReport"]();\n`,
+      `${imports}process.report.writeReport("r.json");\n`,
+      `${imports}const { getReport } = process.report;\nexport const r = getReport();\n`,
+    ];
+    for (const code of refused) {
+      for (const path of [SOURCE, "packages/bridge/src/mcp/probe.js", "scripts/build/probe.js"]) {
+        expect(await messages(code, path), `${path}: ${code}`).toEqual([
+          expect.stringMatching(/^no-restricted-syntax: Do not take Node's diagnostic report/),
+        ]);
+      }
+      expect(await messages(code, TEST), code).toEqual([]);
+    }
+    expect(
+      await messages(`${imports}export const e = process.report.excludeEnv;\n`, SOURCE),
+    ).toEqual([]);
+  });
+});
+
 // The page's components as JSX, linted untyped at a path of the page.
 const PAGE = "packages/web/src/app/Probe.jsx";
 

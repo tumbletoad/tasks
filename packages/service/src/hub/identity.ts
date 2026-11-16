@@ -9,9 +9,10 @@
 // - Elevated: Windows has no Node API for the token, so the service reads its own token's
 //   mandatory label with System32's whoami.exe, by SID, which no locale changes. High (12288) and
 //   above is elevated. A check that cannot run refuses too: the refusal is the safe side.
-//   System32 is the folder the loader took ntdll.dll from, never SystemRoot or windir: a parent
+//   System32 is found through the kernel's \SystemRoot link, never SystemRoot or windir: a parent
 //   sets those, and could point them at a whoami that answers "medium".
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { win32 } from "node:path";
 import { envVar } from "@tasks/brand";
 
@@ -51,26 +52,29 @@ export function integrityLevel(csv: string): number | undefined {
 }
 
 /**
- * The System32 folder among a process's loaded modules: the folder of `ntdll.dll`, which Windows
- * always maps from System32 and no environment variable moves. Undefined when it is not there.
+ * System32 in the kernel's object namespace. The kernel makes `\SystemRoot` at boot, and neither
+ * a parent's environment nor this session's drive letters change where it points.
  */
-export function system32Of(modules: readonly string[]): string | undefined {
-  const ntdll = modules.find((path) => win32.basename(path).toLowerCase() === "ntdll.dll");
-  return ntdll === undefined ? undefined : win32.dirname(ntdll);
-}
+const SYSTEM32_LINK = "\\\\?\\GLOBALROOT\\SystemRoot\\System32";
 
-/** The full paths of the modules this process has loaded, from Node's diagnostic report. */
-function loadedModules(): readonly string[] {
-  const report = process.report.getReport() as { sharedObjects?: unknown };
-  const modules = report.sharedObjects;
-  return Array.isArray(modules) ? modules.filter((m): m is string => typeof m === "string") : [];
-}
+let found: string | undefined;
 
 /**
- * This process's System32 folder, from its loaded modules, or undefined when it cannot be told.
- * Every System32 tool Tasks runs (whoami.exe, reg.exe, tasklist.exe) comes from here.
+ * The System32 folder as a drive path, or undefined when it cannot be told (and on every other
+ * OS). Every System32 tool Tasks runs (whoami.exe, reg.exe, tasklist.exe, powershell.exe) comes
+ * from here. Not from Node's diagnostic report: one taken while a worker thread starts or ends
+ * corrupts the heap and ends the process without a word.
  */
-export const system32 = (): string | undefined => system32Of(loadedModules());
+export function system32(): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  if (found !== undefined) return found;
+  try {
+    found = realpathSync.native(SYSTEM32_LINK);
+  } catch {
+    return undefined;
+  }
+  return found;
+}
 
 /** Whether the current Windows token is elevated, or undefined when that cannot be told. */
 export function windowsElevated(): boolean | undefined {

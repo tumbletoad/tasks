@@ -78,6 +78,22 @@ const noUmask = [
     message: UMASK_MESSAGE,
   },
 ];
+// No diagnostic report in product code: Node 26 takes one while a worker thread starts or ends only
+// at the cost of a corrupt heap (exit 0xC0000374), and the service starts workers whenever a space
+// opens. Tests may take one in a process of their own.
+const REPORT_MESSAGE =
+  "Do not take Node's diagnostic report in product code: one taken while a worker thread starts or ends corrupts the heap and ends the process.";
+const noReport = [
+  {
+    selector:
+      "MemberExpression:matches([property.name=/^(getReport|writeReport)$/], [property.value=/^(getReport|writeReport)$/])",
+    message: REPORT_MESSAGE,
+  },
+  {
+    selector: "ObjectPattern > Property[key.name=/^(getReport|writeReport)$/]",
+    message: REPORT_MESSAGE,
+  },
+];
 const umaskImports = ["process", "node:process"].map((name) => ({
   name,
   importNames: ["umask"],
@@ -166,7 +182,7 @@ export default defineConfig([
     linterOptions: { reportUnusedDisableDirectives: "error" },
     plugins: { tasks },
     rules: {
-      "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noUmask],
+      "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noUmask, ...noReport],
       "no-restricted-imports": ["error", { paths: [...tmpdirImports, ...umaskImports] }],
       // exec and execSync always run a shell (A4). Applies everywhere, tests included.
       "tasks/no-shell-exec": "error",
@@ -175,7 +191,14 @@ export default defineConfig([
   {
     files: ["packages/**"],
     rules: {
-      "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noAppData, ...noUmask],
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUmask,
+        ...noReport,
+      ],
     },
   },
   {
@@ -189,6 +212,7 @@ export default defineConfig([
         ...noUmask,
         ...noStdout,
         ...noDynamicLoad,
+        ...noReport,
       ],
       "no-restricted-imports": [
         "error",
@@ -207,6 +231,7 @@ export default defineConfig([
         ...noAppData,
         ...noUmask,
         ...noDynamicLoad,
+        ...noReport,
       ],
       "no-restricted-imports": ["error", { paths: [...tmpdirImports, ...umaskImports] }],
     },
