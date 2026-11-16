@@ -20,6 +20,7 @@
 //   nest         Linux: moves itself into a new cgroup below its own, prints "ready", waits
 // Modes that talk Claude's stream (`claude -p --output-format stream-json`), for the run host:
 //   talk         prints a message, and on an interrupt prints its result and exits 0
+//   chatty       like talk, and prints another message every 200 ms
 //   detach-stay  like talk, after it started a detached idle child and a daemonised grandchild
 //   flood-answer prints 50 MB of other events, then a 1 MiB answer that escaping makes far longer,
 //                and exits 0
@@ -133,6 +134,12 @@ function talk(): void {
 switch (mode) {
   case "talk":
     talk();
+    break;
+  case "chatty":
+    talk();
+    setInterval(() => {
+      message("Still working on it.");
+    }, 200);
     break;
   case "detach-stay":
     child("idle", { detached: true });
