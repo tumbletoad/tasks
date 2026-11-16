@@ -529,9 +529,7 @@ export function runEvidenceProblem(evidence: unknown): string | undefined {
     const fits =
       kind === "id"
         ? typeof value === "string" && RUN_EVIDENCE_ID.test(value)
-        : kind === "flag"
-          ? typeof value === "boolean"
-          : isEvidenceValue(kind, value);
+        : isEvidenceValue(kind, value);
     if (!fits) return `patch.evidence.${key}`;
   }
   return undefined;

@@ -234,17 +234,14 @@ export const isOpenRun = (run: { state: RunState; reason: string | null }): bool
   (OPEN_RUN_STATES as readonly RunState[]).includes(run.state) || awaitsConfirmation(run);
 
 /**
- * The legal transitions (A4 3.11.2). A self edge records evidence and changes no state: the run
- * shim's claim on `starting`, the agent's PID and native ID on `running`. `starting → running`
- * needs a claim, which the store does not judge: the run machine does. A cancel of a queued run,
- * or of a starting one whose shim has not claimed it, is `cancelled` at once, because no agent can
- * start without a claim; every other cancel goes through `cancelling` and ends with the process.
- * A lost shim is recorded as `reconciling` before its files settle the run. `unknown` moves only
- * on a definite outcome, to a final state, or to `reconciling` when recovery finds the shim of a
- * run whose stop timed out gone, and never back to one a process may still hold.
+ * The legal transitions. A self edge records evidence and changes no state: the agent's PID on
+ * `starting` or `cancelling`, its native ID on `running`. A queued run has no container: a Stop
+ * cancels it at once, and one that can no longer start (its task closed, its instance or folder
+ * gone) fails with why. `unknown` moves only on a definite outcome, to a final state, and never
+ * back to one a process may still hold.
  */
 export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
-  queued: ["starting", "cancelled"],
+  queued: ["starting", "cancelled", "failed"],
   starting: ["starting", "running", "failed", "cancelling", "cancelled", "reconciling", "unknown"],
   running: [
     "running",
@@ -274,10 +271,12 @@ export const isRunEdge = (from: RunState, to: RunState): boolean => RUN_EDGES[fr
  */
 export const RUN_REASONS = {
   failed: [
-    /** The run shim never claimed the run within its window: no agent started. */
-    "not_claimed",
-    /** The run shim's check of the folder or the executable failed (A4 3.3 step 4). */
-    "verify_failed",
+    /** A queued run whose task was finished or deleted before it could start. Nothing ran. */
+    "task_closed",
+    /** A queued run whose agent instance left machine.toml before it could start. Nothing ran. */
+    "instance_gone",
+    /** A queued run whose folder can no longer be found or used. Nothing ran. */
+    "folder_gone",
     /** The agent could not be started in its container. Nothing ran. */
     "spawn_failed",
     /** The container gave no agent within its start time. Nothing of it is left. */
@@ -296,11 +295,9 @@ export const RUN_REASONS = {
     "no_result",
     "no_output",
   ],
-  /** The 30 or 60 minute wall time, or 10 minutes without a stdout line (A4 3.11.7). */
+  /** The run's wall time, or its time without a stdout line, passed (RunLimits). */
   timed_out: ["wall", "idle"],
   unknown: [
-    /** The shim is gone and left no `exit.json`, or a claimed run never reported (A4 3.11.9). */
-    "lost",
     /**
      * The run's container could not be confirmed empty after it was ended: processes of the run may
      * still live. End by force, or the next start, settles it.
@@ -326,36 +323,21 @@ export const takesReason = (state: RunState): boolean => Object.hasOwn(RUN_REASO
 export const RUN_PERMISSIONS = ["full-access", "auto-edit", "read-only"] as const;
 export type RunPermission = (typeof RUN_PERMISSIONS)[number];
 
-/** The kinds of an evidence value: an ID, an instant in ms, a count or a flag. None holds text. */
-export type RunEvidenceKind = "id" | "instant" | "count" | "flag";
+/** The kinds of an evidence value: an ID, an instant in ms or a count. None holds text. */
+export type RunEvidenceKind = "id" | "instant" | "count";
 
-/**
- * The evidence a run record may hold. Evidence only grows: a key, once written, keeps its value,
- * which makes the run shim's claim a once-only record (A4 3.11.2, 3.9.1).
- */
+/** The evidence a run record may hold. Evidence only grows: a key, once written, keeps its value. */
 export const RUN_EVIDENCE_FIELDS = {
-  /**
-   * The run shim's claim, and when it was recorded: a fresh random ID per claim, never the
-   * attachment credential, which machine state keeps hashed (A4 3.16).
-   */
-  claim: "id",
-  claimed_at: "instant",
-  /** The agent's PID and process start time, when the shim reports it started. */
+  /** The agent's PID and when it started, once its container started it. */
   pid: "count",
   pid_started_at: "instant",
-  /** The agent's native session or thread ID (A4 3.11.3). */
+  /** The agent's native session or thread ID. */
   native_id: "id",
-  /** The shim's check of the folder passed (A4 3.3 step 4). */
-  folder_checked: "flag",
 } as const satisfies Record<string, RunEvidenceKind>;
 
 export type RunEvidenceKey = keyof typeof RUN_EVIDENCE_FIELDS;
 export type RunEvidence = {
-  [K in RunEvidenceKey]?: (typeof RUN_EVIDENCE_FIELDS)[K] extends "id"
-    ? string
-    : (typeof RUN_EVIDENCE_FIELDS)[K] extends "flag"
-      ? boolean
-      : number;
+  [K in RunEvidenceKey]?: (typeof RUN_EVIDENCE_FIELDS)[K] extends "id" ? string : number;
 };
 
 /** An ID in evidence or a result: plain characters only (the stream parsers' rule). */
@@ -418,10 +400,13 @@ export interface RunLimits {
   budgetUsd?: number;
 }
 
-/** A4 3.11.3 and 3.11.7's limits: a task run, and a routine's. */
+/**
+ * A run's default limits, a task's and a routine's. The time limits are guidelines: machine.toml's
+ * `[runs]` can change them for the runs queued after.
+ */
 export const RUN_LIMITS: Readonly<Record<"task" | "routine", RunLimits>> = {
-  task: { maxTurns: 50, wallMs: 30 * 60_000, idleMs: 10 * 60_000 },
-  routine: { maxTurns: 150, wallMs: 60 * 60_000, idleMs: 10 * 60_000 },
+  task: { maxTurns: 50, wallMs: 60 * 60_000, idleMs: 20 * 60_000 },
+  routine: { maxTurns: 150, wallMs: 60 * 60_000, idleMs: 20 * 60_000 },
 };
 
 /** Bounds of a limit, so a record cannot hold a value no run could use. */
