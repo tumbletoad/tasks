@@ -718,6 +718,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         machine,
         settingsDir: layout.state,
         defaultSpace: () => defaults.get(),
+        // What the space verbs do is recorded in machine.toml's [[spaces]] (space-records.ts).
+        records: { configDir: layout.config, platform, log },
         manager: {
           list: () => spaceManager().described(),
           open: (path: string, id?: Id<"sp">, options?: { readonly retryMigration?: boolean }) =>
@@ -1111,12 +1113,16 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // in its own backups folder, take the daily backup when due and apply retention, in a
     // maintenance worker. A restore in place or a claim closes the space through the manager first
     // and goes above the epochs this machine has seen (SpaceManager.restoreInPlace, claim).
-    // The registered spaces are machine.toml's enabled [[spaces]], in the file's order. Each opens
-    // only as the space its entry's ID names (spaces.ts): another space there is unavailable.
+    // The registered spaces are machine.toml's [[spaces]], in the file's order, which the space
+    // verbs keep (space-records.ts): the enabled ones open, the others are listed closed. Each
+    // opens only as the space its entry's ID names (spaces.ts): another space there, or none, is
+    // unavailable with its reason, and its entry stays.
     const spacesOpening = hosted.openAll(
-      config.spaces
-        .filter((space) => space.enabled)
-        .map((space): SpaceEntry => ({ id: space.id, path: space.path })),
+      config.spaces.map((space): SpaceEntry => ({
+        id: space.id,
+        path: space.path,
+        enabled: space.enabled,
+      })),
     );
 
     // Once the registered spaces have settled, each open one gets its launch machine and its

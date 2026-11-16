@@ -55,6 +55,7 @@ import {
   type Principal,
 } from "./caller.ts";
 import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
 import {
   apart,
   ExecutionRefused,
@@ -63,6 +64,15 @@ import {
   type LaunchIntent,
   type Root,
 } from "@tasks/launch";
+import {
+  ambiguousError,
+  copyOf,
+  findSpace,
+  isAmbiguity,
+  onlySpace,
+  type Ambiguity,
+  type Copy,
+} from "./copies.ts";
 import {
   LaunchFolderUnavailable,
   LaunchUnavailable,
@@ -122,7 +132,13 @@ import { planningPreview } from "./import-planning.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
+  /** The space's ID as read from its folder, once it is served. */
   readonly id: string | undefined;
+  /**
+   * The ID its machine.toml entry names, also before it is served (unavailable, opening): it tells
+   * which space an unserved copy is of, so copies of one space count as one (ops/copies.ts).
+   */
+  readonly registered?: string;
   readonly name: string | undefined;
   readonly state: "opening" | "open" | "read_only" | "unavailable" | "closing" | "closed";
   readonly reason?: string;
@@ -393,29 +409,27 @@ async function callWith(
 // The space (A2 3.10.5, A3 3.7.8)
 
 /**
- * The space a call uses: `space` (an ID or a name), else TASKS_SPACE from the connection, else the
- * machine's default (`service.default_space`, M5.01), else the one space this service serves. A
- * default that is set but not served is `space_unavailable`, never another space in its place. An
- * agent's CLI gets no default (A2 3.10.5: A3 may forbid step 4 for agent classes, so an unbound
- * agent never writes into the default space by accident).
+ * The space a call uses: `space` (a folder, an ID or a name), else TASKS_SPACE from the connection,
+ * else the machine's default (`service.default_space`, M5.01), else the one space this service
+ * serves. A default that is set but not served is `space_unavailable`, never another space in its
+ * place. An agent's CLI gets no default (A2 3.10.5: A3 may forbid step 4 for agent classes, so an
+ * unbound agent never writes into the default space by accident).
  *
- * Only spaces that are not closed are candidates: a closed space serves no call, and a restored
- * copy has its original's ID and name, so a closed original must never stand in for its open copy.
- * An ID or a name that two candidates share is `ambiguous`, never the first one listed.
+ * Only spaces that are not closed are candidates: a closed space serves no call. A restored copy
+ * has its original's ID and name, so which copy an ID or a name means is copies.ts's one rule: the
+ * writable copy, and a read-only copy by its folder.
  */
 /**
- * The machine's default space among `live` (spaces that are not closed): the one space with that
- * ID; `not_served` when none has it; `ambiguous` when a restored copy shares it with its original;
- * undefined when the machine has no default.
+ * The machine's default space among `live` (spaces that are not closed): the copy of the space with
+ * that ID that copies.ts picks; `not_served` when none has it; an ambiguity when two copies are
+ * equally good; undefined when the machine has no default.
  */
-export function defaultOf<S extends { readonly id: string | undefined }>(
+export function defaultOf<S extends Copy>(
   live: readonly S[],
   defaultId: string | undefined,
-): S | "not_served" | "ambiguous" | undefined {
+): S | Ambiguity<S> | "not_served" | undefined {
   if (defaultId === undefined) return undefined;
-  const found = live.filter((s) => s.id === defaultId);
-  if (found.length > 1) return "ambiguous";
-  return found[0] ?? "not_served";
+  return copyOf(live, defaultId) ?? "not_served";
 }
 
 function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
@@ -435,7 +449,7 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
     const live = host.spaces().filter((s) => s.state !== "closed");
     if (named !== undefined && named !== pinned) {
       const other = findSpace(live, named);
-      if (other?.id !== pinned) {
+      if (other === undefined || isAmbiguity(other) || other.id !== pinned) {
         throw new AppError({
           code: "forbidden",
           message: "This session is bound to another space.",
@@ -443,11 +457,13 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
           data: { rule: "binding" },
         });
       }
+      // A folder names its copy, which a binding to the space may use.
+      if (isAbsolute(named)) return other;
     }
-    const found = live.filter((s) => s.id === pinned);
-    if (found.length > 1) throw twoWithOneId();
-    if (found[0] === undefined) throw spaceUnavailable("not_served", false);
-    return found[0];
+    const found = copyOf(live, pinned);
+    if (isAmbiguity(found)) throw ambiguousError(found);
+    if (found === undefined) throw spaceUnavailable("not_served", false);
+    return found;
   }
   const wanted = named ?? slot?.named;
   let picked: ServedSpace;
@@ -494,66 +510,35 @@ function grantedTarget(
   );
 }
 
-/** The live space whose ID or name is `wanted`, when exactly one has it. */
-function findSpace(live: readonly ServedSpace[], wanted: string): ServedSpace | undefined {
-  const byId = live.filter((s) => s.id === wanted);
-  const found =
-    byId.length > 0 ? byId : live.filter((s) => s.name?.toLowerCase() === wanted.toLowerCase());
-  return found.length === 1 ? found[0] : undefined;
-}
-
-const twoWithOneId = (): AppError =>
-  new AppError({
-    code: "ambiguous",
-    message: "Two spaces have this ID: a restored copy is served beside its original.",
-    hint: "Close one of them: tasks space close <folder>.",
-  });
-
 function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
   const live = host.spaces().filter((s) => s.state !== "closed");
   // A bridge's environment is not passed (A3 3.7.2: TASKS_SPACE never chooses its space).
   const fromEnv = caller.binding === undefined ? caller.env["TASKS_SPACE"] : undefined;
   const wanted = named ?? (fromEnv === "" ? undefined : fromEnv);
   if (wanted !== undefined) {
-    const folded = wanted.toLowerCase();
-    const byId = live.filter((s) => s.id === wanted);
-    const found = byId.length > 0 ? byId : live.filter((s) => s.name?.toLowerCase() === folded);
-    if (found.length > 1) {
-      throw new AppError({
-        code: "ambiguous",
-        message:
-          byId.length > 1
-            ? "Two spaces have this ID: a restored copy is served beside its original."
-            : "Several spaces have this name.",
-        hint:
-          byId.length > 1
-            ? "Close one of them: tasks space close <folder>."
-            : "Name the space by its ID: tasks space list.",
-      });
-    }
-    if (found[0] === undefined) throw spaceUnavailable("not_served", false);
-    return found[0];
+    const found = findSpace(live, wanted);
+    if (isAmbiguity(found)) throw ambiguousError(found);
+    if (found === undefined) throw spaceUnavailable("not_served", false);
+    return found;
   }
   if (caller.class === "cli-agent") {
     throw invalid("space", "Name the space", "Pass --space, or set TASKS_SPACE.");
   }
   const fallback = defaultOf(live, host.defaultSpace?.());
   if (fallback === "not_served") throw spaceUnavailable("not_served", false);
-  if (fallback === "ambiguous") {
-    throw new AppError({
-      code: "ambiguous",
-      message: "Two spaces have the default space's ID: a restored copy is served beside it.",
-      hint: "Close one of them: tasks space close <folder>.",
-    });
-  }
+  if (isAmbiguity(fallback)) throw ambiguousError(fallback);
   if (fallback !== undefined) return fallback;
-  if (live.length === 1 && live[0] !== undefined) return live[0];
-  if (live.length === 0) throw spaceUnavailable("not_served", false);
-  throw invalid(
-    "space",
-    "Name the space",
-    "Pass --space with an ID or name from tasks space list.",
-  );
+  const only = onlySpace(live);
+  if (only === undefined) throw spaceUnavailable("not_served", false);
+  if (only === "several") {
+    throw invalid(
+      "space",
+      "Name the space",
+      "Pass --space with an ID, a name or a folder from tasks space list.",
+    );
+  }
+  if (isAmbiguity(only)) throw ambiguousError(only);
+  return only;
 }
 
 function readerOf(space: ServedSpace): WorkerConnection {

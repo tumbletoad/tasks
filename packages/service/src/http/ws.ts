@@ -23,6 +23,7 @@
 // before it acts.
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
+import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";
 import { defaultOf, type ServedSpace } from "../ops/index.ts";
 import type { HttpLog, WsClose } from "./events.ts";
 import {
@@ -75,7 +76,6 @@ export interface FeedOptions {
   readonly instances?: () => readonly UiInstance[];
 }
 
-const ID = /^sp_[0-9a-z]{26}$/;
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -335,21 +335,19 @@ class FeedSocket {
   /**
    * The served space a subscription names: an ID or a name; without one, the machine's default
    * space (A2 3.1: what a new tab opens), else the one space served. A default that is set but not
-   * served is never replaced by another space.
+   * served is never replaced by another space. Which copy of a space an ID or a name means is
+   * copies.ts's rule, the one every lookup uses (A2 3.10.5).
    */
   #find(ref: string | undefined): ServedSpace | "ambiguous" | "not_served" | undefined {
     const host = this.#hub.options.host;
     const served = host.spaces().filter((s) => s.reader !== undefined && s.id !== undefined);
-    if (ref === undefined) {
-      const fallback = defaultOf(served, host.defaultSpace?.());
-      if (fallback !== undefined) return fallback;
-    }
-    const matches =
-      ref === undefined
-        ? served
-        : served.filter((s) => (ID.test(ref) ? s.id === ref : s.name === ref));
-    if (matches.length > 1) return "ambiguous";
-    return matches[0];
+    const found =
+      ref !== undefined
+        ? findSpace(served, ref)
+        : (defaultOf(served, host.defaultSpace?.()) ?? onlySpace(served));
+    if (found === "several") return "ambiguous";
+    if (found === "not_served" || found === undefined) return found;
+    return isAmbiguity(found) ? "ambiguous" : found;
   }
 
   /**
@@ -447,7 +445,13 @@ class FeedSocket {
       const spaceId = this.#space;
       const cursor = this.#cursor;
       if (this.#closed || spaceId === undefined || cursor === undefined) return;
-      const space = this.#hub.options.host.spaces().find((s) => s.id === spaceId);
+      // The copy the space's ID means now (copies.ts), among the copies that are served: never a
+      // closed original listed before the copy that serves the ID.
+      const found = copyOf(
+        this.#hub.options.host.spaces().filter((s) => s.reader !== undefined),
+        spaceId,
+      );
+      const space = isAmbiguity(found) ? undefined : found;
       if (space?.reader === undefined) {
         this.#unsubscribe();
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
