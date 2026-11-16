@@ -111,15 +111,23 @@ const VOCABULARY: readonly SqlQuery[] = [
 ];
 
 /**
- * Each document's snippet over its current text, with the facts that say whether it may show:
+ * Each document's snippet over its current body, with the facts that say whether it may show:
  * its task and its audience now. A document that no longer matches, or no longer exists, has none.
+ * Only the body: a note's title column is its task's title, and the extra column is the index's
+ * own list of sources, labels and groups, neither of which reads as where the text matched. The
+ * matched words are marked, so a body without a match (the match was in the title) shows none.
  */
 const SNIPPETS =
   "SELECT j.value AS doc, d.entity_id AS entity, d.task_id AS task_id, d.kind AS kind, " +
   "d.audience AS audience, " +
-  "(SELECT snippet(search_fts, -1, '', '', '…', 12) FROM search_fts " +
+  "(SELECT snippet(search_fts, 1, char(2), char(3), '…', 12) FROM search_fts " +
   "WHERE search_fts MATCH $match AND search_fts.rowid = j.value) AS snippet " +
   "FROM json_each($docs) j LEFT JOIN search_docs d ON d.doc = j.value";
+
+const MATCH_START = "\u0002";
+const MATCH_END = "\u0003";
+const unmarked = (text: string): string =>
+  text.replaceAll(MATCH_START, "").replaceAll(MATCH_END, "");
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 const rows = (value: unknown): Row[] => (Array.isArray(value) ? (value as Row[]) : []);
@@ -369,13 +377,14 @@ function rowOf(
   }
   const base = taskRow(row, prefix);
   const snippet = item.doc === null ? undefined : snippets.get(item.doc);
+  const marked = str(snippet?.["snippet"]);
   const shown =
     snippet !== undefined &&
     snippet["entity"] === item.entity &&
     snippet["task_id"] === entry.id &&
     (search.audience === "user" || snippet["audience"] === "all") &&
-    str(snippet["snippet"]).trim() !== ""
-      ? { snippet: cut(str(snippet["snippet"]), ROW_CUTS.snippet), snippet_from: snippet["kind"] }
+    marked.includes(MATCH_START)
+      ? { snippet: cut(unmarked(marked), ROW_CUTS.snippet), snippet_from: snippet["kind"] }
       : str(row["summary"]) === ""
         ? {}
         : { snippet: cut(str(row["summary"]), ROW_CUTS.snippet) };

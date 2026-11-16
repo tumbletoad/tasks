@@ -46,9 +46,12 @@ import {
   type SpaceRow,
 } from "../rows.ts";
 import { readSpacePreference } from "../preferences.ts";
+import type { SchemaStep } from "../schema.ts";
 import { indexChanges } from "../search/documents.ts";
+import { repairSearchIndex } from "../search/remake.ts";
 import { hasSearchTables } from "../search/tables.ts";
 import type { OpenedSpace } from "../space.ts";
+import type { CheckedDriver } from "../startup-check.ts";
 import { Dedupe, type Match } from "./dedupe.ts";
 import {
   CHILD_FIELDS,
@@ -1131,6 +1134,17 @@ export class SpaceWriter {
   queueProjection(keys?: readonly string[]): number {
     const conn = this.#usable();
     return conn.transaction("immediate", () => queueProjection(conn, keys));
+  }
+
+  /**
+   * Checks the search index and makes it again when it is damaged (search/remake.ts). The index is
+   * derived from the tasks, so this changes no task and writes no commit.
+   */
+  repairSearchIndex(
+    checked: CheckedDriver,
+    steps: readonly SchemaStep[],
+  ): "sound" | "remade" | "damaged" {
+    return repairSearchIndex(checked, this.#usable(), steps);
   }
 
   /**

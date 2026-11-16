@@ -251,7 +251,10 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     expect(upgraded.userVersion).toBe(5);
     expect(upgraded.lastSeq).toBeGreaterThan(fixture.lastSeq);
     for (const [table, n] of Object.entries(fixture.counts)) {
-      if (table !== "commits") expect(upgraded.counts[table], table).toBe(n);
+      // The outbox is the projection's queue: the open space's projection empties it at its pace.
+      if (table !== "commits" && table !== "outbox") {
+        expect(upgraded.counts[table], table).toBe(n);
+      }
     }
     for (const table of [
       "labels",
@@ -265,6 +268,22 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     ]) {
       expect(upgraded.counts[table], table).toBe(0);
     }
+    // The space list says what the update did, and which backup is from just before it.
+    const newest = (
+      parsed((await user(["space", "backups", "list", folder, "--json"])).stdout) as {
+        backups: { name: string; kind?: string }[];
+      }
+    ).backups
+      .filter((b) => b.kind === "pre-migrate" && b.name !== backupName)
+      .map((b) => b.name);
+    expect(newest).toHaveLength(1);
+    const after = await world.tasks(["space", "list"]);
+    expect(after.stdout).toMatch(
+      new RegExp(
+        `Updated from schema 0\\.1 to 0\\.4 on [0-9-]+ [0-9:]+\\. The backup from just before it: ${newest[0] ?? "?"} `,
+        "u",
+      ),
+    );
     expect(upgraded.counts["search_docs"]).toBeGreaterThanOrEqual(fixture.counts["tasks"] ?? 0);
     const added = await world.tasks(["add", "Drill fixture task", "--space", id, "--json"]);
     expect(added.code, added.stdout + added.stderr).toBe(0);

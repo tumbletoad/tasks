@@ -1,20 +1,49 @@
-// pnpm release keygen --out <folder>
-// pnpm release sign --key <file> --dist <folder> [--expect <public key file>]
+// pnpm release <command>: making, signing, checking and publishing a release.
 //
-// The release script (A2 3.12.8 "sign", A7 3.8 M1.13). It runs by hand on the owner's machine, in a
-// terminal: it asks for the key's passphrase without echo. `keygen` makes the release key once
-// (A2 3.12.5); `sign` writes SHA256SUMS over the release archives in a
-// folder and signs it in both formats. It refuses CI, a key inside a checkout, a test-signed
-// folder and more (release.ts). It never prints the private key.
-import { readFileSync } from "node:fs";
+// On the owner's machine, in a terminal (the passphrase is asked without echo):
+//   keygen --out <folder outside any checkout>
+//   sign --key <key file> --dist <folder> [--expect <.pub file>]
+// In the release workflow (.github/workflows/release.yml):
+//   plan --mode rehearsal|release --ref <commit> [--base <commit>] --run <n>
+//   gather --from <artifacts folder> --prefix <artifact name prefix> --version <v> --out <new folder>
+//   sign-ci --dist <folder>             the release key from the job's secrets RELEASE_KEY and
+//                                       RELEASE_KEY_PASSPHRASE, never from an argument or a file
+//   rehearse --dist <folder> [--trust-from <commit>]
+//   check-install --dist <signed folder> [--from <previous signed folder>] --work <new folder>
+//   draft --dist <signed folder> --version <v> --commit <sha> [--repo <owner/name>]
+//   publish --version <v> --work <new folder> [--repo <owner/name>]
+import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { RELEASE_PUBLIC_KEYS } from "../../packages/service/src/version/release-keys.ts";
 import { repoRoot } from "../run.ts";
-import { createReleaseKey, MIN_PASSPHRASE, Refusal, refuseInCi, releaseSign } from "./release.ts";
+import { gatherArchives } from "./gather.ts";
+import { draftRelease, publishRelease } from "./github.ts";
+import { installCheck } from "./install-check.ts";
+import { keysAt, planOutputs, planRun } from "./plan.ts";
+import {
+  ciReleaseSign,
+  createReleaseKey,
+  MIN_PASSPHRASE,
+  redact,
+  Refusal,
+  refuseInCi,
+  rehearsalSign,
+  releaseSign,
+  takeSecrets,
+  type ReleaseSigned,
+} from "./release.ts";
 
 const USAGE = [
   "usage: pnpm release keygen --out <folder outside any checkout>",
   "       pnpm release sign --key <release key file> --dist <folder of archives> [--expect <.pub file>]",
+  "       pnpm release sign-ci --dist <folder of archives>",
+  "       pnpm release rehearse --dist <folder of archives> [--trust-from <commit>]",
+  "       pnpm release plan --mode rehearsal|release --ref <commit> [--base <commit>] --run <n>",
+  "       pnpm release gather --from <folder> --prefix <name> --version <v> --out <new folder>",
+  "       pnpm release check-install --dist <signed folder> [--from <signed folder>] --work <new folder>",
+  "       pnpm release draft --dist <signed folder> --version <v> --commit <sha> [--repo <owner/name>]",
+  "       pnpm release publish --version <v> --work <new folder> [--repo <owner/name>]",
 ].join("\n");
 
 /** Reads one line from the terminal without echoing it. Ctrl+C ends the script with nothing done. */
@@ -55,63 +84,188 @@ function askHidden(prompt: string): Promise<string> {
   });
 }
 
-async function main(argv: readonly string[]): Promise<number> {
-  const [command, ...rest] = argv;
-  refuseInCi(process.env);
-  if (command === "keygen") {
-    const { values } = parseArgs({
-      args: rest,
-      options: { out: { type: "string" } },
-      strict: true,
-    });
-    if (values.out === undefined) throw new Refusal(USAGE);
-    const first = await askHidden(
-      `New passphrase (at least ${String(MIN_PASSPHRASE)} characters): `,
-    );
-    const second = await askHidden("The same passphrase again: ");
-    if (first !== second) throw new Refusal("The two passphrases differ. Nothing was written.");
-    const created = createReleaseKey(resolve(values.out), first, repoRoot);
-    console.log(`release key:  ${created.privateKeyFile}`);
-    console.log(`public key:   ${created.publicKeyFile}`);
-    console.log(`              ${created.publicKey}`);
-    console.log(`fingerprint:  ${created.fingerprint}`);
-    console.log("Back up the key file and its passphrase apart from each other.");
-    return 0;
+function options<const T extends Record<string, { type: "string" }>>(
+  args: readonly string[],
+  spec: T,
+  required: readonly (keyof T & string)[],
+): { [K in keyof T]: string | undefined } {
+  let values: Record<string, string | boolean | undefined>;
+  try {
+    ({ values } = parseArgs({ args: [...args], options: spec, strict: true }));
+  } catch (error) {
+    throw new Refusal(`${error instanceof Error ? error.message : String(error)}
+${USAGE}`);
   }
-  if (command === "sign") {
-    const { values } = parseArgs({
-      args: rest,
-      options: { key: { type: "string" }, dist: { type: "string" }, expect: { type: "string" } },
-      strict: true,
-    });
-    if (values.key === undefined || values.dist === undefined) throw new Refusal(USAGE);
-    const signed = await releaseSign({
-      keyFile: resolve(values.key),
-      dist: resolve(values.dist),
-      repoRoot,
-      passphrase: () => askHidden("Passphrase of the release key: "),
-      ...(values.expect === undefined
-        ? {}
-        : { expect: readFileSync(resolve(values.expect), "utf8") }),
-    });
-    for (const archive of signed.archives) console.log(`signed: ${archive}`);
-    console.log("wrote:  SHA256SUMS, SHA256SUMS.sig, SHA256SUMS.sshsig");
-    for (const installer of signed.installers) console.log(`wrote:  ${installer}`);
-    console.log(`key:    ${signed.publicKey}`);
-    console.log(`        ${signed.fingerprint}`);
-    return 0;
-  }
-  throw new Refusal(USAGE);
+  for (const name of required) if (values[name] === undefined) throw new Refusal(USAGE);
+  return values as { [K in keyof T]: string | undefined };
 }
 
+const str = { type: "string" } as const;
+
+function printSigned(signed: ReleaseSigned): void {
+  for (const archive of signed.archives) console.log(`signed: ${archive}`);
+  console.log("wrote:  SHA256SUMS, SHA256SUMS.sig, SHA256SUMS.sshsig");
+  for (const installer of signed.installers) console.log(`wrote:  ${installer}`);
+  console.log(`key:    ${signed.publicKey}`);
+  console.log(`        ${signed.fingerprint}`);
+}
+
+const repository = (given: string | undefined): string => {
+  const repo = given ?? process.env["GITHUB_REPOSITORY"];
+  if (repo === undefined || !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)) {
+    throw new Refusal("Pass --repo <owner/name>.");
+  }
+  return repo;
+};
+
+async function main(
+  argv: readonly string[],
+  secrets: ReturnType<typeof takeSecrets>,
+): Promise<number> {
+  const [command, ...rest] = argv;
+  const log = (line: string) => {
+    console.log(line);
+  };
+  switch (command) {
+    case "keygen": {
+      refuseInCi(process.env);
+      const values = options(rest, { out: str }, ["out"]);
+      const first = await askHidden(
+        `New passphrase (at least ${String(MIN_PASSPHRASE)} characters): `,
+      );
+      const second = await askHidden("The same passphrase again: ");
+      if (first !== second) throw new Refusal("The two passphrases differ. Nothing was written.");
+      const created = createReleaseKey(resolve(values.out ?? ""), first, repoRoot);
+      console.log(`release key:  ${created.privateKeyFile}`);
+      console.log(`public key:   ${created.publicKeyFile}`);
+      console.log(`              ${created.publicKey}`);
+      console.log(`fingerprint:  ${created.fingerprint}`);
+      console.log("Back up the key file and its passphrase apart from each other.");
+      return 0;
+    }
+    case "sign": {
+      refuseInCi(process.env);
+      const values = options(rest, { key: str, dist: str, expect: str }, ["key", "dist"]);
+      printSigned(
+        await releaseSign({
+          keyFile: resolve(values.key ?? ""),
+          dist: resolve(values.dist ?? ""),
+          repoRoot,
+          passphrase: () => askHidden("Passphrase of the release key: "),
+          ...(values.expect === undefined
+            ? {}
+            : { expect: readFileSync(resolve(values.expect), "utf8") }),
+        }),
+      );
+      return 0;
+    }
+    case "sign-ci": {
+      const values = options(rest, { dist: str }, ["dist"]);
+      printSigned(ciReleaseSign({ dist: resolve(values.dist ?? ""), secrets, env: process.env }));
+      return 0;
+    }
+    case "rehearse": {
+      const values = options(rest, { dist: str, "trust-from": str }, ["dist"]);
+      const from = values["trust-from"];
+      printSigned(
+        rehearsalSign(
+          resolve(values.dist ?? ""),
+          from === undefined ? RELEASE_PUBLIC_KEYS : keysAt(repoRoot, from),
+        ),
+      );
+      console.log("A rehearsal: no product trusts this key, and nothing here is ever released.");
+      return 0;
+    }
+    case "plan": {
+      const values = options(rest, { mode: str, ref: str, base: str, run: str }, [
+        "mode",
+        "ref",
+        "run",
+      ]);
+      if (values.mode !== "rehearsal" && values.mode !== "release") throw new Refusal(USAGE);
+      const run = Number(values.run);
+      if (!Number.isSafeInteger(run) || run < 1) throw new Refusal("--run is the run's number.");
+      const plan = planRun({
+        root: repoRoot,
+        mode: values.mode,
+        ref: values.ref ?? "",
+        ...(values.base === undefined ? {} : { base: values.base }),
+        run,
+      });
+      const out = planOutputs(plan);
+      process.stdout.write(out);
+      const file = process.env["GITHUB_OUTPUT"];
+      if (file !== undefined && file !== "") appendFileSync(file, out);
+      return 0;
+    }
+    case "gather": {
+      const values = options(rest, { from: str, prefix: str, version: str, out: str }, [
+        "from",
+        "prefix",
+        "version",
+        "out",
+      ]);
+      const names = gatherArchives({
+        from: resolve(values.from ?? ""),
+        prefix: values.prefix ?? "",
+        version: values.version ?? "",
+        out: resolve(values.out ?? ""),
+      });
+      for (const name of names) log(`gathered: ${name}`);
+      return 0;
+    }
+    case "check-install": {
+      const values = options(rest, { dist: str, from: str, work: str }, ["dist", "work"]);
+      installCheck({
+        dist: values.dist ?? "",
+        ...(values.from === undefined ? {} : { from: values.from }),
+        work: values.work ?? "",
+        log,
+      });
+      log("check-install passed");
+      return 0;
+    }
+    case "draft": {
+      const values = options(rest, { dist: str, version: str, commit: str, repo: str }, [
+        "dist",
+        "version",
+        "commit",
+      ]);
+      draftRelease({
+        repo: repository(values.repo),
+        dist: resolve(values.dist ?? ""),
+        version: values.version ?? "",
+        commit: values.commit ?? "",
+        log,
+      });
+      return 0;
+    }
+    case "publish": {
+      const values = options(rest, { version: str, work: str, repo: str }, ["version", "work"]);
+      publishRelease({
+        repo: repository(values.repo),
+        version: values.version ?? "",
+        work: resolve(values.work ?? ""),
+        log,
+      });
+      return 0;
+    }
+    default:
+      throw new Refusal(USAGE);
+  }
+}
+
+// First, before anything else runs or starts a process: the secrets leave the environment.
+const secrets = takeSecrets(process.env);
 try {
-  process.exitCode = await main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2), secrets);
 } catch (error) {
-  if (error instanceof Refusal) {
-    console.error(error.message);
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof Refusal || (error instanceof Error && error.name === "VersionRefusal")) {
+    console.error(redact(message, secrets));
     process.exitCode = 2;
   } else {
-    console.error(`release FAILED: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`release FAILED: ${redact(message, secrets)}`);
     process.exitCode = 1;
   }
 }

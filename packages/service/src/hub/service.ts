@@ -95,6 +95,7 @@ import {
 } from "./paths.ts";
 import { SPACES_FOLDER } from "./space-settings.ts";
 import {
+  SPACE_OPEN_TIMEOUT_MS,
   SpaceManager,
   type SpaceEntry,
   type SpaceManagerOptions,
@@ -767,6 +768,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           recover: (entry: number) => spaceManager().recover(entry),
           folderOf: (entry: number) => spaceManager().folderOf(entry),
           rebuildView: (entry: number) => spaceManager().rebuildView(entry),
+          repairSearch: (entry: number) => {
+            spaceManager().repairSearch(entry);
+          },
         },
       },
     };
@@ -1163,8 +1167,13 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     );
 
     // Once the registered spaces have settled, each open one gets its launch machine and its
-    // recovery (A4 3.9.3), and the sweep and the PID check run every 30 s.
-    void spacesOpening.then(() => {
+    // recovery (A4 3.9.3), and the sweep and the PID check run every 30 s, and so do the runs'
+    // rounds. A migration has no bound, so the other spaces wait at most an open's bound for it:
+    // a space that opens later joins at the next round.
+    const upkeepAfter = new Promise<void>((resolve) => {
+      setTimeout(resolve, options.spaceOptions?.openTimeoutMs ?? SPACE_OPEN_TIMEOUT_MS).unref();
+    });
+    void Promise.race([spacesOpening, upkeepAfter]).then(() => {
       if (draining === undefined && !aborted) {
         launches.start();
         runs.watch();

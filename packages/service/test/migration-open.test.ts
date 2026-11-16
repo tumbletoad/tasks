@@ -26,7 +26,7 @@ import { SLOW_BARRIER_MS, type StepSet } from "../../storage/test/stand-in-steps
 import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { BUILD } from "../src/hub/build.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
-import { readSpaceSettings, SPACES_FOLDER } from "../src/hub/space-settings.ts";
+import { readSpaceSettings, recordMigration, SPACES_FOLDER } from "../src/hub/space-settings.ts";
 import { RETRY_MIGRATION } from "../src/hub/spaces.ts";
 import {
   readLog,
@@ -41,9 +41,8 @@ import { classSession, errorOf, type CliClass } from "./ops-helpers.ts";
 const LONG = 240_000;
 
 /**
- * The open's bound in the tests whose barrier backup is slow and whose space is then opened again
- * in a new worker: shorter than the slow barrier, so the first open always passes it, and long
- * enough for that ordinary second open on a loaded runner, which 1 s was not.
+ * The open's bound in the tests whose barrier backup is slow: shorter than the slow barrier, so the
+ * migration always runs past it, and long enough for the open's other steps on a loaded runner.
  */
 const SLOW_OPEN_BOUND_MS = SLOW_BARRIER_MS - 500;
 const running: RunningService[] = [];
@@ -529,78 +528,36 @@ async function watched(
 const inOrder = (ready: StorageWorker[]) => () =>
   Promise.resolve(ready.shift() ?? StorageWorker.start({ driver: "node:sqlite" }));
 
-describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the open's bound", () => {
+describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's bound", () => {
   test(
-    "a migration that fails after the bound passed leaves the space unchanged and read-only, with no failure record: the next open tries again",
-    async () => {
-      const { home, spaces } = setUp("slowfail");
-      const space = await spaceAt01(join(spaces, "work"));
-      const id = space.space.spaceId;
-      const fixture = digestSpace(await checkedDriver(), space.folder);
-      // Started before the service, so the open's bound covers only the open itself: a build whose
-      // barrier backup takes longer than that bound (as a large space's does). The reader after the
-      // timeout gets a plain worker, started then.
-      const slow = await watched("slow-failing");
-      const service = await start(home, space.folder, {
-        startWorker: inOrder([slow.worker]),
-        openTimeoutMs: SLOW_OPEN_BOUND_MS,
-        closeTimeoutMs: 30_000,
-      });
-      // The worker was stopped before the space was read again, and the space, still at 0.1, is
-      // served read-only.
-      expect(slow.closed()).toBeDefined();
-      expect(service.spaces()).toEqual([
-        {
-          entry: 0,
-          state: "read_only",
-          reason: "migration_failed",
-          code: "ETIMEDOUT",
-          message:
-            // The service names its own build's latest revision: the stopped worker's cannot tell.
-            "Migration to 0.5 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
-            "The space stays at 0.1. It is tried again when the space next opens.",
-          id,
-        },
-      ]);
-      expect(events(home, "space.read_only")).toEqual([
-        expect.objectContaining({ entry: 0, reason: "migration_failed", code: "ETIMEDOUT" }),
-      ]);
-      expect(JSON.stringify(readLog(home))).not.toContain("Your data is unchanged");
-      // A timeout is no failed migration: nothing is recorded.
-      expect(readSpaceSettings(stateOf(home), id).failedMigrations).toBeUndefined();
-      await stop(service);
-      expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
-
-      // The next open tries again, with this build's real steps, and migrates.
-      const next = await start(home, space.folder);
-      expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
-    },
-    LONG,
-  );
-
-  test(
-    "a migration that succeeds within the close's bound after the open's bound passed leaves the space at this build's latest revision, served for writing, never reported unchanged",
+    "a migration that succeeds after the bound passed is waited for: the space opens for writing, migrated, without a restart",
     async () => {
       const { home, spaces } = setUp("slowok");
       const space = await spaceAt01(join(spaces, "work"));
       const id = space.space.spaceId;
       const before = await dbState(space.folder);
+      // Its barrier backup takes longer than the open's bound, as a large space's does.
       const slow = await watched("slow-real");
       const service = await start(home, space.folder, {
         startWorker: inOrder([slow.worker]),
         openTimeoutMs: SLOW_OPEN_BOUND_MS,
         closeTimeoutMs: 30_000,
       });
-      expect(slow.closed()).toBeDefined();
-      // The stopped open's migration committed before its worker ended: the space is migrated, and
-      // the writer opened again in the new worker. Never read-only, never "unchanged".
+      // The open waited for its own worker's migration: nothing was stopped or tried again.
+      expect(slow.closed()).toBeUndefined();
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(events(home, "space.read_only")).toEqual([]);
+      expect(events(home, "space.migrating")).toEqual([expect.objectContaining({ entry: 0 })]);
       expect(events(home, "space.open")).toEqual([
-        expect.objectContaining({ entry: 0, space: id, migrated: false }),
+        expect.objectContaining({ entry: 0, space: id, migrated: true }),
       ]);
+      const [backup] = barrierBackups(space.folder);
       expect(barrierBackups(space.folder)).toHaveLength(1);
+      // What the space list and doctor tell the person: the revisions, and the backup from before.
+      expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
+        from: "0.1",
+        to: "0.5",
+        backup,
+      });
       const user = await session(home, service, "cli-interactive");
       const added = await call(user, "op/call", {
         op: "task.add",
@@ -608,6 +565,18 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
         space: id,
       });
       expect(added).toHaveProperty("tasks");
+      const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
+      // Past the time retention keeps a barrier backup, the list no longer names it.
+      recordMigration(
+        stateOf(home),
+        id,
+        { from: 1, to: 5, ...(backup === undefined ? {} : { backup }) },
+        new Date(Date.now() - 31 * 86_400_000),
+      );
+      const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5" });
+      expect(later[0]?.["migrated"]).not.toHaveProperty("backup");
       await stop(service);
       const after = await dbState(space.folder);
       expect(after.revision).toEqual({ major: 0, minor: 5 });
@@ -618,44 +587,27 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
     LONG,
   );
 
-  test.each([
-    ["succeeds", "slow-real", { major: 0, minor: 5 }],
-    ["fails", "slow-failing", { major: 0, minor: 1 }],
-  ] as const)(
-    "a migration still running when the close's bound passes, which then %s: no reader is served, the space is unavailable, and the next start finds the state it left intact",
-    async (_, set, revision) => {
-      const { home, spaces } = setUp("stuck");
+  test(
+    "a migration that fails after the bound passed is a failed migration like any other: the space stays unchanged and read-only, and the failure is recorded",
+    async () => {
+      const { home, spaces } = setUp("slowfail");
       const space = await spaceAt01(join(spaces, "work"));
       const id = space.space.spaceId;
       const fixture = digestSpace(await checkedDriver(), space.folder);
-      const slow = await watched(set);
+      const state = await dbState(space.folder);
+      const slow = await watched("slow-failing");
       const service = await start(home, space.folder, {
         startWorker: inOrder([slow.worker]),
-        openTimeoutMs: 1_000,
-        closeTimeoutMs: 500,
+        openTimeoutMs: SLOW_OPEN_BOUND_MS,
+        closeTimeoutMs: 30_000,
       });
-      // The worker did not stop within the close's bound: no reader, and the space unavailable.
-      expect(service.spaces()).toMatchObject([
-        { entry: 0, state: "unavailable", reason: "open_failed", code: "ETIMEDOUT" },
+      const [backup = "?"] = barrierBackups(space.folder);
+      expect(service.spaces()).toEqual([failedNow(id, backup)]);
+      expect(readSpaceSettings(stateOf(home), id).failedMigrations).toEqual([
+        failure(state, backup),
       ]);
-      expect(service.spaces()[0]).not.toHaveProperty("id");
-      expect(events(home, "space.read_only")).toEqual([]);
-      // The stopped worker's migration ends meanwhile, and so does its worker.
-      await slow.closed();
       await stop(service);
-      expect(readSpaceSettings(stateOf(home), id).failedMigrations).toBeUndefined();
-      const left = await dbState(space.folder);
-      expect(left.revision).toEqual(revision);
-      if (set === "slow-failing") {
-        expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
-      }
-
-      // The next start finds that state: a migrated space opens; an unchanged one is tried again,
-      // with this build's real steps (a timeout recorded no failure).
-      const next = await start(home, space.folder);
-      expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
-      expect(barrierBackups(space.folder)).toHaveLength(set === "slow-real" ? 1 : 2);
+      expect(digestSpace(await checkedDriver(), space.folder)).toBe(fixture);
     },
     LONG,
   );

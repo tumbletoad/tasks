@@ -32,6 +32,7 @@ import { checkSwapPath } from "../restore/folders.ts";
 import { recoverSpaceWith } from "../restore/recover.ts";
 import { restoreInPlaceWith, type RestoreSeams } from "../restore/restore.ts";
 import type { SchemaStep } from "../schema.ts";
+import { repairSearchIndex } from "../search/remake.ts";
 import {
   beginSpaceWriter,
   openSpaceWith,
@@ -375,10 +376,18 @@ export function serve(
             ready = { ...opened, revision: to, readOnlyReasons: [] };
           }
         }
+        // A migration made the index just now. Otherwise damage in it alone is repaired here, so
+        // search works again without the person doing anything: the tasks are the truth.
+        const searchIndex =
+          migration === undefined ? repairSearchIndex(checked, ready.conn, steps) : "sound";
         // Attached only: the caller registers the machine once the space is claimed. Attach
         // refuses a writer that still has a reason to be read-only.
         writers.set(handle, SpaceWriter.attach(ready, { machine }, writeSeams));
-        return { ...spaceInfo(handle, ready), ...(migration === undefined ? {} : { migration }) };
+        return {
+          ...spaceInfo(handle, ready),
+          ...(migration === undefined ? {} : { migration }),
+          ...(searchIndex === "sound" ? {} : { searchIndex }),
+        };
       };
 
       /** Claims a read-only copy on its writer's connection. The caller closes it. */
@@ -587,6 +596,7 @@ export function serve(
         openLaunches: ({ handle, machine }) => writer(handle).openLaunches(machine),
         projected: ({ handle, batch }) => writer(handle).projected(batch),
         queueProjection: ({ handle, keys }) => writer(handle).queueProjection(keys),
+        repairSearchIndex: ({ handle }) => writer(handle).repairSearchIndex(checked, steps),
         run: ({ handle, run }) => writer(handle).run(run) ?? null,
         openRuns: ({ handle, machine }) => writer(handle).openRuns(machine),
         exec: ({ handle, sql }) => {

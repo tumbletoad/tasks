@@ -754,6 +754,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.search.repair",
+      "title": "A space whose search index alone is damaged still backs up and its backup restores whole; a writer's open makes the index again from the tasks, and leaves a sound one as it is",
+      "source": "A1 3.12, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.read-only-copy",
       "title": "A backup restored into a new folder is a read-only copy until claimed: a writer is refused with SPACE_READ_ONLY_COPY, a reader reads, the mark lives in the database so a copy of the folder or the database and a missing or damaged space.json keep it, and a claim gives a new epoch and incarnation in one commit and leaves the original untouched",
       "source": "A1 3.18, A6 3.5",
@@ -1307,7 +1315,7 @@
     },
     {
       "id": "A2.3.1.hub.migration-timeout",
-      "title": "An open whose migration runs past the open's bound stops its worker before it reads the space again: a migration that fails, or still runs within the close's bound and fails, leaves the space unchanged and read-only (ETIMEDOUT) with no failure record; one that succeeds within the close's bound leaves it at the new revision and served for writing, never reported unchanged; one still running when the close's bound passes serves no reader, the space is unavailable, and the next start finds the state it left intact",
+      "title": "A migration that runs past the open's bound is waited for: one that succeeds leaves the space open for writing at the new revision without a restart, with the revisions and the backup from before it recorded for the space list; one that fails is a failed migration like any other, the space unchanged and read-only with its failure recorded",
       "source": "A1 3.17, A2 3.1, A7 3.10 M3.01",
       "owner": "M3",
       "kind": "ci",
@@ -3105,8 +3113,40 @@
     },
     {
       "id": "A2.3.12.8.build.release-script",
-      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder and no terminal",
+      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder, a development version, archives that trust another key and no terminal",
       "source": "A2 3.12.8, A7 2 P9, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-ci-sign",
+      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any event but a manual dispatch, any ref but main, a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment first and appear in no message or child process",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-rehearsal",
+      "title": "A rehearsal signs rehearsal versions only, with a key made for the call, marks its folder and install scripts as a test build, signs only archives that trust the committed release keys, and its archive is refused by the product's updater, by release signing and by publishing",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-version",
+      "title": "A release's version is package.json's at a commit on main, dev and rehearsal versions are never released, a draft is created, resumed or left as it is, and a tag on another commit, other bytes, a draft for another commit or a change to a published release are refused",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-files",
+      "title": "The signing job gathers one archive per released platform, each matching its own build's SHA256SUMS, and a release's files are published only when SHA256SUMS is signed by a pinned key in both formats, every archive passes the updater's own check, and no other file is there",
+      "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]
