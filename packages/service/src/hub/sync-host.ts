@@ -37,6 +37,12 @@ const FACTS_TTL_MS = 60_000;
  * take more than ten, and a run cut short leaves every space it was for read-only.
  */
 const RUN_TIMEOUT_MS = CHECK_TIMEOUT_MS;
+/**
+ * The bound on reading the drives' volume identities after the run. A drive that does not answer
+ * within it (a card reader, a disc spinning up) is kept without one, so only a folder on it is
+ * unchecked: waiting longer would let one slow drive run the whole check past its bound.
+ */
+const VOLUMES_TIMEOUT_MS = 10_000;
 const OUTPUT_MAX_BYTES = 4 * 1024 * 1024;
 
 /** The strings a section accepts for a path: REG_SZ, and REG_EXPAND_SZ expanded. */
@@ -284,7 +290,7 @@ const volumeIdOf = async (path: string): Promise<string> =>
 export async function withVolumes(
   facts: WindowsSyncFacts,
   volumeOf: (path: string) => Promise<string> = volumeIdOf,
-  timeoutMs = RUN_TIMEOUT_MS,
+  timeoutMs = VOLUMES_TIMEOUT_MS,
 ): Promise<WindowsSyncFacts> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const bound = new Promise<undefined>((resolve) => {
@@ -312,7 +318,7 @@ export async function readWindowsFacts(
 ): Promise<WindowsSyncFacts | undefined> {
   const out = await runWindowsScript(WINDOWS_SCRIPT, timeoutMs);
   const facts = out === undefined ? undefined : windowsFactsOf(out);
-  return facts === undefined ? undefined : withVolumes(facts, volumeIdOf, timeoutMs);
+  return facts === undefined ? undefined : withVolumes(facts);
 }
 
 /**
