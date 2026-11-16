@@ -1,6 +1,11 @@
-// A request decided behind a verified barrier backup (A1 3.14, 3.18; A7 3.15.5): the import of the
-// earlier prototype. The backup is taken and verified by a trial restore before the request's
-// transaction starts, and the request is decided only on the state the backup holds:
+// A change made only behind a backup that is proven to restore (A1 3.14, 3.17, 3.18; A7 3.15.5): an
+// upgrade of a space's data format (migrate/runner.ts) and the import of the earlier prototype.
+// The backup is taken, then trial restored (restore.ts trialRestore), before the change's
+// transaction starts. A backup that does not restore stops the change: BACKUP_FAILED, or
+// BUNDLE_LIMIT_EXCEEDED for a full disk, and nothing is written to the space. A backup that was
+// published stays, as every backup does.
+//
+// The import is decided only on the state the backup holds:
 //
 //   a retry that its receipt answers → replayed, no backup
 //   the space still at the state the request was decided on (`expect`)? else SPACE_CHANGED
@@ -11,16 +16,45 @@
 // keeps every other process out. The writer still checks, inside its transaction, that the space
 // stands at the backup's seq and incarnation (SubmitOptions.snapshot), so a write the barrier did
 // not hold fails the request undecided instead of applying it on a state no backup holds.
-//
-// A failed or unverified backup stops the request before its transaction: BACKUP_FAILED, or
-// BUNDLE_LIMIT_EXCEEDED for a full disk, and nothing is written to the space. A backup that was
-// published stays, as every backup does.
-import { verifyBackupFile } from "../restore/restore.ts";
+import { trialRestore } from "../restore/restore.ts";
 import { StorageError } from "../errors.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import type { WriteResult } from "../write/request.ts";
 import type { SpaceWriter } from "../write/writer.ts";
-import { backupSpaceWith, type BackupRecord, type BackupSeams } from "./backup.ts";
+import {
+  backupSpaceWith,
+  type BackupRecord,
+  type BackupSeams,
+  type SpaceBackupOptions,
+} from "./backup.ts";
+
+/**
+ * Takes a backup of the space at `folder` and trial restores it. Throws as backupSpace does, and
+ * when the trial restore fails: BUNDLE_LIMIT_EXCEEDED when the disk has no room for it, else
+ * BACKUP_FAILED with the cause's code. The trial restore needs the database's size in free disk
+ * space beside the backup, on top of the backup itself, and takes about as long as the backup.
+ */
+export async function provenBackup(
+  checked: CheckedDriver,
+  folder: string,
+  options: SpaceBackupOptions,
+  seams: BackupSeams = {},
+): Promise<BackupRecord> {
+  const backup = await backupSpaceWith(checked, folder, options, seams);
+  try {
+    await trialRestore(checked, backup.file, {
+      ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
+      ...(seams.steps === undefined ? {} : { steps: seams.steps }),
+      ...(seams.policy === undefined ? {} : { policy: seams.policy }),
+      ...(seams.freeBytes === undefined ? {} : { freeBytes: seams.freeBytes }),
+    });
+  } catch (error) {
+    if (error instanceof StorageError && error.code === "BUNDLE_LIMIT_EXCEEDED") throw error;
+    const cause = error instanceof StorageError ? error.code : "an unexpected error";
+    throw new StorageError("BACKUP_FAILED", `The backup does not restore (${cause})`);
+  }
+  return backup;
+}
 
 /** The space's state a request was decided on: its seq and incarnation. */
 export interface SpaceAt {
@@ -65,7 +99,7 @@ export async function submitBehindBackup(
   if (expect !== undefined && !standsAt(writer.asOf(), expect)) {
     throw new StorageError("SPACE_CHANGED", "The space changed after the import read it");
   }
-  const backup = await backupSpaceWith(
+  const backup = await provenBackup(
     checked,
     options.folder,
     {
@@ -76,13 +110,6 @@ export async function submitBehindBackup(
     },
     seams,
   );
-  // Verified means a trial restore (A1 3.18): the restore's own steps on a scratch copy.
-  const verified = await verifyBackupFile(checked, backup.file, {
-    ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
-  });
-  if (verified === undefined) {
-    throw new StorageError("BACKUP_FAILED", "The backup before the import does not restore");
-  }
   const snapshot = { seq: backup.sidecar.seq, incarnation: backup.sidecar.incarnation };
   if (expect !== undefined && !standsAt(snapshot, expect)) {
     throw new StorageError("SPACE_CHANGED", "The space changed after the import read it");

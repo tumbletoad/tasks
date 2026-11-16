@@ -538,6 +538,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.migration.proven-barrier",
+      "title": "A migration starts only behind a barrier backup that passes a trial restore: one that reads back but does not restore, or a full disk at the trial restore, stops it, and the space stays readable at its revision",
+      "source": "A1 3.17, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.stand-in-steps",
       "title": "The migration runner from 0.1 through the real 0.2 and 0.3 and a stand-in 0.4: one system commit per step, user_version, format, undo floor and space.json; a step that fails midway, in its verify or on a foreign key leaves the space at its revision, and it still opens",
       "source": "A1 3.17, A1 5, A7 3.8 M1.06, A7 3.10 M3.01",

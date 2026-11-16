@@ -16,7 +16,7 @@
 // VERIFIED MEANS A TRIAL RESTORE (A1 3.18). A backup is verified when restoreCopy, the restore's
 // own steps up to and with its first write (unpack with every check, then the read-only mark, whose
 // transaction runs a claim of the copy and takes it back, mark.ts), ran to its end on a scratch copy
-// (verifyBackupFile). So a verified backup restores into a new folder, can be claimed there, and
+// (trialRestore). So a verified backup restores into a new folder, can be claimed there, and
 // restores in place, whose first write is that claim. There is no second checker to drift from
 // what a restore does: retention keeps the newest backup verified this way (backup/retention.ts),
 // and `restore latest` restores its candidates directly (rescue.ts).
@@ -240,17 +240,17 @@ export interface VerifyOptions extends UnpackSeams {
 }
 
 /**
- * Verifies the backup `backupFile` by a trial restore (see the header): restoreCopy on a scratch
- * copy beside it, under a backup's own temporary name (`.backup.tmp-<random>.db`), so a crash leaves
- * only a leftover that the listing names and cleanup removes. The scratch copy is removed again.
- * Returns the backup's sidecar when the restore ran to its end, undefined when any step failed.
- * Never throws for the backup's sake. It needs the database's size in free disk space.
+ * A trial restore of the backup `backupFile` (see the header): restoreCopy on a scratch copy beside
+ * it, under a backup's own temporary name (`.backup.tmp-<random>.db`), so a crash leaves only a
+ * leftover that the listing names and cleanup removes. The scratch copy is removed again. Throws
+ * what the restore threw: BUNDLE_LIMIT_EXCEEDED when the database's size, with the free-space
+ * reserve, does not fit on the disk.
  */
-export async function verifyBackupFile(
+export async function trialRestore(
   checked: CheckedDriver,
   backupFile: string,
   options: VerifyOptions = {},
-): Promise<BackupSidecar | undefined> {
+): Promise<RestoreSource> {
   const scratch = join(dirname(backupFile), `${BACKUP_TEMP_PREFIX}${temporaryTag()}.db`);
   try {
     const copy = await restoreCopy(
@@ -261,11 +261,27 @@ export async function verifyBackupFile(
       options,
       options,
     );
-    return copy.source.kind === "backup" ? copy.source.sidecar : undefined;
-  } catch {
-    return undefined;
+    return copy.source;
   } finally {
     removeDatabase(scratch);
+  }
+}
+
+/**
+ * Verifies the backup `backupFile` by a trial restore (trialRestore). Returns the backup's sidecar
+ * when the restore ran to its end, undefined when any step failed. Never throws for the backup's
+ * sake.
+ */
+export async function verifyBackupFile(
+  checked: CheckedDriver,
+  backupFile: string,
+  options: VerifyOptions = {},
+): Promise<BackupSidecar | undefined> {
+  try {
+    const source = await trialRestore(checked, backupFile, options);
+    return source.kind === "backup" ? source.sidecar : undefined;
+  } catch {
+    return undefined;
   }
 }
 
