@@ -249,7 +249,7 @@ export function twoTerminalsHost(): TerminalHost {
     platform: "linux",
     path: ["/usr/bin"],
     terminalVar: undefined,
-    home: "/home/person",
+    home: "/home/mira",
     windowsApps: undefined,
     executable: (path) => programs.includes(path),
     readText: () => undefined,
