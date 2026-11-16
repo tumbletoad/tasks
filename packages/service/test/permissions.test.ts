@@ -6,6 +6,10 @@
 // The repair table runs every command it can without root against a scratch fixture and judges the
 // fixture again: the next start must pass. The cases that need root (another owner) assert the
 // exact text, and the command's effect is applied to the facts to show that they pass after it.
+//
+// A real fixture's group is this account's, which may be its own private group, whose write the
+// rule accepts: so the real fixtures here are refused for write by every user, and group write is
+// judged on facts (and on this machine's own folders in group-rule.test.ts).
 import { spawnSync } from "node:child_process";
 import {
   accessSync,
@@ -16,6 +20,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -27,6 +32,7 @@ import { loadMachineConfig, type UnsafePart } from "../src/config/machine-toml.t
 import { unsafeConfigMessage } from "../src/config/messages.ts";
 import { ServiceExit } from "../src/hub/exit.ts";
 import {
+  currentPerson,
   factsOf,
   fixCommand,
   problemOf,
@@ -36,6 +42,7 @@ import {
   unsafeMessage,
   type Need,
   type PathFacts,
+  type Person,
   type Unsafe,
 } from "../src/hub/permissions.ts";
 import { startService, type StartOptions } from "../src/hub/service.ts";
@@ -119,8 +126,27 @@ async function startOnce(
 const commandIn = (line: string | undefined): string | undefined =>
   /(?:To fix it|For the others), run: (.*)$/su.exec(line ?? "")?.[1];
 
+/**
+ * Whether `path`'s group is this account's own private group, whose write the rule accepts: a new
+ * file's group is the account's primary group unless a setgid folder above gives it another.
+ */
+const ownGroup = (path: string): boolean => {
+  const own = currentPerson()?.ownGroup();
+  return own !== undefined && own === statSync(path).gid;
+};
+
 const ME = 1000;
 const ROOT = 0;
+/** The primary group of the facts below: shared, as macOS's `staff` is, unless a test says not. */
+const GROUP = 20;
+/** A person whose primary group is shared (`staff`): no group but none may write. */
+const P: Person = {
+  uid: ME,
+  ownGroup: () => undefined,
+  groupName: (gid) => (gid === GROUP ? "staff" : undefined),
+};
+/** The same person with a private group of their own (`ada`), whose write the rule accepts. */
+const OWN: Person = { ...P, ownGroup: () => GROUP, groupName: () => "ada" };
 const facts = (
   path: string,
   need: Need,
@@ -132,39 +158,49 @@ const facts = (
   need,
   kind: need === "file" ? "file" : "folder",
   uid: owner,
+  gid: GROUP,
   mode,
   ...extra,
 });
 
 describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () => {
-  test("another owner, write for every user and write for the group all refuse; the socket folder lets no one in", () => {
-    const judge = (need: Need, mode: number, owner = ME) =>
-      problemOf(facts("/p", need, mode, owner), ME);
+  test("another owner, write for every user and write for a group that is not the person's own all refuse; the socket folder lets no one in", () => {
+    const judge = (need: Need, mode: number, owner = ME, person = P) =>
+      problemOf(facts("/p", need, mode, owner), person);
     expect(judge("file", 0o600)).toBeUndefined();
     expect(judge("file", 0o644)).toBeUndefined();
     expect(judge("file", 0o400)).toBeUndefined();
     expect(judge("file", 0o600, ROOT)).toBe("other_owner");
     expect(judge("file", 0o602)).toBe("world_writable");
     expect(judge("file", 0o666)).toBe("world_writable");
-    // A desktop with umask 002 makes 0664 files: refused, whoever is in the group.
+    // A shared group may hold other people: its write is refused.
     expect(judge("file", 0o664)).toBe("group_writable");
     expect(judge("file", 0o620)).toBe("group_writable");
     expect(judge("file", 0o200)).toBe("no_access");
     expect(judge("folder", 0o755)).toBeUndefined();
     expect(judge("folder", 0o775)).toBe("group_writable");
     expect(judge("folder", 0o500)).toBe("no_access");
+    // A desktop with umask 002 and a private group per user makes 0664 files and 0775 folders:
+    // that group is the person's own, so its write passes. Every user's write still does not, and
+    // another group's does not either.
+    expect(judge("file", 0o664, ME, OWN)).toBeUndefined();
+    expect(judge("folder", 0o775, ME, OWN)).toBeUndefined();
+    expect(judge("folder", 0o777, ME, OWN)).toBe("world_writable");
+    expect(problemOf({ ...facts("/p", "folder", 0o775), gid: 27 }, OWN)).toBe("group_writable");
+    // The socket folder lets no one else in at all, a private group included.
     expect(judge("private_folder", 0o700)).toBeUndefined();
     expect(judge("private_folder", 0o755)).toBe("open_to_others");
     expect(judge("private_folder", 0o775)).toBe("open_to_others");
+    expect(judge("private_folder", 0o770, ME, OWN)).toBe("open_to_others");
     expect(judge("private_folder", 0o701)).toBe("open_to_others");
     expect(judge("private_folder", 0o700, ROOT)).toBe("other_owner");
     // A link where links are not followed (configuration), and the wrong kind of object.
-    expect(problemOf(facts("/p", "file", 0o600, ME, { link: "/etc/x" }), ME)).toBe("link");
+    expect(problemOf(facts("/p", "file", 0o600, ME, { link: "/etc/x" }), P)).toBe("link");
     expect(
-      problemOf(facts("/p", "folder", 0o700, ME, { link: "/d", followsLink: true }), ME),
+      problemOf(facts("/p", "folder", 0o700, ME, { link: "/d", followsLink: true }), P),
     ).toBeUndefined();
-    expect(problemOf({ ...facts("/p", "folder", 0o700), kind: "file" }, ME)).toBe("not_a_folder");
-    expect(problemOf({ ...facts("/p", "file", 0o600), kind: "other" }, ME)).toBe("not_a_file");
+    expect(problemOf({ ...facts("/p", "folder", 0o700), kind: "file" }, P)).toBe("not_a_folder");
+    expect(problemOf({ ...facts("/p", "file", 0o600), kind: "other" }, P)).toBe("not_a_file");
   });
 
   test("a path is written as a person types it: ~/ for home, quoted when needed", () => {
@@ -182,6 +218,7 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
       fixCommand(
         [{ facts: facts("/srv/a\rb", "folder", 0o777), problem: "world_writable" }],
         "ada",
+        P,
       ),
     ).toBeUndefined();
     // A line longer than a line to paste can be (A3 3.13.7): no command, and the message says why.
@@ -194,14 +231,14 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
         problem: "world_writable" as const,
       },
     ];
-    expect(Buffer.byteLength(fixCommand(world(fits), "ada") ?? "")).toBe(MAX_LINE_BYTES);
-    expect(fixCommand(world(long), "ada")).toBeUndefined();
-    expect(unsafeMessage(world(long), "Why", "ada")).toContain(
+    expect(Buffer.byteLength(fixCommand(world(fits), "ada", P) ?? "")).toBe(MAX_LINE_BYTES);
+    expect(fixCommand(world(long), "ada", P)).toBeUndefined();
+    expect(unsafeMessage(world(long), "Why", "ada", P)).toContain(
       `No command is given, because it would be longer than a line to paste can be (${String(MAX_LINE_BYTES)} bytes).`,
     );
   });
 
-  test("the message says what is wrong in plain words first, then why, then the command", () => {
+  test("the message says what is wrong in plain words first, naming the group, then why, then the command", () => {
     const folder = facts("/srv/k", "folder", 0o775);
     const file = facts("/srv/k/machine.toml", "file", 0o664);
     expect(
@@ -212,9 +249,21 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
         ],
         "So the service does not start",
         "ada",
+        P,
       ),
     ).toBe(
-      "TT Tasks's configuration folder (/srv/k) and TT Tasks's machine.toml (/srv/k/machine.toml) can be changed by the members of their group, not only by you. So the service does not start. To fix it, run: chmod go-w /srv/k /srv/k/machine.toml",
+      "TT Tasks's configuration folder (/srv/k) and TT Tasks's machine.toml (/srv/k/machine.toml) can be changed by the members of their group staff, not only by you. So the service does not start. To fix it, run: chmod g-w /srv/k /srv/k/machine.toml",
+    );
+    // A group whose name cannot be read is named by its ID.
+    expect(
+      unsafeMessage(
+        [{ name: "The folder", facts: { ...folder, gid: 27 }, problem: "group_writable" }],
+        "Why",
+        "ada",
+        P,
+      ),
+    ).toBe(
+      "The folder (/srv/k) can be changed by the members of its group with ID 27, not only by you. Why. To fix it, run: chmod g-w /srv/k",
     );
     expect(
       unsafeMessage(
@@ -228,14 +277,26 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
         ],
         "Why",
         "ada",
+        P,
       ),
     ).toBe(
-      "The folder (/srv/k) belongs to another user; The file (/srv/k/f) can be changed by every user on this computer. Why. To fix it, run: sudo chown -h ada /srv/k && chmod go-w /srv/k/f",
+      "The folder (/srv/k) belongs to another user; The file (/srv/k/f) can be changed by every user on this computer. Why. To fix it, run: sudo chown -h ada /srv/k && chmod o-w /srv/k/f",
     );
+    // Every user's write goes, and a private group's stays: one change for each.
+    expect(
+      fixCommand(
+        [
+          { facts: facts("/srv/a", "folder", 0o777), problem: "world_writable" },
+          { facts: { ...facts("/srv/b", "folder", 0o777), gid: 27 }, problem: "world_writable" },
+        ],
+        "ada",
+        OWN,
+      ),
+    ).toBe("chmod o-w /srv/a && chmod go-w /srv/b");
   });
 
   test.skipIf(!posix)(
-    "machine.toml and its folder: group or world write is refused, both are named, and one command fixes both",
+    "machine.toml and its folder as made under umask 002: passed under the person's own private group, else refused with g-w; every user's write is refused, both are named, and one command fixes both",
     () => {
       const dir = join(temp("pm"), "config");
       mkdirSync(dir, { mode: 0o700 });
@@ -244,25 +305,43 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
       expect(loadMachineConfig(dir, "linux").config.log.level).toBe("warn");
       const parts = (found: readonly UnsafePart[] | undefined) =>
         found?.map(({ what, path, problem }) => ({ what, path, problem }));
-      chmodSync(file, 0o660);
+      // As `mkdir` and an editor make them under umask 002, in this account's group.
+      chmodSync(dir, 0o775);
+      chmodSync(file, 0o664);
+      const grouped = loadMachineConfig(dir, "linux");
+      if (ownGroup(dir) && ownGroup(file)) {
+        expect(grouped.problems).toEqual([]);
+        expect(grouped.config.log.level).toBe("warn");
+      } else {
+        expect(parts(grouped.unsafe)).toEqual([
+          { what: "folder", path: dir, problem: "group_writable" },
+          { what: "file", path: file, problem: "group_writable" },
+        ]);
+        const line = unsafeConfigMessage(grouped.unsafe ?? [{} as UnsafePart]);
+        expect(line).toMatch(/can be changed by the members of their group .+, not only by you/u);
+        expect(commandIn(line)).toBe(`chmod g-w ${shellPath(dir)} ${shellPath(file)}`);
+        paste(commandIn(line) ?? "false", dir);
+        expect(loadMachineConfig(dir, "linux").problems).toEqual([]);
+      }
+      chmodSync(dir, 0o755);
+      chmodSync(file, 0o606);
       const fileOnly = loadMachineConfig(dir, "linux");
       expect(fileOnly.problems).toEqual([
         { key: "", code: "unsafe_permissions", severity: "error" },
       ]);
       expect(parts(fileOnly.unsafe)).toEqual([
-        { what: "file", path: file, problem: "group_writable" },
+        { what: "file", path: file, problem: "world_writable" },
       ]);
-      // The folder too, as `mkdir` and an editor make them under umask 002.
-      chmodSync(dir, 0o775);
-      chmodSync(file, 0o664);
+      chmodSync(dir, 0o757);
+      chmodSync(file, 0o646);
       const both = loadMachineConfig(dir, "linux");
       expect(parts(both.unsafe)).toEqual([
-        { what: "folder", path: dir, problem: "group_writable" },
-        { what: "file", path: file, problem: "group_writable" },
+        { what: "folder", path: dir, problem: "world_writable" },
+        { what: "file", path: file, problem: "world_writable" },
       ]);
       const line = unsafeConfigMessage(both.unsafe ?? [{} as UnsafePart]);
-      expect(line).toContain("can be changed by the members of their group, not only by you");
-      expect(commandIn(line)).toBe(`chmod go-w ${shellPath(dir)} ${shellPath(file)}`);
+      expect(line).toContain("can be changed by every user on this computer");
+      expect(commandIn(line)).toBe(`chmod o-w ${shellPath(dir)} ${shellPath(file)}`);
       paste(commandIn(line) ?? "false", dir);
       expect(loadMachineConfig(dir, "linux").problems).toEqual([]);
       chmodSync(dir, 0o707);
@@ -281,14 +360,14 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
       mkdirSync(configOf(h), { recursive: true, mode: 0o700 });
       const file = join(configOf(h), "machine.toml");
       writeFileSync(file, '[log]\nlevel = "warn"\n', { mode: 0o600 });
-      chmodSync(file, 0o664);
+      chmodSync(file, 0o646);
       const lines: string[] = [];
       const exit = await startOnce(h, lines);
       expect(exit?.code).toBe(64);
       expect(exit?.refusal).toBe("unsafe_permissions");
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain("can be changed by the members of its group, not only by you");
-      expect(commandIn(lines[0])).toBe(`chmod go-w ${shellPath(file)}`);
+      expect(lines[0]).toContain("can be changed by every user on this computer");
+      expect(commandIn(lines[0])).toBe(`chmod o-w ${shellPath(file)}`);
       const log = readFileSync(join(stateOf(h), "logs", "service.log"), "utf8");
       expect(log).toMatch(/"ev":"service.refused".*"reason":"unsafe_permissions"/);
       expect(log).not.toContain(h);
@@ -301,11 +380,11 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
     async () => {
       const h = join(temp("pf"), "h");
       mkdirSync(stateOf(h), { recursive: true, mode: 0o700 });
-      chmodSync(stateOf(h), 0o777);
+      chmodSync(stateOf(h), 0o757);
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64, refusal: "unsafe_permissions" });
       expect(lines).toHaveLength(1);
-      expect(commandIn(lines[0])).toBe(`chmod go-w ${shellPath(stateOf(h))}`);
+      expect(commandIn(lines[0])).toBe(`chmod o-w ${shellPath(stateOf(h))}`);
       chmodSync(stateOf(h), 0o700);
     },
   );
@@ -318,14 +397,14 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const h = join(temp("cf"), "h");
       const dir = configOf(h);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
-      chmodSync(dir, 0o775);
+      chmodSync(dir, 0o757);
       const file = join(dir, "machine.toml");
       // The loader, the editor and a first start with the HTTP listener, which persists its port.
       const loaded = loadMachineConfig(dir, "linux");
       expect(loaded.present).toBe(false);
       expect(loaded.problems).toEqual([{ key: "", code: "unsafe_permissions", severity: "error" }]);
       expect(loaded.unsafe?.map((p) => [p.what, p.problem])).toEqual([
-        ["folder", "group_writable"],
+        ["folder", "world_writable"],
       ]);
       expect(
         editMachineToml(dir, [{ op: "set", table: ["log"], key: "level", value: "warn" }]),
@@ -337,7 +416,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         refusal: "unsafe_permissions",
       });
       expect(existsSync(file)).toBe(false);
-      expect(commandIn(lines[0])).toBe(`chmod go-w ${shellPath(dir)}`);
+      expect(commandIn(lines[0])).toBe(`chmod o-w ${shellPath(dir)}`);
       // The one command, and the start passes: it writes machine.toml with its port.
       paste(commandIn(lines[0]) ?? "false", h);
       expect(await startOnce(h, lines, { http })).toBeUndefined();
@@ -378,13 +457,13 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const crash = join(stateOf(h), "crash");
       mkdirSync(logs, { recursive: true, mode: 0o700 });
       mkdirSync(crash, { mode: 0o700 });
-      chmodSync(stateOf(h), 0o775);
+      chmodSync(stateOf(h), 0o707);
       chmodSync(logs, 0o757);
       chmodSync(crash, 0o500);
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64 });
       expect(commandIn(lines[0])).toBe(
-        `chmod go-w ${shellPath(stateOf(h))} ${shellPath(logs)} && chmod u+rwx ${shellPath(crash)}`,
+        `chmod o-w ${shellPath(stateOf(h))} ${shellPath(logs)} && chmod u+rwx ${shellPath(crash)}`,
       );
       paste(commandIn(lines[0]) ?? "false", h);
       expect(await startOnce(h, lines)).toBeUndefined();
@@ -404,7 +483,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       chmodSync(state, 0o700);
       chmodSync(tmp, 0o500);
       chmodSync(settings, 0o757);
-      chmodSync(t3, 0o770);
+      chmodSync(t3, 0o707);
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64, refusal: "unsafe_permissions" });
       expect(lines[0]).toContain(`TT Tasks's temporary folder (${shellPath(tmp)})`);
@@ -413,7 +492,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       // Nothing was read from them or written: no log, no service.json.
       expect(existsSync(join(state, "service.json"))).toBe(false);
       expect(commandIn(lines[0])).toBe(
-        `chmod u+rwx ${shellPath(tmp)} && chmod go-w ${[settings, t3].map((p) => shellPath(p)).join(" ")}`,
+        `chmod u+rwx ${shellPath(tmp)} && chmod o-w ${[settings, t3].map((p) => shellPath(p)).join(" ")}`,
       );
       paste(commandIn(lines[0]) ?? "false", h);
       expect(await startOnce(h, lines)).toBeUndefined();
@@ -429,7 +508,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const launch = join(stateOf(h), "launch");
       mkdirSync(launch, { recursive: true, mode: 0o700 });
       chmodSync(stateOf(h), 0o700);
-      chmodSync(launch, 0o777);
+      chmodSync(launch, 0o757);
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64, refusal: "unsafe_permissions" });
       expect(lines[0]).toContain(
@@ -437,7 +516,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       );
       expect(lines[0]).toContain("could choose what TT Tasks starts as you");
       expect(readFileSync(join(stateOf(h), "logs", "service.log"), "utf8")).not.toContain(launch);
-      expect(commandIn(lines[0])).toBe(`chmod go-w ${shellPath(launch)}`);
+      expect(commandIn(lines[0])).toBe(`chmod o-w ${shellPath(launch)}`);
       paste(commandIn(lines[0]) ?? "false", h);
       expect(await startOnce(h, lines)).toBeUndefined();
     },
@@ -451,7 +530,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const t3 = join(state, "t3");
       mkdirSync(t3, { recursive: true, mode: 0o700 });
       chmodSync(state, 0o700);
-      chmodSync(t3, 0o775);
+      chmodSync(t3, 0o757);
       const files = t3Files(state, "linux");
       let thrown: unknown;
       try {
@@ -463,10 +542,10 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       expect(readdirSync(t3)).toEqual([]);
       const line = (thrown as T3StateUnsafe).line;
       expect(line).toContain(
-        `TT Tasks's T3 folder (${shellPath(t3)}) can be changed by the members`,
+        `TT Tasks's T3 folder (${shellPath(t3)}) can be changed by every user`,
       );
       expect(line).toContain("so no token was kept");
-      expect(commandIn(line)).toBe(`chmod go-w ${shellPath(t3)}`);
+      expect(commandIn(line)).toBe(`chmod o-w ${shellPath(t3)}`);
       paste(commandIn(line) ?? "false", state);
       files.write("pairing", '{"format":1}\n');
       expect(lstatSync(join(t3, "pairing.json")).mode & 0o777).toBe(0o600);
@@ -479,8 +558,8 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const state = join(temp("if"), "state");
       const tmp = join(state, "tmp");
       mkdirSync(tmp, { recursive: true, mode: 0o700 });
-      chmodSync(state, 0o775);
-      chmodSync(tmp, 0o777);
+      chmodSync(state, 0o757);
+      chmodSync(tmp, 0o707);
       const target = { layout: { state } } as unknown as InstallTarget;
       const refusal = (): InstallError | undefined => {
         try {
@@ -496,7 +575,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       expect(first?.message).toContain(`TT Tasks's state folder (${shellPath(state)})`);
       expect(first?.message).toContain(`TT Tasks's temporary folder (${shellPath(tmp)})`);
       expect(first?.message).toContain("so the install does not finish");
-      expect(commandIn(first?.message)).toBe(`chmod go-w ${shellPath(state)} ${shellPath(tmp)}`);
+      expect(commandIn(first?.message)).toBe(`chmod o-w ${shellPath(state)} ${shellPath(tmp)}`);
       expect(readdirSync(tmp)).toEqual([]);
       paste(commandIn(first?.message) ?? "false", state);
       expect(refusal()).toBeUndefined();
@@ -528,13 +607,14 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
     chmodSync(path, mode);
     return path;
   };
+  // Group write of a real fixture depends on this account's group (group-rule.test.ts): these
+  // rows leave the group's bits alone.
   const rows: Row[] = [
     ...(
       [
-        [0o775, "group_writable", "go-w"],
-        [0o757, "world_writable", "go-w"],
-        [0o777, "world_writable", "go-w"],
-        [0o570, "group_writable", "u+rwx,go-w"],
+        [0o757, "world_writable", "o-w"],
+        [0o707, "world_writable", "o-w"],
+        [0o507, "world_writable", "u+rwx,o-w"],
         [0o500, "no_access", "u+rwx"],
         [0o000, "no_access", "u+rwx"],
       ] as const
@@ -564,9 +644,9 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
     })),
     ...(
       [
-        [0o664, "group_writable", "go-w"],
-        [0o646, "world_writable", "go-w"],
-        [0o220, "group_writable", "u+rw,go-w"],
+        [0o646, "world_writable", "o-w"],
+        [0o606, "world_writable", "o-w"],
+        [0o202, "world_writable", "u+rw,o-w"],
         [0o200, "no_access", "u+rw"],
         [0o000, "no_access", "u+rw"],
       ] as const
@@ -579,36 +659,36 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       command: (p) => `chmod ${spec} ${p}`,
     })),
     {
-      title: "a state folder that is a link (followed) to a folder of this user's, 0775",
+      title: "a state folder that is a link (followed) to a folder of this user's, 0757",
       need: "folder",
       follow: true,
       make: (root) => {
-        const real = folderAt(0o775, "real")(root);
+        const real = folderAt(0o757, "real")(root);
         symlinkSync(real, join(root, "state"));
         return join(root, "state");
       },
-      problem: "group_writable",
-      command: (p) => `chmod go-w ${p}`,
+      problem: "world_writable",
+      command: (p) => `chmod o-w ${p}`,
     },
     {
-      title: "a folder below a link, 0775",
+      title: "a folder below a link, 0757",
       need: "folder",
       follow: true,
       make: (root) => {
         mkdirSync(join(root, "real"), { mode: 0o700 });
         symlinkSync(join(root, "real"), join(root, "via"));
-        return folderAt(0o775, "f")(join(root, "via"));
+        return folderAt(0o757, "f")(join(root, "via"));
       },
-      problem: "group_writable",
-      command: (p) => `chmod go-w ${p}`,
+      problem: "world_writable",
+      command: (p) => `chmod o-w ${p}`,
     },
     {
       title: "a folder whose name holds a space, quotes, a substitution and a newline",
       need: "folder",
       follow: true,
-      make: folderAt(0o775, "a b'c $(touch pwned) `touch pwned`\nd"),
-      problem: "group_writable",
-      command: (p) => `chmod go-w ${p}`,
+      make: folderAt(0o757, "a b'c $(touch pwned) `touch pwned`\nd"),
+      problem: "world_writable",
+      command: (p) => `chmod o-w ${p}`,
     },
     {
       title: "machine.toml that is a link to a file of this user's",
@@ -644,7 +724,9 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const path = row.make(root);
       const before = factsOf(path, row.need, { followLink: row.follow });
       if (typeof before !== "object") throw new Error(`no facts for ${path}`);
-      const problem = problemOf(before, uid);
+      const person = currentPerson();
+      if (person === undefined) throw new Error("no person on a POSIX host");
+      const problem = problemOf(before, person);
       expect(problem).toBe(row.problem);
       const thing = { name: "It", facts: before, problem: problem ?? row.problem };
       const command = fixCommand([thing], "ada");
@@ -661,7 +743,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       paste(command, root);
       const after = factsOf(path, row.need, { followLink: row.follow });
       if (typeof after !== "object") throw new Error(`no facts for ${path} after ${command}`);
-      expect(problemOf(after, uid), command).toBeUndefined();
+      expect(problemOf(after, person), command).toBeUndefined();
       // What Tasks needs of it works: a folder takes a new file, the file reads.
       if (row.need === "file") expect(readFileSync(path, "utf8")).toContain("[log]");
       else writeFileSync(join(path, "probe"), "");
@@ -706,6 +788,12 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
     [
       "a folder of root, 0775",
       facts("/srv/k", "folder", 0o775, ROOT),
+      "other_owner",
+      "sudo chown -h ada /srv/k && chmod g-w /srv/k",
+    ],
+    [
+      "a folder of root, 0777",
+      facts("/srv/k", "folder", 0o777, ROOT),
       "other_owner",
       "sudo chown -h ada /srv/k && chmod go-w /srv/k",
     ],
@@ -786,10 +874,10 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
   test.each(rootRows)(
     "needs root: %s — the exact command, and the facts pass after it",
     (_, f, problem, command) => {
-      expect(problemOf(f, ME)).toBe(problem);
-      expect(fixCommand([{ facts: f, problem }], "ada")).toBe(command);
-      if (command !== undefined) expect(problemOf(applied(f, command), ME)).toBeUndefined();
-      else expect(repairOf(f, problem).chown).toBe(false);
+      expect(problemOf(f, P)).toBe(problem);
+      expect(fixCommand([{ facts: f, problem }], "ada", P)).toBe(command);
+      if (command !== undefined) expect(problemOf(applied(f, command), P)).toBeUndefined();
+      else expect(repairOf(f, problem, P).chown).toBe(false);
     },
   );
 
@@ -811,11 +899,11 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       ...(hides === undefined ? {} : { hides }),
     });
     // A root-owned 0700 folder: machine.toml inside it cannot be seen, and is checked next time.
-    expect(unsafeConfigMessage([part("folder", folder, "other_owner", true)], "ada")).toBe(
+    expect(unsafeConfigMessage([part("folder", folder, "other_owner", true)], "ada", P)).toBe(
       `TT Tasks's configuration folder (/srv/k) belongs to another user. ${why} TT Tasks cannot look inside /srv/k until that is fixed, so what is inside it (TT Tasks's machine.toml) is checked on the next start. To fix it, run: sudo chown -h ada /srv/k`,
     );
     // A root-owned 000 machine.toml: it becomes this user's and readable in one go.
-    expect(unsafeConfigMessage([part("file", file, "other_owner")], "ada")).toBe(
+    expect(unsafeConfigMessage([part("file", file, "other_owner")], "ada", P)).toBe(
       `TT Tasks's machine.toml (/srv/k/machine.toml) belongs to another user. ${why} To fix it, run: sudo chown -h ada /srv/k/machine.toml && chmod u+rw /srv/k/machine.toml`,
     );
     // Both, as root's mkdir and editor make them: one sudo, then what each needs.
@@ -826,13 +914,14 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
           part("file", facts("/srv/k/machine.toml", "file", 0o640, ROOT), "other_owner"),
         ],
         "ada",
+        P,
       ),
     ).toBe(
-      `TT Tasks's configuration folder (/srv/k) and TT Tasks's machine.toml (/srv/k/machine.toml) belong to another user. ${why} To fix it, run: sudo chown -h ada /srv/k /srv/k/machine.toml && chmod go-w /srv/k`,
+      `TT Tasks's configuration folder (/srv/k) and TT Tasks's machine.toml (/srv/k/machine.toml) belong to another user. ${why} To fix it, run: sudo chown -h ada /srv/k /srv/k/machine.toml && chmod g-w /srv/k`,
     );
     // A link: never a chown, which would change what it points to.
     const link = facts("/srv/k/machine.toml", "file", 0o777, ME, { link: "/etc/shadow" });
-    expect(unsafeConfigMessage([part("file", link, "link")], "ada")).toBe(
+    expect(unsafeConfigMessage([part("file", link, "link")], "ada", P)).toBe(
       `TT Tasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TT Tasks does not follow links for its configuration: put a real file in place of the link.`,
     );
     // A folder that fails beside a link: the command fixes the folder, and the link is named.
@@ -843,9 +932,10 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
           part("file", link, "link"),
         ],
         "ada",
+        P,
       ),
     ).toBe(
-      `TT Tasks's configuration folder (/srv/k) can be changed by the members of its group, not only by you; TT Tasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TT Tasks does not follow links for its configuration: put a real file in place of the link. For the others, run: chmod go-w /srv/k`,
+      `TT Tasks's configuration folder (/srv/k) can be changed by the members of its group staff, not only by you; TT Tasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TT Tasks does not follow links for its configuration: put a real file in place of the link. For the others, run: chmod g-w /srv/k`,
     );
     // Another owner through a link: no command, and the line says why.
     expect(
@@ -859,6 +949,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         ],
         "Why",
         "ada",
+        P,
       ),
     ).toBe(
       "TT Tasks's state folder (/srv/s) belongs to another user. Why. /srv/s is a link to /mnt/d/s, and TT Tasks gives no command that changes an owner through a link.",
@@ -876,6 +967,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         ],
         "Why",
         "ada",
+        P,
       ),
     ).toBe(
       "TT Tasks's state folder (/srv/k) belongs to another user. Why. /srv, on the way to /srv/k, is a link to /data/srv, and TT Tasks gives no command that changes an owner through a link.",
