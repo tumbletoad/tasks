@@ -56,12 +56,28 @@ export const HistoryUndoInput = z.strictObject({
   request_id: RequestId,
 });
 
+/**
+ * The newest change a script of the same person made in the space after the change undone
+ * (A3 3.7.4): it is not on the undo stack, so the person learns that this undo did not reach it.
+ */
+export const ScriptChange = z.strictObject({
+  task: TaskRef,
+  change: z
+    .string()
+    .regex(/^[a-z_]{1,20}\.[a-z_]{1,20}$/u)
+    .describe("Its first operation's kind on the task, such as task.complete"),
+  at: z.string().regex(patterns.instant).describe("When"),
+});
+
 export const HistoryUndoResult = z.strictObject({
   result: z
     .enum(["undone", "partial"])
     .describe("undone: all of it; partial: the unresolved fields stay as others set them"),
   ...HistoryResultFields,
   unresolved: z.array(Unresolved).describe("Fields left as others set them").optional(),
+  script_change: ScriptChange.describe(
+    "A newer change by a script, which is not on the undo stack",
+  ).optional(),
 });
 
 export const historyUndo = defineEntry({

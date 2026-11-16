@@ -207,7 +207,7 @@ One table in `service.sqlite` for every credential and registration on this mach
 
 #### 3.3.5 Service commands
 
-`tasks service install | uninstall | start | stop | status`. Code: `packages/service/src/install/` (`commands.ts`, whose header states the rules; `entries.ts`, `render.ts`, `registry.ts`, `context.ts`). Tests: `A2.3.3.5.service-install.commands`, `A2.3.3.*.service-install.*`. Not built: `restart`, `logs [-f]`, the Start menu shortcut and the Linux desktop entry.
+`tasks service install | uninstall | start | stop | status`. Code: `packages/service/src/install/` (`commands.ts`, whose header states the rules; `entries.ts`, `render.ts`, `registry.ts`, `context.ts`). Tests: `A2.3.3.5.service-install.commands`, `A2.3.3.*.service-install.*`. Not built: `restart` (a person runs `stop`, then `start`, and every hint says so), `logs [-f]`, the Start menu shortcut and the Linux desktop entry.
 
 - **Roots are parameters**: only `defaultServiceContext()` names the real ones, so no test enables a unit, touches linger or launchd, or writes a real Run value. On Linux a stand-in `systemd-run` comes first on every test's PATH (`packages/testkit/src/setup.ts`), so no service a test starts makes a scope in the person's user manager.
 - **Preview, then apply** exactly the previewed steps, asking once (`--yes`, `--dry-run`). Each step acts only when the entry is still what the plan expects, compared just before the write (exit 4 otherwise). Not detected: a change between that read and the write, which only a same-user process can make (A6 3.15).
@@ -452,7 +452,7 @@ One pure function (`http/checks.ts`, whose header gives the order) runs before a
 
 ### 3.10 The CLI
 
-Code: `packages/cli/src/` (`main.ts`, `args.ts`, `verbs.ts`, `output.ts`, `connect.ts`, `space.ts`, `roots.ts`), the space verbs in `packages/service/src/hub/space-verbs.ts`, the space choice in `packages/service/src/ops/handlers.ts`. Tests: `A2.3.10.cli.*`.
+Code: `packages/cli/src/` (`main.ts`, `args.ts`, `help.ts`, `verbs.ts`, `output.ts`, `connect.ts`, `space.ts`, `roots.ts`), the space verbs in `packages/service/src/hub/space-verbs.ts`, the space choice in `packages/service/src/ops/handlers.ts`. Tests: `A2.3.10.cli.*`.
 
 #### 3.10.1 Entry point
 
@@ -470,6 +470,10 @@ One command, `tasks`, at the stable path. **Operation verbs** are generated from
 
 **`tasks view rebuild [<space>]`** is the rpc method `view/rebuild`, user-only: the space's projection reconciles every file it placed and queues every task again, removing nothing it cannot prove it wrote (A1 3.13), and answers the files checked and the tasks queued. Test: `A1.5.projection.cli`.
 
+**Help** (`help.ts`, `A2.3.10.cli.help`). Every command has its own help, printed the same by `tasks help <command>` and `tasks <command> --help`: what it does in one line, its forms and its flags. The local commands are one table that also names each command's subcommands. A generated verb's help comes from `cli-spec.json` alone, so a flag the contract requires is in its usage line and marked `(required)`, and the CLI names a missing one before any call (`tasks reopen needs --reason`). `tasks mcp --help` is the bridge's own argument error (3.7.1), so mcp's help is `tasks help mcp`.
+
+**Hints name only commands that exist** (`A2.3.10.cli.hints`). A test reads every string and JSX text in the code of every package a person reads text from (the CLI, the service, the bridge, the UI, launch, runs, the importer and the contracts) and fails on a `tasks <command> [<subcommand>]` the table does not have. In a command's place (after `Run: `, `run `, `with: `, a backtick or a quote) every word is checked; elsewhere a short list of English words after "tasks" is prose. A text built by concatenation is not read. A second test fails when the router takes a command the help table lacks. There is no `tasks service restart`: a hint says `tasks service stop`, then `tasks service start`.
+
 #### 3.10.2 Conventions
 
 - `--json` prints exactly one document, the result or `{"error": …}`; streams print NDJSON. Diagnostics go to stderr and are never parsed.
@@ -477,6 +481,7 @@ One command, `tasks`, at the stable path. **Operation verbs** are generated from
 - Human output names the space of every write.
 - With `--request-id` the CLI first looks up an existing receipt (A1 3.8) in its stable writer scope (A3 3.7.9), and every retryable failure of a write prints its request ID.
 - Usage errors name the option or verb, never a value.
+- An error prints as A3 3.5's text form, then its issues and, for a conflict, each field's task, field, author and time, never its value.
 - Colour, once there is any, appears only on a TTY without `NO_COLOR`.
 - `main(io, options)` takes the process as one value, so tests run it in-process.
 
