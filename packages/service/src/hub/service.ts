@@ -528,6 +528,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     }
     // Background runs: the probe starts now, before the service starts any other process, since on
     // Linux it moves the service into its unit's `main` cgroup. Each space's recovery waits for it.
+    // The queue's limits are read from machine.toml at each round: a change applies without a
+    // restart, which would end the runs.
     const runs = new RunService({
       ...options.runs,
       machine: machine.id,
@@ -535,6 +537,13 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       platform,
       spaces: () => made.spaces?.served() ?? [],
       log,
+      settings: () => loadMachineConfig(layout.config, platform).config.runs,
+      instances: () => instances,
+      folderUsable: async (space, place) => {
+        const service = launching.service;
+        if (service === undefined) return true;
+        return (await service.resolveFolder(space, place)).status === "ok";
+      },
     });
     void runs.probe();
 
@@ -578,6 +587,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       endpoint,
       spaces: made.spaces?.described().filter((space) => space.forgotten !== true) ?? [],
       http: httpRunning?.status() ?? null,
+      runs: runs.status(),
     });
     const serviceJson = join(layout.state, SERVICE_FILE);
     /** `beforeRename`: a last check right before the new file replaces the old (atomicWrite). */
@@ -692,6 +702,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       bindings,
       defaults,
+      runs,
       roots: {
         configDir: layout.config,
         stateDir: layout.state,

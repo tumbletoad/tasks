@@ -96,7 +96,16 @@
         "C:/Users/mira/.claude/CLAUDE.md"
       ]
     },
-    "preferences": {}
+    "preferences": {},
+    "runs": {
+      "limits": {
+        "runs": 3,
+        "perInstance": 2,
+        "perTask": 1
+      },
+      "wallMs": 3600000,
+      "idleMs": 1200000
+    }
   },
   "problems": []
 }

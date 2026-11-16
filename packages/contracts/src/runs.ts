@@ -409,6 +409,16 @@ export const RUN_LIMITS: Readonly<Record<"task" | "routine", RunLimits>> = {
   routine: { maxTurns: 150, wallMs: 60 * 60_000, idleMs: 20 * 60_000 },
 };
 
+/** How many runs may run at once: on this machine, per agent instance, and per task. */
+export interface QueueLimits {
+  readonly runs: number;
+  readonly perInstance: number;
+  readonly perTask: number;
+}
+
+/** The queue's default limits, guidelines machine.toml's `[runs]` can change. */
+export const QUEUE_LIMITS: QueueLimits = { runs: 3, perInstance: 2, perTask: 1 };
+
 /** Bounds of a limit, so a record cannot hold a value no run could use. */
 export const RUN_LIMIT_BOUNDS = {
   maxTurns: { min: 1, max: 10_000 },

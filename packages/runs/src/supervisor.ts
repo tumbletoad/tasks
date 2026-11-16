@@ -16,6 +16,7 @@
 import {
   FINAL_RUN_STATES,
   awaitsConfirmation,
+  type QueueLimits,
   type RunRecord,
   type RunState,
 } from "@tasks/contracts/runs";
@@ -23,14 +24,7 @@ import type { AgentCommand, RunHost } from "./host.ts";
 import type { RunMachine, StartRefusal } from "./machine.ts";
 import type { SavedAnswer } from "./run-files.ts";
 
-/** How many runs may run at once: on this machine, per agent instance, and per task. */
-export interface QueueLimits {
-  readonly runs: number;
-  readonly perInstance: number;
-  readonly perTask: number;
-}
-
-export const QUEUE_LIMITS: QueueLimits = { runs: 3, perInstance: 2, perTask: 1 };
+export { QUEUE_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
 
 /** Why a queued run waits. */
 export type WaitReason =

@@ -1489,6 +1489,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.9.run.update-hold",
+      "title": "An update's hold over the local endpoint, on every OS with containers on no operating system: an agent's connection may not take it; it names the running run with its space and task reference; a run queued meanwhile waits with the reason update; stop_held stops the run, which keeps its answer; and closing the hold's connection, as an updater that died does, lets the queue move",
+      "source": "A4 3.11.9, A2 3.12.6, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.command-line",
       "title": "A Windows command line quotes each argument as the C runtime reads it back",
       "source": "A4 3.11.8",
