@@ -91,8 +91,11 @@ export function unknownCommands(text: string): string[] {
     const [, word = "", next] = m;
     const before = text.slice(0, m.index);
     const strict = RUN_PLACE.test(before);
-    if (!strict && !NAME_PLACE.test(before)) continue;
     const local = LOCAL_COMMANDS.find((c) => c.name === word);
+    // A command that takes a subcommand is no English word after "tasks": its subcommand is
+    // checked wherever it stands ("add it with tasks roots add").
+    const named = local?.subcommands !== undefined && next !== undefined;
+    if (!strict && !named && !NAME_PLACE.test(before)) continue;
     if (local === undefined) {
       if (!verbs.has(word) && !HIDDEN.has(word) && (strict || !ABOUT.has(word))) {
         wrong.push(`tasks ${word}`);
@@ -135,6 +138,11 @@ describe("[A2.3.10.cli.hints] every command a message names exists", () => {
     expect(unknownCommands("Stop it, then tasks service restart.")).toEqual([
       "tasks service restart",
     ]);
+    // A command that takes a subcommand is checked mid-sentence too.
+    expect(unknownCommands("Add it with tasks roots mend <id> <folder>.")).toEqual([
+      "tasks roots mend",
+    ]);
+    expect(unknownCommands("Add it with tasks space open <folder>.")).toEqual([]);
     // English about tasks and SQL's table are not in a command's place, whatever their words.
     expect(unknownCommands("those tasks get no owner")).toEqual([]);
     expect(unknownCommands("- The user's tasks live in the space.")).toEqual([]);

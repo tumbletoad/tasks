@@ -236,4 +236,77 @@ describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, 
     expect(pool.started()).toBe(2);
     expect(lateClosed).toBe(1);
   }, 120_000);
+
+  test("an open that ends after its close passed the bound never serves the space: its writer closes while the space reads closed", async () => {
+    const { home, spaces, machine } = setUp("retrylatename");
+    const space = await fixtureSpace(join(spaces, "work"), machine);
+    let stateNow: () => string | undefined = () => undefined;
+    let free: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      free = resolve;
+    });
+    let asked = false;
+    const statesAtClose: (string | undefined)[] = [];
+    /** Calls on the real object, with one method put in place. */
+    const wrap = <T extends object>(target: T, key: string, put: unknown): T =>
+      new Proxy(target, {
+        get: (t, k) => {
+          if (k === key) return put;
+          const value: unknown = Reflect.get(t, k, t);
+          return typeof value === "function" ? (value as () => unknown).bind(t) : value;
+        },
+      });
+    const pool = workers(async () => {
+      const real = await StorageWorker.start({ driver: "node:sqlite" });
+      cleanups.push(() => real.close().catch(() => undefined));
+      const withWriter = wrap(
+        real,
+        "openSpaceWriter",
+        async (...args: Parameters<StorageWorker["openSpaceWriter"]>) => {
+          const writer = await real.openSpaceWriter(...args);
+          return wrap(writer, "close", async () => {
+            statesAtClose.push(stateNow());
+            await writer.close();
+          });
+        },
+      );
+      return wrap(
+        withWriter,
+        "openSpaceReader",
+        async (...args: Parameters<StorageWorker["openSpaceReader"]>) => {
+          const opened = await real.openSpaceReader(...args);
+          // The space's name is read last: it waits until the close has passed its bound.
+          const conn = wrap(opened.conn, "get", async (...rest: unknown[]) => {
+            asked = true;
+            await gate;
+            return (opened.conn.get as (...a: unknown[]) => Promise<unknown>)(...rest);
+          });
+          return { ...opened, conn };
+        },
+      );
+    });
+    registerSpaces(home, [space.folder]);
+    const service = await startService({
+      env: serviceEnv(home),
+      identity: () => ({ root: false, elevated: false, package: null }),
+      say: () => undefined,
+      maintenance: false,
+      spaceOptions: { startWorker: pool.start, openTimeoutMs: 60_000, closeTimeoutMs: 200 },
+    });
+    running.push(service);
+    stateNow = () => service.spaces()[0]?.state;
+    await waitFor(() => (asked ? true : undefined), 30_000, "the open reads the space's name");
+    await service.spaceManager.close(0);
+    expect(service.spaces()[0]?.state).toBe("closed");
+    free();
+    await waitFor(
+      () => (statesAtClose.length > 0 ? true : undefined),
+      30_000,
+      "the late open's writer closes",
+    );
+    expect(statesAtClose).toEqual(["closed"]);
+    await service.spaceManager.open(space.folder);
+    expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: space.space.spaceId }]);
+    expect(pool.started()).toBe(2);
+  }, 120_000);
 });

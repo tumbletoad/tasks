@@ -664,21 +664,20 @@ export class SpaceManager {
 
   /**
    * A space served read-only for a failed migration closes and opens again with its migration
-   * tried (A1 3.17). One change of the space at a time. A worker that did not close in time
-   * keeps the migration from being tried, as it keeps every change: the space opens again as
-   * before (confirmExcluded's rule), and the retry is refused.
+   * tried. One change of the space at a time. A worker or open that did not end in time may still
+   * hold the space, so nothing opens beside it: the retry is refused and the space stays closed
+   * until `space open` finds it ended.
    */
   async #retryMigration(space: Hosted): Promise<void> {
     await this.#exclusive(space, async () => {
       await this.#close(space, this.#closeMs);
-      const stuck = space.stuck;
+      if (space.stuck) {
+        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
+      }
       // Read again: the service may have begun to drain while the space closed.
       if (!this.#isDraining()) {
         space.reset();
-        await this.#begin(space, !stuck);
-      }
-      if (stuck) {
-        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
+        await this.#begin(space, true);
       }
     });
   }
@@ -915,10 +914,12 @@ export class SpaceManager {
     }
     await this.#exclusive(space, async () => {
       await this.#close(space, this.#closeMs);
+      // A worker or open that did not end in time may still hold the space: nothing opens beside
+      // it, and `space open` opens it once it has ended.
+      if (space.stuck) {
+        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
+      }
       try {
-        if (space.stuck) {
-          throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
-        }
         recordSyncedConfirmed(
           this.#options.settingsDir,
           space.registered,
@@ -1106,6 +1107,7 @@ export class SpaceManager {
       space.reader = conn;
       if (await this.#stopped(space)) return;
       await this.#learnName(space);
+      if (await this.#stopped(space)) return;
     } catch (error) {
       await this.#refused(
         space,
@@ -1730,7 +1732,7 @@ export class SpaceManager {
           busy.then(async () => {
             if (space.attempt !== attempt) return;
             await this.#release(space);
-            space.state = "closed";
+            if (space.attempt === attempt) space.state = "closed";
           }),
         );
       }
