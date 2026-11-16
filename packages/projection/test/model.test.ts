@@ -1081,6 +1081,18 @@ async function run(actions: readonly Action[]): Promise<void> {
 describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at every act and faults in what the projection writes outside the tree, against the projection's invariants", () => {
   test("no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told", async () => {
     const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
+    // A counterexample replays alone: PROJECTION_MODEL_SEED and PROJECTION_MODEL_PATH from its report.
+    const replay = process.env["PROJECTION_MODEL_SEED"];
+    if (replay !== undefined) {
+      const path = process.env["PROJECTION_MODEL_PATH"];
+      await fc.assert(property, {
+        seed: Number(replay),
+        numRuns: Number(process.env["PROJECTION_MODEL_RUNS"] ?? "20"),
+        ...(path === undefined ? {} : { path, endOnFailure: true }),
+        verbose: 2,
+      });
+      return;
+    }
     // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
     await fc.assert(property, { numRuns: 80, seed: 20261114 });
     for (const [what, least] of Object.entries(LEAST)) {

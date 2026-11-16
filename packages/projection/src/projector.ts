@@ -367,7 +367,11 @@ export class Projector {
       }
       if (file.task === undefined) this.#republish = true;
       else if (record.entries.get(file.task)?.path === path) queue.add(file.task);
-      else {
+      else if (look.kind === "busy") {
+        // Retired and held open: likely still ours, so it stays retired and its removal is tried
+        // again. Forgotten, it would stay in the folder for good.
+        continue;
+      } else {
         // Retired, and gone or no longer ours: never touched again.
         record.files.delete(path);
         forgotten += 1;

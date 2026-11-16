@@ -31,6 +31,7 @@ import {
   expectSameTree,
   faultState,
   filesOf,
+  holdOpen,
   inTree,
   settle,
   treeOf,
@@ -520,6 +521,33 @@ describe("[A1.5.projection.recovery] the trusted state: an unwritten record hold
     const reports = await settle(again);
     expect(reports.reduce((sum, r) => sum + r.removed, 0)).toBe(1);
     expect(existsSync(join(w.dir, ...old.split("/")))).toBe(false);
+    expect(again.pending().dirty).toBe(false);
+    expectSameTree(treeOf(w.dir), await freshRender());
+  });
+
+  test("a retired file held open while the projection reconciles stays its own: it goes once it is let go", async () => {
+    const projector = w.projector();
+    await projector.start();
+    await settle(projector);
+    const [a] = activeIds();
+    const old = catalogOf(w.dir).find((line) => line.id === a)?.path ?? "";
+    const oldAbs = join(w.dir, ...old.split("/"));
+    // Renamed while its old file is held open: the batch places the new file and cannot remove
+    // the old one; the next batch and a restart reconcile while it is still held.
+    w.submit([{ kind: "task.patch", task: a ?? "", set: { title: "Held while retired" } }]);
+    const again = w.projector();
+    const release = holdOpen(oldAbs);
+    try {
+      expect((await projector.step()).failed).toBe(1);
+      await projector.step();
+      await again.start();
+      await again.step();
+    } finally {
+      release();
+    }
+    expect(again.pending().dirty).toBe(true);
+    await settle(again);
+    expect(existsSync(oldAbs)).toBe(false);
     expect(again.pending().dirty).toBe(false);
     expectSameTree(treeOf(w.dir), await freshRender());
   });
