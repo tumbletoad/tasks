@@ -54,8 +54,11 @@ const OWNER = /^M(?:0|[1-9][0-9]?)$/;
 export interface ManifestEntry {
   id: string;
   title: string;
-  /** The plan section the test comes from, for example "A1 5". */
-  source: string;
+  /**
+   * Where the test came from, as free text. Optional and read by nothing: the planning sections it
+   * named are cut down and renamed, so it is not required and not checked beyond being text.
+   */
+  source?: string;
   /** The milestone that first owns the test, for example "M1". */
   owner: string;
   kind: Kind;
@@ -104,7 +107,7 @@ export function parseManifest(json: unknown): { entries: ManifestEntry[]; errors
     seen.add(id);
     const problems: string[] = [];
     if (!isText(title)) problems.push("title must be a non-empty string");
-    if (!isText(source)) problems.push("source must name a plan section");
+    if (source !== undefined && typeof source !== "string") problems.push("source must be text");
     if (typeof owner !== "string" || !OWNER.test(owner)) problems.push("owner must be M0 to M99");
     if (!KINDS.includes(kind as Kind)) problems.push(`kind must be one of ${KINDS.join(", ")}`);
     if (
@@ -121,7 +124,7 @@ export function parseManifest(json: unknown): { entries: ManifestEntry[]; errors
     entries.push({
       id,
       title: title as string,
-      source: source as string,
+      ...(typeof source === "string" ? { source } : {}),
       owner: owner as string,
       kind: kind as Kind,
       profiles: profiles as string[],

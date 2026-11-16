@@ -6,7 +6,7 @@
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import type { SpaceReason } from "./log.ts";
 
-const AGAIN = `${CLI_NAME} space close <folder>, then ${CLI_NAME} space open <folder>`;
+const AGAIN = `${CLI_NAME} space open <folder>`;
 const LATEST = `${CLI_NAME} space restore latest <folder> --to <new folder>`;
 
 const WAYS: Partial<Record<SpaceReason, string>> = {
