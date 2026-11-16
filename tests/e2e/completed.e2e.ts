@@ -122,7 +122,6 @@ const underPointer = (page: Page, y: number) =>
     return {
       task: row?.getAttribute("data-task") ?? undefined,
       top: row?.getBoundingClientRect().top,
-      scroll: window.scrollY,
     };
   }, y);
 
@@ -225,8 +224,9 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       const arrived = await underPointer(page, y);
       expect(arrived.task).toBeDefined();
       expect(arrived.task).toBe(waiting.task);
+      // The row is where it was on screen. The page's scroll offset itself may move a few pixels:
+      // the list corrects a measured height above the row that way, to keep the row still.
       expect(Math.abs((arrived.top ?? 0) - (waiting.top ?? 0))).toBeLessThan(1);
-      expect(arrived.scroll).toBe(waiting.scroll);
       pages += 1;
     }
     await gate.release();
@@ -277,7 +277,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       for (const width of [1440, 390]) {
         const context = await browser.newContext({
           bypassCSP: true,
-          viewport: { width, height: width > 600 ? 1000 : 844 },
+          viewport: { width: 1440, height: 1000 },
           reducedMotion: "reduce",
         });
         try {
@@ -288,7 +288,9 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
             },
             { key: THEME_KEY, theme },
           );
+          // Opened wide, where the sidebar names the space, then narrowed.
           await openCompleted(page, finished);
+          if (width !== 1440) await page.setViewportSize({ width, height: 844 });
           // The month's head, with the dropped tasks and the done ones' endings.
           const dropped = page.locator('main li[data-task] [data-part="check"][data-dropped]');
           await dropped.first().scrollIntoViewIfNeeded();
