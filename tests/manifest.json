@@ -2226,6 +2226,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.1.hub.space-way-out",
+      "title": "every reason a space is read-only or unavailable has its own message or a way out that names the command to run; an open space has none",
+      "source": "A2 3.1",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.10.cli.space-needs-recovery",
+      "title": "a space with a rollback journal is listed by tasks space list and doctor with tasks space recover <folder>, and the recovery the line names opens it",
+      "source": "A2 3.10.1, A1 3.18",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.not-open",
+      "title": "In Chromium and Firefox: a computer whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
+      "source": "A5 3.3, A2 3.1",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.write.applied-answer",
+      "title": "an undo, redo, update, finish or reopen whose answer cannot be read from history after it applied reports what it applied, never a failure, and a replay of the undo answers with its tasks",
+      "source": "A3 3.4.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.cli.accept",
       "title": "pnpm accept m1 --part cli against a real service child in a temporary TASKS_HOME: two parallel tasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, tasks show --json matches its schema",
       "source": "A2 3.10, A3 3.4.1, A7 3.8 M1.10",
@@ -3371,7 +3403,7 @@
     },
     {
       "id": "A5.3.3.web.landing",
-      "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice",
+      "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice; a space that is not open is named with why",
       "source": "A2 3.1, A5 3.3, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",

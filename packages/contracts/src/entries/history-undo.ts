@@ -38,9 +38,20 @@ export const Unresolved = z.strictObject({
 /** What an undo and a redo return besides their outcome. */
 export const HistoryResultFields = {
   commit: CommitId.describe("The change undone or redone"),
-  tasks: z.array(TaskRef).max(50).describe("The tasks it changed, the first 50"),
-  // A space never holds more tasks than its references number (A1 3.3).
-  task_count: z.int().min(0).max(9_999_999_999).describe("How many tasks it changed"),
+  // Both are left out when they could not be read after the change applied: the change still
+  // happened, and the answer says so.
+  tasks: z
+    .array(TaskRef)
+    .max(50)
+    .describe("The tasks it changed, the first 50; absent when they could not be read")
+    .optional(),
+  // A space never holds more tasks than its references number.
+  task_count: z
+    .int()
+    .min(0)
+    .max(9_999_999_999)
+    .describe("How many tasks it changed; absent when they could not be read")
+    .optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),
 };

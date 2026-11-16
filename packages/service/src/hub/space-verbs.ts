@@ -382,7 +382,8 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
   };
 
   const backupDirOf = (view: SpaceView): string => {
-    const settings = view.id === undefined ? {} : readSpaceSettings(host.settingsDir, view.id);
+    const id = view.id ?? view.registered;
+    const settings = id === undefined ? {} : readSpaceSettings(host.settingsDir, id);
     return settings.backupDir ?? backupsFolder(manager.folderOf(view.entry));
   };
 
@@ -649,9 +650,11 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           throw invalid("to", "The latest backup is restored into a new folder");
         }
         const of = find(required(params, "of"));
-        if (of.id === undefined) throw invalid("of", "The space's ID is not known yet");
+        // A space that never opened, such as one whose database is refused, still has the ID its
+        // entry names: its backups are the way out.
+        const spaceId = of.id ?? of.registered;
+        if (spaceId === undefined) throw invalid("of", "The space's ID is not known yet");
         const target = resolve(to);
-        const spaceId = of.id;
         try {
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
@@ -749,6 +752,19 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       const view = find(required(params, "space"));
       if (view.state !== "read_only" || view.reason !== "read_only_copy") {
         throw notClaimable(view);
+      }
+      // The copy shares its original's space ID, and one space takes writes in one place: an
+      // original still open here holds them.
+      const id = view.id ?? view.registered;
+      const original = manager
+        .list()
+        .find((other) => other.entry !== view.entry && other.id === id && other.state === "open");
+      if (original !== undefined) {
+        throw new AppError({
+          code: "invalid_input",
+          message: `The original of this copy is open on this computer. Close it first, then claim the copy again: ${command(["space", "close", manager.folderOf(original.entry)], "space close <folder>")}`,
+          data: { issues: [{ path: "space", message: "Its original is open" }] },
+        });
       }
       let change;
       try {

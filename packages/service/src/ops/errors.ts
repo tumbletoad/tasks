@@ -232,15 +232,28 @@ function withReplay(body: ErrorBody): ErrorBody {
   return { ...body, data: { ...body.data, replayed: true } };
 }
 
-/** A space the service does not serve, or not now (A3 3.5's transport table). */
-export function spaceUnavailable(reason: string, retryable: boolean, state?: string): AppError {
+/**
+ * A space the service does not serve, or not now. `wayOut`: what the space's state tells a person
+ * to run, which `tasks space list` shows with the space's folder.
+ */
+export function spaceUnavailable(
+  reason: string,
+  retryable: boolean,
+  state?: string,
+  wayOut?: string,
+): AppError {
   return new AppError({
     code: "space_unavailable",
     message:
       reason === "opening"
         ? "The space is still opening."
         : "The service does not serve that space now.",
-    hint: reason === "opening" ? "Try again in a moment." : "Run tasks space list.",
+    hint:
+      reason === "opening"
+        ? "Try again in a moment."
+        : wayOut === undefined
+          ? "Run tasks space list."
+          : `${wayOut} Run tasks space list for its folder.`,
     data: { reason, retryable, ...(state === undefined ? {} : { state }) },
   });
 }
