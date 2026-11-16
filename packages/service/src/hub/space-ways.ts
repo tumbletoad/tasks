@@ -24,7 +24,8 @@ const WAYS: Partial<Record<SpaceReason, string>> = {
     "The space's database file has a second name (a link), so it is not opened. " +
     `Restore its newest backup into a new folder: ${LATEST}.`,
   open_failed:
-    `The space could not be opened. Try again with: ${AGAIN}. ` +
+    `The space could not be opened. Try again with: ${AGAIN}. If it stays closed, restart ` +
+    `the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start. ` +
     `If it fails again, restore its newest backup into a new folder: ${LATEST}.`,
   other_space:
     "This folder holds another space than the one this computer opened there, so it is not " +
