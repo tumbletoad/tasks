@@ -634,6 +634,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.restore.search-derived",
+      "title": "The search index is derived: a backup made before schema 0.4, one made after it, one whose search tables are missing and one whose search tables differ each verify by a trial restore and restore into a new folder and in place, with the index made again from the copy's tasks and a new space's schema",
+      "source": "A1 3.12, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.read-only-copy",
       "title": "A backup restored into a new folder is a read-only copy until claimed: a writer is refused with SPACE_READ_ONLY_COPY, a reader reads, the mark lives in the database so a copy of the folder or the database and a missing or damaged space.json keep it, and a claim gives a new epoch and incarnation in one commit and leaves the original untouched",
       "source": "A1 3.18, A6 3.5",

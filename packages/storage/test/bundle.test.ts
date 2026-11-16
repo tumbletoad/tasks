@@ -34,7 +34,6 @@ import { newId, osRandom } from "../src/ids.ts";
 import { backupPeak, backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import { listBackups, verifyBackup } from "../src/backup/list.ts";
 import { applyRetention, planRetention } from "../src/backup/retention.ts";
-import { schemaObjects } from "../src/backup/snapshot.ts";
 import { openReader } from "../src/open.ts";
 import { rescueSpace, restoreLatest } from "../src/restore/rescue.ts";
 import { restoreBackup, restoreBackupWith, restoreInPlace } from "../src/restore/restore.ts";
@@ -44,7 +43,7 @@ import { LATEST_REVISION, openSpace } from "../src/space.ts";
 import { copyTree, rawWriter, readFacts, treeDigest, writeCommits } from "./backup-helpers.ts";
 import { checkedDriver, createFixtureSpace, tempFolders, TEST_MACHINE } from "./space-helpers.ts";
 import { STEPS_0_1 } from "./revisions.ts";
-import { STEPS_MARK_GUARD, STEPS_SEARCH } from "./stand-in-steps.ts";
+import { STEPS_MARK_GUARD } from "./stand-in-steps.ts";
 
 const folders = tempFolders("bundle");
 
@@ -1131,99 +1130,24 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     }
   });
 
-  test("a virtual table and its module's shadow tables count by their own text, which this test pins: an SQLite that wrote it otherwise would refuse older backups", async () => {
+  test("a space with the search index backs up, exports, verifies and restores; a table under the FTS table's prefix is refused", async () => {
+    const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
-    const conn = await rawWriter(folder);
-    try {
-      const before = schemaObjects(conn);
-      // The search index's definition (search/tables.ts) and the texts FTS5 writes for it.
-      conn.exec(
-        "CREATE VIRTUAL TABLE probe_fts USING fts5(title, body, extra, " +
-          "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
-      );
-      const added = schemaObjects(conn).filter((o) => !before.includes(o));
-      const shadow = (suffix: string, sql: string): string =>
-        JSON.stringify([
-          "table",
-          `probe_fts_${suffix}`,
-          `probe_fts_${suffix}`,
-          `CREATE TABLE 'probe_fts_${suffix}'${sql}`,
-        ]);
-      expect(added).toEqual([
-        JSON.stringify([
-          "table",
-          "probe_fts",
-          "probe_fts",
-          "CREATE VIRTUAL TABLE probe_fts USING fts5(title, body, extra, " +
-            "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')",
-        ]),
-        shadow("config", "(k PRIMARY KEY, v) WITHOUT ROWID"),
-        shadow("content", "(id INTEGER PRIMARY KEY, c0, c1, c2)"),
-        shadow("data", "(id INTEGER PRIMARY KEY, block BLOB)"),
-        shadow("docsize", "(id INTEGER PRIMARY KEY, sz BLOB)"),
-        shadow("idx", "(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID"),
-      ]);
-    } finally {
-      conn.close();
+    await writeCommits(folder, 3, "s");
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, {});
+    // The index is derived: neither record counts its rows.
+    for (const counts of [backup.sidecar.counts, bundle.manifest.counts]) {
+      expect(Object.keys(counts).filter((t) => t.startsWith("search_"))).toEqual([]);
     }
-  });
-
-  test("a shadow table with a definition of its own is refused: it would refuse every later write to the search index", async () => {
-    const checked = await checkedDriver();
-    const steps = STEPS_SEARCH;
-    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
-    await writeCommits(folder, 2, "s", steps);
-    const good = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
-    plant(
-      join(folder, "space.db"),
-      "UPDATE sqlite_schema SET sql = replace(sql, 'c2)', 'c2, CHECK (c0 IS NULL))') " +
-        "WHERE name = 'search_fts_content'",
-    );
-    await expectCode(
-      () => exportBundleWith(checked, folder, { mode: "backup" }, { steps }),
-      "SPACE_SCHEMA_FOREIGN",
-    );
-    const bad = await backupSpaceWith(
-      checked,
-      folder,
-      { kind: "manual", now: () => Date.now() + 1000 },
-      { steps },
-    );
-    const listed = listBackups(join(folder, "backups")).backups;
-    expect(listed.map((b) => b.name).sort()).toEqual([good.name, bad.name].sort());
-    for (const b of listed) {
-      expect(await verifyBackup(checked, b, { steps }), b.name).toEqual(
-        b.name === good.name ? good.sidecar : undefined,
-      );
-    }
-    await expectCode(
-      () => restoreBackupWith(checked, bad.file, join(folders.make(), "mira"), {}, { steps }),
-      "BACKUP_INVALID",
-    );
-  });
-
-  test("a space at a revision with the search tables (a stand-in for the step that adds them) backs up, exports, verifies and restores; a table under the FTS table's prefix is refused", async () => {
-    const checked = await checkedDriver();
-    const steps = STEPS_SEARCH;
-    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
-    await writeCommits(folder, 3, "s", steps);
-    const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
-    const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, { steps });
-    expect(bundle.manifest.counts["search_fts_data"]).toBeGreaterThan(0);
     for (const file of [backup.file, bundle.file]) {
-      const restored = await restoreBackupWith(
-        checked,
-        file,
-        join(folders.make(), "mira"),
-        {},
-        { steps },
-      );
-      expect(restored.revision, file).toEqual({ major: 0, minor: 4 });
+      const restored = await restoreBackup(checked, file, join(folders.make(), "mira"));
+      expect(restored.revision, file).toEqual(LATEST_REVISION);
       expect(restored.space.lastSeq, file).toBe(3);
     }
     const listed = listBackups(join(folder, "backups")).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
-    expect(await verifyBackup(checked, listed, { steps })).toEqual(backup.sidecar);
+    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
 
     const conn = await rawWriter(folder);
     try {
@@ -1232,21 +1156,20 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       conn.close();
     }
     await expectCode(
-      () => exportBundleWith(checked, folder, { mode: "backup" }, { steps }),
+      () => exportBundleWith(checked, folder, { mode: "backup" }, {}),
       "SPACE_SCHEMA_FOREIGN",
     );
-    const foreign = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps });
+    const foreign = await backupSpace(checked, folder, { kind: "manual" });
     await expectCode(
-      () => restoreBackupWith(checked, foreign.file, join(folders.make(), "mira"), {}, { steps }),
+      () => restoreBackup(checked, foreign.file, join(folders.make(), "mira")),
       "BACKUP_INVALID",
     );
   });
 
   test("the export makes the search index again in its snapshot: neither a deleted document's words nor a row planted in a shadow table reach the bundle", async () => {
     const checked = await checkedDriver();
-    const steps = STEPS_SEARCH;
-    const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
-    await writeCommits(folder, 3, "s", steps);
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 3, "s");
     // Two words no task holds, lower-case letters only so the tokenizer keeps each whole.
     const deleted = "qzxvdeletedwordqzxv";
     const planted = "qzxvplantedwordqzxv";
@@ -1265,7 +1188,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     );
     const live = readFileSync(join(folder, "space.db"));
     expect(live.includes(Buffer.from(deleted)) || live.includes(Buffer.from(planted))).toBe(true);
-    const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, { steps });
+    const bundle = await exportBundleWith(checked, folder, { mode: "backup" }, {});
     const unpacked = folders.make();
     await readBundle(bundle.file, BUNDLE_POLICY, {
       extractTo: (name) => join(unpacked, ...name.split("/")),
@@ -1274,10 +1197,16 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     expect(db.includes(Buffer.from(deleted))).toBe(false);
     expect(db.includes(Buffer.from(planted))).toBe(false);
     // The index is whole again: one row per document, every one of them named by search_docs.
-    const facts = await readFacts(unpacked);
-    expect(facts.counts["search_fts_content"]).toBe(facts.counts["search_docs"]);
-    expect(facts.counts["search_docs"]).toBeGreaterThan(0);
-    await restoreBackupWith(checked, bundle.file, join(folders.make(), "mira"), {}, { steps });
+    const reader = openReader(checked, join(unpacked, "space.db"));
+    try {
+      const count = (table: string): unknown =>
+        reader.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.["n"];
+      expect(count("search_fts_content")).toBe(count("search_docs"));
+      expect(count("search_docs")).toBeGreaterThan(0);
+    } finally {
+      reader.close();
+    }
+    await restoreBackup(checked, bundle.file, join(folders.make(), "mira"));
   });
 
   test("an export whose bundle a restore would refuse at its first write is refused, and nothing is published", async () => {
