@@ -213,20 +213,21 @@ export function forgetSpaceRecord(host: SpaceRecordsHost, folder: string): Recor
     typeof element["path"] === "string" && key(resolve(element["path"])) === target;
   let why: NotRecorded = "changed_meanwhile";
   for (let attempt = 1; attempt <= TRIES; attempt += 1) {
-    let listed = false;
+    // Set by the plan, which sees the document as this read parses it.
+    const plan = { listed: false };
     try {
       const prepared = prepareEditOf(host.configDir, (doc) => {
         const current = doc[ARRAY];
         if (current === undefined) return [];
         if (!Array.isArray(current)) return "unsupported_layout";
-        listed = current.some((element) => isTable(element) && at(element));
-        return listed ? [{ op: "remove_element", array: ARRAY, select: at }] : [];
+        plan.listed = current.some((element) => isTable(element) && at(element));
+        return plan.listed ? [{ op: "remove_element", array: ARRAY, select: at }] : [];
       });
       if (!prepared.ok) {
         why = prepared.reason;
         break;
       }
-      if (!listed) return { remembered: true };
+      if (!plan.listed) return { remembered: true };
       const written = commitEdit(prepared.edit);
       if (written.ok) {
         host.log.log("config.space_forgotten", {});

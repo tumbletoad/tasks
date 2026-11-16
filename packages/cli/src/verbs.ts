@@ -226,11 +226,11 @@ export async function runVerb(
     } catch (error) {
       const body = bodyOf(asAppError(error));
       const answered = await hooks?.failed?.(body, async (changes) => {
-        const again = { ...input, ...changes, request_id: newRequestId() };
+        const id = newRequestId();
         try {
-          return await send(again);
+          return await send({ ...input, ...changes, request_id: id });
         } catch (failed) {
-          return failure(failed, String(again["request_id"]));
+          return failure(failed, id);
         }
       });
       if (answered !== undefined) return answered;

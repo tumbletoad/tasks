@@ -2188,7 +2188,7 @@ async function refuseBehindScript(call: Call): Promise<void> {
       ...(principal.earlierScope === undefined ? {} : { earlier_scope_id: principal.earlierScope }),
       request_id: String(call.input["request_id"]),
     });
-    if (receiptResult(stored)["found"] === true) return;
+    if (receiptResult(stored).found) return;
     const target = await readUndoTarget(reader, await actorOf(writerOf(call.space), principal));
     if (target === undefined) return;
     const scripted = await readScriptChange(reader, {

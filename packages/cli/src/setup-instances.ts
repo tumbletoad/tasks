@@ -28,6 +28,7 @@
 // start the agent in. They meet at the instance ID: an instance written here is the ID setup agents
 // gives that home's entry, and a home setup agents registered first keeps its ID here.
 import { createHash } from "node:crypto";
+import { posix, win32 } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import {
@@ -122,7 +123,7 @@ const forbidden = (): AppError =>
   });
 
 /** One proposal the preview offers: the entry it writes, keys in their order. */
-interface Offer {
+export interface Offer {
   readonly id: string;
   readonly label: string;
   readonly entry: ReadonlyMap<string, InstanceValue>;
@@ -196,6 +197,8 @@ async function surveyOf(
   }
   const taken = new Set(existing.map((i) => i.id));
   const offers: Offer[] = [];
+  /** Each offer's agent home, which tells two offers of one app apart. */
+  const homes = new Map<string, string>();
   const left: Left[] = [];
   // T3 Code (A4 3.2): one complete instance per enabled provider instance its settings name, read
   // through setup's reader. One whose provider instance a T3 instance of machine.toml names is
@@ -247,14 +250,37 @@ async function surveyOf(
       entry: made.entry,
       ...(proposal.t3 === undefined ? {} : { modelFrom: proposal.t3.modelFrom }),
     });
+    if (proposal.configHome !== undefined) homes.set(proposal.id, proposal.configHome);
   }
   return {
     detection,
-    offers,
+    offers: distinctLabels(offers, homes, io.platform),
     left,
     configured: machine.instances.map((i) => ({ id: i.id, target: i.target })),
     platform: io.platform,
   };
+}
+
+/**
+ * Offers a person can tell apart: two of one app (two Codex homes) are each labelled with their
+ * home's folder name, such as `Codex (.codex-personal)`, in the preview and in the entry, whose
+ * label names the instance's tile.
+ */
+export function distinctLabels(
+  offers: readonly Offer[],
+  homes: ReadonlyMap<string, string>,
+  platform: NodeJS.Platform,
+): Offer[] {
+  const name = (path: string) => (platform === "win32" ? win32 : posix).basename(path);
+  return offers.map((offer) => {
+    const home = homes.get(offer.id);
+    const shared = offers.filter((other) => other.label === offer.label).length > 1;
+    if (!shared || home === undefined) return offer;
+    const label = `${offer.label} (${name(home)})`;
+    const entry = new Map(offer.entry);
+    if (entry.get("label") === offer.label) entry.set("label", label);
+    return { ...offer, label, entry };
+  });
 }
 
 /** The plan's token: the entries the preview showed, in order, key for key. */

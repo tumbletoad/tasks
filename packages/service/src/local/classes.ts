@@ -142,7 +142,7 @@ export function refusalOf(
   cls: ConnectionClass,
   method: RpcMethod,
 ): { readonly message: string; readonly hint?: string } {
-  const forUser = (RPC_METHODS[method] as readonly ConnectionClass[]).includes("cli-interactive");
+  const forUser = mayCall("cli-interactive", method);
   if (forUser && cls === "cli-script") {
     return {
       message:

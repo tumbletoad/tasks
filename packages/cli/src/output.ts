@@ -138,8 +138,7 @@ function searchLines(result: Result): string[] {
   const span = rows.length === 0 ? "0" : `${String(first)}–${String(first + rows.length - 1)}`;
   const parsed = str(result["parsed"]);
   const lines = [
-    `${span} of ${str(result["total"])} · scope ${str(result["scope"])}` +
-      `${parsed === "" ? "" : ` · parsed: ${parsed}`}`,
+    `${span} of ${str(result["total"])} · scope ${str(result["scope"])}${parsed === "" ? "" : ` · parsed: ${parsed}`}`,
   ];
   for (const row of rows) {
     const mark = row["changed"] === true ? " *" : "";

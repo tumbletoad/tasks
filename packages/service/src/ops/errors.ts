@@ -2,7 +2,7 @@
 // map through contracts' table (A3 3.5). Bodies never quote a value the caller sent: issues
 // name a path and a fixed sentence, and storage's messages are fixed sentences.
 import { CLI_NAME } from "@tasks/brand";
-import { a1ErrorBody, AppError, findEntry, type ErrorBody } from "@tasks/contracts";
+import { a1ErrorBody, AppError, cliFaces, findEntry, type ErrorBody } from "@tasks/contracts";
 import { StorageError, type WriteResult } from "@tasks/storage";
 
 /** A feature of an entry that a later step builds. Never a silent drop of what the caller sent. */
@@ -89,11 +89,10 @@ export type Face = "cli" | "mcp" | "ui";
 
 /** How the caller on `face` does `entry`: the command or the tool, or nothing in the UI. */
 function way(face: Face, entry: string, args: string): string | undefined {
-  const faces = findEntry(entry)?.faces;
-  if (face === "mcp") return faces?.mcp?.tool ?? entry;
+  const found = findEntry(entry);
+  if (face === "mcp") return found?.faces.mcp?.tool ?? entry;
   if (face === "ui") return undefined;
-  const cli = faces?.cli;
-  const verb = (Array.isArray(cli) ? cli[0] : cli)?.verb ?? entry;
+  const verb = (found === undefined ? undefined : cliFaces(found)[0])?.verb ?? entry;
   return `${CLI_NAME} ${verb}${args === "" ? "" : ` ${args}`}`;
 }
 

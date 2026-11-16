@@ -14,6 +14,7 @@ import { configOf, stateOf } from "@tasks/service/test/harness";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "@tasks/service/test/http-world";
 import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
 import type { AgentsSetupOptions } from "../src/setup-agents.ts";
+import { distinctLabels, type Offer } from "../src/setup-instances.ts";
 import { runMain } from "./cli-harness.ts";
 
 const SLOW = 300_000;
@@ -331,4 +332,26 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
     },
     SLOW,
   );
+
+  test("two homes of one app are each labelled with the home's folder name, in the preview and the entry", () => {
+    const offer = (id: string): Offer => ({
+      id,
+      label: "Codex",
+      entry: new Map<string, string | boolean>([
+        ["id", id],
+        ["label", "Codex"],
+      ]),
+    });
+    const homes = new Map([
+      ["codex", "/home/mira/.codex"],
+      ["codex-personal", "/home/mira/.codex-personal"],
+    ]);
+    const two = distinctLabels([offer("codex"), offer("codex-personal")], homes, "linux");
+    expect(two.map((o) => [o.label, o.entry.get("label")])).toEqual([
+      ["Codex (.codex)", "Codex (.codex)"],
+      ["Codex (.codex-personal)", "Codex (.codex-personal)"],
+    ]);
+    // One home of an app keeps the app's own name.
+    expect(distinctLabels([offer("codex")], homes, "linux")[0]?.label).toBe("Codex");
+  });
 });
