@@ -411,7 +411,7 @@ function RowView({
     },
     ctx,
   );
-  // Completed's line says how the task ended; elsewhere, and without an ending, the summary.
+  // A finished task's line says how it ended; an open task, and one without an ending, the summary.
   const line = model.ending ?? model.summary;
   const tab = current ? 0 : -1;
   // Checked: completed, or checked off and in its hold. The box takes a check-off of an open task,
