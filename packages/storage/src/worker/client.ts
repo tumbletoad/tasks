@@ -41,6 +41,7 @@ import {
   type RunResult,
   type TransactionMode,
 } from "../driver.ts";
+import type { BackupRecord } from "../backup/backup.ts";
 import { misuse, StorageError, UnexpectedSpace } from "../errors.ts";
 import { FILE_MODE } from "../files.ts";
 import type { Id } from "../ids.ts";
@@ -844,8 +845,34 @@ export class SpaceWriterHandle {
    * with STORAGE_OVERLOADED and a late answer with STORAGE_TIMEOUT: both may be retried with the
    * same request ID.
    */
-  submit(request: unknown): Promise<WriteResult> {
-    return this.#queued(() => this.#worker.call("submit", { handle: this.handle, request }));
+  submit(request: unknown, options: { timeoutMs?: number } = {}): Promise<WriteResult> {
+    return this.#queued(
+      () => this.#worker.call("submit", { handle: this.handle, request }),
+      options.timeoutMs,
+    );
+  }
+
+  /**
+   * An import's request behind a verified barrier backup (backup/barrier.ts, A7 3.15.5). It waits
+   * in the writer's queue like any request, and holds the queue while the backup runs, which can
+   * take longer than a request's time limit: `timeoutMs` gives it its own. A late answer is still
+   * decided by the worker, so a retry with the same request ID replays it without a new backup.
+   */
+  importSubmit(
+    request: unknown,
+    options: {
+      backupDir?: string;
+      appVersion?: string;
+      /** The state the request was decided on: else SPACE_CHANGED before any backup. */
+      expect?: { seq: number; incarnation: string };
+      timeoutMs: number;
+    },
+  ): Promise<{ result: WriteResult; backup?: BackupRecord }> {
+    const { timeoutMs, ...rest } = options;
+    return this.#queued(
+      () => this.#worker.call("importSubmit", { handle: this.handle, request, ...rest }),
+      timeoutMs,
+    );
   }
 
   /**
@@ -864,7 +891,7 @@ export class SpaceWriterHandle {
    * The actor a connection writes as (A3 3.7.4): the space's human, or the agent actor with this
    * label, which the writer adds on its first act (`actor.register`). Waits in the writer's queue.
    */
-  actor(kind: "human" | "agent", label: string): Promise<Id<"ac">> {
+  actor(kind: "human" | "agent" | "import", label: string): Promise<Id<"ac">> {
     return this.#queued(() =>
       this.#worker.call("actor", { handle: this.handle, actorKind: kind, label }),
     );
@@ -922,7 +949,7 @@ export class SpaceWriterHandle {
   }
 
   /** One call to the writer, within the queue limit and the time limit (A1 3.9). */
-  #queued<T>(send: () => Promise<T>): Promise<T> {
+  #queued<T>(send: () => Promise<T>, timeoutMs = this.#timeoutMs): Promise<T> {
     if (this.#waiting >= this.#queueLimit) {
       return Promise.reject(
         new StorageError("STORAGE_OVERLOADED", "The space's writer has too many requests waiting"),
@@ -936,7 +963,7 @@ export class SpaceWriterHandle {
       this.#waiting -= 1;
     };
     answer.then(free, free);
-    return deadline(answer, this.#timeoutMs);
+    return deadline(answer, timeoutMs);
   }
 
   async close(): Promise<void> {

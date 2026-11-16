@@ -38,7 +38,6 @@
 // approval settings, so the preview names the change for the person to make by hand.
 import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { isAgentMarker } from "@tasks/bridge/protocol";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import {
@@ -101,7 +100,7 @@ import {
 } from "@tasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
-import type { Io } from "./io.ts";
+import { personAtTerminal, type Io } from "./io.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { asAppError } from "./verbs.ts";
 
@@ -245,12 +244,6 @@ function parse(input: readonly string[]): Parsed {
     throw new UsageError(`--app takes ${APP_WORDS.join(", ")}`);
   }
   return { mode: chosen, apps, instance, home, parts: parts ?? ["mcp"], plan, for: kind };
-}
-
-/** A person at a terminal (A2 3.6.5's `cli-interactive`): no agent marker, both ends a TTY. */
-function userAtTerminal(io: Io): boolean {
-  const agent = Object.entries(io.env).some(([n, v]) => v !== undefined && isAgentMarker(n));
-  return !agent && io.tty.stdin && io.tty.stdout;
 }
 
 const forbidden = (): AppError =>
@@ -480,7 +473,7 @@ export async function agentsCommand(
   };
   try {
     const parsed = parse(args);
-    if ((parsed.mode === "apply" || parsed.mode === "remove") && !userAtTerminal(io)) {
+    if ((parsed.mode === "apply" || parsed.mode === "remove") && !personAtTerminal(io)) {
       throw forbidden();
     }
     // Apply carries out a preview the person has seen, or nothing (A3 3.13.1).

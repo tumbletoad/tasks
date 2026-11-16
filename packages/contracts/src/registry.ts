@@ -5,6 +5,7 @@ import { entryAdd } from "./entries/entry-add.ts";
 import { groupManage } from "./entries/group-manage.ts";
 import { historyRedo } from "./entries/history-redo.ts";
 import { historyUndo } from "./entries/history-undo.ts";
+import { importPlanningApply, importPlanningUndo } from "./entries/import-planning-apply.ts";
 import { importPlanningPreview } from "./entries/import-planning-preview.ts";
 import { launchOpen } from "./entries/launch-open.ts";
 import { prefsManage } from "./entries/prefs-manage.ts";
@@ -39,6 +40,8 @@ export const registry = [
   historyUndo,
   historyRedo,
   importPlanningPreview,
+  importPlanningApply,
+  importPlanningUndo,
 ] as const satisfies readonly AnyEntry[];
 
 type Registry = (typeof registry)[number];

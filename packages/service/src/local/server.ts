@@ -56,7 +56,14 @@ import {
   type JsonObject,
   type Mode,
 } from "@tasks/bridge/protocol";
-import { classify, isRpcMethod, mayCall, type ConnectionClass, type RpcMethod } from "./classes.ts";
+import {
+  classify,
+  isRpcMethod,
+  mayCall,
+  refusalOf,
+  type ConnectionClass,
+  type RpcMethod,
+} from "./classes.ts";
 import { isLive, type GrantStore } from "./grants.ts";
 
 export interface ServerLimits {
@@ -1114,7 +1121,7 @@ class Connection {
     if (!mayCall(info.class, method)) {
       const error = new AppError({
         code: "forbidden",
-        message: "This connection cannot call this method.",
+        ...refusalOf(info.class, method),
         data: { reason: "connection_class", class: info.class },
       });
       this.#replyError(id, RPC_ERROR.app, error.message, error.toBody());

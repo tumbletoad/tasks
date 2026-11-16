@@ -36,6 +36,15 @@ export { entryAdd, EntryAddInput, EntryAddResult } from "./entries/entry-add.ts"
 export { historyRedo, HistoryRedoInput, HistoryRedoResult } from "./entries/history-redo.ts";
 export { historyUndo, HistoryUndoInput, HistoryUndoResult } from "./entries/history-undo.ts";
 export {
+  IMPORT_FIELDS,
+  importPlanningApply,
+  ImportPlanningApplyInput,
+  ImportPlanningApplyResult,
+  importPlanningUndo,
+  ImportPlanningUndoInput,
+  ImportPlanningUndoResult,
+} from "./entries/import-planning-apply.ts";
+export {
   IMPORT_RUN,
   ImportPlanningCounts,
   importPlanningPreview,

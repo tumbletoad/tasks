@@ -29,7 +29,7 @@ import {
 import { isAbsolutePath, placeFor, ROOT_ID, type Roots } from "./places.ts";
 import { problem, type Problem, type ProblemCode, type ProblemField } from "./problems.ts";
 import type { PrototypeParse } from "./prototype.ts";
-import { groupKey, groupSlug, numberedSlug } from "./slug.ts";
+import { groupKey, groupSlug, numberedSlug, storedKey } from "./slug.ts";
 import {
   classifyUrl,
   fileLinkPath,
@@ -262,7 +262,7 @@ function groupsOf(entries: readonly Entry[], report: Report): Groups {
     if (planned === undefined) {
       const slug = numberedSlug(groupSlug(areaText.full, "area"), areaSlugs, nextArea);
       areaSlugs.add(slug);
-      planned = { slug, title: areaText.title };
+      planned = { slug, title: areaText.title, key: storedKey(areaKey) };
       areas.set(areaKey, planned);
     }
     const area = planned.slug;
@@ -272,14 +272,15 @@ function groupsOf(entries: readonly Entry[], report: Report): Groups {
       of.set(e, { area });
       continue;
     }
-    const key = `${area}\u0000${groupKey(projectText.full, "project")}`;
+    const projectKey = groupKey(projectText.full, "project");
+    const key = `${areaKey}\u0000${projectKey}`;
     let project = projects.get(key);
     if (project === undefined) {
       // Project slugs are unique in a space, not per area (A1 3.4): another project with the same
       // slug gets the next free number.
       const slug = numberedSlug(groupSlug(projectText.full, "project"), projectSlugs, nextProject);
       projectSlugs.add(slug);
-      project = { slug, title: projectText.title, area };
+      project = { slug, title: projectText.title, area, key: storedKey(areaKey, projectKey) };
       projects.set(key, project);
     }
     of.set(e, { area, project: project.slug });
