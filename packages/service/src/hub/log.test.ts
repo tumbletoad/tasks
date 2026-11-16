@@ -90,6 +90,7 @@ describe("[A2.3.13.hub.logs-content-free] the log takes no free text", () => {
         method: method as keyof typeof RPC_METHODS,
       })),
       { ev: "local.revoked", conn: 3 },
+      { ev: "local.listen_error", code: "EACCES" },
     ];
     for (const event of events) {
       const { ev, ...fields } = event;

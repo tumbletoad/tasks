@@ -71,11 +71,17 @@ export function bulkTask(n: number): Operation {
   };
 }
 
-/** Adds `count` tasks to the space at `folder`, as its owner, on the authority's machine. */
-export async function addBulkTasks(
+type Machine = { readonly id: string; readonly name: string; readonly os: "linux" };
+
+/**
+ * Writes `requests` into the space at `folder`, as its owner, on the authority's machine. `now`
+ * gets the request's index: the writer never lets a commit's time go back past the last one.
+ */
+async function writeRequests(
   folder: string,
-  machine: { readonly id: string; readonly name: string; readonly os: "linux" },
-  count: number,
+  machine: Machine,
+  requests: readonly Operation[][],
+  now: (request: number) => number,
 ): Promise<void> {
   const opened = openSpace(await checkedDriver(), folder, { role: "writer" });
   const human = opened.conn
@@ -85,14 +91,10 @@ export async function addBulkTasks(
     opened.conn.close();
     throw new Error("the space has no owner actor");
   }
-  // The requests are spread over the last ten days, so the rows' ages differ. The writer never
-  // lets a commit's time go back past the seed's last one.
   let request = 0;
-  const requests = Math.ceil(count / 50);
-  const start = Date.now() - 10 * 86_400_000;
   const writer = SpaceWriter.open(opened, {
     machine: { id: machine.id as Id<"m">, name: machine.name, os: machine.os },
-    now: () => start + Math.floor((request / requests) * 10 * 86_400_000),
+    now: () => now(request),
   });
   try {
     const actor: Credential = {
@@ -102,9 +104,7 @@ export async function addBulkTasks(
       machine_id: machine.id as Id<"m">,
       origin: "cli",
     };
-    for (let from = 0; from < count; from += 50) {
-      const ops: Operation[] = [];
-      for (let n = from; n < Math.min(count, from + 50); n += 1) ops.push(bulkTask(n));
+    for (const ops of requests) {
       const result = writer.submit({
         space_id: opened.space.spaceId,
         request_id: newId("op").slice(3),
@@ -119,4 +119,62 @@ export async function addBulkTasks(
   } finally {
     writer.close();
   }
+}
+
+/** Adds `count` tasks to the space at `folder`, in requests of 50 creates. */
+export async function addBulkTasks(folder: string, machine: Machine, count: number): Promise<void> {
+  const requests: Operation[][] = [];
+  for (let from = 0; from < count; from += 50) {
+    const ops: Operation[] = [];
+    for (let n = from; n < Math.min(count, from + 50); n += 1) ops.push(bulkTask(n));
+    requests.push(ops);
+  }
+  // Spread over the last ten days, so the rows' ages differ.
+  const start = Date.now() - 10 * 86_400_000;
+  await writeRequests(folder, machine, requests, (request) =>
+    Math.floor(start + (request / requests.length) * 10 * 86_400_000),
+  );
+}
+
+/** Finished fixture tasks: completed and wrapped up, checked off (wrap-up waiting), dropped. */
+export interface FinishedCounts {
+  readonly done: number;
+  readonly pending: number;
+  readonly dropped: number;
+}
+
+/**
+ * Adds finished tasks to the space at `folder`, each made and finished in one request, 25 a
+ * request, all now: the writer's clock holds them in the month the test runs in.
+ */
+export async function addFinishedTasks(
+  folder: string,
+  machine: Machine,
+  counts: FinishedCounts,
+): Promise<void> {
+  const requests: Operation[][] = [];
+  const add = (count: number, how: keyof FinishedCounts, title: string) => {
+    for (let from = 0; from < count; from += 25) {
+      const ids = Array.from({ length: Math.min(25, count - from) }, () => newId("t"));
+      requests.push([
+        ...ids.map((id, i): Operation => ({
+          kind: "task.create",
+          id,
+          title: `${title} ${String(from + i + 1)}`,
+          project: "garden",
+        })),
+        ...ids.map((task): Operation =>
+          how === "dropped"
+            ? { kind: "task.archive", task }
+            : how === "pending"
+              ? { kind: "task.complete", task }
+              : { kind: "task.complete", task, outcome: "Done as planned." },
+        ),
+      ]);
+    }
+  };
+  add(counts.done, "done", "Finished fixture task");
+  add(counts.pending, "pending", "Checked off fixture task");
+  add(counts.dropped, "dropped", "Dropped fixture task");
+  await writeRequests(folder, machine, requests, () => Date.now());
 }

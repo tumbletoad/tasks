@@ -434,6 +434,7 @@ export const EVENTS = {
     fields: { conn: "int", method: RPC_METHOD_NAMES },
   },
   "local.revoked": { lvl: "info", c: "local", fields: { conn: "int" } },
+  "local.listen_error": { lvl: "error", c: "local", fields: { code: "error_code" } },
   // The UI's HTTP listener (A2 3.8.3 "Logging": method, route, status, duration, connection class;
   // never a path, query, header, body, token or code). Every word comes from http/events.ts.
   "http.request": {

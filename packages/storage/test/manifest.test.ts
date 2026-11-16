@@ -298,7 +298,8 @@ describe("[A1.5.space.manifest] app versions compare by SemVer precedence", () =
         expect(isAppVersion(a)).toBe(true);
         expect(compareAppVersions(a, a)).toBe(0);
         expect(compareAppVersions(a, b) === 0).toBe(a === b);
-        expect(compareAppVersions(a, b)).toBe(-compareAppVersions(b, a));
+        // A sum, not a negation: -0 is not 0 to toBe, and equal versions compare as 0.
+        expect(compareAppVersions(a, b) + compareAppVersions(b, a)).toBe(0);
         // Transitive: after sorting, every pair is in order, not only the neighbours.
         const [x = "", y = "", z = ""] = [a, b, c].sort(compareAppVersions);
         expect(compareAppVersions(x, y)).toBeLessThanOrEqual(0);
