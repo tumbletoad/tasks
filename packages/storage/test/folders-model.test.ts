@@ -1,12 +1,15 @@
 // A property test over random sequences of folder operations on two machines, a Linux and a Windows
-// one: a person sets and clears projects' and tasks' folders, moves tasks between projects, deletes
-// and restores projects, undoes and redoes; an agent sets projects' folders too, on no undo stack.
-// Paths come from small sets per machine, so two projects often reach for one folder, by the same
-// spelling or, on Windows, another case. After every step:
+// one: a person sets and clears projects' and tasks' folders, moves tasks between projects and
+// projects between areas, deletes and restores tasks and projects, undoes and redoes; an agent does
+// most of these too, in between, on no undo stack. Paths come from small sets per machine, so two
+// projects often reach for one folder, by the same spelling or, on Windows, another case, and one
+// project's folder is often inside another's. After every step:
 // - an owner has at most one live folder per machine;
 // - two live projects never have one folder on one machine, by that machine's case rule;
+// - a deleted project holds no live folder and no live task, and a task is in its project's area;
 // - a project's folder change moved exactly its tasks' folders inside the old one, to the same
-//   place inside the new one, and changed no other folder;
+//   place inside the new one, unless the new folder is around or inside the old one, and changed
+//   no other folder (worked out here apart from the writer's code);
 // - an undo that applied whole, of a commit nobody else's change followed, gives back the space as
 //   it was before that commit, and its redo the space as that commit left it.
 // Each run ends with A1's history invariants (write-helpers.ts: checkHistory). Fixture paths only:
@@ -15,7 +18,7 @@ import fc from "fast-check";
 import { afterAll, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
 import { openSpace } from "../src/space.ts";
-import { folderKey, rebased, type FolderOs } from "../src/write/folders.ts";
+import { folderKey, type FolderOs } from "../src/write/folders.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import { checkHistory, writeFixture, type Fixture } from "./write-helpers.ts";
@@ -32,15 +35,21 @@ const PATHS: Readonly<Record<FolderOs, readonly string[]>> = {
 const PROJECTS = 4;
 /** Tasks start in the first two projects; the last two start empty, so they can be deleted. */
 const TASKS = 4;
+/** Areas a project moves between; the last index is no area. */
+const AREAS = 2;
+
+type Who = "human" | "agent";
 
 type Step =
-  | { kind: "project_set"; who: "human" | "agent"; m: number; p: number; path: number }
+  | { kind: "project_set"; who: Who; m: number; p: number; path: number }
   | { kind: "project_clear"; m: number; p: number }
   | { kind: "task_set"; m: number; t: number; path: number }
   | { kind: "task_clear"; m: number; t: number }
-  | { kind: "move"; t: number; p: number }
-  | { kind: "delete"; p: number }
-  | { kind: "restore"; p: number }
+  | { kind: "move"; who: Who; t: number; p: number }
+  | { kind: "task_delete"; who: Who; t: number; restore: boolean }
+  | { kind: "regroup"; who: Who; p: number; a: number }
+  | { kind: "delete"; who: Who; p: number }
+  | { kind: "restore"; who: Who; p: number }
   /** An agent sets a project's folder to one a project had and lost: a delete's, a clear's. */
   | { kind: "steal"; m: number; p: number; pick: number }
   | { kind: "undo"; partial: boolean }
@@ -50,6 +59,8 @@ const m = fc.nat({ max: 1 });
 const p = fc.nat({ max: PROJECTS - 1 });
 const t = fc.nat({ max: TASKS - 1 });
 const path = fc.nat({ max: 5 });
+/** Mostly the person, whose changes are on the undo stack; sometimes an agent in between. */
+const who = fc.constantFrom<Who>("human", "human", "agent");
 const step: fc.Arbitrary<Step> = fc.oneof(
   {
     arbitrary: fc.record({
@@ -65,11 +76,34 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("task_set" as const), m, t, path }), weight: 4 },
   { arbitrary: fc.record({ kind: fc.constant("task_clear" as const), m, t }), weight: 1 },
   {
-    arbitrary: fc.record({ kind: fc.constant("move" as const), t, p: fc.nat({ max: PROJECTS }) }),
+    arbitrary: fc.record({
+      kind: fc.constant("move" as const),
+      who,
+      t,
+      p: fc.nat({ max: PROJECTS }),
+    }),
     weight: 2,
   },
-  { arbitrary: fc.record({ kind: fc.constant("delete" as const), p }), weight: 2 },
-  { arbitrary: fc.record({ kind: fc.constant("restore" as const), p }), weight: 3 },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("task_delete" as const),
+      who,
+      t,
+      restore: fc.boolean(),
+    }),
+    weight: 1,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("regroup" as const),
+      who,
+      p,
+      a: fc.nat({ max: AREAS }),
+    }),
+    weight: 2,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("delete" as const), who, p }), weight: 2 },
+  { arbitrary: fc.record({ kind: fc.constant("restore" as const), who, p }), weight: 3 },
   {
     arbitrary: fc.record({ kind: fc.constant("steal" as const), m, p, pick: fc.nat() }),
     weight: 2,
@@ -81,6 +115,53 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("redo" as const) }), weight: 3 },
 );
 
+/**
+ * Fewer kinds, and an agent as often as the person: a project's moves, deletes and restores with an
+ * agent filing tasks and setting folders in between, then the person's undo and redo.
+ */
+const either = fc.constantFrom<Who>("human", "agent");
+const groupStep: fc.Arbitrary<Step> = fc.oneof(
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("regroup" as const),
+      who: either,
+      p,
+      a: fc.nat({ max: AREAS }),
+    }),
+    weight: 3,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("move" as const),
+      who: either,
+      t,
+      p: fc.nat({ max: PROJECTS }),
+    }),
+    weight: 3,
+  },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("task_delete" as const),
+      who: either,
+      t,
+      restore: fc.boolean(),
+    }),
+    weight: 2,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("delete" as const), who: either, p }), weight: 2 },
+  { arbitrary: fc.record({ kind: fc.constant("restore" as const), who: either, p }), weight: 2 },
+  {
+    arbitrary: fc.record({ kind: fc.constant("project_set" as const), who: either, m, p, path }),
+    weight: 2,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("project_clear" as const), m, p }), weight: 1 },
+  {
+    arbitrary: fc.record({ kind: fc.constant("undo" as const), partial: fc.boolean() }),
+    weight: 4,
+  },
+  { arbitrary: fc.record({ kind: fc.constant("redo" as const) }), weight: 2 },
+);
+
 interface FolderState {
   id: string;
   kind: string;
@@ -90,16 +171,23 @@ interface FolderState {
   live: boolean;
 }
 
-/** What an undo must give back: the live folders, the live projects and each task's project. */
+/**
+ * What an undo must give back: the live folders, the live projects with their areas, and each
+ * task's project, area and tombstone.
+ */
 interface Snapshot {
   folders: Record<string, string>;
   projects: string[];
+  areas: Record<string, string | null>;
   tasks: Record<string, string | null>;
+  taskAreas: Record<string, string | null>;
+  deletedTasks: string[];
 }
 
 interface World {
   fx: Fixture;
   machines: { id: Id<"m">; os: FolderOs; human: Credential; agent: Credential }[];
+  areas: Id<"a">[];
   projects: Id<"p">[];
   tasks: Id<"t">[];
 }
@@ -132,10 +220,17 @@ async function world(): Promise<World> {
     human: { ...fx.human, machine_id: machine.id },
     agent: { ...fx.codex, machine_id: machine.id },
   }));
+  const areas = Array.from({ length: AREAS }, () => newId("a"));
   const projects = Array.from({ length: PROJECTS }, () => newId("p"));
   const tasks = Array.from({ length: TASKS }, () => newId("t"));
   const ops: Operation[] = [
-    ...projects.map((id, k): Operation => ({ kind: "project.create", id, title: `P${String(k)}` })),
+    ...areas.map((id, k): Operation => ({ kind: "area.create", id, title: `A${String(k)}` })),
+    ...projects.map((id, k): Operation => ({
+      kind: "project.create",
+      id,
+      title: `P${String(k)}`,
+      area: areas[k % AREAS] ?? null,
+    })),
     ...tasks.map((id, k): Operation => ({
       kind: "task.create",
       id,
@@ -145,7 +240,7 @@ async function world(): Promise<World> {
   ];
   const created = fx.writer.submit(fx.request(fx.codex, ops));
   if (created.status !== "applied") throw new Error("the world was not created");
-  return { fx, machines, projects, tasks };
+  return { fx, machines, areas, projects, tasks };
 }
 
 function folders(w: World): FolderState[] {
@@ -163,22 +258,24 @@ function folders(w: World): FolderState[] {
 }
 
 function snapshot(w: World): Snapshot {
+  const projects = w.fx.reader
+    .prepare("SELECT id, area_id, deleted_at FROM projects ORDER BY id")
+    .all();
+  const tasks = w.fx.reader
+    .prepare("SELECT id, project_id, area_id, deleted_at FROM tasks ORDER BY id")
+    .all();
+  const nullable = (v: unknown): string | null => (typeof v === "string" ? v : null);
   return {
     folders: Object.fromEntries(
       folders(w)
         .filter((f) => f.live)
         .map((f) => [f.id, f.path]),
     ),
-    projects: w.fx.reader
-      .prepare("SELECT id FROM projects WHERE deleted_at IS NULL ORDER BY id")
-      .all()
-      .map((r) => String(r["id"])),
-    tasks: Object.fromEntries(
-      w.fx.reader
-        .prepare("SELECT id, project_id FROM tasks ORDER BY id")
-        .all()
-        .map((r) => [String(r["id"]), (r["project_id"] as string | null) ?? null]),
-    ),
+    projects: projects.filter((r) => r["deleted_at"] === null).map((r) => String(r["id"])),
+    areas: Object.fromEntries(projects.map((r) => [String(r["id"]), nullable(r["area_id"])])),
+    tasks: Object.fromEntries(tasks.map((r) => [String(r["id"]), nullable(r["project_id"])])),
+    taskAreas: Object.fromEntries(tasks.map((r) => [String(r["id"]), nullable(r["area_id"])])),
+    deletedTasks: tasks.filter((r) => r["deleted_at"] !== null).map((r) => String(r["id"])),
   };
 }
 
@@ -190,7 +287,8 @@ function checkInvariants(w: World): void {
     expect(owners.has(key), `one live folder per owner and machine: ${key}`).toBe(false);
     owners.add(key);
   }
-  const liveProjects = new Set(snapshot(w).projects);
+  const now = snapshot(w);
+  const liveProjects = new Set(now.projects);
   for (const machine of w.machines) {
     const keys = all
       .filter((f) => f.kind === "project" && f.machine === machine.id && liveProjects.has(f.owner))
@@ -199,6 +297,33 @@ function checkInvariants(w: World): void {
       keys.length,
     );
   }
+  // A deleted project holds no live folder and no live task, and a task is in its project's area.
+  for (const f of all) {
+    if (f.kind === "project") {
+      expect(liveProjects.has(f.owner), "a deleted project has no live folder").toBe(true);
+    }
+  }
+  for (const [task, project] of Object.entries(now.tasks)) {
+    if (project === null) continue;
+    if (!now.deletedTasks.includes(task)) {
+      expect(liveProjects.has(project), "a deleted project holds no live task").toBe(true);
+    }
+    expect(now.taskAreas[task], "a task is in its project's area").toBe(now.areas[project]);
+  }
+}
+
+/**
+ * Where a task's folder lands when its project's folder changes from `from` to `to`, worked out
+ * here apart from the writer's code: inside the old folder it moves, unless one of the two
+ * folders is the other or inside it, when nothing moves.
+ */
+function expectedMove(path: string, from: string, to: string, os: FolderOs): string {
+  const sep = os === "windows" ? "\\" : "/";
+  const fold = (s: string): string => (os === "linux" ? s : s.toLowerCase());
+  const within = (a: string, b: string): boolean =>
+    fold(a) === fold(b) || fold(a).startsWith(fold(b) + sep);
+  if (within(to, from) || within(from, to) || !within(path, from)) return path;
+  return to + path.slice(from.length);
 }
 
 /** A commit on the person's stack, with the space before and after it. */
@@ -224,9 +349,9 @@ async function run(steps: readonly Step[]): Promise<void> {
       const human = machine?.human ?? w.fx.human;
       let ops: Operation[] | undefined;
       let actor = human;
+      if ("who" in s && s.who === "agent") actor = machine?.agent ?? w.fx.codex;
       switch (s.kind) {
         case "project_set":
-          if (s.who === "agent") actor = machine?.agent ?? w.fx.codex;
           ops = [
             {
               kind: "project.folder_set",
@@ -256,6 +381,18 @@ async function run(steps: readonly Step[]): Promise<void> {
               kind: "task.move",
               task: w.tasks[s.t] ?? "",
               project: s.p === PROJECTS ? null : (w.projects[s.p] ?? ""),
+            },
+          ];
+          break;
+        case "task_delete":
+          ops = [{ kind: s.restore ? "task.restore" : "task.delete", task: w.tasks[s.t] ?? "" }];
+          break;
+        case "regroup":
+          ops = [
+            {
+              kind: "project.move",
+              project: w.projects[s.p] ?? "",
+              area: s.a === AREAS ? null : (w.areas[s.a] ?? ""),
             },
           ];
           break;
@@ -354,7 +491,7 @@ async function run(steps: readonly Step[]): Promise<void> {
             f.machine === machine.id &&
             inProject.has(f.owner)
           ) {
-            expected = rebased(f.path, old.path, to, machine.os) ?? f.path;
+            expected = expectedMove(f.path, old.path, to, machine.os);
           }
           expect(now?.path, "a folder change moves exactly the folders inside").toBe(expected);
         }
@@ -370,6 +507,15 @@ describe("[A1.5.write.folders-model] random folder operations, deletes, restores
   test("one folder per owner and machine, never two live projects on one folder, moves carry exactly the folders inside, and undo gives back what was", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 5, maxLength: 40 }), async (steps) => {
+        await run(steps);
+      }),
+      { numRuns: 100 },
+    );
+  }, 300_000);
+
+  test("a deleted project never holds a live task or folder, and a task stays in its project's area, with an agent working in between", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(groupStep, { minLength: 5, maxLength: 30 }), async (steps) => {
         await run(steps);
       }),
       { numRuns: 100 },

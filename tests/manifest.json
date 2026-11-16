@@ -643,7 +643,7 @@
     },
     {
       "id": "A1.5.write.groups",
-      "title": "Areas and projects through the write path: create with a slug from the title, numbered when taken, in one request with a task filed into the new project; rename and other fields with a base, keeping the ID, slug and tasks; a project moved to another area with all its tasks; archive and unarchive, idempotent, keeping the group's tasks as they are; delete refused while a project holds tasks, delete and restore of an empty one; undo and redo of each, and an undo of a create kept by another's task",
+      "title": "Areas and projects through the write path: create with a slug from the title, numbered when taken, in one request with a task filed into the new project; rename and other fields with a base, keeping the ID, slug and tasks; a project moved to another area with all its tasks, its undo a conflict when a task was filed into it since; archive and unarchive, idempotent, keeping the group's tasks as they are; delete refused while a project holds tasks, delete and restore of an empty one; undo and redo of each, and an undo of a create kept by another's task",
       "source": "A1 3.6, A1 3.10",
       "owner": "M4",
       "kind": "ci",
@@ -651,7 +651,7 @@
     },
     {
       "id": "A1.5.write.folders",
-      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a project's folder change with a base that moves its tasks' folders inside the old one; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
+      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a project's folder change with a base that moves its tasks' folders inside the old one; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a task that joined the project or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through undo, redo and a task's restore; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
       "source": "A1 3.6, A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -659,7 +659,7 @@
     },
     {
       "id": "A1.5.write.folders-model",
-      "title": "Property test over random folder sets and clears, task moves, project deletes and restores, undos and redos on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, never two live projects on one folder by the machine's case rule, a project's folder change moves exactly its tasks' folders inside the old one, an undo applied whole gives back the space as it was and its redo the space the commit left, and the history invariants hold",
+      "title": "Property tests over random folder sets and clears, task moves, deletes and restores, project moves, deletes and restores, undos and redos on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, never two live projects on one folder by the machine's case rule, a deleted project holds no live folder or task and a task is in its project's area, a project's folder change moves exactly its tasks' folders inside the old one by an oracle of the test's own, an undo applied whole gives back the space as it was and its redo the space the commit left, and the history invariants hold",
       "source": "A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -691,7 +691,7 @@
     },
     {
       "id": "A1.3.15.folders.request-path",
-      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; an agent's task filed into an area and project it names first, created with it",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; an agent's task filed into an area and project it names first, created with it",
       "source": "A1 3.15, A3 3.4.5",
       "owner": "M4",
       "kind": "ci",

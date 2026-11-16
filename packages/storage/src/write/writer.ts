@@ -63,12 +63,12 @@ import {
   type TaskField,
 } from "./fields.ts";
 import {
+  carriedTo,
   decodeFolder,
   FOLDER_SQL,
   folderHolder,
   folderProblem,
   machineOs,
-  rebased,
   type FolderOs,
 } from "./folders.ts";
 import { planImportRevert, recomputeToken } from "./imports.ts";
@@ -2404,7 +2404,8 @@ export class SpaceWriter {
           const touches: Touch[] = [];
           if (row !== undefined) {
             // Another folder for the one there: the base covers the folder the caller saw, and
-            // the task folders inside it that move along with a project's.
+            // the task folders inside it that move along with a project's, with each task's place
+            // in the project, so a task that joined it since is not moved unseen.
             const found = decodeFolder(row);
             target = found.id;
             touches.push(...folderTouches(row, ["path"], parent));
@@ -2413,13 +2414,26 @@ export class SpaceWriter {
                 .prepare(FOLDER_SQL.taskFoldersOfProject)
                 .all({ machine: folder.machine, project: owner.id })) {
                 const moved = decodeFolder(inside);
-                if (rebased(moved.path, found.path, op.path, folder.os) === undefined) continue;
-                touches.push(...folderTouches(inside, ["path"], moved.ownerId as Id<"t">));
+                if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
+                const owned = task(moved.ownerId, "task", true);
+                touches.push(
+                  ...folderTouches(inside, ["path"], owned),
+                  ...taskTouches(owned, ["grouping"]),
+                );
               }
             }
           } else if (target === undefined) {
             target = newId("fo", random);
             draftFolders.set(key, target);
+            // A folder cleared since the caller's base is a change it has not seen.
+            const gone = fresh
+              ? undefined
+              : conn
+                  .prepare(FOLDER_SQL.lastRemoved)
+                  .get({ kind: owner.kind, owner: owner.id, machine: folder.machine });
+            if (gone !== undefined && request.base !== undefined) {
+              touches.push(...folderTouches(gone, ["deleted"], parent));
+            }
           }
           return {
             i,
@@ -3774,8 +3788,17 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.restore": {
       // A1 3.11.4: the tombstone only. Every row of the task and its history stay.
       const target = staged.target as Id<"t">;
-      if (op.kind === "task.restore" && !readTask(conn, target).deleted) {
-        problem("INVALID_TRANSITION", "Only a deleted task can be restored", i, "task");
+      if (op.kind === "task.restore") {
+        const found = readTask(conn, target);
+        if (!found.deleted) {
+          problem("INVALID_TRANSITION", "Only a deleted task can be restored", i, "task");
+        }
+        // A deleted project holds no live task: its restore comes first.
+        const project =
+          found.projectId === null ? undefined : readRow(conn, "projects", found.projectId);
+        if (project !== undefined && project["deleted_at"] !== null) {
+          problem("DELETED", "The task's project is deleted: restore the project first", i, "task");
+        }
       }
       update(
         conn,
@@ -4301,7 +4324,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
               .prepare(FOLDER_SQL.taskFoldersOfProject)
               .all({ machine, project: owner.id })) {
               const task = decodeFolder(inside);
-              const moved = rebased(task.path, found.path, op.path, os);
+              const moved = carriedTo(task.path, found.path, op.path, os);
               if (moved === undefined || moved === task.path) continue;
               ensureStart(conn, run, "folders", task.id);
               conn.prepare(SQL.folderPath).run({ id: task.id, path: moved });

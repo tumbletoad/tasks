@@ -268,6 +268,7 @@ export {
 export { FIRST_POSITION, isPosition, positionBetween } from "./write/positions.ts";
 // Folders (schema 0.5): their form on each OS, the case rule, and the folder a launch uses.
 export {
+  carriedTo,
   decideLaunchFolder,
   FOLDER_PATH_MAX,
   folderKey,

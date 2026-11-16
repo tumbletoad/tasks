@@ -188,6 +188,25 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     });
   });
 
+  test("undo of a project's move is a conflict when a task was filed into it since; its partial form leaves the project and its tasks together", () => {
+    const first = created(submit([{ kind: "task.create", title: "Before", project: fx.project }]));
+    expectStatus(submit([{ kind: "project.move", project: fx.project, area: "home" }]), "applied");
+    const filed = created(
+      submit([{ kind: "task.create", title: "Filed since", project: fx.project }], "codex"),
+    );
+    const blocked = undo();
+    expectStatus(blocked, "conflict");
+    expect(blocked.conflicts).toEqual([
+      expect.objectContaining({ entity: "tasks", id: filed, field: "grouping" }),
+    ]);
+    const partial = fx.writer.submit(fx.request(fx.human, [{ kind: "undo", partial: true }]));
+    expectStatus(partial, "applied");
+    const areaOf = (id: string) =>
+      fx.reader.prepare("SELECT area_id FROM tasks WHERE id = $id").get({ id })?.["area_id"];
+    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.home);
+    expect([areaOf(first), areaOf(filed)]).toEqual([fx.areas.home, fx.areas.home]);
+  });
+
   test("archive keeps the group's tasks as they are; archive twice and unarchive an active one change nothing", () => {
     const task = created(
       submit([{ kind: "task.create", title: "Still open", project: fx.project }]),

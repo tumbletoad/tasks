@@ -32,9 +32,9 @@ import {
   type PrefValue,
 } from "@tasks/contracts";
 import {
+  carriedTo,
   isId,
   newId,
-  rebased,
   type Id,
   type Operation,
   type OpResult,
@@ -113,6 +113,7 @@ import {
   readCommit,
   readCommitTasks,
   readBind,
+  readFolderOwner,
   readGroupNames,
   readGroups,
   readLaunch,
@@ -2296,7 +2297,11 @@ async function folderWrite(
   // set or clear, on a project or a task.
   let owner: { kind: "project" | "task"; id: string; name?: string };
   if (typeof input["project"] === "string") {
-    const project = projectNamed(names, input["project"]);
+    // A retry of a decided write is the writer's to replay: a rename since never refuses it, and
+    // its result names the project.
+    const project = replay
+      ? { id: REPLAY_GROUP, name: input["project"] }
+      : projectNamed(names, input["project"]);
     owner = { kind: "project", id: project.id, name: project.name };
   } else {
     // The writer resolves the reference; its result names the task by ID.
@@ -2331,7 +2336,7 @@ async function folderWrite(
     if (owner.kind === "project" && old !== undefined && old.path !== folder.stored) {
       moved = 0;
       for (const task of read.tasks) {
-        const to = rebased(task.path, old.path, folder.stored, osOf(platform));
+        const to = carriedTo(task.path, old.path, folder.stored, osOf(platform));
         if (to === undefined || to === task.path) continue;
         moved += 1;
         const reason = await reservedBy(expanded(to, home, platform), facts);
@@ -2350,6 +2355,18 @@ async function folderWrite(
   const result = await submit(call, [op]);
   const done = result.results[0];
   const changed = result.status === "applied";
+  if (owner.kind === "project" && owner.id === REPLAY_GROUP) {
+    // The result names the folder, or the project when a clear found none.
+    let id = done?.id ?? "";
+    if (!isId(id, "p")) {
+      try {
+        id = (await readFolderOwner(reader, id)) ?? "";
+      } catch (error) {
+        throw storageFailure(error);
+      }
+    }
+    owner = { ...owner, id, name: names.projects.find((p) => p.id === id)?.title ?? "" };
+  }
   return {
     action,
     result: changed ? (action === "set" ? "set" : "cleared") : "no_change",

@@ -119,6 +119,24 @@ export function rebased(path: string, from: string, to: string, os: FolderOs): s
   return to.endsWith(sep) ? `${to}${rest.join(sep)}` : `${to}${sep}${rest.join(sep)}`;
 }
 
+/**
+ * Where a task's folder `path` goes when its project's folder changes from `from` to `to`: as
+ * `rebased`, but nowhere when one of the two folders is the other or inside it. The project then
+ * names a folder around or inside the one it had, the folders below are still where they were,
+ * and moving them would name folders that are not there.
+ */
+export function carriedTo(
+  path: string,
+  from: string,
+  to: string,
+  os: FolderOs,
+): string | undefined {
+  if (rebased(to, from, from, os) !== undefined || rebased(from, to, to, os) !== undefined) {
+    return undefined;
+  }
+  return rebased(path, from, to, os);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Reads
 
@@ -161,6 +179,10 @@ export const FOLDER_SQL = {
     "AND deleted_at IS NULL ORDER BY created_seq DESC, id",
   /** Every folder row of an owner, removed ones included. */
   allOfOwner: "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner ORDER BY id",
+  /** An owner's folder on one machine that was removed last, if any. */
+  lastRemoved:
+    "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
+    "AND machine_id = $machine AND deleted_at IS NOT NULL ORDER BY version DESC, id LIMIT 1",
   /** The live folders of live projects on a machine: the same-folder rule's rows. */
   liveProjectFolders:
     "SELECT f.* FROM folders f JOIN projects p ON p.id = f.owner_id " +
