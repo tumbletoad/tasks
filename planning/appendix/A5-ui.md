@@ -211,20 +211,6 @@ Built, in `packages/web/src/edit/` (`edits.ts`, `calls.ts`, `change.ts`, `due.ts
 
 **Settings and preferences** are operations too, so they are undoable.
 
-### 3.13 Quick capture and search
-
-**One field for both.** `/` focuses it to search. `n` or the `+` button focuses it to add. In add mode the placeholder reads "New task" and `Enter` creates the task. `Ctrl+K` focuses it from anywhere, including inside text fields.
-
-**Capture syntax**, parsed locally as the user types and shown as chips under the field: natural dates ("fri", "next week", "20 nov"), `p1`–`p3` (`p4` is accepted and is the default), `#area` or `#area/project` with type-ahead, `@person` (sets waiting on), and `*` (star). The rest is the title. `Shift+Enter` creates and keeps the field open for the next task. An ambiguous date shows both readings as chips, and the user picks one before Enter is accepted.
-
-**Where a capture lands.** In the current context: an area view uses that area, Waiting uses waiting, a day filtered on Today uses that due date. A task without an area goes to **Inbox**.
-
-**Search.** Typing in search mode filters after 120 ms of quiet. Results replace the view, with no title, because the query is the title. Groups (hidden when empty): Tasks, Completed, Learnings (the learning text and a link to its task), Go to (views, areas and settings sections). Matches are highlighted with `<mark>`. Filters follow A3's query language, for example `timezone area:client status:open due<7d p:1 src:mail`. Unknown filters get a dotted underline and a tooltip. The last row is always `Add "…"` with the parsed chips, so search falls through to capture. "Show more" pages with the snapshot cursor (R12). `Esc` clears the field and restores the previous view and focus.
-
-**Search results are a frozen snapshot.** The result list and its cursor belong to one snapshot, so paging never skips or repeats a row and nothing re-sorts under the reader. Rows already shown take new field values from live events in place. When an event could change which tasks match or their order (a change to a task's searchable text or to a field the query filters or sorts on, task creation, lifecycle changes and deletion), one muted line appears above the results: "Results changed · Refresh". Refresh restarts the query from a new snapshot, loads as many rows as were shown and keeps focus on the same task when it still matches. If the service reports that the cursor expired, the client refreshes the same way without asking.
-
-Global capture outside the browser (an OS hotkey or the PWA) comes later through `tasks capture` (A2).
-
 ### 3.14 Agent changes: the marker and the digest
 
 **The changed marker.** A task shows the 6 px accent dot when an operation by any actor other than the user (agent session, run, routine, import, another machine) has a sequence number above the task's `seen` cursor. The prototype import is the exception: its tasks start as seen and get no dot (A7 3.15.3). The tooltip names the latest change: "Codex moved this to Review · 10:42", or "Codex changed 3 fields · 10:42". Expanding the task advances its `seen` cursor and clears the dot. Tasks the user creates start as seen. The dot is derived from history, so it appears at every autonomy level, including Full. A3's "mark" at Review is this same dot.

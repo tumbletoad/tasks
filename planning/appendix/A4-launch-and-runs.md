@@ -298,29 +298,6 @@ The first Run in an instance with `inherit` asks for a mode: "Runs in Codex · w
 - **Folder lease** on the folder's real path: a second run waits. A live interactive session there asks "Codex · work is open in this folder. Run anyway?" The hover says a lease cannot stop agents Tasks does not know about. Work folders take no lease.
 - **Timeouts**, enforced by the shim so they hold while the service is down: 30 min wall time for task runs, 60 min for routines, 10 min idle without a stdout line. A timeout runs 3.11.8 and ends `timed_out`. A run stuck on a login or trust prompt shows as idle, and the message says so.
 
-#### 3.11.8 Cancellation
-
-1. The service sends `cancel` to the run shim.
-2. **Unix process group.** The agent is spawned `detached` (Node calls `setsid`), so it leads a group whose ID is its PID, recorded in `meta.json`. The shim stays outside the group and survives to write `exit.json`. (Interactive agents stay in the terminal's foreground group, 3.6.3.)
-3. **Unix sequence.** SIGINT to the group, SIGKILL to the group after 10 s. Group signals are sent only before the agent is reaped, so the group ID cannot be reused.
-4. **Descendants.** After the agent exits, the shim ends what is left. On Linux: every process in the run unit's cgroup except itself, which catches processes that left with their own `setsid`. This is required: Codex's MCP server can survive a group SIGTERM by more than 1 s. On macOS, and on Linux without `systemd-run`: the remaining group members that `ps` shows started after the run. Each gets SIGTERM, then SIGKILL after 2 s, by PID.
-5. **Windows: the console-attach helper** (a small native executable, M6.04h). A console event reaches only processes on the sender's console, and the run shim has none.
-   - **Start mode.** The run shim starts the agent through the helper, which calls `SetConsoleCtrlHandler(NULL, FALSE)`, starts the agent in a console the run creates and owns, with the same stdio, and passes its exit code on. It is needed because the detached shim (`CREATE_NEW_PROCESS_GROUP`) and all its descendants start with Ctrl+C ignored. The alternative is that the shim's own launcher re-enables Ctrl+C before Node starts. M6.04h picks one and tests it under a detached parent. The ignore covers Ctrl+C, not Ctrl+Break.
-   - **Cancel mode.** The helper attaches to the agent's console, reads its process list once, and refuses when the list holds a process other than the agent, a descendant or the helper, when it cannot be read (`GetConsoleProcessList` returns 0), or when it does not fit the buffer. It then sends **Ctrl+C**. Ctrl+C with process group 0 reaches every process on the console, and one that attaches after the check still gets it, so the check narrows the risk without removing it. The helper checks every console and process API result and refuses on any failure, and identifies processes by PID plus creation time. A test covers the refusal for a foreign process.
-   - **Sequence.** Ctrl+C, then `taskkill /PID <pid> /T /F` after 10 s. Not used: `taskkill /T` without `/F`, which never stops a windowless console agent; Ctrl+Break, after which Claude gives no `result` and Codex exits 0xC000013A; a hard stop alone, which loses Claude's final `result`.
-   - A hard stop loses at most the current turn, because both CLIs write their transcript as they go. Descendants end with the shim's kill-on-close job at the latest.
-6. The run is `cancelled` once the agent exited and the sweep finished. If the shim is unreachable, the service stops the unit (`systemctl --user stop tasks-<install>-run-<ref>`: `KillMode=mixed` gives the shim SIGTERM, which runs this sequence, and kills what is left after 15 s) or kills the recorded PID tree after checking its start time.
-7. Cancelling stops the process tree, not what the agent already did. The confirmation says so.
-
-#### 3.11.9 Service restart during a run
-
-The run shim does not need the service while it runs: it holds the agent, parses, journals, writes the outcome and enforces timeouts.
-1. When the service stops, the shim retries every 5 s.
-2. The new service lists the machine's runs in `starting`, `running`, `waiting_for_input`, `cancelling` and `reconciling`, and the `unknown` ones whose stop timed out (`openWork`, which also lists `queued` for the supervisor), reads `meta.json`, checks the shim's PID and start time (and the unit on Linux), and waits for the re-attach. `RunMachine.recover` does this, steps 4 and 5 included, from the observation `RunRecovery.observe` gives (M6.03 builds it on the run files), and `RunMachine.sweep` does it again periodically, so `observe` must be safe to call on a live run; the re-attach of step 3 is M6.03's, and a shim that re-attaches to a cancelling run is sent the cancel again.
-3. On `run.attach {credential, pid, start_time, seq}` the service applies the journal after its own last applied `seq`, then live `run.event {seq, event}` messages. If the journal was truncated in the gap, it applies `checkpoint.json`. The last applied `seq` is in machine state, and the record changes events cause are idempotent compare-and-set patches, so a replay changes nothing and no event is lost or counted twice.
-4. Shim gone with `exit.json`: finalize from it. The journal fills in labels.
-5. Shim gone without `exit.json`: `unknown`, never respawned.
-
 #### 3.11.10 Continue interactively
 
 "Continue in terminal" creates a launch intent in the same session with the resume argv (`claude --resume <uuid>` or `codex resume <thread_id> -C <folder> --no-daemon`). If the run is still going, the UI first asks "Stop the run and continue in a terminal?", because two processes on one session would corrupt it.
@@ -430,20 +407,3 @@ Tasks never writes another app's trust settings silently. Every change is a user
 - **Links.** A trust file or its folder that is a symbolic link (or on Windows a junction) is refused, never followed: a link could make the splice write another file.
 - **Encoding.** Strict UTF-8: invalid bytes are refused, a byte order mark is kept, so the bytes written back are the bytes read. A previous trust value is kept only when plain (`false` or `null` in JSON, a string in TOML). Anything else is refused.
 - **Undo.** The record holds only the splice (Tasks' text and the previous value) and the file hashes, never a copy. While the hash is unchanged the undo restores the exact bytes. Otherwise it reverts only Tasks' key, and when the key no longer holds `true` or `"trusted"` it leaves the file alone and reports `key changed`. A Codex table Tasks created is removed whole only while its header is exactly Tasks', and a comment put after the value stays as a comment line.
-
-## 5. Verification
-
-### 5.1 Automated tests (CI on Windows and Linux)
-
-**Built**, each pinned by its test IDs in `tests/manifest.json`: catalogue, detection and approval (`[A4.3.2.*]`), exact folders (`[A1.3.15.places.*]`), the work folder (`[A4.5.shim.work-folder]`), T3's two routes, binding, pairing, fake server and fake CLI (`[A4.3.4.1.t3.*]`, `[A4.3.16.t3.state]`, `[A4.5.t3.*]`), golden argv and homes (`[A4.5.routes.golden-argv]`, `[A4.5.routes.homes]`), routes through a real service, a real `tasks shim` and testkit's fake CLI, which on Windows covers the runtime's real quoting into one command line (`[A4.5.routes.service]`), the opener (`[A4.5.routes.opener]`), the Codex reference match (`[A4.5.routes.codex-match]`), terminals and hostile input (`[A4.5.terminal.*]`), the sanitiser and briefs (`[A4.5.brief.*]`), the environment (`[A4.5.environment.*]`, `[A4.5.shim.environment]`), the execution store contract on every backend (`[A4.5.execution-store.contract]`), the launch state machine over a model world with faults at every store call and step (`[A4.5.launch.*]`), launch request hygiene (`[A1.5.write.launches]`), the shim and its re-attachment (`[A4.5.shim.*]`), the installed shim (`[A4.5.shim.installed]`), the parsers and fake agents (`[A4.5.parsers.*]`, `[A4.5.fake-agents.replay]`), the run records and the run state machine with a cancel in every state and a crash at every boundary (`[A1.5.write.runs]`, `[A4.5.run.machine]`, `[A4.5.run.state-machine]`), and the page's Open and Copy end to end (`[A7.3.9.m2-13.e2e.open]`, `[A7.3.9.m2-10.e2e.copy]`).
-
-To build:
-
-| Kind | What it proves |
-|---|---|
-| Run timeouts | A timeout fires while the service is down, enforced by the shim (M6.02, M6.03) |
-| Run cancellation | Unix: a fake agent that ignores SIGINT and starts a grandchild, and on Linux one that calls `setsid`: all end within 12 s, the shim writes `exit.json`, the run is `cancelled`. A timeout ends `timed_out` the same way. Windows: the helper under a detached parent, and its refusal of a foreign console process |
-| Event journal | The service stops, the agent writes past the raw cap and emits native ID, usage and result: after restart the record holds all three and every `seq` applies once. Past the journal cap, `finished` and the outcome still arrive |
-| Scheduler (M9, fake clock) | DST both ways, a 3-day sleep, a clock set back, overlap, the 08:30 deferral with a restart at 08:45, a crash just before the run's transaction commits. At most one run per decision and one catch-up run |
-
-A test file creates nothing at module level: homes, folders, fake agents and temporary folders are made inside a test or its hooks, with explicit modes (0700, 0600) as the product uses, so a filter, a skipped test or the person's umask changes nothing another test sees.
