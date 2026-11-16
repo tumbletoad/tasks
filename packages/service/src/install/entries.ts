@@ -230,7 +230,10 @@ function spacesText(spaces: readonly { readonly state: string }[]): string {
   if (spaces.length === 0) return "none";
   const counts = new Map<string, number>();
   for (const space of spaces) counts.set(space.state, (counts.get(space.state) ?? 0) + 1);
-  return [...counts].map(([state, n]) => `${String(n)} ${state}`).join(", ");
+  const listed = [...counts].map(([state, n]) => `${String(n)} ${state}`).join(", ");
+  return counts.has("unavailable") || counts.has("read_only")
+    ? `${listed}. ${CLI_NAME} space list says why and what to run`
+    : listed;
 }
 
 /** The UI line of status: the listener's address, or A2 3.8.2's moved line or blocked message. */
