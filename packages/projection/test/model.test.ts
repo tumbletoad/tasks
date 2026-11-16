@@ -1094,8 +1094,12 @@ async function run(actions: readonly Action[]): Promise<void> {
   }
 }
 
-/** Fresh random runs after the fixed seed's. */
-const RUNS = Number(process.env["PROJECTION_MODEL_RUNS"] ?? "20");
+/**
+ * Fresh random runs after the fixed seed's. A defect seen once in about 800 runs passed 20 runs in
+ * most checks; finding such a one is a soak's work (PROJECTION_MODEL_RUNS=2000, about 15 minutes
+ * on Windows), and each check adds what costs it seconds.
+ */
+const RUNS = Number(process.env["PROJECTION_MODEL_RUNS"] ?? "50");
 
 const quietRun = {
   kind: "run",
@@ -1167,7 +1171,6 @@ describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at
           least,
         );
       }
-      // More for a soak run: PROJECTION_MODEL_RUNS=2000.
       await fc.assert(property, { numRuns: RUNS });
     },
     600_000 + RUNS * 2_000,
