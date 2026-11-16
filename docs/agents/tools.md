@@ -354,8 +354,8 @@ Redo the change you undid last, as long as nobody changed its fields since.
 |---|---|---|---|
 | `result` | "redone" | yes | The change is back |
 | `commit` | string | yes | The change undone or redone |
-| `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
-| `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
+| `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
+| `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
@@ -414,8 +414,8 @@ Undo your newest change in the space, field by field as long as nobody changed i
 |---|---|---|---|
 | `result` | "undone" \| "partial" | yes | undone: all of it; partial: the unresolved fields stay as others set them |
 | `commit` | string | yes | The change undone or redone |
-| `tasks` | string[], max 50 items | yes | The tasks it changed, the first 50 |
-| `task_count` | integer, 0 to 9999999999 | yes | How many tasks it changed |
+| `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
+| `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 | `unresolved` | object[] | no | Fields left as others set them |

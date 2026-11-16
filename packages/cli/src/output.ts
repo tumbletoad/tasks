@@ -258,7 +258,7 @@ export function render(entry: string, result: Result, space: string): string {
           ? "Redid your change"
           : result["result"] !== "partial"
             ? "Undid your change"
-            : tasks.length > 0
+            : tasks.length > 0 || result["tasks"] === undefined
               ? "Undid part of your change"
               : "Nothing of your change was left to undo";
       lines.push(`${done}${which} in ${space}${replay(result)}`);

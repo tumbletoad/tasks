@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../live.ts";
-import { landingSpace, type SpaceList } from "./spaces.ts";
+import { landingSpace, notOpen, type SpaceList } from "./spaces.ts";
 import {
   areaFilter,
   COUNTED,
@@ -109,6 +109,7 @@ const B = "sp_bbbbbbbbbbbbbbbbbbbbbbbbbb";
 const list = (defaultId: string | null, states: [string, string][]): SpaceList => ({
   default: defaultId,
   spaces: states.map(([id, state]) => ({ id, name: id.slice(3, 4), state })),
+  unopened: [],
 });
 
 describe("[A5.3.3.web.landing] what a new tab opens", () => {
@@ -160,5 +161,21 @@ describe("[A5.3.3.web.landing] what a new tab opens", () => {
       ),
     ).toBeUndefined();
     expect(landingSpace(list(null, []))).toBeUndefined();
+  });
+
+  test("a space that is not open is named with why, also one that never opened", () => {
+    const listed: SpaceList = {
+      ...list(null, [
+        [A, "open"],
+        [B, "unavailable"],
+      ]),
+      unopened: [{ state: "unavailable", reason: "needs_recovery" }, { state: "opening" }],
+    };
+    expect(notOpen(listed)).toEqual([
+      { name: "b", why: "other" },
+      { why: "needs_recovery" },
+      { why: "opening" },
+    ]);
+    expect(notOpen(list(null, [[A, "open"]]))).toEqual([]);
   });
 });
