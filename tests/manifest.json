@@ -338,6 +338,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.refs.copies",
+      "title": "Through the service, a claim of a restored copy goes on from its original's task references, and a restore in place goes on from the claimed copy's",
+      "source": "A1 3.3, A1 3.18, A6 3.5",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.refs.across-restore",
       "title": "Over random sequences of creates, backups and restores in place, no task reference is given to a second task; a backup from a later state keeps its counter, and a live space that does not open still lends its own",
       "source": "A1 3.3, A1 3.18",

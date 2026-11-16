@@ -82,6 +82,7 @@ import {
   formatRevision,
   LATEST_REVISION,
   readManifest,
+  RANGES,
   RETENTION,
   SpaceLockedElsewhere,
   StorageError,
@@ -891,9 +892,11 @@ export class SpaceManager {
     // the restore goes into a new folder (`--to`).
     await this.#refuseUnwritableFolder(space, { synced: true });
     return this.#changed(space, async (worker, settings) => {
+      const refFloor = await this.#refFloor(space, worker);
       const restored = await worker.restoreInPlace(backupFile, space.folder, {
         machineId: this.#options.machine.id,
         knownEpochs: knownEpochs(settings),
+        ...(refFloor === undefined ? {} : { refFloor }),
         holder: this.#holderFacts,
       });
       // Another database is in place: what failed before is forgotten (A1 3.17). Its state
@@ -916,9 +919,11 @@ export class SpaceManager {
       throw new StorageError("STORAGE_MISUSE", "Only a read-only copy is claimed");
     }
     return this.#changed(space, async (worker, settings) => {
+      const refFloor = await this.#refFloor(space, worker);
       const claim = await worker.claimSpace(space.folder, {
         machine: this.#options.machine,
         knownEpochs: knownEpochs(settings),
+        ...(refFloor === undefined ? {} : { refFloor }),
         holder: this.#holderFacts,
         // Watched while the claim writes, as a writer is.
         onLock: (lock) => {
@@ -1932,6 +1937,48 @@ export class SpaceManager {
       return readSpaceSettings(this.#options.settingsDir, spaceId);
     } catch {
       return {};
+    }
+  }
+
+  /**
+   * The highest next task reference among the other copies of `space` this service knows (a
+   * restored copy and its original, A1 3.3): a claim or a restore in place of `space` goes on from
+   * there, so it never gives a reference one of them gave. Read through a served copy's reader, else
+   * through a reader of its own in `worker`. A copy that cannot be read adds nothing.
+   */
+  async #refFloor(space: Hosted, worker: StorageWorker): Promise<number | undefined> {
+    const id = space.id ?? space.registered;
+    const self = canonicalFolder(space.folder);
+    let floor: number | undefined;
+    for (const other of this.#spaces) {
+      if (other === space || (other.id ?? other.registered) !== id) continue;
+      if (canonicalFolder(other.folder) === self) continue;
+      const next = await this.#nextRefOf(other, worker).catch(() => undefined);
+      if (next !== undefined && (floor === undefined || next > floor)) floor = next;
+    }
+    return floor;
+  }
+
+  async #nextRefOf(space: Hosted, worker: StorageWorker): Promise<number | undefined> {
+    const read = async (conn: WorkerConnection): Promise<number | undefined> => {
+      const row = await bounded(
+        conn.get<{ next_ref?: unknown }>("SELECT next_ref FROM space WHERE one = 1"),
+        this.#openMs,
+      );
+      const next = row?.next_ref;
+      return typeof next === "number" &&
+        Number.isSafeInteger(next) &&
+        next >= RANGES.taskRef.min &&
+        next <= RANGES.taskRef.max + 1
+        ? next
+        : undefined;
+    };
+    if (space.reader !== undefined) return read(space.reader);
+    const { conn } = await bounded(worker.openSpaceReader(space.folder), this.#openMs);
+    try {
+      return await read(conn);
+    } finally {
+      await conn.close().catch(() => undefined);
     }
   }
 }
