@@ -59,6 +59,19 @@ type Reading =
   | { readonly state: "occupied"; readonly detail: string }
   | { readonly state: "unknown"; readonly detail: string };
 
+/** `promise`'s value, or undefined after `ms`; the timer does not outlive the answer. */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  const timer = new AbortController();
+  try {
+    return await Promise.race([
+      promise,
+      sleep(ms, undefined, { signal: timer.signal }).catch(() => undefined),
+    ]);
+  } finally {
+    timer.abort();
+  }
+}
+
 export class WindowsContainers implements Containers {
   private readonly helper: string;
   private readonly live = new Map<string, Live>();
@@ -172,7 +185,6 @@ export class WindowsContainers implements Containers {
               control,
               pid,
               waiting: [],
-              empty: false,
               ended: false,
               helperEnded,
             };
@@ -185,7 +197,6 @@ export class WindowsContainers implements Containers {
           return;
         }
         if (word === "exit") reportExit({ code: Number(rest[0]), signal: null });
-        else if (word === "empty") live.empty = true;
         else if (word === "interrupt" || word === "kill") live.waiting.shift()?.(line);
       });
       void helperEnded.then(() => {
@@ -210,7 +221,7 @@ export class WindowsContainers implements Containers {
       live.waiting.push(resolve);
     });
     live.control.write(`${command}\n`);
-    const line = await Promise.race([answer, sleep(ANSWER_MS).then(() => undefined)]);
+    const line = await within(answer, ANSWER_MS);
     return line?.split(" ")[1] === "1";
   }
 
@@ -234,8 +245,7 @@ export class WindowsContainers implements Containers {
     if (live !== undefined) {
       // The helper says "empty" and ends once the job is empty: wait for that first, then read
       // the job by name, which is the evidence.
-      const left = Math.max(0, deadline - performance.now());
-      await Promise.race([live.helperEnded, sleep(left)]);
+      await within(live.helperEnded, Math.max(0, deadline - performance.now()));
     }
     for (;;) {
       const reading = await this.read("confirm", name);
@@ -257,7 +267,7 @@ export class WindowsContainers implements Containers {
   /** Lets the helper of an empty job go: it ends, and the job's name with it. */
   private async release(name: string, live: Live): Promise<void> {
     live.control.destroy();
-    await Promise.race([live.helperEnded, sleep(ANSWER_MS)]);
+    await within(live.helperEnded, ANSWER_MS);
     this.live.delete(name);
   }
 

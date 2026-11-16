@@ -34,8 +34,11 @@ import {
 export const JOIN_FAILED_EXIT = 97;
 
 // $0 is the run's cgroup.procs. fd 3 tells the service the shell joined, and is closed for the
-// agent. A failed write ends the shell before the agent exists.
-const WRAPPER = 'echo $$ > "$0" || exit 97; echo ok >&3 || exit 97; exec "$@" 3>&-';
+// agent. A failed write ends the shell before the agent exists. The shell may have taken tracing
+// or an `echo` function from the environment (bash as /bin/sh reads both): `set` and `unset` are
+// special builtins, which no function can replace, so they turn those off first.
+const WRAPPER =
+  'set +x +v; unset -f echo; echo $$ > "$0" || exit 97; echo ok >&3 || exit 97; exec "$@" 3>&-';
 
 const POLL_MS = 10;
 
