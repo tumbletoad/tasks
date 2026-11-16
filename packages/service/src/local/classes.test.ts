@@ -16,6 +16,7 @@ import {
   RPC_METHODS,
   classify,
   mayCall,
+  refusalOf,
   type ConnectionClass,
   type RpcHandlers,
   type RpcMethod,
@@ -31,9 +32,9 @@ afterAll(() => {
   root.remove();
 });
 
-const cli = (stdin: boolean, stdout: boolean): ClientInfo => ({
+const cli = (stdin: boolean, stdout: boolean, stderr?: boolean): ClientInfo => ({
   ...clientInfo("cli"),
-  tty: { stdin, stdout },
+  tty: stderr === undefined ? { stdin, stdout } : { stdin, stdout, stderr },
 });
 const withEnv = (env: Record<string, string>): JsonObject => ({ env });
 
@@ -50,10 +51,17 @@ const A4_METHODS: RpcMethod[] = [
 ];
 
 describe("[A2.3.6.local.classes] classification", () => {
-  test("the CLI is interactive only with both TTYs and no marker", () => {
+  test("the CLI is a person's with a terminal on any stream and no marker", () => {
     expect(classify("rpc", cli(true, true), {})).toBe("cli-interactive");
-    expect(classify("rpc", cli(true, false), {})).toBe("cli-script");
-    expect(classify("rpc", cli(false, true), {})).toBe("cli-script");
+    // `tasks space list | less`, `x=$(tasks space backups)`, `tasks space list > file`.
+    expect(classify("rpc", cli(true, false, true), {})).toBe("cli-interactive");
+    // `echo y | tasks undo`, and output redirected too with errors on the terminal.
+    expect(classify("rpc", cli(false, true, true), {})).toBe("cli-interactive");
+    expect(classify("rpc", cli(false, false, true), {})).toBe("cli-interactive");
+    // A client that does not say what stderr is.
+    expect(classify("rpc", cli(true, false), {})).toBe("cli-interactive");
+    // No terminal at all: cron, ssh without -t, an agent's shell.
+    expect(classify("rpc", cli(false, false, false), {})).toBe("cli-script");
     expect(classify("rpc", cli(false, false), {})).toBe("cli-script");
     expect(classify("rpc", cli(true, true), withEnv({ TASKS_SPACE: "sp_x" }))).toBe(
       "cli-interactive",
@@ -115,6 +123,24 @@ describe("[A2.3.6.local.classes] classification", () => {
       }
     }
     expect(A4_METHODS.every((m) => Object.hasOwn(RPC_METHODS, m))).toBe(true);
+  });
+
+  test("what only reads a space is for every CLI; a refusal says how to run the command", () => {
+    for (const method of ["space/list", "space/backups"] as const) {
+      expect(CONNECTION_CLASSES.filter((cls) => mayCall(cls, method)).sort()).toEqual([
+        "cli-agent",
+        "cli-interactive",
+        "cli-script",
+      ]);
+    }
+    expect(refusalOf("cli-script", "space/backup")).toMatchObject({
+      message: expect.stringContaining("has none") as unknown,
+      hint: expect.stringContaining("ssh -t") as unknown,
+    });
+    expect(refusalOf("cli-agent", "space/backup").hint).toContain("their own terminal");
+    expect(refusalOf("cli-interactive", "run.event").message).toBe(
+      "This connection cannot call this method.",
+    );
   });
 
   test("shutdown and UI codes are for a person or a script, never an agent", () => {
@@ -187,6 +213,8 @@ describe("[A2.3.6.local.classes] over a connection", () => {
       for (const client of [
         { ...clientInfo(), kind: "desktop" },
         { ...clientInfo(), tty: { stdin: "yes", stdout: true } },
+        { ...clientInfo(), tty: { stdin: true, stdout: true, stderr: "yes" } },
+        { ...clientInfo(), tty: { stdin: true, stdout: true, stderr: true, extra: true } },
         { ...clientInfo(), pid: -1 },
         { ...clientInfo(), extra: 1 },
         { ...clientInfo(), version: "" },

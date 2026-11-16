@@ -112,13 +112,14 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   },
   {
     name: "space",
-    summary: "List, create, open, close, back up, restore, claim and recover spaces",
+    summary: "List, create, open, close, forget, back up, restore, claim and recover spaces",
     help: SPACE_HELP,
     subcommands: [
       "list",
       "create",
       "open",
       "close",
+      "forget",
       "backup",
       "backups",
       "export",
@@ -237,12 +238,17 @@ export function verbHelp(verb: VerbSpec): string {
   if (verb.entry === "launch.open") {
     lines.push("  --copy  Put the text on the clipboard instead of printing it");
   }
+  // `tasks undo --yes` is the CLI's own: no question when a script's change is newer than yours.
+  if (verb.entry === "history.undo") {
+    lines.push(
+      "  -y, --yes  Undo your newest change also when a script changed something after it, without asking",
+    );
+  }
   lines.push(
     "  --input <file or ->  The whole input as JSON",
     "  --json  Print the result as JSON",
   );
-  if (verb.actors === "user")
-    lines.push("", "Only the user can run this, in an interactive terminal.");
+  if (verb.actors === "user") lines.push("", "Only the user can run this, from a terminal.");
   return `${lines.join("\n")}\n`;
 }
 

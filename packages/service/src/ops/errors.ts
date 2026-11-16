@@ -1,7 +1,8 @@
 // The request path's errors (A3 3.5): every failure becomes the contract's error body. A1's codes
 // map through contracts' table (A3 3.5). Bodies never quote a value the caller sent: issues
 // name a path and a fixed sentence, and storage's messages are fixed sentences.
-import { a1ErrorBody, AppError, type ErrorBody } from "@tasks/contracts";
+import { CLI_NAME } from "@tasks/brand";
+import { a1ErrorBody, AppError, cliFaces, findEntry, type ErrorBody } from "@tasks/contracts";
 import { StorageError, type WriteResult } from "@tasks/storage";
 
 /** A feature of an entry that a later step builds. Never a silent drop of what the caller sent. */
@@ -83,20 +84,53 @@ export function storageFailure(error: unknown): AppError {
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
 }
 
-/** The hint of a refusal whose remedy is another call (A3 3.4.6, 3.5). */
-const HINTS: Readonly<Record<string, string>> = {
-  TASK_NOT_ACTIVE: "Reopen it first: reopen_task (tasks reopen).",
-  // A1 3.10.1: the person chooses; nothing is overwritten unseen.
-  UNDO_CONFLICT: "Pass partial to undo the rest (tasks undo --partial), or set the value again.",
-  UNDO_BEFORE_FLOOR: "Changes from before the space's last format change stay as they are.",
-};
+/** Where the caller reads a hint: the commands a person types, an agent's tools, or the UI. */
+export type Face = "cli" | "mcp" | "ui";
+
+/** How the caller on `face` does `entry`: the command or the tool, or nothing in the UI. */
+function way(face: Face, entry: string, args: string): string | undefined {
+  const found = findEntry(entry);
+  if (face === "mcp") return found?.faces.mcp?.tool ?? entry;
+  if (face === "ui") return undefined;
+  const verb = (found === undefined ? undefined : cliFaces(found)[0])?.verb ?? entry;
+  return `${CLI_NAME} ${verb}${args === "" ? "" : ` ${args}`}`;
+}
+
+const said = (words: string, how: string | undefined) =>
+  how === undefined ? `${words}.` : `${words}: ${how}.`;
+
+/** The hint of a refusal whose remedy is another call, in the words of the caller's face. */
+function hintOf(code: string, face: Face): string | undefined {
+  switch (code) {
+    case "TASK_NOT_ACTIVE":
+      return said("Reopen it first", way(face, "task.reopen", "<task> --reason <why>"));
+    // The person chooses; nothing is overwritten unseen.
+    case "UNDO_CONFLICT":
+      return face === "mcp"
+        ? "Pass partial to undo the rest, or set the value again."
+        : face === "cli"
+          ? `Undo the rest with ${CLI_NAME} undo --partial, or set the value again.`
+          : "Undo the rest, or set the value again.";
+    case "UNDO_BEFORE_FLOOR":
+      return "Changes from before the space's last format change stay as they are.";
+    default:
+      return undefined;
+  }
+}
 
 /** A conflict's `reason` when complete_task's wrap-up was held (A3 3.4.8). */
 export const ALREADY_WRAPPED = "already_wrapped";
 const WRAPPED =
   "The task is already wrapped up with another outcome or other learnings, so nothing was changed.";
-const WRAPPED_HINT =
-  "To add to it, log an entry: add_entry (tasks log). To finish it again, reopen it first: reopen_task (tasks reopen).";
+
+/** What to do about a task wrapped up already: log on it, or reopen it and finish it again. */
+function wrappedHint(face: Face, task: string | undefined): string {
+  const ref = task ?? "<task>";
+  return [
+    said("To add to it, log an entry", way(face, "entry.add", `${ref} <text>`)),
+    said("To finish it again, reopen it first", way(face, "task.reopen", `${ref} --reason <why>`)),
+  ].join(" ");
+}
 
 /**
  * Who wrote a version, as people read it (A3 3.10): an import, the user, else the actor's label.
@@ -130,12 +164,13 @@ function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
  * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
  * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form. `wrapUp` is the
  * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
- * base.
+ * base. `face` is where the caller reads the hint: a command names commands, a tool tools.
  */
 export function resultFailure(
   result: WriteResult,
   hints: Readonly<Record<string, string>> = {},
   wrapUp?: number,
+  face: Face = "mcp",
 ): AppError {
   const problem = result.error;
   // complete_task on a task wrapped up already with another outcome or other learnings: the
@@ -143,10 +178,10 @@ export function resultFailure(
   // what happened, `reason` names it for a script, and the hint says what the person can do.
   const wrapped = heldWrapUp(result, wrapUp);
   const hint = wrapped
-    ? WRAPPED_HINT
+    ? wrappedHint(face, result.conflicts[0]?.ref)
     : problem === undefined
       ? undefined
-      : (hints[problem.code] ?? HINTS[problem.code]);
+      : (hints[problem.code] ?? hintOf(problem.code, face));
   const base: ErrorBody =
     problem === undefined
       ? { code: "conflict", message: "A field changed after the base: read again." }

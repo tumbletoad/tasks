@@ -559,7 +559,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       manager,
       protocol: PROTOCOLS,
       endpoint,
-      spaces: made.spaces?.described() ?? [],
+      spaces: made.spaces?.described().filter((space) => space.forgotten !== true) ?? [],
       http: httpRunning?.status() ?? null,
     });
     const serviceJson = join(layout.state, SERVICE_FILE);
@@ -718,6 +718,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         machine,
         settingsDir: layout.state,
         defaultSpace: () => defaults.get(),
+        clearDefault: (id: string) => defaults.clear(id),
         // What the space verbs do is recorded in machine.toml's [[spaces]] (space-records.ts).
         records: { configDir: layout.config, platform, log },
         manager: {
@@ -727,6 +728,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           checkFolder: (folder: string) => spaceManager().checkFolder(folder),
           confirmExcluded: (entry: number) => spaceManager().confirmExcluded(entry),
           close: (entry: number) => spaceManager().close(entry),
+          forget: (entry: number) => {
+            spaceManager().forget(entry);
+          },
+          forgettable: (entry: number) => spaceManager().forgettable(entry),
           claim: (entry: number) => spaceManager().claim(entry),
           restoreInPlace: (entry: number, file: string) =>
             spaceManager().restoreInPlace(entry, file),

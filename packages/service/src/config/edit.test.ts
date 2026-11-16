@@ -591,6 +591,48 @@ describe("[A2.3.2.4.config.edit-element] setting a key in one element of an arra
     ).toBe(crlf.replace(`id = "${ID}"`, 'id = "sp_0123456789abcdefghjkmnpqrs"'));
   });
 
+  test("an element is taken out however it was written; a comment around it stays; a sub-table refuses it", () => {
+    const remove = (path: string): Edit => ({
+      op: "remove_element",
+      array: "spaces",
+      select: byPath(path),
+    });
+    expect(applied(FILE, [remove("/home/mira/Tasks/work")])).toBe(
+      FILE.replace(
+        `[[spaces]]\nid = "${ID}"   # the work space\npath = "/home/mira/Tasks/work"\n`,
+        "",
+      ),
+    );
+    expect(applyEdits(FILE, [remove("/home/mira/Tasks/home")])).toEqual({
+      ok: false,
+      reason: "unsupported_layout",
+    });
+    expect(applyEdits(FILE, [remove("/elsewhere")])).toEqual({ ok: false, reason: "absent" });
+    // The blank line before it goes too, and the last element gone takes the array with it.
+    const two = [
+      "[log]",
+      'level = "info"',
+      "",
+      "[[spaces]]",
+      `id = "${ID}"`,
+      "path = 'C:\\Tasks\\Mira'",
+      "enabled = false",
+      "",
+      "[[spaces]]",
+      'id = "sp_3z8sm956jp8dajmtsar5kx026c"',
+      "path = 'C:\\Tasks\\Home'",
+      "",
+    ].join("\r\n");
+    const first = applied(two, [remove("C:\\Tasks\\Mira")]);
+    expect(first).toBe(
+      two.replace(
+        `\r\n[[spaces]]\r\nid = "${ID}"\r\npath = 'C:\\Tasks\\Mira'\r\nenabled = false\r\n`,
+        "",
+      ),
+    );
+    expect(applied(first, [remove("C:\\Tasks\\Home")])).toBe('[log]\r\nlevel = "info"\r\n');
+  });
+
   test("no element picked is absent; two picked, or an inline array, is refused; nothing changes", () => {
     const edit = (select: (e: Readonly<Record<string, unknown>>) => boolean): Edit => ({
       op: "set_in_element",

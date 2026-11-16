@@ -939,6 +939,40 @@ export async function readCommitTasks(
 }
 
 /**
+ * The change an undo of `$principal` would take back: its newest commit still on its undo stack,
+ * with the kind of the first operation that changed a task.
+ */
+const UNDO_TARGET: Statement = {
+  sql:
+    "SELECT k.id AS id, k.seq AS seq, (SELECT json_extract(k.ops, '$[' || c.op || '].op') " +
+    "FROM changes c WHERE c.seq = k.seq AND c.task_id IS NOT NULL ORDER BY c.n LIMIT 1) AS change " +
+    "FROM commits k WHERE k.principal_id = $principal AND k.undo_status = 'done' " +
+    "ORDER BY k.seq DESC LIMIT 1",
+  mode: "get",
+};
+
+/** What an undo would take back now, when the actor `principal` has a change on its stack. */
+export async function readUndoTarget(
+  reader: WorkerConnection,
+  principal: string,
+): Promise<
+  { commit: string; seq: number; change?: string; tasks: string[]; count: number } | undefined
+> {
+  const [row] = await snapshot(reader, [UNDO_TARGET], { principal });
+  const found = row as Row | null;
+  if (found === null || typeof found["id"] !== "string") return undefined;
+  const seq = Number(found["seq"]);
+  const tasks = await readCommitTasks(reader, seq);
+  return {
+    commit: found["id"],
+    seq,
+    ...(typeof found["change"] === "string" ? { change: found["change"] } : {}),
+    tasks: tasks.refs,
+    count: tasks.count,
+  };
+}
+
+/**
  * The newest commit under writer scope `$scope` after the commit `$undone` and before `$seq`, with
  * the first task it changed and the kind of the operation that changed it (`commits.ops[op].op`).
  */
