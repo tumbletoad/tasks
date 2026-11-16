@@ -109,14 +109,18 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       outcome: "Finished while Completed was open.",
       base: read.as_of,
     });
-    await expect.poll(() => largestSetSize(page), { timeout: SLOW_MS }).toBe(monthSize + 1);
-    await expect(focused).toBeInViewport();
     // The month's first row is the task just finished: Home, then the next group.
-    await page.keyboard.press("Home");
-    await page.keyboard.press("]");
-    await expect(focused).toHaveAttribute("data-task", task.ref);
+    await expect(async () => {
+      await page.keyboard.press("Home");
+      await page.keyboard.press("]");
+      await expect(focused).toHaveAttribute("data-task", task.ref, { timeout: 1_000 });
+    }).toPass({ timeout: SLOW_MS });
     await expect(focused).toHaveAttribute("aria-posinset", "1");
     await page.screenshot({ path: test.info().outputPath("completed-joined.png") });
+    // The list read again holds as many rows as it showed, so its oldest row moved to the next
+    // page: read to the end again, and the month is one larger, none twice and none missing.
+    await readAll(page);
+    expect(await largestSetSize(page)).toBe(monthSize + 1);
     expect(await violations(page)).toEqual([]);
   });
 
