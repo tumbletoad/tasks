@@ -142,6 +142,22 @@ function Get-Sha256([string]$Path) {
   }
 }
 
+# Removes a folder and everything in it. Windows keeps a file that was just written or run open
+# for a moment after (an antivirus scan, the verifier's node.exe as its process ends), and a delete
+# meanwhile fails with a sharing violation or access denied: it is tried again for up to 10 s.
+function Remove-Tree([string]$Dir) {
+  $clock = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($true) {
+    try {
+      if ([System.IO.Directory]::Exists($Dir)) { [System.IO.Directory]::Delete($Dir, $true) }
+      return
+    } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+      if ($clock.ElapsedMilliseconds -ge 10000) { throw }
+      [System.Threading.Thread]::Sleep(100)
+    }
+  }
+}
+
 function Test-IsLink([System.IO.FileSystemInfo]$Item) {
   return [bool]($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
 }
@@ -519,13 +535,13 @@ process.exitCode = verified ? 0 : 1;
         "It was left as it is and nothing in it ran. Stop $ProductName if it runs from that folder, " +
         "move the folder out of $versions, and run the installer again.")
     }
-    [System.IO.Directory]::Delete($staging, $true)
+    Remove-Tree $staging
   } else {
     [System.IO.Directory]::Move($staging, $target)
     $targetNew = $target
   }
   $staging = $null
-  [System.IO.Directory]::Delete($work, $true)
+  Remove-Tree $work
   $work = $null
 
   # ---- 6. home.marker: the launchers set @@HOME_VAR@@ to the root (A2 3.2.2 rule 3) ------------
@@ -580,7 +596,7 @@ process.exitCode = verified ? 0 : 1;
     $currentFile = if ($rootNew -or $targetNew -or $markerNew -or $versionsNew) { Join-Path $Root 'current' } else { $null }
     if ($currentFile -and (Test-Path -LiteralPath $currentFile)) {
       foreach ($dir in @($work, $staging)) {
-        if ($dir -and (Test-Path -LiteralPath $dir)) { [System.IO.Directory]::Delete($dir, $true) }
+        if ($dir) { Remove-Tree $dir }
       }
       $rootNew = $null
       if ([System.IO.File]::Exists($currentFile) -and
@@ -590,16 +606,16 @@ process.exitCode = verified ? 0 : 1;
     } elseif ($rootNew) {
       foreach ($entry in [System.IO.Directory]::GetFileSystemEntries($rootNew)) {
         if ($entry -eq $lockPath) { continue }
-        if ([System.IO.Directory]::Exists($entry)) { [System.IO.Directory]::Delete($entry, $true) }
+        if ([System.IO.Directory]::Exists($entry)) { Remove-Tree $entry }
         else { [System.IO.File]::Delete($entry) }
       }
     } elseif ($rootMade) {
       # Not locked: removed only below, and only while empty.
     } else {
       foreach ($dir in @($work, $staging)) {
-        if ($dir -and (Test-Path -LiteralPath $dir)) { [System.IO.Directory]::Delete($dir, $true) }
+        if ($dir) { Remove-Tree $dir }
       }
-      if ($targetNew -and (Test-Path -LiteralPath $targetNew)) { [System.IO.Directory]::Delete($targetNew, $true) }
+      if ($targetNew) { Remove-Tree $targetNew }
       if ($markerNew -and [System.IO.File]::Exists($markerNew)) { [System.IO.File]::Delete($markerNew) }
       if ($versionsNew -and [System.IO.Directory]::Exists($versionsNew) -and
           @([System.IO.Directory]::GetFileSystemEntries($versionsNew)).Count -eq 0) {
