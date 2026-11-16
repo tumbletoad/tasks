@@ -40,6 +40,8 @@ const BARE_KEY = /[A-Za-z0-9_-]/u;
 class Scanner {
   readonly text: string;
   pos = 0;
+  /** Where each comment's `#` stands. */
+  readonly comments: number[] = [];
 
   constructor(text: string) {
     this.text = text;
@@ -70,6 +72,7 @@ class Scanner {
   /** A comment up to (not including) its line break. */
   skipComment(): void {
     if (this.peek() !== "#") return;
+    this.comments.push(this.pos);
     while (!this.atEnd() && this.peek() !== "\n" && !this.startsWith("\r\n")) this.pos += 1;
   }
 
@@ -277,6 +280,18 @@ class Scanner {
 
 /** The headers and key/value lines of valid TOML text, in order. Throws ScanError otherwise. */
 export function scanToml(text: string): ScannedLine[] {
+  return scan(text).lines;
+}
+
+/**
+ * Where each comment's `#` stands in valid TOML text, in order: a `#` inside a string is not
+ * one. Throws ScanError otherwise.
+ */
+export function tomlComments(text: string): readonly number[] {
+  return scan(text).comments;
+}
+
+function scan(text: string): { lines: ScannedLine[]; comments: readonly number[] } {
   const s = new Scanner(text);
   const lines: ScannedLine[] = [];
   while (!s.atEnd()) {
@@ -313,5 +328,5 @@ export function scanToml(text: string): ScannedLine[] {
     s.endLine();
     lines.push({ kind: "keyval", start, end: s.pos, valueStart, valueEnd, key });
   }
-  return lines;
+  return { lines, comments: s.comments };
 }
