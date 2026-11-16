@@ -150,8 +150,10 @@ export function withDelegate(text: string): string | undefined {
     if (line === "[Service]") service = i;
   }
   if (service === -1) return undefined;
+  // Before the blank lines and comments that close the section, where renderUnit writes it.
   let at = end;
-  while (at > service + 1 && sdTrim(lines[at - 1] ?? "") === "") at -= 1;
+  const closing = (line: string) => line === "" || line.startsWith("#") || line.startsWith(";");
+  while (at > service + 1 && closing(sdTrim(lines[at - 1] ?? ""))) at -= 1;
   if ((lines[at - 1] ?? "").trimEnd().endsWith("\\")) return undefined;
   lines.splice(at, 0, DELEGATE_COMMENT, "Delegate=yes");
   return lines.join("\n");

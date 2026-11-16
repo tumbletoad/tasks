@@ -248,7 +248,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
       conn.close();
     }
     // The sample at this build's revision holds the same rows in every 0.1 table: 0.2 to 0.4 add
-    // only tables and the space's hold, and the sample's requests that need them. Its eight run
+    // only tables and the space's hold, and the sample's requests that need them. Its seven run
     // requests (0.3) each add a commit, a receipt and a change row. Mira's wrap-up with two
     // learnings (0.2), its last request, adds one commit with its receipt, the task's wrap change
     // and the two learnings.
@@ -260,7 +260,7 @@ describe("[A7.3.3.seed.deterministic] the Mira generator is deterministic", () =
     expect(b.counts).toEqual({
       ...a.counts,
       ...Object.fromEntries([...EMPTY_0_2, ...EMPTY_0_3].map((t) => [t, 0])),
-      ...Object.fromEntries([more("commits", 9), more("receipts", 9), more("changes", 11)]),
+      ...Object.fromEntries([more("commits", 8), more("receipts", 8), more("changes", 10)]),
       learnings: 2,
       runs: 2,
     });
