@@ -184,7 +184,7 @@ async function makeVersionFolder(
     throw new Error(`the version folder fails its manifest: ${problems.join("; ")}`);
   // The binaries the build ships carry no test hook (A2 3.12.8).
   if (platform === "win-x64") {
-    for (const exe of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`]) {
+    for (const exe of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`, `${PRODUCT_ID}-run.exe`]) {
       assertReleaseBinary(join(out, "bin", exe));
     }
   }

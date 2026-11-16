@@ -103,6 +103,7 @@ import {
 import type { OpsHost } from "../ops/index.ts";
 import { MemoryGrants, type GrantStore } from "../local/index.ts";
 import { LaunchService, type LaunchOptions, type OpenTaskRequest } from "../launch/index.ts";
+import { RunService, type RunOptions } from "../runs/service.ts";
 import {
   Bindings,
   FileSessionStore,
@@ -213,6 +214,8 @@ export interface StartOptions {
   readonly http?: HttpStart;
   /** Where session records and binding handles are kept. Default: `<state>/sessions.json`. */
   readonly sessions?: SessionStore;
+  /** Background runs: the containers, tasks-run.exe and the host's times, for tests. */
+  readonly runs?: RunOptions;
 }
 
 export type StopReason = "signal" | "request";
@@ -242,6 +245,8 @@ export interface RunningService {
   readonly launches: LaunchService;
   /** Session binding (A3 3.7, M2.04): agent connections' sessions and their binding handles. */
   readonly bindings: Bindings;
+  /** Background runs: the containers' probe, each open space's run host and its recovery. */
+  readonly runs: RunService;
   /** Resolves when the registered spaces have each opened or become unavailable. */
   readonly spacesSettled: Promise<void>;
   /** The UI's HTTP listener (M2.12) when the service runs one. */
@@ -521,6 +526,18 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       log.log("service.refused", { reason: "invalid_config" });
       throw refuse(say, "invalid_config", `${PRODUCT_NAME}'s machine.json is damaged.`);
     }
+    // Background runs: the probe starts now, before the service starts any other process, since on
+    // Linux it moves the service into its unit's `main` cgroup. Each space's recovery waits for it.
+    const runs = new RunService({
+      ...options.runs,
+      machine: machine.id,
+      stateDir: layout.state,
+      platform,
+      spaces: () => made.spaces?.served() ?? [],
+      log,
+    });
+    void runs.probe();
+
     const { key, replaced } = loadOrCreateKey(layout.state, platform);
     if (replaced !== undefined) log.log("service.key_created", { reason: replaced });
 
@@ -1018,6 +1035,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         // its connections, its spaces (their writer.lock files are theirs), service.sqlite's
         // connection, the lock it holds. Exit codes stay those of the stop that began.
         launches.stop();
+        // A run's processes end with the service: its containers are killed, and the next start
+        // settles the runs.
+        await within(runs.close(), DRAIN_MS).catch(() => undefined);
         // A drain for a loss (service.lock's, or a space's writer.lock in this process) starts
         // latched.
         if (reason === "ownership_lost") ownershipLost = true;
@@ -1133,7 +1153,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Once the registered spaces have settled, each open one gets its launch machine and its
     // recovery (A4 3.9.3), and the sweep and the PID check run every 30 s.
     void spacesOpening.then(() => {
-      if (draining === undefined && !aborted) launches.start();
+      if (draining === undefined && !aborted) {
+        launches.start();
+        runs.watch();
+      }
     });
 
     // While it runs, an update journal whose updater is gone is finished or rolled back within
@@ -1182,6 +1205,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ops: hub.ops,
       launches,
       bindings,
+      runs,
       spacesSettled: spacesOpening,
       http: httpRunning,
       stop: (o = {}) =>

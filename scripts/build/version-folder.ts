@@ -3,6 +3,7 @@
 //   bin/tasks                     POSIX launcher (Linux, macOS)
 //   bin/tasks-launchd             launchd wrapper (macOS, M1.12's text, A2 3.3.4)
 //   bin/tasks.exe, bin/tasksw.exe C launchers (Windows)
+//   bin/tasks-run.exe             the holder of a background run's job object (Windows)
 //   runtime/node | node.exe       the official Node binary, unmodified
 //   lib/tasks.mjs                 entry: compile cache, then the CLI chunk, the bridge or the shim
 //   lib/chunks/*.mjs              the CLI, the three worker entries and their shared chunks
@@ -40,7 +41,7 @@ export function plannedFiles(platform: Platform): string[] {
   const windows = platform === "win-x64";
   return [
     ...(windows
-      ? [`bin/${PRODUCT_ID}.exe`, `bin/${PRODUCT_ID}w.exe`]
+      ? [`bin/${PRODUCT_ID}.exe`, `bin/${PRODUCT_ID}w.exe`, `bin/${PRODUCT_ID}-run.exe`]
       : [
           `bin/${PRODUCT_ID}`,
           ...(osOf(platform) === "darwin" ? [`bin/${PRODUCT_ID}-launchd`] : []),
@@ -85,11 +86,11 @@ export interface FolderInput {
   };
   /**
    * The launchers: the POSIX script's and the launchd wrapper's text (macOS takes the wrapper),
-   * or the compiled Windows pair.
+   * or the compiled Windows pair and tasks-run.exe.
    */
   readonly launchers:
     | { readonly posix: string; readonly launchd: string }
-    | { readonly tasks: string; readonly tasksw: string };
+    | { readonly tasks: string; readonly tasksw: string; readonly run: string };
   /** The bundler's output folder, which holds lib/. */
   readonly bundle: { readonly out: string; readonly files: readonly string[] };
   /** The page's build (packages/web): its folder, and its files relative to it. */
@@ -106,6 +107,7 @@ export function folderSources(input: FolderInput): Map<string, Source> {
     if (!windows) throw new Error("only win-x64 takes the C launchers");
     sources.set(`bin/${PRODUCT_ID}.exe`, { file: input.launchers.tasks });
     sources.set(`bin/${PRODUCT_ID}w.exe`, { file: input.launchers.tasksw });
+    sources.set(`bin/${PRODUCT_ID}-run.exe`, { file: input.launchers.run });
   } else {
     if (windows) throw new Error("win-x64 needs the C launchers");
     sources.set(`bin/${PRODUCT_ID}`, { text: input.launchers.posix });

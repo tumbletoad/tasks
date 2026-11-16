@@ -1450,6 +1450,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.9.run.service",
+      "title": "The service probes its containers at start and says why runs cannot be contained where they cannot, refusing its internal call to start one there; on Windows it hosts a run started through that call to its answer, and a run left open by a stopped service ends at the next start as interrupted with its last saved answer",
+      "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.command-line",
       "title": "A Windows command line quotes each argument as the C runtime reads it back",
       "source": "A4 3.11.8",
