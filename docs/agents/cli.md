@@ -183,7 +183,7 @@ Usage: `tasks reopen <task> [flags]`
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID |
-| `--reason` | `reason` | string | Why it is open again (required) |
+| `--reason` | `reason` | string | Why it is open again |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
 ## `tasks run-report`

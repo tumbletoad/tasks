@@ -1710,8 +1710,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     checkMode(input);
     const task = await taskOf(call);
+    const reason = input["reason"];
     const result = await submit(call, [
-      { kind: "task.reopen", task, reason: String(input["reason"]) },
+      { kind: "task.reopen", task, ...(typeof reason === "string" ? { reason } : {}) },
     ]);
     const done = opAt(result, 0);
     // The status is not part of the writer's result: it is the task's status as of the commit,
