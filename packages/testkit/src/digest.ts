@@ -4,9 +4,20 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { MANIFEST_FILE, openSpace, type CheckedDriver, type Connection } from "@tasks/storage";
+import {
+  hasSearchTables,
+  isSearchObject,
+  MANIFEST_FILE,
+  openSpace,
+  type CheckedDriver,
+  type Connection,
+} from "@tasks/storage";
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
+
+const SEARCH_DOCUMENTS =
+  "SELECT d.entity_id, d.kind, d.task_id, d.lifecycle, d.audience, f.title, f.body, f.extra " +
+  "FROM search_docs d LEFT JOIN search_fts f ON f.rowid = d.doc ORDER BY d.entity_id";
 
 /** A row value as digest text: JSON, with integers beyond 2^53 and blobs spelt out. */
 function value(v: unknown): unknown {
@@ -30,7 +41,14 @@ export function digestDatabase(conn: Connection): string {
       "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     )
     .all<{ name: string }>()
-    .map((t) => t.name);
+    .map((t) => t.name)
+    .filter((name) => !isSearchObject(name, name));
+  // The search index is derived, and a rebuild numbers its documents and lays out its segments
+  // anew: what it holds is each document's facts and text, by entity.
+  if (hasSearchTables(conn)) {
+    line({ search: "documents" });
+    for (const row of conn.prepare(SEARCH_DOCUMENTS).iterate()) line(Object.values(row));
+  }
   for (const table of tables) {
     if (!IDENTIFIER.test(table)) throw new Error("A table name is not a plain identifier");
     const columns = conn
@@ -56,14 +74,16 @@ export function digestDatabase(conn: Connection): string {
 /**
  * The digest of the schema behind `conn`: every table, index and trigger with the SQL SQLite keeps
  * for it, in type and name order. digestDatabase sees tables and columns only, so this is what
- * pins an index, a CHECK or a foreign key.
+ * pins an index, a CHECK or a foreign key. A virtual table's shadow tables are left out: their
+ * text is the module's, not the steps'.
  */
 export function digestSchema(conn: Connection): string {
   const hash = createHash("sha256");
   for (const row of conn
     .prepare(
       "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' " +
-        "ORDER BY type, name",
+        "AND name NOT IN (SELECT name FROM pragma_table_list WHERE schema = 'main' " +
+        "AND type = 'shadow') ORDER BY type, name",
     )
     .iterate()) {
     hash.update(`${JSON.stringify([row["type"], row["name"], row["tbl_name"], row["sql"]])}\n`);
