@@ -52,7 +52,7 @@ checks the version and switches to it. A person does not run it.
 
 const UPDATE_HELP = `Usage: ${CLI_NAME} update --from <archive> [--yes] [--stop-runs]
        ${CLI_NAME} update --rollback [--yes] [--stop-runs]
-       ${CLI_NAME} update --repair
+       ${CLI_NAME} update --repair [--stop-runs]
 
 Updates this install from a signed release archive, goes back to the version before the last
 update, or finishes an update that was cut off. It restarts the service, and asks once in a

@@ -16,6 +16,7 @@ import {
   type Containers,
   type Lane,
   type Prepared,
+  type QueueLimits,
   type RunFolderList,
   type RunFolders,
   type SavedAnswer,
@@ -88,6 +89,7 @@ function bench(
     prepare?: (run: RunRecord) => Promise<Prepared> | undefined;
     prepareMs?: number;
     updating?: () => boolean;
+    limits?: QueueLimits;
   } = {},
 ) {
   let now = Date.UTC(2026, 10, 16, 9, 0, 0);
@@ -104,7 +106,7 @@ function bench(
   let refuse = false;
   const supervisor = new Supervisor({
     lanes: () => [lane],
-    limits: () => ({ runs: 3, perInstance: 2, perTask: 1 }),
+    limits: () => options.limits ?? { runs: 3, perInstance: 2, perTask: 1 },
     available: () => Promise.resolve(true),
     prepare: (_lane, run) =>
       options.prepare?.(run) ??
@@ -383,6 +385,53 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
     await settle();
     expect(refusals).toBe(1);
     expect((await b.store.readRun(run.id))?.state).toBe("queued");
+    b.supervisor.close();
+    await b.host.close();
+  });
+
+  test("a run whose check keeps failing leaves its place to the next run in line within the same round", async () => {
+    const failing = new Set<string>();
+    const b = bench({
+      limits: { runs: 1, perInstance: 2, perTask: 1 },
+      prepare: (run) =>
+        failing.has(run.id) ? Promise.reject(new Error("The task could not be read")) : undefined,
+    });
+    const first = await b.queue();
+    failing.add(first.id);
+    const second = await b.queue(OTHER_TASK);
+    await b.supervisor.round();
+    expect((await b.store.readRun(first.id))?.state).toBe("queued");
+    expect((await b.store.readRun(second.id))?.state).toBe("starting");
+    b.supervisor.close();
+    await b.host.close();
+  });
+
+  test("a run left starting whose store does not take its end holds up no round: other runs start meanwhile", async () => {
+    const stuck = new Set<string>();
+    const b = bench({
+      prepareMs: 20,
+      store: (store) =>
+        new Proxy(store, {
+          get(target, key, receiver) {
+            const value: unknown = Reflect.get(target, key, receiver);
+            if (typeof value !== "function") return value;
+            const call = (value as (...a: unknown[]) => unknown).bind(target);
+            if (key !== "transitionRun") return call;
+            return (...args: unknown[]) =>
+              stuck.has(String(args[0])) && args[2] !== "starting"
+                ? Promise.reject(new Error("The disk is full"))
+                : call(...args);
+          },
+        }),
+    });
+    const left = await b.queue();
+    stuck.add(left.id);
+    await b.store.transitionRun(left.id, { state: "queued", version: left.version }, "starting");
+    const other = await b.queue(OTHER_TASK);
+    await b.supervisor.round();
+    expect((await b.store.readRun(left.id))?.state).toBe("starting");
+    expect((await b.store.readRun(other.id))?.state).toBe("starting");
+    expect(b.host.hosted()).toEqual([other.id]);
     b.supervisor.close();
     await b.host.close();
   });

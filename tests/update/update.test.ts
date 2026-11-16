@@ -95,6 +95,15 @@ async function world(label: string, running = true) {
   return { dir, root, state: join(root, "state"), control, selfTest, said, options };
 }
 
+/** Resolves once `ok` holds; fails after 20 s. */
+async function until(ok: () => boolean, what: string): Promise<void> {
+  const end = Date.now() + 20_000;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error(`timed out: ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 const refusal = async (promise: Promise<unknown>): Promise<InstanceType<typeof UpdateError>> => {
   try {
     await promise;
@@ -437,7 +446,7 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
     };
     const r2 = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
     const updating = updateFromArchive(r2.archive, options);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => w.said.some((line) => line.startsWith("New runs wait")), "the wait");
     // Nothing changed while it waits: no journal, current as it was, the service untouched.
     expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
     expect(currentOf(w.root, os)).toBe("0.1.0");
@@ -539,10 +548,10 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
     };
     const r2 = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
     const updating = updateFromArchive(r2.archive, options);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => w.said.some((line) => line.startsWith("New runs wait")), "the wait");
     // The service ended by itself and came back, and a run of its own started before any hold.
     runs.restarted([{ space_name: "Work", task: "WORK-13", state: "running" }]);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => w.control.calls.length >= 3, "the second hold");
     expect(w.control.calls).toEqual(["hold", "release", "hold"]);
     expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
     runs.set([]);
@@ -550,6 +559,7 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
     expect(asked).toEqual([]);
 
     w.control.calls.length = 0;
+    w.said.length = 0;
     runs.silent = true;
     const given = await refusal(rollbackUpdate(options));
     expect(given.exitCode).toBe(1);
@@ -558,6 +568,32 @@ describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the r
     );
     expect(currentOf(w.root, os)).toBe("0.2.0");
     expect(w.control.calls).toEqual(["hold"]);
+  });
+
+  test("a repair that restarts a service with runs waits for them first: giving up leaves the service as it is, stopping them goes on", async () => {
+    const w = await world("runs-repair");
+    const runs = new FakeRuns([{ space_name: "Work", task: "WORK-12", state: "running" }]);
+    w.control.runs = runs;
+    // The service runs another version than current names, with no update journal.
+    w.control.version = "0.0.9";
+    const given = await refusal(
+      repairUpdate({
+        ...w.options,
+        runs: { waitMs: 30, decide: () => Promise.resolve("give_up") },
+      }),
+    );
+    expect(given.exitCode).toBe(2);
+    expect(given.message).toMatch(/not restarted on 0\.1\.0 while background runs still run/);
+    expect(w.control.calls).toEqual(["hold", "release"]);
+    expect(w.control.version).toBe("0.0.9");
+
+    w.control.calls.length = 0;
+    const repaired = await repairUpdate({
+      ...w.options,
+      runs: { waitMs: 30, decide: () => Promise.resolve("stop") },
+    });
+    expect(repaired).toMatchObject({ outcome: "repaired", current: "0.1.0" });
+    expect(w.control.calls).toEqual(["hold", "stop runs", "restart", "wait 0.1.0", "release"]);
   });
 });
 

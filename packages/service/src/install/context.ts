@@ -15,6 +15,7 @@ import {
   LocalError,
   openRpc,
   parseKey,
+  RPC_ERROR,
   RpcError,
   rpcContextEnv,
   type ClientInfo,
@@ -499,11 +500,18 @@ export const HOLD_ANSWER_MS = 120_000;
 /** How long stopping the runs may take: their grace, confirmation and drain, and some. */
 const STOP_HELD_MS = 120_000;
 
+/** Reasons a probe gives that say no service of this install runs, or one that hosts no runs. */
+const NO_RUNS: ReadonlySet<ProbeReason> = new Set([
+  "not_running",
+  "other_install",
+  "service_too_old",
+]);
+
 /**
  * `runs/hold`: no new run starts while the hold's connection is open, and the service says which
- * runs the update would cut short. Undefined when no service of this install answers, or one of an
- * earlier version that hosts no runs; `silent` when the service took the request but did not say
- * within `answerMs` which runs it has.
+ * runs the update would cut short. Undefined when no service of this install runs, or one of an
+ * earlier version that hosts no runs. A service that may run but does not answer, or does not say
+ * which runs it has, is asked again until `answerMs` passed: then `silent`.
  */
 export async function holdRuns(
   state: string,
@@ -511,10 +519,26 @@ export async function holdRuns(
   env: Env,
   answerMs: number = HOLD_ANSWER_MS,
 ): Promise<RunsHold | "silent" | undefined> {
+  const end = Date.now() + answerMs;
+  for (;;) {
+    const tried = await tryHold(state, id, env, end);
+    if (tried !== "again") return tried;
+    const left = end - Date.now();
+    if (left <= 0) return "silent";
+    await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, left)));
+  }
+}
+
+async function tryHold(
+  state: string,
+  id: string,
+  env: Env,
+  end: number,
+): Promise<RunsHold | "again" | undefined> {
   const opened = await openSession(state, id, env, probeEnd(undefined));
-  if ("reason" in opened) return undefined;
+  if ("reason" in opened) return NO_RUNS.has(opened.reason) ? undefined : "again";
   const session = opened.session;
-  const live = { held: true, runs: [] as HeldRun[] };
+  const live = { held: true, said: false, unsupported: false, runs: [] as HeldRun[] };
   const waiters: (() => void)[] = [];
   const wake = () => {
     for (const resolve of waiters.splice(0)) resolve();
@@ -528,14 +552,21 @@ export async function holdRuns(
   session.onNotification = (method, params) => {
     if (method !== "runs/blocking") return;
     live.runs = heldRuns(params);
+    live.said = true;
     told();
     wake();
   };
   void session
     .call("runs/hold", {})
     .then(
-      () => undefined,
-      () => undefined,
+      (value) => {
+        // Answered before it said anything: a service that hosts no runs.
+        live.unsupported = !live.said && isObject(value) && value["held"] === false;
+      },
+      (error: unknown) => {
+        // A service of an earlier version, which hosts no runs, does not know the request.
+        live.unsupported = error instanceof RpcError && error.code === RPC_ERROR.methodNotFound;
+      },
     )
     .finally(() => {
       live.held = false;
@@ -545,18 +576,17 @@ export async function holdRuns(
   const answered = await Promise.race([
     first,
     new Promise<"late">((resolve) => {
-      setTimeout(() => {
-        resolve("late");
-      }, answerMs).unref();
+      setTimeout(
+        () => {
+          resolve("late");
+        },
+        Math.max(0, end - Date.now()),
+      ).unref();
     }),
   ]);
-  if (!live.held) {
+  if (answered === "late" || !live.held) {
     session.close();
-    return undefined;
-  }
-  if (answered === "late") {
-    session.close();
-    return "silent";
+    return live.unsupported ? undefined : "again";
   }
   return {
     blocking: () => live.runs,

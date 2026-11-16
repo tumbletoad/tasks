@@ -26,6 +26,7 @@ import { envVar, PRODUCT_NAME } from "@tasks/brand";
 import type { Instance, Root } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
+  DEFAULT_CONFIG,
   fatalProblems,
   loadMachineConfig,
   sectionOf,
@@ -504,6 +505,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       return undefined;
     });
     if (afterRepair(log, atStart, manager)) throw new ServiceExit(EXIT.restart, "restart");
+    // An update that can be neither finished nor rolled back restarts nothing: its journal then
+    // holds no run back.
+    let repairStuck = atStart?.kind === "stuck";
 
     const temps = removeStaleTemps(layout.state, [
       SERVICE_FILE,
@@ -532,6 +536,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Linux it moves the service into its unit's `main` cgroup. Each space's recovery waits for it.
     // The queue's limits are read from machine.toml at each round: a change applies without a
     // restart, which would end the runs.
+    let runSettings = config.runs;
     const runs = new RunService({
       ...options.runs,
       machine: machine.id,
@@ -539,7 +544,13 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       platform,
       spaces: () => made.spaces?.served() ?? [],
       log,
-      settings: () => loadMachineConfig(layout.config, platform).config.runs,
+      settings: () => {
+        // A file that cannot be used as a whole, one saved halfway for one, keeps the last
+        // settings read: the person's limits do not fall back to the defaults meanwhile.
+        const loaded = loadMachineConfig(layout.config, platform);
+        if (!loaded.present || loaded.config !== DEFAULT_CONFIG) runSettings = loaded.config.runs;
+        return runSettings;
+      },
       instances: () => instances,
       folderUsable: async (space, place) => {
         const service = launching.service;
@@ -548,7 +559,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       // From the journal's write to its removal an update may restart the service, a repair
       // included, whether or not its updater still holds the queue.
-      updating: () => existsSync(join(layout.state, UPDATE_JOURNAL)),
+      updating: () => !repairStuck && existsSync(join(layout.state, UPDATE_JOURNAL)),
     });
     void runs.probe();
 
@@ -1197,6 +1208,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       void repairIfIdle(updateRepair)
         .then(
           (outcome) => {
+            if (outcome !== undefined) repairStuck = outcome.kind === "stuck";
             if (outcome?.kind === "stuck") {
               if (reported === "stuck") return;
               reported = "stuck";

@@ -22,7 +22,7 @@ import { migrationLines } from "./migrations.ts";
 import { printUsage } from "./output.ts";
 
 export const UPDATE_USAGE =
-  "tasks update --from <archive> [--yes] [--stop-runs], tasks update --rollback [--yes] [--stop-runs] or tasks update --repair";
+  "tasks update --from <archive> [--yes] [--stop-runs], tasks update --rollback [--yes] [--stop-runs] or tasks update --repair [--stop-runs]";
 
 interface Answers {
   readonly yes: boolean;

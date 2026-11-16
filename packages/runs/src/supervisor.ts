@@ -204,6 +204,8 @@ export class Supervisor {
   readonly #holds = new Set<object>();
   /** Runs whose start this supervisor has under way: their record may still say `queued`. */
   readonly #starting = new Set<string>();
+  /** Runs left `starting` with nothing behind them, while their settling goes on. */
+  readonly #settling = new Map<string, Promise<void>>();
   /** What the last round read of each space, by space. */
   #records = new Map<string, readonly RunRecord[]>();
   #waiting = new Map<string, WaitReason>();
@@ -383,7 +385,8 @@ export class Supervisor {
         }
       }),
     );
-    // A run whose `starting` commit landed after its host gave up on it: nothing runs for it.
+    // A run whose `starting` commit landed after its host gave up on it: nothing runs for it. Its
+    // settling goes on by itself when its store does not take it, and holds up no round.
     for (const { lane, runs } of read) {
       for (const run of runs ?? []) {
         if (
@@ -391,9 +394,20 @@ export class Supervisor {
           !this.#starting.has(run.id) &&
           !lane.host.hosted().includes(run.id)
         ) {
-          await lane.host.settleUnstarted(run.id).catch((error: unknown) => {
-            this.#failed("unstarted", error);
-          });
+          let settling = this.#settling.get(run.id);
+          if (settling === undefined) {
+            settling = lane.host
+              .settleUnstarted(run.id)
+              .then(
+                () => undefined,
+                (error: unknown) => {
+                  this.#failed("unstarted", error);
+                },
+              )
+              .finally(() => this.#settling.delete(run.id));
+            this.#settling.set(run.id, settling);
+          }
+          await this.#bounded(settling);
         }
       }
     }
@@ -422,31 +436,51 @@ export class Supervisor {
     }
     this.#records = records;
 
-    let start: Slot[] = [];
-    let waiting: Map<string, WaitReason>;
     if (this.held) {
-      waiting = new Map(queued.map((slot) => [slot.id, "update" as const]));
+      this.#waiting = new Map(queued.map((slot) => [slot.id, "update" as const]));
     } else if (queued.length > 0 && !(await this.#available())) {
-      waiting = new Map(queued.map((slot) => [slot.id, "unavailable" as const]));
+      this.#waiting = new Map(queued.map((slot) => [slot.id, "unavailable" as const]));
     } else {
-      ({ start, waiting } = planStarts(queued, active, this.#options.limits()));
+      await this.#startWhatFits(read, records, queued, active);
     }
-    this.#waiting = waiting;
+    await this.#retainWhenDue();
+  }
 
+  /**
+   * Starts the queued runs the limits allow. A planned run that took no place (refused, stopped
+   * meanwhile, or one whose check or store failed and that stays queued) leaves its place to the
+   * next run in line within this round. Each run is tried once a round.
+   */
+  async #startWhatFits(
+    read: readonly { lane: Lane }[],
+    records: ReadonlyMap<string, readonly RunRecord[]>,
+    queued: readonly Slot[],
+    active: readonly Slot[],
+  ): Promise<void> {
     const byId = new Map<string, { lane: Lane; run: RunRecord }>();
     for (const { lane } of read) {
       for (const run of records.get(lane.space) ?? []) byId.set(run.id, { lane, run });
     }
-    // A planned run that left the queue without starting (refused, or stopped meanwhile) leaves
-    // its place to the next round, which comes at once. One still queued waits for a later round.
-    let again = false;
-    for (const slot of start) {
-      const found = byId.get(slot.id);
-      if (found === undefined || this.#isClosed() || this.held) continue;
-      if (await this.#start(found.lane, found.run)) again = true;
+    const limits = this.#options.limits();
+    const placed = [...active];
+    const tried = new Set<string>();
+    for (;;) {
+      const plan = planStarts(
+        queued.filter((slot) => !tried.has(slot.id)),
+        placed,
+        limits,
+      );
+      this.#waiting = plan.waiting;
+      let unused = false;
+      for (const slot of plan.start) {
+        tried.add(slot.id);
+        const found = byId.get(slot.id);
+        if (found === undefined || this.#isClosed() || this.held) return;
+        if (await this.#start(found.lane, found.run)) placed.push(slot);
+        else unused = true;
+      }
+      if (!unused) return;
     }
-    await this.#retainWhenDue();
-    if (again) void this.round();
   }
 
   /** The runs after the strays were settled: those are read again. */
@@ -472,9 +506,9 @@ export class Supervisor {
   }
 
   /**
-   * Starts one queued run. True when its place went unused: it left the queue without starting
-   * (refused, or stopped meanwhile). A check or a store that failed, or a store that did not take
-   * the move, leaves it queued for a later round, and its place unused until then.
+   * Starts one queued run: true once it holds a place. A run refused or stopped meanwhile holds
+   * none, and neither does one whose check or store failed: that one stays queued for a later
+   * round.
    */
   async #start(lane: Lane, run: RunRecord): Promise<boolean> {
     this.#starting.add(run.id);
@@ -491,20 +525,18 @@ export class Supervisor {
         return false;
       }
       if ("refused" in prepared) {
-        const after = await lane.machine.refuse(run.id, prepared.refused);
+        await lane.machine.refuse(run.id, prepared.refused);
         this.#log("run.refused", { reason: prepared.refused });
-        return after !== undefined && after.state !== "queued";
-      }
-      const begun = await lane.host.start(run.id, prepared.command);
-      if (begun?.state === "starting" && lane.host.hosted().includes(run.id)) {
-        // Its end frees a place: the next round may start what waits.
-        void lane.host.ended(run.id).then(
-          () => this.round(),
-          () => this.round(),
-        );
         return false;
       }
-      return begun !== undefined && begun.state !== "queued";
+      const begun = await lane.host.start(run.id, prepared.command);
+      if (begun?.state !== "starting" || !lane.host.hosted().includes(run.id)) return false;
+      // Its end frees a place: the next round may start what waits.
+      void lane.host.ended(run.id).then(
+        () => this.round(),
+        () => this.round(),
+      );
+      return true;
     } catch (error) {
       this.#failed("start", error);
       return false;

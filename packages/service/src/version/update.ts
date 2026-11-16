@@ -522,7 +522,14 @@ async function repairFirst(
       const running = await control.running();
       const wanted = running !== undefined || (journaled && repair.journal.service);
       if (wanted && (running?.version !== current || supervisorChanged)) {
-        await bringBack(control, options, current, supervisorChanged);
+        // A service that runs may have started runs since the update was cut off: they are
+        // waited for, or stopped once the person says so, as before any restart.
+        const held = running === undefined ? undefined : await heldForRepair(options, current);
+        try {
+          await bringBack(control, options, current, supervisorChanged);
+        } finally {
+          held?.release();
+        }
       }
     }
   } finally {
@@ -530,6 +537,27 @@ async function repairFirst(
     if (journaled) removeJournal(install.state);
   }
   return repair;
+}
+
+/**
+ * waitForRuns before a repair restarts the service. The repair itself is done by then, so giving
+ * up leaves the service on its version until a later `--repair`, which the message says.
+ */
+async function heldForRepair(
+  options: UpdateOptions,
+  current: string,
+): Promise<RunsHold | undefined> {
+  try {
+    return await waitForRuns(options);
+  } catch (error) {
+    if (error instanceof InstallError && error.exitCode === 2) {
+      throw new InstallError(
+        `The service was not restarted on ${current} while background runs still run. Run ${PRODUCT_ID} update --repair once they finished, or with --stop-runs.`,
+        2,
+      );
+    }
+    throw error;
+  }
 }
 
 /** The version current names, which must be installed. */
@@ -848,16 +876,13 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     writeInstallRecord(state, root, platform, { installed: to });
     await at(options, "recorded");
     const control = options.control;
+    // A unit an earlier version wrote gets what background runs need, also when the service is
+    // stopped now, so a person never meets runs turned off for a line only a reinstall would have
+    // added. Not a reason to stop the update: `service status` and doctor say what is missing.
+    if (await control?.delegateUnit?.().catch(() => false)) {
+      say(options, "The service's systemd unit now has Delegate=yes, which background runs need.");
+    }
     if (control !== undefined && (run.journal.service || (await control.running()) !== undefined)) {
-      // A unit an earlier version wrote gets what background runs need, so a person never meets
-      // Run turned off for a line only a reinstall would have added. Not a reason to stop the
-      // update: `service status` and doctor say what is missing.
-      if (await control.delegateUnit?.().catch(() => false)) {
-        say(
-          options,
-          "The service's systemd unit now has Delegate=yes, which background runs need.",
-        );
-      }
       write({ ...run.journal, phase: "restarted" });
       restarted = true;
       say(options, `Restarting the service on ${to}. Sessions keep running and reconnect.`);

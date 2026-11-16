@@ -22,6 +22,7 @@ import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import type { ServedSpace } from "../src/ops/index.ts";
 import { RunService, RunsUnavailable } from "../src/runs/service.ts";
+import { holdRuns } from "../src/install/context.ts";
 import {
   instanceToml,
   readLog,
@@ -431,7 +432,18 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     updater.close();
     expect(await holding).toBe("ended");
     await runUntil(service, spaceId, second.id, (r) => r.state === "running", "the second run");
+
+    // The updater's own client: the running run, by its task; nothing once the service stopped.
+    // Its environment carries no agent's marker: the update is the person's.
+    const env = {};
+    const hold = await holdRuns(service.layout.state, service.installId, env, 15_000);
+    if (hold === undefined || hold === "silent") throw new Error(`no hold: ${String(hold)}`);
+    expect(hold.blocking()).toEqual([expect.objectContaining({ state: "running" })]);
+    expect(hold.blocking()[0]?.task).toMatch(/^[A-Z]+-\d+$/);
+    hold.release();
     boxes.finish(second.id);
     expect(await service.runs.ended(spaceId, second.id)).toMatchObject({ state: "succeeded" });
+    await service.stop();
+    expect(await holdRuns(service.layout.state, service.installId, env, 15_000)).toBeUndefined();
   }, 120_000);
 });
