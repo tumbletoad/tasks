@@ -3160,6 +3160,10 @@
                   "maxLength": 20,
                   "type": "string"
                 },
+                "focus": {
+                  "description": "Star it for today, only when the user asks",
+                  "type": "boolean"
+                },
                 "inbox": {
                   "description": "Put it in the Inbox for the user",
                   "type": "boolean"
@@ -3476,6 +3480,10 @@
                   "description": "Effort, such as S, M or L",
                   "maxLength": 20,
                   "type": "string"
+                },
+                "focus": {
+                  "description": "Star it for today, only when the user asks",
+                  "type": "boolean"
                 },
                 "inbox": {
                   "description": "Put it in the Inbox for the user",
