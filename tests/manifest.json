@@ -651,7 +651,7 @@
     },
     {
       "id": "A1.5.write.folders",
-      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a project's folder change with a base that moves its tasks' folders inside the old one; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a task that joined the project or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through undo, redo and a task's restore; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
+      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a project's folder change with a base that moves its tasks' folders inside the old one; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a task that joined the project or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through undo, redo, a task's restore or several operations of one request; one request changes an owner's folder once; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
       "source": "A1 3.6, A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -691,7 +691,7 @@
     },
     {
       "id": "A1.3.15.folders.request-path",
-      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; an agent's task filed into an area and project it names first, created with it",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it",
       "source": "A1 3.15, A3 3.4.5",
       "owner": "M4",
       "kind": "ci",

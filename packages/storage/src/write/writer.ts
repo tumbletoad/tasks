@@ -74,10 +74,12 @@ import {
 import { planImportRevert, recomputeToken } from "./imports.ts";
 import {
   applyInversions,
+  groupBreaks,
   planInversions,
   readChanges,
   redoTarget,
   undoTarget,
+  type GroupTouch,
   type Inversion,
 } from "./history.ts";
 import {
@@ -1377,10 +1379,11 @@ export class SpaceWriter {
     const draftSlugs = { areas: new Set<string>(), projects: new Set<string>() };
     /** Projects earlier operations move, with their new area: tasks filed into them follow it. */
     const movedProjects = new Map<string, Id<"a"> | null>();
-    /** The owners whose folder earlier operations set or clear, by `kind|id`, and new folders. */
-    const boundFolders = new Set<string>();
-    const clearedFolders = new Set<string>();
-    const draftFolders = new Map<string, Id<"fo">>();
+    /**
+     * The owners whose folder an earlier operation sets or clears, by `kind|id`: once a request,
+     * so each operation is staged against the folders it changes.
+     */
+    const changedFolders = new Set<string>();
 
     const ops = request.ops.map((op, i): StagedOp => {
       /** An area or project by ID or slug: first those the request upserts, then the space's. */
@@ -2389,10 +2392,10 @@ export class SpaceWriter {
               : { kind: "project" as const, id: projectOf(op.project ?? "").id as string };
           const folder = folderMachine(op.path);
           const key = `${owner.kind}|${owner.id}`;
-          if (clearedFolders.has(key)) {
-            problem("VALIDATION_FAILED", "A folder is set and cleared in one request", i, "path");
+          if (changedFolders.has(key)) {
+            problem("VALIDATION_FAILED", "A request changes an owner's folder once", i, "path");
           }
-          boundFolders.add(key);
+          changedFolders.add(key);
           const parent = owner.kind === "task" ? (owner.id as Id<"t">) : null;
           const fresh = drafts.has(owner.id as Id<"t">) || createdGroups.has(owner.id);
           const row = fresh
@@ -2400,7 +2403,7 @@ export class SpaceWriter {
             : conn
                 .prepare(FOLDER_SQL.liveOf)
                 .get({ kind: owner.kind, owner: owner.id, machine: folder.machine });
-          let target = draftFolders.get(key);
+          let target: Id<"fo">;
           const touches: Touch[] = [];
           if (row !== undefined) {
             // Another folder for the one there: the base covers the folder the caller saw, and
@@ -2422,18 +2425,17 @@ export class SpaceWriter {
                 );
               }
             }
-          } else if (target === undefined) {
+          } else {
             target = newId("fo", random);
-            draftFolders.set(key, target);
             // A folder cleared since the caller's base is a change it has not seen.
-            const gone = fresh
-              ? undefined
-              : conn
-                  .prepare(FOLDER_SQL.lastRemoved)
-                  .get({ kind: owner.kind, owner: owner.id, machine: folder.machine });
-            if (gone !== undefined && request.base !== undefined) {
-              touches.push(...folderTouches(gone, ["deleted"], parent));
-            }
+            const gone =
+              fresh || request.base === undefined
+                ? []
+                : conn
+                    .prepare(FOLDER_SQL.removedOn)
+                    .all({ kind: owner.kind, owner: owner.id, machine: folder.machine });
+            for (const removed of gone)
+              touches.push(...folderTouches(removed, ["deleted"], parent));
           }
           return {
             i,
@@ -2454,10 +2456,10 @@ export class SpaceWriter {
               : { kind: "project" as const, id: projectOf(op.project ?? "").id as string };
           const folder = folderMachine();
           const key = `${owner.kind}|${owner.id}`;
-          if (boundFolders.has(key)) {
-            problem("VALIDATION_FAILED", "A folder is set and cleared in one request", i, "task");
+          if (changedFolders.has(key)) {
+            problem("VALIDATION_FAILED", "A request changes an owner's folder once", i, owner.kind);
           }
-          clearedFolders.add(key);
+          changedFolders.add(key);
           const parent = owner.kind === "task" ? (owner.id as Id<"t">) : null;
           const fresh = drafts.has(owner.id as Id<"t">) || createdGroups.has(owner.id);
           const row = fresh
@@ -2551,6 +2553,7 @@ export class SpaceWriter {
         undo_status: request.undoable === true ? "done" : null,
       });
       for (const staged of plan.ops) apply(conn, run, staged);
+      groupsKept(conn, run);
       changes = coalesce(conn, run);
       if (changes.length > 0) {
         insertChanges(conn, seq, changes);
@@ -3412,6 +3415,47 @@ function readTask(conn: Connection, id: Id<"t">): TaskRow {
 }
 
 /**
+ * The group rules (history.ts groupBreaks) on the state the request's operations made together:
+ * a deleted project holds no live task and no live folder, and a task is in its project's area.
+ * One operation keeps them; a request that breaks one through several is refused at the operation
+ * that wrote the row in question.
+ */
+function groupsKept(conn: Connection, run: Execution): void {
+  const touch = { projects: [], tasks: [], folders: [], moved: [], regrouped: [] } as {
+    [K in keyof GroupTouch]: string[];
+  };
+  for (const row of run.rows.values()) {
+    const grouped = row.created !== undefined || row.fields.has("grouping");
+    if (row.entity === "projects") {
+      touch.projects.push(row.id);
+      if (grouped) touch.moved.push(row.id);
+    } else if (row.entity === "tasks") {
+      touch.tasks.push(row.id);
+      if (grouped) touch.regrouped.push(row.id);
+    } else if (row.entity === "folders") touch.folders.push(row.id);
+  }
+  if (touch.projects.length + touch.tasks.length + touch.folders.length === 0) return;
+  /** The write of the request that makes a row's side of a rule, if it made one. */
+  const made = (key: string, field: string) => {
+    const row = run.rows.get(key);
+    if (row === undefined) return undefined;
+    if (row.created !== undefined) return row.created;
+    return field === "child"
+      ? (row.fields.get("deleted") ?? row.fields.get("grouping"))
+      : row.fields.get(field);
+  };
+  for (const { rule, project, child } of groupBreaks(conn, touch).breaks) {
+    // A break that was there before the request is not its to refuse: it makes nothing worse.
+    const op =
+      made(rowKey(child.entity, child.id), "child") ??
+      made(rowKey("projects", project), rule === "held" ? "deleted" : "grouping");
+    if (op === undefined) continue;
+    if (rule === "held") problem("DELETED", "The project is deleted", op, "project");
+    problem("VALIDATION_FAILED", "A task in a project is in that project's area", op, "area");
+  }
+}
+
+/**
  * Records that operation `i` created a row (`fields` null) or wrote `fields` of one. A field of a
  * row that existed before the request keeps the first operation that wrote it; a row the request
  * created gets one create row, whatever later operations wrote to it.
@@ -3788,17 +3832,8 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.restore": {
       // A1 3.11.4: the tombstone only. Every row of the task and its history stay.
       const target = staged.target as Id<"t">;
-      if (op.kind === "task.restore") {
-        const found = readTask(conn, target);
-        if (!found.deleted) {
-          problem("INVALID_TRANSITION", "Only a deleted task can be restored", i, "task");
-        }
-        // A deleted project holds no live task: its restore comes first.
-        const project =
-          found.projectId === null ? undefined : readRow(conn, "projects", found.projectId);
-        if (project !== undefined && project["deleted_at"] !== null) {
-          problem("DELETED", "The task's project is deleted: restore the project first", i, "task");
-        }
+      if (op.kind === "task.restore" && !readTask(conn, target).deleted) {
+        problem("INVALID_TRANSITION", "Only a deleted task can be restored", i, "task");
       }
       update(
         conn,
@@ -4343,7 +4378,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.folder_clear": {
       const owner = must(staged.owner, "A folder has an owner");
       if (owner.bound !== true) return;
-      // A second clear of the same folder in the request finds it cleared: nothing more to do.
+      // Its project's delete earlier in the request removed it already.
       if (readRow(conn, "folders", staged.target)["deleted_at"] !== null) return;
       conn.prepare(SQL.folderDeleted).run({ id: staged.target, at: run.at });
       wrote(run, i, "folders", staged.target, staged.task, ["deleted"]);

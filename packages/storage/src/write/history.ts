@@ -1207,12 +1207,91 @@ const inGroupRules = (i: Inversion): boolean =>
   i.entity === "folders" ||
   (i.entity === "tasks" && (i.field === "deleted" || i.field === "grouping"));
 
+/** The rows a write touched that the group rules look at, by ID. */
+export interface GroupTouch {
+  readonly projects: readonly string[];
+  readonly tasks: readonly string[];
+  readonly folders: readonly string[];
+  /** The projects whose area the write set, and the tasks whose project or area it set. */
+  readonly moved: readonly string[];
+  readonly regrouped: readonly string[];
+}
+
 /**
- * A project and what is in it (applyInversions), on the state the plan makes: a deleted project
- * holds no live task and no live folder, and a task in a project is in that project's area. When
- * the plan breaks one, its inversions on its own side stay undone: a project's tombstone or move
- * together with its folders' tombstones and its tasks' moves, or the task or folder it would bring
- * into a deleted project. The other side is named, with who wrote it.
+ * Where a project and what is in it break their rules after a write: a deleted project that holds
+ * a live task or a live folder (`held`), or a task whose area is not its project's (`stray`).
+ */
+export interface GroupBreak {
+  readonly rule: "held" | "stray";
+  readonly project: string;
+  readonly child: { readonly entity: "tasks" | "folders"; readonly id: string };
+}
+
+/**
+ * The group rules on the state a write made, for the projects it touched, the projects of the
+ * tasks and folders it touched, and the tasks it moved: a deleted project holds no live task and no
+ * live folder, and a task in a project is in that project's area. Also the project each touched
+ * task is in now.
+ */
+export function groupBreaks(
+  conn: Connection,
+  touch: GroupTouch,
+): { breaks: GroupBreak[]; projectOf: Map<string, string> } {
+  const folders = hasFolders(conn) ? touch.folders : [];
+  const projectOf = new Map(
+    conn
+      .prepare(SQL.projectsOfTasks)
+      .all({ tasks: JSON.stringify(touch.tasks) })
+      .map((row) => [String(row["id"]), String(row["project"])]),
+  );
+  const projects = [
+    ...new Set([
+      ...touch.projects,
+      ...projectOf.values(),
+      ...(folders.length === 0
+        ? []
+        : conn
+            .prepare(SQL.ownersOfFolders)
+            .all({ folders: JSON.stringify(folders) })
+            .map((row) => String(row["project"]))),
+    ]),
+  ];
+  const breaks: GroupBreak[] = [];
+  const held = (entity: "tasks" | "folders", sql: string): void => {
+    for (const row of conn.prepare(sql).all({ projects: JSON.stringify(projects) })) {
+      breaks.push({
+        rule: "held",
+        project: String(row["project"]),
+        child: { entity, id: String(row["id"]) },
+      });
+    }
+  };
+  if (projects.length > 0) {
+    held("tasks", SQL.liveTasksOfDeleted);
+    if (hasFolders(conn)) held("folders", SQL.liveFoldersOfDeleted);
+  }
+  if (touch.moved.length > 0 || touch.regrouped.length > 0) {
+    const stray = conn.prepare(SQL.outOfArea).all({
+      tasks: JSON.stringify(touch.regrouped),
+      projects: JSON.stringify(touch.moved),
+    });
+    for (const row of stray) {
+      breaks.push({
+        rule: "stray",
+        project: String(row["project"]),
+        child: { entity: "tasks", id: String(row["id"]) },
+      });
+    }
+  }
+  return { breaks, projectOf };
+}
+
+/**
+ * The group rules (groupBreaks) on the state the plan makes (applyInversions). When the plan
+ * breaks one, its inversions on its own side stay undone: a project's tombstone or move together
+ * with its folders' tombstones and its tasks' moves, or the task or folder it would bring into a
+ * deleted project. The other side is named, with who wrote it: for a task, who put it into the
+ * project.
  */
 function groupRules(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
   const mine = new Map<string, Inversion[]>();
@@ -1226,100 +1305,53 @@ function groupRules(conn: Connection, inversions: readonly Inversion[], broken: 
   if (mine.size === 0) return;
   const of = (entity: InvertibleEntity, id: string, field?: string): Inversion[] =>
     (mine.get(`${entity}|${id}`) ?? []).filter((i) => field === undefined || i.field === field);
-  const ids = (entity: InvertibleEntity): string[] =>
+  const ids = (entity: InvertibleEntity, field?: string): string[] =>
     [...mine.keys()]
       .filter((k) => k.startsWith(`${entity}|`))
-      .map((k) => k.slice(entity.length + 1));
-  const tasks = ids("tasks");
-  const folders = hasFolders(conn) ? ids("folders") : [];
-  /** The project each of the plan's tasks is in now. */
-  const projectOf = new Map(
-    conn
-      .prepare(SQL.projectsOfTasks)
-      .all({ tasks: JSON.stringify(tasks) })
-      .map((row) => [String(row["id"]), String(row["project"])]),
-  );
-  const projects = [
-    ...new Set([
-      ...ids("projects"),
-      ...projectOf.values(),
-      ...(folders.length === 0
-        ? []
-        : conn
-            .prepare(SQL.ownersOfFolders)
-            .all({ folders: JSON.stringify(folders) })
-            .map((row) => String(row["project"]))),
-    ]),
-  ];
+      .map((k) => k.slice(entity.length + 1))
+      .filter((id) => of(entity, id, field).length > 0);
+  const regrouped = ids("tasks", "grouping");
+  const { breaks, projectOf } = groupBreaks(conn, {
+    projects: ids("projects"),
+    tasks: ids("tasks"),
+    folders: ids("folders"),
+    moved: ids("projects", "grouping"),
+    regrouped,
+  });
   const undo = (list: readonly Inversion[]): void => {
     for (const i of list) broken.undone.add(i);
   };
   /** A project's own side: its tombstone with its folders', or its move with its tasks'. */
   const projectSide = (project: string, field: "deleted" | "grouping"): Inversion[] => {
     const own = of("projects", project, field);
-    if (own.length === 0 || field === "grouping") return own;
+    if (own.length === 0) return own;
+    if (field === "grouping") {
+      return [
+        ...own,
+        ...regrouped
+          .filter((t) => projectOf.get(t) === project)
+          .flatMap((t) => of("tasks", t, "grouping")),
+      ];
+    }
     const theirs = conn
       .prepare(FOLDER_SQL.allOfOwner)
       .all({ kind: "project", owner: project })
       .flatMap((row) => of("folders", String(row["id"]), "deleted"));
     return [...own, ...theirs];
   };
-  const params = { projects: JSON.stringify(projects) };
-  const held = [
-    ...conn
-      .prepare(SQL.liveTasksOfDeleted)
-      .all(params)
-      .map((row) => ({ entity: "tasks" as const, id: String(row["id"]), project: row["project"] })),
-    ...(hasFolders(conn)
-      ? conn
-          .prepare(SQL.liveFoldersOfDeleted)
-          .all(params)
-          .map((row) => ({
-            entity: "folders" as const,
-            id: String(row["id"]),
-            project: row["project"],
-          }))
-      : []),
-  ];
-  for (const child of held) {
-    const project = String(child.project);
-    const tombstone = projectSide(project, "deleted");
-    const brought = of(child.entity, child.id);
-    if (tombstone.length > 0) {
-      undo(tombstone);
-      broken.named.push({
-        entity: child.entity,
-        id: child.id,
-        task: child.entity === "tasks" ? (child.id as Id<"t">) : null,
-        field: "deleted",
-      });
-    }
-    if (brought.length > 0) {
+  for (const { rule, project, child } of breaks) {
+    const task = child.entity === "tasks" ? (child.id as Id<"t">) : null;
+    const side = projectSide(project, rule === "held" ? "deleted" : "grouping");
+    const brought =
+      rule === "held" ? of(child.entity, child.id) : of("tasks", child.id, "grouping");
+    if (side.length > 0) {
+      undo(side);
+      const field = child.entity === "tasks" ? "grouping" : "deleted";
+      broken.named.push({ entity: child.entity, id: child.id, task, field });
+    } else if (brought.length > 0) {
       undo(brought);
-      broken.named.push({ entity: "projects", id: project, task: null, field: "deleted" });
-    }
-  }
-  const moved = projects.filter((p) => of("projects", p, "grouping").length > 0);
-  const regrouped = tasks.filter((t) => of("tasks", t, "grouping").length > 0);
-  if (moved.length === 0 && regrouped.length === 0) return;
-  const stray = conn
-    .prepare(SQL.outOfArea)
-    .all({ tasks: JSON.stringify(regrouped), projects: JSON.stringify(moved) });
-  for (const row of stray) {
-    const task = String(row["id"]);
-    const project = String(row["project"]);
-    const move = projectSide(project, "grouping");
-    const own = of("tasks", task, "grouping");
-    if (move.length > 0) {
-      // The project stays where it is, and so do the tasks the plan would move with it.
-      undo(move);
-      for (const t of regrouped) {
-        if (projectOf.get(t) === project) undo(of("tasks", t, "grouping"));
-      }
-      broken.named.push({ entity: "tasks", id: task, task: task as Id<"t">, field: "grouping" });
-    } else if (own.length > 0) {
-      undo(own);
-      broken.named.push({ entity: "projects", id: project, task: null, field: "grouping" });
+      const field = rule === "held" ? "deleted" : "grouping";
+      broken.named.push({ entity: "projects", id: project, task: null, field });
     }
   }
 }

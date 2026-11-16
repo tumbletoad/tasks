@@ -256,14 +256,16 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(live()).toEqual({});
     expectStatus(undo(), "applied");
     expect(live()).toEqual({ [`task:${task}`]: "~/Dev/own2" });
-    // Set and cleared in one request is two intents in one.
-    expectStatus(
-      submit([
-        { kind: "task.folder_set", task, path: "~/Dev/x" },
-        { kind: "task.folder_clear", task },
-      ]),
-      "rejected",
-    );
+    // One request changes an owner's folder once: set and cleared, or set twice, is refused.
+    for (const second of [
+      { kind: "task.folder_clear" as const, task },
+      { kind: "task.folder_set" as const, task, path: "~/Dev/z" },
+    ]) {
+      expectStatus(
+        submit([{ kind: "task.folder_set", task, path: "~/Dev/x" }, second]),
+        "rejected",
+      );
+    }
     // An agent sets a folder too; a deleted task takes none.
     expectStatus(
       submit([{ kind: "task.folder_set", task, path: "~/Dev/agent" }], fx.codex),
@@ -336,6 +338,15 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       expect.objectContaining({ entity: "folders", field: "deleted" }),
     ]);
     expectStatus(submit([{ kind: "project.folder_set", project, path: "~/Dev/other" }]), "applied");
+    // With an older removed folder beside it, the newest clear still counts.
+    const before = fx.base();
+    expectStatus(submit([{ kind: "project.folder_clear", project }], fx.codex), "applied");
+    expectStatus(
+      submit([{ kind: "project.folder_set", project, path: "~/Dev/third" }], fx.human, {
+        base: before,
+      }),
+      "conflict",
+    );
     const unbased = fx.writer.submit(
       fx.request(fx.human, [{ kind: "task.folder_set", task: newTask("T"), path: "~/Dev/t" }]),
     );
@@ -393,12 +404,27 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     );
     const deleteRedo = redo();
     expectStatus(deleteRedo, "conflict");
+    // Named by who put it into the project.
     expect(deleteRedo.conflicts).toEqual([
-      expect.objectContaining({ entity: "tasks", id: filed, field: "deleted" }),
+      expect.objectContaining({ entity: "tasks", id: filed, field: "grouping" }),
     ]);
     expect(
       fx.reader.prepare("SELECT deleted_at FROM projects WHERE id = $id").get({ id: other }),
     ).toEqual({ deleted_at: null });
+  });
+
+  test("a request whose operations together would leave a live folder or task in a deleted project is refused", () => {
+    for (const after of [
+      (project: string): Operation => ({ kind: "project.folder_set", project, path: "~/Dev/late" }),
+      (project: string): Operation => ({ kind: "task.create", title: "Late", project }),
+      (project: string): Operation => ({ kind: "task.move", task: newTask("Moved"), project }),
+    ]) {
+      const project = newProject("Gone with it");
+      const refused = submit([{ kind: "project.delete", project }, after(project)]);
+      expectStatus(refused, "rejected");
+      expect(refused.error).toMatchObject({ code: "DELETED", op: 1 });
+    }
+    expect(live()).toEqual({});
   });
 
   test("a task in a deleted project is restored after its project", () => {
@@ -408,9 +434,31 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expectStatus(submit([{ kind: "project.delete", project }]), "applied");
     const refused = submit([{ kind: "task.restore", task }]);
     expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "DELETED", field: "task" });
+    expect(refused.error).toMatchObject({ code: "DELETED", op: 0, field: "project" });
     expectStatus(submit([{ kind: "project.restore", project }]), "applied");
     expectStatus(submit([{ kind: "task.restore", task }]), "applied");
+  });
+
+  test("a task left in a deleted project before these rules can still be changed", async () => {
+    const project = newProject("Left behind");
+    const task = newTask("Still here", project);
+    // Outside the write path, as a space from before the rules may hold it.
+    const deletedAt = async (at: number | null) => {
+      fx.writer.close();
+      const conn = openSpace(await checkedDriver(), fx.folder, { role: "writer" }).conn;
+      try {
+        conn
+          .prepare("UPDATE projects SET deleted_at = $at WHERE id = $id")
+          .run({ at, id: project });
+      } finally {
+        conn.close();
+      }
+      fx.reopen();
+    };
+    await deletedAt(1);
+    expectStatus(submit([{ kind: "task.patch", task, set: { title: "Renamed" } }]), "applied");
+    expectStatus(submit([{ kind: "task.move", task, project: null }]), "applied");
+    await deletedAt(null);
   });
 
   test("a path the request's machine cannot name is refused before anything is written", () => {

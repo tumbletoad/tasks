@@ -179,10 +179,10 @@ export const FOLDER_SQL = {
     "AND deleted_at IS NULL ORDER BY created_seq DESC, id",
   /** Every folder row of an owner, removed ones included. */
   allOfOwner: "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner ORDER BY id",
-  /** An owner's folder on one machine that was removed last, if any. */
-  lastRemoved:
+  /** An owner's removed folders on one machine. */
+  removedOn:
     "SELECT * FROM folders WHERE owner_kind = $kind AND owner_id = $owner " +
-    "AND machine_id = $machine AND deleted_at IS NOT NULL ORDER BY version DESC, id LIMIT 1",
+    "AND machine_id = $machine AND deleted_at IS NOT NULL ORDER BY id",
   /** The live folders of live projects on a machine: the same-folder rule's rows. */
   liveProjectFolders:
     "SELECT f.* FROM folders f JOIN projects p ON p.id = f.owner_id " +
