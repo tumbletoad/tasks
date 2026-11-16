@@ -26,11 +26,17 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
-import { ENV_PREFIX, PRODUCT_ID } from "../../../packages/brand/src/index.ts";
+import { ENV_PREFIX, PRODUCT_ID, PRODUCT_NAME } from "../../../packages/brand/src/index.ts";
 import { isAgentMarker } from "../../../packages/bridge/src/protocol/index.ts";
 import { findMsvc } from "../../../packages/launcher-win/src/build.ts";
 import { buildWeb } from "../../../packages/web/build.ts";
 import { windowsElevated } from "../../../packages/service/src/hub/identity.ts";
+import {
+  canonicalStatePath,
+  hostFacts,
+  installId,
+  resolveLayout,
+} from "../../../packages/service/src/hub/paths.ts";
 import {
   listFolder,
   sha256File,
@@ -49,6 +55,7 @@ import {
   SSH_SIGNATURE,
   SUMS_FILE,
   TEST_KEY_FILE,
+  verifyRawSignature,
   writeSums,
 } from "../../build/signing.ts";
 import { assembleVersionFolder, folderEntries } from "../../build/version-folder.ts";
@@ -214,18 +221,14 @@ export function releaseOf(folder: string, dist: string, key: KeyObject, work: st
 }
 
 /**
- * A release from a dist folder that `pnpm build --sign test` wrote (the smoke): its throwaway key's
- * public half is in SHA256SUMS.test-key.pub, and its private half is gone with the build. Its
- * install script is the one the build wrote beside the archives (else one is rendered into
- * `work`); `dist` stays as the build left it.
+ * A release from a dist folder that `pnpm build --sign test` or a rehearsal wrote (the smoke): its
+ * throwaway key's public half is in SHA256SUMS.test-key.pub, and its private half is gone. Its
+ * install script is the one written beside the archives (else one is rendered into `work`); `dist`
+ * stays as it was. With `release`, a folder signed with the release key: its own release install
+ * script, and the pinned key that signed SHA256SUMS.
  */
-export function releaseOfDist(dist: string, work: string): Release {
+export function releaseOfDist(dist: string, work: string, release?: readonly string[]): Release {
   const platform = hostPlatformOrThrow();
-  const keyFile = join(dist, TEST_KEY_FILE);
-  if (!existsSync(keyFile)) {
-    throw new Error(`${dist} was not test-signed: the smoke installs only a test-signed build`);
-  }
-  const publicKey = opensshPublicKey(parseOpensshPublicKey(readFileSync(keyFile, "utf8")));
   const pattern = new RegExp(`^${PRODUCT_ID}-(.+)-${platform}\\.(?:tar\\.gz|zip)$`);
   const archives = readdirSync(dist).filter((name) => pattern.test(name));
   const archive = archives[0];
@@ -233,17 +236,17 @@ export function releaseOfDist(dist: string, work: string): Release {
     throw new Error(`${dist} holds no single ${platform} archive`);
   }
   const version = pattern.exec(archive)?.[1] ?? "";
+  if (release !== undefined) return releaseSignedDist(dist, platform, archive, version, release);
+  const keyFile = join(dist, TEST_KEY_FILE);
+  if (!existsSync(keyFile)) {
+    throw new Error(`${dist} was not test-signed: the smoke installs only a test-signed build`);
+  }
+  const publicKey = opensshPublicKey(parseOpensshPublicKey(readFileSync(keyFile, "utf8")));
   mkdirSync(work, { recursive: true });
-  const manifest = (platform === "win-x64" ? readZip : readTarGz)(
-    readFileSync(join(dist, archive)),
-  ).find((entry) => entry.path === "manifest.json");
-  const build = String(
-    (JSON.parse(manifest?.data.toString() ?? "{}") as { build?: unknown }).build,
-  );
   return {
     dist,
     version,
-    build,
+    build: archiveBuild(join(dist, archive), platform),
     platform,
     archive,
     installer:
@@ -251,6 +254,86 @@ export function releaseOfDist(dist: string, work: string): Release {
     publicKey,
     key: undefined,
   };
+}
+
+/** The build label in a release archive's manifest.json. */
+function archiveBuild(path: string, platform: Platform): string {
+  const manifest = (platform === "win-x64" ? readZip : readTarGz)(readFileSync(path)).find(
+    (entry) => entry.path === "manifest.json",
+  );
+  return String((JSON.parse(manifest?.data.toString() ?? "{}") as { build?: unknown }).build);
+}
+
+function releaseSignedDist(
+  dist: string,
+  platform: Platform,
+  archive: string,
+  version: string,
+  pinned: readonly string[],
+): Release {
+  const installer = join(dist, installerName(KIND, version, "release"));
+  if (!existsSync(installer)) throw new Error(`${dist} holds no release install script`);
+  const sums = readFileSync(join(dist, SUMS_FILE));
+  const signature = readFileSync(join(dist, RAW_SIGNATURE));
+  const publicKey = pinned.find((line) => {
+    try {
+      return verifyRawSignature(sums, signature, parseOpensshPublicKey(line));
+    } catch {
+      return false;
+    }
+  });
+  if (publicKey === undefined) throw new Error(`no pinned release key signed ${dist}`);
+  return {
+    dist,
+    version,
+    build: archiveBuild(join(dist, archive), platform),
+    platform,
+    archive,
+    installer,
+    publicKey,
+    key: undefined,
+  };
+}
+
+/**
+ * Checks an install made by the install script: it succeeded, current names the version, the
+ * stable command exists and runs it, install.json names the install's own ID, and no download or
+ * staging folder was left.
+ */
+export function checkInstalled(root: string, release: Release, ran: Ran): void {
+  const fail = (what: string, shown?: Ran): never => {
+    throw new Error(
+      `${what}${shown === undefined ? "" : `\n  exit ${String(shown.status)}\n${shown.stdout}\n${shown.stderr}`}`,
+    );
+  };
+  if (ran.status !== 0) fail(`the install into ${root} failed`, ran);
+  const current = join(root, "current");
+  if (
+    windows
+      ? readFileSync(current, "utf8") !== release.version
+      : linkTarget(current) !== `versions/${release.version}`
+  ) {
+    fail("current does not name the version");
+  }
+  if (!existsSync(stableCommand(root))) fail("no stable command");
+  // The install's state folder by the layout: `<root>/state` of a TASKS_HOME root.
+  const state = resolveLayout(hostFacts({ [HOME_VAR]: root })).state;
+  const record = JSON.parse(readFileSync(join(state, "install.json"), "utf8")) as {
+    install_id?: string;
+  };
+  if (
+    record.install_id !==
+    installId(canonicalStatePath(realpathSync.native(state), process.platform))
+  ) {
+    fail("install.json does not name the install's own ID");
+  }
+  const version = runProgram(stableCommand(root), ["version"]);
+  if (version.stdout.trim() !== `${PRODUCT_NAME} ${release.version} (${release.build})`) {
+    fail("the stable command does not run the version", version);
+  }
+  if (!listing(join(root, "versions")).every((path) => !path.startsWith("."))) {
+    fail("a download or staging folder was left");
+  }
 }
 
 /** The test install script `pnpm build --sign test` wrote beside its archives, if it pins `key`. */

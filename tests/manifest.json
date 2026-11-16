@@ -3057,8 +3057,40 @@
     },
     {
       "id": "A2.3.12.8.build.release-script",
-      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder and no terminal",
+      "title": "The release script, with throwaway keys only: keygen writes an encrypted Ed25519 key; sign writes SHA256SUMS with raw and OpenSSH signatures, and refuses CI, a key inside a checkout, an unencrypted or open key file, an unexpected key, a test-signed folder, a development version, archives that trust another key and no terminal",
       "source": "A2 3.12.8, A7 2 P9, A7 3.8 M1.13",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-ci-sign",
+      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any event but a manual dispatch, any ref but main, a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment first and appear in no message or child process",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-rehearsal",
+      "title": "A rehearsal signs rehearsal versions only, with a key made for the call, marks its folder and install scripts as a test build, signs only archives that trust the committed release keys, and its archive is refused by the product's updater, by release signing and by publishing",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-version",
+      "title": "A release's version is package.json's at a commit on main, dev and rehearsal versions are never released, a draft is created, resumed or left as it is, and a tag on another commit, other bytes, a draft for another commit or a change to a published release are refused",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-files",
+      "title": "The signing job gathers one archive per released platform, each matching its own build's SHA256SUMS, and a release's files are published only when SHA256SUMS is signed by a pinned key in both formats, every archive passes the updater's own check, and no other file is there",
+      "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]
