@@ -226,10 +226,9 @@ function readSpaces(
     const enabled = r.bool("enabled", true);
     r.done();
     if (r.failed || id === undefined || path === undefined) continue;
-    if (spaces.some((s) => s.id === id)) {
-      problems.error(keyPath(key, "id"), "duplicate");
-      continue;
-    }
+    // Copies of one space share its ID (a restored copy beside its original, a claimed copy beside
+    // the closed original), so an ID may repeat: which copy an ID means is A2 3.10.5's rule. A
+    // folder holds one space, so a folder may not.
     if (spaces.some((s) => fold(p.resolve(s.path)) === fold(p.resolve(path)))) {
       problems.error(keyPath(key, "path"), "duplicate");
       continue;

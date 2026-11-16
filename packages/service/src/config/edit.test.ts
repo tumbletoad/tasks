@@ -17,12 +17,30 @@ import {
 import { atomicWrite } from "../hub/files.ts";
 import { MAX_CONFIG_BYTES } from "./toml.ts";
 
-/** A rename that fails once with EBUSY (a Windows sharing failure), running a callback first. */
-const renameFaults = vi.hoisted(() => ({ busyOnce: undefined as undefined | (() => void) }));
+/**
+ * A rename that fails once with EBUSY (a Windows sharing failure), running a callback first; and
+ * writes that each write at most `shortWrites` bytes, as a disk filling up may.
+ */
+const renameFaults = vi.hoisted(() => ({
+  busyOnce: undefined as undefined | (() => void),
+  shortWrites: undefined as undefined | number,
+}));
 vi.mock("node:fs", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs")>();
   return {
     ...fs,
+    writeSync: (fd: number, data: unknown, ...rest: unknown[]) => {
+      const most = renameFaults.shortWrites;
+      if (most !== undefined && data instanceof Uint8Array) {
+        const offset = typeof rest[0] === "number" ? rest[0] : 0;
+        const length = typeof rest[1] === "number" ? rest[1] : data.length - offset;
+        return fs.writeSync(fd, data, offset, Math.min(most, length));
+      }
+      if (most !== undefined && typeof data === "string") {
+        return fs.writeSync(fd, data.slice(0, most));
+      }
+      return (fs.writeSync as (...args: unknown[]) => number)(fd, data, ...rest);
+    },
     renameSync: (from: string, to: string) => {
       const fault = renameFaults.busyOnce;
       if (fault !== undefined) {
@@ -230,6 +248,24 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
     }).toThrow("changed");
     expect(checked).toBe(1);
     expect(readFileSync(file, "utf8")).toBe("# mine\n");
+    expect(readdirSync(dir)).toEqual([MACHINE_TOML]);
+  });
+
+  test("a write the disk cuts short is written whole before the rename: the file is never replaced by a part", () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, MACHINE_TOML), '# my notes\n[log]\nlevel = "warn"\n', { mode: 0o600 });
+    // Each write call writes at most 5 bytes, as a disk that fills up may.
+    renameFaults.shortWrites = 5;
+    try {
+      expect(
+        editMachineToml(dir, [{ op: "set", table: ["log"], key: "level", value: "info" }]),
+      ).toMatchObject({ ok: true });
+    } finally {
+      renameFaults.shortWrites = undefined;
+    }
+    expect(readFileSync(join(dir, MACHINE_TOML), "utf8")).toBe(
+      '# my notes\n[log]\nlevel = "info"\n',
+    );
     expect(readdirSync(dir)).toEqual([MACHINE_TOML]);
   });
 
@@ -480,6 +516,103 @@ describe("[A2.3.2.4.config.edit-remove] taking out an element exactly as it was 
     // Two elements written the same: which one setup wrote cannot be told.
     const twice = applyEdits("", [append, append]);
     expect(applyEdits(twice.ok ? twice.text : "", [remove])).toEqual({
+      ok: false,
+      reason: "unsupported_layout",
+    });
+  });
+});
+
+describe("[A2.3.2.4.config.edit-element] setting a key in one element of an array of tables", () => {
+  const ID = "sp_43f0gjcvzgaa1gh5my6qxwcj7m";
+  const byPath =
+    (path: string) =>
+    (element: Readonly<Record<string, unknown>>): boolean =>
+      element["path"] === path;
+  const FILE = [
+    "# My spaces.",
+    "[[spaces]]",
+    `id = "${ID}"   # the work space`,
+    'path = "/home/mira/Tasks/work"',
+    "",
+    "# Home, kept closed.",
+    "[[spaces]]",
+    `id = "sp_3z8sm956jp8dajmtsar5kx026c"`,
+    'path = "/home/mira/Tasks/home"',
+    "enabled = false # for now",
+    "",
+    "[spaces.notes]",
+    'colour = "green"',
+    "",
+    "[log]",
+    'level = "info"',
+    "",
+  ].join("\n");
+
+  test("a key is added after the element's last key, or its value replaced in place; every other byte stays", () => {
+    const added = applied(FILE, [
+      {
+        op: "set_in_element",
+        array: "spaces",
+        select: byPath("/home/mira/Tasks/work"),
+        key: "enabled",
+        value: false,
+      },
+    ]);
+    expect(added).toBe(
+      FILE.replace(
+        'path = "/home/mira/Tasks/work"\n',
+        'path = "/home/mira/Tasks/work"\nenabled = false\n',
+      ),
+    );
+    // A value already written is replaced in place, and its comment stays. The sub-table after
+    // the element stays the element's.
+    const replaced = applied(FILE, [
+      {
+        op: "set_in_element",
+        array: "spaces",
+        select: byPath("/home/mira/Tasks/home"),
+        key: "enabled",
+        value: true,
+      },
+    ]);
+    expect(replaced).toBe(FILE.replace("enabled = false # for now", "enabled = true # for now"));
+    // CRLF files get CRLF lines.
+    const crlf = FILE.replaceAll("\n", "\r\n");
+    expect(
+      applied(crlf, [
+        {
+          op: "set_in_element",
+          array: "spaces",
+          select: byPath("/home/mira/Tasks/work"),
+          key: "id",
+          value: "sp_0123456789abcdefghjkmnpqrs",
+        },
+      ]),
+    ).toBe(crlf.replace(`id = "${ID}"`, 'id = "sp_0123456789abcdefghjkmnpqrs"'));
+  });
+
+  test("no element picked is absent; two picked, or an inline array, is refused; nothing changes", () => {
+    const edit = (select: (e: Readonly<Record<string, unknown>>) => boolean): Edit => ({
+      op: "set_in_element",
+      array: "spaces",
+      select,
+      key: "enabled",
+      value: false,
+    });
+    expect(applyEdits(FILE, [edit(byPath("/elsewhere"))])).toEqual({
+      ok: false,
+      reason: "absent",
+    });
+    expect(applyEdits('[log]\nlevel = "info"\n', [edit(() => true)])).toEqual({
+      ok: false,
+      reason: "absent",
+    });
+    expect(applyEdits(FILE, [edit(() => true)])).toEqual({
+      ok: false,
+      reason: "unsupported_layout",
+    });
+    const inline = `spaces = [{ id = "${ID}", path = "/w" }]\n`;
+    expect(applyEdits(inline, [edit(byPath("/w"))])).toEqual({
       ok: false,
       reason: "unsupported_layout",
     });

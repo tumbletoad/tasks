@@ -41,6 +41,15 @@ the behaviour it describes, and keep each one to a sentence or two.
   the old data readable.
 - An older version of Tasks never writes a newer data format.
 
+## Your spaces on this computer
+
+- A space you create, open, restore or claim opens again after a restart, and one you close stays
+  closed. Tasks never takes a space off its list by itself.
+- Recording this keeps your own comments and settings in the configuration file. When the file
+  cannot be written, Tasks says so and names the command that records it once the file is fixed.
+- When several copies of one space are on this computer, a command without a folder reaches the
+  copy that takes changes, and after a restart that is still the copy you last changed.
+
 ## Agents
 
 - An agent that uses Tasks cannot start other agents, raise its own permissions or change your
@@ -96,6 +105,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   with the space.
 - A space in a synced folder or on a network drive opens read-only, because a live database there
   can be damaged. For a synced folder you confirm once that it is excluded from sync.
+- An editor that had the configuration file open while Tasks recorded a space, and saves it
+  afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a computer that several people sign in to, another person could serve a page at Tasks'
   address while Tasks is stopped.
 - An edit that could not be saved is kept in the open page. Reloading the page loses it.

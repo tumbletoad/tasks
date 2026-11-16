@@ -57,7 +57,21 @@ export type Edit =
    * `absent` when no element is, so an element the person changed or annotated is never removed;
    * `unsupported_layout` when more than one is.
    */
-  | { readonly op: "remove"; readonly array: string; readonly entries: Entries };
+  | { readonly op: "remove"; readonly array: string; readonly entries: Entries }
+  /**
+   * Sets `key` in the one element of `[[array]]` that `select` picks by its values as parsed: the
+   * value is replaced where the key is written, else a line is added after the element's last key.
+   * Every other byte of the element stays, comments included. Refused `absent` when no element is
+   * picked, and `unsupported_layout` when more than one is or the array is not written as
+   * `[[array]]` headers (an inline array).
+   */
+  | {
+      readonly op: "set_in_element";
+      readonly array: string;
+      readonly select: (element: Readonly<Record<string, unknown>>) => boolean;
+      readonly key: string;
+      readonly value: EditValue;
+    };
 
 export type EditRefusal =
   /** The file is not valid TOML (or not UTF-8, or too large): fix it first. */
@@ -303,7 +317,62 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const found = removal(text, layout, edit);
       return "refused" in found ? found : found.text;
     }
+    case "set_in_element":
+      // Placed with the parsed document (elementSet), in applyEdits.
+      return { refused: "unsupported_layout" };
   }
+}
+
+/** The index of the one element of `doc[array]` that `select` picks, or why there is none. */
+function pickedElement(
+  doc: TomlDocument,
+  edit: Extract<Edit, { op: "set_in_element" }>,
+): number | EditRefusal {
+  const current = doc[edit.array];
+  if (current === undefined) return "absent";
+  if (!Array.isArray(current)) return "unsupported_layout";
+  const picked: number[] = [];
+  (current as unknown[]).forEach((element, i) => {
+    if (isTable(element) && edit.select(element)) picked.push(i);
+  });
+  if (picked.length > 1) return "unsupported_layout";
+  return picked[0] ?? "absent";
+}
+
+/**
+ * `set_in_element`: the element's header is the index-th `[[array]]` header, since those headers
+ * make the array's elements in order. Its own keys are the lines up to the next header (a
+ * sub-table's header ends them).
+ */
+function elementSet(
+  text: string,
+  layout: Layout,
+  edit: Extract<Edit, { op: "set_in_element" }>,
+  index: number,
+  count: number,
+): string | { refused: EditRefusal } {
+  const { eol, lines } = layout;
+  const elements = lines.filter(
+    (l): l is ScannedHeader => l.kind === "header" && l.array && samePath(l.path, [edit.array]),
+  );
+  // An array written inline, or partly so, has fewer headers than elements.
+  const header = elements[index];
+  if (elements.length !== count || header === undefined) return { refused: "unsupported_layout" };
+  const body = tableLines(lines, header);
+  const existing = body.find((l) => l.kind === "keyval" && samePath(l.key, [edit.key]));
+  if (existing?.kind === "keyval") {
+    return (
+      text.slice(0, existing.valueStart) + valueText(edit.value) + text.slice(existing.valueEnd)
+    );
+  }
+  if (body.some((l) => l.kind === "keyval" && l.key[0] === edit.key)) {
+    return { refused: "unsupported_layout" };
+  }
+  const last = body.at(-1);
+  const at = last === undefined ? header.end : last.end;
+  const before = text.slice(0, at);
+  const lead = before === "" || before.endsWith("\n") ? "" : eol;
+  return `${before}${lead}${keyText(edit.key)} = ${valueText(edit.value)}${eol}${text.slice(at)}`;
 }
 
 /**
@@ -383,6 +452,15 @@ const isComment = (line: string): boolean => line.trim().startsWith("#");
 
 function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | EditRefusal {
   switch (edit.op) {
+    case "set_in_element": {
+      const current = doc[edit.array];
+      if (!Array.isArray(current)) return "absent";
+      const element: unknown = (current as unknown[])[index];
+      if (!isTable(element)) return "absent";
+      const changed = [...(current as unknown[])];
+      changed[index] = { ...element, [edit.key]: parsedValue(edit.value) };
+      return { ...doc, [edit.array]: changed };
+    }
     case "remove": {
       const current = doc[edit.array];
       if (!Array.isArray(current)) return "absent";
@@ -451,6 +529,14 @@ export function applyEdits(text: string, edits: readonly Edit[]): EditResult {
         next = found.text;
         want = intended(doc, edit, found.index);
         if (typeof want === "string") return { ok: false, reason: want };
+      } else if (edit.op === "set_in_element") {
+        // The element the selection picks in the document as it is now decides the place.
+        const index = pickedElement(doc, edit);
+        if (typeof index === "string") return { ok: false, reason: index };
+        want = intended(doc, edit, index);
+        if (typeof want === "string") return { ok: false, reason: want };
+        const count = (doc[edit.array] as unknown[]).length;
+        next = elementSet(current, layout, edit, index, count);
       } else {
         want = intended(doc, edit);
         if (typeof want === "string") return { ok: false, reason: want };
@@ -513,6 +599,18 @@ export function prepareEdit(
   configDir: string,
   edits: readonly Edit[],
 ): { ok: true; edit: PreparedEdit } | { ok: false; reason: EditRefusal } {
+  return prepareEditOf(configDir, () => edits);
+}
+
+/**
+ * prepareEdit with the edits worked out from the document as this one read parses it, so the edits
+ * fit the very bytes they are made against, which commitEdit then checks are still there. `plan`
+ * may refuse with a reason. Writes nothing.
+ */
+export function prepareEditOf(
+  configDir: string,
+  plan: (doc: TomlDocument) => readonly Edit[] | EditRefusal,
+): { ok: true; edit: PreparedEdit } | { ok: false; reason: EditRefusal } {
   const path = join(configDir, MACHINE_TOML);
   // The service's own rule: nothing is written into a config folder or machine.toml that fails it.
   if (unsafeMachineToml(configDir)) return { ok: false, reason: "unsafe" };
@@ -526,6 +624,10 @@ export function prepareEdit(
     text = decoded.text;
     bom = decoded.bom;
   }
+  const parsed = parseToml(text);
+  if (!parsed.ok) return { ok: false, reason: "invalid_file" };
+  const edits = plan(parsed.doc);
+  if (typeof edits === "string") return { ok: false, reason: edits };
   const result = applyEdits(text, edits);
   if (!result.ok) return result;
   const whole = `${bom ? BOM : ""}${result.text}`;
