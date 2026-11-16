@@ -223,7 +223,11 @@ export async function runMain(
     tty:
       typeof options.tty === "object"
         ? options.tty
-        : { stdin: options.tty === true, stdout: options.tty === true, stderr: options.tty === true },
+        : {
+            stdin: options.tty === true,
+            stdout: options.tty === true,
+            stderr: options.tty === true,
+          },
     pid: process.pid,
     stdout: (text) => {
       stdout += text;
