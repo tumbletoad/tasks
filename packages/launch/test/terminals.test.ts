@@ -1051,6 +1051,30 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
     expect(looked).toContain("/stalled/bin/ghostty");
   });
 
+  test("a folder later on PATH is looked at only when the earlier ones lack the program", async () => {
+    const input = {
+      platform: "linux",
+      path: ["/usr/bin", "/later/bin"],
+      terminalVar: undefined,
+      home: "/home/mira",
+      windowsApps: undefined,
+    } as const;
+    const looked: string[] = [];
+    const probe = fileProbe("linux", {
+      executable: (path) => {
+        looked.push(path);
+        return Promise.resolve(path === KITTY);
+      },
+      realpath: (path) => Promise.resolve(path),
+    });
+    const programs = await readProgramFacts(settings(), osTerminalHost(input), probe);
+    expect(apps(terminalChain(settings(), osTerminalHost({ ...input, programs })))).toEqual([
+      "kitty",
+    ]);
+    expect(looked).not.toContain("/later/bin/kitty");
+    expect(new Set(looked).size).toBe(looked.length);
+  });
+
   test("the probe reads the real file system: a program, a missing one and a link", async () => {
     const root = mkdtempSync(join(tmpdir(), "tasks-term-probe-"));
     try {

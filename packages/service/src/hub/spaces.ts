@@ -67,8 +67,8 @@
 // or an open in progress, still runs, and only the end of the process stops a worker for certain.
 // So the manager reports the loss (`onLockLost`) and the service exits 70 at once (service.ts).
 //
-// One space failing never stops the service (A2 3.1). Every wait is bounded. A close waits for an
-// open in progress only up to its bound; an open still running then releases what it took when it
+// One space failing never stops the service (A2 3.1). Every wait but a migration's is bounded. A
+// close waits for an open in progress only up to its bound; an open still running then releases what it took when it
 // ends, or the process exit does. The lock lives in the space's worker, beside the writer it
 // guards, so a worker that hangs keeps both until the process exits.
 import { realpathSync, statSync } from "node:fs";
@@ -82,6 +82,7 @@ import {
   formatRevision,
   LATEST_REVISION,
   readManifest,
+  RETENTION,
   SpaceLockedElsewhere,
   StorageError,
   StorageWorker,
@@ -567,11 +568,18 @@ export class SpaceManager {
    * (status, `tasks space`).
    */
   described(): SpaceView[] {
+    const now = (this.#options.now?.() ?? new Date()).getTime();
     return this.#spaces.map((space) => {
-      const migrated = readSpaceSettings(
+      const last = readSpaceSettings(
         this.#options.settingsDir,
         space.id ?? space.registered,
       ).lastMigration;
+      // Retention keeps a barrier backup only so long: past that it is not named as one to go to.
+      const migrated =
+        last?.backup !== undefined &&
+        now - Date.parse(last.at) >= RETENTION.preMigrateDays * 86_400_000
+          ? { from: last.from, to: last.to, at: last.at }
+          : last;
       return {
         ...space.view(),
         registered: space.registered,

@@ -26,7 +26,7 @@ import { SLOW_BARRIER_MS, type StepSet } from "../../storage/test/stand-in-steps
 import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { BUILD } from "../src/hub/build.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
-import { readSpaceSettings, SPACES_FOLDER } from "../src/hub/space-settings.ts";
+import { readSpaceSettings, recordMigration, SPACES_FOLDER } from "../src/hub/space-settings.ts";
 import { RETRY_MIGRATION } from "../src/hub/spaces.ts";
 import {
   readLog,
@@ -567,6 +567,16 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       expect(added).toHaveProperty("tasks");
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
       expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.4", backup });
+      // Past the time retention keeps a barrier backup, the list no longer names it.
+      recordMigration(
+        stateOf(home),
+        id,
+        { from: 1, to: 4, ...(backup === undefined ? {} : { backup }) },
+        new Date(Date.now() - 31 * 86_400_000),
+      );
+      const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.4" });
+      expect(later[0]?.["migrated"]).not.toHaveProperty("backup");
       await stop(service);
       const after = await dbState(space.folder);
       expect(after.revision).toEqual({ major: 0, minor: 4 });

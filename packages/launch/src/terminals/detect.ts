@@ -673,9 +673,9 @@ export interface ProgramFacts {
 /**
  * Looks at every program and link the choice for `settings` asks about, through `probe`, without
  * blocking the service: a stalled folder on PATH must not hold up an Open, or anything else the
- * service does meanwhile. It runs the choice against what was found so far, looks at what it asked
- * for, and repeats until it asks for nothing new. One look at a time, so a stalled share holds one
- * of Node's file threads, not all of them.
+ * service does meanwhile. It runs the choice against what was found so far, looks at the first thing
+ * it asked for and did not know, and repeats until it asks for nothing new: the same looks, in the
+ * same order, as a choice that waited for each answer.
  */
 export async function readProgramFacts(
   settings: TerminalSettings,
@@ -685,24 +685,24 @@ export async function readProgramFacts(
   const executable = new Map<string, boolean>();
   const real = new Map<string, string | undefined>();
   for (;;) {
-    const asked: { path: string; kind: "x" | "r" }[] = [];
+    const ask: { next?: { path: string; kind: "x" | "r" } } = {};
     terminalChoice(settings, {
       ...host,
       executable: (path) => {
-        if (!executable.has(path)) asked.push({ path, kind: "x" });
+        if (!executable.has(path)) ask.next ??= { path, kind: "x" };
         return executable.get(path) ?? false;
       },
       realpath: (path) => {
-        if (!real.has(path)) asked.push({ path, kind: "r" });
+        if (!real.has(path)) ask.next ??= { path, kind: "r" };
         return real.get(path);
       },
     });
-    if (asked.length === 0) return { executable, realpath: real };
-    for (const { path, kind } of asked) {
-      if (kind === "x") {
-        if (!executable.has(path)) executable.set(path, await probe.executable(path));
-      } else if (!real.has(path)) real.set(path, await probe.realpath(path));
-    }
+    const next = ask.next;
+    if (next === undefined) return { executable, realpath: real };
+    // Only the first unknown: what the choice asks after it depends on its answer, so a folder
+    // later on PATH is looked at only when the earlier ones do not have the program.
+    if (next.kind === "x") executable.set(next.path, await probe.executable(next.path));
+    else real.set(next.path, await probe.realpath(next.path));
   }
 }
 
