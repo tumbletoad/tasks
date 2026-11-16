@@ -399,9 +399,7 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       const folder = absolute(params, "path");
       const refPrefix = text(params, "ref_prefix", 6);
       return oneAtATime(async () => {
-        const taken = manager
-          .list()
-          .flatMap((v) => (v.ref_prefix === undefined ? [] : [v.ref_prefix]));
+        const taken = listed().flatMap((v) => (v.ref_prefix === undefined ? [] : [v.ref_prefix]));
         try {
           // A1 3.2: never written on a network file system. In a synced folder the new space
           // opens read-only, with the words that say why.
