@@ -442,6 +442,11 @@ export async function seedMira(
     if (opened.revision.major > 0 || opened.revision.minor >= 2) {
       wrapUp(conn, writer, rng, created.space, created.actors.human);
     }
+    // Schema 0.5's folders: an older chain's sample has none, and every row before them is the one
+    // that chain made.
+    if (opened.revision.major > 0 || opened.revision.minor >= 5) {
+      bindFolders(conn, writer, rng, created.space, created.actors.human);
+    }
     conn.pragma("synchronous", "FULL");
     const counts: Record<string, number> = {};
     for (const { name } of conn
@@ -502,6 +507,44 @@ function wrapUp(
   });
   if (result.status !== "applied") {
     throw new Error(`the sample's wrap-up was ${result.status}: ${result.error?.code ?? ""}`);
+  }
+}
+
+/**
+ * Mira gives her portal project its folder on her machine, and her first task a folder of its own
+ * inside it, in one request through the writer.
+ */
+function bindFolders(
+  conn: Connection,
+  writer: SpaceWriter,
+  rng: Rng,
+  space: { spaceId: Id<"sp">; authority: { machineId: Id<"m"> } },
+  human: Id<"ac">,
+): void {
+  const portal = conn.prepare("SELECT id FROM projects WHERE slug = 'lumen-portal'").get()?.["id"];
+  const first = conn.prepare("SELECT id FROM tasks ORDER BY ref LIMIT 1").get()?.["id"];
+  if (typeof portal !== "string" || typeof first !== "string") throw new Error("no portal");
+  const result = writer.submit({
+    space_id: space.spaceId,
+    request_id: newId("op", (bytes) => {
+      rng.fill(bytes);
+    }).slice(3),
+    actor: {
+      scope_id: "cli:mira",
+      principal_id: human,
+      actor_kind: "human",
+      machine_id: space.authority.machineId,
+      origin: "cli",
+    },
+    base: formatAsOf(writer.asOf()),
+    undoable: true,
+    ops: [
+      { kind: "project.folder_set", project: portal, path: "~/work/lumen/portal" },
+      { kind: "task.folder_set", task: first, path: "~/work/lumen/portal/appointments" },
+    ],
+  });
+  if (result.status !== "applied") {
+    throw new Error(`the sample's folders were ${result.status}: ${result.error?.code ?? ""}`);
   }
 }
 

@@ -354,8 +354,8 @@ describe("[A1.5.write.read-your-writes] an operation never fails against an earl
 describe("[A1.5.write.operations] the five task operations, their checks and their history", () => {
   test("the writer's operations are the registry's, with the same base rule", () => {
     // packages/contracts holds the operation registry (A3 3.2).
-    // The inserts need no base; a revival's link version and an existing place's base are
-    // conditional, which the registry leaves to the handler (A1 3.6).
+    // The inserts need no base; a revival's link version and an existing place's or folder's base
+    // are conditional, which the registry leaves to the handler (A1 3.6).
     const baseFree = new Set([
       "task.create",
       "task.context_append",
@@ -364,6 +364,12 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "source.add",
       "place.set",
       "place.clear",
+      "area.create",
+      "project.create",
+      "project.folder_set",
+      "project.folder_clear",
+      "task.folder_set",
+      "task.folder_clear",
     ]);
     for (const kind of OPERATION_KINDS) {
       if (kind.startsWith("launch.") || kind.startsWith("run.")) {

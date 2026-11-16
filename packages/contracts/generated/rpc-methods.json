@@ -148,6 +148,172 @@
     },
     {
       "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "ambiguous",
+        "conflict",
+        "forbidden",
+        "space_unavailable",
+        "read_only",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "add_project makes a project for a folder; set and clear a project's or a task's",
+            "enum": [
+              "add_project",
+              "set",
+              "clear"
+            ],
+            "type": "string"
+          },
+          "area": {
+            "description": "add_project: the new project's area, by name",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "base": {
+            "description": "as_of from your last read, verbatim",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "folder": {
+            "description": "add_project, set: an absolute folder on this machine, or one under ~",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "project": {
+            "description": "set, clear: \"Area/Project\", or a name, slug or ID; add_project: its name",
+            "maxLength": 250,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "task": {
+            "description": "set, clear: the task, such as M-14",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "folder.manage",
+      "ops": [
+        "area.create",
+        "project.create",
+        "project.folder_set",
+        "project.folder_clear",
+        "task.folder_set",
+        "task.folder_clear"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "The action",
+            "enum": [
+              "add_project",
+              "set",
+              "clear"
+            ],
+            "type": "string"
+          },
+          "as_of": {
+            "description": "Read position; pass it as base on your next write",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "folder": {
+            "description": "The folder here as stored, the home as ~; absent once cleared",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "moved": {
+            "description": "Task folders that moved along with the project's",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "owner": {
+            "additionalProperties": false,
+            "description": "Whose folder it is",
+            "properties": {
+              "id": {
+                "description": "Its ID",
+                "pattern": "^[pt]_[0-9a-hjkmnp-tv-z]{26}$",
+                "type": "string"
+              },
+              "kind": {
+                "description": "Project or task",
+                "enum": [
+                  "project",
+                  "task"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "A project's name",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Task reference",
+                "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "What happened; exists: another project has this folder here",
+            "enum": [
+              "created",
+              "exists",
+              "set",
+              "cleared",
+              "no_change"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "result",
+          "owner",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "never",
+      "scope": "space:write",
+      "summary": "Give a project or a task its folder on this machine, or make a project for a folder."
+    },
+    {
+      "actorKinds": [
         "human",
         "agent",
         "routine"
@@ -167,13 +333,14 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "list reads; create, rename, move and archive change a group",
+            "description": "list reads; create, rename, move, archive and unarchive change a group",
             "enum": [
               "list",
               "create",
               "rename",
               "move",
-              "archive"
+              "archive",
+              "unarchive"
             ],
             "type": "string"
           },
@@ -223,7 +390,9 @@
         "project.create",
         "project.patch",
         "project.move",
-        "project.archive"
+        "project.archive",
+        "area.unarchive",
+        "project.unarchive"
       ],
       "output": {
         "additionalProperties": false,
@@ -235,7 +404,8 @@
               "create",
               "rename",
               "move",
-              "archive"
+              "archive",
+              "unarchive"
             ],
             "type": "string"
           },
@@ -401,6 +571,7 @@
               "renamed",
               "moved",
               "archived",
+              "unarchived",
               "no_change",
               "proposed"
             ],
@@ -431,7 +602,7 @@
       },
       "remote": "write",
       "scope": "space:write",
-      "summary": "List the areas and projects, or create, rename, move or archive one."
+      "summary": "List the areas and projects, or create, rename, move, archive or unarchive one."
     },
     {
       "actorKinds": [
@@ -2665,7 +2836,8 @@
                         "preferences",
                         "runs",
                         "areas",
-                        "projects"
+                        "projects",
+                        "folders"
                       ],
                       "type": "string"
                     },
@@ -3742,7 +3914,9 @@
         "task.create",
         "log.add",
         "source.add",
-        "place.set"
+        "place.set",
+        "area.create",
+        "project.create"
       ],
       "output": {
         "additionalProperties": false,
@@ -4108,7 +4282,9 @@
         "task.create",
         "log.add",
         "source.add",
-        "place.set"
+        "place.set",
+        "area.create",
+        "project.create"
       ],
       "output": {
         "additionalProperties": false,
@@ -6828,7 +7004,9 @@
         "source.add",
         "source.unlink",
         "place.set",
-        "place.clear"
+        "place.clear",
+        "area.create",
+        "project.create"
       ],
       "output": {
         "additionalProperties": false,

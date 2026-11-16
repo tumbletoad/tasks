@@ -33,6 +33,7 @@ import {
   type PrefValue,
 } from "@tasks/contracts";
 import {
+  carriedTo,
   isId,
   newId,
   type Id,
@@ -88,6 +89,15 @@ import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, placeState, type Match, type PlaceState } from "./here.ts";
 import { bindPlace, outsideWarning, placeRefused, remoteWarning } from "./places.ts";
 import {
+  checkFolder,
+  expanded,
+  folderRefused,
+  osOf,
+  reservedBy,
+  storedForm,
+  type Folder,
+} from "./folders.ts";
+import {
   byOf,
   invalid,
   readOnly,
@@ -103,6 +113,8 @@ import { editDistance, resolveGroup } from "./groups.ts";
 import {
   readCommit,
   readCommitTasks,
+  readBind,
+  readFolderOwner,
   readGroupNames,
   readGroups,
   readLaunch,
@@ -125,6 +137,7 @@ import {
   text,
   type CommitFacts,
   type TaskRead,
+  type BindRead,
   type Destination,
   type GroupNames,
 } from "./read.ts";
@@ -168,6 +181,10 @@ export interface OpsHost {
   readonly roots?: () => readonly Root[];
   /** The OS whose path rules a place follows. Default: this process's. */
   readonly platform?: NodeJS.Platform;
+  /** The person's home folder on this machine: what `~` in a folder means. None: no folder binds. */
+  readonly home?: string;
+  /** Tasks' own data folder (the Tasks home): no folder is bound inside it. */
+  readonly dataFolder?: string;
   /** Milliseconds since 1970. Default: Date.now. */
   readonly now?: () => number;
   /** The space's time zone. Default: this machine's. */
@@ -403,7 +420,12 @@ async function callWith(
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
-  const result = await handler(call);
+  // A call that binds a folder or may create a group by name decides on what it read of the
+  // space: such calls go one at a time per space, from that read to the writer's answer, so two
+  // never both create one name or bind one folder by two spellings.
+  const result = await (decidesOnNames(entry.name, call.input)
+    ? oneAtATime(space.id ?? "", () => handler(call))
+    : handler(call));
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
     // A write whose handler returned has done its work, whichever path it wrote through: an error
@@ -1137,9 +1159,18 @@ function destinationOf(draft: Record<string, unknown>, agent: boolean): Destinat
 /** The area or project of a stand-in in a request the writer replays (`resolvedDrafts`). */
 const REPLAY_GROUP = "replay";
 
+/** The drafts with their groups resolved, and the groups their new names create. */
+interface ResolvedDrafts {
+  readonly list: Record<string, unknown>[];
+  /** `area.create` and `project.create` for each new name, once per name, in first-named order. */
+  readonly groups: Operation[];
+}
+
 /**
  * The drafts (or `update_task`'s `set`) with their area and project names resolved to IDs
- * (groups.ts, A3 3.4.5), as the writer takes them; `path` gives each item's input path. A request
+ * (groups.ts, A3 3.4.5), as the writer takes them; `path` gives each item's input path. A name no
+ * group has, and none is close to, is a new group: its create goes with the request, once however
+ * many drafts name it, so the drafts and their new groups are one commit and one undo. A request
  * ID with a receipt is the writer's to replay: its names are not resolved then, so a group renamed
  * since never refuses a retry of a call that applied (as `placeSets` does for folders), and each
  * one is a stand-in the writer's shape check takes (a name may be longer than its group field),
@@ -1150,15 +1181,17 @@ async function resolvedDrafts(
   call: Call,
   list: readonly Record<string, unknown>[],
   path: (k: number) => string,
-): Promise<Record<string, unknown>[]> {
+): Promise<ResolvedDrafts> {
   const named = list.some((d) => d["area"] !== undefined || d["project"] !== undefined);
-  if (!named) return [...list];
-  const standIns = (): Record<string, unknown>[] =>
-    list.map((draft) => ({
+  if (!named) return { list: [...list], groups: [] };
+  const standIns = (): ResolvedDrafts => ({
+    list: list.map((draft) => ({
       ...draft,
       ...(typeof draft["area"] === "string" ? { area: REPLAY_GROUP } : {}),
       ...(typeof draft["project"] === "string" ? { project: REPLAY_GROUP } : {}),
-    }));
+    })),
+    groups: [],
+  });
   if (await applied(call)) return standIns();
   let names: GroupNames;
   try {
@@ -1166,27 +1199,71 @@ async function resolvedDrafts(
   } catch (error) {
     throw storageFailure(error);
   }
+  const groups: Operation[] = [];
+  // The groups an earlier draft makes join the names, so a later draft resolves them by the same
+  // rules as the space's own: one call answers as its drafts sent one by one would. A new group
+  // has no slug yet.
+  const areas = [...names.areas];
+  const projects = [...names.projects];
+  const working: GroupNames = { areas, projects, aliases: names.aliases };
+  const made = new Set<string>();
   try {
-    return list.map((draft, k) => {
+    const resolved = list.map((draft, k) => {
       const at = path(k);
-      const resolved = { ...draft };
+      const out = { ...draft };
       const area = draft["area"];
-      if (typeof area === "string")
-        resolved["area"] = resolveGroup(names, "area", area, `${at}.area`);
+      if (typeof area === "string") {
+        let id = resolveGroup(working, "area", area, `${at}.area`);
+        if (id === undefined) {
+          const created = newId("a");
+          made.add(created);
+          areas.push({ id: created, slug: "", title: area.trim(), area: null });
+          groups.push({ kind: "area.create", id: created, title: area.trim() });
+          id = created;
+        }
+        out["area"] = id;
+      }
       const project = draft["project"];
       if (typeof project === "string") {
-        const within = typeof resolved["area"] === "string" ? resolved["area"] : undefined;
-        resolved["project"] = resolveGroup(names, "project", project, `${at}.project`, {
-          area: within,
-        });
+        const within = typeof out["area"] === "string" ? out["area"] : undefined;
+        // An area the call makes holds only the projects the call makes there: a project of
+        // that name elsewhere is no reason to refuse, and no typo of one there.
+        const among =
+          within !== undefined && made.has(within)
+            ? { ...working, projects: projects.filter((p) => p.area === within) }
+            : working;
+        let id = resolveGroup(among, "project", project, `${at}.project`, { area: within });
+        if (id === undefined) {
+          const created = newId("p");
+          projects.push({ id: created, slug: "", title: project.trim(), area: within ?? null });
+          groups.push({
+            kind: "project.create",
+            id: created,
+            title: project.trim(),
+            ...(within === undefined ? {} : { area: within }),
+          });
+          id = created;
+        }
+        out["project"] = id;
       }
-      return resolved;
+      return out;
     });
+    return { list: resolved, groups };
   } catch (error) {
     // A retry racing its first call: the request may have been decided meanwhile.
     if (error instanceof AppError && (await applied(call))) return standIns();
     throw error;
   }
+}
+
+/**
+ * A result as the call's own operations see it: the results of the groups it created by name are
+ * left out and the rest numbered from 0, so a handler reads its operations by their own indexes
+ * whether a name made a group or not, and a replay, which creates none, reads the same.
+ */
+function ownResults(result: WriteResult): WriteResult {
+  const own = result.results.filter((r) => !isId(r.id, "a") && !isId(r.id, "p"));
+  return { ...result, results: own.map((r, i) => ({ ...r, i })) };
 }
 
 /**
@@ -1480,7 +1557,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     checkMode(input);
     const agent = call.principal.actorKind !== "human";
-    const list = await resolvedDrafts(call, drafts(input["tasks"]), (k) => `tasks.${String(k)}`);
+    const { list, groups } = await resolvedDrafts(
+      call,
+      drafts(input["tasks"]),
+      (k) => `tasks.${String(k)}`,
+    );
     const ops: Operation[] = [];
     const firsts: number[] = [];
     const asks: PlaceAsk[] = [];
@@ -1498,7 +1579,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     ops.push(...places.ops);
     // The binding's own warnings and the possible duplicates go with the request: the writer keeps
     // them with the result, so a replay says the first call's, never this call's late reading.
-    const result = await submit(call, ops, { warnings: [...duplicates, ...places.warnings] });
+    // New groups first, so the drafts can name them; the drafts' results are read without them.
+    const result = ownResults(
+      await submit(call, [...groups, ...ops], { warnings: [...duplicates, ...places.warnings] }),
+    );
     const placed = placeWarnings(
       result,
       asks.map((ask, k) => ({ asked: ask.value !== undefined, first: firsts[k] ?? 0, at: ask.at })),
@@ -1535,6 +1619,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     checkMode(input);
     const task = await taskOf(call);
     const ops: Operation[] = [];
+    /** The groups a new area or project name creates, before the task moves into them. */
+    const groups: Operation[] = [];
     const fields: string[] = [];
     const set = isRecord(input["set"]) ? input["set"] : {};
     // A3 3.4.6: a finished task is not a status. The input alone decides it, so no receipt.
@@ -1578,7 +1664,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     if (set["area"] !== undefined || set["project"] !== undefined) {
       // Names as add_tasks takes them (A3 3.4.5): the writer takes IDs and slugs only.
-      const [group = set] = await resolvedDrafts(call, [set], () => "set");
+      const resolved = await resolvedDrafts(call, [set], () => "set");
+      const [group = set] = resolved.list;
+      groups.push(...resolved.groups);
       ops.push({
         kind: "task.move",
         task,
@@ -1617,7 +1705,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // update_task changes an active task (A3 3.4.6): the writer refuses a completed or archived
     // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted.
     // The binding's warnings go with the request, so a replay says the first call's (task.add).
-    const result = await submit(call, ops, { active: true, warnings: places.warnings });
+    const result = ownResults(
+      await submit(call, [...groups, ...ops], { active: true, warnings: places.warnings }),
+    );
     const applied = result.status === "applied";
     const first = opAt(result, 0);
     const named = [...new Set(fields)];
@@ -1691,7 +1781,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       });
     }
     const own = ops.length;
-    const follow = await resolvedDrafts(
+    const { list: follow, groups } = await resolvedDrafts(
       call,
       drafts(input["follow_ups"]),
       (k) => `follow_ups.${String(k)}`,
@@ -1721,7 +1811,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // task.finish's result has no warnings, so a follow-up's folder under no root is refused. A
     // follow-up bound without a remote (its config unreadable) has no remote check, unannounced.
     ops.push(...(await placeSets(call, asks, "refuse", ops.length)).ops);
-    const result = await submit(call, ops, own > 1 ? { wrapUp: 1 } : {});
+    // New groups after the task's own operations, so its wrap-up keeps its index, and before the
+    // follow-ups that name them; the results are read without them.
+    const sent = [...ops.slice(0, own), ...groups, ...ops.slice(own)];
+    const result = ownResults(await submit(call, sent, own > 1 ? { wrapUp: 1 } : {}));
     const done = opAt(result, 0);
     // Whether the call finished or wrapped up the task, from the operations' stored results; its
     // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a
@@ -2055,8 +2148,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       if (action !== "create" && input["base"] === undefined) {
         throw invalid("base", `Required to ${action}`, "Pass base: the as_of of your last read.");
       }
-      // A1's area.* and project.* operations arrive with M4.01b (A3 3.4.10).
-      throw unsupported("action", "M4.01b (A1's area and project operations)");
+      return groupWrite(call, action);
     }
     const reader = readerOf(call.space);
     let read;
@@ -2073,6 +2165,31 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const only =
       names === undefined ? undefined : resolveGroup(names, "area", area, "path", { lookup: true });
     return groupList(read, only);
+  },
+
+  "folder.manage": async (call) => {
+    const { input } = call;
+    const action = String(input["action"]);
+    const folder = typeof input["folder"] === "string" ? input["folder"] : undefined;
+    if (action === "add_project") {
+      if (input["project"] === undefined) {
+        throw invalid("project", "Required to add a project", "Name the new project.");
+      }
+      if (input["task"] !== undefined) throw invalid("task", "A new project takes no task");
+    } else {
+      if ((input["project"] === undefined) === (input["task"] === undefined)) {
+        throw invalid("project", "Name a project or a task, one of them");
+      }
+      if (input["area"] !== undefined) throw invalid("area", "Only a new project takes an area");
+    }
+    if (action === "clear" && folder !== undefined) {
+      throw invalid("folder", "A clear takes no folder");
+    }
+    if (action !== "clear" && folder === undefined) {
+      throw invalid("folder", `Required to ${action === "set" ? "set" : "add"} a folder`);
+    }
+    // One at a time with the space's other binds (decidesOnNames).
+    return folderWrite(call, action, folder);
   },
 
   "prefs.manage": async (call) => {
@@ -2117,6 +2234,395 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
 // ---------------------------------------------------------------------------------------------
 // group.manage (A3 3.4.10) and prefs.manage (A3 3.4.11)
+
+// ---------------------------------------------------------------------------------------------
+// folder.manage: a project's or a task's folder on this machine (folders.ts)
+
+/** The calls in flight that decide on what they read, by space: each waits for the one before. */
+const turns = new Map<string, Promise<unknown>>();
+
+async function oneAtATime<T>(space: string, work: () => Promise<T>): Promise<T> {
+  const before = turns.get(space) ?? Promise.resolve();
+  const mine = before.then(work, work);
+  const settled = mine.then(
+    () => undefined,
+    () => undefined,
+  );
+  turns.set(space, settled);
+  try {
+    return await mine;
+  } finally {
+    if (turns.get(space) === settled) turns.delete(space);
+  }
+}
+
+/**
+ * Whether a call binds a folder or names an area or project it may create: folder.manage,
+ * organize's create and move, and a task tool whose drafts name a group.
+ */
+function decidesOnNames(entry: string, input: Record<string, unknown>): boolean {
+  const named = (list: unknown): boolean =>
+    Array.isArray(list) &&
+    list.some((d) => isRecord(d) && (d["area"] !== undefined || d["project"] !== undefined));
+  switch (entry) {
+    case "folder.manage":
+      return true;
+    case "group.manage":
+      return input["action"] === "create" || input["action"] === "move";
+    case "task.add":
+      return named(input["tasks"]);
+    case "task.update":
+      return named([input["set"]]);
+    case "task.finish":
+      return named(input["follow_ups"]);
+    default:
+      return false;
+  }
+}
+
+/** The project a folder write names: `Area/Project`, or a project by name, slug or ID. */
+function projectNamed(names: GroupNames, given: string): { id: string; name: string } {
+  const cut = given.lastIndexOf("/");
+  const area =
+    cut > 0
+      ? resolveGroup(names, "area", given.slice(0, cut).trim(), "project", { lookup: true })
+      : undefined;
+  const name = cut > 0 ? given.slice(cut + 1).trim() : given.trim();
+  const id = resolveGroup(names, "project", name, "project", { lookup: true, area }) ?? "";
+  return { id, name: names.projects.find((p) => p.id === id)?.title ?? name };
+}
+
+async function folderWrite(
+  call: Call,
+  action: string,
+  given: string | undefined,
+): Promise<unknown> {
+  const { input, host } = call;
+  const platform = host.platform ?? process.platform;
+  const home = host.home;
+  if (home === undefined) {
+    throw new AppError({ code: "internal", message: "This service has no home folder to bind." });
+  }
+  let stored: Folder | undefined;
+  if (given !== undefined) {
+    const form = storedForm(given, home, platform);
+    if (typeof form === "string") throw folderRefused("folder", form);
+    stored = form;
+  }
+  const machine = host.machine.id;
+  const replay = await applied(call);
+  const reader = readerOf(call.space);
+  let names: GroupNames;
+  try {
+    names = await readGroupNames(reader);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  const reserved = [
+    ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
+    ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
+  ];
+  const facts = { home, platform, reserved };
+
+  if (action === "add_project") {
+    const name = String(input["project"]).trim();
+    const folder = must(stored);
+    const projectId = newId("p");
+    const ops: Operation[] = [];
+    if (!replay) {
+      let read: BindRead;
+      try {
+        read = await readBind(reader, { kind: "project", id: projectId }, machine);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      const problem = await checkFolder(folder, { ...facts, projects: read.projects });
+      // A folder another live project has here: that project, rather than a second one for it.
+      if (problem?.reason === "folder_taken" && problem.project !== undefined) {
+        return {
+          action,
+          result: "exists",
+          owner: { kind: "project", id: problem.project.project, name: problem.project.name },
+          folder: problem.project.stored,
+          as_of: read.space.asOf,
+        };
+      }
+      if (problem !== undefined) throw folderRefused("folder", problem.reason);
+    }
+    let area: string | undefined;
+    if (typeof input["area"] === "string") {
+      area = replay ? REPLAY_GROUP : resolveGroup(names, "area", input["area"], "area");
+      if (area === undefined) {
+        area = newId("a");
+        ops.push({ kind: "area.create", id: area as Id<"a">, title: input["area"].trim() });
+      }
+    }
+    ops.push(
+      {
+        kind: "project.create",
+        id: projectId,
+        title: name,
+        ...(area === undefined ? {} : { area }),
+      },
+      { kind: "project.folder_set", project: projectId, path: folder.stored },
+    );
+    const result = await submit(call, ops);
+    const project = result.results.find((r) => isId(r.id, "p"));
+    return {
+      action,
+      result: result.status === "applied" ? "created" : "no_change",
+      owner: { kind: "project", id: project?.id ?? projectId, name },
+      folder: folder.stored,
+      as_of: result.as_of,
+      ...replayed(result),
+    };
+  }
+
+  // set or clear, on a project or a task.
+  let owner: { kind: "project" | "task"; id: string; name?: string };
+  if (typeof input["project"] === "string") {
+    // A retry of a decided write is the writer's to replay: a rename since never refuses it, and
+    // its result names the project.
+    const project = replay
+      ? { id: REPLAY_GROUP, name: input["project"] }
+      : projectNamed(names, input["project"]);
+    owner = { kind: "project", id: project.id, name: project.name };
+  } else {
+    // The writer resolves the reference; its result names the task by ID.
+    owner = { kind: "task", id: String(input["task"]) };
+  }
+  let moved: number | undefined;
+  if (!replay && action === "set") {
+    const folder = must(stored);
+    let read: BindRead;
+    try {
+      read = await readBind(reader, owner, machine);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+    const others = read.projects.filter((p) => p.project !== owner.id);
+    const problem = await checkFolder(folder, {
+      ...facts,
+      ...(owner.kind === "project" ? { projects: others } : {}),
+    });
+    if (problem !== undefined) {
+      throw folderRefused(
+        "folder",
+        problem.reason,
+        problem.project === undefined
+          ? {}
+          : { project: { id: problem.project.project, name: problem.project.name } },
+      );
+    }
+    // A project's tasks' folders inside its old folder move along: none may land in Tasks' own
+    // data, or the whole change is refused, naming the task.
+    const old = read.current;
+    if (owner.kind === "project" && old !== undefined && old.path !== folder.stored) {
+      moved = 0;
+      for (const task of read.tasks) {
+        const to = carriedTo(task.path, old.path, folder.stored, osOf(platform));
+        if (to === undefined || to === task.path) continue;
+        moved += 1;
+        const reason = await reservedBy(expanded(to, home, platform), facts);
+        if (reason !== undefined) throw folderRefused("folder", reason, { task: task.ref });
+      }
+    }
+  }
+  const op: Operation =
+    action === "set"
+      ? owner.kind === "project"
+        ? { kind: "project.folder_set", project: owner.id, path: must(stored).stored }
+        : { kind: "task.folder_set", task: owner.id, path: must(stored).stored }
+      : owner.kind === "project"
+        ? { kind: "project.folder_clear", project: owner.id }
+        : { kind: "task.folder_clear", task: owner.id };
+  const result = await submit(call, [op]);
+  const done = result.results[0];
+  const changed = result.status === "applied";
+  if (owner.kind === "project" && owner.id === REPLAY_GROUP) {
+    // The result names the folder, or the project when a clear found none.
+    let id = done?.id ?? "";
+    if (!isId(id, "p")) {
+      try {
+        id = (await readFolderOwner(reader, id)) ?? "";
+      } catch (error) {
+        throw storageFailure(error);
+      }
+    }
+    owner = { ...owner, id, name: names.projects.find((p) => p.id === id)?.title ?? "" };
+  }
+  return {
+    action,
+    result: changed ? (action === "set" ? "set" : "cleared") : "no_change",
+    owner: {
+      kind: owner.kind,
+      id: owner.kind === "task" ? (done?.task ?? "") : owner.id,
+      ...(owner.name === undefined ? {} : { name: owner.name }),
+      ...(done?.ref === undefined ? {} : { ref: done.ref }),
+    },
+    ...(action === "set" ? { folder: must(stored).stored } : {}),
+    ...(changed && moved !== undefined && result.replayed !== true ? { moved } : {}),
+    as_of: result.as_of,
+    ...replayed(result),
+  };
+}
+
+function must<T>(value: T | undefined): T {
+  if (value === undefined) throw new AppError({ code: "internal", message: "A value is missing." });
+  return value;
+}
+
+/** What organize's write did, by its action, when it changed the group. */
+const GROUP_DONE: Readonly<Record<string, string>> = {
+  create: "created",
+  rename: "renamed",
+  move: "moved",
+  archive: "archived",
+  unarchive: "unarchived",
+};
+
+/** The group a write names, by its path: `Area` or `Area/Project`. */
+interface GroupPath {
+  readonly area: string;
+  readonly project: string | undefined;
+}
+
+function groupPath(input: Record<string, unknown>): GroupPath {
+  const parts = String(input["path"])
+    .split("/")
+    .map((part) => part.trim());
+  const [area = "", project, ...more] = parts;
+  if (area === "" || more.length > 0 || project === "") {
+    throw invalid("path", "Expected Area or Area/Project", "Name the area, or the area/project.");
+  }
+  return { area, project };
+}
+
+/**
+ * organize's writes (A3 3.4.10): create an area, or a project in an area (a new area too), rename,
+ * move a project to another area, archive and unarchive. A name resolves as a draft's does
+ * (groups.ts): a name close to another is refused with the close ones, a group that exists is
+ * `no_change` for create. The answer is the list as of the write.
+ */
+async function groupWrite(call: Call, action: string): Promise<unknown> {
+  const { input } = call;
+  const path = groupPath(input);
+  const to = typeof input["to"] === "string" ? input["to"].trim() : undefined;
+  if ((action === "rename" || action === "move") && (to === undefined || to === "")) {
+    throw invalid("to", `Required to ${action}`, action === "move" ? "Name the area." : undefined);
+  }
+  const done = GROUP_DONE[action] ?? "no_change";
+  if (await applied(call)) {
+    // A retry of a decided write: the writer replays it. Its names are not resolved again, since
+    // a rename it made would refuse its own retry; a stand-in operation carries it to the writer.
+    const result = await submit(call, [{ kind: "area.create", title: path.area }]);
+    const read = await afterWrite(call, readGroups);
+    const kind = action === "move" || path.project !== undefined ? "project" : "area";
+    return {
+      ...(read === undefined
+        ? { areas: [], projects: [], total_areas: 0, total_projects: 0 }
+        : groupList(read, undefined)),
+      action,
+      as_of: result.as_of,
+      result: result.status === "applied" ? done : "no_change",
+      group: {
+        kind,
+        id: result.results.at(-1)?.id ?? "",
+        name: action === "rename" ? (to ?? "") : (path.project ?? path.area),
+      },
+      ...replayed(result),
+    };
+  }
+  let names: GroupNames;
+  try {
+    names = await readGroupNames(readerOf(call.space));
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  const lookup = (kind: "area" | "project", name: string, area?: string): string =>
+    resolveGroup(names, kind, name, "path", { lookup: true, area }) ?? "";
+  const titleOf = (kind: "area" | "project", id: string): string =>
+    (kind === "area" ? names.areas : names.projects).find((g) => g.id === id)?.title ?? "";
+  const ops: Operation[] = [];
+  let group: { kind: "area" | "project"; id: string; name: string };
+  if (action === "create") {
+    // The group created is created as named; an area named only to hold it keeps the typo check.
+    let area = resolveGroup(names, "area", path.area, "path", {
+      create: path.project === undefined,
+    });
+    if (area === undefined) {
+      area = newId("a");
+      ops.push({ kind: "area.create", id: area as Id<"a">, title: path.area });
+    }
+    group = { kind: "area", id: area, name: path.area };
+    if (path.project !== undefined) {
+      const fresh = ops.length > 0;
+      let project = fresh
+        ? undefined
+        : resolveGroup(names, "project", path.project, "path", { area, create: true });
+      if (project === undefined) {
+        project = newId("p");
+        ops.push({ kind: "project.create", id: project as Id<"p">, title: path.project, area });
+        group = { kind: "project", id: project, name: path.project };
+      } else group = { kind: "project", id: project, name: titleOf("project", project) };
+    } else if (ops.length === 0) group = { kind: "area", id: area, name: titleOf("area", area) };
+  } else {
+    const kind = path.project === undefined ? "area" : "project";
+    const area = lookup("area", path.area);
+    const id = kind === "area" ? area : lookup("project", path.project ?? "", area);
+    group = { kind, id, name: titleOf(kind, id) };
+    if (action === "rename") {
+      const title = to ?? "";
+      ops.push(
+        kind === "area"
+          ? { kind: "area.patch", area: id, set: { title } }
+          : { kind: "project.patch", project: id, set: { title } },
+      );
+      group = { ...group, name: title };
+    } else if (action === "move") {
+      if (kind !== "project") {
+        throw invalid("path", "Only a project moves to another area", "Name it as Area/Project.");
+      }
+      let target = resolveGroup(names, "area", to ?? "", "to");
+      if (target === undefined) {
+        target = newId("a");
+        ops.push({ kind: "area.create", id: target as Id<"a">, title: to ?? "" });
+      }
+      ops.push({ kind: "project.move", project: id, area: target });
+    } else {
+      const archive = action === "archive";
+      ops.push(
+        kind === "area"
+          ? { kind: archive ? "area.archive" : "area.unarchive", area: id }
+          : { kind: archive ? "project.archive" : "project.unarchive", project: id },
+      );
+    }
+  }
+  let asOf: string | undefined;
+  let outcome = "no_change";
+  let replay = false;
+  if (ops.length > 0) {
+    const result = await submit(call, ops);
+    asOf = result.as_of;
+    replay = result.replayed === true;
+    if (result.status === "applied") outcome = done;
+  }
+  // The list as of the write, so the caller sees the group where it is now.
+  let read;
+  try {
+    read = await readGroups(readerOf(call.space));
+  } catch (error) {
+    throw storageFailure(error);
+  }
+  return {
+    ...groupList(read, undefined),
+    action,
+    as_of: asOf ?? read.space.asOf,
+    result: outcome,
+    group,
+    ...(replay ? { replayed: true } : {}),
+  };
+}
 
 /** A group row as the result names it. */
 function groupRow(row: Row): { id: string; slug: string; name: string; active: number } {

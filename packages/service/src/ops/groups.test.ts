@@ -66,9 +66,9 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
     expect(failure(() => resolveGroup(names, "area", "Hme", "p")).data).toMatchObject({
       suggestions: ["Home"],
     });
-    // Two letters from "QA" is a new name, not a typo of it.
-    expect(failure(() => resolveGroup(names, "area", "UX", "p")).hint).toContain("M4.01b");
-    expect(failure(() => resolveGroup(names, "area", "Garden", "p")).hint).toContain("M4.01b");
+    // Two letters from "QA" is a new name, not a typo of it: the caller creates it.
+    expect(resolveGroup(names, "area", "UX", "p")).toBeUndefined();
+    expect(resolveGroup(names, "area", "Garden", "p")).toBeUndefined();
     // A lookup of an unknown name is not_found, with any close name.
     const lookup = failure(() => resolveGroup(names, "area", "Hme", "path", { lookup: true }));
     expect(lookup).toMatchObject({ code: "not_found", data: { suggestions: ["Home"] } });

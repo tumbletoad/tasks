@@ -2,6 +2,7 @@
 import type { z } from "zod";
 import type { AnyEntry, Filled } from "./define.ts";
 import { entryAdd } from "./entries/entry-add.ts";
+import { folderManage } from "./entries/folder-manage.ts";
 import { groupManage } from "./entries/group-manage.ts";
 import { historyRedo } from "./entries/history-redo.ts";
 import { historyUndo } from "./entries/history-undo.ts";
@@ -30,6 +31,8 @@ export const registry = [
   // Before the examples that finish or reopen a task: it reads the world's finished tasks.
   taskFinished,
   taskAdd,
+  // Before the later writes: as the UI's, its create would be the change the undo takes back.
+  groupManage,
   taskUpdate,
   entryAdd,
   taskFinish,
@@ -37,11 +40,12 @@ export const registry = [
   receiptGet,
   launchOpen,
   taskSearch,
-  groupManage,
   prefsManage,
   runReport,
   historyUndo,
   historyRedo,
+  // After the undo's and redo's examples: its user's change would be the one they take back.
+  folderManage,
   importPlanningPreview,
   importPlanningApply,
   importPlanningUndo,
