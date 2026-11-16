@@ -206,6 +206,9 @@ export const EVENTS = {
     c: "hub",
     fields: { type: "error_type", code: "error_code" },
   },
+  // A write applied and was answered as applied, but its answer does not match its entry's
+  // contract: a defect in the service, named by the entry only.
+  "service.result_mismatch": { lvl: "error", c: "hub", fields: { entry: ENTRY_NAMES } },
   "service.start_failed": {
     lvl: "error",
     c: "hub",
