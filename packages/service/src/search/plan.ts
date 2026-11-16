@@ -326,7 +326,9 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
         case "archived":
           return "t.lifecycle = 'archived'";
         case "unwrapped":
-          return "t.lifecycle = 'completed' AND coalesce(t.outcome, '') = ''";
+          // The wrap-up state, not the outcome: a task reopened and checked off again keeps its
+          // earlier outcome while its new wrap-up waits.
+          return "t.lifecycle = 'completed' AND t.wrap_state = 'pending'";
         case "proposed":
           return "EXISTS (SELECT 1 FROM proposals pr WHERE pr.task_id = t.id AND pr.state = 'pending')";
         case "bound":

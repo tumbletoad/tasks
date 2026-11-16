@@ -330,7 +330,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
               className={`${styles.move} ${styles.reopen}`}
               data-part="reopen"
               onClick={() => {
-                edits.reopen(task, t("fact.reopenReason"));
+                edits.reopen(task);
               }}
             >
               {t("fact.reopen")}

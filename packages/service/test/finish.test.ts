@@ -327,4 +327,70 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
     },
     LONG,
   );
+
+  test(
+    "a task reopened and checked off again waits for its wrap-up: is:unwrapped finds it although its earlier outcome stays",
+    async () => {
+      const task = await add("Fixture task wrapped, reopened and checked off again");
+      await finish({ task, outcome: "Sent the first export." });
+      const unwrapped = async () =>
+        (
+          (await call("task.search", { q: "is:unwrapped", scope: "finished", limit: 50 }))[
+            "rows"
+          ] as Json[]
+        ).map((row) => row["ref"]);
+      expect(await unwrapped()).not.toContain(task);
+      await call("task.reopen", { task, base: await asOf(), request_id: rid() }, USER);
+      expect(await finish({ task }, USER)).toMatchObject({ wrap_state: "pending" });
+      expect((await outcomeOf(task)).outcome).toMatchObject({
+        outcome: "Sent the first export.",
+        wrap_state: "pending",
+      });
+      expect(await unwrapped()).toContain(task);
+      const done = (
+        (await call("task.search", { q: "-is:unwrapped", scope: "finished", limit: 50 }))[
+          "rows"
+        ] as Json[]
+      ).map((row) => row["ref"]);
+      expect(done).not.toContain(task);
+    },
+    LONG,
+  );
+
+  test(
+    "reopen: the person may leave the reason out and the commit then has none; an agent must give one",
+    async () => {
+      const task = await add("Fixture task reopened without a reason");
+      await finish({ task }, USER);
+      expect(
+        await call("task.reopen", { task, base: await asOf(), request_id: rid() }, USER),
+      ).toMatchObject({ result: "reopened", lifecycle: "active" });
+      const reader = w.service.ops.spaces().find((s) => s.reader !== undefined)?.reader;
+      if (reader === undefined) throw new Error("no space is served");
+      const [last] = await reader.transaction("deferred", [
+        { sql: "SELECT reason FROM commits ORDER BY seq DESC LIMIT 1", mode: "get" },
+      ]);
+      expect(last).toEqual({ reason: null });
+
+      await finish({ task }, USER);
+      const refused = await refusal("task.reopen", {
+        task,
+        base: await asOf(),
+        request_id: rid(),
+      });
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        data: { issues: [expect.objectContaining({ path: "reason" })] },
+      });
+      expect(
+        await call("task.reopen", {
+          task,
+          reason: "Fixture reason.",
+          base: await asOf(),
+          request_id: rid(),
+        }),
+      ).toMatchObject({ result: "reopened" });
+    },
+    LONG,
+  );
 });
