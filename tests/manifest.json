@@ -1227,7 +1227,7 @@
     },
     {
       "id": "A2.3.1.hub.migration-timeout",
-      "title": "An open whose migration runs past the open's bound stops its worker before it reads the space again: a migration that fails, or still runs within the close's bound and fails, leaves the space unchanged and read-only (ETIMEDOUT) with no failure record; one that succeeds within the close's bound leaves it at the new revision and served for writing, never reported unchanged; one still running when the close's bound passes serves no reader, the space is unavailable, and the next start finds the state it left intact",
+      "title": "A migration that runs past the open's bound is waited for: one that succeeds leaves the space open for writing at the new revision without a restart, with the revisions and the backup from before it recorded for the space list; one that fails is a failed migration like any other, the space unchanged and read-only with its failure recorded",
       "source": "A1 3.17, A2 3.1, A7 3.10 M3.01",
       "owner": "M3",
       "kind": "ci",

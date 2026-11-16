@@ -272,6 +272,11 @@ export interface SpaceWriterOptions {
    */
   onLock?: (lock: LockedFile) => void;
   /**
+   * Called when the space is at an older revision and this machine will migrate it now, before the
+   * migration starts: a migration of a large space can take long, and its caller may wait for it.
+   */
+  onMigrating?: (from: Revision) => void;
+  /**
    * The space this writer is for (A2 3.2.4: a `[[spaces]]` entry's ID). A folder that holds
    * another space is refused with UnexpectedSpace after a read-only open, before anything is
    * claimed, locked or written.
@@ -553,6 +558,12 @@ export class StorageWorker {
       if (expected !== undefined && probe.spaceId !== expected) throw new UnexpectedSpace();
       const purpose: WriterPurpose =
         backupDir === undefined ? { kind: "write" } : { kind: "write", backupDir };
+      if (
+        probe.readOnlyReasons.includes("older_revision") &&
+        probe.authority.machineId === machine.id
+      ) {
+        options.onMigrating?.(probe.revision);
+      }
       const { info, lock } = await this.#openClaimed(
         claim,
         dir,

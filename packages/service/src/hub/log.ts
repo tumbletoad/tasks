@@ -281,6 +281,8 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", swapped: "bool", carried: "int" },
   },
+  // A migration still runs when the open's bound passes: the open waits for it.
+  "space.migrating": { lvl: "info", c: "space", fields: { entry: "int", ms: "int" } },
   "space.migrated": {
     lvl: "info",
     c: "space",

@@ -247,6 +247,22 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     expect(parsed(reopened.stdout)["space"]).toMatchObject({ state: "open" });
     expect(parsed(reopened.stdout)["space"]).not.toHaveProperty("message");
     expect(await barriers()).toBe(2);
+    // The space list says what the update did, and which backup is from just before it.
+    const newest = (
+      parsed((await user(["space", "backups", "list", folder, "--json"])).stdout) as {
+        backups: { name: string; kind?: string }[];
+      }
+    ).backups
+      .filter((b) => b.kind === "pre-migrate" && b.name !== backupName)
+      .map((b) => b.name);
+    expect(newest).toHaveLength(1);
+    const after = await world.tasks(["space", "list"]);
+    expect(after.stdout).toMatch(
+      new RegExp(
+        `Updated from schema 0\\.1 to 0\\.4 on [0-9-]+ [0-9:]+\\. The backup from just before it: ${newest[0] ?? "?"} `,
+        "u",
+      ),
+    );
     const upgraded = await factsOf(folder);
     expect(upgraded.userVersion).toBe(4);
     expect(upgraded.lastSeq).toBeGreaterThan(fixture.lastSeq);

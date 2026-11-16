@@ -32,6 +32,7 @@ import { hostFacts, resolveLayout } from "@tasks/service/paths";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
+import { migratedLine, type Migrated } from "./migrations.ts";
 import { bodyOf, printError, printUsage, str } from "./output.ts";
 import { asAppError } from "./verbs.ts";
 
@@ -89,6 +90,8 @@ export interface SpaceRow {
    * folder, or a failed migration's (A1 3.17: what happened, and the barrier backup's name).
    */
   message?: string;
+  /** The newest migration this machine ran on the space, with the backup from just before it. */
+  migrated?: Migrated;
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -192,6 +195,7 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
     `${verb}${name}${row.ref_prefix === undefined ? "" : ` (${row.ref_prefix})`}  ${state}${id === undefined ? "" : `  ${id}`}${row.folder === undefined ? "" : `  ${row.folder}`}\n`,
   );
   if (row.message !== undefined) io.stdout(`  ${row.message}\n`);
+  if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 

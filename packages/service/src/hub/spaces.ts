@@ -29,13 +29,17 @@
 //      read_only(not_authority), at its revision;
 //    - another process's lock: unavailable(locked_elsewhere), the holder from writer.json in
 //      status (never in the log); a database file with a second name: unavailable(linked_database);
-//    - an open past its bound (SPACE_OPEN_TIMEOUT_MS), a long migration's for one: its worker is
-//      stopped first, within the close's bound, and only then is the space read again, in a new
-//      worker. Still at an older revision, it was not changed (a migration is one transaction):
+//    - a migration has no bound: once the worker says it migrates, the open waits for it, so a
+//      large space's honest migration finishes and the space is served when it has, without a
+//      restart. Stopping the service ends it, and its one transaction rolls back.
+//    - any other open past its bound (SPACE_OPEN_TIMEOUT_MS): its worker is stopped first, within
+//      the close's bound, and only then is the space read again, in a new worker. Still at an
+//      older revision, it was not changed (a migration is one transaction):
 //      read_only(migration_failed), code ETIMEDOUT, with a migration's message, and its next open
-//      tries again (a timeout is no failed migration and records none). At the build's revision,
-//      the stopped open's migration committed: the writer opens again, once, in the new worker. A
-//      worker that does not stop in time is unavailable(open_failed), and no reader is served.
+//      tries again (a timeout is no failed migration and records none). At the build's revision, a
+//      migration the stopped open began committed: the writer opens again, once, in the new
+//      worker. A worker that does not stop in time is unavailable(open_failed), and no reader is
+//      served.
 //    A writer whose authority is another machine opens and refuses every write (SPACE_READ_ONLY,
 //    `not_authority`), so that space is read_only(not_authority) too, never `open`. The reader a
 //    read-only state opens must hold the entry's space too, or the space is unavailable(other_space).
@@ -108,12 +112,14 @@ import {
   projectionStateOf,
   readSpaceSettings,
   recordFailedMigration,
+  recordMigration,
   recordProjectionRescue,
   recordSeen,
   recordSyncedConfirmed,
   recordWriterFolder,
   type BuildIdentity,
   type FailedMigration,
+  type LastMigration,
   type SpaceSettings,
 } from "./space-settings.ts";
 import {
@@ -182,6 +188,11 @@ export interface SpaceView {
    * (space-ways.ts). It names no path and no content.
    */
   readonly message?: string;
+  /**
+   * The newest migration this machine ran on the space, with the backup from just before it: in
+   * described(), for people.
+   */
+  readonly migrated?: LastMigration;
   /** What the folder check found (A1 3.2), when it found a sync client or a network file system. */
   readonly folder_check?: {
     readonly verdict: "synced" | "network";
@@ -556,12 +567,19 @@ export class SpaceManager {
    * (status, `tasks space`).
    */
   described(): SpaceView[] {
-    return this.#spaces.map((space) => ({
-      ...space.view(),
-      registered: space.registered,
-      ...(space.name === undefined ? {} : { name: space.name }),
-      ...(space.refPrefix === undefined ? {} : { ref_prefix: space.refPrefix }),
-    }));
+    return this.#spaces.map((space) => {
+      const migrated = readSpaceSettings(
+        this.#options.settingsDir,
+        space.id ?? space.registered,
+      ).lastMigration;
+      return {
+        ...space.view(),
+        registered: space.registered,
+        ...(space.name === undefined ? {} : { name: space.name }),
+        ...(space.refPrefix === undefined ? {} : { ref_prefix: space.refPrefix }),
+        ...(migrated === undefined ? {} : { migrated }),
+      };
+    });
   }
 
   /**
@@ -1092,19 +1110,30 @@ export class SpaceManager {
       const worker = space.worker ?? (await this.#startWorkerBounded());
       space.worker = worker;
       if (await this.#stopped(space)) return;
-      writer = await bounded(
-        worker.openSpaceWriter(space.folder, {
-          machine,
-          // Another space in the folder is refused before anything is claimed, locked or written.
-          spaceId: space.registered,
-          holder: this.#holderFacts,
-          ...(settings.backupDir === undefined ? {} : { backupDir: settings.backupDir }),
-          onLock: (lock) => {
-            this.#watch(space, worker, lock);
-          },
-        }),
-        this.#openMs,
-      );
+      const progress = { migrating: false };
+      const opening = worker.openSpaceWriter(space.folder, {
+        machine,
+        // Another space in the folder is refused before anything is claimed, locked or written.
+        spaceId: space.registered,
+        holder: this.#holderFacts,
+        ...(settings.backupDir === undefined ? {} : { backupDir: settings.backupDir }),
+        onLock: (lock) => {
+          this.#watch(space, worker, lock);
+        },
+        onMigrating: () => {
+          progress.migrating = true;
+        },
+      });
+      try {
+        writer = await bounded(opening, this.#openMs);
+      } catch (error) {
+        // A migration has no bound of its own: a large space's honest migration must be able to
+        // finish, and the space is served the moment it has. Stopping the service ends it, and its
+        // one transaction rolls back.
+        if (!(error instanceof Timeout) || !progress.migrating) throw error;
+        log.log("space.migrating", { entry: space.index, ms: this.#openMs });
+        writer = await opening;
+      }
       space.writer = writer;
       if (await this.#stopped(space)) return;
       // Reads go through a reader of their own, never the writer (A1 3.9, M1.10's request path).
@@ -1131,6 +1160,15 @@ export class SpaceManager {
         to: encodeRevision(writer.migration.to),
         steps: writer.migration.seqs.length,
       });
+      try {
+        recordMigration(this.#options.settingsDir, writer.spaceId, {
+          from: encodeRevision(writer.migration.from),
+          to: encodeRevision(writer.migration.to),
+          backup: writer.migration.backup.name,
+        });
+      } catch {
+        // Only what the space list says about the migration: the migration itself is done.
+      }
     }
     if (writer.searchIndex !== undefined) {
       log.log("space.search_index", {
