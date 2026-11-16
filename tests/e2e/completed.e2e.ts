@@ -22,6 +22,17 @@ const setSizeOf = (page: Page, title: string) =>
     return undefined;
   }, title);
 
+/** The largest list size the mounted rows say they are in. */
+const largestSetSize = (page: Page) =>
+  page.evaluate(() =>
+    Math.max(
+      0,
+      ...[...document.querySelectorAll("main li[aria-setsize]")].map((li) =>
+        Number(li.getAttribute("aria-setsize")),
+      ),
+    ),
+  );
+
 /** Reads every page: "Show more" until the list has no more. */
 async function readAll(page: Page): Promise<number> {
   const more = page.getByRole("button", { name: "Show more", exact: true });
@@ -72,23 +83,23 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     await expect(droppedRow.locator("[data-tip^='Dropped ']").first()).toBeAttached();
     await page.screenshot({ path: test.info().outputPath("completed-first-page.png") });
 
-    // Every page, then the month's size as its rows say it: past the 1,000 a search holds.
+    // Every page, then the month's size as its rows say it: past the 1,000 a search holds. The
+    // list is at its end now, where every mounted row is the month's.
     const clicks = await readAll(page);
     expect(clicks).toBeGreaterThan(50);
-    const monthSize = (await setSizeOf(page, "Dropped fixture task 1")) ?? 0;
+    const monthSize = await largestSetSize(page);
     expect(monthSize).toBeGreaterThanOrEqual(FINISHED_TASKS.done + FINISHED_TASKS.dropped);
 
     // End reaches the month's last row.
-    await droppedRow.locator('[data-part="title"]').focus();
+    await page.locator('main li[data-task] [data-part="title"]').last().focus();
     await page.keyboard.press("End");
-    const last = page.locator("main li[data-task]:focus-within");
-    await expect(last).toBeInViewport();
-    expect(Number(await last.getAttribute("aria-posinset"))).toBe(monthSize);
+    const focused = page.locator("main li[data-task]:focus-within");
+    await expect(focused).toBeInViewport();
+    expect(Number(await focused.getAttribute("aria-posinset"))).toBe(monthSize);
     await page.screenshot({ path: test.info().outputPath("completed-end.png") });
 
     // A task finished while the list is open joins its month at the top; the list read again
     // holds every row it showed, none twice.
-    await page.keyboard.press("Home");
     const task = finished.task;
     const read = (await finished.op(finished.mira.id, "task.get", { task: task.ref })) as {
       as_of: string;
@@ -98,9 +109,14 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       outcome: "Finished while Completed was open.",
       base: read.as_of,
     });
-    const joined = page.locator(`main li[data-task="${task.ref}"]`);
-    await expect(joined).toBeVisible({ timeout: SLOW_MS });
-    await expect.poll(() => setSizeOf(page, task.title), { timeout: SLOW_MS }).toBe(monthSize + 1);
+    await expect.poll(() => largestSetSize(page), { timeout: SLOW_MS }).toBe(monthSize + 1);
+    await expect(focused).toBeInViewport();
+    // The month's first row is the task just finished: Home, then the next group.
+    await page.keyboard.press("Home");
+    await page.keyboard.press("]");
+    await expect(focused).toHaveAttribute("data-task", task.ref);
+    await expect(focused).toHaveAttribute("aria-posinset", "1");
+    await page.screenshot({ path: test.info().outputPath("completed-joined.png") });
     expect(await violations(page)).toEqual([]);
   });
 
