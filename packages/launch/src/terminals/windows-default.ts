@@ -13,8 +13,9 @@
 //                        DelegationTerminal {86633F1F-6454-40EC-89CE-DA4EBA977EE2}
 //
 // Read with reg.exe by its full path, never a PowerShell cmdlet (a cmdlet makes Windows PowerShell
-// search its module path, which takes seconds on a slow machine), with a short deadline: no answer
-// is no setting. Nothing read here is logged.
+// search its module path, which takes seconds on a slow machine), with a short deadline. No answer
+// is not taken for "Let Windows decide": the choice says the setting was not read. Nothing read here
+// is logged.
 import { win32 } from "node:path";
 import { captureOutput, type Capture } from "../environment/capture.ts";
 
