@@ -165,8 +165,8 @@ export async function startWorld(
       install,
       tasks,
       close: async () => {
-        await reportLostService(service, home, path);
         try {
+          await reportLostService(service, home, path).catch(() => undefined);
           for (const child of children) child.kill("SIGKILL");
           if (install === undefined) service.send("stop");
           else {
@@ -211,15 +211,23 @@ async function reportLostService(service: Proc, home: string, path: string): Pro
   const running = exitCode === null && signalCode === null;
   const answers =
     running &&
-    (await openSession(home, path, 10_000).then(
-      (session) => {
-        session.close();
-        return true;
-      },
-      () => false,
-    ));
+    (await Promise.resolve()
+      .then(() => openSession(home, path, 10_000))
+      .then(
+        (session) => {
+          session.close();
+          return true;
+        },
+        () => false,
+      ));
   if (answers) return;
-  const files = diagnostics(home).map(({ file, text }) => {
+  let found: { file: string; text: string }[];
+  try {
+    found = diagnostics(home);
+  } catch (error) {
+    found = [{ file: "logs and crash files", text: `not read: ${String(error)}` }];
+  }
+  const files = found.map(({ file, text }) => {
     const lines = text.split("\n");
     return `--- ${file} ---\n${lines.slice(-80).join("\n")}`;
   });
