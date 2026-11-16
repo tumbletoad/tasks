@@ -161,6 +161,7 @@ export const TaskDraft = z.strictObject({
   effort: safeLine(20).describe("Effort, such as S, M or L").optional(),
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
+  focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
   place: PlaceInput.describe('Its folder: "cwd", an absolute folder, or root and path').optional(),
   sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
   context: ContextInput.describe("Markdown context").optional(),

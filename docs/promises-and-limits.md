@@ -10,35 +10,44 @@ the behaviour it describes, and keep each one to a sentence or two.
   shown both values and choose.
 - Changes sent together are saved together, or not at all.
 - A change that was reported as saved survives a crash of Tasks.
-- Sending the same change again after a lost reply never applies it twice.
+- A change sent again with the same request ID after a lost reply is applied once. The page and the
+  agent tools resend that way by themselves. At the command line, repeat the command with the
+  `--request-id` that the failed command named.
 - Every change keeps what changed and who made it: you, an agent, or a script.
-- Undo and redo never replace someone else's work that came in between.
+- Undo and redo never replace someone else's work that came in between, also when that work set a
+  value and set it back.
 - Your undo history survives a restart and is shared by your windows and the command line.
 - Checking off a task completes it at once and can be undone.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
   outcome and what was learned.
 - Deleting a task keeps its contents and history recoverable. Nothing empties the trash by itself.
-- A task's reference, such as M-14, is never given to another task.
-- Adding work that is already recorded from the same source finds the existing task and keeps its
-  fields.
+- A task's reference, such as M-14, is not given to another task when the task is deleted or its
+  creation is undone.
+- Adding work by a source that an open task or a recently finished one already has finds that task
+  and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
+  new work.
 
 ## Backups, restore and export
 
 - A backup stays consistent while people and agents change tasks.
 - A backup that is called verified has passed a trial restore.
-- A space gets a backup every day on the computer that owns it. Seven daily and four weekly
-  backups are kept, and backups you make by hand stay until you remove them.
+- While a space is open for changes, Tasks backs it up once a day. It keeps the backups of seven
+  recent days and four recent weeks, and removes older scheduled ones. Backups you make by hand
+  stay until you remove them.
 - Clean-up never removes the newest backup that restores.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.
 - Restoring over a space keeps what was there before.
 - A restored copy cannot be edited until you make it the current copy.
-- Tasks never deletes your data or a backup as a side effect of something else.
-- An export refuses text that looks like a secret and says what kind it is and where, without
-  printing it.
-- A space is upgraded only after a backup of it has been made and verified. A failed upgrade leaves
-  the old data readable.
+- Apart from that clean-up of scheduled backups, Tasks never deletes your data or a backup as a
+  side effect of something else.
+- An import first makes a backup that has passed a trial restore, and without one it changes
+  nothing.
+- An export refuses text that matches a known kind of secret, such as an access token or a private
+  key, and says what kind it is and where, without printing it.
+- A space is upgraded only after a backup of it has been made and read back. A failed upgrade
+  leaves the old data readable.
 - An older version of Tasks never writes a newer data format.
 
 ## Your spaces on this computer
@@ -66,7 +75,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   silently.
 - Opening with a particular account uses that account's settings of the agent app.
 - Tasks tells apart "asked the app to open" from "the agent connected", and says so when it does
-  not know. It never repeats an uncertain launch by itself.
+  not know. An uncertain launch is never started a second time by itself.
 - Restarting or updating Tasks does not end an agent session it opened.
 - The brief an agent gets when a task opens holds the task's title and reference, not its notes or
   sources. An instruction too long for it is kept as a note, never cut.
@@ -78,7 +87,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - What you are typing in a field stays when an agent changes that field or finishes the task.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
-- Logs hold no task text. Nothing is sent anywhere: there is no telemetry.
+- Logs hold no task text, and there is no telemetry. Task text leaves Tasks only where you send it:
+  the brief to the agent app you open a task in, and what an agent reads through its connection.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted.
 
@@ -88,7 +98,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
   wrote.
 - An update is checked before it runs. A failed update returns to the version before it.
-- Updating and rolling back leave your data alone.
+- The updater leaves your spaces and settings alone. A new version may upgrade a space when it
+  opens it, and rolling back the app does not undo that upgrade.
 
 ## Where the protection stops
 
@@ -100,9 +111,16 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Tasks cannot make an agent ignore instructions hidden in a task, a mail or another source it
   reads.
 - Undo does not unsend a mail, reverse a commit or undo anything done outside Tasks.
+- Undo steps back through your own changes. A change by an agent or a script is not on it, and
+  nothing from before the last upgrade that changed the data format can be undone.
+- Restoring an older backup also brings back its counter for references. A task made after the
+  restore can get a reference that a task made after that backup had.
+- The backup made before an upgrade is read back but not trial restored, and a backup that fails,
+  for example on a full disk, is written to the log and not shown to you.
+- A command repeated without its request ID is a new change: a note added twice is there twice.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
-- Backups stay on the same computer unless you copy an export elsewhere. A lost disk loses them
-  with the space.
+- Backups sit beside the space on the same disk unless you set another folder for them or copy an
+  export elsewhere. A lost disk then loses them with the space.
 - A space in a synced folder or on a network drive opens read-only, because a live database there
   can be damaged. For a synced folder you confirm once that it is excluded from sync.
 - An editor that had the configuration file open while Tasks recorded a space, and saves it

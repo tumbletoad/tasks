@@ -80,6 +80,11 @@ export interface TaskListProps {
   /** The line an empty view shows; none while the view does not know yet (a query on its way). */
   readonly empty: string | undefined;
   /**
+   * Rows checked off here stay, checked, after their hold: the list's rows are a search's, which
+   * do not move under the pointer.
+   */
+  readonly keepsFinished?: boolean;
+  /**
    * The task the URL names (a reference or an ID): expanded once it is found. In the live rows,
    * or else read with `task.get` and injected (A5 3.3): a task of another lifecycle, or one the
    * view's filter leaves out. Undefined: none is expanded.
@@ -100,6 +105,7 @@ export function TaskList({
   groups: groupsOf,
   clock: viewClock,
   empty,
+  keepsFinished = false,
   expand: wantedRef,
   onExpand,
 }: TaskListProps) {
@@ -543,6 +549,11 @@ export function TaskList({
   let currentKey = current !== undefined && items.index.has(current) ? current : undefined;
   if (currentKey === undefined) currentKey = items.items.find((i) => i.kind === "row")?.key;
 
+  const leavingOf = (id: string) => {
+    const entry = holding.get(id);
+    return keepsFinished && entry?.out === true ? undefined : entry;
+  };
+
   const row = (item: RowItem, place: Place) => (
     <Row
       key={item.key}
@@ -559,7 +570,7 @@ export function TaskList({
       posinset={item.posinset}
       setsize={item.setsize}
       actions={actions}
-      leaving={holding.get(item.key)}
+      leaving={leavingOf(item.key)}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}
