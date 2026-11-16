@@ -9,6 +9,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -26,7 +27,12 @@ import {
   type MachineConfig,
 } from "./machine-toml.ts";
 import { currentPerson } from "../hub/permissions.ts";
+import { unsafeConfigMessage } from "./messages.ts";
 import { MAX_CONFIG_BYTES } from "./toml.ts";
+
+const fail = (): never => {
+  throw new Error("Expected the parts that fail the rule");
+};
 
 const FIXTURES = fileURLToPath(new URL("../../test/config/", import.meta.url));
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -227,6 +233,43 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     // Within the bound, a reserved section nests as it likes.
     const fine = parseMachineConfig(`[remote.${"x.".repeat(20)}x]\nk = 1\n`, "linux");
     expect(fine.problems).toEqual([]);
+  });
+
+  test("a configuration folder that is a link is named as a link to its target, on every OS", () => {
+    const dir = tempDir();
+    const real = join(dir, "real");
+    mkdirSync(real, { mode: 0o700 });
+    writeFileSync(join(real, MACHINE_TOML), '[log]\nlevel = "warn"\n', { mode: 0o600 });
+    // A junction on Windows needs no privilege; elsewhere the type is ignored.
+    const folder = join(dir, "config");
+    symlinkSync(real, folder, "junction");
+    const linked = loadMachineConfig(folder, "linux");
+    expect(linked.problems).toEqual([{ key: "", code: "unsafe_permissions", severity: "error" }]);
+    expect(linked.config).toBe(DEFAULT_CONFIG);
+    const said = unsafeConfigMessage(linked.unsafe ?? fail());
+    expect(said).toMatch(/configuration folder \(.+\) is a link to .+real/u);
+    expect(said).toContain("does not follow links for its configuration");
+  });
+
+  test("a machine.toml that is a link is named as a link to its target, on every OS", (context) => {
+    const dir = tempDir();
+    const real = join(dir, "real");
+    mkdirSync(real, { mode: 0o700 });
+    writeFileSync(join(real, MACHINE_TOML), '[log]\nlevel = "warn"\n', { mode: 0o600 });
+    const config = join(dir, "plain");
+    mkdirSync(config, { mode: 0o700 });
+    try {
+      symlinkSync(join(real, MACHINE_TOML), join(config, MACHINE_TOML), "file");
+    } catch (error) {
+      // A file link on Windows needs Developer Mode or an administrator.
+      if ((error as NodeJS.ErrnoException).code === "EPERM") context.skip();
+      throw error;
+    }
+    const file = loadMachineConfig(config, "linux");
+    expect(file.problems).toEqual([{ key: "", code: "unsafe_permissions", severity: "error" }]);
+    expect(unsafeConfigMessage(file.unsafe ?? fail())).toMatch(
+      /machine\.toml \(.+\) is a link to .+machine\.toml/u,
+    );
   });
 
   test.skipIf(process.platform === "win32")(

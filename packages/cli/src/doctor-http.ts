@@ -1,9 +1,9 @@
-// Doctor's HTTP and accounts rows (A2 3.13): "Port moved, UI blocked by a foreign port holder
-// (3.8.2), port in a Windows excluded range, Host and Origin self-test (a request with
-// `Host: evil.example` must get 421), CSP present with a fresh nonce on index.html", and "Other
-// user accounts". Only codes, counts and ports reach the output: never a token, name or SID.
+// Doctor's HTTP and accounts rows: the UI's port moved or blocked by another program's listener,
+// a port in a Windows excluded range, the Host and Origin self-test (a request with
+// `Host: evil.example` must get 421), a CSP with a fresh nonce on index.html, and how many other
+// user accounts the computer has. Only codes, counts and ports reach the output: never a token,
+// name or SID.
 import { win32 } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
 import { helperOutput } from "@tasks/launch/helpers";
 import { blockedMessage, metaContent, movedMessage } from "@tasks/service/http/shared";
 import { countAccounts, type AccountFacts } from "./accounts.ts";
@@ -96,7 +96,7 @@ export function excludedRanges(text: string): [number, number][] {
   return ranges;
 }
 
-/** netsh runs as a helper of the runner (@tasks/launch helpers.ts, A3 3.14). */
+/** netsh runs as a helper of the runner (@tasks/launch helpers.ts). */
 async function windowsExcluded(
   port: number,
   env: Readonly<Record<string, string | undefined>>,
@@ -156,25 +156,20 @@ export async function httpCheck(
   };
 }
 
-/** The `accounts` row (A2 3.13 "Other user accounts"). */
+/** The `accounts` row: information, never a warning. */
 export function accountsCheck(facts: AccountFacts | undefined): Check {
   if (facts === undefined) {
-    return { id: "accounts", status: "skip", detail: "The machine's accounts could not be read." };
+    return { id: "accounts", status: "skip", detail: "The computer's accounts could not be read." };
   }
   const { others, sandbox } = countAccounts(facts);
+  const count = others === 0 ? "No" : String(others);
   const left =
     sandbox === 0
       ? ""
-      : ` ${String(sandbox)} agent sandbox account${sandbox === 1 ? " is" : "s are"} not counted.`;
-  if (others === 0) {
-    return { id: "accounts", status: "ok", detail: `No other user accounts.${left}` };
-  }
+      : ` (not counting ${String(sandbox)} agent sandbox account${sandbox === 1 ? "" : "s"})`;
   return {
     id: "accounts",
-    status: "warn",
-    detail:
-      `This machine has ${String(others)} other user account${others === 1 ? "" : "s"}. ` +
-      `${PRODUCT_NAME} v1 assumes one user per machine. Another account could serve a fake ` +
-      `${PRODUCT_NAME} page at the UI's address while ${PRODUCT_NAME} is stopped.${left}`,
+    status: "ok",
+    detail: `${count} other user account${others === 1 ? "" : "s"} on this computer${left}.`,
   };
 }

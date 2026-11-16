@@ -125,6 +125,7 @@ describe("[A2.3.4.hub.writer-lock] one writer per space across services", () => 
           reason: "locked_elsewhere",
           code: "SPACE_LOCKED_ELSEWHERE",
           holder: expect.objectContaining({ pid: pa.pid, instance: ja.instance }) as unknown,
+          message: expect.stringContaining("Close it there") as unknown,
         },
       ]);
       expect(await sc.stop()).toBe(EXIT.ok);
@@ -311,6 +312,7 @@ describe("[A2.3.4.hub.writer-lock] one writer per space across services", () => 
           state: "unavailable",
           reason: "linked_database",
           code: "SPACE_DATABASE_LINKED",
+          message: expect.stringContaining("space restore latest <folder>") as unknown,
         })),
       );
       expect(await service.stop()).toBe(EXIT.ok);
@@ -339,7 +341,13 @@ describe("[A2.3.4.hub.writer-lock] one writer per space across services", () => 
       });
       await service.spacesSettled;
       expect(service.spaces()).toEqual([
-        { entry: 0, state: "unavailable", reason: "missing", code: "SPACE_NOT_FOUND" },
+        {
+          entry: 0,
+          state: "unavailable",
+          reason: "missing",
+          code: "SPACE_NOT_FOUND",
+          message: expect.stringContaining("connect it") as unknown,
+        },
       ]);
       expect(service.status().state).toBe("ready");
       expect(await service.stop()).toBe(EXIT.ok);

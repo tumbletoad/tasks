@@ -214,6 +214,13 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
     // sentence shows it escaped and no command is given.
     expect(shellArg("/srv/a\rb", "/home/ada")).toBeUndefined();
     expect(shellPath("/srv/a\rb", "/home/ada")).toBe(`"/srv/a\\rb"`);
+    // A Windows path gets no POSIX quoting: no shell line is given for one.
+    expect(shellPath(String.raw`C:\Users\ada\App Data\tasks`, "/home/ada")).toBe(
+      String.raw`C:\Users\ada\App Data\tasks`,
+    );
+    expect(shellPath(String.raw`\\server\share\it's`, "/home/ada")).toBe(
+      String.raw`\\server\share\it's`,
+    );
     expect(
       fixCommand(
         [{ facts: facts("/srv/a\rb", "folder", 0o777), problem: "world_writable" }],
