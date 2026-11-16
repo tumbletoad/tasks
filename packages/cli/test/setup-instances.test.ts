@@ -243,16 +243,16 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
         JSON.stringify({
           providerInstances: {
             codex: { driver: "codex", displayName: "Codex Work", enabled: true },
-            claude_personal: {
+            claude_second: {
               driver: "claudeAgent",
-              displayName: "Claude Personal",
+              displayName: "Claude Second",
               enabled: true,
-              config: { homePath: "~/.claude_personal" },
+              config: { homePath: "~/.claude_second" },
             },
             claude_off: { driver: "claudeAgent", enabled: false },
             cursor: { driver: "cursor", enabled: true },
           },
-          defaultModelSelection: { instanceId: "claude_personal", model: "claude-sonnet-5" },
+          defaultModelSelection: { instanceId: "claude_second", model: "claude-sonnet-5" },
         }),
         { mode: 0o600 },
       );
@@ -264,16 +264,16 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
         ["claude", undefined],
         ["codex", undefined],
         ["t3-codex", "catalogue"],
-        ["t3-claude-personal", "t3"],
+        ["t3-claude-second", "t3"],
         ["t3-claude", "catalogue"],
       ]);
-      expect(shown.add.find((a) => a.id === "t3-claude-personal")?.entry).toEqual({
-        id: "t3-claude-personal",
+      expect(shown.add.find((a) => a.id === "t3-claude-second")?.entry).toEqual({
+        id: "t3-claude-second",
         target: "t3",
-        label: "Claude Personal",
-        account: "personal",
+        label: "Claude Second",
+        account: "second",
         t3_environment: "local",
-        t3_provider_instance: "claude_personal",
+        t3_provider_instance: "claude_second",
         t3_model: "claude-sonnet-5",
         remote_allowed: false,
       });
@@ -289,25 +289,25 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       // One of them, applied as the preview showed it. machine.toml holds the world's space.
       const tomlBefore = readFileSync(machineToml(), "utf8");
       const one = await run(
-        ["setup", "instances", "--instance", "t3-claude-personal", "--json"],
+        ["setup", "instances", "--instance", "t3-claude-second", "--json"],
         false,
       );
       const planned = JSON.parse(one.stdout) as Preview;
-      expect(planned.add.map((a) => a.id)).toEqual(["t3-claude-personal"]);
+      expect(planned.add.map((a) => a.id)).toEqual(["t3-claude-second"]);
       const applied = await run((planned.apply ?? []).slice(1));
       expect(applied.code, applied.stdout + applied.stderr).toBe(0);
       const written = readFileSync(machineToml(), "utf8");
-      expect(written).toContain('t3_provider_instance = "claude_personal"');
+      expect(written).toContain('t3_provider_instance = "claude_second"');
       expect(written).toContain('t3_model = "claude-sonnet-5"');
       // Its provider instance is configured now, so it is not proposed again.
-      expect((await preview()).add.map((a) => a.id)).not.toContain("t3-claude-personal");
+      expect((await preview()).add.map((a) => a.id)).not.toContain("t3-claude-second");
 
       const removed = await run([
         "setup",
         "instances",
         "--remove",
         "--instance",
-        "t3-claude-personal",
+        "t3-claude-second",
       ]);
       expect(removed.code, removed.stdout).toBe(0);
       expect(readFileSync(machineToml(), "utf8")).toBe(tomlBefore);
@@ -344,12 +344,12 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
     });
     const homes = new Map([
       ["codex", "/home/mira/.codex"],
-      ["codex-personal", "/home/mira/.codex-personal"],
+      ["codex-second", "/home/mira/.codex-second"],
     ]);
-    const two = distinctLabels([offer("codex"), offer("codex-personal")], homes, "linux");
+    const two = distinctLabels([offer("codex"), offer("codex-second")], homes, "linux");
     expect(two.map((o) => [o.label, o.entry.get("label")])).toEqual([
       ["Codex (.codex)", "Codex (.codex)"],
-      ["Codex (.codex-personal)", "Codex (.codex-personal)"],
+      ["Codex (.codex-second)", "Codex (.codex-second)"],
     ]);
     // One home of an app keeps the app's own name.
     expect(distinctLabels([offer("codex")], homes, "linux")[0]?.label).toBe("Codex");

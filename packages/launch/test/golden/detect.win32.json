@@ -37,8 +37,8 @@
     },
     {
       "target": "claude-cli",
-      "path": "C:\\Users\\mira\\.claude_personal",
-      "suffix": "personal",
+      "path": "C:\\Users\\mira\\.claude_second",
+      "suffix": "second",
       "source": "home"
     },
     {
@@ -49,8 +49,8 @@
     },
     {
       "target": "codex-cli",
-      "path": "C:\\Users\\mira\\.codex-personal",
-      "suffix": "personal",
+      "path": "C:\\Users\\mira\\.codex-second",
+      "suffix": "second",
       "source": "home"
     }
   ],
@@ -69,16 +69,16 @@
       "needs": []
     },
     {
-      "id": "claude-personal",
+      "id": "claude-second",
       "target": "claude-cli",
-      "label": "Claude Code · personal",
-      "account": "personal",
+      "label": "Claude Code · second",
+      "account": "second",
       "source": "home",
       "exec": "C:\\Users\\mira\\.local\\bin\\claude.exe",
       "argsPrefix": [],
-      "configHome": "C:\\Users\\mira\\.claude_personal",
+      "configHome": "C:\\Users\\mira\\.claude_second",
       "env": {
-        "CLAUDE_CONFIG_DIR": "C:\\Users\\mira\\.claude_personal"
+        "CLAUDE_CONFIG_DIR": "C:\\Users\\mira\\.claude_second"
       },
       "needs": []
     },
@@ -96,18 +96,18 @@
       "needs": []
     },
     {
-      "id": "codex-personal",
+      "id": "codex-second",
       "target": "codex-cli",
-      "label": "Codex · personal",
-      "account": "personal",
+      "label": "Codex · second",
+      "account": "second",
       "source": "home",
       "exec": "C:\\Program Files\\nodejs\\node.exe",
       "argsPrefix": [
         "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js"
       ],
-      "configHome": "C:\\Users\\mira\\.codex-personal",
+      "configHome": "C:\\Users\\mira\\.codex-second",
       "env": {
-        "CODEX_HOME": "C:\\Users\\mira\\.codex-personal"
+        "CODEX_HOME": "C:\\Users\\mira\\.codex-second"
       },
       "needs": []
     },
