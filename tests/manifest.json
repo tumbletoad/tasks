@@ -3377,8 +3377,16 @@
     },
     {
       "id": "A5.3.5.web.completed",
-      "title": "Completed's page source over a fake search: the checked-off list first, then whole month windows newest first in completion order whatever the search's order, empty months stepped over, a page of whole windows with a cursor that goes on from the next month, and the groups Checked off then each month (with its year when it is not this year), the expanded task the rows do not hold at the top of its group",
-      "source": "A5 3.5, A5 3.15, A3 3.9, A7 3.12 M5.05",
+      "title": "Completed's page source over a fake finished-tasks read: the whole checked-off list first, then every other finished task, pages that cross from one to the other, and the groups Checked off then each month newest first (with its year when it is not this year), a dropped task in the month it was dropped, a reopened row leaving at once, the expanded task the rows do not hold at the top of its group",
+      "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.5.service.finished",
+      "title": "The read of finished tasks against a real space: 2,500 tasks finished in one month all reachable once, newest first by finish time then ID, the checked-off list and the rest apart and together, the feed's compact row with the area's ID, version and creation time, a dropped task at the time it was dropped, a deleted one left out, a task finished or reopened between pages neither repeating nor skipping a row, a foreign cursor refused, and the feed's row of a finished task carrying its finish time",
+      "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3995,6 +4003,14 @@
       "id": "A7.3.12.m5-05.e2e.screens",
       "title": "In Chromium and Firefox against the real service: screenshots of Waiting, Completed and an area view in Sumi and Washi at 1,440 px and 390 px, and of the sidebar of a space whose views are mostly empty (every entry in its place, the empty ones quieter, the same entries in the drawer at 390 px); axe-core finds no violation on any of them in either theme, and nothing scrolls horizontally at 390 px",
       "source": "A5 3.5, A5 3.19, A5 3.22, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-05.e2e.finished",
+      "title": "In Chromium and Firefox against the real service, with 3,000 tasks finished in one month: the checked-off list whole on the first page, every task reachable through Show more and End, a dropped task in its month with its own mark and name, a task finished while the list is open joining it with the list one larger, and screenshots of Completed in Sumi and Washi",
+      "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
