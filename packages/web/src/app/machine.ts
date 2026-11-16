@@ -105,7 +105,14 @@ export function useMachineControl(
       pending.current.set(key, (pending.current.get(key) ?? 0) + 1);
       setShown((s) => ({ ...s, [field]: value }));
       try {
-        await api.setMachinePreference(key, value);
+        const kept = await api.setMachinePreference(key, value);
+        // The answer is the service's word too: the feed's message for it may come after it, or,
+        // with the feed down, only at the next connection.
+        const now = held.current;
+        if (now !== undefined) {
+          const { theme, singleKeys } = settingsOf([kept], now);
+          held.current = { theme, singleKeys };
+        }
       } catch (error) {
         // Refused before the service ever said what it holds: back to what was shown.
         if (held.current === undefined) setShown((s) => ({ ...s, [field]: before }));

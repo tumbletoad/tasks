@@ -13,7 +13,7 @@ import {
   SwitchField,
   Text,
 } from "react-aria-components";
-import type { TerminalView } from "../api.ts";
+import { Refused, type TerminalView } from "../api.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { useSheet } from "../keys/Sheet.tsx";
 import { useKeyLabel } from "../keys/labels.ts";
@@ -52,6 +52,15 @@ const LABELS: Readonly<Record<ThemeChoice, readonly [MessageId, MessageId]>> = {
 /** An adapter's word as the catalogue's select takes it. */
 const word = (app: string) => app.replaceAll("-", "_");
 
+/**
+ * Why a setting was not saved: machine.toml changed meanwhile, a terminal went away or the network
+ * failed, and trying again helps; any other refusal is machine.toml's, and trying again does not.
+ */
+const failure = (error: unknown): MessageId =>
+  error instanceof Refused && error.code !== "conflict" && error.code !== "not_found"
+    ? "settings.fileProblem"
+    : "settings.failed";
+
 export function SettingsPage() {
   const t = useT();
   useTitle(t("nav.settings"));
@@ -79,8 +88,8 @@ function Appearance() {
         value={machine.theme}
         onChange={(value) => {
           if (isThemeChoice(value)) {
-            machine.setTheme(value).catch(() => {
-              say(t("settings.failed"));
+            machine.setTheme(value).catch((error: unknown) => {
+              say(t(failure(error)));
             });
           }
         }}
@@ -120,8 +129,8 @@ function Keyboard() {
         isSelected={machine.singleKeys}
         aria-describedby="settings-single-keys"
         onChange={(on) => {
-          machine.setSingleKeys(on).catch(() => {
-            say(t("settings.failed"));
+          machine.setSingleKeys(on).catch((error: unknown) => {
+            say(t(failure(error)));
           });
         }}
       >
@@ -195,8 +204,10 @@ function Terminal() {
               (next) => {
                 setView(next);
               },
-              () => {
-                say(t("settings.failed"));
+              (error: unknown) => {
+                say(t(failure(error)));
+                // The terminals found may have changed since the page read them.
+                read();
               },
             )
             .finally(() => {

@@ -7,6 +7,7 @@
 // are A4's `launch.open`. A task's receipts have a route of their own (`/api/v1/launch/list`).
 import { httpHeader } from "@tasks/brand";
 import { createClient, type Client } from "@tasks/contracts/generated/client.ts";
+import type { MachinePreference } from "./store/rows.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -52,6 +53,17 @@ export interface TerminalView {
 export class SignedOut extends Error {}
 /** The service runs another build than the one that served this page. */
 export class StaleBuild extends Error {}
+/** The service answered with an error: its code, or `unknown` when the answer had none. */
+export class Refused extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
 
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
 export const requestId = (): string => crypto.randomUUID();
@@ -112,9 +124,10 @@ export class Api {
 
   async #result<T>(path: string, input: unknown): Promise<T> {
     const reply = await this.post(path, JSON.stringify(input));
-    const parsed = JSON.parse(reply.body) as { result?: T };
+    const parsed = JSON.parse(reply.body) as { result?: T; error?: { code?: unknown } };
     if (reply.status !== 200 || parsed.result === undefined) {
-      throw new Error(`The service answered ${String(reply.status)}`);
+      const code = parsed.error?.code;
+      throw new Refused(reply.status, typeof code === "string" ? code : "unknown");
     }
     return parsed.result;
   }
@@ -167,8 +180,8 @@ export class Api {
   }
 
   /** Sets one of this computer's settings of the page, or resets it with null. */
-  async setMachinePreference(key: string, value: unknown): Promise<void> {
-    await this.#result("/api/v1/machine/pref", { key, value });
+  async setMachinePreference(key: string, value: unknown): Promise<MachinePreference> {
+    return this.#result<MachinePreference>("/api/v1/machine/pref", { key, value });
   }
 
   /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */

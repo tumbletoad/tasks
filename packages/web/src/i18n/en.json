@@ -254,6 +254,7 @@
 
   "settings.where": "These settings are kept on this computer. Every space and every browser here follows them.",
   "settings.failed": "The setting was not saved. Try again.",
+  "settings.fileProblem": "The setting was not saved: machine.toml cannot be changed as it is. Run {cli} doctor to see why.",
   "settings.appearance": "Appearance",
   "settings.theme": "Theme",
   "settings.sumi": "Sumi",
