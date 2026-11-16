@@ -69,7 +69,7 @@ const lit = (path: string) => `'${path}'`;
 
 describe("[A2.3.2.4.hub.spaces] the hub hosts machine.toml's spaces and refuses a file it cannot start with", () => {
   test(
-    "the enabled [[spaces]] in order, [log] level, and each root's revision in machine state",
+    "the enabled [[spaces]] open in order and a disabled one is listed closed, [log] level, and each root's revision in machine state",
     async () => {
       const { root, cleanup } = tempRoot("cfg");
       cleanups.push(cleanup);
@@ -118,7 +118,11 @@ describe("[A2.3.2.4.hub.spaces] the hub hosts machine.toml's spaces and refuses 
       });
       running.push(service);
       await service.spacesSettled;
-      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id: work.space.spaceId }]);
+      // A disabled entry is the person's closed space: listed closed, not opened (A2 3.1).
+      expect(service.spaces()).toEqual([
+        { entry: 0, state: "closed" },
+        { entry: 1, state: "open", id: work.space.spaceId },
+      ]);
       expect(service.config.spaces.map((s) => [s.id, s.enabled])).toEqual([
         [life.space.spaceId, false],
         [work.space.spaceId, true],

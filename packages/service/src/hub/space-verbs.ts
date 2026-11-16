@@ -28,31 +28,50 @@
 // written. A new folder for a space (create, restore into a new folder) is checked first: a
 // network file system is refused, and a new space in a synced folder opens read-only.
 //
-// The service registers the enabled `[[spaces]]` of machine.toml at start (A2 3.1). A space
-// that `create`, `open` or `restore --to` adds is served until the service stops, and its entry
-// opens only as that one space, as a `[[spaces]]` entry does; writing it to machine.toml is the
-// step that adds `tasks space add`.
+// The service opens machine.toml's `[[spaces]]` at start (A2 3.1), and the verbs record what they
+// do there (space-records.ts), so what a person last did to a space holds after a restart: create,
+// open, a restore and a claim leave the space's entry enabled, close leaves it `enabled = false`.
+// An entry opens only as the one space it names (A2 3.2.4).
+//
+// A space is named by its folder, its ID or its name. Which copy of a space an ID or a name means,
+// when a restored copy is served beside its original, is the one rule of ops/copies.ts (A2 3.10.5).
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
+import { shellLine } from "@tasks/launch";
 import {
   backupsFolder,
   exportsFolder,
   listBackups,
+  readManifest,
   StorageError,
   type Id,
   type MachineInfo,
 } from "@tasks/storage";
 import type { JsonObject } from "@tasks/bridge/protocol";
 import type { ConnectionClass } from "../local/index.ts";
+import { ambiguousError, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { unsupported } from "../ops/errors.ts";
 import { isUserClass } from "../ops/index.ts";
 import { storageFailureBody } from "./space-errors.ts";
 import { AdminFailed, runAdmin, type AdminResult } from "./space-admin.ts";
+import {
+  notRememberedLine,
+  recordSpace,
+  type SpaceChange,
+  type SpaceRecordsHost,
+} from "./space-records.ts";
 import { readSpaceSettings } from "./space-settings.ts";
 import type { SpaceManager, SpaceView } from "./spaces.ts";
 import type { FolderCheck } from "./sync-folders.ts";
+
+/**
+ * A6 3.5's warning at a claim: the copy becomes this machine's, and another computer that still
+ * has the space goes on without it.
+ */
+export const CLAIM_WARNING =
+  "If another computer still has this space, its later changes will not appear here.";
 
 export interface SpaceVerbsHost {
   readonly manager: Pick<
@@ -73,6 +92,8 @@ export interface SpaceVerbsHost {
   readonly settingsDir: string;
   /** The machine's default space (A2 3.1), which `space/list` names. */
   readonly defaultSpace?: () => string | undefined;
+  /** Where the verbs record what they did (machine.toml, space-records.ts). None: no record. */
+  readonly records?: SpaceRecordsHost;
 }
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
@@ -215,10 +236,57 @@ export function leftoversOf(folder: string): string[] {
   return found.sort();
 }
 
-const same = (a: string, b: string): boolean =>
-  process.platform === "win32" || process.platform === "darwin"
-    ? a.toLowerCase() === b.toLowerCase()
-    : a === b;
+/** Whether `folder` holds a space: its space.json or its database is there. */
+function holdsSpace(folder: string): boolean {
+  try {
+    return readManifest(folder).state === "present" || existsSync(join(folder, "space.db"));
+  } catch {
+    return existsSync(join(folder, "space.db"));
+  }
+}
+
+/** A command for the person to run, quoted for their shell, or its pattern when it cannot be. */
+const command = (words: readonly string[], pattern: string): string =>
+  shellLine(process.platform, [CLI_NAME, ...words]) ?? `${CLI_NAME} ${pattern}`;
+
+/**
+ * A create into a folder that is there already: when the folder holds a space, the way to serve it
+ * is to open it, which the answer names.
+ */
+function existsAnswer(error: AppError, folder: string): AppError {
+  if (error.data["cause"] !== "SPACE_EXISTS" || !holdsSpace(folder)) return error;
+  return new AppError({
+    ...error.toBody(),
+    message: "A space is already in that folder.",
+    hint: `Open it with: ${command(["space", "open", folder], "space open <folder>")}`,
+  });
+}
+
+/**
+ * Why a space that is not a restored copy is not claimed, and the way that works: another
+ * machine's space is copied through an export bundle, whose restore is a copy this machine claims
+ * (A6 3.5; a transfer comes with M3.08).
+ */
+function notClaimable(view: SpaceView): AppError {
+  if (view.state === "read_only" && view.reason === "not_authority") {
+    return new AppError({
+      code: "invalid_input",
+      message:
+        "This space belongs to another computer, so it is not claimed where it is. Make a copy of it this computer's: export it, close it, restore the bundle into a new folder and claim that copy.",
+      hint: `${CLI_NAME} space export <folder>; ${CLI_NAME} space close <folder>; ${CLI_NAME} space restore <bundle> --to <new folder>; ${CLI_NAME} space claim <new folder>`,
+      data: { issues: [{ path: "space", message: "Another computer's space" }] },
+    });
+  }
+  return new AppError({
+    code: "invalid_input",
+    message:
+      view.state === "open"
+        ? "This space takes writes on this computer already: there is nothing to claim."
+        : "Only a restored copy is claimed, and this space is not one.",
+    hint: `${CLI_NAME} space list shows a restored copy as read_only: read_only_copy.`,
+    data: { issues: [{ path: "space", message: "Not a restored copy" }] },
+  });
+}
 
 export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
   const { manager } = host;
@@ -242,41 +310,57 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
   };
 
   /**
-   * A space by folder, ID or name (an unavailable space has no ID or name yet). An absolute path
-   * is a folder and only a folder, so a space whose name looks like a path never stands in for the
-   * space at that path. A restored copy has its original's ID and name, so an ID or a name that two
-   * registered spaces share is `ambiguous`, never the first one listed: only the folder names one
-   * of them for certain.
+   * A space by folder, ID or name, by the one rule for copies (ops/copies.ts, A2 3.10.5): an
+   * absolute path is a folder and only a folder, so a space whose name looks like a path never
+   * stands in for the space at that path; an ID or a name means the copy that serves it best, the
+   * writable one first, and a read-only copy beside it is reached by its folder. A space not served
+   * yet is found by the ID its entry names; it has no name until it is served.
    */
   const find = (wanted: string): SpaceView => {
-    const views = manager.list();
-    if (isAbsolute(wanted)) {
-      const folder = resolve(wanted);
-      const byFolder = views.find((v) => same(manager.folderOf(v.entry), folder));
-      if (byFolder !== undefined) return byFolder;
-      throw new AppError({
-        code: "not_found",
-        message: "The service has no space in that folder.",
-        hint: "Run tasks space list.",
-      });
-    }
-    const byId = views.filter((v) => v.id === wanted);
-    const found =
-      byId.length > 0 ? byId : views.filter((v) => v.name?.toLowerCase() === wanted.toLowerCase());
-    if (found.length > 1) {
-      throw new AppError({
-        code: "ambiguous",
-        message:
-          byId.length > 1 ? "Several spaces have this ID." : "Several spaces have this name.",
-        hint: "Name the space by its folder: tasks space list.",
-      });
-    }
-    if (found[0] !== undefined) return found[0];
+    const copies = manager.list().map((view) => ({
+      view,
+      id: view.id ?? view.registered,
+      name: view.name,
+      state: view.state,
+      reason: view.reason,
+      folder: manager.folderOf(view.entry),
+    }));
+    const found = findSpace(copies, wanted);
+    if (isAmbiguity(found)) throw ambiguousError(found);
+    if (found !== undefined) return found.view;
     throw new AppError({
       code: "not_found",
-      message: "The service has no space by that ID or name.",
-      hint: "Run tasks space list.",
+      message: isAbsolute(wanted)
+        ? "The service has no space in that folder."
+        : "The service has no space by that ID or name.",
+      hint: `Run ${CLI_NAME} space list.`,
     });
+  };
+
+  /**
+   * Records in machine.toml what the verb did to `view`'s space (space-records.ts), and says so in
+   * the answer: `remembered`, and when it is false, the plain line why a restart will not keep it.
+   */
+  const remember = (
+    view: SpaceView,
+    enabled: boolean,
+    extra: Pick<SpaceChange, "repoint" | "others"> = {},
+  ): JsonObject => {
+    const id = view.id ?? view.registered;
+    if (host.records === undefined || id === undefined) return {};
+    const folder = manager.folderOf(view.entry);
+    const done = recordSpace(host.records, { folder, id, enabled, ...extra });
+    if (done.remembered) return { remembered: true };
+    // Once the file is fixed, `space open` or `space close` of the folder records the state the verb
+    // left: they do nothing more to a space already open or closed, while a create, a restore, a
+    // claim or a recovery cannot simply be run again.
+    const again = enabled
+      ? command(["space", "open", folder], "space open <folder>")
+      : command(["space", "close", folder], "space close <folder>");
+    return {
+      remembered: false,
+      not_remembered: notRememberedLine(done.why, enabled, again, id, extra.repoint === true),
+    };
   };
 
   const viewOf = (entry: number): SpaceView => {
@@ -320,11 +404,13 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
             machineId: host.machine.id,
             ownerLabel: "user",
           });
-          // The entry opens only as the space just made (A2 3.2.4).
+          // The entry opens only as the space just made (A2 3.2.4), from now on also after a
+          // restart: the folder was not there, so an entry it had names this space now.
           const entry = await manager.open(folder, spaceOf(created));
-          return { space: describe(viewOf(entry)) };
+          const view = viewOf(entry);
+          return { space: describe(view), ...remember(view, true, { repoint: true }) };
         } catch (error) {
-          throw failure(error);
+          throw existsAnswer(failure(error), folder);
         }
       });
     },
@@ -355,7 +441,8 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
               });
             }
           }
-          return { space: describe(viewOf(entry)) };
+          const opened = viewOf(entry);
+          return { space: describe(opened), ...remember(opened, true) };
         } catch (error) {
           throw failure(error);
         }
@@ -370,7 +457,9 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       } catch (error) {
         throw failure(error);
       }
-      return { space: describe(viewOf(view.entry)) };
+      // Closed also after a restart: the entry stays, `enabled = false`, and is listed closed.
+      const closed = viewOf(view.entry);
+      return { space: describe(closed), ...remember(closed, false) };
     },
 
     "space/backup": async (params, cls) => {
@@ -509,28 +598,37 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
               target,
             });
             const entry = await manager.open(target, spaceOf(restored));
+            const view = viewOf(entry);
             return {
-              space: describe(viewOf(entry)),
+              space: describe(view),
               read_only_copy: true,
               ...(restored.kind === "restore" && restored.backup !== undefined
                 ? { backup: restored.backup }
                 : {}),
+              ...remember(view, true, { repoint: true }),
             };
           });
         } catch (error) {
           throw failure(error);
         }
       }
-      // A backup's or a bundle's file, or its name: a backup's in the backups folder of the space
-      // it restores, a bundle's (`.zip`) in its exports folder.
+      // A backup's or a bundle's file, or its name as `space backups` prints it: a backup's in the
+      // backups folder of the space it restores (`space` in place, `of` into a new folder), a
+      // bundle's (`.zip`) in its exports folder.
       let file: string;
+      const from = inPlace ?? text(params, "of");
       if (isAbsolute(backup)) file = resolve(backup);
-      else if (inPlace !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
-        const space = find(inPlace);
+      else if (from !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
+        const space = find(from);
         file = /\.zip$/i.test(backup)
           ? join(exportsFolder(manager.folderOf(space.entry)), backup)
           : join(backupDirOf(space), backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`);
-      } else throw invalid("backup", "Expected the backup's file as an absolute path");
+      } else {
+        throw invalid(
+          "backup",
+          "Expected the backup's file as an absolute path, or its name with the space it is of",
+        );
+      }
       try {
         if (to !== undefined) {
           if (!isAbsolute(to)) throw invalid("to", "Expected an absolute path");
@@ -539,15 +637,23 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
             refuseNetwork(await manager.checkFolder(target), "to");
             const restored = await runAdmin({ kind: "restore", backupFile: file, target });
             const entry = await manager.open(target, spaceOf(restored));
-            return { space: describe(viewOf(entry)), read_only_copy: true };
+            const view = viewOf(entry);
+            return {
+              space: describe(view),
+              read_only_copy: true,
+              ...remember(view, true, { repoint: true }),
+            };
           });
         }
         const view = find(inPlace ?? "");
         const change = await manager.restoreInPlace(view.entry, file);
+        // The space opens again after a restore in place, whatever it was before.
+        const restored = viewOf(view.entry);
         return {
-          space: describe(viewOf(view.entry)),
+          space: describe(restored),
           epoch: change.epoch,
           incarnation: change.incarnation,
+          ...remember(restored, true),
         };
       } catch (error) {
         throw failure(error);
@@ -578,22 +684,37 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
       userOnly(cls);
       const view = find(required(params, "space"));
       if (view.state !== "read_only" || view.reason !== "read_only_copy") {
-        throw new AppError({
-          code: "invalid_input",
-          message: "Only a read-only copy is claimed.",
-          data: { issues: [{ path: "space", message: "Not a read-only copy" }] },
-        });
+        throw notClaimable(view);
       }
+      let change;
       try {
-        const change = await manager.claim(view.entry);
-        return {
-          space: describe(viewOf(view.entry)),
-          epoch: change.epoch,
-          incarnation: change.incarnation,
-        };
+        change = await manager.claim(view.entry);
       } catch (error) {
         throw failure(error);
       }
+      // The claimed copy is the space from now on, also after a restart: every other entry of the
+      // space that serves nothing now (a closed or unavailable original) is recorded closed, so the
+      // list shows this copy as the space. Copies served read-only now stay as they are, as the
+      // person left them. That this copy keeps the writer at a start is the space settings'
+      // `writer_folder` (spaces.ts openAll), which its open after the claim recorded.
+      const claimed = viewOf(view.entry);
+      const keep = manager
+        .list()
+        .filter(
+          (other) =>
+            other.entry !== claimed.entry &&
+            (other.id ?? other.registered) === (claimed.id ?? claimed.registered) &&
+            other.state !== "closed" &&
+            other.state !== "unavailable",
+        )
+        .map((other) => manager.folderOf(other.entry));
+      return {
+        space: describe(claimed),
+        epoch: change.epoch,
+        incarnation: change.incarnation,
+        warning: CLAIM_WARNING,
+        ...remember(claimed, true, { others: { keep } }),
+      };
     },
 
     "space/recover": async (params, cls) => {
@@ -606,12 +727,27 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           data: { issues: [{ path: "space", message: "Not refused with a rollback journal" }] },
         });
       }
+      // The folder must still hold the space its entry names. Its database cannot be read before
+      // the journal is played back, so its space.json is what is checked, when it is there; the
+      // open after the recovery checks the database (A2 3.10.1).
+      const folder = manager.folderOf(view.entry);
+      let named: string | undefined;
+      try {
+        const read = readManifest(folder);
+        named = read.state === "present" ? read.safety.space_id : undefined;
+      } catch {
+        named = undefined;
+      }
+      if (named !== undefined && view.registered !== undefined && named !== view.registered) {
+        throw new AppError(storageFailureBody("SPACE_ID_MISMATCH"));
+      }
       try {
         await manager.recover(view.entry);
       } catch (error) {
         throw failure(error);
       }
-      return { space: describe(viewOf(view.entry)), recovered: true };
+      const recovered = viewOf(view.entry);
+      return { space: describe(recovered), recovered: true, ...remember(recovered, true) };
     },
   };
 }
