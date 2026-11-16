@@ -189,6 +189,11 @@ export default defineConfig([
     },
   },
   {
+    // Lab code takes diagnostic reports on purpose, in processes of its own.
+    files: ["spikes/**"],
+    rules: { "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noUmask] },
+  },
+  {
     files: ["packages/**"],
     rules: {
       "no-restricted-syntax": [

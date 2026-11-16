@@ -255,6 +255,7 @@ describe("[A2.3.3.hub.system32-workers] product code takes no diagnostic report"
         ]);
       }
       expect(await messages(code, TEST), code).toEqual([]);
+      expect(await messages(code, "spikes/m0/probe.js"), code).toEqual([]);
     }
     expect(
       await messages(`${imports}export const e = process.report.excludeEnv;\n`, SOURCE),
