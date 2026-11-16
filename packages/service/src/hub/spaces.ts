@@ -845,6 +845,11 @@ export class SpaceManager {
     return this.#space(entry).projection?.rebuild();
   }
 
+  /** A backup of the space found its search index damaged: its writer repairs it (#repairSearch). */
+  repairSearch(entry: number): void {
+    this.#repairSearch(this.#space(entry));
+  }
+
   /**
    * Restores `backupFile` in place of the space (A1 3.18): the space closes first, the
    * restore claims the backup with an epoch above every one this machine has seen, under the
@@ -1125,6 +1130,13 @@ export class SpaceManager {
         from: encodeRevision(writer.migration.from),
         to: encodeRevision(writer.migration.to),
         steps: writer.migration.seqs.length,
+      });
+    }
+    if (writer.searchIndex !== undefined) {
+      log.log("space.search_index", {
+        entry: space.index,
+        space: writer.spaceId,
+        outcome: writer.searchIndex,
       });
     }
     // A migration succeeded, this open's or the stopped one's: what failed before is forgotten.
@@ -1591,6 +1603,7 @@ export class SpaceManager {
             unverified: report.unverified,
             ms: Math.round(performance.now() - t0),
           });
+          if (report.searchIndexDamaged === true) this.#repairSearch(space);
         },
         (error: unknown) => {
           // A run the service's drain ended is no failure of the space.
@@ -1606,6 +1619,34 @@ export class SpaceManager {
       .finally(() => {
         space.maintaining = undefined;
       });
+  }
+
+  /**
+   * A backup found the space's search index damaged (it made the backup's own again): the writer
+   * checks it and makes it again, so search works without a restart. Logged; never fails the space.
+   */
+  #repairSearch(space: Hosted): void {
+    const writer = space.writer;
+    const spaceId = space.id;
+    if (writer === undefined || spaceId === undefined) return;
+    writer.repairSearchIndex().then(
+      (outcome) => {
+        this.#options.log.log("space.search_index", {
+          entry: space.index,
+          space: spaceId,
+          outcome,
+        });
+      },
+      (error: unknown) => {
+        const code = codeOf(error);
+        this.#options.log.log("space.search_index", {
+          entry: space.index,
+          space: spaceId,
+          outcome: "damaged",
+          ...(code === undefined ? {} : { code }),
+        });
+      },
+    );
   }
 
   /** A worker, or Timeout after the open's bound. A worker that starts after that is closed. */

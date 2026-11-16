@@ -666,6 +666,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.search.repair",
+      "title": "A space whose search index alone is damaged still backs up and its backup restores whole; a writer's open makes the index again from the tasks, and leaves a sound one as it is",
+      "source": "A1 3.12, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.read-only-copy",
       "title": "A backup restored into a new folder is a read-only copy until claimed: a writer is refused with SPACE_READ_ONLY_COPY, a reader reads, the mark lives in the database so a copy of the folder or the database and a missing or damaged space.json keep it, and a claim gives a new epoch and incarnation in one commit and leaves the original untouched",
       "source": "A1 3.18, A6 3.5",

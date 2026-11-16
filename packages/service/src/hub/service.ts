@@ -741,6 +741,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           recover: (entry: number) => spaceManager().recover(entry),
           folderOf: (entry: number) => spaceManager().folderOf(entry),
           rebuildView: (entry: number) => spaceManager().rebuildView(entry),
+          repairSearch: (entry: number) => {
+            spaceManager().repairSearch(entry);
+          },
         },
       },
     };

@@ -323,6 +323,18 @@ export const EVENTS = {
       ms: "int",
     },
   },
+  // The search index failed its check (at a writer's open, or in a backup's copy): made again
+  // from the tasks, or still damaged.
+  "space.search_index": {
+    lvl: "warn",
+    c: "space",
+    fields: {
+      entry: "int",
+      space: "space",
+      outcome: ["sound", "remade", "damaged"],
+      code: "error_code",
+    },
+  },
   "space.maintenance_failed": {
     lvl: "warn",
     c: "space",
