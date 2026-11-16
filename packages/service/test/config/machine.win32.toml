@@ -17,14 +17,14 @@ window = "tabs"
 after_exit = "pause"
 
 [[instance]]
-id = "codex-personal"
+id = "codex-second"
 target = "codex-cli"
-label = "Codex · personal"
-account = "personal"
+label = "Codex · second"
+account = "second"
 exec = 'C:\Program Files\nodejs\node.exe'
 args_prefix = ['C:\Users\mira\npm-global\node_modules\@openai\codex\bin\codex.js']
-config_home = 'C:\Users\mira\.codex-personal'
-env = { CODEX_HOME = 'C:\Users\mira\.codex-personal' }
+config_home = 'C:\Users\mira\.codex-second'
+env = { CODEX_HOME = 'C:\Users\mira\.codex-second' }
 open_permission = "full-access"
 run_permission = "full-access"
 
@@ -32,7 +32,7 @@ run_permission = "full-access"
 id = "claude"
 target = "claude-cli"
 label = "Claude Code"
-account = "personal"
+account = "second"
 exec = "C:/Users/mira/.local/bin/claude.exe"
 extra_args = ["--verbose"]
 

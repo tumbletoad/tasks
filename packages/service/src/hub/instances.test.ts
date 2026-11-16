@@ -131,26 +131,26 @@ describe("[A4.3.2.setup.instances-service] the service writes and takes back [[i
 
     // A T3 instance as setup instances proposes it (A4 3.2): its provider instance and model.
     const t3 = {
-      id: "t3-claude-personal",
+      id: "t3-claude-second",
       target: "t3",
-      label: "Claude Personal",
-      account: "personal",
+      label: "Claude Second",
+      account: "second",
       t3_environment: "local",
-      t3_provider_instance: "claude_personal",
+      t3_provider_instance: "claude_second",
       t3_model: "claude-sonnet-5",
       remote_allowed: false,
     };
     expect(await add({ entries: [t3] }, "cli-interactive")).toEqual({
-      added: ["t3-claude-personal"],
+      added: ["t3-claude-second"],
     });
     expect(h.live.map((i) => [i.id, i.t3])).toEqual([
       [
-        "t3-claude-personal",
-        { environment: "local", providerInstance: "claude_personal", model: "claude-sonnet-5" },
+        "t3-claude-second",
+        { environment: "local", providerInstance: "claude_second", model: "claude-sonnet-5" },
       ],
     ]);
     expect(await remove({}, "cli-interactive")).toEqual({
-      outcomes: [{ id: "t3-claude-personal", result: "removed" }],
+      outcomes: [{ id: "t3-claude-second", result: "removed" }],
     });
     expect(readFileSync(toml, "utf8")).toBe("# mine\n[http]\nport = 7713\n");
   });

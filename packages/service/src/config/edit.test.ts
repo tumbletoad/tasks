@@ -73,12 +73,12 @@ const EDITS: Edit[] = [
     op: "append",
     array: "instance",
     entries: new Map<string, string | boolean | readonly string[] | Record<string, string>>([
-      ["id", "codex-personal"],
+      ["id", "codex-second"],
       ["target", "codex-cli"],
-      ["label", "Codex · personal"],
-      ["exec", "/home/mira/.local/bin/codex-personal"],
+      ["label", "Codex · second"],
+      ["exec", "/home/mira/.local/bin/codex-second"],
       ["extra_args", []],
-      ["env", { CODEX_HOME: "/home/mira/.codex-personal" }],
+      ["env", { CODEX_HOME: "/home/mira/.codex-second" }],
       ["remote_allowed", false],
     ]),
   },
@@ -119,7 +119,7 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
     expect(Object.fromEntries(config.approvals)).toEqual({ [ALLOW]: "allow", [OTHER]: "deny" });
     // codex-work's extra argument holds a line break, which an argument may not: it stays dropped.
     expect(config.instances.map((i) => [i.id, i.env])).toEqual([
-      ["codex-personal", { CODEX_HOME: "/home/mira/.codex-personal" }],
+      ["codex-second", { CODEX_HOME: "/home/mira/.codex-second" }],
     ]);
     expect(config.roots).toEqual([
       { id: "work", label: "work", path: "/home/mira/work", runs: true },
