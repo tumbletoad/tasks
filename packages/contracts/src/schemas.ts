@@ -132,22 +132,10 @@ export const SourceInput = z.strictObject({
 });
 
 /**
- * A task's folder (A1 3.15, R11): `"cwd"` (the caller's working folder, from `cwd`), an absolute
- * folder on this machine, or a root and a relative path. The service turns the first two into a
- * root of this machine and a relative path before anything is stored: the space never holds an
- * absolute path (A6 3.3), and the root and path form never takes one. `"cwd"` and a folder are one
- * text form: the schema grammar gives each JSON type one option of a union (A3 3.2.1).
+ * A folder on this machine: `"cwd"`, the caller's working folder from its `cwd` field, an absolute
+ * path, or one under `~`. The service checks it and stores it with the home written as `~`.
  */
-export const PlaceInput = z.union([
-  z
-    .string()
-    .max(4096)
-    .regex(/^(?:cwd$|\/|[A-Za-z]:[\\/]|[\\/]{2})/u),
-  z.strictObject({
-    root: safeLine(120).describe("Root name or ID"),
-    path: z.string().max(1024).describe("Relative path inside the root"),
-  }),
-]);
+export const FolderInput = z.string().min(1).max(4096);
 
 /** One task to create (A3 3.4.5). */
 export const TaskDraft = z.strictObject({
@@ -162,7 +150,7 @@ export const TaskDraft = z.strictObject({
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
-  place: PlaceInput.describe('Its folder: "cwd", an absolute folder, or root and path').optional(),
+  folder: FolderInput.describe('Its folder: "cwd", an absolute folder or one under ~').optional(),
   sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
   context: ContextInput.describe("Markdown context").optional(),
   log: LogInput.describe("Log entry; also added to a matched task").optional(),
@@ -343,9 +331,4 @@ export const SourceOutput = z.strictObject({
   who: z.string().describe("Sender or counterpart").optional(),
   url: z.string().describe("Link").optional(),
   at: z.string().describe("When it was sent").optional(),
-});
-
-export const PlaceOutput = z.strictObject({
-  root: z.string().describe("Root name"),
-  path: z.string().describe("Path inside the root"),
 });

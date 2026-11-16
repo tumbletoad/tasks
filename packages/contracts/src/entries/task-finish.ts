@@ -71,7 +71,7 @@ export const taskFinish = defineEntry({
   scope: "space:write",
   remote: "write",
   audience: "caller",
-  // A follow-up is a task draft, as for task.add: its log entry, sources and place too.
+  // A follow-up is a task draft, as for task.add: its log entry, sources and folder too.
   ops: [
     "task.complete",
     "task.archive",
@@ -79,7 +79,7 @@ export const taskFinish = defineEntry({
     "task.create",
     "log.add",
     "source.add",
-    "place.set",
+    "task.folder_set",
     // A follow-up's new area or project name creates it, in the same commit.
     "area.create",
     "project.create",

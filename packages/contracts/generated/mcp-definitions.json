@@ -8,14 +8,14 @@
       "tokens": 638
     },
     {
-      "bytes": 3419,
+      "bytes": 3153,
       "name": "add_tasks",
-      "tokens": 1710
+      "tokens": 1577
     },
     {
-      "bytes": 3952,
+      "bytes": 3648,
       "name": "complete_task",
-      "tokens": 1976
+      "tokens": 1824
     },
     {
       "bytes": 1379,
@@ -23,9 +23,9 @@
       "tokens": 690
     },
     {
-      "bytes": 1306,
+      "bytes": 1550,
       "name": "organize",
-      "tokens": 653
+      "tokens": 775
     },
     {
       "bytes": 1697,
@@ -43,9 +43,9 @@
       "tokens": 664
     },
     {
-      "bytes": 1042,
+      "bytes": 1053,
       "name": "search",
-      "tokens": 521
+      "tokens": 527
     },
     {
       "bytes": 1189,
@@ -53,14 +53,14 @@
       "tokens": 595
     },
     {
-      "bytes": 3866,
+      "bytes": 3563,
       "name": "update_task",
-      "tokens": 1933
+      "tokens": 1782
     }
   ],
   "total": {
-    "bytes": 21464,
-    "tokens": 10735,
+    "bytes": 20846,
+    "tokens": 10427,
     "tools": 11
   }
 }
