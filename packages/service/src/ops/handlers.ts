@@ -222,7 +222,7 @@ const opUnknown = (): AppError =>
   new AppError({
     code: "op_unknown",
     message: "The running service does not know this operation.",
-    hint: `Update ${PRODUCT_NAME}, or restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start.`,
+    hint: `Update ${PRODUCT_NAME}, or restart the service: ${CLI_NAME} service restart.`,
   });
 
 /** `op/list` (A2 3.6.4): the registry's metadata for help and completion. */

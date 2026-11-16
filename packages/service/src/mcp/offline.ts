@@ -120,7 +120,7 @@ export function offlineTexts(): Record<string, string> {
     ),
     service_too_old: fail(
       "service_too_old",
-      `The running ${name} service is older than this session's ${name} tools. Ask the user to restart it (\`${cli} service stop\`, then \`${cli} service start\`), then retry.`,
+      `The running ${name} service is older than this session's ${name} tools. Ask the user to restart it (\`${cli} service restart\`), then retry.`,
     ),
     connection_lost: fail(
       "connection_lost",
