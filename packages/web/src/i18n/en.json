@@ -99,6 +99,7 @@
   "view.empty.completed": "Nothing completed yet.",
   "view.empty.agents": "No agent changes since this page opened.",
   "completed.more": "Show more",
+  "completed.all": "Everything is shown",
   "completed.failed": "Completed tasks could not be read.",
   "row.backToOpen": "Back to open",
   "fact.reopen": "Reopen",

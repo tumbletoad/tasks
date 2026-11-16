@@ -316,6 +316,22 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
     ]);
   });
 
+  test("Completed says how a task ended where the summary goes; other views keep the summary", () => {
+    const shipped = task({
+      title: "Fix the report",
+      summary: "Check the March totals",
+      lifecycle: "completed",
+      ending: "Shipped the fix.",
+    });
+    expect(renderRow(row(shipped), ctx("completed", "flat"))).toMatchObject({
+      ending: "Shipped the fix.",
+      summary: "Check the March totals",
+    });
+    expect(renderRow(row(shipped), ctx("today", "flat")).ending).toBeUndefined();
+    const plain = task({ title: "x", summary: "Next step", lifecycle: "completed" });
+    expect(renderRow(row(plain), ctx("completed", "flat")).ending).toBeUndefined();
+  });
+
   test("Agents: mixed areas and statuses, so the prefix and the chips show", () => {
     const docs = task({ title: "Check the docs", status: "review" });
     const r = read(renderRow(row(docs, LUMEN), ctx("agents", "flat")));

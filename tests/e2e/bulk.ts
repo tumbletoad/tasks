@@ -143,9 +143,21 @@ export interface FinishedCounts {
   readonly dropped: number;
 }
 
+/** Outcomes the done tasks take in turn: one line, several lines, and one longer than a row. */
+const OUTCOMES = [
+  "Done as planned.",
+  "Repotted the herbs into the larger planters.\nEvidence: photos in the garden log.",
+  "Moved the compost bins to the shady corner by the shed, turned both piles, added two bags " +
+    "of leaves and a layer of grass cuttings, and checked the moisture again after the rain.",
+];
+
+/** Why the dropped tasks were dropped, in turn; the last gives no reason. */
+const REASONS = ["The neighbours share theirs now.", "Too late in the season.", undefined];
+
 /**
  * Adds finished tasks to the space at `folder`, each made and finished in one request, 25 a
- * request, all now: the writer's clock holds them in the month the test runs in.
+ * request, all now: the writer's clock holds them in the month the test runs in. Each has a
+ * summary, which a row shows when the task has no ending.
  */
 export async function addFinishedTasks(
   folder: string,
@@ -161,15 +173,19 @@ export async function addFinishedTasks(
           kind: "task.create",
           id,
           title: `${title} ${String(from + i + 1)}`,
+          summary: "Check the beds after the frost",
           project: "garden",
         })),
-        ...ids.map((task): Operation =>
-          how === "dropped"
-            ? { kind: "task.archive", task }
-            : how === "pending"
-              ? { kind: "task.complete", task }
-              : { kind: "task.complete", task, outcome: "Done as planned." },
-        ),
+        ...ids.map((task, i): Operation => {
+          const turn = (from + i) % 3;
+          const reason = REASONS[turn];
+          if (how === "dropped") {
+            return { kind: "task.archive", task, ...(reason === undefined ? {} : { reason }) };
+          }
+          return how === "pending"
+            ? { kind: "task.complete", task }
+            : { kind: "task.complete", task, outcome: OUTCOMES[turn] ?? "" };
+        }),
       ]);
     }
   };

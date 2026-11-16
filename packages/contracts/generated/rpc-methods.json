@@ -4301,6 +4301,11 @@
                   "description": "Effort",
                   "type": "string"
                 },
+                "ending": {
+                  "description": "How it ended, one line: why it was dropped, or its outcome once wrapped up",
+                  "maxLength": 300,
+                  "type": "string"
+                },
                 "finished_at": {
                   "description": "When it was completed or dropped",
                   "maximum": 8640000000000000,

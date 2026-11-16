@@ -23,36 +23,78 @@ export type FinishedRead = (input: Parameters<Finished>[0]) => ReturnType<Finish
 const READ_MAX = 200;
 
 /** `c`: the checked-off part, `d`: the rest; then the read's cursor in that part, if any. */
-const CURSOR = /^([cd]):(.*)$/;
+const CURSOR = /^([cd]):(?:([0-9]+)\.(.+))?$/;
 
-/** The Completed list's page source: the checked-off part whole, then the rest. */
+type Part = "c" | "d";
+
+/** A place in the list: a part, and in it the finish time and ID of a row (none: its start). */
+interface Place {
+  readonly part: Part;
+  readonly key?: { readonly at: number; readonly id: string };
+}
+
+function placeOf(cursor: string): Place | undefined {
+  const match = CURSOR.exec(cursor);
+  if (match === null) return undefined;
+  const part = match[1] === "c" ? "c" : "d";
+  const [at, id] = [match[2], match[3]];
+  return at === undefined || id === undefined ? { part } : { part, key: { at: Number(at), id } };
+}
+
+/** The read's own cursor: a row's finish time and ID. */
+const keyCursor = (key: { readonly at: number; readonly id: string }): string =>
+  `${String(key.at)}.${key.id}`;
+
+const cursorOf = (place: Place): string =>
+  `${place.part}:${place.key === undefined ? "" : keyCursor(place.key)}`;
+
+/** Whether a row of `part` at `key` comes at or before `end` in the list's order. */
+function reaches(end: Place, part: Part, key: { at: number; id: string }): boolean {
+  if (part !== end.part) return part === "c";
+  if (end.key === undefined) return false;
+  return key.at > end.key.at || (key.at === end.key.at && key.id >= end.key.id);
+}
+
+/** Whether the rest of the list, from the start of the part `at` is in, lies past `end`. */
+const past = (end: Place, at: Place): boolean =>
+  at.part === "d" && at.key === undefined && (end.part === "c" || end.key === undefined);
+
+/**
+ * The Completed list's page source: the checked-off part whole, then the rest. With `through`, a
+ * restart reads on to that place, or to the end, whatever `limit` says.
+ */
 export function completedSource(read: FinishedRead): PageSource<TaskRow> {
-  return async ({ after, limit }): Promise<Page<TaskRow>> => {
-    let part = "c";
-    let cursor: string | undefined;
+  return async ({ after, limit, through }): Promise<Page<TaskRow>> => {
+    let at: Place = { part: "c" };
     if (after !== undefined) {
-      const match = CURSOR.exec(after);
-      if (match === null) return { rows: [] };
-      part = match[1] ?? "d";
-      cursor = match[2] === "" ? undefined : match[2];
+      const place = placeOf(after);
+      if (place === undefined) return { rows: [] };
+      at = place;
     }
+    const end: Place | "end" | undefined =
+      through === null ? "end" : through === undefined ? undefined : placeOf(through);
     const rows: TaskRow[] = [];
-    while (rows.length < limit) {
+    while (end !== undefined || rows.length < limit) {
+      if (end !== undefined && end !== "end" && past(end, at)) break;
       const page = await read({
-        checked_off: part === "c",
-        limit: Math.min(READ_MAX, limit - rows.length),
-        ...(cursor === undefined ? {} : { cursor }),
+        checked_off: at.part === "c",
+        limit: end === undefined ? Math.min(READ_MAX, limit - rows.length) : READ_MAX,
+        ...(at.key === undefined ? {} : { cursor: keyCursor(at.key) }),
       });
       for (const found of page.rows) {
+        const key = { at: found.finished_at, id: found.id };
+        if (end !== undefined && end !== "end" && !reaches(end, at.part, key)) {
+          return { rows, next: cursorOf(at) };
+        }
+        at = { part: at.part, key };
         const row = taskRow(found);
         if (row !== undefined) rows.push(row);
       }
-      cursor = page.cursor;
-      if (cursor !== undefined) continue;
-      if (part === "d") return { rows };
-      part = "d";
+      if (page.cursor !== undefined) continue;
+      if (at.part === "d") return { rows };
+      at = { part: "d" };
     }
-    return { rows, next: `${part}:${cursor ?? ""}` };
+    return { rows, next: cursorOf(at) };
   };
 }
 
