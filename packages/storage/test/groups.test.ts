@@ -2,8 +2,10 @@
 // unarchive, delete and restore, each with its history and one undo step per request. Fixture
 // text only, in a temporary space.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { SqlValue } from "../src/driver.ts";
+import { openSpace } from "../src/space.ts";
 import type { Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
-import { tempFolders } from "./space-helpers.ts";
+import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("groups");
@@ -268,4 +270,104 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
     expectStatus(blocked, "conflict");
     expect(blocked.conflicts.map((c) => c.entity)).toContain("tasks");
   });
+
+  test("in a space whose project left its tasks in another area, ordinary moves, a new task beside them and undo of each work, and a move of the project brings them along", async () => {
+    const [first, second] = [newTask("First"), newTask("Second")];
+    const loose = created(submit([{ kind: "task.create", title: "Loose", area: "lumen" }]));
+    // The project moved without its tasks, as an earlier version let it.
+    await olderSpace("UPDATE projects SET area_id = $area WHERE id = $id", {
+      area: fx.areas.home,
+      id: fx.project,
+    });
+    expect([taskRow(first)["area_id"], taskRow(second)["area_id"]]).toEqual([
+      fx.areas.lumen,
+      fx.areas.lumen,
+    ]);
+    expectStatus(
+      submit([{ kind: "task.patch", task: first, set: { title: "Renamed" } }]),
+      "applied",
+    );
+
+    // A reorder takes the project's area with it, and its undo puts the task back as it was.
+    expectStatus(submit([{ kind: "task.move", task: second, before: first }]), "applied");
+    expect(order()).toEqual([second, first]);
+    expect(taskRow(second)["area_id"]).toBe(fx.areas.home);
+    expectStatus(undo(), "applied");
+    expect(order()).toEqual([first, second]);
+    expect(taskRow(second)["area_id"]).toBe(fx.areas.lumen);
+    expectStatus(redo(), "applied");
+
+    // A task put beside one of them, or created there, joins the project in its area.
+    expectStatus(submit([{ kind: "task.move", task: loose, after: first }]), "applied");
+    expect(taskRow(loose)).toMatchObject({ project_id: fx.project, area_id: fx.areas.home });
+    const beside = created(submit([{ kind: "task.create", title: "Beside", before: first }]));
+    expect(taskRow(beside)).toMatchObject({ project_id: fx.project, area_id: fx.areas.home });
+    const named = created(submit([{ kind: "task.create", title: "Named", project: fx.project }]));
+    expect(taskRow(named)["area_id"]).toBe(fx.areas.home);
+    for (let n = 0; n < 3; n += 1) expectStatus(undo(), "applied");
+
+    // The project's move brings every task into its new area; its undo puts each back.
+    const third = created(submit([{ kind: "area.create", title: "Third" }]));
+    expectStatus(submit([{ kind: "project.move", project: fx.project, area: third }]), "applied");
+    expect([taskRow(first)["area_id"], taskRow(second)["area_id"]]).toEqual([third, third]);
+    expectStatus(undo(), "applied");
+    expect(row("projects", fx.project)["area_id"]).toBe(fx.areas.home);
+    expect(taskRow(first)["area_id"]).toBe(fx.areas.lumen);
+    expectStatus(redo(), "applied");
+    expect(taskRow(first)["area_id"]).toBe(third);
+  });
+
+  test("in a space whose deleted project still holds live tasks, a reorder and its undo work, a move out and its undo too, and no task joins the project", async () => {
+    const [first, second] = [newTask("First"), newTask("Second")];
+    // The project was deleted with its tasks still in it, as the undo of an import could leave it.
+    await olderSpace("UPDATE projects SET deleted_at = 1 WHERE id = $id", { id: fx.project });
+    expectStatus(submit([{ kind: "task.move", task: second, before: first }]), "applied");
+    expect(order()).toEqual([second, first]);
+    expectStatus(undo(), "applied");
+    expect(order()).toEqual([first, second]);
+
+    const joining = submit([{ kind: "task.create", title: "Joining", after: first }]);
+    expectStatus(joining, "rejected");
+    expect(joining.error).toMatchObject({ code: "DELETED", op: 0 });
+
+    expectStatus(submit([{ kind: "task.move", task: first, project: null }]), "applied");
+    expect(taskRow(first)["project_id"]).toBeNull();
+    expectStatus(undo(), "applied");
+    expect(taskRow(first)["project_id"]).toBe(fx.project);
+    expectStatus(submit([{ kind: "task.complete", task: second }]), "applied");
+    expectStatus(submit([{ kind: "task.delete", task: second }]), "applied");
+    expectStatus(undo(), "applied");
+    expect(taskRow(second)["deleted_at"]).toBeNull();
+    expectStatus(submit([{ kind: "project.restore", project: fx.project }]), "applied");
+  });
 });
+
+/** A task created in the fixture's project. */
+function newTask(title: string): string {
+  return created(submit([{ kind: "task.create", title, project: fx.project }]));
+}
+
+const taskRow = (id: string) =>
+  fx.reader.prepare("SELECT * FROM tasks WHERE id = $id").get({ id }) ?? {};
+
+/** The fixture project's tasks, in their order. */
+const order = (): string[] =>
+  fx.reader
+    .prepare("SELECT id FROM tasks WHERE project_id = $p AND deleted_at IS NULL ORDER BY position")
+    .all({ p: fx.project })
+    .map((r) => String(r["id"]));
+
+/**
+ * Changes the space outside the write path, as a space from before the group rules may hold it.
+ * Only the fixture's project, which has no create row, keeps its history whole that way.
+ */
+async function olderSpace(sql: string, params: Record<string, SqlValue>): Promise<void> {
+  fx.writer.close();
+  const conn = openSpace(await checkedDriver(), fx.folder, { role: "writer" }).conn;
+  try {
+    conn.prepare(sql).run(params);
+  } finally {
+    conn.close();
+  }
+  fx.reopen();
+}

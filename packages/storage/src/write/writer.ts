@@ -77,6 +77,7 @@ import {
 import { planImportRevert, recomputeToken } from "./imports.ts";
 import {
   applyInversions,
+  brokenIn,
   groupBreaks,
   planInversions,
   readChanges,
@@ -352,8 +353,9 @@ interface Group {
   projectId: Id<"p"> | null;
 }
 
+/** A project's tasks are one group, as their positions are, whatever area an older one holds. */
 const sameGroup = (a: Group, b: Group): boolean =>
-  a.areaId === b.areaId && a.projectId === b.projectId;
+  a.projectId === b.projectId && (a.projectId !== null || a.areaId === b.areaId);
 
 // ---------------------------------------------------------------------------------------------
 // The staged plan
@@ -3432,7 +3434,8 @@ function readTask(conn: Connection, id: Id<"t">): TaskRow {
  * The group rules (history.ts groupBreaks) on the state the request's operations made together:
  * a deleted project holds no live task and no live folder, and a task is in its project's area.
  * One operation keeps them; a request that breaks one through several is refused at the operation
- * that wrote the row in question.
+ * that wrote the row in question. A pair the space held broken before the request stays its own:
+ * an earlier version let a person get there, and their ordinary work there goes on.
  */
 function groupsKept(conn: Connection, run: Execution): void {
   const touch = { projects: [], tasks: [], folders: [], moved: [], regrouped: [] } as {
@@ -3458,12 +3461,19 @@ function groupsKept(conn: Connection, run: Execution): void {
       ? (row.fields.get("deleted") ?? row.fields.get("grouping"))
       : row.fields.get(field);
   };
-  for (const { rule, project, child } of groupBreaks(conn, touch).breaks) {
-    // A break that was there before the request is not its to refuse: it makes nothing worse.
+  /** A row as the request found it: none for one it created. */
+  const before = (entity: Entity, id: string): Row | undefined => {
+    const row = run.rows.get(rowKey(entity, id));
+    if (row === undefined) return readRow(conn, entity, id);
+    return row.created === undefined ? must(row.start, "A written row has a start").raw : undefined;
+  };
+  for (const found of groupBreaks(conn, touch).breaks) {
+    if (brokenIn(found, before)) continue;
+    const { rule, project, child } = found;
     const op =
       made(rowKey(child.entity, child.id), "child") ??
       made(rowKey("projects", project), rule === "held" ? "deleted" : "grouping");
-    if (op === undefined) continue;
+    if (op === undefined) throw misuse("A group rule broke with no write of the request");
     if (rule === "held") problem("DELETED", "The project is deleted", op, "project");
     problem("VALIDATION_FAILED", "A task in a project is in that project's area", op, "area");
   }
@@ -3585,7 +3595,8 @@ function positionIn(
 /**
  * The group and position a task takes: the explicit group, else the sibling's, else its own;
  * right next to the sibling, else at the end of a new group, else where it is. A task that
- * already stands where it is asked to keeps its position.
+ * already stands where it is asked to keeps its position. One placed by a sibling in a project
+ * takes the project's area, also when the sibling holds another from before the group rules.
  */
 function place(
   conn: Connection,
@@ -3601,7 +3612,15 @@ function place(
           areaId: intent.area === "keep" ? (current?.areaId ?? null) : intent.area,
           projectId: intent.project,
         }
-      : (sibling ?? current ?? { areaId: null, projectId: null });
+      : sibling !== undefined
+        ? {
+            areaId:
+              sibling.projectId === null
+                ? sibling.areaId
+                : (readRow(conn, "projects", sibling.projectId)["area_id"] as Id<"a"> | null),
+            projectId: sibling.projectId,
+          }
+        : (current ?? { areaId: null, projectId: null });
   const target = { areaId: group.areaId, projectId: group.projectId };
   const kept = current !== undefined && sameGroup(current, target) ? current.position : undefined;
   if (sibling !== undefined && staged.sibling !== undefined) {

@@ -1102,6 +1102,7 @@ export function applyInversions(
   const checked = (inversions: readonly Inversion[]): boolean =>
     restoresOf(inversions).size > 0 || inversions.some(inGroupRules);
   if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
+  const since = Math.min(...plan.inversions.map((i) => i.change.seq));
   for (;;) {
     conn.exec("SAVEPOINT restores");
     const applied = writeInversions(conn, plan.inversions, options);
@@ -1110,7 +1111,7 @@ export function applyInversions(
     brokenKeys(conn, restores, broken);
     tooManyLearnings(conn, restores, broken);
     sharedFolders(conn, plan.inversions, broken);
-    groupRules(conn, plan.inversions, broken);
+    groupRules(conn, plan.inversions, broken, { seq: options.seq, since });
     if (broken.undone.size === 0) {
       conn.exec("RELEASE restores");
       return applied;
@@ -1286,14 +1287,41 @@ export function groupBreaks(
   return { breaks, projectOf };
 }
 
+/** Whether `found` holds between the rows `rowOf` gives (groupBreaks' statements, on any state). */
+export function brokenIn(
+  found: GroupBreak,
+  rowOf: (entity: "projects" | "tasks" | "folders", id: string) => Row | undefined,
+): boolean {
+  const project = rowOf("projects", found.project);
+  const child = rowOf(found.child.entity, found.child.id);
+  if (project === undefined || child === undefined) return false;
+  if (found.rule === "stray") {
+    return child["project_id"] === found.project && child["area_id"] !== project["area_id"];
+  }
+  const inside =
+    found.child.entity === "tasks"
+      ? child["project_id"] === found.project
+      : child["owner_kind"] === "project" && child["owner_id"] === found.project;
+  return inside && project["deleted_at"] !== null && child["deleted_at"] === null;
+}
+
 /**
  * The group rules (groupBreaks) on the state the plan makes (applyInversions). When the plan
  * breaks one, its inversions on its own side stay undone: a project's tombstone or move together
  * with its folders' tombstones and its tasks' moves, or the task or folder it would bring into a
  * deleted project. The other side is named, with who wrote it: for a task, who put it into the
  * project.
+ *
+ * A break whose every side the plan set back (`seq`) or is older than the commits it inverts
+ * (`since`) is as it was before them: the plan brings back what a person had, also a break that an
+ * earlier version let in. Only a side written since by another makes it the plan's.
  */
-function groupRules(conn: Connection, inversions: readonly Inversion[], broken: Broken): void {
+function groupRules(
+  conn: Connection,
+  inversions: readonly Inversion[],
+  broken: Broken,
+  { seq, since }: { seq: number; since: number },
+): void {
   const mine = new Map<string, Inversion[]>();
   for (const i of inversions) {
     if (!inGroupRules(i)) continue;
@@ -1339,7 +1367,26 @@ function groupRules(conn: Connection, inversions: readonly Inversion[], broken: 
       .flatMap((row) => of("folders", String(row["id"]), "deleted"));
     return [...own, ...theirs];
   };
-  for (const { rule, project, child } of breaks) {
+  const asBefore = ([entity, id, field]: readonly [InvertibleEntity, string, string]): boolean => {
+    const row = readRow(conn, entity, id);
+    if (row === undefined) throw misuse("A row the plan read has gone");
+    const version = versionOf(row, field);
+    return version === seq || version < since;
+  };
+  const sides = ({ rule, project, child }: GroupBreak) =>
+    rule === "stray"
+      ? ([
+          ["projects", project, "grouping"],
+          ["tasks", child.id, "grouping"],
+        ] as const)
+      : ([
+          ["projects", project, "deleted"],
+          [child.entity, child.id, "deleted"],
+          ...(child.entity === "tasks" ? ([["tasks", child.id, "grouping"]] as const) : []),
+        ] as const);
+  for (const found of breaks) {
+    if (sides(found).every(asBefore)) continue;
+    const { rule, project, child } = found;
     const task = child.entity === "tasks" ? (child.id as Id<"t">) : null;
     const side = projectSide(project, rule === "held" ? "deleted" : "grouping");
     const brought =
