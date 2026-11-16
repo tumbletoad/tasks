@@ -1299,8 +1299,16 @@
     },
     {
       "id": "A4.5.parsers.tolerance",
-      "title": "Truncated, unknown and 1 MB lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
+      "title": "Truncated, unknown and over-long lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
       "source": "A4 3.11.4, A4 5.1, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.answer",
+      "title": "The agent's answer is kept whole up to 1 MiB after 50 MB of other output and when escaping makes its line far longer, is cut with a flag beyond 1 MiB, never refused, and is reported as answer events, final only once the agent finished its turn",
+      "source": "A4 3.11.4, A4 3.11.5",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

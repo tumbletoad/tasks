@@ -11,9 +11,10 @@
 // it, kept as the writer keeps it (a property over every JSON shape).
 import fc from "fast-check";
 import {
+  ANSWER_CAP_BYTES,
   APP_TOOLS_STATES,
-  cutRunText,
   FINAL_RUN_STATES,
+  normaliseRunText,
   OUTCOME_REASONS,
   RUN_EDGES,
   RUN_LIMITS,
@@ -32,7 +33,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SpaceExecutionStore } from "../src/space-store.ts";
-import { RunRefused, seenRun, type ExecutionStore } from "../src/store.ts";
+import { cutResultTexts, RunRefused, seenRun, type ExecutionStore } from "../src/store.ts";
 import type { ContractBackend } from "./execution-store-contract.ts";
 
 const HASH = "5e0b7d13".repeat(8);
@@ -116,6 +117,8 @@ async function verdictOf(transition: Promise<RunRecord>): Promise<Verdict> {
 
 const RESULT_COLUMNS: Readonly<Record<string, string>> = {
   exitCode: "exit_code",
+  textCut: "text_cut",
+  textFinal: "text_final",
   nativeId: "native_id",
   appTools: "app_tools",
   permissionDenials: "permission_denials",
@@ -141,9 +144,8 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 function writerForm(value: unknown): unknown {
   if (!isPlainObject(value)) return value;
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => {
-      let out = item;
-      if ((key === "text" || key === "error") && typeof item === "string") out = cutRunText(item);
+    Object.entries(cutResultTexts(value)).map(([key, item]) => {
+      let out: unknown = item;
       if (key === "usage" && isPlainObject(item)) {
         out = Object.fromEntries(
           Object.entries(item).map(([name, n]) => [USAGE_COLUMNS[name] ?? name, n]),
@@ -184,7 +186,13 @@ const text = fc.oneof(
   fc.string(),
   fc.string({ unit: "binary", maxLength: 40 }),
   // Longer than the cap, and longer once normalised (U+0344 expands to two marks).
-  fc.constantFrom("x".repeat(TEXT_CAP_BYTES + 1), "̈́".repeat(TEXT_CAP_BYTES / 2), ""),
+  fc.constantFrom(
+    "x".repeat(TEXT_CAP_BYTES + 1),
+    "̈́".repeat(TEXT_CAP_BYTES / 2),
+    "x".repeat(ANSWER_CAP_BYTES + 1),
+    "̈́".repeat(ANSWER_CAP_BYTES / 2),
+    "",
+  ),
 );
 /** Every JSON shape: null, booleans, numbers, texts, lists and objects, nested. */
 const anyJson = fc.oneof(
@@ -222,6 +230,8 @@ const RESULT_KEYS = [
   "signal",
   "nativeId",
   "text",
+  "textCut",
+  "textFinal",
   "error",
   "usage",
   "appTools",
@@ -251,6 +261,8 @@ const resultValue: fc.Arbitrary<unknown> = fc.oneof(
             fc.constantFrom("a".repeat(128), "a".repeat(129), "two words", "-x", ""),
           ),
           text: field(orNull(text), fc.constant(undefined)),
+          textCut: field(fc.constantFrom(undefined, true, false), fc.constantFrom(0, "yes")),
+          textFinal: field(fc.constantFrom(undefined, true, false), fc.constantFrom(1, null)),
           error: field(orNull(text), fc.constant(undefined)),
           usage: field(
             orNull(
@@ -518,15 +530,35 @@ export function runStoreContract(
     });
 
     test("texts are kept as the space stores them: an agent's are cut, never refused, and a request is judged after normalising", async () => {
-      // U+0344 is 2 UTF-8 bytes and normalises to two marks of 2 bytes each: 8 KiB becomes 16.
-      const grows = "̈́".repeat(TEXT_CAP_BYTES / 2);
+      // U+0344 is 2 UTF-8 bytes and normalises to two marks of 2 bytes each: its text doubles.
+      const grows = (bytes: number): string => "̈́".repeat(bytes / 2);
       const run = await runIn("running");
+      const error = `Stopped\r\nat a prompt\u0007${grows(TEXT_CAP_BYTES)}`;
       const done = await store.transitionRun(run.id, seenRun(run), "succeeded", {
-        result: { ...RESULT, text: grows, error: "Stopped\r\nat a prompt\u0007" },
+        result: {
+          ...RESULT,
+          text: grows(ANSWER_CAP_BYTES),
+          error,
+        },
       });
-      expect(done.result?.text).toBe("̈́".repeat(TEXT_CAP_BYTES / 4));
-      expect(done.result?.error).toBe("Stopped\nat a prompt");
+      // The answer is kept up to its cap and flagged as cut; the error has the small cap.
+      const bytes = (s: string | null | undefined): number =>
+        new TextEncoder().encode(s ?? "").length;
+      const answer = done.result?.text ?? "";
+      expect(bytes(answer)).toBe(ANSWER_CAP_BYTES);
+      expect(normaliseRunText(grows(ANSWER_CAP_BYTES)).startsWith(answer)).toBe(true);
+      expect(done.result?.textCut).toBe(true);
+      expect(normaliseRunText(error).startsWith(done.result?.error ?? "-")).toBe(true);
+      expect(bytes(done.result?.error)).toBeGreaterThan(TEXT_CAP_BYTES - 4);
+      expect(bytes(done.result?.error)).toBeLessThanOrEqual(TEXT_CAP_BYTES);
       expect(await store.readRun(run.id)).toEqual(done);
+      // An answer the size of its cap is kept whole and not flagged.
+      const whole = "a".repeat(ANSWER_CAP_BYTES);
+      const other = await runIn("running");
+      const flagged = await store.transitionRun(other.id, seenRun(other), "succeeded", {
+        result: { ...RESULT, text: whole, textFinal: true },
+      });
+      expect(flagged.result).toEqual({ ...RESULT, text: whole, textFinal: true });
       // Every other field is judged as the writer judges it, so no backend accepts a result
       // another refuses: a cost beyond a safe integer, a fractional duration, usage that is a list.
       for (const [bad, field] of [

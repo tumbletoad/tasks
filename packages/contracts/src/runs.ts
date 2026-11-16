@@ -5,11 +5,11 @@
 // execution store and the page load it cheaply (`@tasks/contracts/runs`).
 //
 // Nothing here is free text of Tasks' own making: every label, state and reason is a value from a
-// fixed vocabulary. The agent-written strings are `message.text`, the outcome's `result` and
-// `error`, `native-id.id` and `session.cwd`, each capped (TEXT_CAP_BYTES). A run record holds the
-// person's request text and the agent's final result and error, which are task text: they stay in
-// the space and never reach a log, an argv, a URL or a snapshot. A working folder never reaches a
-// record: the space holds no absolute path (A1 3.15).
+// fixed vocabulary. The agent-written strings are `message.text`, the answer, the outcome's
+// `error`, `native-id.id` and `session.cwd`, each capped (ANSWER_CAP_BYTES, TEXT_CAP_BYTES). A run
+// record holds the person's request text and the agent's answer and error, which are task text:
+// they stay in the space and never reach a log, an argv, a URL or a snapshot. A working folder
+// never reaches a record: the space holds no absolute path (A1 3.15).
 
 // ---------------------------------------------------------------------------------------------
 // Adapters and caps
@@ -18,12 +18,22 @@
 export const RUN_ADAPTERS = ["claude-print", "codex-exec"] as const;
 export type RunAdapterId = (typeof RUN_ADAPTERS)[number];
 
-/** A stdout line longer than this (UTF-8 bytes, without its line break) is skipped (A4 3.11.4). */
-export const LINE_CAP_BYTES = 1024 * 1024;
+/**
+ * A stdout line longer than this (UTF-8 bytes, without its line break) is skipped (A4 3.11.4). It
+ * is well above ANSWER_CAP_BYTES: the line that carries an answer is JSON, whose escaping and other
+ * fields make it several times longer than the answer itself.
+ */
+export const LINE_CAP_BYTES = 8 * 1024 * 1024;
 
 /**
- * Message, result and error text is cut to this many UTF-8 bytes (A4 3.11.5), in the journal and
- * in the run record alike.
+ * The agent's answer is kept whole up to this many UTF-8 bytes, and cut with a flag beyond it: in
+ * the parser's answer events and outcome, in the run's answer file and in the run record.
+ */
+export const ANSWER_CAP_BYTES = 1024 * 1024;
+
+/**
+ * Message, error and other agent-written text is cut to this many UTF-8 bytes, in the journal and
+ * in the run record alike. The answer has its own cap (ANSWER_CAP_BYTES).
  */
 export const TEXT_CAP_BYTES = 8 * 1024;
 
@@ -95,6 +105,13 @@ export type RunEvent =
   | { kind: "session"; cwd: string | null; appTools: AppToolsState }
   | { kind: "progress"; label: ProgressLabel }
   | { kind: "message"; text: string }
+  /**
+   * The agent's answer so far (≤ ANSWER_CAP_BYTES, `cut` when it was longer): Claude's `result`,
+   * and each assistant message of either CLI. `final` once the agent finished its turn with it:
+   * Claude's `result`, or Codex's last message when its turn completed. The run host saves each
+   * one at once, so a crash keeps the last.
+   */
+  | { kind: "answer"; text: string; final: boolean; cut: boolean }
   | ({ kind: "usage" } & Usage)
   | { kind: "finished"; ok: boolean; reason: OutcomeReason };
 
@@ -131,7 +148,7 @@ export interface StreamCounts {
   truncatedTail: number;
   /** Known events with a field of the wrong shape: the field is ignored. */
   malformed: number;
-  /** Texts cut to TEXT_CAP_BYTES. */
+  /** Texts cut to TEXT_CAP_BYTES, and answers cut to ANSWER_CAP_BYTES. */
   cappedTexts: number;
   /** Progress and message events produced. */
   progress: number;
@@ -150,8 +167,12 @@ export interface RunOutcome {
   reason: OutcomeReason;
   exit: ProcessExit;
   nativeId: string | null;
-  /** The final result: Claude's `result`, else the last assistant message (≤ TEXT_CAP_BYTES). */
+  /** The answer: Claude's `result`, else the last assistant message (≤ ANSWER_CAP_BYTES). */
   result: string | null;
+  /** The answer was longer than ANSWER_CAP_BYTES and is cut. */
+  resultCut: boolean;
+  /** The agent finished its turn with this answer (see the `answer` event). */
+  resultFinal: boolean;
   /** The agent's last error message on a failed run (≤ TEXT_CAP_BYTES), else null. */
   error: string | null;
   usage: Usage | null;
@@ -370,6 +391,12 @@ export function cutRunText(text: string, bytes: number = TEXT_CAP_BYTES): string
   return "";
 }
 
+/** An answer as a run record keeps it (`cutRunText` to ANSWER_CAP_BYTES), and whether it was cut. */
+export function cutRunAnswer(text: string): { text: string; cut: boolean } {
+  const kept = cutRunText(text, ANSWER_CAP_BYTES);
+  return { text: kept, cut: kept.length < normaliseRunText(text).length };
+}
+
 /** A run's limits (A4 3.11.3, 3.11.7), fixed when it is queued. */
 export interface RunLimits {
   /** Claude's `--max-turns`. */
@@ -397,8 +424,9 @@ export const RUN_LIMIT_BOUNDS = {
 } as const;
 
 /**
- * The final outcome a run record keeps (A4 3.11.5): the outcome's verdict and counts, the final
- * result and error (each ≤ TEXT_CAP_BYTES), usage and the native ID. Never the working folder.
+ * The final outcome a run record keeps (A4 3.11.5): the outcome's verdict and counts, the answer
+ * (≤ ANSWER_CAP_BYTES) and the error (≤ TEXT_CAP_BYTES), usage and the native ID. Never the working
+ * folder.
  */
 export interface RunResult {
   ok: boolean;
@@ -406,7 +434,12 @@ export interface RunResult {
   exitCode: number | null;
   signal: string | null;
   nativeId: string | null;
+  /** The agent's answer, or its last message when it never finished its turn (`textFinal`). */
   text: string | null;
+  /** The answer was longer than ANSWER_CAP_BYTES and is cut. Absent means false. */
+  textCut?: boolean;
+  /** The agent finished its turn with `text`. Absent means false. */
+  textFinal?: boolean;
   error: string | null;
   usage: Usage | null;
   appTools: AppToolsState | null;
