@@ -1695,7 +1695,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | A1 operations | `task.create`, `log.add`, `source.add`, `place.set` |
 | Faces | MCP `add_tasks`, CLI `tasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1667, reported |
+| Definition, estimated tokens | 1710, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1713,6 +1713,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | `tasks[].effort` | string, max 20 | no | Effort, such as S, M or L |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
+| `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
 | `tasks[].place` | string, max 4096 \| object | no | Its folder: "cwd", an absolute folder, or root and path |
 | `tasks[].place.root` | string, max 120 | yes | Root name or ID |
 | `tasks[].place.path` | string, max 1024 | yes | Relative path inside the root |
@@ -1826,7 +1827,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `place.set` |
 | Faces | MCP `complete_task`, CLI `tasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1933, reported |
+| Definition, estimated tokens | 1976, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1848,6 +1849,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].effort` | string, max 20 | no | Effort, such as S, M or L |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
+| `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |
 | `follow_ups[].place` | string, max 4096 \| object | no | Its folder: "cwd", an absolute folder, or root and path |
 | `follow_ups[].place.root` | string, max 120 | yes | Root name or ID |
 | `follow_ups[].place.path` | string, max 1024 | yes | Relative path inside the root |

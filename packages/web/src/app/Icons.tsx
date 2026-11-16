@@ -105,6 +105,21 @@ export const PlusIcon = () => (
   </Icon>
 );
 
+/** A lens: search. */
+export const SearchIcon = () => (
+  <Icon>
+    <circle cx="10.5" cy="10.5" r="5.5" />
+    <path d="m15 15 4.5 4.5" />
+  </Icon>
+);
+
+/** A small cross: take a shortcut back into the text. */
+export const CrossIcon = () => (
+  <Icon>
+    <path d="m8 8 8 8M16 8l-8 8" />
+  </Icon>
+);
+
 export const MenuIcon = () => (
   <Icon>
     <path d="M4 7h16M4 12h16M4 17h16" />
