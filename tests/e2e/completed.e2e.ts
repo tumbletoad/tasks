@@ -262,7 +262,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       await expect(focused).toHaveAttribute("data-task", task.ref, { timeout: 1_000 });
     }).toPass({ timeout: SLOW_MS });
     await expect(focused).toHaveAttribute("aria-posinset", "1");
-    await expect(focused.locator("[data-part='ending']")).toHaveText(
+    await expect(focused.locator("[data-part='ending'] > [dir]")).toHaveText(
       "Finished while Completed was open.",
     );
     await page.screenshot({ path: test.info().outputPath("completed-joined.png") });
