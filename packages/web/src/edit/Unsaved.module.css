@@ -24,3 +24,10 @@
   text-underline-offset: 2px;
   cursor: pointer;
 }
+
+/* The person's own value, where no fact shows it (a finished task's title). */
+.value {
+  min-width: 0;
+  color: var(--k-text);
+  overflow-wrap: anywhere;
+}

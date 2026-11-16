@@ -10,6 +10,7 @@ export const httpRoutes = [
   { entry: "import.planning.preview", method: "POST", path: "/api/v1/op/import.planning.preview" },
   { entry: "launch.open", method: "POST", path: "/api/v1/op/launch.open" },
   { entry: "prefs.manage", method: "POST", path: "/api/v1/op/prefs.manage" },
+  { entry: "receipt.get", method: "POST", path: "/api/v1/op/receipt.get" },
   { entry: "space.status", method: "POST", path: "/api/v1/op/space.status" },
   { entry: "task.add", method: "POST", path: "/api/v1/op/task.add" },
   { entry: "task.finish", method: "POST", path: "/api/v1/op/task.finish" },

@@ -295,6 +295,105 @@ test.describe("[A7.3.12.m5-08.e2e.ask] An agent-only field starts a request in t
   });
 });
 
+test.describe("[A5.3.11.e2e.unanswered] An undo that gets no answer does not hold later edits", () => {
+  test("Ctrl+Z whose request is lost: the star clicked after it goes out once the page has learned the undo's outcome, and the undo takes back the priority, not the star", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const [ref, other] = await addTasks(world, [
+      { title: `Book the boiler service (${tag})`, area: "home" },
+      { title: `Sort the tax papers (${tag})`, area: "home" },
+    ]);
+    if (ref === undefined || other === undefined) throw new Error("the tasks were not added");
+    await openArea(page, world, "Home");
+    const row = rowOf(page, ref);
+    await row.locator('[data-part="title"]').click();
+    const priority = row.getByRole("radiogroup", { name: "Priority" });
+    await priority.getByRole("radio", { name: "P1" }).click();
+    await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
+
+    // The first undo request never reaches the service (a connection that went away); a request
+    // sent again goes through.
+    let held = 0;
+    await page.route("**/api/v1/op/history.undo", async (route) => {
+      held += 1;
+      if (held === 1) return;
+      await route.continue();
+    });
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    await expect.poll(() => held).toBe(1);
+    // The person stars another task: it shows at once, and waits for the undo.
+    const star = rowOf(page, other).locator('[data-part="star"]');
+    await star.click();
+    await expect(star).toHaveAttribute("aria-pressed", "true");
+    // The page asks for the undo's outcome by its ID, sends it again, and then the star.
+    await expect(toast(page)).toHaveText("Undone", { timeout: SLOW_MS });
+    await expect
+      .poll(async () => (await read(world, other)).task as unknown as { focus: unknown })
+      .toMatchObject({ focus: true });
+    expect((await read(world, ref)).task.priority).toBe(4);
+    expect(held).toBe(2);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+});
+
+test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is finished elsewhere stays with the person", () => {
+  test("the typed title shows with Copy and Discard, no Try again, and reopened the task takes it", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const [ref] = await addTasks(world, [
+      { title: `Renew the library card (${tag})`, area: "home" },
+    ]);
+    if (ref === undefined) throw new Error("the task was not added");
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+    await showsSpace(page, world.mira.name);
+    const row = rowOf(page, ref);
+    const title = row.locator('[data-part="title"]');
+    await expect(title).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
+    await title.focus();
+    await page.keyboard.press("F2");
+    const field = row.locator('[data-part="title-edit"]');
+    await expect(field).toBeFocused();
+    await field.fill(`Renew the library card online (${tag})`);
+    // Finished in another window while the person types.
+    await world.op(world.mira.id, "task.finish", {
+      task: ref,
+      base: (await read(world, ref)).as_of,
+    });
+    await expect(row.locator("[data-fact]").first()).toHaveText("Checked off", {
+      timeout: SLOW_MS,
+    });
+    await page.keyboard.press("Enter");
+    const line = row.locator('[data-part="unsaved"]');
+    await expect(line).toHaveAttribute("data-reason", "finished");
+    await expect(line.locator('[data-part="unsaved-value"]')).toHaveText(
+      `Renew the library card online (${tag})`,
+    );
+    await expect(line.locator('[data-part="copy-mine"]')).toBeVisible();
+    await expect(line.locator('[data-part="keep-theirs"]')).toBeVisible();
+    await expect(line.locator('[data-part="apply-mine"]')).toHaveCount(0);
+    await row.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath("finished-title.png") });
+
+    // Reopened, the line offers Try again, which saves it.
+    await world.op(world.mira.id, "task.reopen", {
+      task: ref,
+      reason: "Not done yet",
+      base: (await read(world, ref)).as_of,
+    });
+    await expect(line).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
+    await line.locator('[data-part="apply-mine"]').click();
+    await expect
+      .poll(async () => (await read(world, ref)).task as unknown as { title: string })
+      .toMatchObject({ title: `Renew the library card online (${tag})` });
+    await expect(line).toHaveCount(0);
+  });
+});
+
 test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots and axe", () => {
   test("Sumi and Washi at 1,440 px and 390 px, with the date popover and a toast, axe clean", async ({
     browser,
