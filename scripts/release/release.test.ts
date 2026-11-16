@@ -36,7 +36,7 @@ import { ReleaseError, verifyRelease } from "../../packages/service/src/version/
 import { repoRoot } from "../run.ts";
 import { gatherArchives, RELEASE_PLATFORMS } from "./gather.ts";
 import { checkReleaseFolder } from "./github.ts";
-import { planRun } from "./plan.ts";
+import { isOnMain, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
   createReleaseKey,
@@ -54,6 +54,7 @@ import {
   takeSecrets,
 } from "./release.ts";
 import {
+  checkPublishCommit,
   draftStep,
   rehearsalVersion,
   releaseVersionProblem,
@@ -244,7 +245,20 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     expect(ran.stderr).toMatch(
       RELEASE_PUBLIC_KEYS.includes(RELEASE_KEY_PLACEHOLDER) ? /not pinned yet/ : /terminal/,
     );
-  }, 60_000);
+    // keygen asks first, so it shows the question's own refusal whatever is pinned.
+    const out = join(work, "keygen-no-terminal");
+    mkdirSync(out);
+    const keygen = spawnSync(process.execPath, [MAIN, "keygen", "--out", out], {
+      env: without(["CI", "GITHUB_ACTIONS"]),
+      input: `${PASSPHRASE}\n${PASSPHRASE}\n`,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 60_000,
+    });
+    expect(keygen.status).toBe(2);
+    expect(keygen.stderr).toMatch(/Run this in a terminal/);
+    expect(readdirSync(out)).toEqual([]);
+  }, 120_000);
 
   test("writes the release's install scripts pinning the release keys, and signs nothing while they are not pinned or the key is not one of them", async () => {
     const asked = (): Promise<string> => Promise.reject(new Error("the passphrase was asked"));
@@ -517,6 +531,38 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
       expect(childEnv).not.toContain(PASSPHRASE);
     },
   );
+
+  test.runIf(process.platform !== "win32")(
+    "the command takes the secrets out of its environment before it starts any program",
+    () => {
+      const tools = join(work, "fake-git");
+      mkdirSync(tools);
+      const seen = join(work, "git-env.txt");
+      writeFileSync(join(tools, "git"), `#!/bin/sh\nenv > '${seen}'\nexit 1\n`, { mode: 0o755 });
+      // `rehearse --trust-from` asks git for the keys at a commit before anything else.
+      const ran = spawnSync(
+        process.execPath,
+        [MAIN, "rehearse", "--dist", join(work, "none"), "--trust-from", "HEAD"],
+        {
+          env: {
+            ...process.env,
+            PATH: `${tools}:${process.env["PATH"] ?? ""}`,
+            [KEY_SECRET]: pem,
+            [PASSPHRASE_SECRET]: PASSPHRASE,
+          },
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 60_000,
+        },
+      );
+      expect(ran.status).toBe(2);
+      const childEnv = readFileSync(seen, "utf8");
+      expect(childEnv).toContain("PATH=");
+      expect(childEnv).not.toContain(KEY_SECRET);
+      expect(childEnv).not.toContain(PASSPHRASE);
+    },
+    60_000,
+  );
 });
 
 describe("[A2.3.12.8.build.release-rehearsal] a rehearsal signs what a release would, with a key no product trusts, and can never pass for a release", () => {
@@ -661,6 +707,39 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
       /development/,
     );
     expect(() => planRun({ root: repo, mode: "release", ref: "--help", run: 7 })).toThrow(Refusal);
+
+    // A version that a tag gives to another commit is refused before anything is built; the
+    // tagged commit itself may run again (a rerun of its release).
+    git("tag", "v0.2.0", second);
+    git("checkout", "-q", "main");
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "0.2.0" }));
+    git("commit", "-q", "-am", "0.2.0 again");
+    const again = git("rev-parse", "HEAD");
+    expect(() =>
+      planRun({ root: repo, mode: "release", ref: again, run: 7, main: "main" }),
+    ).toThrow(/v0.2.0 already names commit/);
+    expect(planRun({ root: repo, mode: "release", ref: second, run: 7, main: "main" }).commit).toBe(
+      second,
+    );
+
+    // Publishing: the release's commit must be a full commit on main, and its tag, if there is
+    // one, must name that commit.
+    const onMain = (c: string) => isOnMain(repo, c, "main");
+    expect(() => {
+      checkPublishCommit("0.2.0", second, second, onMain);
+    }).not.toThrow();
+    expect(() => {
+      checkPublishCommit("0.2.0", again, undefined, onMain);
+    }).not.toThrow();
+    for (const [what, target, tag, reason] of [
+      ["a branch name", "main", undefined, /not a commit on main/],
+      ["a commit off main", side, undefined, /not a commit on main/],
+      ["a tag on another commit", again, second, /v0.2.0 names commit/],
+    ] as const) {
+      expect(() => {
+        checkPublishCommit("0.2.0", target, tag, onMain);
+      }, what).toThrow(reason);
+    }
   });
 });
 
@@ -721,6 +800,22 @@ describe("[A2.3.12.8.build.release-files] the signing job signs exactly the arch
       checkReleaseFolder(folder, "0.2.0", [pinned]);
     }).toThrow(/files it should not: notes.txt/);
     rmSync(join(folder, "notes.txt"));
+    // The install scripts are not covered by the signature: each must be this version's and pin
+    // exactly the release keys.
+    const sh = join(folder, "install-0.2.0.sh");
+    const rendered = readFileSync(sh, "utf8");
+    for (const [what, text] of [
+      ["an empty script", ""],
+      ["one that pins another key", rendered.replaceAll(pinned, other)],
+      ["one that pins another key too", rendered.replace(pinned, `${pinned}\n${other}`)],
+      ["another version's", rendered.replaceAll("'0.2.0'", "'0.1.0'")],
+    ] as const) {
+      writeFileSync(sh, text);
+      expect(() => {
+        checkReleaseFolder(folder, "0.2.0", [pinned]);
+      }, what).toThrow(/install-0.2.0.sh is not this release's install script/);
+    }
+    writeFileSync(sh, rendered);
     const archivePath = join(folder, archiveName("0.2.0", "win-x64"));
     writeFileSync(archivePath, Buffer.concat([readFileSync(archivePath), Buffer.from("x")]));
     expect(() => {

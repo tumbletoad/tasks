@@ -44,6 +44,10 @@ function mustGit(root: string, args: readonly string[], what: string): string {
   return ran.out;
 }
 
+/** Whether `commit` is `main` or an ancestor of it, in the clone at `root`. */
+export const isOnMain = (root: string, commit: string, main = "origin/main"): boolean =>
+  !commit.startsWith("-") && git(root, ["merge-base", "--is-ancestor", commit, main]).ok;
+
 function packageVersion(root: string, commit: string): string {
   const text = mustGit(root, ["show", `${commit}:package.json`], `${commit} has no package.json`);
   const version = (JSON.parse(text) as { version?: unknown }).version;
@@ -101,12 +105,25 @@ export function planRun(options: {
     }));
   if (mode === "release") {
     const main = options.main ?? "origin/main";
-    if (!git(root, ["merge-base", "--is-ancestor", commit, main]).ok) {
+    if (!isOnMain(root, commit, main)) {
       throw new Refusal(`${commit} is not on ${main}: a release is made only from main.`);
     }
     const version = packageVersion(root, commit);
     const problem = releaseVersionProblem(version);
     if (problem !== undefined) throw new Refusal(problem);
+    // Before anything is built or signed: a signed build of a version that is released already
+    // from another commit would be a second set of bytes under its name.
+    const tagged = git(root, [
+      "rev-parse",
+      "--verify",
+      "-q",
+      `refs/tags/${releaseTag(version)}^{commit}`,
+    ]);
+    if (tagged.ok && tagged.out !== commit) {
+      throw new Refusal(
+        `${releaseTag(version)} already names commit ${tagged.out}, not ${commit}. A version is released from one commit only: raise the version in package.json.`,
+      );
+    }
     return {
       mode,
       commit,

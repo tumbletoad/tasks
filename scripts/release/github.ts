@@ -20,9 +20,12 @@ import {
   verifySshSignature,
 } from "../build/signing.ts";
 import { INSTALLER_KINDS, installerName } from "../install/render.ts";
+import { repoRoot } from "../run.ts";
 import { RELEASE_PLATFORMS } from "./gather.ts";
-import { Refusal } from "./release.ts";
+import { isOnMain } from "./plan.ts";
+import { keyLinesIn, Refusal } from "./release.ts";
 import {
+  checkPublishCommit,
   draftStep,
   releaseTag,
   releaseVersionProblem,
@@ -234,9 +237,22 @@ export function checkReleaseFolder(
   });
   if (extra.length > 0)
     throw new Refusal(`The release holds files it should not: ${extra.join(", ")}.`);
+  // The install scripts are what a person runs first and are not covered by the signature: each
+  // must name this version and pin exactly the pinned release keys.
+  const keys = [...new Set(pinned.map((line) => line.trim().split(/\s+/).slice(0, 2).join(" ")))];
   for (const kind of INSTALLER_KINDS) {
-    if (!existsSync(join(dist, installerName(kind, version, "release")))) {
-      throw new Refusal(`The release has no ${installerName(kind, version, "release")}.`);
+    const name = installerName(kind, version, "release");
+    if (!existsSync(join(dist, name))) throw new Refusal(`The release has no ${name}.`);
+    const text = readFileSync(join(dist, name), "utf8");
+    const pins = [...new Set(keyLinesIn(text))];
+    if (
+      !text.includes(`'${version}'`) ||
+      pins.length !== keys.length ||
+      !keys.every((key) => pins.includes(key))
+    ) {
+      throw new Refusal(
+        `${name} is not this release's install script: it must be the one for ${version} that pins exactly the release keys.`,
+      );
     }
   }
 }
@@ -260,6 +276,9 @@ export function publishRelease(options: {
     throw new Refusal(`GitHub has ${String(release.length)} releases for ${tag}, not one.`);
   }
   const found = release[0];
+  checkPublishCommit(version, found.target_commitish, tagCommit(repo, tag), (commit) =>
+    isOnMain(repoRoot, commit),
+  );
   if (existsSync(work)) throw new Refusal(`${work} exists: publish makes it itself.`);
   mkdirSync(work, { recursive: true });
   for (const asset of found.assets) {

@@ -4,7 +4,7 @@
 //   keygen --out <folder outside any checkout>
 //   sign --key <key file> --dist <folder> [--expect <.pub file>]
 // In the release workflow (.github/workflows/release.yml):
-//   plan --mode rehearsal|release --ref <commit or tag> [--base <commit>] --run <n>
+//   plan --mode rehearsal|release --ref <commit> [--base <commit>] --run <n>
 //   gather --from <artifacts folder> --prefix <artifact name prefix> --version <v> --out <new folder>
 //   sign-ci --dist <folder>             the release key from the job's secrets RELEASE_KEY and
 //                                       RELEASE_KEY_PASSPHRASE, never from an argument or a file
@@ -41,7 +41,7 @@ const USAGE = [
   "       pnpm release sign --key <release key file> --dist <folder of archives> [--expect <.pub file>]",
   "       pnpm release sign-ci --dist <folder of archives>",
   "       pnpm release rehearse --dist <folder of archives> [--trust-from <commit>]",
-  "       pnpm release plan --mode rehearsal|release --ref <commit or tag> [--base <commit>] --run <n>",
+  "       pnpm release plan --mode rehearsal|release --ref <commit> [--base <commit>] --run <n>",
   "       pnpm release gather --from <folder> --prefix <name> --version <v> --out <new folder>",
   "       pnpm release check-install --dist <signed folder> [--from <signed folder>] --work <new folder>",
   "       pnpm release draft --dist <signed folder> --version <v> --commit <sha> [--repo <owner/name>]",

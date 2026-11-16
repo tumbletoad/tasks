@@ -23,10 +23,6 @@ on:
         type: choice
         options: [rehearsal, release, publish]
         default: rehearsal
-      ref:
-        description: "The commit or tag on main to build. Default: the commit this run is on."
-        type: string
-        required: false
       version:
         description: "publish only: the version whose draft to publish"
         type: string
@@ -81,8 +77,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The plan reads package.json at the commit and at the build it upgrades from, and checks
-          # that a release's commit is on main.
+          # The plan reads package.json at the commit and at the build it upgrades from, checks
+          # that a release's commit is on main, and that no tag gives its version to another commit.
           fetch-depth: 0
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -94,7 +90,8 @@ jobs:
       - id: plan
         env:
           MODE: ${{ steps.mode.outputs.mode }}
-          REF: ${{ inputs.ref || github.sha }}
+          # The commit the run is on: GitHub's attestations name it as the source.
+          REF: ${{ github.sha }}
           BASE: ${{ github.event.pull_request.base.sha }}
           RUN: ${{ github.run_number }}
         run: |
@@ -341,7 +338,8 @@ jobs:
         run: pnpm release draft --dist "$RUNNER_TEMP/signed/current" --version "$VERSION" --commit "$COMMIT"
 
   # Publishing, as its own run: the draft's files downloaded from GitHub and checked as a person's
-  # machine checks them, with the release keys of main, then the draft published.
+  # machine checks them, with the release keys of main, its commit checked against main and the
+  # tag, then the draft published.
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -353,6 +351,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Publishing checks that the draft's commit is on main.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:

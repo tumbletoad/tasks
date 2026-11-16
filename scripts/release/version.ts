@@ -63,6 +63,29 @@ export class VersionRefusal extends Error {
 }
 
 /**
+ * Refuses to publish a release whose commit is not a full commit on main, or whose tag already
+ * names another commit: GitHub would publish it at the tag, and the files at its target.
+ */
+export function checkPublishCommit(
+  version: string,
+  target: string,
+  tagCommit: string | undefined,
+  onMain: (commit: string) => boolean,
+): void {
+  const tag = releaseTag(version);
+  if (!/^[0-9a-f]{40}$/.test(target) || !onMain(target)) {
+    throw new VersionRefusal(
+      `The release of ${tag} targets ${target}, not a commit on main. Delete that draft by hand and release again.`,
+    );
+  }
+  if (tagCommit !== undefined && tagCommit !== target) {
+    throw new VersionRefusal(
+      `${tag} names commit ${tagCommit}, but the release's files were built from ${target}. Remove the tag if it was made by mistake, or raise the version and release again.`,
+    );
+  }
+}
+
+/**
  * What the draft step does for a release of `version` from `commit` with the files `local` (name
  * to SHA-256), given what GitHub has: the commit the tag names, if the tag exists, and the release
  * for the tag, if there is one. Creates a draft, uploads only the files a draft lacks (a rerun
