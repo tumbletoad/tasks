@@ -2,7 +2,7 @@
 // service, it tells an untrusted endpoint from a stopped service, and with a running service it
 // reports its version, protocol and spaces, and recent crash files. Fixture text only.
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { RpcError } from "@tasks/bridge/protocol";
@@ -21,13 +21,31 @@ interface Report {
 const status = (report: Report, id: string) => report.checks.find((c) => c.id === id)?.status;
 
 let world: CliWorld;
+/** Linux: a stand-in systemd-run first on the service's PATH, so the scope probe starts no unit. */
+let tools: ReturnType<typeof tempRoot> | undefined;
+let probes = "";
 
 beforeAll(async () => {
-  world = await startWorld("dr");
+  let env: Record<string, string> | undefined;
+  if (process.platform === "linux") {
+    tools = tempRoot("dt");
+    probes = join(tools.root, "probes.txt");
+    const bin = join(tools.root, "bin");
+    mkdirSync(bin, { mode: 0o700 });
+    writeFileSync(join(bin, "systemd-run"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${probes}'\n`, {
+      mode: 0o700,
+    });
+    env = { PATH: `${bin}:${process.env["PATH"] ?? "/usr/bin:/bin"}` };
+  }
+  world = await startWorld("dr", env === undefined ? {} : { env });
 }, 180_000);
 
 afterAll(async () => {
-  await world.close();
+  try {
+    await world.close();
+  } finally {
+    tools?.cleanup();
+  }
 }, 120_000);
 
 describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
@@ -101,7 +119,16 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
     }
     expect(status(report, "sessions")).toBe("ok");
     expect(status(report, "launch.t3")).toBe("skip");
-    if (process.platform !== "linux") expect(status(report, "launch.scopes")).toBe("skip");
+    // The service's own launch service answers them: its environment's check, and on Linux the
+    // scope probe a terminal launch runs (here the stand-in systemd-run, which exits 0).
+    const env = report.checks.find((c) => c.id === "launch.env");
+    expect(env?.detail).not.toContain("fixed environment");
+    if (process.platform === "win32") expect(["ok", "warn"]).toContain(env?.status);
+    else expect(env?.detail).toContain("No launch has read your login shell's environment yet");
+    if (process.platform === "linux") {
+      expect(status(report, "launch.scopes")).toBe("ok");
+      expect(readFileSync(probes, "utf8")).toMatch(/^--user --scope .* -- \S+$/m);
+    } else expect(status(report, "launch.scopes")).toBe("skip");
 
     // A service whose status answers while its operations fail does not pass.
     const broken = await runMain(["doctor", "--self-test", "--json"], {

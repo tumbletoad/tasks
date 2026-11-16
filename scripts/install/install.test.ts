@@ -97,6 +97,10 @@ const install = (
 
 const output = (ran: Ran): string => `exit ${String(ran.status)}\n${ran.stdout}\n${ran.stderr}`;
 
+/** A path as install.sh writes it in a command to paste: single-quoted unless it is plain. */
+const pasted = (path: string): string =>
+  /^[A-Za-z0-9_./+-]+$/u.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
+
 /** A good install: current, the stable command, home.marker, install.json, no leftovers. */
 function expectInstalled(root: string, ran: Ran, version = release.version): void {
   expect(ran.status, output(ran)).toBe(0);
@@ -367,11 +371,16 @@ describe("[A2.3.12.4.install.root] the install root: named, absolute, at most 16
       const shared = join(homes, "shared");
       mkdirSync(shared);
       if (windows) letUsersChange(shared);
-      else chmodSync(shared, 0o770);
+      else chmodSync(shared, 0o707);
       const before = listing(homes);
       const ran = install({ root: shared });
       expect(ran.status).not.toBe(0);
-      expect(ran.stderr).toMatch(/Another (user|account) can change/);
+      if (windows) expect(ran.stderr).toMatch(/Another account can change/);
+      else {
+        expect(ran.stderr).toContain(
+          `Every user on this computer can change ${shared}, the install root, so nothing was installed. To fix it, run: chmod o-w ${pasted(shared)}`,
+        );
+      }
       expect(listing(homes)).toEqual(before);
       if (!windows) {
         const open = join(homes, "open");
@@ -380,11 +389,35 @@ describe("[A2.3.12.4.install.root] the install root: named, absolute, at most 16
         const inside = install({ root: join(open, "root") });
         expect(inside.status).not.toBe(0);
         expect(inside.stderr).toMatch(
-          /Another user can change .*open, a folder above the install root/,
+          /Every user on this computer can change .*open, a folder above the install root, so nothing was installed\. To fix it, run: chmod g?o-w /,
         );
         expect(present(join(open, "root"))).toBe(false);
         chmodSync(open, 0o700);
       }
+    },
+    SLOW,
+  );
+
+  test.runIf(!windows)(
+    "[A2.3.2.2.permissions.group-rule] a root below a folder its owner's group may write, as umask 002 makes it: installed under the person's own private group, else refused with the group and chmod g-w",
+    () => {
+      const parent = join(homes, "umask002");
+      mkdirSync(parent, { mode: 0o700 });
+      chmodSync(parent, 0o775);
+      const root = join(parent, "root");
+      const ran = install({ root });
+      const id = (flag: string) =>
+        spawnSync("id", [flag], { encoding: "utf8" }).stdout.replace(/\n$/u, "");
+      if (id("-un") !== "" && id("-un") === id("-gn")) {
+        expectInstalled(root, ran);
+      } else {
+        expect(ran.status).not.toBe(0);
+        expect(ran.stderr).toContain(
+          `The members of the group ${id("-gn")} can change ${parent}, a folder above the install root, not only you, so nothing was installed. To fix it, run: chmod g-w ${pasted(parent)}`,
+        );
+        expect(present(root)).toBe(false);
+      }
+      chmodSync(parent, 0o700);
     },
     SLOW,
   );
