@@ -176,7 +176,12 @@ export type Look =
       readonly links: number;
     }
   /** A folder, a link, a file that could not be read: never a file of the projection's. */
-  | { readonly kind: "other" };
+  | { readonly kind: "other" }
+  /**
+   * Held open by another program that shares nothing (Windows: an editor, a scanner, a backup
+   * tool): what it holds is unknown for now, and it may well still be the projection's.
+   */
+  | { readonly kind: "busy" };
 
 /** A regular file read through one descriptor, still open. */
 interface Opened {
@@ -339,8 +344,8 @@ export class Tree {
       if (found.kind !== "file") return found;
       closeSync(found.fd);
       return { kind: "file", sha256: found.sha256, size: found.size, links: found.links };
-    } catch {
-      return { kind: "other" };
+    } catch (error) {
+      return codeIs(error, "EBUSY") ? { kind: "busy" } : { kind: "other" };
     }
   }
 

@@ -18,7 +18,7 @@ import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 export const TaskReopenInput = z.strictObject({
   task: TaskRefInput.describe("Task ref (M-14) or ID"),
-  reason: safeText(200).describe("Why it is open again"),
+  reason: safeText(200).describe("Why it is open again").optional(),
   base: Base,
   request_id: RequestId,
   mode: Mode,
@@ -46,6 +46,8 @@ export const taskReopen = defineEntry({
   audience: "caller",
   ops: ["task.reopen"],
   input: TaskReopenInput,
+  // A person's click has no words to give; an agent says why, for the person who reads the history.
+  agent: { required: ["reason"] },
   defaults: [["mode", "apply"]],
   output: TaskReopenResult,
   faces: {
