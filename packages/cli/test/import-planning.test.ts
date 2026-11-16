@@ -253,7 +253,9 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
     expect(cut).toContain("and 2400 more, listed in the run's undo.json");
     const unsaved = undoText({ ...answer, kept: kept(3), kept_more: 2_400, unsaved: true });
     expect(unsaved).toContain("kept as they are: 2403 tasks.");
-    expect(unsaved).toContain("and 2400 more, not listed: the run's undo.json could not be written");
+    expect(unsaved).toContain(
+      "and 2400 more, not listed: the run's undo.json could not be written",
+    );
     expect(unsaved).not.toContain("listed in the run's undo.json");
   });
 

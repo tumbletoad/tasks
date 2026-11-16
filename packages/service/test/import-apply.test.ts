@@ -1164,7 +1164,12 @@ describe("[A7.3.15.importer.undo] the undo of an import", () => {
   test("an undo whose undo.json cannot be written stands, and its answer says the file is missing", async () => {
     const { world, prototype } = await synthetic();
     try {
-      writePrototype(prototype, { tasks: [{ id: "pa", title: "A" }, { id: "pb", title: "B" }] });
+      writePrototype(prototype, {
+        tasks: [
+          { id: "pa", title: "A" },
+          { id: "pb", title: "B" },
+        ],
+      });
       const first = await importedSynthetic(world, prototype);
       world.edit([{ kind: "task.patch", task: taskOf(world, "pa"), set: { title: "Mine" } }]);
       // No run folder to write it into.
