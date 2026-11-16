@@ -66,7 +66,9 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     expect(await dropped.first().getAttribute("aria-label")).toMatch(
       /^Dropped: Dropped fixture task \d+$/,
     );
-    const droppedRow = page.locator("main li[data-task]", { has: dropped.first() });
+    const droppedRow = page
+      .locator('main li[data-task]:has([data-part="check"][data-dropped])')
+      .first();
     await expect(droppedRow.locator("[data-tip^='Dropped ']").first()).toBeAttached();
     await page.screenshot({ path: test.info().outputPath("completed-first-page.png") });
 
