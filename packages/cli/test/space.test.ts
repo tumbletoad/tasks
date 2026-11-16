@@ -4,10 +4,12 @@
 // synced or network folder names the ways out (A1 3.2). Fixture text only.
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -501,6 +503,36 @@ describe("[A2.3.10.cli.space-needs-recovery] a space that needs recovery says wh
     const after = parsed((await user(["space", "list", "--json"])).stdout)["spaces"] as Row[];
     expect(after.find((s) => s.name === "Journal")).not.toHaveProperty("message");
     expect((await user(["space", "close", folder])).code).toBe(0);
+  }, 300_000);
+
+  test("a space whose database is refused before it opened is restored from its backups, as its way out says", async () => {
+    const folder = join(world.root, "s", "linked");
+    expect((await user(["space", "create", "Linked", "--path", folder])).code).toBe(0);
+    expect((await user(["space", "backup", folder])).code).toBe(0);
+    expect((await user(["space", "close", folder])).code).toBe(0);
+    // A second name for the database, as a copy tool that hard-links leaves one.
+    const second = join(world.root, "linked-second.db");
+    linkSync(join(folder, "space.db"), second);
+    try {
+      const opened = await user(["space", "open", folder, "--json"]);
+      const space = parsed(opened.stdout)["space"] as Record<string, unknown>;
+      expect(space).toMatchObject({ state: "unavailable", reason: "linked_database" });
+      expect(space).not.toHaveProperty("id");
+      expect(String(space["message"])).toContain(`${CLI_NAME} space restore latest <folder>`);
+
+      const copy = join(world.root, "s", "linked-copy");
+      const restored = await user(["space", "restore", "latest", folder, "--to", copy, "--json"]);
+      expect(restored.code, restored.stdout + restored.stderr).toBe(0);
+      expect(parsed(restored.stdout)).toMatchObject({
+        read_only_copy: true,
+        space: { name: "Linked", state: "read_only", reason: "read_only_copy" },
+      });
+      for (const done of [copy, folder]) {
+        expect((await user(["space", "close", done])).code).toBe(0);
+      }
+    } finally {
+      unlinkSync(second);
+    }
   }, 300_000);
 });
 

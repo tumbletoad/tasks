@@ -371,7 +371,8 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
   };
 
   const backupDirOf = (view: SpaceView): string => {
-    const settings = view.id === undefined ? {} : readSpaceSettings(host.settingsDir, view.id);
+    const id = view.id ?? view.registered;
+    const settings = id === undefined ? {} : readSpaceSettings(host.settingsDir, id);
     return settings.backupDir ?? backupsFolder(manager.folderOf(view.entry));
   };
 
@@ -585,9 +586,11 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
           throw invalid("to", "The latest backup is restored into a new folder");
         }
         const of = find(required(params, "of"));
-        if (of.id === undefined) throw invalid("of", "The space's ID is not known yet");
+        // A space that never opened, such as one whose database is refused, still has the ID its
+        // entry names: its backups are the way out.
+        const spaceId = of.id ?? of.registered;
+        if (spaceId === undefined) throw invalid("of", "The space's ID is not known yet");
         const target = resolve(to);
-        const spaceId = of.id;
         try {
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
