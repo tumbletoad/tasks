@@ -78,7 +78,6 @@ export class RunService {
   readonly #hosted = new Map<string, Hosted>();
   #probe: Promise<ProbeResult> | undefined;
   #timer: NodeJS.Timeout | undefined;
-  #round: Promise<void> | undefined;
   #stopped = false;
 
   constructor(options: RunServiceOptions) {
@@ -134,25 +133,20 @@ export class RunService {
 
   /**
    * One round: a host, with its recovery, for every space that opened since, and the end of the
-   * hosts whose space closed.
+   * hosts whose space closed. Each space's recovery goes on by itself, so one whose store does not
+   * answer holds up no other space and no later round. Resolves once this round's recoveries ended.
    */
-  tick(): Promise<void> {
-    if (this.#round !== undefined) return this.#round;
-    const round = (async () => {
-      for (const [space, hosted] of [...this.#hosted]) {
-        if (!this.#serves(space, hosted.writer)) this.#drop(space, hosted);
-      }
-      for (const space of this.#options.spaces().filter(isOpen)) {
-        await this.#space(space.id ?? "").catch(() => undefined);
-      }
-    })();
-    // Cleared after it is set: a round with nothing to await has already ended here.
-    this.#round = round;
-    const clear = () => {
-      if (this.#round === round) this.#round = undefined;
-    };
-    round.then(clear, clear);
-    return round;
+  async tick(): Promise<void> {
+    if (this.#stopped) return;
+    for (const [space, hosted] of [...this.#hosted]) {
+      if (!this.#serves(space, hosted.writer)) this.#drop(space, hosted);
+    }
+    await Promise.all(
+      this.#options
+        .spaces()
+        .filter(isOpen)
+        .map((space) => this.#space(space.id ?? "").catch(() => undefined)),
+    );
   }
 
   /** Ends hosting: the containers of live runs are killed; the next start settles their runs. */
@@ -209,6 +203,7 @@ export class RunService {
 
   /** The space's run host, made once per writer with that writer's recovery. */
   async #space(space: string): Promise<{ host: RunHost; machine: RunMachine } | undefined> {
+    if (this.#stopped) return undefined;
     const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
     const writer = served?.writer;
     if (served === undefined || writer === undefined) return undefined;

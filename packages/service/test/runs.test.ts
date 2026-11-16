@@ -198,7 +198,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     expect(events).toContain("run.recovered");
   }, 180_000);
 
-  test("a probe that failed is asked again, and a space that opens after an empty round is recovered", async () => {
+  test("a probe that failed is asked again, a space that opens after an empty round is recovered, and a space whose store does not answer holds up no other", async () => {
     const answers: ProbeResult[] = [
       { available: false, reason: "check_failed", message: "The user manager did not answer." },
       { available: true, kind: "job" },
@@ -235,9 +235,26 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
       expect((await service.probe()).available).toBe(true);
       expect(probes).toBe(2);
       await service.tick();
-      spaces = [{ id: newId("sp"), state: "open", writer } as unknown as ServedSpace];
+      const open = (w: unknown) =>
+        ({ id: newId("sp"), state: "open", writer: w }) as unknown as ServedSpace;
+      spaces = [open(writer)];
       await service.tick();
       expect(recovered).toBe(1);
+      // A space whose store never answers holds up neither another space nor a later round.
+      const silent = { actor: () => new Promise<never>(() => undefined) };
+      spaces = [open(silent), open(writer)];
+      void service.tick();
+      expect(recovered).toBe(2);
+      let later = 0;
+      const opened = {
+        actor: () => {
+          later += 1;
+          return Promise.reject(new Error("closed"));
+        },
+      };
+      spaces = [open(silent), open(opened)];
+      void service.tick();
+      expect(later).toBe(1);
     } finally {
       await service.close();
     }

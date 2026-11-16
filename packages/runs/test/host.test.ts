@@ -374,6 +374,32 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(starts).toBe(0);
   });
 
+  test("a Stop the store does not take still stops the run", async () => {
+    let starts = 0;
+    const { host, id } = await bareHost({
+      containers: {
+        ...refusing,
+        start: () => {
+          starts += 1;
+          return Promise.reject(new Error("unexpected"));
+        },
+      },
+      wrap: (store) => ({
+        createRun: (input, request) => store.createRun(input, request),
+        readRun: (run) => store.readRun(run),
+        openWork: (machine) => store.openWork(machine),
+        transitionRun: (run, seen, next, patch) =>
+          next === "cancelling"
+            ? Promise.reject(new Error("The disk is full"))
+            : store.transitionRun(run, seen, next, patch),
+      }),
+    });
+    await host.start(id, never);
+    await expect(host.stop(id)).rejects.toThrow("The disk is full");
+    expect(await host.ended(id)).toMatchObject({ state: "failed", reason: "spawn_failed" });
+    expect(starts).toBe(0);
+  });
+
   test("a command that is never ready fails the run after the start time", async () => {
     const { host, id } = await bareHost({ containers: refusing, times: { startMs: 50 } });
     await host.start(id, never);
