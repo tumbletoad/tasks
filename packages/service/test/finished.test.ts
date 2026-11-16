@@ -251,9 +251,7 @@ describe("[A5.3.5.service.finished] the read of finished tasks behind Completed"
   });
 
   test("the feed's row of a finished task carries when it was finished", async () => {
-    const after = Number(
-      (fx.reader.prepare("SELECT max(seq) AS seq FROM commits").get() as Row | undefined)?.["seq"],
-    );
+    const after = Number(fx.reader.prepare("SELECT max(seq) AS seq FROM commits").get()?.["seq"]);
     const [task] = finish(1, Date.UTC(2026, 10, 28, 9), "dropped", "Fixture dropped in the feed");
     const { batch } = await readBatch(readerOf(fx.reader), after);
     const rows = batch.events.flatMap((e) => e.entities).filter((e) => e.id === task);

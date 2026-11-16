@@ -17,8 +17,8 @@
 // back after the feed changed it: a read that left before a change can answer after it. A snapshot
 // (after a gap) means the changes in between are unknown: every query counts as changed.
 //
-// The read itself is injected (`PageSource`): the service's paged reads (search, the Completed
-// list) arrive with their steps; this module is the part that decides when they read again.
+// The read itself is injected (`PageSource`): the service's paged reads (`task.search`,
+// `task.finished`); this module is the part that decides when they read again.
 import type { Change } from "./core.ts";
 import { withTaskRow } from "./rows.ts";
 import type { Changes } from "./store.ts";

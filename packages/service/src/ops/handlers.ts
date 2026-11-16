@@ -1363,9 +1363,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "task.finished": async (call) => {
     const { input, host } = call;
     let after: { at: number; id: string } | undefined;
-    if (input["cursor"] !== undefined) {
-      const cursor = String(input["cursor"]);
-      if (!FINISHED_CURSOR.test(cursor)) {
+    const cursor = input["cursor"];
+    if (cursor !== undefined) {
+      if (typeof cursor !== "string" || !FINISHED_CURSOR.test(cursor)) {
         throw invalid("cursor", "Not a cursor this read gave", "Read from the start again.");
       }
       const dot = cursor.indexOf(".");
@@ -1388,11 +1388,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     } catch (error) {
       throw storageFailure(error);
     }
-    const last = read.rows[read.rows.length - 1];
+    const at = read.rows[read.rows.length - 1]?.["finished_at"];
+    const id = read.rows[read.rows.length - 1]?.["id"];
     return {
       rows: read.rows,
-      ...(read.more && last !== undefined
-        ? { cursor: `${String(last["finished_at"])}.${String(last["id"])}` }
+      ...(read.more && typeof at === "number" && typeof id === "string"
+        ? { cursor: `${String(at)}.${id}` }
         : {}),
     };
   },

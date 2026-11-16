@@ -3810,6 +3810,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-05.e2e.finished",
+      "title": "In Chromium and Firefox against the real service, with 3,000 tasks finished in one month: the checked-off list whole on the first page, every task reachable through Show more and End, a dropped task in its month with its own mark and name, a task finished while the list is open joining it with the list one larger, and screenshots of Completed in Sumi and Washi",
+      "source": "A5 3.5, A5 3.15, A7 3.12 M5.05",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-03.e2e.scroll-5000",
       "title": "In Chromium and Firefox against the real service with 5,000 open fixture tasks: the built page virtualises the list, scrolling from top to bottom and back keeps the mounted rows bounded and leaves no frame with an uncovered gap, the focused row keeps focus while it leaves and re-enters the window, End and Home move focus across the whole list, an agent's add above the viewport keeps the first visible row in place, and no CSP violation is reported",
       "source": "A5 3.25, A5 3.22, A5 3.15, A5 3.26, A7 3.12 M5.03",
