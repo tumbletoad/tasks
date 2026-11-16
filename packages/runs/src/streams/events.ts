@@ -4,6 +4,7 @@
 import { RUN_ADAPTERS, type StreamCounts } from "@tasks/contracts/runs";
 
 export {
+  ANSWER_CAP_BYTES,
   APP_TOOLS_STATES,
   LINE_CAP_BYTES,
   OUTCOME_REASONS,

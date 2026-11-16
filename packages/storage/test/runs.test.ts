@@ -305,7 +305,9 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     for (const [bad, field] of [
       [{ ...RESULT, cwd: "/home/x" }, "ops[0].result"],
       [{ ...RESULT, signal: "kill me" }, "ops[0].result.signal"],
-      [{ ...RESULT, text: "x".repeat(9 * 1024) }, "ops[0].result.text"],
+      [{ ...RESULT, text: "x".repeat(1024 * 1024 + 1) }, "ops[0].result.text"],
+      [{ ...RESULT, error: "x".repeat(9 * 1024) }, "ops[0].result.error"],
+      [{ ...RESULT, text_cut: "yes" }, "ops[0].result.text_cut"],
       [{ ...RESULT, usage: { tokens: 1 } }, "ops[0].result.usage"],
       [{ ...RESULT, outcome: "fine" }, "ops[0].result.outcome"],
     ] as const) {

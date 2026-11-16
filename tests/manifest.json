@@ -1306,8 +1306,16 @@
     },
     {
       "id": "A4.5.parsers.tolerance",
-      "title": "Truncated, unknown and 1 MB lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
+      "title": "Truncated, unknown and over-long lines never make a stream parser throw: invalid UTF-8, unknown events and fields, a stream that ends mid-line and any chunking keep memory bounded and are counted, not fatal",
       "source": "A4 3.11.4, A4 5.1, A7 3.13 M6.05",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.parsers.answer",
+      "title": "The agent's answer is kept whole up to 1 MiB after 50 MB of other output and when escaping makes its line far longer, is cut with a flag beyond 1 MiB, never refused, and is reported as answer events, final only once the agent finished its turn",
+      "source": "A4 3.11.4, A4 3.11.5",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -1369,16 +1377,16 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.run.state-machine",
-      "title": "Property test of the run state machine with cancels in every state and the service killed at every boundary (a store write or an external step, before or after it takes effect, recovery included) and restarted, with claims repeated also after their reply, agents started and exiting with every outcome and the shim's timeouts, shims dying without exit.json, shims ending while the service is down, start failures (also reported while a sweep finds the shim gone, so they arrive after it settled the run) and wall clock steps, a fifth of the scenarios starting from a claimed, stopped, stop-timed-out, started or ended run: at most one spawn and one claim reply per run, no agent without a durable claim its shim was replied with, final states that match what the processes did, and every run final or still queued once every window has passed, never unknown when its shim left exit.json or a heard start failure, cancels shown to reach every state a v1 run can be in, and late start failures shown to arrive after a sweep settled the run lost, with and without a Stop, on the in-memory store and on the space database",
+      "id": "A4.5.run.lifecycle-model",
+      "title": "Property test of the run host with fake containers and a fake clock: runs started, starts refused or hanging past the start time and answering late, agents that talk, fork, exit, obey or ignore an interrupt, Stop at every moment, the wall and idle limits, containers that refuse to empty, End by force, and the service crashed at any boundary (a store write, a container call or an answer save, before or after it takes effect) and started again: a final run's container is empty and no start of it is pending, a stopped run ends cancelled or unknown and never runs again, an answer in a record is one its agent gave whole (the last it finished with, else its last message, or after a restart the one saved last), every run is final or unknown once every limit passed, and the next start settles every run that is not queued, on the in-memory store and on the space database",
       "source": "A4 3.11.2, A4 3.11.9, A4 5.1, A4 5.2, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.run.machine",
-      "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep applying recovery's rule to every open run, a start failure after a Stop and one that arrives after a sweep settled the run lost (failed, or cancelled after a Stop, also after the stop timed out, on the in-memory store and the space database), and the claim window on the monotonic and the wall clock",
+      "id": "A4.5.run.host",
+      "title": "The run host's rules one by one: Stop on a queued run, while the agent runs (an agent that obeys gives its answer, one that ignores it is killed after the grace time), before the agent's PID (recorded, never running) and after the agent exited, a container that refuses to empty (unknown, End by force once it is empty), a start past its time whose late container is ended, a refused start, the idle and wall limits, and the next start after a crash (interrupted with the last saved answer, cancelled after a Stop, unknown while a process refuses to end)",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
@@ -1420,6 +1428,38 @@
       "id": "A4.3.11.8.container.probe",
       "title": "The container probe names why runs cannot be contained (no systemd, no cgroup v2, no user manager, not a service, no Delegate=yes, no cgroup.kill, no tasks-run.exe, another platform), and start refuses there",
       "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.run.stop",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), Stop for a stand-in agent that ignores it, starts children late, or detached a child and a daemon ends the agent and everything it started, counted from the operating system, and the run is cancelled, with the answer an agent gave on the interrupt",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.5.run.answer",
+      "title": "On a real container, a 1 MiB answer that escaping makes far longer, after 50 MB of other output, is kept whole in the run's record and its saved answer, and an answer longer than 1 MiB is cut on a code point and flagged while the run succeeds",
+      "source": "A4 3.11.5",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.crash",
+      "title": "On a real container, the stand-in service killed by force mid run, and while answers are being saved, leaves nothing of the run alive, and the next start ends the run failed (service_ended) with the last whole saved answer",
+      "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.service",
+      "title": "The service probes its containers at start and says why runs cannot be contained where they cannot, refusing its internal call to start one there; on Windows it hosts a run started through that call to its answer, and a run left open by a stopped service ends at the next start as interrupted with its last saved answer",
+      "source": "A4 3.11.9",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
