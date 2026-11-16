@@ -104,6 +104,14 @@ import {
 } from "./lock.ts";
 import type { Reconciled } from "@tasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
+import {
+  afterFailure,
+  afterProvenBackup,
+  afterRun,
+  troubleView,
+  type BackupHealth,
+  type BackupTroubleView,
+} from "./backup-health.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
 import { ProjectionRunner } from "./projection.ts";
@@ -195,6 +203,8 @@ export interface SpaceView {
    * described(), for people.
    */
   readonly migrated?: LastMigration;
+  /** An open space whose backups are not working: what happened and what to do. */
+  readonly backup?: BackupTroubleView;
   /** What the folder check found (A1 3.2), when it found a sync client or a network file system. */
   readonly folder_check?: {
     readonly verdict: "synced" | "network";
@@ -376,6 +386,8 @@ class Hosted {
   daily: NodeJS.Timeout | undefined;
   /** The maintenance run in progress. */
   maintaining: Promise<void> | undefined;
+  /** Whether the space's backups work, as its upkeep and the person's backups last found. */
+  backupHealth: BackupHealth = {};
   /** A restore in place or a claim through the manager, in progress. */
   replacing: Promise<unknown> | undefined;
   /**
@@ -460,6 +472,7 @@ class Hosted {
     this.closing = undefined;
     this.check = undefined;
     this.message = undefined;
+    this.backupHealth = {};
   }
 
   /** What a person reads about the state: its own message, else its way out (space-ways.ts). */
@@ -470,6 +483,7 @@ class Hosted {
   view(): SpaceView {
     const check = this.check;
     const message = this.shown();
+    const backup = this.state === "open" ? troubleView(this.backupHealth) : undefined;
     return {
       entry: this.index,
       state: this.state,
@@ -479,6 +493,7 @@ class Hosted {
       ...(this.code === undefined ? {} : { code: this.code }),
       ...(this.holder === undefined ? {} : { holder: this.holder }),
       ...(message === undefined ? {} : { message }),
+      ...(backup === undefined ? {} : { backup }),
       ...(check === undefined || check.verdict === "local"
         ? {}
         : {
@@ -600,6 +615,7 @@ export class SpaceManager {
       .filter((space) => !space.forgotten)
       .map((space) => {
         const message = space.shown();
+        const backup = space.view().backup;
         return {
           id: space.id,
           registered: space.registered,
@@ -607,6 +623,7 @@ export class SpaceManager {
           state: space.state,
           ...(space.reason === undefined ? {} : { reason: space.reason }),
           ...(message === undefined ? {} : { message }),
+          ...(backup === undefined ? {} : { backup: backup.why }),
           writer: space.state === "open" ? space.writer : undefined,
           reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
           folder: space.folder,
@@ -870,6 +887,14 @@ export class SpaceManager {
    */
   rebuildView(entry: number): Promise<Reconciled> | undefined {
     return this.#space(entry).projection?.rebuild();
+  }
+
+  /**
+   * A backup the person made of the space passed its trial restore: whatever its upkeep found wrong
+   * with its backups is over.
+   */
+  backedUp(entry: number, at: number): void {
+    this.#space(entry).backupHealth = afterProvenBackup(at);
   }
 
   /** A backup of the space found its search index damaged: its writer repairs it (#repairSearch). */
@@ -1654,12 +1679,14 @@ export class SpaceManager {
             unverified: report.unverified,
             ms: Math.round(performance.now() - t0),
           });
+          space.backupHealth = afterRun(space.backupHealth, report);
           if (report.searchIndexDamaged === true) this.#repairSearch(space);
         },
         (error: unknown) => {
           // A run the service's drain ended is no failure of the space.
           if (error instanceof MaintenanceFailed && error.stopped) return;
           const code = error instanceof MaintenanceFailed ? error.code : undefined;
+          space.backupHealth = afterFailure(space.backupHealth, code);
           log.log("space.maintenance_failed", {
             entry: space.index,
             space: spaceId,

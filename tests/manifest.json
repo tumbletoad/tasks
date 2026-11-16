@@ -554,6 +554,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.backup.failure-shown",
+      "title": "A failed daily backup, or a newest backup that does not restore, is shown by doctor and the space list with its cause and what to run, through a running service, and goes when a backup succeeds again",
+      "source": "A1 3.18, A2 3.13",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.proven-barrier",
       "title": "A migration starts only behind a barrier backup that passes a trial restore: one that reads back but does not restore, or a full disk at the trial restore, stops it, and the space stays readable at its revision",
       "source": "A1 3.17, A1 3.18",

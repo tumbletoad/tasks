@@ -49,6 +49,10 @@ try {
           planRetention(listing, clock, { spaceId: job.spaceId }),
         )
       : undefined;
+  const verifiedAt =
+    retention?.verified === undefined
+      ? undefined
+      : listing.backups.find((b) => b.name === retention.verified)?.sidecar?.created_at;
   reply({
     ok: true,
     report: {
@@ -57,6 +61,8 @@ try {
       removed: retention?.removed.length ?? 0,
       unverified: retention?.unverified.length ?? 0,
       ...(searchIndexDamaged ? { searchIndexDamaged: true as const } : {}),
+      ...(retention === undefined ? {} : { checked: true as const }),
+      ...(verifiedAt === undefined ? {} : { verifiedAt }),
     },
   });
 } catch (error) {

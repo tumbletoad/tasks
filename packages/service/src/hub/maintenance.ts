@@ -35,6 +35,10 @@ export interface MaintenanceReport {
   readonly unverified: number;
   /** The backup found the space's search index damaged: the space's writer repairs it. */
   readonly searchIndexDamaged?: true;
+  /** Retention ran and trial restored the newest backups, until one passed. */
+  readonly checked?: true;
+  /** When the newest backup that passed was made, when one did. */
+  readonly verifiedAt?: number;
 }
 
 export type MaintenanceReply =

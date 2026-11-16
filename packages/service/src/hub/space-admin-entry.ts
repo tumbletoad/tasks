@@ -1,16 +1,16 @@
 // The space admin worker's entry (space-admin.ts): one job, off the main thread. Storage's
-// functions as the space verbs use them (A1 3.18): createSpace, backupSpace of kind `manual`,
+// functions as the space verbs use them (A1 3.18): createSpace, provenBackup of kind `manual`,
 // exportBundle, and restoreBackup into a new folder, which leaves a read-only copy until a person
 // claims it.
 import { dirname } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import {
-  backupSpace,
   CheckedDriver,
   createSpace,
   DEFAULT_DRIVER,
   exportBundle,
   loadDriver,
+  provenBackup,
   rescueSpace,
   restoreBackup,
   restoreLatest,
@@ -39,7 +39,9 @@ async function run(job: AdminJob): Promise<AdminResult> {
       return { kind: "create", spaceId: created.space.spaceId, refPrefix: created.space.refPrefix };
     }
     case "backup": {
-      const record = await backupSpace(checked, job.folder, {
+      // Proven by a trial restore, so a person who makes one after a failed daily backup knows it
+      // restores.
+      const record = await provenBackup(checked, job.folder, {
         kind: "manual",
         ...(job.backupDir === undefined ? {} : { backupDir: job.backupDir }),
       });
