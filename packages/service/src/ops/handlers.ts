@@ -723,13 +723,26 @@ const refOf = (op: OpResult): string => {
   return op.ref;
 };
 
-/** What the commit `seq` of a write did to the task of `op`, from history (read.ts). */
-async function commitOf(call: Call, op: OpResult, seq: number): Promise<CommitFacts> {
+/**
+ * A read that completes the answer to a write that has applied. It never turns that answer into an
+ * error: the caller would take an applied change for a failed one and send it again, and a second
+ * plain undo would take back an older, unrelated change. On a failed read the answer leaves out
+ * what the read would add.
+ */
+async function afterWrite<T>(
+  call: Call,
+  read: (reader: WorkerConnection) => Promise<T>,
+): Promise<T | undefined> {
   try {
-    return await readCommit(readerOf(call.space), op.task ?? op.id, seq);
-  } catch (error) {
-    throw storageFailure(error);
+    return await read(readerOf(call.space));
+  } catch {
+    return undefined;
   }
+}
+
+/** What the commit `seq` of a write did to the task of `op`, from history (read.ts). */
+function commitOf(call: Call, op: OpResult, seq: number): Promise<CommitFacts | undefined> {
+  return afterWrite(call, (reader) => readCommit(reader, op.task ?? op.id, seq));
 }
 
 /**
@@ -1566,13 +1579,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const result = await submit(call, ops, { active: true, warnings: places.warnings });
     const applied = result.status === "applied";
     const first = opAt(result, 0);
+    const named = [...new Set(fields)];
+    const facts = applied ? await commitOf(call, first, result.seq) : undefined;
     return {
       result: applied ? "updated" : "no_change",
       task: refOf(first),
-      // The fields the commit changed (A3 3.4.6), read from its history: the same on a replay.
-      fields: applied
-        ? changedFields([...new Set(fields)], await commitOf(call, first, result.seq))
-        : [],
+      // The fields the commit changed, read from its history, so a replay answers the same.
+      // Unread, the fields the call set stand in.
+      fields: !applied ? [] : facts === undefined ? named : changedFields(named, facts),
       as_of: result.as_of,
       warnings: [...differsWarnings(result, sourcePaths), ...result.warnings],
       ...replayed(result),
@@ -1675,15 +1689,22 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       (op) => op.status !== "unchanged",
     );
     const facts = await commitOf(call, done, result.seq);
+    // Unread, the operations' own results stand in for history.
+    const wrapped = own > 1 && opAt(result, 1).status !== "unchanged";
     return {
       result: changed ? "completed" : "no_change",
       task: refOf(done),
-      lifecycle: facts.lifecycle ?? "completed",
-      ...(facts.wrapState === undefined ? {} : { wrap_state: facts.wrapState }),
+      lifecycle:
+        facts?.lifecycle ?? (input["status"] === "dropped" && changed ? "archived" : "completed"),
+      ...(facts?.wrapState === undefined ? {} : { wrap_state: facts.wrapState }),
       learnings:
-        result.status === "applied"
-          ? facts.changes.filter((c) => c.entity === "learnings" && c.field === null).length
-          : 0,
+        result.status !== "applied"
+          ? 0
+          : facts === undefined
+            ? wrapped
+              ? learnings.length
+              : 0
+            : facts.changes.filter((c) => c.entity === "learnings" && c.field === null).length,
       // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
       follow_ups: follow.map((draft, k) => {
         const outcome = draftOutcome(result, firsts[k] ?? 0);
@@ -1708,7 +1729,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const done = opAt(result, 0);
     // The status is not part of the writer's result: it is the task's status as of the commit,
     // from history, so a replay answers the same after a later status change.
-    const { status } = await commitOf(call, done, result.seq);
+    const status = (await commitOf(call, done, result.seq))?.status;
     return {
       result: result.status === "applied" ? "reopened" : "no_change",
       task: refOf(done),
@@ -1833,19 +1854,14 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     );
     // A3 3.7.4: a script of the same person (`cli-script` on this machine) writes as `script`,
     // whose changes are on no undo stack. When one changed the space after the change undone,
-    // the answer names it, so the person knows this undo did not take it back. The note is extra:
-    // the undo has applied, so a failed read of it leaves the note out and never turns the undo
-    // into a failure, which a plain `tasks undo` again would answer by undoing one more change.
-    let scripted;
-    try {
-      scripted = await readScriptChange(readerOf(call.space), {
+    // the answer names it, so the person knows this undo did not take it back.
+    const scripted = await afterWrite(call, (reader) =>
+      readScriptChange(reader, {
         scope: principalOf("cli-script", call.host.machine.id).scope,
         undone: String(answer["commit"]),
         seq: result.seq,
-      });
-    } catch {
-      scripted = undefined;
-    }
+      }),
+    );
     return scripted === undefined ? answer : { ...answer, script_change: scripted };
   },
 
@@ -2181,24 +2197,19 @@ function namedCommit(input: Record<string, unknown>): { commit?: Id<"op"> } {
 
 /**
  * An undo's or a redo's result: the change it moved, the tasks its commit changed (read from
- * history, so a replay answers the same), and what a partial undo left as others set it.
+ * history, so a replay answers the same; left out when that read fails), and what a partial undo
+ * left as others set it.
  */
 async function historyResult(
   call: Call,
   result: WriteResult,
   word: "undone" | "partial" | "redone",
 ): Promise<Record<string, unknown>> {
-  let tasks: { refs: string[]; count: number };
-  try {
-    tasks = await readCommitTasks(readerOf(call.space), result.seq);
-  } catch (error) {
-    throw storageFailure(error);
-  }
+  const tasks = await afterWrite(call, (reader) => readCommitTasks(reader, result.seq));
   return {
     result: word,
     commit: opAt(result, 0).id,
-    tasks: tasks.refs,
-    task_count: tasks.count,
+    ...(tasks === undefined ? {} : { tasks: tasks.refs, task_count: tasks.count }),
     ...(word === "partial"
       ? {
           unresolved: result.conflicts.map((c) => ({
