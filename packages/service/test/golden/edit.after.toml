@@ -29,12 +29,12 @@ literal = '''
 CODEX_HOME = "/home/mira/.codex"
 
 [[instance]]
-id = "codex-personal"
+id = "codex-second"
 target = "codex-cli"
-label = "Codex · personal"
-exec = "/home/mira/.local/bin/codex-personal"
+label = "Codex · second"
+exec = "/home/mira/.local/bin/codex-second"
 extra_args = []
-env = { CODEX_HOME = "/home/mira/.codex-personal" }
+env = { CODEX_HOME = "/home/mira/.codex-second" }
 remote_allowed = false
 
 # The next block documents approvals.
