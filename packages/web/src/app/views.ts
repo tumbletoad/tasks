@@ -173,6 +173,11 @@ export interface TaskChange {
   readonly actor: string;
   /** When the page saw it, in milliseconds since 1970. */
   readonly at: number;
+  /**
+   * The task's newest row the feed brought, kept for a task the live rows no longer hold: one the
+   * agent finished is still what the person comes back to see.
+   */
+  readonly row?: TaskRow;
 }
 
 export interface TodayOptions {
@@ -490,7 +495,8 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
 // ---------------------------------------------------------------------------------------------
 // Agents until the service has a read of sessions, runs and routines: "Recent", the
 // tasks an agent or a routine changed while this tab followed the space (the change log Today's
-// Changes reads), newest first, one group per day of the change.
+// Changes reads), newest first, one group per day of the change. A task the agent finished stays,
+// with the row the feed last brought; a deleted one leaves.
 
 export interface RecentDay {
   /** `YYYY-MM-DD` on the viewer's calendar. */
@@ -498,7 +504,7 @@ export interface RecentDay {
   readonly tasks: readonly TaskRow[];
 }
 
-/** The changed tasks the rows still hold, by the day of their newest change, newest first. */
+/** The changed tasks, by the day of their newest change, newest first. */
 export function recentOf(
   changes: readonly TaskChange[],
   tasks: ReadonlyMap<string, TaskRow>,
@@ -506,8 +512,8 @@ export function recentOf(
 ): RecentDay[] {
   const days: { date: string; tasks: TaskRow[] }[] = [];
   for (const change of changes) {
-    const task = tasks.get(change.task);
-    if (task === undefined) continue;
+    const task = tasks.get(change.task) ?? change.row;
+    if (task === undefined || task.deleted_at !== undefined) continue;
     const date = localDate(change.at, timeZone);
     const last = days.at(-1);
     if (last?.date === date) last.tasks.push(task);

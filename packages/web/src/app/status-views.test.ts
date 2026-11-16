@@ -4,11 +4,15 @@ import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { areaGroups, flatGroups, personGroups, projectGroups, type Group } from "../groups.ts";
 import { itemsOf } from "../list/items.ts";
+import type { Change } from "../store/core.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import type { Changes } from "../store/store.ts";
+import { ChangeLog } from "./changes.ts";
 import {
   areaFilter,
   COUNTED,
   countedViewOf,
+  recentOf,
   VIEW_LABEL,
   VIEW_LIST,
   viewCounts,
@@ -140,6 +144,52 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
     );
     expect(shape(project)).toEqual([
       ["flat", "Lumen Health", [[undefined, ["Fix zones", "Someday"]]]],
+    ]);
+  });
+
+  test("Agents: a task an agent finished stays in Recent with its finished row, until it is deleted", () => {
+    let emit: (changes: Changes) => void = () => undefined;
+    const log = new ChangeLog(
+      {
+        onChanges: (listener) => {
+          emit = listener;
+          return () => undefined;
+        },
+      },
+      () => Date.UTC(2026, 10, 12, 9),
+    );
+    const change = (before: TaskRow, after: TaskRow, actor: string): Change => ({
+      type: "task",
+      id: after.id,
+      task: after.id,
+      before,
+      after,
+      changed: ["lifecycle", "wrap"],
+      created: false,
+      kind: "ops",
+      actor: { kind: actor, label: actor === "agent" ? "Codex" : "You" },
+      request_id: `fixture-${String(after.version)}`,
+    });
+    const open = task({ title: "Draft the export" });
+    const done: TaskRow = {
+      ...open,
+      lifecycle: "completed",
+      wrap_state: "wrapped",
+      completed_at: Date.UTC(2026, 10, 12, 8),
+      version: 2,
+    };
+    const other = task({ title: "Still open" });
+    emit({ changes: [change(open, done, "agent"), change(other, other, "agent")], reset: false });
+    // The live rows no longer hold the finished task: the log's row shows it.
+    const live = new Map([[other.id, other]]);
+    expect(recentOf(log.getEntries(), live, "UTC")).toEqual([
+      { date: "2026-11-12", tasks: [other, done] },
+    ]);
+    // The person's later change keeps the task where it is, with its newest row.
+    const deleted: TaskRow = { ...done, deleted_at: Date.UTC(2026, 10, 12, 10), version: 3 };
+    emit({ changes: [change(done, deleted, "human")], reset: false });
+    expect(recentOf(log.getEntries(), live, "UTC")).toEqual([
+      { date: "2026-11-12", tasks: [other] },
     ]);
   });
 });

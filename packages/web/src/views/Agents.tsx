@@ -1,5 +1,6 @@
 // Agents as far as the page's data allows: "Recent", the tasks an agent or a routine
-// changed while this tab followed the space, newest first, one small heading per day. The rows are
+// changed while this tab followed the space, the ones it finished included, newest first, one
+// small heading per day. The rows are
 // ordinary rows, so a task expands to its thread, where the changes are. "Running", "Routines" and
 // the full history with Revert wait for the service's read of sessions, runs and routines.
 import { useCallback, useContext, useSyncExternalStore } from "react";
