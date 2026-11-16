@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { buildRunHelper } from "@tasks/launcher-win/build";
 import type { NewRun, RunRecord } from "@tasks/contracts/runs";
 import { newId, type Id } from "@tasks/storage";
+import { RunFiles, RUNS_FOLDER } from "@tasks/runs";
 import { seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
@@ -177,6 +178,9 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     );
     const id = second?.id ?? "";
     const live = await runUntil(service, spaceId, id, (r) => r.state === "running", "the run runs");
+    // Its message is saved before the service stops: what a restart keeps is what was saved.
+    const files = new RunFiles(join(stateOf(home), RUNS_FOLDER));
+    await waitFor(() => files.readAnswer(id), 15_000, "the message saved");
     // The service stops: the run's processes end with it, and its record is still open.
     await service.stop();
     removeRuntimeDir(service);
