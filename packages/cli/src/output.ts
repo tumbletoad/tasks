@@ -174,7 +174,7 @@ function searchLines(result: Result): string[] {
         // A snippet that only says the title again (a summary that is the title) adds nothing.
         const snippet =
           typeof row["snippet"] === "string" && row["snippet"] !== row["title"]
-            ? ` —${from === "" || from === "task" ? "" : `${from}: `}${row["snippet"]}`
+            ? ` — ${from === "" || from === "task" ? "" : `${from}: `}${row["snippet"]}`
             : "";
         lines.push(`${parts.join(" · ")}${snippet}${mark}`);
       }
