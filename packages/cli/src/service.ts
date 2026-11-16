@@ -1,4 +1,4 @@
-// `tasks service install|uninstall|start|stop|status` (A2 3.3.5): the service install's entries
+// `tasks service install|uninstall|start|stop|restart|status` (A2 3.3.5): the service install's entries
 // (M1.12, `@tasks/service/install`), a local command (A2 3.10.1). The CLI parses its global flags
 // (`--json`); the entry takes the verb and `--yes` and `--dry-run`, prints its preview, asks in a
 // terminal and returns A2 3.10.3's exit code. It is loaded only for this command: the service
@@ -14,12 +14,13 @@ export const SERVICE_HELP = `Usage: ${CLI_NAME} service <command> [--json]
   uninstall [--yes] [--dry-run]  Take that entry out again, and stop the service
   start                          Start the service through the OS and wait until it is ready
   stop                           Stop the service and wait until it has stopped
+  restart                        Stop, then start: the service runs the installed version after it
   status                         The entry, the service, its spaces and the UI's address
   port <n> [--reuse [--yes]]     Move the UI to another port; the service restarts
 
 install and uninstall show what they will change and ask once: --yes applies without asking (for a
-script), --dry-run only shows it. To restart the service, run ${CLI_NAME} service stop, then
-${CLI_NAME} service start.
+script), --dry-run only shows it. A restart ends background runs, whose answers so far are kept.
+Agent sessions keep running and reconnect, and open pages offer a reload.
 `;
 
 /** Runs `tasks service <verb> [--yes] [--dry-run]` and returns its exit code. */
@@ -35,7 +36,7 @@ export async function serviceCommand(
     return printUsage(
       io,
       globals.json,
-      "tasks service takes one of install, uninstall, start, stop, status, and the flags --yes and --dry-run",
+      "tasks service takes one of install, uninstall, start, stop, restart, status, and the flags --yes and --dry-run",
     );
   }
   // A question only in a terminal: the entry reads the answer from it.
