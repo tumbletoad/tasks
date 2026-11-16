@@ -1061,7 +1061,8 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       expect(await probe.executable(join(root, "missing"))).toBe(false);
       expect(await probe.executable(root)).toBe(false);
       expect(await probe.realpath(join(root, "missing"))).toBeUndefined();
-      expect(await probe.realpath(program)).toBe(realpathSync(program));
+      // The native resolution, as fs.promises.realpath does: it expands Windows' short names.
+      expect(await probe.realpath(program)).toBe(realpathSync.native(program));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -247,6 +247,26 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
     expect(parsed(reopened.stdout)["space"]).toMatchObject({ state: "open" });
     expect(parsed(reopened.stdout)["space"]).not.toHaveProperty("message");
     expect(await barriers()).toBe(2);
+    const upgraded = await factsOf(folder);
+    expect(upgraded.userVersion).toBe(4);
+    expect(upgraded.lastSeq).toBeGreaterThan(fixture.lastSeq);
+    for (const [table, n] of Object.entries(fixture.counts)) {
+      // The outbox is the projection's queue: the open space's projection empties it at its pace.
+      if (table !== "commits" && table !== "outbox") {
+        expect(upgraded.counts[table], table).toBe(n);
+      }
+    }
+    for (const table of [
+      "labels",
+      "task_labels",
+      "learnings",
+      "proposals",
+      "exchanges",
+      "sessions",
+      "runs",
+    ]) {
+      expect(upgraded.counts[table], table).toBe(0);
+    }
     // The space list says what the update did, and which backup is from just before it.
     const newest = (
       parsed((await user(["space", "backups", "list", folder, "--json"])).stdout) as {
@@ -263,23 +283,6 @@ describe("[A1.5.migration.drill] the installed-build migration failure and resto
         "u",
       ),
     );
-    const upgraded = await factsOf(folder);
-    expect(upgraded.userVersion).toBe(4);
-    expect(upgraded.lastSeq).toBeGreaterThan(fixture.lastSeq);
-    for (const [table, n] of Object.entries(fixture.counts)) {
-      if (table !== "commits") expect(upgraded.counts[table], table).toBe(n);
-    }
-    for (const table of [
-      "labels",
-      "task_labels",
-      "learnings",
-      "proposals",
-      "exchanges",
-      "sessions",
-      "runs",
-    ]) {
-      expect(upgraded.counts[table], table).toBe(0);
-    }
     expect(upgraded.counts["search_docs"]).toBeGreaterThanOrEqual(fixture.counts["tasks"] ?? 0);
     const added = await world.tasks(["add", "Drill fixture task", "--space", id, "--json"]);
     expect(added.code, added.stdout + added.stderr).toBe(0);
