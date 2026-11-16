@@ -26,7 +26,7 @@ One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14).
 
 ## Real-machine sessions
 
-Some checks need the owner at a real machine: the Windows reference machine or the Linux reference machine (Ubuntu 24.04, no sudo rights). These are open:
+Some checks need the owner at a real machine, on Windows 11 or on Ubuntu 24.04 without sudo rights. These are open:
 
 | Session | Machine | What it checks | Rows and steps |
 |---|---|---|---|
@@ -38,8 +38,8 @@ Some checks need the owner at a real machine: the Windows reference machine or t
 Gate G2 stays open until lab sessions 1 to 3 have run. Steps behind a G2 predicate are built meanwhile, to the lab's recorded findings, and their pull requests list what waits for a session. M1.15 and M2.15 are not claimed before the sessions.
 
 Merged steps left these checks for a session:
-- `tasks setup agents`, then `--apply`, then `--remove` in the real agent homes on each machine: the apps' own `mcp add` commands write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` (M2.15).
-- The installed-build migration drill (`pnpm accept m3 --part migration --installed <folder>`) against the Linux build on the Linux reference machine, before a build with schema 0.2 opens real spaces there.
+- `tasks setup agents`, then `--apply`, then `--remove` in the real agent homes on a real Windows and a real Linux machine: the apps' own `mcp add` commands write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` (M2.15).
+- The installed-build migration drill (`pnpm accept m3 --part migration --installed <folder>`) against the Linux build on a real Ubuntu 24.04 machine, before a build with schema 0.2 opens real spaces on it.
 - The modes T3 Code gives its runtime file and `userdata` folder under umask 002, when the session that observes T3 runs (L05).
 
 ## M0: the real-machine lab
@@ -201,7 +201,7 @@ M4.05b and M4.01b are not in the base count.
 | M7.06 | Export to the prototype format | M7.03 | M | ready |
 | M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |
 | M7.08 | Trial tooling | M7.07 | S | todo |
-| M7.09 | Rehearsal on the Linux reference machine | M5, M6, M7.08 | S RM | todo |
+| M7.09 | Rehearsal on the machine that holds the real work data | M5, M6, M7.08 | S RM | todo |
 | M7.10 | Cutover and 10-day trial | M7.09 | S RM | todo |
 | M7.11 | The importer on folders | M7.05, M4.09 | M | todo |
 
