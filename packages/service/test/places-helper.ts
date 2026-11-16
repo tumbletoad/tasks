@@ -1,7 +1,7 @@
 // A task's place written straight to its space's writer. The launch, `here` and the feed's rows
 // still read places, and no tool binds one: their tests place a task this way. Tests only.
 import { randomBytes } from "node:crypto";
-import type { Id } from "@tasks/storage";
+import type { Id, Operation } from "@tasks/storage";
 import type { OpsHost } from "../src/ops/index.ts";
 import { readSpace } from "../src/ops/read.ts";
 
@@ -17,11 +17,24 @@ export function placeTask(
 }
 
 /** Places each task, in one request. */
-export async function placeTasks(
+export function placeTasks(
   ops: OpsHost,
   places: readonly { readonly task: string; readonly root: string; readonly path: string }[],
   space?: string,
 ): Promise<void> {
+  return write(
+    ops,
+    places.map(({ task, root, path }) => ({ kind: "place.set" as const, task, root, path })),
+    space,
+  );
+}
+
+/** Takes the task's place away. */
+export function unplaceTask(ops: OpsHost, task: string, space?: string): Promise<void> {
+  return write(ops, [{ kind: "place.clear", task }], space);
+}
+
+async function write(ops: OpsHost, sent: Operation[], space: string | undefined): Promise<void> {
   const served = ops
     .spaces()
     .find((s) => s.writer !== undefined && (space === undefined || s.id === space));
@@ -41,7 +54,7 @@ export async function placeTasks(
       machine_id: ops.machine.id as Id<"m">,
       origin: "cli",
     },
-    ops: places.map(({ task, root, path }) => ({ kind: "place.set" as const, task, root, path })),
+    ops: sent,
   });
   if (result.status !== "applied") throw new Error(`the fixture place was ${result.status}`);
 }

@@ -6,7 +6,7 @@
 //
 // It builds the examples' world through the transport itself (only registry operations), as far
 // as this build's operations can: Mira's tasks M-1 to M-15, with M-3 completed, M-14 and M-15
-// placed in the portal folder under the root `work`, and M-14's notes, log entries, source and
+// with the portal folder as their own, and M-14's notes, log entries, source and
 // receipts. Then every example of every entry runs:
 //
 // - VERIFIED examples give a result that matches the entry's output schema and the documented
@@ -248,7 +248,16 @@ interface Later {
 
 /** Examples by `<entry> <index>`. */
 const LATER: Readonly<Record<string, Later>> = {
-  "space.status 1": {
+  "space.status 0": {
+    owner: "the step that makes here read folders",
+    why: "here lists the tasks placed at the working folder, and the world's tasks have folders",
+    now: { result: "schema" },
+  },
+  "launch.open 0": {
+    owner: "the step that makes Open use folders",
+    why: "the brief's folder line names the task's place, and the world's tasks have folders",
+    now: { result: "schema" },
+  },  "space.status 1": {
     owner: "M6 (routines)",
     why: "a routine's session",
     now: { result: "schema" },
@@ -297,7 +306,6 @@ const LATER: Readonly<Record<string, Later>> = {
 };
 
 const VERIFIED = new Set([
-  "space.status 0",
   "task.get 0",
   "task.get 1",
   "task.get 2",
@@ -313,7 +321,6 @@ const VERIFIED = new Set([
   "receipt.get 0",
   "receipt.get 1",
   "receipt.get 2",
-  "launch.open 0",
   "group.manage 1",
   "folder.manage 0",
   "prefs.manage 0",
@@ -747,7 +754,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             const input = { ...(example.input as Value) };
             // An example's base is "the as_of of a read just before": the world's own.
             if (typeof input["base"] === "string") input["base"] = await world.asOf();
-            // An example's working folder is the world's portal, where M-14 and M-15 are placed.
+            // An example's working folder is the world's portal, M-14's and M-15's folder.
             if (typeof input["cwd"] === "string") input["cwd"] = transport.portal;
             // An example's folder is the world's portal too: a folder that exists on this machine.
             if (entry.name === "folder.manage" && typeof input["folder"] === "string") {
@@ -825,11 +832,11 @@ async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<strin
   }));
   await t.call("task.add", { tasks, request_id: rid() }, "user");
 
-  // M-14 and M-15 in the portal folder, as the user binds them: the tasks `here` names.
+  // M-14 and M-15 in the portal folder, as the user gives it to them.
   for (const task of ["M-14", "M-15"]) {
     await t.call(
       "task.update",
-      { task, set: { place: t.portal }, base: await asOf(), request_id: rid() },
+      { task, set: { folder: t.portal }, base: await asOf(), request_id: rid() },
       "user",
     );
   }
