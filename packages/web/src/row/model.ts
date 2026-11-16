@@ -124,11 +124,7 @@ export interface RowInput {
   readonly place?: PlaceFact;
   readonly marker?: MarkerFact;
   readonly launchBlock?: LaunchBlock;
-  /**
-   * When the task's current wait began, in milliseconds since the epoch: Waiting's age column shows
-   * the time spent waiting (A5 3.5, 3.6). The page does not get it yet; until it does, the age is
-   * the task's own and its tooltip says "Created".
-   */
+  /** When the task's current wait began, in ms since the epoch: Waiting's age column counts from it. */
   readonly waitingSince?: number;
 }
 

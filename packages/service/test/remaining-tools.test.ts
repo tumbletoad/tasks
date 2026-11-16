@@ -19,14 +19,7 @@ import {
   TaskGetResult,
   type ErrorBody,
 } from "@tasks/contracts";
-import type {
-  Connection,
-  ReceiptLookup,
-  Row,
-  SpaceWriterHandle,
-  WorkerConnection,
-  WriteRequest,
-} from "@tasks/storage";
+import type { ReceiptLookup, SpaceWriterHandle, WriteRequest } from "@tasks/storage";
 import { openSpaceConnection } from "@tasks/storage";
 import { STEPS_0_3 } from "@tasks/storage/revisions";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
@@ -34,7 +27,7 @@ import { checkedDriver } from "@tasks/testkit";
 import { bridgePrincipal, renderError, renderResult, TOOLS } from "../src/mcp/index.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
-import { tempRoot } from "./harness.ts";
+import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
@@ -71,27 +64,6 @@ async function edit(f: Fixture, sql: string, params: Record<string, unknown>): P
   }
 }
 
-/** The fixture's reader as the service's: one deferred read transaction per call. */
-function readerOf(f: Fixture): WorkerConnection {
-  const conn: Connection = f.reader;
-  return {
-    transaction: (mode: "deferred", queries: { sql: string; mode: string; params: object }[]) =>
-      Promise.resolve(
-        conn.transaction(mode, () =>
-          queries.map((q) => {
-            const statement = conn.prepare(q.sql);
-            if (q.mode === "get") return statement.get(q.params as never) ?? null;
-            if (q.mode === "all") {
-              const rows: Row[] = statement.all(q.params as never);
-              return rows;
-            }
-            return statement.run(q.params as never);
-          }),
-        ),
-      ),
-  } as unknown as WorkerConnection;
-}
-
 /** The fixture's writer as the service's handle: the same calls, answered at once. */
 function writerOf(f: Fixture): SpaceWriterHandle {
   return {
@@ -105,7 +77,7 @@ function writerOf(f: Fixture): SpaceWriterHandle {
 const hostOf = (f: Fixture): OpsHost => ({
   machine: { id: MACHINE.id },
   spaces: () => [
-    { id: f.spaceId, name: "Mira", state: "open", writer: writerOf(f), reader: readerOf(f) },
+    { id: f.spaceId, name: "Mira", state: "open", writer: writerOf(f), reader: readerOf(f.reader) },
   ],
   now: () => clock,
   timeZone: () => "Europe/Lisbon",

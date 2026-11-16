@@ -4,13 +4,13 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { Connection, Operation, Row, WorkerConnection, WriteResult } from "@tasks/storage";
+import type { Operation, WriteResult } from "@tasks/storage";
 import { writeFixture, type Fixture } from "@tasks/storage/write-helpers";
 import { parseMachineConfig } from "../src/config/machine-toml.ts";
 import { readBatch, readHead, readSnapshot } from "../src/http/feed.ts";
 import { readPreferences } from "../src/ops/preferences.ts";
 import { readStatus } from "../src/ops/read.ts";
-import { tempRoot } from "./harness.ts";
+import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
@@ -27,26 +27,6 @@ afterAll(() => {
   temp.cleanup();
 });
 
-/** The service's reader, in this thread: each call is one deferred read transaction. */
-function readerOf(f: Fixture): WorkerConnection {
-  const conn: Connection = f.reader;
-  return {
-    transaction: (mode: "deferred", queries: { sql: string; mode: string; params?: object }[]) =>
-      Promise.resolve(
-        conn.transaction(mode, () =>
-          queries.map((q) => {
-            const statement = conn.prepare(q.sql);
-            const params = q.params as Record<string, null> | undefined;
-            if (q.mode === "get") return statement.get(params) ?? null;
-            const all: Row[] = statement.all(params);
-            return all;
-          }),
-        ),
-      ),
-    get: (sql: string) => Promise.resolve(conn.prepare(sql).get() ?? null),
-  } as unknown as WorkerConnection;
-}
-
 function submit(ops: Operation[]): WriteResult {
   const result = fx.writer.submit(fx.request(fx.human, ops, { base: fx.base() }));
   expect(result.status, JSON.stringify(result.error)).toBe("applied");
@@ -54,7 +34,12 @@ function submit(ops: Operation[]): WriteResult {
 }
 
 const status = () =>
-  readStatus(readerOf(fx), { today: "2026-11-12", week: "2026-11-19", since: 0, include: [] });
+  readStatus(readerOf(fx.reader), {
+    today: "2026-11-12",
+    week: "2026-11-19",
+    since: 0,
+    include: [],
+  });
 
 describe("[A1.3.16.prefs.read] the service reads preferences through the registry", () => {
   test("status follows the space's statuses and autonomy level, and their defaults after a reset", async () => {
@@ -78,9 +63,9 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
   });
 
   test("the snapshot carries every space preference and flag; a batch names a changed one", async () => {
-    const start = (await readHead(readerOf(fx))).cursor.seq;
+    const start = (await readHead(readerOf(fx.reader))).cursor.seq;
     const result = submit([{ kind: "pref.set", key: "ui.theme", value: "washi" }]);
-    const snapshot = await readSnapshot(readerOf(fx));
+    const snapshot = await readSnapshot(readerOf(fx.reader));
     expect(snapshot.preferences.map((p) => p.key)).toEqual([
       "ui.theme",
       "tasks.statuses",
@@ -101,7 +86,7 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
       value: true,
       state: "default",
     });
-    const { batch } = await readBatch(readerOf(fx), start);
+    const { batch } = await readBatch(readerOf(fx.reader), start);
     const event = batch.events.find((e) => e.seq === result.seq);
     expect(event?.entities).toEqual([
       { type: "preference", id: "ui.theme", row: null, changed: [], created: true },
@@ -114,7 +99,7 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
       "linux",
     );
     submit([{ kind: "pref.set", key: "features.search_trigram", value: true }]);
-    const all = await readPreferences(readerOf(fx), config);
+    const all = await readPreferences(readerOf(fx.reader), config);
     expect(all.find((p) => p.key === "projection.dir")).toEqual({
       key: "projection.dir",
       value: "/srv/tasks-view",

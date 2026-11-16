@@ -10,14 +10,7 @@ import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, SEARCH_SCOPES, TaskSearchResult } from "@tasks/contracts";
-import {
-  indexChanges,
-  rebuildSearchIndex,
-  type Connection,
-  type Operation,
-  type Row,
-  type WriteResult,
-} from "@tasks/storage";
+import { indexChanges, rebuildSearchIndex, type Operation, type WriteResult } from "@tasks/storage";
 import {
   addLearning,
   changeAuthority,
@@ -29,7 +22,6 @@ import {
 } from "@tasks/storage/search-helpers";
 import { STEPS_0_3 } from "@tasks/storage/revisions";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
-import type { WorkerConnection } from "@tasks/storage";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
 import { SearchCursors, CURSOR_LIMITS } from "../src/search/cursors.ts";
@@ -41,7 +33,7 @@ import {
 } from "../src/search/search.ts";
 import { SEPARATOR_RANGES } from "../src/search/query.ts";
 import { queryText } from "./search-queries.ts";
-import { tempRoot } from "./harness.ts";
+import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
@@ -65,27 +57,6 @@ afterAll(() => {
   temp.cleanup();
 });
 
-/** The service's reader, in this thread: each call is one deferred read transaction. */
-function readerOf(f: Fixture): SearchReader {
-  const conn: Connection = f.reader;
-  return {
-    transaction: (mode, queries) =>
-      Promise.resolve(
-        conn.transaction(mode, () =>
-          queries.map((q) => {
-            const statement = conn.prepare(q.sql);
-            if (q.mode === "get") return statement.get(q.params) ?? null;
-            if (q.mode === "all") {
-              const all: Row[] = statement.all(q.params);
-              return all;
-            }
-            return statement.run(q.params);
-          }),
-        ),
-      ),
-  };
-}
-
 function envOf(f: Fixture, extra: Partial<SearchEnv> = {}): SearchEnv {
   return {
     cursors,
@@ -103,7 +74,7 @@ function envOf(f: Fixture, extra: Partial<SearchEnv> = {}): SearchEnv {
 }
 
 const search = (input: Parameters<typeof runSearch>[1], extra: Partial<SearchEnv> = {}, f = fx) =>
-  runSearch(readerOf(f), input, envOf(f, extra));
+  runSearch(readerOf(f.reader), input, envOf(f, extra));
 
 function submit(f: Fixture, ops: Operation[], who = f.human): WriteResult {
   return f.writer.submit(f.request(who, ops, { base: f.base() }));
@@ -355,7 +326,7 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
       });
     // Between the search's reads, the area named home is renamed and the task moves into it: it
     // never was in an area named home.
-    const inner = readerOf(fx);
+    const inner = readerOf(fx.reader);
     let calls = 0;
     const racing: SearchReader = {
       transaction: async (mode, queries) => {
@@ -605,7 +576,7 @@ describe("[A3.5.search.find] task.search through the request path", () => {
         name: "Mira",
         state: "open",
         writer: undefined,
-        reader: readerOf(fx) as unknown as WorkerConnection,
+        reader: readerOf(fx.reader),
       },
     ],
     now: () => clock,

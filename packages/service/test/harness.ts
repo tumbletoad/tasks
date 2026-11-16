@@ -18,12 +18,37 @@ import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PRODUCT_ID } from "@tasks/brand";
 import { openRpc, parseKey, type RpcSession } from "@tasks/bridge/protocol";
-import { newId, readManifest } from "@tasks/storage";
+import {
+  newId,
+  readManifest,
+  type Connection,
+  type Params,
+  type Query,
+  type QueryResult,
+  type Row,
+  type WorkerConnection,
+} from "@tasks/storage";
 import { applyEdits, type Edit } from "../src/config/edit.ts";
 import { canonicalStatePath, installId, RUN_USER_BASE } from "../src/hub/paths.ts";
 
 export const MAIN = fileURLToPath(new URL("../src/hub/main.ts", import.meta.url));
 export const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
+
+/** A space's reader as the service holds it, answered at once in this thread. */
+export function readerOf(conn: Connection): WorkerConnection {
+  const run = (q: Query): QueryResult => {
+    const statement = conn.prepare(q.sql);
+    if (q.mode === "get") return statement.get(q.params) ?? null;
+    if (q.mode === "all") return statement.all<Row>(q.params);
+    return statement.run(q.params);
+  };
+  return {
+    transaction: (mode, queries: Query[]) =>
+      Promise.resolve(conn.transaction(mode, () => queries.map(run))),
+    get: (sql: string, params?: Params) => Promise.resolve(conn.prepare(sql).get(params)),
+    all: (sql: string, params?: Params) => Promise.resolve(conn.prepare(sql).all(params)),
+  } as Pick<WorkerConnection, "transaction" | "get" | "all"> as unknown as WorkerConnection;
+}
 
 /** Generous bounds: a loaded runner must not fail a test that is only slow. */
 export const READY_MS = 60_000;

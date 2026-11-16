@@ -24,12 +24,12 @@ import {
   type Operation,
   type Row,
   type SpaceWriterHandle,
-  type WorkerConnection,
   type WriteResult,
   type WriteSeams,
 } from "@tasks/storage";
 import { checkedDriver, MIRA, seedMira } from "@tasks/testkit";
 import { planningApply, planningPreview, planningUndo } from "../src/ops/import-planning.ts";
+import { readerOf } from "./harness.ts";
 
 /** The import's time zone in every test: days are 09:00 there. */
 export const ZONE = "Europe/Amsterdam";
@@ -70,27 +70,6 @@ export interface ImportWorld {
   /** The space's last seq. */
   seq(): number;
   close(): void;
-}
-
-/** A reader over one connection, as the storage worker's (only `transaction` is used). */
-function readerOf(conn: Connection): WorkerConnection {
-  return {
-    transaction: (
-      mode: "deferred" | "immediate",
-      queries: { sql: string; mode: string; params?: Record<string, unknown> }[],
-    ) =>
-      Promise.resolve(
-        conn.transaction(mode, () =>
-          queries.map((q) => {
-            const statement = conn.prepare(q.sql);
-            const params = q.params as Record<string, string | number | null> | undefined;
-            if (q.mode === "get") return statement.get(params) ?? null;
-            if (q.mode === "all") return statement.all(params);
-            return statement.run(params);
-          }),
-        ),
-      ),
-  } as unknown as WorkerConnection;
 }
 
 /** The space's writer, as the storage worker's handle (only what the import uses). */
