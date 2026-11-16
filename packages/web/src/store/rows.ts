@@ -33,6 +33,11 @@ export interface TaskRow {
   /** When a finished task was completed or dropped (a dropped one keeps no completion time). */
   readonly finished_at?: number;
   /**
+   * The day it was completed, as a search gives it (`task.search`'s `completed`) for a finished
+   * task the live store does not hold. Not a compact row's column: `finished_at` wins when present.
+   */
+  readonly completed_on?: string;
+  /**
    * When its current wait began, in milliseconds since the epoch (A5 3.5, 3.6): the Waiting view's
    * age. Absent until the service's compact row carries it.
    */

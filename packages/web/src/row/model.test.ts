@@ -305,6 +305,15 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
       "Dropped: x",
     ]);
     expect(dropped.description.map(say)).toEqual(["dropped Thursday 12 November"]);
+    // A row found by a search carries the day only.
+    const found = renderRow(
+      row(task({ title: "x", lifecycle: "completed", completed_on: "2026-11-12" })),
+      ctx("completed", "flat"),
+    );
+    expect([say(found.due?.text), say(found.due?.tip)]).toEqual([
+      "Today",
+      "Completed Thursday 12 November",
+    ]);
   });
 
   test("Agents: mixed areas and statuses, so the prefix and the chips show", () => {

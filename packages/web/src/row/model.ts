@@ -326,10 +326,16 @@ function ageOf(
       };
 }
 
-/** The day a finished task was completed or dropped, on the viewer's calendar. */
+/**
+ * The day a finished task was completed or dropped: its instant on the viewer's calendar, or the
+ * day a search gave for it.
+ */
 export function finishedDayOf(task: TaskRow, timeZone: string): string | undefined {
   const at = task.finished_at ?? task.completed_at;
-  return at === undefined ? undefined : localDate(at, timeZone);
+  if (at !== undefined) return localDate(at, timeZone);
+  return task.completed_on !== undefined && dayNumber(task.completed_on) !== undefined
+    ? task.completed_on
+    : undefined;
 }
 
 /** Completed's due column: the day it was completed or dropped (A5 3.5), never a due date. */
