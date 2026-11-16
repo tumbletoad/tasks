@@ -1,11 +1,11 @@
 // Runs the spike page once for rows U05 and U07 (step M0.08) and writes the result files.
-// Lab code: Node built-ins and the kit only, so it runs on the Linux lab machine from the packaged Node
+// Lab code: Node built-ins and the kit only, so it runs on Linux from the packaged Node
 // without node_modules. It installs nothing and changes no setting: the stand-in service runs in
 // this process on a new state folder (socket folder inside it, so nothing under /run/user), and
 // a browser, when one is named, gets a new profile folder that this run creates.
 //
 //   node spikes/m0/ui/lab.ts run --state <new dir> --ui <built page> --out <dir>
-//     --machine desktop|laptop [--measure u07|none] [--timeout 300] [--size 1440x900]
+//     --machine windows|linux [--measure u07|none] [--timeout 300] [--size 1440x900]
 //     [--browser <exe> --kind firefox|chrome --profile <new dir> [--headless]]
 //
 // Without --browser it prints the URL (one line of JSON) and waits for the page to report, so an
@@ -103,7 +103,7 @@ export function browserArgs(
       "--no-remote",
       "-profile",
       profile,
-      // Headless Firefox 159 keeps its default 1366x768 window either way (seen on the Linux lab machine),
+      // Headless Firefox 159 keeps its default 1366x768 window either way (seen on Ubuntu 24.04),
       // so the page reports its real viewport and the result files carry that.
       `--window-size=${String(w)},${String(h)}`,
       url,

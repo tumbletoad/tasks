@@ -4,8 +4,8 @@ Recorded output streams of the two v1 run adapters (A4 3.11.3, 3.11.4), turned i
 
 Recorded on 2026-11-12 in lab run N (step M0.11, rows N01, N02, N03, N05) with Claude Code 2.1.322 and codex-cli 0.167.2:
 
-- `windows-*`: the Windows lab machine (Windows 11). `claude -p` and `codex exec --json` with full access, both CLIs.
-- `linux-*`: the Linux lab machine (Ubuntu 24.04, no sudo rights). `codex exec --json` only, in the default sandbox with the probe's tools on `default_tools_approval_mode = "approve"` (no full access and no Claude Code sessions there in this step).
+- `windows-*`: Windows 11. `claude -p` and `codex exec --json` with full access, both CLIs.
+- `linux-*`: Ubuntu 24.04 without sudo rights. `codex exec --json` only, in the default sandbox with the probe's tools on `default_tools_approval_mode = "approve"` (no full access and no Claude Code sessions there in this step).
 
 Every run used fixture prompts only ("Call the tool probe_echo with the text hello. Then reply with the single word done."), an empty working folder, and the lab's probe MCP server registered for that run only under the name `tasks`.
 
@@ -76,8 +76,8 @@ On 2026-11-12 the committed fixtures were run through this sanitiser again (`lab
 
 The scan cannot recognise an arbitrary private name (a person, a customer, a project) in a field whose values the structure does not constrain: it knows shapes and this machine's names only. The structural assertions are the guarantee: in the stream fixtures no string field is free. The index's `case` and `note` texts are written by the lab's own code.
 
-The lab runs both layers before it publishes anything: every output is built and checked in the run's scratch folder, and only when all pass are they copied here (`spikes/m0/runs/publish.ts`). Raw streams never left their scratch folder, and the Linux lab machine's were sanitised on that machine.
+The lab runs both layers before it publishes anything: every output is built and checked in the run's scratch folder, and only when all pass are they copied here (`spikes/m0/runs/publish.ts`). Raw streams never left their scratch folder, and the Linux recordings were sanitised on the machine that made them.
 
 ## Regenerating
 
-Only through the lab (`spikes/m0/runs/README.md`): record with `lab.ts n01`, `n02`, `n03`, `repeats` (Windows) or `n02-laptop`, then `lab.ts n05 --fixtures fixtures/streams`, then `pnpm exec prettier --write "fixtures/streams/*.json"`. After a change to the schema, `lab.ts resanitise --fixtures fixtures/streams` runs the committed fixtures through it again. Never edit a fixture by hand to add content.
+Only through the lab (`spikes/m0/runs/README.md`): record with `lab.ts n01`, `n02`, `n03`, `repeats` (Windows) or `n02-linux`, then `lab.ts n05 --fixtures fixtures/streams`, then `pnpm exec prettier --write "fixtures/streams/*.json"`. After a change to the schema, `lab.ts resanitise --fixtures fixtures/streams` runs the committed fixtures through it again. Never edit a fixture by hand to add content.

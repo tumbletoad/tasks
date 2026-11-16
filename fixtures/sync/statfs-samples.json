@@ -1,62 +1,62 @@
 {
-  "about": "File system samples for the synced-folder and network check (A1 3.2, M3.09). 'captured' samples were read on a real machine with fs.statfs and the mount table (Node 26.13.1), keeping only the file system's type, never a source or a person's path. 'constructed' samples carry the values of the Linux kernel's include/uapi/linux/magic.h and the file systems' own sources, or macOS mount(8)'s output format, for file systems no machine here mounts. 'expect' is what the check reports: 'local' for a file system known to keep its files on this machine, the network file system's word, or 'unchecked' for any other.",
+  "about": "File system samples for the synced-folder and network check (A1 3.2, M3.09). 'captured' samples were read on a real machine with fs.statfs and the mount table (Node 26.13.1), keeping only the file system's type, never a source or a person's path. 'constructed' samples carry the values of the Linux kernel's include/uapi/linux/magic.h and the file systems' own sources, or macOS mount(8)'s output format, for file systems the captures did not mount. 'expect' is what the check reports: 'local' for a file system known to keep its files on this machine, the network file system's word, or 'unchecked' for any other.",
   "linux": [
     {
-      "source": "captured: WSL2 on the Windows lab machine, kernel 6.18 (/)",
+      "source": "captured: WSL2 on Windows 11, kernel 6.18 (/)",
       "fstype": "ext4",
       "statfs_type": "0xef53",
       "expect": "local"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/mnt/wsl)",
+      "source": "captured: WSL2 on Windows 11 (/mnt/wsl)",
       "fstype": "tmpfs",
       "statfs_type": "0x1021994",
       "expect": "local"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/usr/lib/modules)",
+      "source": "captured: WSL2 on Windows 11 (/usr/lib/modules)",
       "fstype": "overlay",
       "statfs_type": "0x794c7630",
       "expect": "local"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/mnt/c and /usr/lib/wsl/drivers, Windows folders over 9P)",
+      "source": "captured: WSL2 on Windows 11 (/mnt/c and /usr/lib/wsl/drivers, Windows folders over 9P)",
       "fstype": "9p",
       "statfs_type": "0x1021997",
       "expect": "9p"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/init)",
+      "source": "captured: WSL2 on Windows 11 (/init)",
       "fstype": "rootfs",
       "statfs_type": "0x1021994",
       "expect": "local"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/dev)",
+      "source": "captured: WSL2 on Windows 11 (/dev)",
       "fstype": "devtmpfs",
       "statfs_type": "0x1021994",
       "expect": "local"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/sys)",
+      "source": "captured: WSL2 on Windows 11 (/sys)",
       "fstype": "sysfs",
       "statfs_type": "0x62656572",
       "expect": "unchecked"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/proc)",
+      "source": "captured: WSL2 on Windows 11 (/proc)",
       "fstype": "proc",
       "statfs_type": "0x9fa0",
       "expect": "unchecked"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/dev/pts)",
+      "source": "captured: WSL2 on Windows 11 (/dev/pts)",
       "fstype": "devpts",
       "statfs_type": "0x1cd1",
       "expect": "unchecked"
     },
     {
-      "source": "captured: WSL2 on the Windows lab machine (/sys/fs/cgroup)",
+      "source": "captured: WSL2 on Windows 11 (/sys/fs/cgroup)",
       "fstype": "cgroup2",
       "statfs_type": "0x63677270",
       "expect": "unchecked"
@@ -184,21 +184,21 @@
   ],
   "windows": [
     {
-      "source": "captured: the Windows lab machine, a drive letter mapped to \\\\wsl.localhost\\Ubuntu (net use), fs.realpath.native of W:\\tmp; .NET DriveInfo said Network, 9P",
+      "source": "captured: Windows 11, a drive letter mapped to \\\\wsl.localhost\\Ubuntu (net use), fs.realpath.native of W:\\tmp; .NET DriveInfo said Network, 9P",
       "realpath": "\\\\wsl.localhost\\Ubuntu\\tmp",
       "drive_type": "Network",
       "format": "9P",
       "expect": "unc"
     },
     {
-      "source": "captured: the Windows lab machine, the Google Drive virtual drive (DriveInfo: Fixed, FAT32, labelled Google Drive), a path on it",
+      "source": "captured: Windows 11, the Google Drive virtual drive (DriveInfo: Fixed, FAT32, labelled Google Drive), a path on it",
       "realpath": "G:\\My Drive\\mira",
       "drive_type": "Fixed",
       "format": "FAT32",
       "expect": "local"
     },
     {
-      "source": "captured: the Windows lab machine, a local NTFS folder (the user's folder name replaced)",
+      "source": "captured: Windows 11, a local NTFS folder (the user's folder name replaced)",
       "realpath": "C:\\Users\\fixture\\Tasks\\mira",
       "drive_type": "Fixed",
       "format": "NTFS",

@@ -37,7 +37,7 @@ export const PARTS: Readonly<Record<string, Readonly<Record<string, readonly str
   m3: {
     // M3.01's installed-build drill (A1 5, MIL-02), which repeats M1.15's with the real 0.2: an
     // `installed` entry, run with --installed against an install root (the smoke job's) or the
-    // version folder `pnpm build --sign test` makes. The maintainer's real 0.1 spaces are upgraded
+    // version folder `pnpm build --sign test` makes. Real 0.1 spaces are upgraded
     // only after it passes.
     migration: ["A1.5.migration.drill"],
   },

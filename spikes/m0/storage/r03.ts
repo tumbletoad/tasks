@@ -1,6 +1,6 @@
 // R03 (A1 M0 item 2): commit latency of one-task patches with synchronous=FULL, in the space
 // folder the caller names (the lab uses ~/Tasks), plus receipt-only commits.
-// Pass: p95 <= 10 ms for the `desktop` role, <= 25 ms for the `laptop` role.
+// Pass: p95 <= 10 ms for the `windows` role, <= 25 ms for the `linux` role.
 import { summaryText } from "./fixture.ts";
 import { withConnection } from "./connection.ts";
 import {
@@ -45,7 +45,7 @@ export function r03(ctx: Context, o: R03Options): RowResult {
       receipt.push(performance.now() - t0);
     }
     const latency = summarize(patch);
-    const limit = ctx.machine.role === "desktop" ? 10 : 25;
+    const limit = ctx.machine.role === "windows" ? 10 : 25;
     // A7 3.7: 1,000 one-task patches on the design-scale database.
     const v = verdict(
       [
@@ -57,7 +57,7 @@ export function r03(ctx: Context, o: R03Options): RowResult {
     return {
       row: "R03",
       title: `commit latency, ${String(o.patches)} one-task patches, synchronous=FULL`,
-      threshold: `p95 <= ${String(limit)} ms (${ctx.machine.role}; desktop 10 ms, laptop 25 ms)`,
+      threshold: `p95 <= ${String(limit)} ms (${ctx.machine.role}; windows 10 ms, linux 25 ms)`,
       ...v,
       latency,
       metrics: {
@@ -66,7 +66,7 @@ export function r03(ctx: Context, o: R03Options): RowResult {
         synchronous: synchronous === 2 ? "FULL" : String(synchronous),
         journalMode: journal,
         receiptOnly: summarize(receipt),
-        p50TargetMs: ctx.machine.role === "desktop" ? 3 : null,
+        p50TargetMs: ctx.machine.role === "windows" ? 3 : null,
       },
     };
   });

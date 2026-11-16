@@ -89,7 +89,7 @@ const sc = openScratch(scratchPath);
 const scratch = sc.root;
 const results = option(args, "--results") ?? join(scratch, "results");
 mkdirSync(results, { recursive: true });
-const machine = WIN ? "desktop" : "laptop";
+const machine = WIN ? "windows" : "linux";
 
 // Every PID the lab starts, so the end of the run can show that none is left.
 const ledgerFile = join(scratch, "ledger.json");

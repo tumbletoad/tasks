@@ -35,7 +35,7 @@ import { BenchWorker } from "./threads.ts";
 
 const RUN = fileURLToPath(new URL("./run.ts", import.meta.url));
 const SCALE = 0.01;
-// The whole run must fit well inside the CI job. At 1 % it takes a few seconds on the Windows lab machine.
+// The whole run must fit well inside the CI job. At 1 % it takes a few seconds on Windows 11.
 const BUDGET_MS = 90_000;
 const ROWS = ["R02", "R03", "R04", "R05", "R06"] as const;
 /** Repeated starts for the start-up race of the second review (5 of 15 starts failed). */
@@ -131,7 +131,7 @@ const fullScaleContext = (out: string): Context => ({
   scale: 1,
   seed: "mira-ci",
   text: "default",
-  machine: machine("desktop"),
+  machine: machine("windows"),
   out,
 });
 
@@ -528,7 +528,7 @@ describe("[A7.3.7.storage-bench.failure-cleanup] failures release connections, r
       const { r04 } = await import(${module("./r04.ts")});
       const { machine } = await import(${module("./results.ts")});
       const ctx = { scale: 0.01, seed: "r04-failure", text: "default",
-        machine: machine("desktop"), out: ${JSON.stringify(dir)} };
+        machine: machine("windows"), out: ${JSON.stringify(dir)} };
       await r04(ctx, { primary: ${JSON.stringify(primary)}, writers: 10, seconds: 60 }).then(
         () => console.log("no failure"),
         (error) => console.log(String(error)),
@@ -539,7 +539,7 @@ describe("[A7.3.7.storage-bench.failure-cleanup] failures release connections, r
     expect(child.timedOut).toBe(false);
     expect(child.stderr).toBe("");
     expect(child.stdout).toContain("r04-queue worker: injected queue failure");
-    // The run asked for 60 s. Start-up and the failure take well under a second on the Windows lab machine.
+    // The run asked for 60 s. Start-up and the failure take well under a second on Windows 11.
     expect(child.ms).toBeLessThan(10_000);
   }, 40_000);
 
