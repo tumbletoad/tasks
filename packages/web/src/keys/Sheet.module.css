@@ -55,7 +55,8 @@
 
 .list {
   display: grid;
-  grid-template-columns: minmax(7.5rem, max-content) 1fr;
+  /* One width for every group, so the descriptions line up down the sheet. */
+  grid-template-columns: 12rem 1fr;
   gap: 6px 16px;
   margin: 0;
 }

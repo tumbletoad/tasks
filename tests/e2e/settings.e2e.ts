@@ -262,6 +262,7 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     page,
     world,
   }) => {
+    await watchViolations(page);
     await open(page, world, "/inbox");
     const gear = page.getByRole("link", { name: "Settings" });
     const tip = page.getByRole("tooltip", { includeHidden: true });
@@ -279,6 +280,8 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     // Escape closed the label only: focus and the page stay where they were.
     await expect(page.getByRole("button", { name: "Search instead" })).toBeFocused();
     await expect(page).toHaveURL(/\/inbox$/u);
+    // The label is placed under the strict CSP without an inline style the policy blocks.
+    expect(await violations(page)).toEqual([]);
   });
 });
 
