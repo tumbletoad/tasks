@@ -58,6 +58,17 @@ export interface SpaceState {
    * space, so whether a planned project is reused or numbered depends on the space's other slugs
    * too (placeProjects). */
   readonly projects: readonly SpaceProject[];
+  /** Where earlier imports landed groups: absent when none did. */
+  readonly landed?: Landed;
+}
+
+/**
+ * Where earlier imports landed groups, as their exchange items record it: by a planned group's
+ * identity (PlannedArea.key, PlannedProject.key), the ID of the group the newest record names.
+ */
+export interface Landed {
+  readonly areas: ReadonlyMap<string, string>;
+  readonly projects: ReadonlyMap<string, string>;
 }
 
 export interface SpaceArea {
@@ -103,24 +114,32 @@ function liveGroups<T extends { readonly slug: string; readonly title?: string }
 
 /**
  * Where each planned area and project goes in the space (A7 3.15.3, Areas and projects), the rule
- * the dry run reports and the apply follows. A planned group is first the live group with its
- * identity (its title's letters and digits, as the import groups titles; a project only in its
- * area), so a re-import finds every group an earlier import made whatever slug the order of the
- * prototype's lines gives it now: a numbered slug (`area-2`, `admin-2`) follows from the order of
- * first appearance, which a reordered prototype changes. Then the live group with its slug (a
- * project only in the same area), as an import into a space whose groups it did not make reuses
- * them. Else a new group with its slug, or the next number free in the space, the plan and the
- * placements when another group holds it. Each live group is reused by one planned group at most.
+ * the dry run reports and the apply follows. A planned group that an earlier import landed in a
+ * group that is still live goes there, whatever its title or slug is now: the import records each
+ * group's whole identity with the group's ID (`landed`), because titles are cut to fit and slugs
+ * number by the order of the prototype's lines, so neither tells two long, similar groups apart
+ * once the prototype is reordered. A project goes to its record only in the area its area goes to.
+ *
+ * A group without such a record is first the live group with its identity (its title's letters and
+ * digits, as the import groups titles; a project only in its area), then the live group with its
+ * slug (a project only in the same area), as an import into a space whose groups it did not make
+ * reuses them. Else a new group with its slug, or the next number free in the space, the plan and
+ * the placements when another group holds it. Each live group is reused by one planned group at
+ * most.
  *
  * `met` and `metAreas` hold every slug this looked at with the space's row there, or null where it
- * found none: each live group with a planned group's identity (a project in its area) and each
- * slug it tried, which is what the decision depends on and the token pins. A group a later write
- * adds at a slug none of these names changes no token; only an import adds groups, and its aliases
- * change the token anyway.
+ * found none: each recorded group, each live group with a planned group's identity (a project in
+ * its area) and each slug it tried, which is what the decision depends on and the token pins. A
+ * group a later write adds at a slug none of these names changes no token; only an import adds
+ * groups, and its aliases change the token anyway.
  */
 export function placeGroups(
   plan: ImportPlan,
-  space: { readonly areas: readonly SpaceArea[]; readonly projects: readonly SpaceProject[] },
+  space: {
+    readonly areas: readonly SpaceArea[];
+    readonly projects: readonly SpaceProject[];
+    readonly landed?: Landed;
+  },
 ): {
   areas: Map<string, GroupPlacement>;
   projects: Map<string, GroupPlacement>;
@@ -137,7 +156,17 @@ export function placeGroups(
   };
   const areas = new Map<string, GroupPlacement>();
   const claimedAreas = new Set<string>();
+  const areaById = new Map(space.areas.map((a) => [a.id, a]));
   for (const p of plan.areas) {
+    const id = space.landed?.areas.get(p.key);
+    const row = id === undefined ? undefined : areaById.get(id);
+    if (row === undefined || claimedAreas.has(row.slug)) continue;
+    lookArea(row.slug);
+    claimedAreas.add(row.slug);
+    areas.set(p.slug, { slug: row.slug, reuses: row.id });
+  }
+  for (const p of plan.areas) {
+    if (areas.has(p.slug)) continue;
     const same = liveAreas.byIdentity.get(groupKey(p.title, "area")) ?? [];
     for (const a of same) lookArea(a.slug);
     const candidates = same.filter((a) => !claimedAreas.has(a.slug));
@@ -184,7 +213,18 @@ export function placeGroups(
   };
   const projects = new Map<string, GroupPlacement>();
   const claimed = new Set<string>();
+  const projectById = new Map(space.projects.map((p) => [p.id, p]));
   for (const p of plan.projects) {
+    const id = space.landed?.projects.get(p.key);
+    const row = id === undefined ? undefined : projectById.get(id);
+    if (row === undefined) continue;
+    look(row.slug);
+    if (claimed.has(row.slug) || row.area !== areaOf(p.area)) continue;
+    claimed.add(row.slug);
+    projects.set(p.slug, { slug: row.slug, reuses: row.id });
+  }
+  for (const p of plan.projects) {
+    if (projects.has(p.slug)) continue;
     const area = areaOf(p.area);
     const same = (liveProjects.byIdentity.get(groupKey(p.title, "project")) ?? []).filter(
       (r) => r.area === area,
@@ -342,10 +382,16 @@ function judged(plan: ImportPlan, space: SpaceState) {
  * export's hashes, the options and the plan's hash. The apply recomputes these from the folder,
  * and the writer hashes them with the space's identity and the rows the plan meets, which it reads
  * in the applying transaction (storage: recomputeToken).
+ *
+ * Also each record of where an earlier import landed one of the plan's groups, with whether that
+ * group is live: the apply reads the records in the snapshot it decides on, and the barrier holds
+ * the space at that snapshot until the writer's transaction, so the writer takes them as given.
  */
 export function previewPinned(
   plan: ImportPlan,
-  run: Pick<PreviewRun, "run" | "inputs" | "actions" | "options">,
+  run: Pick<PreviewRun, "run" | "inputs" | "actions" | "options"> & {
+    readonly space?: Pick<SpaceState, "areas" | "projects" | "landed">;
+  },
 ): Record<string, unknown> {
   const o = run.options;
   return {
@@ -361,7 +407,31 @@ export function previewPinned(
       time_zone: o.timeZone,
     },
     plan: planHash(plan),
+    landed: run.space === undefined ? [] : landedOf(plan, run.space),
   };
+}
+
+/** The records placeGroups follows for the plan's groups, each with its group's live row or null. */
+function landedOf(
+  plan: ImportPlan,
+  space: Pick<SpaceState, "areas" | "projects" | "landed">,
+): unknown[] {
+  const areas = new Map(space.areas.map((a) => [a.id, a]));
+  const projects = new Map(space.projects.map((p) => [p.id, p]));
+  const out: unknown[] = [];
+  for (const a of plan.areas) {
+    const id = space.landed?.areas.get(a.key);
+    if (id === undefined) continue;
+    const row = areas.get(id);
+    out.push(["area", a.key, id, row === undefined ? null : [row.slug, row.version]]);
+  }
+  for (const p of plan.projects) {
+    const id = space.landed?.projects.get(p.key);
+    if (id === undefined) continue;
+    const row = projects.get(id);
+    out.push(["project", p.key, id, row === undefined ? null : [row.slug, row.version, row.area]]);
+  }
+  return out;
 }
 
 /**

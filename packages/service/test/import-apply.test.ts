@@ -797,6 +797,134 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       world.close();
     }
   }, 120_000);
+
+  test("an outcome the person wrote stays through the prototype's uncheck and check again", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      const done = { id: "pa", title: "Ship", done: { date: "2026-11-02", evidence: "Shipped" } };
+      writePrototype(prototype, { tasks: [done] });
+      await importedSynthetic(world, prototype);
+      const ta = taskOf(world, "pa");
+      expect(task(world, ta)).toMatchObject({ lifecycle: "completed", outcome: "Shipped" });
+      expect(
+        world.edit([{ kind: "task.wrap_up", task: ta, outcome: "Shipped, with my notes" }]).status,
+      ).toBe("applied");
+      const mine = {
+        lifecycle: "completed",
+        wrap_state: "wrapped",
+        outcome: "Shipped, with my notes",
+      };
+      // Unchecked in the prototype: a change of the lifecycle that would take the person's
+      // outcome with it, so both are a conflict and the task stays as the person left it.
+      writePrototype(prototype, { tasks: [{ id: "pa", title: "Ship" }] });
+      const unchecked = await importedSynthetic(world, prototype);
+      expect(unchecked.result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual([
+        "lifecycle",
+        "wrap",
+      ]);
+      expect(task(world, ta)).toMatchObject(mine);
+      // Checked again with its old outcome: the person's stays.
+      writePrototype(prototype, { tasks: [done] });
+      await importedSynthetic(world, prototype);
+      expect(task(world, ta)).toMatchObject(mine);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
+
+  test("a source the person took off stays off, also after an import whose prototype left it out", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      const url = "https://example.com/notes/plan";
+      const at = (title: string, linked: boolean) => ({
+        tasks: [
+          {
+            id: "pa",
+            title,
+            meta: linked ? { sources: [{ label: "Plan notes", url }] } : {},
+          },
+        ],
+      });
+      writePrototype(prototype, at("First", false));
+      await importedSynthetic(world, prototype);
+      const ta = taskOf(world, "pa");
+      const links = () =>
+        world.rows(
+          "SELECT s.url FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
+            "WHERE ts.task_id = $t AND ts.removed_at IS NULL",
+          { t: ta },
+        ).length;
+      // The person links the source by hand; the prototype names it too, in an import that writes.
+      expect(
+        world.edit([
+          {
+            kind: "source.add",
+            task: ta,
+            source: { kind: "web", title: "Plan", url, key: `url:${url}` },
+          },
+        ]).status,
+      ).toBe("applied");
+      writePrototype(prototype, at("Second", true));
+      expect((await importedSynthetic(world, prototype)).result.status).toBe("applied");
+      // The person takes the link off again with Ctrl+Z.
+      const undo = world.writer.submit({
+        space_id: world.writer.spaceId,
+        request_id: `undo-link-${String(world.seq()).padStart(8, "0")}`,
+        actor: {
+          scope_id: "cli:import-test",
+          principal_id: world.user,
+          actor_kind: "human",
+          machine_id: world.machine,
+          origin: "cli",
+        },
+        ops: [{ kind: "undo" }],
+      });
+      expect(undo.status).toBe("applied");
+      expect(links()).toBe(0);
+      // An import whose prototype leaves the source out, then one that names it again.
+      writePrototype(prototype, at("Third", false));
+      expect((await importedSynthetic(world, prototype)).result.status).toBe("applied");
+      writePrototype(prototype, at("Third", true));
+      await importedSynthetic(world, prototype);
+      expect(links()).toBe(0);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
+
+  test("groups whose long titles cut to the same text keep their tasks when the prototype is reordered", async () => {
+    const { world, prototype } = await synthetic();
+    try {
+      // Past the title's 300 characters only the last word differs: one title, two groups, and
+      // their slugs number by the order of first appearance.
+      const long = `Long ${"name ".repeat(70)}`;
+      const a = { id: "pa", title: "A", meta: { category: `${long}alpha` } };
+      const b = { id: "pb", title: "B", meta: { category: `${long}beta` } };
+      const c = { id: "pc", title: "C", meta: { category: "Work", project: `${long}one` } };
+      const d = { id: "pd", title: "D", meta: { category: "Work", project: `${long}two` } };
+      const a2 = { id: "pe", title: "A too", meta: a.meta };
+      const c2 = { id: "pf", title: "C too", meta: c.meta };
+      writePrototype(prototype, { tasks: [a, b, c, d] });
+      await importedSynthetic(world, prototype);
+      const where = (legacy: string) => {
+        const t = task(world, taskOf(world, legacy));
+        return { area: t["area_id"], project: t["project_id"] };
+      };
+      const [wa, wb, wc, wd] = [where("pa"), where("pb"), where("pc"), where("pd")];
+      expect(wa.area).not.toBe(wb.area);
+      expect(wc.project).not.toBe(wd.project);
+      // Reordered, with a new task in the first group of each kind: the dry run finds every
+      // group, the apply moves nothing, and the new tasks join their own groups.
+      writePrototype(prototype, { tasks: [b, d, a2, c2, a, c] });
+      const second = await importedSynthetic(world, prototype);
+      expect(second.preview.counts).toMatchObject({ areas_existing: 3, projects_existing: 2 });
+      expect(second.result.counts).toMatchObject({ created: 2, updated: 0, conflicts: 0 });
+      expect([where("pa"), where("pb"), where("pc"), where("pd")]).toEqual([wa, wb, wc, wd]);
+      expect([where("pe"), where("pf")]).toEqual([wa, wc]);
+    } finally {
+      world.close();
+    }
+  }, 120_000);
 });
 
 describe("[A7.3.15.importer.undo] the undo of an import", () => {

@@ -24,10 +24,14 @@
 // import's seq, so a later import still sees the person's change as a change. An undone import's
 // item gives no base for the fields its undo set back (`voided`).
 //
-// Besides the task's own fields: a source the prototype added since the last import is linked
-// (never one it dropped, and never one the person removed); a place is set when its folder changed
-// in the prototype and not in the space (never cleared); a changed evidence text adds an evidence
-// entry. Areas and projects are upserted by slug, only those an operation needs.
+// A completion or a reopen writes the lifecycle and the wrap-up together: when the person's value
+// of either stands (kept or in conflict), the other is a conflict too, so neither overwrites it.
+//
+// Besides the task's own fields: a source the prototype names that no earlier import named is
+// linked (never one it dropped, and never one the person removed); a place is set when its folder
+// changed in the prototype and not in the space (never cleared); a changed evidence text adds an
+// evidence entry. Areas and projects are placed by placeGroups and upserted by slug, only those an
+// operation needs, and each item records where its task's groups landed for the next import.
 //
 // The same input twice gives no operation: an import that changes nothing writes no exchange.
 import type { ImportPlan, PlannedSource, PlannedSourceFields, PlannedTask } from "./plan.ts";
@@ -77,6 +81,18 @@ export interface ItemBase {
   readonly fields: Readonly<Partial<Record<BaseField, unknown>>>;
   /** The identities (key, else `@url`) of the plan's sources for the task. */
   readonly sources: readonly string[];
+  /**
+   * Where the task's planned area and project landed in the space: each group's identity
+   * (PlannedArea.key, PlannedProject.key) and its ID. A later import places the group there
+   * (preview.ts: placeGroups). Absent for a group the space does not hold after the import.
+   */
+  readonly groups?: { readonly area?: LandedGroup; readonly project?: LandedGroup };
+}
+
+/** One group an import landed: the planned group's identity and the group's ID. */
+export interface LandedGroup {
+  readonly key: string;
+  readonly id: string;
 }
 
 /** One recorded base of a task: its item's base and the seq of the import that recorded it. */
@@ -147,6 +163,8 @@ export interface ApplyOptions {
   readonly dir: string;
   /** The ID a new task of this legacy ID gets. */
   readonly idOf: (legacyId: string) => string;
+  /** The ID a new area or project of this identity gets (PlannedArea.key, PlannedProject.key). */
+  readonly groupIdOf: (kind: "area" | "project", key: string) => string;
   /** The instant the apply was made: `ext.planning.imported_at` of a task it creates. */
   readonly importedAt: number;
 }
@@ -260,6 +278,9 @@ function baseOf(task: MatchedTask, field: BaseField): { value: unknown; seq: num
   return undefined;
 }
 
+/** What a re-import does with one field (the module header). */
+type Verdict = "apply" | "settle" | "keep" | "conflict";
+
 /** The fields a `task.patch` sets, by base field. */
 const PATCHED: ReadonlySet<BaseField> = new Set([
   "title",
@@ -295,7 +316,9 @@ export function decideApply(
   };
 
   const taskOps: ApplyOp[] = [];
-  const items: { task: string; file: string; base: ItemBase }[] = [];
+  /** Each task's item, with its planned area's and project's slugs in the plan. */
+  const items: { task: string; file: string; base: ItemBase; area: string; project?: string }[] =
+    [];
   const tasks: AppliedTask[] = [];
   /** The groups the operations name: upserted before them. */
   const areas = new Set<string>();
@@ -350,6 +373,8 @@ export function decideApply(
           fields: expected.values,
           sources: [...expected.sources.keys()],
         },
+        area: task.area,
+        ...(task.project === undefined ? {} : { project: task.project }),
       });
       tasks.push({
         legacyId: task.legacyId,
@@ -378,6 +403,8 @@ export function decideApply(
         fields: decided.settled,
         sources: [...expected.sources.keys()],
       },
+      area: task.area,
+      ...(task.project === undefined ? {} : { project: task.project }),
     });
     tasks.push({
       legacyId: task.legacyId,
@@ -394,29 +421,58 @@ export function decideApply(
   // from then on a person's change of it counts from this import.
   if (taskOps.length === 0 && !refreshed) return { ops: [], tasks, gone: space.gone };
 
-  // The groups the operations need that the space lacks, at the slugs their placement gives.
+  // The groups the operations need that the space lacks, at the slugs their placement gives, with
+  // IDs of the apply's own, so the items can record where each group landed.
   const upserts: ApplyOp[] = [];
+  /** Each planned group the space holds once the import applies: its identity and its ID. */
+  const landedAreas = new Map<string, LandedGroup>();
+  const landedProjects = new Map<string, LandedGroup>();
   for (const a of plan.areas) {
     const placed = areaPlacements.get(a.slug);
-    if (!areas.has(a.slug) || placed === undefined || placed.reuses !== undefined) continue;
-    upserts.push({ kind: "area.upsert", slug: placed.slug, title: a.title });
+    if (placed === undefined) continue;
+    if (placed.reuses !== undefined) {
+      landedAreas.set(a.slug, { key: a.key, id: placed.reuses });
+    } else if (areas.has(a.slug)) {
+      const id = options.groupIdOf("area", a.key);
+      upserts.push({ kind: "area.upsert", slug: placed.slug, title: a.title, id });
+      landedAreas.set(a.slug, { key: a.key, id });
+    }
   }
   for (const p of plan.projects) {
     const placed = placements.get(p.slug);
-    if (!projects.has(p.slug) || placed === undefined || placed.reuses !== undefined) continue;
-    upserts.push({
-      kind: "project.upsert",
-      slug: placed.slug,
-      title: p.title,
-      area: areaSlug(p.area),
-    });
+    if (placed === undefined) continue;
+    if (placed.reuses !== undefined) {
+      landedProjects.set(p.slug, { key: p.key, id: placed.reuses });
+    } else if (projects.has(p.slug)) {
+      const id = options.groupIdOf("project", p.key);
+      upserts.push({
+        kind: "project.upsert",
+        slug: placed.slug,
+        title: p.title,
+        area: areaSlug(p.area),
+        id,
+      });
+      landedProjects.set(p.slug, { key: p.key, id });
+    }
   }
   const exchange: ApplyOp = {
     kind: "exchange.create",
     id: options.exchange,
     dir: options.dir,
     applied: true,
-    items,
+    items: items.map(({ task, file, base, area, project }) => {
+      const a = landedAreas.get(area);
+      const p = project === undefined ? undefined : landedProjects.get(project);
+      const groups = {
+        ...(a === undefined ? {} : { area: a }),
+        ...(p === undefined ? {} : { project: p }),
+      };
+      return {
+        task,
+        file,
+        base: Object.keys(groups).length === 0 ? base : { ...base, groups },
+      };
+    }),
   };
   return { ops: [...upserts, ...taskOps, exchange], tasks, gone: space.gone };
 }
@@ -438,34 +494,52 @@ function decideMatched(
   const conflicts: BaseField[] = [];
   /** A field whose base this import moves: E is new to the record, and the space holds it. */
   let refreshed = false;
-  /** Whether to apply E, settle (record E), or neither, for each field. */
-  const verdict = new Map<BaseField, "apply" | "settle" | "keep" | "conflict">();
+  /**
+   * Whether to apply E, settle (record E), or neither, for each field. Each verdict is decided
+   * once, below, and an operation is only ever emitted from the final one: a later rule may turn
+   * an apply into a keep or a conflict, never a conflict or a keep into anything else.
+   */
+  const verdict = new Map<BaseField, Verdict>();
   for (const field of BASE_FIELDS) {
     const e = expected.values[field];
     const c = found.values[field];
+    if (field === "evidence") {
+      // An evidence entry is only ever added, so no person's change can meet it: a changed text
+      // adds one, a text the prototype dropped adds nothing, and without a base the first import
+      // wrote it.
+      const b = baseOf(found, field);
+      verdict.set(
+        field,
+        b === undefined || same(e, b.value) ? "settle" : e === null ? "keep" : "apply",
+      );
+      continue;
+    }
     const b = baseOf(found, field);
-    let v: "apply" | "settle" | "keep" | "conflict";
+    let v: Verdict;
     if (b === undefined) v = same(e, c) ? "settle" : "conflict";
     else if (same(e, b.value)) v = same(e, c) ? "settle" : "keep";
     else if (found.versions[field] <= b.seq) v = same(e, c) ? "settle" : "apply";
     else v = same(e, c) ? "settle" : "conflict";
     verdict.set(field, v);
   }
+  // A completion or a reopen writes the lifecycle and the wrap-up together, and a wrap-up needs
+  // the lifecycle the person left: when either is the person's (kept or in conflict), applying
+  // the other would overwrite it, so that one is a conflict too.
+  const lifecycleV = verdict.get("lifecycle") ?? "keep";
+  const wrapV = verdict.get("wrap") ?? "keep";
+  const personal = (v: Verdict) => v === "keep" || v === "conflict";
+  if (lifecycleV === "apply" && personal(wrapV)) verdict.set("lifecycle", "conflict");
+  if (wrapV === "apply" && personal(lifecycleV)) verdict.set("wrap", "conflict");
+  // A changed outcome alone wraps the finished task up again. An outcome the prototype dropped
+  // stays: an import never unwraps a task, as it never removes a place or an evidence entry.
+  if (verdict.get("wrap") === "apply" && verdict.get("lifecycle") !== "apply") {
+    const done = (found.values.lifecycle as string) !== "active";
+    if (expected.values.wrap === null || !done) verdict.set("wrap", "keep");
+  }
   // Never deleted by an import: a place the prototype no longer names stays (A1 3.14).
   if (verdict.get("place") === "apply" && expected.values.place === null) {
     verdict.set("place", "keep");
   }
-  // An evidence entry is only ever added, so no person's change can meet it: a changed text adds
-  // one, a text the prototype dropped adds nothing, and without a base the first import wrote it.
-  const evidence = baseOf(found, "evidence");
-  verdict.set(
-    "evidence",
-    evidence === undefined || same(expected.values.evidence, evidence.value)
-      ? "settle"
-      : expected.values.evidence === null
-        ? "keep"
-        : "apply",
-  );
 
   const ops: ApplyOp[] = [];
   const id = found.id;
@@ -492,11 +566,10 @@ function decideMatched(
     ops.push({ kind: "task.move", task: id, area: g.area, project: g.project });
   }
 
-  // Lifecycle and wrap-up go together: a completion carries its outcome, a reopen clears it.
-  const lifecycle = verdict.get("lifecycle");
-  let wrap = verdict.get("wrap");
+  // A completion carries its outcome, a reopen clears the wrap-up: either way the space holds E's
+  // wrap-up after it.
   const outcome = expected.values.wrap as string | null;
-  if (lifecycle === "apply") {
+  if (verdict.get("lifecycle") === "apply") {
     if (expected.values.lifecycle === "completed") {
       ops.push({
         kind: "task.complete",
@@ -505,16 +578,9 @@ function decideMatched(
         ...(expected.completedAt === undefined ? {} : { at: expected.completedAt }),
       });
     } else ops.push({ kind: "task.reopen", task: id });
-    // The space holds E's wrap-up once the lifecycle applies: E's outcome, or none.
-    wrap = "settle";
-  } else if (wrap === "apply") {
-    // A changed outcome wraps the finished task up again. An outcome the prototype dropped stays:
-    // an import never unwraps a task, as it never removes a place or an evidence entry.
-    const done = (found.values.lifecycle as string) !== "active";
-    if (outcome !== null && done) ops.push({ kind: "task.wrap_up", task: id, outcome });
-    else wrap = "keep";
+  } else if (verdict.get("wrap") === "apply" && outcome !== null) {
+    ops.push({ kind: "task.wrap_up", task: id, outcome });
   }
-  verdict.set("wrap", wrap ?? "keep");
 
   if (verdict.get("place") === "apply") {
     const place = expected.values.place as { root: string; path: string };
@@ -529,10 +595,13 @@ function decideMatched(
       ...(expected.evidenceAt === undefined ? {} : { at: expected.evidenceAt }),
     });
   }
-  // Sources the prototype added since the last import, that the task does not link: never one
-  // the last import named already, which a person may have taken off since.
-  const recorded = found.bases.find((b) => !b.voided.has("sources"));
-  const before = new Set(recorded?.base.sources ?? []);
+  // Sources the prototype names that the task does not link and that no earlier import named: a
+  // source an import named was linked then, so one that is not linked now was taken off by a
+  // person, also when an import in between left it out. An undo that set links back voids its
+  // import's list.
+  const before = new Set(
+    found.bases.flatMap((b) => (b.voided.has("sources") ? [] : b.base.sources)),
+  );
   let linked = false;
   for (const [identity, fields] of expected.sources) {
     if (found.sources.has(identity) || before.has(identity)) continue;

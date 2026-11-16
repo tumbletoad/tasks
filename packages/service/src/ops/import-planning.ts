@@ -300,6 +300,7 @@ function spaceState(rows: ImportRows): SpaceState {
     sources: rows.sources,
     areas: rows.areas,
     projects: rows.projects,
+    landed: rows.landed,
   };
 }
 
@@ -808,6 +809,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
 
   const names = judgedNames(plan, { areas: [], projects: [] });
   const ids = new Map<string, string>();
+  const groupIds = new Map<string, string>();
   const now = (call.now ?? Date.now)();
   // The decision is made on one read, and the barrier serves it only while the space still stands
   // there: a write that came between (an edit in another window, an agent's change) makes it read
@@ -849,6 +851,11 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
       idOf: (legacy) => {
         const id = ids.get(legacy) ?? newId("t");
         ids.set(legacy, id);
+        return id;
+      },
+      groupIdOf: (kind, key) => {
+        const id = groupIds.get(`${kind}|${key}`) ?? newId(kind === "area" ? "a" : "p");
+        groupIds.set(`${kind}|${key}`, id);
         return id;
       },
       importedAt: now,

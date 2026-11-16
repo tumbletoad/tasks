@@ -356,6 +356,7 @@ describe("[A7.3.15.importer.writer-fit] every value of a plan is one the space s
       exchange: newId("ex"),
       dir: "exchange/planning/run/input",
       idOf: () => newId("t"),
+      groupIdOf: (kind) => newId(kind === "area" ? "a" : "p"),
       importedAt: Date.UTC(2026, 10, 15),
     });
     const ops = decision.ops.map((op) => ({ ...op }));

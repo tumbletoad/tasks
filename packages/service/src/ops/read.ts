@@ -118,6 +118,14 @@ export interface ImportRows {
     area: string | null;
     title: string;
   }[];
+  /**
+   * Where earlier imports landed groups: by a planned group's identity, the group ID of the newest
+   * record (the importer's ItemBase.groups).
+   */
+  readonly landed: {
+    readonly areas: ReadonlyMap<string, string>;
+    readonly projects: ReadonlyMap<string, string>;
+  };
 }
 
 const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
@@ -148,7 +156,47 @@ const IMPORT_READS: readonly Statement[] = [
       "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
     mode: "all",
   },
+  {
+    // Where each applied import landed its groups, once per distinct record with its newest seq:
+    // an import's items repeat one record for every task of a group.
+    sql:
+      "SELECT json_extract(ei.base, '$.groups') AS groups, max(x.applied_seq) AS seq " +
+      "FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
+      "WHERE x.state = 'applied' AND json_extract(ei.base, '$.import') = 'planning' " +
+      "AND json_extract(ei.base, '$.groups') IS NOT NULL GROUP BY 1",
+    mode: "all",
+  },
 ];
+
+/** The newest record of each group identity, from the rows of IMPORT_READS' last statement. */
+function landedOf(rows: Row[]): ImportRows["landed"] {
+  const newest = {
+    areas: new Map<string, [number, string]>(),
+    projects: new Map<string, [number, string]>(),
+  };
+  const note = (into: Map<string, [number, string]>, record: unknown, seq: number) => {
+    if (typeof record !== "object" || record === null) return;
+    const { key, id } = record as { key?: unknown; id?: unknown };
+    if (typeof key !== "string" || typeof id !== "string") return;
+    const known = into.get(key);
+    if (known === undefined || known[0] < seq) into.set(key, [seq, id]);
+  };
+  for (const row of rows) {
+    let groups: unknown;
+    try {
+      groups = JSON.parse(String(row["groups"]));
+    } catch {
+      continue;
+    }
+    if (typeof groups !== "object" || groups === null) continue;
+    const seq = Number(row["seq"]);
+    const { area, project } = groups as { area?: unknown; project?: unknown };
+    note(newest.areas, area, seq);
+    note(newest.projects, project, seq);
+  }
+  const ids = (m: Map<string, [number, string]>) => new Map([...m].map(([k, [, id]]) => [k, id]));
+  return { areas: ids(newest.areas), projects: ids(newest.projects) };
+}
 
 /** The tasks that hold one of `$aliases` as a planning alias, as SQL. */
 const ALIASED = `SELECT entity_id FROM aliases WHERE namespace = 'planning' AND entity_kind = 'task' AND alias ${IN("$aliases")}`;
@@ -226,7 +274,7 @@ export interface ApplyRows {
 }
 
 function importRows(row: unknown, lists: unknown[]): ImportRows {
-  const [aliases, sources, areas, projects] = lists;
+  const [aliases, sources, areas, projects, groups] = lists;
   const space = decodeSpaceRow(row as Row);
   return {
     spaceId: space.spaceId,
@@ -244,6 +292,7 @@ function importRows(row: unknown, lists: unknown[]): ImportRows {
     sources: sources as ImportRows["sources"],
     areas: areas as ImportRows["areas"],
     projects: projects as ImportRows["projects"],
+    landed: landedOf((groups as Row[] | undefined) ?? []),
   };
 }
 
@@ -352,7 +401,7 @@ export async function readApplyRows(
   names: ImportNames,
   machine: string,
 ): Promise<{ rows: ImportRows; apply: ApplyRows }> {
-  const [row, aliases, sources, areas, projects, ...apply] = await snapshot(
+  const [row, aliases, sources, areas, projects, groups, ...apply] = await snapshot(
     reader,
     [...IMPORT_READS, ...APPLY_READS],
     {
@@ -364,7 +413,7 @@ export async function readApplyRows(
   );
   const [tasks, places, links, bases, undone, all] = apply as Row[][];
   return {
-    rows: importRows(row, [aliases, sources, areas, projects]),
+    rows: importRows(row, [aliases, sources, areas, projects, groups]),
     apply: {
       tasks: tasks ?? [],
       places: places ?? [],
