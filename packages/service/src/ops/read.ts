@@ -1512,6 +1512,21 @@ export async function readLaunchFolder(
   return decideLaunchFolder(ownRows, projectRows, machine, (id) => names.get(id));
 }
 
+const FOLDER_OWNER: Statement = {
+  sql: "SELECT owner_id FROM folders WHERE id = $id",
+  mode: "get",
+};
+
+/** The owner of a folder row, by the row's ID. */
+export async function readFolderOwner(
+  reader: WorkerConnection,
+  id: string,
+): Promise<string | undefined> {
+  const [row] = await snapshot(reader, [FOLDER_OWNER], { id });
+  const owner = (row as Row | null | undefined)?.["owner_id"];
+  return typeof owner === "string" ? owner : undefined;
+}
+
 /** What binding a folder on this machine reads first (folders.ts in ops). */
 export interface BindRead {
   readonly space: SpaceFacts;

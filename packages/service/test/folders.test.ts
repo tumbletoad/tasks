@@ -2,7 +2,8 @@
 // project made for a folder in one change, its folder changed with its task's folder moving
 // along, the undo and redo of that change, an agent's project created by name, and the checks at
 // bind: a folder inside Tasks' own data, a folder that is not there, and a folder another project
-// has. The folders are temporary ones of this test. Fixture text only.
+// has; and a retry that replays after a rename. The folders are temporary ones of this test.
+// Fixture text only.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -234,6 +235,42 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect(await at(file)).toMatchObject({ data: { reason: "not_a_directory" } });
     expect(await at("relative/folder")).toMatchObject({ data: { reason: "not_absolute" } });
     expect(await asOf(user)).toBe(before);
+  });
+
+  test("a retry of a folder set replays after the project was renamed in between", async () => {
+    const user = await session("cli-interactive");
+    const made = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "add_project",
+        project: "Old name",
+        area: "Client work",
+        folder: folder("replayed"),
+        request_id: rid(),
+      }),
+    );
+    const input = {
+      action: "set",
+      project: "Client work/Old name",
+      folder: folder("replayed2"),
+      base: await asOf(user),
+      request_id: rid(),
+    };
+    const first = FolderManageResult.parse(await call(user, "folder.manage", input));
+    expect(first).toMatchObject({ result: "set", owner: { id: made.owner.id } });
+    await call(user, "group.manage", {
+      action: "rename",
+      path: "Client work/Old name",
+      to: "Renamed",
+      base: await asOf(user),
+      request_id: rid(),
+    });
+    const retry = FolderManageResult.parse(await call(user, "folder.manage", input));
+    expect(retry).toMatchObject({
+      result: "set",
+      replayed: true,
+      owner: { kind: "project", id: made.owner.id, name: "Renamed" },
+      folder: first.folder,
+    });
   });
 
   test("an agent files a task into a project it names first, which is created with it", async () => {

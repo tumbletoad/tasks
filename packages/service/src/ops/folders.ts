@@ -14,7 +14,8 @@
 //   candidate's real path up to its root is compared by identity with each of them;
 // - it is not another live project's folder on this machine, compared by identity, so two
 //   spellings of one folder (case, a short name, a link) are one; a project's folder that is
-//   missing now is compared by its stored path, with the machine's case rule.
+//   missing now or does not answer is compared by its stored path, with the machine's case
+//   rule, so a share that is away keeps no other folder from binding.
 // The writer keeps the last rule again by the stored text in its transaction, for an undo, a redo
 // and a restore, which it decides without the disk.
 //
@@ -230,19 +231,19 @@ export async function checkFolder(
   const projects = facts.projects ?? [];
   if (projects.length === 0) return undefined;
   const os = osOf(platform);
-  const taken = await bounded(async () => {
-    const mine = await identityOf(folder.absolute, platform);
-    for (const project of projects) {
-      const theirs = await identityOf(expanded(project.stored, facts.home, platform), platform);
-      const same =
-        theirs === undefined
-          ? folderKey(project.stored, os) === folderKey(folder.stored, os)
-          : theirs === mine;
-      if (same) return project;
-    }
-    return undefined;
-  });
-  if (taken === "not_answering") return { reason: "not_answering" };
+  const mine = await bounded(() => identityOf(folder.absolute, platform));
+  if (mine === "not_answering") return { reason: "not_answering" };
+  const same = await Promise.all(
+    projects.map(async (project) => {
+      const theirs = await bounded(() =>
+        identityOf(expanded(project.stored, facts.home, platform), platform),
+      );
+      return mine === undefined || theirs === undefined || theirs === "not_answering"
+        ? folderKey(project.stored, os) === folderKey(folder.stored, os)
+        : theirs === mine;
+    }),
+  );
+  const taken = projects.find((_, k) => same[k] === true);
   return taken === undefined ? undefined : { reason: "folder_taken", project: taken };
 }
 
