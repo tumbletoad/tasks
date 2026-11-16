@@ -1674,13 +1674,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       (op) => op.status !== "unchanged",
     );
     const facts = await commitOf(call, done, result.seq);
-    // Unread, the operations' own results stand in for history.
+    // Unread, the operations' own results stand in for history. A task finished before this call
+    // was left as it was, which they do not say: "completed" stands in for it.
+    const finished = done.status !== "unchanged";
     const wrapped = own > 1 && opAt(result, 1).status !== "unchanged";
     return {
       result: changed ? "completed" : "no_change",
       task: refOf(done),
       lifecycle:
-        facts?.lifecycle ?? (input["status"] === "dropped" && changed ? "archived" : "completed"),
+        facts?.lifecycle ?? (input["status"] === "dropped" && finished ? "archived" : "completed"),
       ...(facts?.wrapState === undefined ? {} : { wrap_state: facts.wrapState }),
       learnings:
         result.status !== "applied"

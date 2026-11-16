@@ -132,6 +132,22 @@ describe("[A3.3.4.write.applied-answer] a write whose answer cannot be read afte
       });
       expect((await show(task))["lifecycle"]).toBe("active");
 
+      // A task completed before, then dropped with an outcome: only the wrap-up applies, and the
+      // answer does not call it archived.
+      const other = await add("Fixture task finished twice");
+      await call("task.finish", { task: other, base: await asOf(), request_id: rid() });
+      const wrapped = await unread(async () =>
+        call("task.finish", {
+          task: other,
+          status: "dropped",
+          outcome: "Fixture outcome",
+          base: await asOf(),
+          request_id: rid(),
+        }),
+      );
+      expect(wrapped).toMatchObject({ result: "completed", lifecycle: "completed" });
+      expect((await show(other))["lifecycle"]).toBe("completed");
+
       // With the reads back, a replay of the undo answers with its tasks.
       expect(await call("history.undo", { request_id: undoId })).toMatchObject({
         result: "undone",
