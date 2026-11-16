@@ -42,15 +42,20 @@ let indexed: Fixture;
 let plain: Fixture;
 /** A fixture whose rows tests change by hand (`edit`), for states no operation makes yet. */
 let edited: Fixture;
+/** A fixture organize's writes shape. */
+let organized: Fixture;
 const clock = Date.UTC(2026, 10, 12, 9, 0, 0);
 
 beforeAll(async () => {
   temp = tempRoot("m401");
-  for (const name of ["fx", "indexed", "plain", "edited"]) mkdirSync(join(temp.root, name));
+  for (const name of ["fx", "indexed", "plain", "edited", "organized"]) {
+    mkdirSync(join(temp.root, name));
+  }
   fx = await writeFixture(join(temp.root, "fx"));
   indexed = await writeFixture(join(temp.root, "indexed"));
   plain = await writeFixture(join(temp.root, "plain"), { steps: STEPS_0_3 });
   edited = await writeFixture(join(temp.root, "edited"));
+  organized = await writeFixture(join(temp.root, "organized"));
 }, 60_000);
 
 afterAll(() => {
@@ -58,6 +63,7 @@ afterAll(() => {
   indexed.close();
   plain.close();
   edited.close();
+  organized.close();
   temp.cleanup();
 });
 
@@ -187,20 +193,60 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
     );
   });
 
-  test("a new name is refused naming the step that creates groups, and nothing is written", async () => {
-    const before = fx.base();
-    const body = await refusal(
-      call(fx, script, "task.add", {
-        tasks: [{ title: "New group", area: "Gardening" }],
-        request_id: rid(),
-      }),
-    );
-    expect(body).toMatchObject({
-      code: "invalid_input",
-      data: { issues: [{ path: "tasks.0.area" }] },
+  test("a new name creates its area or project with the tasks, once however many drafts name it, and a retry creates nothing more", async () => {
+    const groups = () =>
+      organized.reader
+        .prepare("SELECT (SELECT count(*) FROM areas) AS areas, (SELECT count(*) FROM projects) AS projects")
+        .get();
+    const before = groups();
+    const request = rid();
+    const drafts = [
+      { title: "Plant the beds", area: "Gardening", project: "Spring beds" },
+      { title: "Order seeds", area: "gardening", project: "spring beds" },
+      { title: "Fix the gate", project: "Gate" },
+    ];
+    const added = await add(organized, script, drafts, request);
+    expect(added.tasks.map((t) => t.result)).toEqual(["created", "created", "created"]);
+    const rows = await Promise.all(added.tasks.map((t) => rowOf(organized, t.ref ?? "")));
+    expect(rows.map((r) => [r.area, r.project])).toEqual([
+      ["Gardening", "Spring beds"],
+      ["Gardening", "Spring beds"],
+      [undefined, "Gate"],
+    ]);
+    // A task in a group is no Inbox task.
+    expect(rows.every((r) => !r.inbox)).toBe(true);
+    expect(groups()).toEqual({
+      areas: Number(before?.["areas"]) + 1,
+      projects: Number(before?.["projects"]) + 2,
     });
-    expect(body.hint).toContain("M4.01b");
-    expect(fx.base()).toBe(before);
+    // The groups and the tasks are one commit.
+    const commit = organized.reader
+      .prepare("SELECT ops FROM commits ORDER BY seq DESC LIMIT 1")
+      .get<{ ops: string }>();
+    expect((JSON.parse(commit?.ops ?? "[]") as { op: string }[]).map((o) => o.op)).toEqual([
+      "area.create",
+      "project.create",
+      "project.create",
+      "task.create",
+      "task.create",
+      "task.create",
+    ]);
+    const again = await add(organized, script, drafts, request);
+    expect(again.replayed).toBe(true);
+    expect(again.tasks.map((t) => t.ref)).toEqual(added.tasks.map((t) => t.ref));
+    expect(groups()).toEqual({
+      areas: Number(before?.["areas"]) + 1,
+      projects: Number(before?.["projects"]) + 2,
+    });
+    // A name close to the new one is still a typo of it.
+    expect(
+      await refusal(
+        call(organized, script, "task.add", {
+          tasks: [{ title: "Typo", area: "Gardenign" }],
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({ code: "invalid_input", data: { suggestions: ["Gardening"] } });
   });
 
   test("a project named beside an area it is not in is refused, and nothing is written", async () => {
@@ -360,7 +406,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     expect(await found(written)).toBe(true);
   });
 
-  test("a write action needs a request_id, then waits for M4.01b; mode propose waits for M4.02", async () => {
+  test("a write action needs a request_id, a group and, to change one, a base; mode propose waits for M4.02", async () => {
     const missing = await refusal(
       call(fx, script, "group.manage", { action: "create", path: "Garden" }),
     );
@@ -368,12 +414,10 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
       code: "invalid_input",
       data: { issues: [{ path: "request_id" }] },
     });
-    // The input rules of each write come before the step it waits for: a group, and base to change
-    // an existing one.
     expect(
       await refusal(call(fx, script, "group.manage", { action: "create", request_id: rid() })),
     ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "path" }] } });
-    for (const action of ["rename", "move", "archive"]) {
+    for (const action of ["rename", "move", "archive", "unarchive"]) {
       expect(
         await refusal(
           call(fx, script, "group.manage", {
@@ -386,20 +430,6 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
         action,
       ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "base" }] } });
     }
-    const later = await refusal(
-      call(fx, script, "group.manage", {
-        action: "rename",
-        path: "Home",
-        to: "House",
-        base: fx.base(),
-        request_id: rid(),
-      }),
-    );
-    expect(later.hint).toContain("M4.01b");
-    const created = await refusal(
-      call(fx, script, "group.manage", { action: "create", path: "Garden", request_id: rid() }),
-    );
-    expect(created.hint).toContain("M4.01b");
     const propose = await refusal(
       call(fx, script, "group.manage", {
         action: "create",
@@ -409,6 +439,83 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
       }),
     );
     expect(propose.hint).toContain("M4.02");
+  });
+});
+
+describe("[A3.3.4.organize.write] organize: create, rename, move, archive and unarchive through the request path", () => {
+  test("each write changes the group it names, keeps its ID, answers the list as of the write, and a retry replays", async () => {
+    const write = async (input: Record<string, unknown>, request = rid()) =>
+      GroupManageResult.parse(
+        await call(organized, script, "group.manage", { request_id: request, ...input }),
+      );
+    const created = await write({ action: "create", path: "Clients/Northwind Clinic" });
+    expect(created).toMatchObject({ result: "created", group: { kind: "project", name: "Northwind Clinic" } });
+    const clients = created.areas.find((a) => a.name === "Clients");
+    expect(clients?.projects.map((p) => [p.id, p.name])).toEqual([
+      [created.group?.id, "Northwind Clinic"],
+    ]);
+    // Creating what is there already changes nothing and names it.
+    expect(await write({ action: "create", path: "clients/northwind clinic" })).toMatchObject({
+      result: "no_change",
+      group: { id: created.group?.id },
+    });
+    expect(await write({ action: "create", path: "Home" })).toMatchObject({
+      result: "no_change",
+      group: { kind: "area", id: organized.areas.home },
+    });
+    const request = rid();
+    const renamed = await write(
+      { action: "rename", path: "Clients/Northwind Clinic", to: "Northwind", base: organized.base() },
+      request,
+    );
+    expect(renamed).toMatchObject({ result: "renamed", group: { id: created.group?.id, name: "Northwind" } });
+    // The retry names the old name, which the rename took away: the writer replays it.
+    const again = await write(
+      { action: "rename", path: "Clients/Northwind Clinic", to: "Northwind", base: organized.base() },
+      request,
+    );
+    expect(again).toMatchObject({ result: "renamed", replayed: true, group: { id: created.group?.id } });
+    const moved = await write({
+      action: "move",
+      path: "Clients/Northwind",
+      to: "Home",
+      base: organized.base(),
+    });
+    expect(moved.result).toBe("moved");
+    expect(moved.areas.find((a) => a.name === "Home")?.projects.map((p) => p.name)).toEqual([
+      "Northwind",
+    ]);
+    // An area moves nowhere.
+    expect(
+      await refusal(
+        call(organized, script, "group.manage", {
+          action: "move",
+          path: "Home",
+          to: "Clients",
+          base: organized.base(),
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "path" }] } });
+    const archived = await write({ action: "archive", path: "Home/Northwind", base: organized.base() });
+    expect(archived.result).toBe("archived");
+    expect(archived.areas.find((a) => a.name === "Home")?.projects).toEqual([]);
+    expect(
+      await write({ action: "archive", path: "Home/Northwind", base: organized.base() }),
+    ).toMatchObject({ result: "no_change" });
+    const back = await write({ action: "unarchive", path: "Home/Northwind", base: organized.base() });
+    expect(back.result).toBe("unarchived");
+    // A name that only looks a group up is not_found when no group has it.
+    expect(
+      await refusal(
+        call(organized, script, "group.manage", {
+          action: "archive",
+          path: "Nowhere",
+          base: organized.base(),
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({ code: "not_found" });
   });
 });
 

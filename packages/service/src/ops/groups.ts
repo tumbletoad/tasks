@@ -8,7 +8,6 @@
 // A1's `area.create` and `project.create` exist (M4.01b); until then it is refused naming that
 // step. Where a name only looks a group up (organize's list), an unknown one is `not_found`.
 import { AppError } from "@tasks/contracts";
-import { unsupported } from "./errors.ts";
 import type { GroupName, GroupNames } from "./read.ts";
 
 /** A3 3.4.5: an unknown name this close to an existing one is a typo, not a new group. */
@@ -78,9 +77,10 @@ const exact = (group: GroupName, wanted: string): boolean =>
   group.id === wanted || group.slug === fold(wanted) || fold(group.title) === fold(wanted);
 
 /**
- * The ID of the area or project `name` names, at input path `path`. `area` is the area the caller
- * named beside a project: a project there wins over one of the same name elsewhere. `lookup`: the
- * name only looks a group up, so an unknown one is `not_found` rather than a group to create.
+ * The ID of the area or project `name` names, at input path `path`, or undefined for a new name:
+ * one no group has and none is close to. `area` is the area the caller named beside a project: a
+ * project there wins over one of the same name elsewhere. `lookup`: the name only looks a group up,
+ * so an unknown one is `not_found` rather than a group to create.
  */
 export function resolveGroup(
   names: GroupNames,
@@ -88,7 +88,7 @@ export function resolveGroup(
   name: string,
   path: string,
   options: { readonly area?: string | undefined; readonly lookup?: boolean } = {},
-): string {
+): string | undefined {
   const { area } = options;
   const groups = kind === "area" ? names.areas : names.projects;
   let found = groups.filter((group) => exact(group, name));
@@ -140,5 +140,5 @@ export function resolveGroup(
       data: { issues: [{ path, message: "Close to an existing name" }], suggestions },
     });
   }
-  throw unsupported(path, "M4.01b (creating an area or project by name)");
+  return undefined;
 }

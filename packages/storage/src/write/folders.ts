@@ -248,20 +248,40 @@ export type LaunchFolder =
   | { kind: "other_machine"; machine: { id: Id<"m">; name: string } }
   | { kind: "none" };
 
+/**
+ * The decision of `launchFolder` from the task's and its project's live folders, each newest
+ * first, and the machines' names: the one rule, whoever read the rows.
+ */
+export function decideLaunchFolder(
+  own: readonly FolderView[],
+  project: readonly FolderView[],
+  machine: string,
+  nameOf: (machine: Id<"m">) => string | undefined,
+): LaunchFolder {
+  const here = (list: readonly FolderView[]) => list.find((f) => f.machine === machine);
+  const mine = here(own);
+  if (mine !== undefined) return { kind: "task", folder: mine };
+  const theirs = here(project);
+  if (theirs !== undefined) return { kind: "project", folder: theirs };
+  const elsewhere = own[0] ?? project[0];
+  if (elsewhere === undefined) return { kind: "none" };
+  const name = nameOf(elsewhere.machine) ?? elsewhere.machine;
+  return { kind: "other_machine", machine: { id: elsewhere.machine, name } };
+}
+
+/** A folder row as the reads show it, from its row. */
+export function folderView(row: Row): FolderView {
+  return viewOf(decodeFolder(row));
+}
+
 export function launchFolder(conn: Connection, task: string, machine: string): LaunchFolder {
   const row = conn.prepare(FOLDER_SQL.task).get({ id: task });
   if (row === undefined) return { kind: "none" };
   const project = row["project_id"];
   const own = foldersOf(conn, "task", task);
   const projects = isId(project, "p") ? foldersOf(conn, "project", project) : [];
-  const here = (list: readonly FolderView[]) => list.find((f) => f.machine === machine);
-  const mine = here(own);
-  if (mine !== undefined) return { kind: "task", folder: mine };
-  const theirs = here(projects);
-  if (theirs !== undefined) return { kind: "project", folder: theirs };
-  const elsewhere = own[0] ?? projects[0];
-  if (elsewhere === undefined) return { kind: "none" };
-  const other = conn.prepare(FOLDER_SQL.machine).get({ id: elsewhere.machine });
-  const name = typeof other?.["name"] === "string" ? other["name"] : elsewhere.machine;
-  return { kind: "other_machine", machine: { id: elsewhere.machine, name } };
+  return decideLaunchFolder(own, projects, machine, (id) => {
+    const name = conn.prepare(FOLDER_SQL.machine).get({ id })?.["name"];
+    return typeof name === "string" ? name : undefined;
+  });
 }

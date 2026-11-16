@@ -296,7 +296,9 @@ async function run(steps: readonly Step[]): Promise<void> {
       } else {
         result = w.fx.writer.submit(
           w.fx.request(w.fx.human, [
-            s.kind === "undo" ? { kind: "undo", ...(s.partial ? { partial: true } : {}) } : s,
+            s.kind === "undo"
+              ? { kind: "undo", ...(s.partial ? { partial: true } : {}) }
+              : { kind: "redo" },
           ]),
         );
         if (result.status === "applied") {
