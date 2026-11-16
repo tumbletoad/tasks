@@ -183,14 +183,42 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     // Its row: checked, the completion day in the due column.
     await expect(row(page, lease).locator('[data-part="check"]')).toBeChecked();
     await expect(row(page, lease)).toContainText("Today");
-
     await page.screenshot({ path: test.info().outputPath("views-flow.png"), fullPage: true });
+
+    // Reopen from the expanded finished task: an undo toast, and the task is open again.
+    await row(page, lease).locator('[data-part="title"]').click();
+    await page.locator('[data-part="reopen"]').click();
+    await expect(page.getByRole("status").filter({ hasText: "Reopened" })).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    await sidebar(page).locator('a[data-view="open"]').click();
+    await expect(row(page, lease)).toBeVisible({ timeout: SLOW_MS });
+    await expect(row(page, lease).locator('[data-part="check"]')).not.toBeChecked();
     expect(await violations(page)).toEqual([]);
   });
 });
 
+/** axe-core's violations on the whole page. */
+async function axeOn(page: Page, axe: string): Promise<string[]> {
+  await page.evaluate(axe);
+  return page.evaluate(async () => {
+    const run = (
+      window as unknown as {
+        axe: {
+          run: (
+            context: unknown,
+            options: unknown,
+          ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
+        };
+      }
+    ).axe.run;
+    const result = await run({ include: ["body"] }, { resultTypes: ["violations"] });
+    return result.violations.map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`);
+  });
+}
+
 test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and 390 px", () => {
-  test("screenshots of Waiting, Completed and an area view, axe clean, no horizontal scroll", async ({
+  test("screenshots of Waiting, Completed, an area view and the sidebar with empty views, axe clean, no horizontal scroll", async ({
     browser,
     world,
   }) => {
@@ -244,24 +272,7 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
             path: test.info().outputPath(`views-${name}-${theme}-1440.png`),
             fullPage: true,
           });
-          await page.evaluate(axe);
-          const found = await page.evaluate(async () => {
-            const run = (
-              window as unknown as {
-                axe: {
-                  run: (
-                    context: unknown,
-                    options: unknown,
-                  ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-                };
-              }
-            ).axe.run;
-            const result = await run({ include: ["body"] }, { resultTypes: ["violations"] });
-            return result.violations.map(
-              (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-            );
-          });
-          expect(found, `axe on ${name} in ${theme}`).toEqual([]);
+          expect(await axeOn(page, axe), `axe on ${name} in ${theme}`).toEqual([]);
 
           await page.setViewportSize({ width: 390, height: 900 });
           await page.evaluate(() => {
@@ -276,6 +287,33 @@ test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and
             fullPage: true,
           });
         }
+
+        // The sidebar of a space whose Open, Waiting, Review and Backlog are empty: every entry in
+        // its place, the empty ones quieter; at 390 px the same entries in the drawer.
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await open(page, world, "today", world.studio);
+        await expect(sidebar(page).locator('a[data-view="open"]')).toHaveAttribute(
+          "data-empty",
+          "true",
+        );
+        await page.screenshot({
+          path: test.info().outputPath(`views-sidebar-empty-${theme}-1440.png`),
+        });
+        expect(await axeOn(page, axe), `axe on the empty views in ${theme}`).toEqual([]);
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.getByRole("button", { name: "Menu" }).click();
+        const drawer = page.getByRole("dialog", { name: "Views and areas" });
+        const entries = drawer.locator("a[data-view]");
+        await expect(entries).toHaveCount(VIEWS.length);
+        expect(
+          await entries.evaluateAll((items) =>
+            items.map((item) => item.querySelector("span")?.textContent ?? ""),
+          ),
+        ).toEqual(VIEWS);
+        await page.screenshot({
+          path: test.info().outputPath(`views-sidebar-empty-${theme}-390.png`),
+        });
+        await page.keyboard.press("Escape");
       } finally {
         await context.close();
       }

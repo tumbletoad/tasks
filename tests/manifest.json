@@ -3243,7 +3243,7 @@
     },
     {
       "id": "A5.3.3.web.views",
-      "title": "The sidebar's views: Inbox and the status views are disjoint and their counts add up, Today has sections rather than a filter, Completed and Agents read what the live rows do not hold, and an area or project view holds every status of its area or project",
+      "title": "The sidebar's views: Inbox and the status views are disjoint and their counts add up, Today has sections rather than a filter, Completed and Agents read what the live rows do not hold, an area or project view holds every status of its area or project, and every view keeps its sidebar entry in its place in every state: an empty one quieter without a count, and before the rows are known none claims a count or emptiness",
       "source": "A5 3.3, A5 3.5, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",
@@ -3515,7 +3515,7 @@
     },
     {
       "id": "A5.3.12.web.undo",
-      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo that conflicts on every field offers Restore mine (a partial undo, then the person's value with a fresh base), one that conflicts on some offers Undo the rest, a value no hand edit can set offers no Restore mine, and nothing to undo, a newer change first and an unknown commit each change nothing",
+      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo that conflicts on every field offers Restore mine (a partial undo, then the person's value with a fresh base), one that conflicts on some offers Undo the rest, a value no hand edit can set offers no Restore mine, and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
       "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -3555,7 +3555,7 @@
     },
     {
       "id": "A7.3.12.m5-05.e2e.views",
-      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open and Review's Back to open move the task with an undo toast, the area view groups by project, and a task completed while Completed is open appears in its Checked off group",
+      "title": "In Chromium and Firefox against the real service: every sidebar view is there in its fixed order also when it is empty (no count, its name says no tasks), no view has a heading that names it, Waiting groups by person, Inbox's Move to Open and Review's Back to open move the task with an undo toast, the area view groups by project, a task completed while Completed is open appears in its Checked off group, and Reopen in its expanded facts brings it back to Open with an undo toast",
       "source": "A5 3.3, A5 3.5, A5 3.15, A5 3.16, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
@@ -3563,7 +3563,7 @@
     },
     {
       "id": "A7.3.12.m5-05.e2e.screens",
-      "title": "In Chromium and Firefox against the real service: screenshots of Waiting, Completed and an area view in Sumi and Washi at 1,440 px and 390 px, axe-core finds no violation on any of them in either theme, and nothing scrolls horizontally at 390 px",
+      "title": "In Chromium and Firefox against the real service: screenshots of Waiting, Completed and an area view in Sumi and Washi at 1,440 px and 390 px, and of the sidebar of a space whose views are mostly empty (every entry in its place, the empty ones quieter, the same entries in the drawer at 390 px); axe-core finds no violation on any of them in either theme, and nothing scrolls horizontally at 390 px",
       "source": "A5 3.5, A5 3.19, A5 3.22, A7 3.12 M5.05",
       "owner": "M5",
       "kind": "ci",
