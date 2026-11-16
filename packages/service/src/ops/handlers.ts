@@ -416,7 +416,12 @@ async function callWith(
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
-  const result = await handler(call);
+  // A call that binds a folder or may create a group by name decides on what it read of the
+  // space: such calls go one at a time per space, from that read to the writer's answer, so two
+  // never both create one name or bind one folder by two spellings.
+  const result = await (decidesOnNames(entry.name, call.input)
+    ? oneAtATime(space.id ?? "", () => handler(call))
+    : handler(call));
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
     // A write whose handler returned has done its work, whichever path it wrote through: an error
@@ -1216,8 +1221,14 @@ async function resolvedDrafts(
         const key = `${within ?? ""}|${fold(project)}`;
         // A project of a new area is new too: no project is in an area made by this call.
         const fresh = within !== undefined && [...newAreas.values()].includes(within as Id<"a">);
+        // Named without an area, a project an earlier draft makes is that one, in whatever area.
+        const made =
+          within === undefined
+            ? [...newProjects].find(([k]) => k.slice(k.indexOf("|") + 1) === fold(project))?.[1]
+            : undefined;
         let id: string | undefined =
           newProjects.get(key) ??
+          made ??
           (fresh
             ? undefined
             : resolveGroup(names, "project", project, `${at}.project`, { area: within }));
@@ -2136,9 +2147,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (action !== "clear" && folder === undefined) {
       throw invalid("folder", `Required to ${action === "set" ? "set" : "add"} a folder`);
     }
-    // One folder's bind at a time per space, from its look to the writer's answer, so two that
-    // name one folder by two spellings are decided one after the other.
-    return bindLock(call.space.id ?? "", () => folderWrite(call, action, folder));
+    // One at a time with the space's other binds (decidesOnNames).
+    return folderWrite(call, action, folder);
   },
 
   "prefs.manage": async (call) => {
@@ -2187,21 +2197,45 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 // ---------------------------------------------------------------------------------------------
 // folder.manage: a project's or a task's folder on this machine (folders.ts)
 
-/** The folder binds in flight, by space: each waits for the one before it. */
-const binds = new Map<string, Promise<unknown>>();
+/** The calls in flight that decide on what they read, by space: each waits for the one before. */
+const turns = new Map<string, Promise<unknown>>();
 
-async function bindLock<T>(space: string, work: () => Promise<T>): Promise<T> {
-  const before = binds.get(space) ?? Promise.resolve();
+async function oneAtATime<T>(space: string, work: () => Promise<T>): Promise<T> {
+  const before = turns.get(space) ?? Promise.resolve();
   const mine = before.then(work, work);
   const settled = mine.then(
     () => undefined,
     () => undefined,
   );
-  binds.set(space, settled);
+  turns.set(space, settled);
   try {
     return await mine;
   } finally {
-    if (binds.get(space) === settled) binds.delete(space);
+    if (turns.get(space) === settled) turns.delete(space);
+  }
+}
+
+/**
+ * Whether a call binds a folder or names an area or project it may create: folder.manage,
+ * organize's create and move, and a task tool whose drafts name a group.
+ */
+function decidesOnNames(entry: string, input: Record<string, unknown>): boolean {
+  const named = (list: unknown): boolean =>
+    Array.isArray(list) &&
+    list.some((d) => isRecord(d) && (d["area"] !== undefined || d["project"] !== undefined));
+  switch (entry) {
+    case "folder.manage":
+      return true;
+    case "group.manage":
+      return input["action"] === "create" || input["action"] === "move";
+    case "task.add":
+      return named(input["tasks"]);
+    case "task.update":
+      return named([input["set"]]);
+    case "task.finish":
+      return named(input["follow_ups"]);
+    default:
+      return false;
   }
 }
 

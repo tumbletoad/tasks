@@ -290,4 +290,33 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       expect.objectContaining({ name: "Spring release", active: 1 }),
     ]);
   });
+
+  test("a new project named by several drafts, or by calls at once, is made once", async () => {
+    const agent = await session("cli-agent", { TASKS_SPACE: space });
+    await call(agent, "task.add", {
+      tasks: [
+        { title: "Plan the launch", area: "Launches", project: "Autumn launch" },
+        { title: "Book the venue", project: "Autumn launch" },
+      ],
+      request_id: rid(),
+    });
+    // Two calls at once, as an agent's parallel tool calls are.
+    await Promise.all(
+      ["Write the invite", "Order the banners"].map((title) =>
+        call(agent, "task.add", {
+          tasks: [{ title, area: "Launches", project: "Winter launch" }],
+          request_id: rid(),
+        }),
+      ),
+    );
+    const user = await session("cli-interactive");
+    const listed = (await call(user, "group.manage", { action: "list" })) as {
+      areas: { name: string; projects: { name: string; active: number }[] }[];
+    };
+    expect(listed.areas.filter((a) => a.name === "Launches")).toHaveLength(1);
+    expect(listed.areas.find((a) => a.name === "Launches")?.projects).toEqual([
+      expect.objectContaining({ name: "Autumn launch", active: 2 }),
+      expect.objectContaining({ name: "Winter launch", active: 2 }),
+    ]);
+  });
 });
