@@ -112,13 +112,14 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   },
   {
     name: "space",
-    summary: "List, create, open, close, back up, restore, claim and recover spaces",
+    summary: "List, create, open, close, forget, back up, restore, claim and recover spaces",
     help: SPACE_HELP,
     subcommands: [
       "list",
       "create",
       "open",
       "close",
+      "forget",
       "backup",
       "backups",
       "export",
