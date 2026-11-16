@@ -301,6 +301,23 @@ describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", ()
       });
       expect(beaten.code).toBe(0);
       expect(beaten.stderr).not.toContain("Started");
+      // Started by hand on Linux, where no unit of this install is installed: one more line says
+      // it does not start by itself (A2 3.3.3).
+      await w.stop();
+      const byHand = await runMain(["open", "--print-url"], {
+        home: w.home,
+        tty: true,
+        main: {
+          startService: async () => {
+            await w.restart();
+            return "started_by_hand" as const;
+          },
+        },
+      });
+      expect(byHand.code).toBe(0);
+      expect(byHand.stderr).toContain(
+        "Started TT Tasks's service.\nIt does not start by itself when you sign in. To have it start by itself, run: tasks service install\n",
+      );
     },
   );
 

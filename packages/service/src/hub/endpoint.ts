@@ -91,8 +91,14 @@ export interface EndpointHub {
   readonly roots?: RootsHost;
   /** The machine's default space: `tasks space use` (`space/use`). */
   readonly defaults?: Pick<DefaultSpace, "make">;
-  /** The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). */
-  readonly launches?: { handlers(): RpcHandlers; doctor?(take: boolean): Promise<JsonObject> };
+  /**
+   * The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). `doctor`
+   * answers `doctor/launch` (A3 3.14); undefined while there is no launch service to ask.
+   */
+  readonly launches?: {
+    handlers(): RpcHandlers;
+    doctor?(take: boolean): Promise<JsonObject | undefined>;
+  };
   /** `tasks setup t3` (`t3/*`). */
   readonly t3?: T3Host;
   /**

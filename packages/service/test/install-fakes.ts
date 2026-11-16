@@ -296,6 +296,12 @@ export class FakeTools {
   readonly #options: ToolOptions;
   readonly #unitDir: string;
   loaded = false;
+  /**
+   * What `systemctl --user is-active` says of the unit whatever runs, when set: a unit that systemd
+   * started while a service by hand holds the lock is `activating` or `active` a moment before it
+   * exits 73.
+   */
+  unitState: string | undefined;
 
   constructor(service: FakeService, unitDir: string, options: ToolOptions = {}) {
     this.#service = service;
@@ -346,8 +352,14 @@ export class FakeTools {
         const wants = join(this.#unitDir, "default.target.wants");
         switch (verb) {
           case "show":
+            // The unit's main process: the service, when the unit runs it.
+            if (args.includes("--property=MainPID")) {
+              const runs = service.running && service.manager === "systemd";
+              return ok(`${runs ? String(service.pid) : "0"}\n`);
+            }
+            return ok("Version=255\n");
           case "daemon-reload":
-            return ok(verb === "show" ? "Version=255\n" : "");
+            return ok();
           case "enable":
             // As systemctl does, enabling an enabled unit leaves its link as it is.
             mkdirSync(wants, { recursive: true });
@@ -360,6 +372,9 @@ export class FakeTools {
           case "is-enabled":
             return existsSync(join(wants, unit)) ? ok("enabled\n") : fail(1, "disabled\n");
           case "is-active":
+            if (this.unitState !== undefined) {
+              return this.unitState === "active" ? ok("active\n") : fail(3, `${this.unitState}\n`);
+            }
             return service.running && service.manager === "systemd"
               ? ok("active\n")
               : fail(3, "inactive\n");
