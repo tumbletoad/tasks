@@ -312,6 +312,8 @@ interface Status {
     state: string;
     reason?: string;
     holder?: unknown;
+    /** What happened and what to run, when the space is not open for writing. */
+    message?: string;
   }[];
 }
 
@@ -410,6 +412,10 @@ async function serviceChecks(
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
     const bad = spaces.filter((s) => s.state !== "open" && s.state !== "read_only");
+    // A space's way out names `<folder>`, which tasks space list shows: this row holds no path.
+    const folders = spaces.some((s) => s.message?.includes("<folder>") === true)
+      ? " Run tasks space list to see each space's folder."
+      : "";
     checks.push({
       id: "spaces",
       status: bad.length > 0 ? "warn" : "ok",
@@ -417,11 +423,13 @@ async function serviceChecks(
         spaces.length === 0
           ? "No spaces."
           : spaces
-              .map(
-                (s) =>
-                  `${s.name ?? s.id ?? `entry ${String(s.entry)}`}: ${s.state}${s.reason === undefined ? "" : ` (${s.reason})`}`,
-              )
-              .join("; "),
+              .map((s) => {
+                const name = s.name ?? s.id ?? `entry ${String(s.entry)}`;
+                const reason = s.reason === undefined ? "" : ` (${s.reason})`;
+                const message = s.message === undefined ? "" : `. ${s.message}`;
+                return `${name}: ${s.state}${reason}${message}`;
+              })
+              .join("; ") + folders,
     });
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));
@@ -642,24 +650,27 @@ export async function doctor(
   // stateDir names a layout that cannot be resolved; past it, the layout is this install's.
   const state = stateDir(io);
   const layout = resolveLayout(hostFacts(io.env, io.platform));
+  // The OS's account list can take seconds on a slow computer: it is read while the other rows run.
   const accounts =
     connect.accounts === undefined
-      ? await readAccounts(io.platform, io.env, io.cwd)
-      : connect.accounts();
-  const checks = [
+      ? readAccounts(io.platform, io.env, io.cwd).catch(() => undefined)
+      : Promise.resolve(connect.accounts());
+  const before = [
     ...localChecks(io, layout, now),
     configCheck(io),
     ...(await versionChecks(io, connect.versionFolder)),
-    accountsCheck(accounts),
+  ];
+  const after = [
     ...(io.platform === "win32" ? [supervisorCheck(state, layout.crash)] : []),
     ...(await serviceChecks(io, state, connect, args.includes("--live"))),
     ...(await candidateRows(io, connect.versionFolder, args.includes("--self-test"), state)),
-    // The agent side (A3 3.14), loaded only here: it loads setup's engine.
+    // The agent side, loaded only here: it loads setup's engine.
     ...(await (
       await import("./doctor-agents.ts")
     ).agentChecks(io, state, args.includes("--live"), connect)),
     ...SKIPPED,
   ];
+  const checks = [...before, accountsCheck(await accounts), ...after];
   const failed = checks.some((c) => c.status === "fail");
   if (globals.json) {
     io.stdout(`${JSON.stringify({ ok: !failed, checks })}\n`);

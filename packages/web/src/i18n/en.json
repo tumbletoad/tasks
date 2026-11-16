@@ -4,7 +4,7 @@
   "app.offline": "{product}'s service is not running. Trying again.",
   "app.updated": "{product} was updated.",
   "app.reload": "Reload",
-  "app.noSpace": "This space is not open on this machine.",
+  "app.noSpace": "This space is not open on this machine. {cli} space list says why and what to run.",
   "app.noSpaces": "No space is open on this machine. Run {cli} space create to make one.",
   "app.pickSpace": "Choose a space.",
   "app.skip": "Skip to the list",
@@ -35,6 +35,9 @@
   "space.madeDefault": "New tabs open {name}.",
   "space.defaultFailed": "The default space was not changed. Try again.",
   "space.listFailed": "The spaces could not be listed.",
+  "space.notOpen": "{name} is not open. {way}",
+  "space.unnamedNotOpen": "A space on this machine is not open. {way}",
+  "space.way": "{why, select, needs_recovery {A crash left an unfinished change beside its database. Recover it with {cli} space recover and the folder that {cli} space list shows.} missing {Its folder holds no space now. Connect its drive, or open it where it is now with {cli} space open.} locked_elsewhere {Another program has it open, such as a second {product} service. Close that one, then {cli} space list says what to run.} format_too_new {A newer version of {product} wrote it. Update {product} to open it.} opening {It is still opening.} other {{cli} space list says why and what to run.}}",
 
   "top.newTask": "New task",
   "top.add": "Add the task",
