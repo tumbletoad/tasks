@@ -17,7 +17,7 @@ import {
 import { join } from "node:path";
 import type { RpcSession } from "@tasks/bridge/protocol";
 import { backupsFolder, listBackups, StorageWorker, type Id } from "@tasks/storage";
-import { createSpaceAt, STEPS_0_1 } from "@tasks/storage/revisions";
+import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_0_4 } from "@tasks/storage/revisions";
 import { checkedDriver, digestSpace } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeCommits } from "../../storage/test/backup-helpers.ts";
@@ -557,7 +557,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
           code: "ETIMEDOUT",
           message:
             // The service names its own build's latest revision: the stopped worker's cannot tell.
-            "Migration to 0.3 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
+            "Migration to 0.4 did not finish in time (ETIMEDOUT). Your data is unchanged. " +
             "The space stays at 0.1. It is tried again when the space next opens.",
           id,
         },
@@ -574,7 +574,7 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       // The next open tries again, with this build's real steps, and migrates.
       const next = await start(home, space.folder);
       expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 3 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
     },
     LONG,
   );
@@ -610,16 +610,16 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       expect(added).toHaveProperty("tasks");
       await stop(service);
       const after = await dbState(space.folder);
-      expect(after.revision).toEqual({ major: 0, minor: 3 });
-      // The fixture's commits, then the migration's two, this machine's registration and the
+      expect(after.revision).toEqual({ major: 0, minor: 4 });
+      // The fixture's commits, then the migration's three, this machine's registration and the
       // task's.
-      expect(after.lastSeq).toBe(before.lastSeq + 4);
+      expect(after.lastSeq).toBe(before.lastSeq + 5);
     },
     LONG,
   );
 
   test.each([
-    ["succeeds", "slow-real", { major: 0, minor: 3 }],
+    ["succeeds", "slow-real", { major: 0, minor: 4 }],
     ["fails", "slow-failing", { major: 0, minor: 1 }],
   ] as const)(
     "a migration still running when the close's bound passes, which then %s: no reader is served, the space is unavailable, and the next start finds the state it left intact",
@@ -659,8 +659,149 @@ describe("[A2.3.1.hub.migration-timeout] an open whose migration runs past the o
       // with this build's real steps (a timeout recorded no failure).
       const next = await start(home, space.folder);
       expect(next.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 3 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
       expect(barrierBackups(space.folder)).toHaveLength(set === "slow-real" ? 1 : 2);
+    },
+    LONG,
+  );
+});
+
+/** The titles a search through the request path finds, best first. */
+async function titlesFound(
+  s: RpcSession,
+  space: Id<"sp">,
+  q: string,
+  scope: "active" | "all" = "active",
+): Promise<string[]> {
+  const result = await call(s, "op/call", {
+    op: "task.search",
+    input: { q, scope, limit: 50 },
+    space,
+  });
+  return (result["rows"] as { title: string }[]).map((row) => row.title);
+}
+
+/** A space as a 0.3 build made it, with two tasks titled `Task early1` and `Task early2`. */
+async function spaceAt03(folder: string) {
+  const created = createSpaceAt(
+    await checkedDriver(),
+    folder,
+    { name: "Work", ownerLabel: "Mira Okafor", machineId: MACHINE },
+    STEPS_0_3,
+  );
+  await writeCommits(created.folder, 3, "early", STEPS_0_3);
+  return created;
+}
+
+describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a new one, and one whose update failed", () => {
+  test(
+    "a 0.3 space migrates on open and answers words, and the index follows adds, edits, notes and completion through the request path",
+    async () => {
+      const { home, spaces } = setUp("search-migrated");
+      const space = await spaceAt03(join(spaces, "work"));
+      const id = space.space.spaceId;
+      const service = await start(home, space.folder);
+      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
+      const user = await session(home, service, "cli-interactive");
+
+      // What the space held before its migration is found by its words.
+      expect(await titlesFound(user, id, "early2")).toEqual(["Task early2"]);
+
+      let requests = 0;
+      const write = async (op: string, input: Record<string, unknown>) =>
+        call(user, "op/call", {
+          op,
+          input: { ...input, request_id: `fixture-search-request-${String((requests += 1))}` },
+          space: id,
+        });
+      const asOf = async () =>
+        (await call(user, "op/call", { op: "space.status", input: {}, space: id }))["as_of"];
+
+      const added = await write("task.add", { tasks: [{ title: "Quokka fence repair" }] });
+      const ref = (added["tasks"] as { ref: string }[])[0]?.ref ?? "";
+      expect(await titlesFound(user, id, "quokka")).toEqual(["Quokka fence repair"]);
+      expect(await titlesFound(user, id, "fence")).toEqual(["Quokka fence repair"]);
+
+      // A new title replaces the old words.
+      await write("task.update", {
+        task: ref,
+        set: { title: "Wombat fence repair" },
+        base: await asOf(),
+      });
+      expect(await titlesFound(user, id, "quokka")).toEqual([]);
+      expect(await titlesFound(user, id, "wombat")).toEqual(["Wombat fence repair"]);
+
+      // A note's words find its task.
+      await write("entry.add", { task: ref, kind: "note", text: "Ask about the zebrafish pond." });
+      expect(await titlesFound(user, id, "zebrafish")).toEqual(["Wombat fence repair"]);
+
+      // A finished task leaves the active scope and stays in all.
+      await write("task.finish", { task: ref, status: "done", base: await asOf() });
+      expect(await titlesFound(user, id, "wombat")).toEqual([]);
+      expect(await titlesFound(user, id, "wombat", "all")).toEqual(["Wombat fence repair"]);
+    },
+    LONG,
+  );
+
+  test(
+    "a space this build creates answers words from its first task",
+    async () => {
+      const { home, spaces } = setUp("search-new");
+      const created = createSpaceAt(
+        await checkedDriver(),
+        join(spaces, "work"),
+        { name: "Work", ownerLabel: "Mira Okafor", machineId: MACHINE },
+        STEPS_0_4,
+      );
+      const id = created.space.spaceId;
+      const service = await start(home, created.folder);
+      const user = await session(home, service, "cli-interactive");
+      await call(user, "op/call", {
+        op: "task.add",
+        input: {
+          tasks: [{ title: "Order the platypus feed" }],
+          request_id: "fixture-search-new-request-1",
+        },
+        space: id,
+      });
+      expect(await titlesFound(user, id, "platypus")).toEqual(["Order the platypus feed"]);
+    },
+    LONG,
+  );
+
+  test(
+    "a space whose update failed answers filters, and refuses words with a line that says why",
+    async () => {
+      const { home, spaces } = setUp("search-failed");
+      const space = await spaceAt03(join(spaces, "work"));
+      const id = space.space.spaceId;
+      const service = await start(home, space.folder, {
+        startWorker: workers(() => "failing-0.4"),
+      });
+      expect(service.spaces()[0]).toMatchObject({
+        state: "read_only",
+        reason: "migration_failed",
+        code: "MIGRATION_FAILED",
+      });
+      const user = await session(home, service, "cli-interactive");
+      expect((await titlesFound(user, id, "status:open")).sort()).toEqual([
+        "Task early1",
+        "Task early2",
+      ]);
+      const error = await refused(
+        call(user, "op/call", { op: "task.search", input: { q: "early1" }, space: id }),
+      );
+      expect(error).toMatchObject({
+        code: "space_unavailable",
+        message:
+          "This space could not be updated from schema 0.3, so it has no word index yet and " +
+          "words cannot be searched.",
+        hint:
+          "Filters such as status:open work now. tasks space list shows why the update failed " +
+          "and how to try it again.",
+        data: { reason: "not_indexed", retryable: false },
+      });
     },
     LONG,
   );

@@ -1,6 +1,5 @@
 // The search index tables (A1 3.12; A7 3.10 M3.05 Verify: "Search rows equal a fresh rebuild").
-// The fixture space gets the search tables before its writer opens, as the schema step that adds
-// them will do, so every commit maintains the index. Tombstones (M3.04), redaction (M3.14),
+// The fixture space is created with schema 0.4, so every commit maintains the index. Tombstones (M3.04), redaction (M3.14),
 // learnings and area renames have no operation yet: they are played directly on the database
 // (search-helpers.ts), with the change rows their operations will write passed to the index as the
 // writer passes them. Fixture text only.
@@ -26,7 +25,8 @@ import {
   restore,
   tombstone,
 } from "./search-helpers.ts";
-import { tempFolders } from "./space-helpers.ts";
+import { openSpaceAt, STEPS_0_3 } from "./revisions.ts";
+import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import { writeFixture, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("search-index");
@@ -34,8 +34,8 @@ let fx: Fixture;
 let plain: Fixture;
 
 beforeAll(async () => {
-  fx = await writeFixture(temp.make(), { search: true });
-  plain = await writeFixture(temp.make());
+  fx = await writeFixture(temp.make());
+  plain = await writeFixture(temp.make(), { steps: STEPS_0_3 });
 }, 60_000);
 
 afterAll(() => {
@@ -275,15 +275,27 @@ describe("[A1.5.search.index] the search tables are written in the commit", () =
     expectRebuildEqual(fx);
   });
 
-  test("a space without the search tables keeps no index and writes as before", () => {
+  test("a 0.3 space keeps no index, and its build writes it as before", () => {
     expect(hasSearchTables(plain.reader)).toBe(false);
     expect(submit(plain, [{ kind: "task.create", title: "No index here" }]).status).toBe("applied");
   });
 
   test("rebuildSearchIndex refuses a space without the search tables", async () => {
-    await expect(directly(plain, (conn) => rebuildSearchIndex(conn))).rejects.toThrow(
-      /no search tables/,
+    plain.writer.close();
+    const { conn } = openSpaceAt(
+      await checkedDriver(),
+      plain.folder,
+      { role: "writer" },
+      STEPS_0_3,
     );
+    try {
+      expect(() => conn.transaction("immediate", () => rebuildSearchIndex(conn))).toThrow(
+        /no search tables/,
+      );
+    } finally {
+      conn.close();
+      plain.reopen();
+    }
   });
 
   test("random writes, tombstones, restores and redactions keep the index equal to a rebuild", async () => {

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { step0001 } from "../migrations/0001-schema-0.1.ts";
 import { step0002, TABLES_0_2_NEW } from "../migrations/0002-schema-0.2.ts";
 import { step0003, TABLES_0_3_NEW } from "../migrations/0003-schema-0.3.ts";
+import { step0004, TABLES_0_4_NEW } from "../migrations/0004-schema-0.4.ts";
 import { SCHEMA_STEPS } from "../migrations/index.ts";
 import type { Connection } from "../src/driver.ts";
 import { StorageError } from "../src/errors.ts";
@@ -164,9 +165,13 @@ const jsonChecked = (sql: string): string[] =>
   [...sql.matchAll(/json_valid\(([a-z_]+)\)/gi)].map((m) => m[1] ?? "").sort();
 
 describe("[A1.5.schema.lint] the schema of a freshly created space follows A1 3.4's rules", () => {
-  test("the tables are schema 0.3's: 0.1's (M1.03's list, M1.05's receipts, M2.05's launches), M3.01's and M6.01's", () => {
-    expect(SCHEMA_STEPS).toEqual([step0001, step0002, step0003]);
-    expect(tables.map((t) => t.name)).toEqual([...step0003.tables].sort());
+  test("the tables are schema 0.4's: 0.1's (M1.03's list, M1.05's receipts, M2.05's launches), M3.01's, M6.01's and the search index's", () => {
+    expect(SCHEMA_STEPS).toEqual([step0001, step0002, step0003, step0004]);
+    // The FTS5 table is a virtual table: its rows and shadow tables are FTS5's.
+    expect(tables.map((t) => t.name)).toEqual(
+      [...step0004.tables].filter((t) => t !== "search_fts").sort(),
+    );
+    expect([...step0004.tables].sort()).toEqual([...step0003.tables, ...TABLES_0_4_NEW].sort());
     expect([...step0003.tables].sort()).toEqual([...step0002.tables, ...TABLES_0_3_NEW].sort());
     expect([...TABLES_0_3_NEW].sort()).toEqual(["runs", "sessions"]);
     expect([...step0002.tables].sort()).toEqual([...step0001.tables, ...TABLES_0_2_NEW].sort());
@@ -416,12 +421,12 @@ describe("[A1.5.schema.lint] the schema of a freshly created space follows A1 3.
     refused("UPDATE space SET one = 2");
   });
 
-  test("the database format: application_id, user_version 0.3, incremental auto_vacuum, WAL", () => {
+  test("the database format: application_id, user_version 0.4, incremental auto_vacuum, WAL", () => {
     expect(conn.pragma("application_id")).toBe(APP_ID);
     expect(conn.pragma("user_version")).toBe(encodeRevision(LATEST_REVISION));
     expect(encodeRevision({ major: 0, minor: 1 })).toBe(1);
-    expect(LATEST_REVISION).toEqual({ major: 0, minor: 3 });
-    expect(conn.pragma("user_version")).toBe(3);
+    expect(LATEST_REVISION).toEqual({ major: 0, minor: 4 });
+    expect(conn.pragma("user_version")).toBe(4);
     expect(conn.pragma("auto_vacuum")).toBe(2);
     expect(conn.pragma("journal_mode")).toBe("wal");
   });

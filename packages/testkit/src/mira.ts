@@ -19,6 +19,7 @@ import {
   DEFAULT_DRIVER,
   formatAsOf,
   intentFingerprint,
+  isSearchObject,
   loadDriver,
   newId,
   openSpace,
@@ -446,6 +447,8 @@ export async function seedMira(
     for (const { name } of conn
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
       .all<{ name: string }>()) {
+      // The search index is derived: its rows are not the sample's.
+      if (isSearchObject(name, name)) continue;
       counts[name] = Number(conn.prepare(`SELECT count(*) AS n FROM ${name}`).get()?.["n"]);
     }
     return { folder: created.folder, machine: machineId, counts };

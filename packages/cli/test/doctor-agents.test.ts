@@ -387,7 +387,7 @@ describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", ()
   );
 
   test(
-    "print and approve-tools write nothing; block is not in this build",
+    "print, print-block and approve-tools write nothing, nor does the block's preview",
     async () => {
       const before = read();
       const printed = await run(
@@ -425,8 +425,12 @@ describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", ()
       expect(read()).toEqual(before);
       expect(existsSync(join(user, ".claude", "settings.json"))).toBe(false);
 
-      expect((await run(["setup", "agents", "--parts", "block"])).code).toBe(2);
-      expect((await run(["setup", "agents", "print-block", "--for", "claude"])).code).toBe(2);
+      // The instruction block's preview and print-block write nothing either (A3 3.12).
+      expect((await run(["setup", "agents", "--parts", "block"], agents(), false)).code).toBe(0);
+      expect((await run(["setup", "agents", "print-block", "--for", "claude"])).code).toBe(0);
+      expect(existsSync(join(user, ".claude", "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(user, ".codex", "AGENTS.md"))).toBe(false);
+      expect(read()).toEqual(before);
       expect((await run(["setup", "agents", "print", "--app", "notepad"])).code).toBe(2);
       expect((await run(["doctor", "--bogus"])).code).toBe(2);
 

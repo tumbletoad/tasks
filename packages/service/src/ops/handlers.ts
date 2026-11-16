@@ -1900,6 +1900,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         timeZone: (host.timeZone ?? localTimeZone)(),
         machine: host.machine.id,
         ...(boundTask === undefined ? {} : { boundTask }),
+        updateFailed: call.space.state === "read_only" && call.space.reason === "migration_failed",
         live: () =>
           [...(host.bindings?.liveSessions(space) ?? new Map<string, number>())]
             .filter(([, count]) => count > 0)
