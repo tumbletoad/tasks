@@ -566,7 +566,7 @@ describe("[A1.5.space.create-open] a refusal in phase 1 changes nothing in the d
         await expectUntouched(folder, before, mode);
       }
     }
-  }, 30_000);
+  });
 
   test("a format the revision's step did not register is SPACE_INVALID and never copied", async () => {
     // The reviewer's case: user_version names this build's revision, the space row format 99.
@@ -631,7 +631,7 @@ describe("[A1.5.space.create-open] a refusal in phase 1 changes nothing in the d
         expect(snapshot(folder), `${label}, ${role}`).toEqual(before);
       }
     }
-  }, 30_000);
+  });
 
   // The Windows CI runner is slow: a space per case once took 8 s there against a 5 s limit.
   test("a -wal with frames is read and kept: a refusal in phase 1 adds or rebuilds only the -shm", async () => {
@@ -663,7 +663,7 @@ describe("[A1.5.space.create-open] a refusal in phase 1 changes nothing in the d
         expect(Object.keys(after).sort(), `${label}, ${role}`).toEqual([...files].sort());
       }
     }
-  }, 30_000);
+  });
 
   test("an empty database file is refused before SQLite opens it, and a -wal beside it stays", async () => {
     const { folder } = await createFixtureSpace(folders.make());
@@ -759,7 +759,7 @@ describe("[A1.5.space.create-open] the writer's second phase", () => {
       expect(readdirSync(folder).sort(), mode).toEqual(files.sort());
       expect(await journalMode(db), mode).toBe(mode);
     }
-  }, 30_000);
+  });
 
   // The Windows CI runner is slow: a space per case once took 8 s there against a 5 s limit.
   test("a database with a hot journal swapped in is refused before the first read, unchanged", async () => {
@@ -792,7 +792,7 @@ describe("[A1.5.space.create-open] the writer's second phase", () => {
       expect(readFileSync(db), mode).toEqual(bytes);
       expect(readFileSync(join(folder, JOURNAL)), mode).toEqual(journal);
     }
-  }, 30_000);
+  });
 
   // The Windows CI runner is slow: a space per case once took 8 s there against a 5 s limit.
   test("a revision changed between the phases: SPACE_CHANGED before any persistent pragma", async () => {
@@ -815,7 +815,7 @@ describe("[A1.5.space.create-open] the writer's second phase", () => {
       expect(readFileSync(db), mode).toEqual(bytes);
       expect(await journalMode(db), mode).toBe(mode);
     }
-  }, 30_000);
+  });
 
   test("a database emptied between the phases is refused before the first read", async () => {
     const { folder } = await createFixtureSpace(folders.make());
@@ -937,7 +937,7 @@ describe("[A1.5.space.manifest] open honours each safety field of space.json", (
       expect(writer.manifestRebuilt, label).toBe(true);
       expect(readManifest(folder), label).toMatchObject({ state: "present", damaged: false });
     }
-  }, 30_000);
+  });
 
   test("a damaged field next to a valid min_writer 99.0.0: the reader names both", async () => {
     const { folder } = await createFixtureSpace(folders.make());

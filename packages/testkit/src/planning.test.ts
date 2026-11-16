@@ -546,7 +546,7 @@ describe("[A7.3.14.planning-fixture.index] the synthetic prototype and its index
     } finally {
       conn.close();
     }
-  }, 60_000);
+  });
 
   test("events: the grammar, the .ready rule by file name, and the fold of every case", () => {
     // Every event file is valid: one invalid file would fail the prototype's read of the folder.

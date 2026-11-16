@@ -85,7 +85,7 @@ describe("[A7.3.14.planning-fixture.deterministic] pnpm seed --planning", () => 
         `${path} differs: run pnpm seed --planning`,
       ).toBe(true);
     }
-  }, 60_000);
+  });
 
   test("the committed fixture keeps its line ends through checkout", () => {
     const read = (name: string) =>
@@ -140,5 +140,5 @@ describe("[A7.3.14.planning-fixture.deterministic] pnpm seed --planning", () => 
     expect(again.stderr).toContain("already exists");
     expect(again.stderr).not.toContain(out);
     expect(readdirSync(join(out, PLANNING.folder))).toEqual([]);
-  }, 60_000);
+  });
 });

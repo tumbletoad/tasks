@@ -57,7 +57,7 @@ beforeAll(async () => {
   mkdirSync(unindexed);
   fx = await writeFixture(indexed);
   plain = await writeFixture(unindexed, { steps: STEPS_0_3 });
-}, 60_000);
+});
 
 afterAll(() => {
   fx.close();

@@ -850,7 +850,7 @@ describe("[A2.3.12.6.update.lock] a second update waits for the first and then f
       racer.send({ exit: true });
       await new Promise((resolve) => racer.once("exit", resolve));
     }
-  }, 60_000);
+  });
 });
 
 // ---------------------------------------------------------------------------------------------
