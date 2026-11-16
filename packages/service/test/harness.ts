@@ -39,7 +39,10 @@ export function readerOf(conn: Connection): WorkerConnection {
   const run = (q: Query): QueryResult => {
     const statement = conn.prepare(q.sql);
     if (q.mode === "get") return statement.get(q.params) ?? null;
-    if (q.mode === "all") return statement.all<Row>(q.params);
+    if (q.mode === "all") {
+      const rows: Row[] = statement.all(q.params);
+      return rows;
+    }
     return statement.run(q.params);
   };
   return {
