@@ -78,19 +78,19 @@ const noUmask = [
     message: UMASK_MESSAGE,
   },
 ];
-// No diagnostic report in product code: Node 26 takes one while a worker thread starts or ends only
-// at the cost of a corrupt heap (exit 0xC0000374), and the service starts workers whenever a space
-// opens. Tests may take one in a process of their own.
+// No diagnostic report in product code: on Windows, Node 26 takes one while any worker thread runs
+// only at the cost of a corrupt heap (exit 0xC0000374), and every open space has workers. Tests may
+// take one in a process of their own.
 const REPORT_MESSAGE =
-  "Do not take Node's diagnostic report in product code: one taken while a worker thread starts or ends corrupts the heap and ends the process.";
+  "Do not take Node's diagnostic report in product code: one taken while a worker thread runs corrupts the heap and ends the process.";
+const REPORT_NAME = "/^(getReport|writeReport)$/";
 const noReport = [
   {
-    selector:
-      "MemberExpression:matches([property.name=/^(getReport|writeReport)$/], [property.value=/^(getReport|writeReport)$/])",
+    selector: `MemberExpression:matches([property.name=${REPORT_NAME}], [property.value=${REPORT_NAME}])`,
     message: REPORT_MESSAGE,
   },
   {
-    selector: "ObjectPattern > Property[key.name=/^(getReport|writeReport)$/]",
+    selector: `ObjectPattern > Property:matches([key.name=${REPORT_NAME}], [key.value=${REPORT_NAME}])`,
     message: REPORT_MESSAGE,
   },
 ];

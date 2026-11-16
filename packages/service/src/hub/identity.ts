@@ -62,8 +62,8 @@ let found: string | undefined;
 /**
  * The System32 folder as a drive path, or undefined when it cannot be told (and on every other
  * OS). Every System32 tool Tasks runs (whoami.exe, reg.exe, tasklist.exe, powershell.exe) comes
- * from here. Not from Node's diagnostic report: one taken while a worker thread starts or ends
- * corrupts the heap and ends the process without a word.
+ * from here. Not from Node's diagnostic report: one taken while a worker thread runs corrupts the
+ * heap and ends the process without a word.
  */
 export function system32(): string | undefined {
   if (process.platform !== "win32") return undefined;

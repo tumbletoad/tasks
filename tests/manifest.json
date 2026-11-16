@@ -1162,7 +1162,7 @@
     },
     {
       "id": "A2.3.3.hub.system32-workers",
-      "title": "Looking for System32 never ends the process: a process whose worker threads start and end while it looks runs on and finds the folder, and lint refuses a diagnostic report in product code",
+      "title": "Looking for System32 never ends the process: a process whose worker threads run, start and end while it looks runs on and finds the folder, and lint refuses a diagnostic report in product code",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]

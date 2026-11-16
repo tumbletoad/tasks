@@ -247,6 +247,7 @@ describe("[A2.3.3.hub.system32-workers] product code takes no diagnostic report"
       `${imports}export const r = process.report["getReport"]();\n`,
       `${imports}process.report.writeReport("r.json");\n`,
       `${imports}const { getReport } = process.report;\nexport const r = getReport();\n`,
+      `${imports}const { "writeReport": w } = process.report;\nw("r.json");\n`,
     ];
     for (const code of refused) {
       for (const path of [SOURCE, "packages/bridge/src/mcp/probe.js", "scripts/build/probe.js"]) {

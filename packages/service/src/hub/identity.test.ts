@@ -89,19 +89,26 @@ describe("[A2.3.3.hub.refusals] who the service runs as", () => {
 });
 
 describe("[A2.3.3.hub.system32-workers] looking for System32 never ends the process", () => {
-  test("a process whose worker threads start and end while it looks for System32 runs on", async () => {
+  test("a process whose worker threads run, start and end while it looks for System32 runs on", async () => {
     const child = spawn(process.execPath, [WORKERS_ENTRY, "4000"], {
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
       env: { ...process.env, SystemRoot: "C:\\nowhere", windir: "C:\\nowhere" },
     });
-    let stderr = "";
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-    const code = await new Promise<number | null>((resolve) => {
-      child.once("exit", resolve);
-    });
-    // A diagnostic report raced the threads and broke the heap: exit 0xC0000374, no output. The
-    // folder is the one this process finds, whatever the child's SystemRoot and windir say.
-    expect({ code, stderr }).toEqual({ code: 0, stderr: `system32 ${String(system32())}\n` });
+    try {
+      let stderr = "";
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+      const code = await new Promise<number | null>((resolve) => {
+        child.once("exit", resolve);
+      });
+      // A diagnostic report taken beside the threads broke the heap: exit 0xC0000374, no output.
+      // The folder is the one this process finds, whatever the child's SystemRoot and windir say.
+      expect({ code, stderr }).toEqual({
+        code: 0,
+        stderr: `system32 ${String(system32())}, workers ran\n`,
+      });
+    } finally {
+      child.kill();
+    }
   }, 60_000);
 });
