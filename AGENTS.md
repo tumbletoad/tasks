@@ -9,6 +9,7 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 - `VISION.md`: how the product should feel and behave. Where two solutions both work, choose by
   it. Only the owner changes it.
 - The code and its tests. They are the source of truth for how things work.
+- `docs/promises-and-limits.md`: what a person can count on, and where the protection stops.
 - `planning/STATUS.md`: what is built and what is left.
 - `planning/PLAN.md` and `planning/appendix/` were written before the code. For a part that is not
   built yet they are background. They are never a reason to build or keep something you would not
