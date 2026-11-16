@@ -25,7 +25,9 @@
 // new epoch and a new incarnation (claim.ts), then swapped in for the live space, whose folder
 // becomes `<slug>.replaced-<utc>`: kept, never deleted (folders.ts has the steps and the crash
 // windows). The replaced folder is the barrier: the state before the restore stays there byte for
-// byte, so the restore takes no separate barrier backup (A1 3.18).
+// byte, so the restore takes no separate barrier backup (A1 3.18). The claim raises the restored
+// counter of task references to the live space's (and to the caller's `refFloor`), so a task made
+// after the restore never gets a reference that a task made after the backup had.
 //
 // One writer per space (A1 3.9): every writable connection here is on a new file in a new
 // staging folder (`.<slug>.restoring-<utc>`) that is not a space yet: the unpacked database, the
@@ -51,7 +53,8 @@ import {
   readManifest,
   writeManifest,
 } from "../manifest.ts";
-import { inRange, type SpaceRow } from "../rows.ts";
+import { openReader } from "../open.ts";
+import { inRange, RANGES, type SpaceRow } from "../rows.ts";
 import type { Revision, SchemaStep } from "../schema.ts";
 import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
 import type { CheckedDriver } from "../startup-check.ts";
@@ -93,6 +96,11 @@ export interface RestoreInPlaceOptions extends RestoreOptions {
   machineId: Id<"m">;
   /** Epochs this machine knows for the space besides the backup's and the live space's. */
   knownEpochs?: readonly number[];
+  /**
+   * A next task reference this machine reached in the space besides the live space's own (other
+   * copies of it). The restored space gives no reference below the highest of these and its own.
+   */
+  refFloor?: number;
   /** The source of the new incarnation and commit IDs. Default: the OS. */
   random?: RandomSource;
   /**
@@ -294,16 +302,20 @@ const pick = (u: { space: SpaceRow; revision: Revision; source: RestoreSource })
   source: u.source,
 });
 
-/** What can be read of the live space: its ID, and every epoch it knows. */
+/**
+ * What can be read of the live space: its ID, every epoch it knows, and its next task reference,
+ * which the restored space never goes below.
+ */
 interface LiveIdentity {
   spaceId: Id<"sp"> | undefined;
   epochs: number[];
+  nextRef: number | undefined;
 }
 
 /**
  * Reads what it can of the live space's identity: through a reader open when the space opens,
- * else from space.json's safety fields. A space that opens for neither gives nothing: it is the
- * one being recovered.
+ * else from space.json's safety fields and the database's space row read as it is. A space that
+ * gives neither gives nothing: it is the one being recovered.
  */
 function liveIdentity(
   checked: CheckedDriver,
@@ -323,20 +335,50 @@ function liveIdentity(
     return {
       spaceId: space.spaceId,
       epochs: [space.authority.epoch, ...space.lineage.incarnations.map((e) => e.epoch)],
+      nextRef: space.nextRef,
     };
   } catch {
+    const nextRef = rawNextRef(checked, folder, options);
     try {
       const read = readManifest(folder);
-      if (read.state !== "present") return { spaceId: undefined, epochs: [] };
+      if (read.state !== "present") return { spaceId: undefined, epochs: [], nextRef };
       const epochs = read.manifest
         ? [read.manifest.authority.epoch, ...read.manifest.lineage.incarnations.map((e) => e.epoch)]
         : [];
-      return { spaceId: read.safety.space_id, epochs };
+      return { spaceId: read.safety.space_id, epochs, nextRef };
     } catch {
-      return { spaceId: undefined, epochs: [] };
+      return { spaceId: undefined, epochs: [], nextRef };
     }
   }
 }
+
+/**
+ * The live database's next task reference when the space does not open (a damaged space.json, a
+ * schema it does not know): read-only, from the space row alone. Undefined when even that fails.
+ */
+function rawNextRef(
+  checked: CheckedDriver,
+  folder: string,
+  options: RestoreOptions,
+): number | undefined {
+  try {
+    const conn = openReader(checked, join(folder, DATABASE_FILE), busy(options));
+    try {
+      const value = conn.prepare("SELECT next_ref FROM space WHERE one = 1").get()?.["next_ref"];
+      return isNextRef(value) ? value : undefined;
+    } finally {
+      conn.close();
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+const isNextRef = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isSafeInteger(value) &&
+  value >= RANGES.taskRef.min &&
+  value <= RANGES.taskRef.max + 1;
 
 /**
  * Restores `backupFile` in place of the space at `folder` and claims it with a new epoch and a new
@@ -362,6 +404,9 @@ export async function restoreInPlaceWith(
 ): Promise<RestoredInPlace> {
   const { appVersion, now } = settings(options);
   if (!isId(options.machineId, "m")) throw misuse("The machine ID is not an m_ ID");
+  if (options.refFloor !== undefined && !isNextRef(options.refFloor)) {
+    throw misuse("A reference floor is a next task reference");
+  }
   const names = swapNames(folder, now);
   if (!isDirectory(names.live)) {
     throw new StorageError("SPACE_NOT_FOUND", "No space found: the folder does not exist");
@@ -394,10 +439,12 @@ export async function restoreInPlaceWith(
         conn.transaction("immediate", () => {
           prepareCopy(checked, conn, seams.steps ?? SCHEMA_STEPS);
         });
+        const floors = [live.nextRef, options.refFloor].filter(isNextRef);
         return claimSpace(conn, {
           kind: "restore_claim",
           machineId: options.machineId,
           knownEpochs: [...live.epochs, ...(options.knownEpochs ?? [])],
+          ...(floors.length === 0 ? {} : { refFloor: Math.max(...floors) }),
           now,
           random: options.random ?? osRandom,
         });

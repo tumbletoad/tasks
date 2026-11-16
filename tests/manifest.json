@@ -338,6 +338,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.refs.across-restore",
+      "title": "Over random sequences of creates, backups and restores in place, no task reference is given to a second task; a backup from a later state keeps its counter, and a live space that does not open still lends its own",
+      "source": "A1 3.3, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.space.create-open",
       "title": "Create and open a space folder: space.json, schema 0.1, epoch 1 and a random incarnation, owner-only modes; refusals for an existing or missing folder, another database, a newer, unknown or inconsistent revision and a mismatched space_id, each leaving the database's bytes and journal mode as they were; a rollback journal or an empty database file refused before SQLite opens it; a change between inspection and the writer refused before any persistent pragma, and before the first read when the file system shows it; space.json rebuilt by the writer only when it is missing or stale",
       "source": "A1 3.1, A1 3.4, A1 3.5, A1 3.17",
