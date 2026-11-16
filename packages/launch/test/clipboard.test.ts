@@ -51,11 +51,15 @@ function fake(controls: Record<string, string> = {}): {
   runs += 1;
   const out = join(dir, `out-${String(runs)}.bin`);
   const argv = join(dir, `argv-${String(runs)}.json`);
+  // Each case names its own session: the one this test runs in must not choose the tool.
+  const inherited = { ...(process.env as Record<string, string>) };
+  delete inherited["WAYLAND_DISPLAY"];
+  delete inherited["DISPLAY"];
   return {
     out,
     argv,
     env: {
-      ...(process.env as Record<string, string>),
+      ...inherited,
       FAKE_CLIP_OUT: out,
       FAKE_CLIP_ARGV: argv,
       ...controls,

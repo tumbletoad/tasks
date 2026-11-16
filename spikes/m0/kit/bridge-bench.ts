@@ -585,7 +585,7 @@ export interface BridgeBenchOptions {
   kit?: string;
   /** Suffix for the result files, such as run1. */
   label?: string;
-  /** desktop or laptop, for the result files. */
+  /** A label for the result files, such as windows or linux. */
   role?: string;
   /** B02: calls after the handshake (10) and idle time before the reading (60 s). */
   calls?: number;

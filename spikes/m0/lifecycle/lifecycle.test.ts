@@ -285,7 +285,7 @@ describe("[A7.3.7.m0-lifecycle.self-test] the M0.07 lifecycle lab", () => {
       tools: { node: { found: true }, rg: { found: false } },
       ssh_agent: { found: true, via: "SSH_AUTH_SOCK" },
     };
-    // The Linux lab machine's committed E01 result: the same tools, the agent only in the service.
+    // The committed Linux E01 result: the same tools, the agent only in the service.
     expect(
       snapshotDifferences(["node", "rg"], built, {
         tools: { node: true, rg: false },
