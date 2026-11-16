@@ -147,18 +147,19 @@ describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started
     need(ctx);
     const { token, name } = await start(get(), "ignore-stop");
     await waitForCensus(token, (pids) => pids.length === 2);
+    // The agent sets its handlers before it starts the child, and the child says when it has.
     await waitFor(
-      "ready",
+      "child ready",
       () => output(get(), name),
-      (o) => o.head.includes("ready"),
+      (o) => o.head.includes("child ready"),
     );
     expect(await get().request<{ delivered: boolean }>("interrupt", { name })).toEqual({
       delivered: true,
     });
     await waitFor(
-      "ignored",
+      "both ignored",
       () => output(get(), name),
-      (o) => o.head.includes("ignored"),
+      (o) => o.head.split("ignored").length - 1 === 2,
     );
     await sleep(300);
     expect(census(token)).toHaveLength(2);
@@ -362,7 +363,7 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
         () => output(service, name),
         (o) => o.head !== "",
       );
-      expect(said.head.trim()).toBe("fd3 closed fd4 closed");
+      expect(said.head.trim()).toBe("leaked 0");
       await killAndConfirm(service, name, token);
     } finally {
       await service.close();

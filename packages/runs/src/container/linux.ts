@@ -11,7 +11,16 @@
 // runs' included. So after a crash a run's cgroup is gone, which confirms it empty.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmdirSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { makeDir } from "@tasks/files";
@@ -174,7 +183,7 @@ export class LinuxContainers implements Containers {
     if (!placed.inMain) {
       try {
         makeDir(join(root, MAIN_CGROUP), 0o755);
-        writeFileSync(join(root, MAIN_CGROUP, "cgroup.procs"), String(process.pid), { flag: "r+" });
+        writeExisting(join(root, MAIN_CGROUP, "cgroup.procs"), String(process.pid));
       } catch (error) {
         return {
           ok: false,
@@ -259,7 +268,7 @@ export class LinuxContainers implements Containers {
   async kill(name: string): Promise<void> {
     const dir = this.live.get(name)?.dir ?? (await this.dirOf(name));
     try {
-      writeFileSync(join(dir, "cgroup.kill"), "1", { flag: "r+" });
+      writeExisting(join(dir, "cgroup.kill"), "1");
     } catch (error) {
       // A cgroup that is gone holds nothing to kill.
       if (errorCode(error) !== "ENOENT") throw error;
@@ -332,6 +341,19 @@ function joined(child: ChildProcess, exited: Promise<AgentExit>): Promise<void> 
       });
     });
   });
+}
+
+/**
+ * Writes to a cgroup's interface file, opened write-only: cgroup.kill cannot be read, so a
+ * read-write open is refused, and nothing may be created.
+ */
+function writeExisting(path: string, text: string): void {
+  const fd = openSync(path, constants.O_WRONLY);
+  try {
+    writeSync(fd, text);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Whether a cgroup has a live process in it or below it, from its cgroup.events. */

@@ -9,11 +9,12 @@
 //   detach       starts a detached idle child, and a detached child that starts a detached idle
 //                grandchild and exits (on Linux: two new sessions, the grandchild a daemon whose
 //                parent is gone), then exits 0 once both idle processes run
-//   ignore-stop  ignores interrupts and SIGTERM and SIGHUP, as does its child; prints "ignored"
+//   ignore-stop  ignores interrupts and SIGTERM and SIGHUP, as does its child, which prints
+//                "child ready" once it does; prints "ignored" for each signal
 //   hold-pipe    starts a detached idle child that shares its stdout and stderr, then exits 0
 //   flood        writes 64 KiB chunks to stdout without end
 //   die          prints "ready" and exits 3
-//   handles      prints whether it holds file descriptors 3 and 4, then waits
+//   handles      prints how many of the service's control pipes it holds ("leaked <n>"), then waits
 //   argv         prints the arguments after `--` as JSON and exits 0
 //   nest         Linux: moves itself into a new cgroup below its own, prints "ready", waits
 // Child roles: idle (waits), daemonize (starts a detached idle child, exits once it runs).
@@ -23,7 +24,15 @@
 // alive without trusting the container. None outlives --max-ms (default 60 s), so a broken
 // container cannot leave a stand-in running for long.
 import { spawn, type StdioOptions } from "node:child_process";
-import { fstatSync, mkdirSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import {
+  fstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { parseArgs } from "node:util";
@@ -122,11 +131,12 @@ switch (mode) {
   }
   case "ignore-stop":
     ignoreStops();
-    child("ignore-child");
+    child("ignore-child", { stdio: ["ignore", "inherit", "ignore"] });
     say("ready\n");
     break;
   case "ignore-child":
     ignoreStops();
+    say("child ready\n");
     break;
   case "hold-pipe":
     // Detached, because Node on Windows ends its other children when it exits.
@@ -150,15 +160,29 @@ switch (mode) {
     process.exit(3);
     break;
   case "handles": {
-    const open = (fd: number) => {
-      try {
-        fstatSync(fd);
-        return "open";
-      } catch {
-        return "closed";
+    // The service's control pipes would be fd 3 and 4. On Linux, Node itself reuses low numbers
+    // for its own files, but never for a socket, which is what the service's pipes are there.
+    let leaked = 0;
+    if (process.platform === "linux") {
+      for (const fd of readdirSync("/proc/self/fd").map(Number)) {
+        if (fd <= 2) continue;
+        try {
+          if (readlinkSync(`/proc/self/fd/${String(fd)}`).startsWith("socket:")) leaked += 1;
+        } catch {
+          // The listing's own descriptor is gone by now.
+        }
       }
-    };
-    say(`fd3 ${open(3)} fd4 ${open(4)}\n`);
+    } else {
+      for (const fd of [3, 4]) {
+        try {
+          fstatSync(fd);
+          leaked += 1;
+        } catch {
+          // Not open: as it should be.
+        }
+      }
+    }
+    say(`leaked ${String(leaked)}\n`);
     break;
   }
   case "nest": {
@@ -166,7 +190,7 @@ switch (mode) {
     const own = readFileSync("/proc/self/cgroup", "utf8").trim().slice(3);
     const nested = join("/sys/fs/cgroup", own, "nested");
     mkdirSync(nested);
-    writeFileSync(join(nested, "cgroup.procs"), String(process.pid), { flag: "r+" });
+    writeFileSync(join(nested, "cgroup.procs"), String(process.pid), { flag: "a" });
     say("ready\n");
     break;
   }
