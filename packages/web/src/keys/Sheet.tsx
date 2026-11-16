@@ -70,8 +70,10 @@ export function Sheet({
       isDismissable
     >
       <Modal className={styles.sheet}>
-        <Dialog className={styles.body} aria-labelledby="keys-title">
-          <Heading slot="title" id="keys-title" className={styles.title}>
+        {/* Named by aria-label, as the drawer is: named through its heading, the dialog crashed
+            Firefox's page process when axe read its name. */}
+        <Dialog className={styles.body} aria-label={t("keys.sheet")}>
+          <Heading level={2} className={styles.title}>
             {t("keys.sheet")}
           </Heading>
           {singleKeys ? null : (
@@ -92,7 +94,12 @@ export function Sheet({
             const here = actions.filter((action) => action.scope === scope);
             if (here.length === 0) return null;
             return (
-              <section key={scope} className={styles.group} aria-labelledby={`keys-${scope}`}>
+              <div
+                key={scope}
+                className={styles.group}
+                role="group"
+                aria-labelledby={`keys-${scope}`}
+              >
                 <Heading level={3} id={`keys-${scope}`} className={styles.heading}>
                   {t(HEADINGS[scope])}
                 </Heading>
@@ -115,7 +122,7 @@ export function Sheet({
                     </Fragment>
                   ))}
                 </dl>
-              </section>
+              </div>
             );
           })}
         </Dialog>

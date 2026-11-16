@@ -3664,6 +3664,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-11.e2e.theme",
+      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this computer once",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.terminal",
+      "title": "In Chromium and Firefox against the real service: Settings says which terminal Open uses and why, lists the terminals found, keeps another one across a reload and goes back to this computer's default",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.keys",
+      "title": "In Chromium and Firefox: n, / and Ctrl+K reach the top field and ? the sheet of the view's keys; none fires while typing, composing, with Alt or inside the sheet; with single-letter keys off none fires, Ctrl+K does, the hint and the sheet say so; the tooltip shows on hover and keyboard focus and Escape closes only it",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.screens",
+      "title": "In Chromium and Firefox: Settings and the shortcut sheet in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-01.e2e.task-links",
       "title": "In Chromium and Firefox: a task link opened on a machine without a default keeps its task through the space chooser, and a navigation from one task's route to another's, and Back, expands the task each route names",
       "source": "A5 3.3, A2 3.1, A7 3.12 M5.01",

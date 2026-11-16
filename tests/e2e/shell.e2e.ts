@@ -129,7 +129,7 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     await expect(spaces(page)).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByRole("link", { name: "Settings" }).click();
-    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/settings/appearance`);
+    await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/settings`);
     const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     expect(await background()).toBe("rgb(23, 22, 20)");
     await choose(page, "Washi");
@@ -146,8 +146,11 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     await showsSpace(page, world.mira.name);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
     await choose(page, "Sumi");
-    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
-    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_KEY)).toBe("sumi");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "sumi");
+    // This computer keeps the choice: the browser keeps none of its own.
+    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_KEY)).toBeNull();
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "sumi");
 
     // The narrow layout's drawer is a React Aria modal too.
     await page.setViewportSize({ width: 390, height: 844 });
@@ -219,12 +222,7 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
     for (const { theme, scheme } of themes) {
       // Reduced motion: no transition is caught half way in a screenshot.
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-      await page.evaluate(
-        (value) => {
-          localStorage.setItem(value.key, value.theme);
-        },
-        { key: THEME_KEY, theme },
-      );
+      await world.machine("ui.theme", theme);
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.reload();
       await expect(row).toHaveAttribute("data-expanded", "true");
@@ -249,6 +247,8 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
       await page.screenshot({ path: test.info().outputPath(`shell-${theme}-1440-spaces.png`) });
       await page.keyboard.press("Escape");
     }
+    // The tests of a worker share its service: the theme goes back to its default.
+    await world.machine("ui.theme", null);
   });
 });
 
