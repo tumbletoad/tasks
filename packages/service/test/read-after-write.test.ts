@@ -182,7 +182,12 @@ describe("[A3.3.4.write.result-mismatch] an answer that does not match its contr
       const spy = mismatchOnce("task.update");
       const updated = (await opCall(host, USER, {
         op: "task.update",
-        input: { task, set: { summary: "Fixture mismatch" }, base: await asOf(), request_id: rid() },
+        input: {
+          task,
+          set: { summary: "Fixture mismatch" },
+          base: await asOf(),
+          request_id: rid(),
+        },
       })) as Json;
       spy.mockRestore();
       expect(updated).toMatchObject({ result: "updated", task, fields: ["summary"] });

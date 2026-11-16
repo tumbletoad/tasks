@@ -1668,7 +1668,7 @@ export class SpaceManager {
           Math.max(1, deadline - performance.now()),
         );
         await this.#release(space, Math.max(1, Math.round(deadline - performance.now())));
-      } else if (busy !== undefined) {
+      } else {
         // The open still runs, and until it ends its worker may hold the space, so nothing else
         // may change or open it. Once it has ended, what it still holds is released here: an open
         // that saw the close released it already, one that did not would keep it. A new open

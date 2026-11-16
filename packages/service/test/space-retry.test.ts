@@ -59,7 +59,7 @@ async function fixtureSpace(folder: string, machine: Id<"m">) {
 async function start(
   home: string,
   folder: string,
-  spaceOptions: StartOptions["spaceOptions"],
+  spaceOptions: NonNullable<StartOptions["spaceOptions"]>,
 ): Promise<RunningService> {
   registerSpaces(home, [folder]);
   const service = await startService({
