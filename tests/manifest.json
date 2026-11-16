@@ -642,6 +642,46 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.write.groups",
+      "title": "Areas and projects through the write path: create with a slug from the title, numbered when taken, in one request with a task filed into the new project; rename and other fields with a base, keeping the ID, slug and tasks; a project moved to another area with all its tasks; archive and unarchive, idempotent, keeping the group's tasks as they are; delete refused while a project holds tasks, delete and restore of an empty one; undo and redo of each, and an undo of a create kept by another's task",
+      "source": "A1 3.6, A1 3.10",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.folders",
+      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a project's folder change with a base that moves its tasks' folders inside the old one; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
+      "source": "A1 3.6, A1 3.10, A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.5.write.folders-model",
+      "title": "Property test over random folder sets and clears, task moves, project deletes and restores, undos and redos on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, never two live projects on one folder by the machine's case rule, a project's folder change moves exactly its tasks' folders inside the old one, an undo applied whole gives back the space as it was and its redo the space the commit left, and the history invariants hold",
+      "source": "A1 3.10, A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.folders.form",
+      "title": "A folder's form on each OS (a ~ path, an absolute path, a drive or a share, no empty, . or .. segment, no trailing separator, at most 4,096 characters, no control character or lone surrogate), the case rule (Windows and macOS without case, Linux with) and where a folder lands when its parent moves, by whole segments",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.folders.launch",
+      "title": "The folder a launch uses on a machine: the task's own folder there, else its project's folder there, else the machine where the task's or its project's folder is, else none",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.migration.run-parents-0003",
       "title": "On the 0.2 fixture migrated to 0.3, a task's run written through the write path is detached from its task as entity redaction detaches it (task and request set to null): the space stays intact with no foreign key broken, the detached run reads and still settles through the writer, and the runs table refuses a run with both a task and a routine",
       "source": "A1 3.4, A1 3.11.4, A4 3.11.1, A7 3.13 M6.01",
