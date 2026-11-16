@@ -28,6 +28,7 @@ import { httpRoutes } from "@tasks/contracts/generated/http-routes.ts";
 import { ERROR_CODES, AppError, findEntry, type ErrorBody, type ErrorCode } from "@tasks/contracts";
 import { hasControl } from "@tasks/launch";
 import { WebSocketServer } from "ws";
+import { copyOf, isAmbiguity } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
 import { isLive, type Grant, type GrantStore } from "../local/index.ts";
 import {
@@ -720,10 +721,18 @@ export class HttpApp {
     try {
       const defaults = this.options.defaults;
       if (action === "list") {
-        const spaces = this.options.ops
+        // One row per space: the page names a space by its ID, which means the copy copies.ts
+        // picks (A2 3.10.5), so a restored copy beside its original is not a second row.
+        const live = this.options.ops
           .spaces()
-          .filter((s) => s.id !== undefined && s.state !== "closed")
-          .map((s) => ({ id: s.id, name: s.name ?? "", state: s.state }));
+          .filter((s) => s.id !== undefined && s.state !== "closed");
+        const spaces = live
+          .filter((s, i) => live.findIndex((other) => other.id === s.id) === i)
+          .map((first) => {
+            const copy = copyOf(live, first.id ?? "");
+            const s = copy === undefined || isAmbiguity(copy) ? first : copy;
+            return { id: s.id, name: s.name ?? "", state: s.state };
+          });
         this.#json(res, port, 200, { result: { spaces, default: defaults?.get() ?? null } });
         return;
       }
