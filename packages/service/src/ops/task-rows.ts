@@ -186,6 +186,7 @@ export async function taskRows(
         x_source_count: count,
         x_place_here: placeHere,
         x_place_elsewhere: elsewhere,
+        x_ending: ending,
         ref,
         ...own
       } = row;
@@ -197,6 +198,8 @@ export async function taskRows(
       if (shown.length > 0) out["sources"] = shown;
       const more = Number(count ?? 0) - shown.length;
       if (more > 0) out["sources_more"] = more;
+      const ended = endingOf(ending);
+      if (ended !== undefined) out["ending"] = ended;
       const place = parsed(placeHere);
       if (here !== undefined && isPlain(place)) {
         out["place"] = { state: await resolve(place as unknown as HerePlace) };
@@ -231,20 +234,27 @@ const ENDING =
   "substr(CASE WHEN t.lifecycle = 'archived' AND trim(t.archived_reason) <> '' THEN " +
   "t.archived_reason WHEN t.wrap_state = 'wrapped' THEN t.outcome END, 1, 2000)";
 
-/** The most characters of an ending a row carries. */
+/** The most UTF-16 code units of an ending a row carries, its ellipsis included. */
 export const ENDING_MAX = 300;
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /**
  * The ending's first line with text, without a Markdown heading, list or quote mark, cut to
- * `ENDING_MAX` with an ellipsis.
+ * `ENDING_MAX` with an ellipsis between two characters, never inside one.
  */
 export function endingOf(text: unknown): string | undefined {
   if (typeof text !== "string") return undefined;
   for (const raw of text.split(/\r?\n/u)) {
     const line = raw.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|>\s*)?/u, "").trim();
     if (line === "") continue;
-    const chars = [...line];
-    return chars.length <= ENDING_MAX ? line : `${chars.slice(0, ENDING_MAX - 1).join("")}…`;
+    if (line.length <= ENDING_MAX) return line;
+    let cut = "";
+    for (const { segment } of graphemes.segment(line)) {
+      if (cut.length + segment.length > ENDING_MAX - 1) break;
+      cut += segment;
+    }
+    return `${cut.trimEnd()}…`;
   }
   return undefined;
 }
@@ -259,9 +269,8 @@ function finishedSql(request: FinishedRequest): string {
   if (request.checkedOff === false) where.push(`NOT ${CHECKED_OFF}`);
   const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
   return (
-    `SELECT ${TASK_COLUMNS}, ${ENDING} AS x_ending FROM (SELECT k.id, k.at FROM (SELECT t.id AS ` +
-    `id, ${FINISHED_AT} ` +
-    `AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
+    `SELECT ${TASK_COLUMNS}, ${ENDING} AS x_ending FROM (SELECT k.id, k.at FROM (SELECT ` +
+    `t.id AS id, ${FINISHED_AT} AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
     "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
   );
 }
@@ -287,18 +296,12 @@ export async function readFinished(
       },
     },
   ]);
-  const found = (rows as Row[]).slice(0, request.limit);
+  const found = rows as Row[];
   const prefix = (space as Row | null)?.["ref_prefix"];
   const page = await taskRows(
-    found.map(({ x_ending: _, ...row }) => row),
+    found.slice(0, request.limit),
     typeof prefix === "string" ? prefix : "",
     here,
   );
-  return {
-    rows: page.map((row, i) => {
-      const ending = endingOf(found[i]?.["x_ending"]);
-      return ending === undefined ? row : { ...row, ending };
-    }),
-    more: (rows as Row[]).length > request.limit,
-  };
+  return { rows: page, more: found.length > request.limit };
 }

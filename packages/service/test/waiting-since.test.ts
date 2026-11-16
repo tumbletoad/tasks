@@ -82,7 +82,10 @@ describe("[A5.3.5.service.waiting-undo] a wait an undo brings back keeps the day
     const MONDAY = mondayOf(0);
     const [WEDNESDAY, THURSDAY] = [MONDAY + 2 * DAY, MONDAY + 3 * DAY];
     const task = newId("t");
-    submit([{ kind: "task.create", id: task, title: "Fixture waits", area: fx.areas.home }], MONDAY - DAY);
+    submit(
+      [{ kind: "task.create", id: task, title: "Fixture waits", area: fx.areas.home }],
+      MONDAY - DAY,
+    );
     submit(
       [{ kind: "task.patch", task, set: { status: "waiting", waiting_on: "Fixture One" } }],
       MONDAY,
