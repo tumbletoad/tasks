@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
+  DEFAULT_TERMINAL,
   MemoryT3Files,
   newGrantId,
   writePairing,
@@ -16,6 +17,7 @@ import {
   type EnvironmentSource,
   type SpawnRequest,
   type Spawner,
+  type TerminalSettings,
 } from "@tasks/launch";
 import { sessionFacts } from "../src/binding/index.ts";
 import type { Logger } from "../src/hub/log.ts";
@@ -80,10 +82,38 @@ function launches(
     log,
     environment: env,
     shimCommand: ["/opt/tasks/bin/tasks"],
-    terminals: { spawn, systemdRun: "/usr/bin/systemd-run", trueProgram: "/usr/bin/true" },
+    terminals: {
+      spawn,
+      systemdRun: "/usr/bin/systemd-run",
+      trueProgram: "/usr/bin/true",
+      // A fake machine: GNOME Terminal on Linux; on Windows, Windows Terminal installed and the
+      // person's default set to Windows Console Host. Nothing of this machine is read.
+      host: (_session, path) => ({
+        platform,
+        path: platform === "win32" ? path : ["/usr/bin"],
+        terminalVar: undefined,
+        home: "/home/mira",
+        windowsApps: "C:\\Local\\Microsoft\\WindowsApps",
+        powershell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        delegation: { console: CONHOST, terminal: CONHOST },
+        executable: (p) =>
+          p === "/usr/bin/gnome-terminal" || p === "C:\\Local\\Microsoft\\WindowsApps\\wt.exe",
+        readText: () => undefined,
+        realpath: (p) => p,
+      }),
+    },
   });
   return { service, probes };
 }
+
+const CONHOST = "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}";
+const GNOME_INSTALLED = {
+  app: "gnome-terminal",
+  source: "installed",
+  found: true,
+  unsupported: null,
+  unread: null,
+};
 
 describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows", () => {
   test("doctor/launch: the launch's own scope probe, once per start, and the environment's check", async () => {
@@ -103,6 +133,8 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
         attempted_at: "2026-11-14T00:00:00.000Z",
         taken_at: "2026-11-13T00:00:00.000Z",
       },
+      // The terminal a launch now opens first, and why.
+      terminal: GNOME_INSTALLED,
     });
     // The probe a launch runs: systemd-run's scope around `true`, with the terminal's environment.
     expect(scoped.probes).toHaveLength(1);
@@ -121,15 +153,68 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     });
 
     const unscoped = launches("linux", 1, environment());
-    expect(await unscoped.service.doctor(false)).toEqual({ scopes: false, environment: null });
+    expect(await unscoped.service.doctor(false)).toEqual({
+      scopes: false,
+      environment: null,
+      terminal: GNOME_INSTALLED,
+    });
 
-    // Windows: no scopes, and the registry's answer.
+    // Windows: no scopes, the registry's answer, and the person's Console Host over Windows
+    // Terminal.
     const windows = launches("win32", 0, environment({ kind: "registry", read: false }));
     expect(await windows.service.doctor(false)).toEqual({
       scopes: null,
       environment: { kind: "registry", read: false },
+      terminal: {
+        app: "console",
+        source: "windows",
+        found: true,
+        unsupported: null,
+        unread: null,
+      },
     });
     expect(windows.probes).toEqual([]);
+  });
+
+  test("doctor/launch: Windows' setting is read only when [terminal] leaves the choice to it, and an unread one is said", async () => {
+    const service = (terminalSettings: TerminalSettings) => {
+      const reads = { count: 0 };
+      const made = new LaunchService({
+        machine: "m_7c0hq2m4w9d8k1r6t3v5x0b2nf",
+        root: join(base, "launch-registry"),
+        stateDir: join(base, "state"),
+        roots: () => [],
+        platform: "win32",
+        env: {},
+        spaces: () => [],
+        log,
+        environment: environment(),
+        shimCommand: ["C:\\tasks\\tasks.exe"],
+        terminalSettings,
+        terminals: {
+          // reg.exe did not answer.
+          delegation: () => {
+            reads.count += 1;
+            return Promise.resolve(undefined);
+          },
+        },
+      });
+      return { made, reads };
+    };
+    const decided = service({ ...DEFAULT_TERMINAL, app: "wt", fallbacks: ["console"] });
+    expect((await decided.made.doctor(false))["terminal"]).toMatchObject({
+      app: "wt",
+      source: "configured",
+      unread: null,
+    });
+    expect(decided.reads.count).toBe(0);
+    const auto = service(DEFAULT_TERMINAL);
+    expect((await auto.made.doctor(false))["terminal"]).toMatchObject({
+      app: "console",
+      source: "installed",
+      unread: "windows",
+    });
+    expect(auto.reads.count).toBe(1);
   });
 
   test("t3/status: the token's expiry and whether the pairing renews it, also while T3 is not running", async () => {

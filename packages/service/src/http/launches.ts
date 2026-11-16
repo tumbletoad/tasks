@@ -10,7 +10,15 @@
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
 // fixed codes only, as the launch record does.
 import { AppError } from "@tasks/contracts";
-import { INSTANCE_KEY, isRoute, TASK_ID, type IntentState, type Route } from "@tasks/launch";
+import {
+  INSTANCE_KEY,
+  isRoute,
+  TASK_ID,
+  TERMINAL_APPS,
+  TERMINAL_SOURCES,
+  type IntentState,
+  type Route,
+} from "@tasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
 import type { HttpLog } from "./events.ts";
@@ -47,6 +55,12 @@ export interface UiReceipt {
   readonly reason: string | null;
   /** When it entered each state, milliseconds since 1970. */
   readonly at: Readonly<Partial<Record<IntentState, number>>>;
+  /**
+   * A terminal launch: the terminal that was Dispatched and why it was chosen, as the
+   * fixed words of `[terminal] app` and TERMINAL_SOURCES. Absent before its dispatch, and for a
+   * launch recorded by a build that did not record them.
+   */
+  readonly terminal?: { readonly app: string; readonly source: string };
 }
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
@@ -93,12 +107,29 @@ const LIST_SQL =
   "SELECT id, reference, instance_id, route, state, reason, detail FROM launches " +
   "WHERE task_id = $task ORDER BY created_at DESC, id DESC LIMIT 10";
 
-function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
+/** A `launches` row as the page's receipt, or undefined for a detail that does not parse. */
+export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
   const at: Partial<Record<IntentState, number>> = {};
+  let terminal: UiReceipt["terminal"];
   try {
-    const detail = JSON.parse(String(row["detail"])) as { at?: Record<string, unknown> };
+    const detail = JSON.parse(String(row["detail"])) as {
+      at?: Record<string, unknown>;
+      evidence?: Record<string, unknown>;
+    };
     for (const [state, value] of Object.entries(detail.at ?? {})) {
       if (typeof value === "number") at[state as IntentState] = value;
+    }
+    // Only the fixed words reach the page: anything else is left out, never shown.
+    const app = detail.evidence?.["terminal"];
+    const source = detail.evidence?.["terminal_source"];
+    if (
+      typeof app === "string" &&
+      typeof source === "string" &&
+      app !== "auto" &&
+      (TERMINAL_APPS as readonly string[]).includes(app) &&
+      (TERMINAL_SOURCES as readonly string[]).includes(source)
+    ) {
+      terminal = { app, source };
     }
   } catch {
     return undefined;
@@ -112,6 +143,7 @@ function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
     state: String(row["state"]) as IntentState,
     reason: typeof reason === "string" ? reason : null,
     at,
+    ...(terminal === undefined ? {} : { terminal }),
   };
 }
 

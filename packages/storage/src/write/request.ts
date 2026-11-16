@@ -568,6 +568,8 @@ export const LAUNCH_EVIDENCE_FIELDS = {
   folder_checked: "flag",
   exit_code: "count",
   bound_at: "instant",
+  terminal: "id",
+  terminal_source: "id",
 } as const satisfies Record<string, "id" | "instant" | "count" | "flag">;
 
 /** An ID in evidence: a native session or thread ID, a grant, a claim, a file identity. */
