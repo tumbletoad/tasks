@@ -294,12 +294,23 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
       prefix: "Lumen Health",
     });
     expect(r.description).toEqual(["Lumen Health", "completed Tuesday 10 November"]);
-    // A row read from search carries the day only.
-    const read2 = renderRow(
+    // A dropped task keeps no completion time: the day it was dropped, and its box says so.
+    const dropped = renderRow(
+      row(task({ title: "x", lifecycle: "archived", finished_at: Date.UTC(2026, 10, 12, 9) })),
+      ctx("completed", "flat"),
+    );
+    expect([say(dropped.due?.text), say(dropped.due?.tip), say(dropped.done)]).toEqual([
+      "Today",
+      "Dropped Thursday 12 November",
+      "Dropped: x",
+    ]);
+    expect(dropped.description.map(say)).toEqual(["dropped Thursday 12 November"]);
+    // A row found by a search carries the day only.
+    const found = renderRow(
       row(task({ title: "x", lifecycle: "completed", completed_on: "2026-11-12" })),
       ctx("completed", "flat"),
     );
-    expect([say(read2.due?.text), say(read2.due?.tip)]).toEqual([
+    expect([say(found.due?.text), say(found.due?.tip)]).toEqual([
       "Today",
       "Completed Thursday 12 November",
     ]);

@@ -30,9 +30,11 @@ export interface TaskRow {
   readonly position: string;
   readonly wrap_state?: string;
   readonly completed_at?: number;
+  /** When a finished task was completed or dropped (a dropped one keeps no completion time). */
+  readonly finished_at?: number;
   /**
-   * The day it was completed, as a paged read gives it (`task.search`'s `completed`) for a finished
-   * task the live store does not hold. Not a compact row's column: `completed_at` wins when present.
+   * The day it was completed, as a search gives it (`task.search`'s `completed`) for a finished
+   * task the live store does not hold. Not a compact row's column: `finished_at` wins when present.
    */
   readonly completed_on?: string;
   /**
@@ -94,8 +96,8 @@ export const TASK_FIELD_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * Every column a logical field of a task stands for, and what the compact row carries of the
- * task's children (A5 3.6): each is the compact row's, present or left out.
+ * Every column a logical field of a task stands for, what the compact row carries of the task's
+ * children (A5 3.6), and the times it derives: each is the compact row's, present or left out.
  */
 const TASK_COLUMNS: ReadonlySet<string> = new Set([
   ...Object.values(TASK_FIELD_COLUMNS).flat(),
@@ -103,6 +105,7 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
   "sources_more",
   "place",
   "waiting_since",
+  "finished_at",
 ]);
 
 /**
@@ -258,6 +261,7 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["deleted_at"], isNumber) ||
     !optional(v["touched"], isNumber) ||
     !optional(v["waiting_since"], isNumber) ||
+    !optional(v["finished_at"], isNumber) ||
     !optional(v["sources"], isSources) ||
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace)
