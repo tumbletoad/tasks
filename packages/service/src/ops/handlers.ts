@@ -187,6 +187,8 @@ export interface OpsHost {
   readonly homes?: HomeGate;
   /** Launching (`launch.open`): the hub's launch service. None: no task opens here. */
   readonly launches?: LaunchPort;
+  /** Told of a write's answer that does not match its entry's contract (the service logs it). */
+  readonly resultMismatch?: (entry: string) => void;
 }
 
 /** What `launch.open` needs of the launch service (launch/service.ts). */
@@ -402,6 +404,13 @@ async function callWith(
   const result = await handler(call);
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
+    // A write whose handler returned has done its work, whichever path it wrote through: an error
+    // would send the caller to do it again, or to undo an older change. The mismatch is a defect
+    // to find in the log. A read has changed nothing, so its caller can be told plainly.
+    if (entry.kind === "write") {
+      host.resultMismatch?.(entry.name);
+      return result;
+    }
     throw new AppError({
       code: "internal",
       message: "The service built a result that does not match its contract.",

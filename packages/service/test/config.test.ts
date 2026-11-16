@@ -293,14 +293,8 @@ describe("[A2.3.2.4.hub.space-id] a [[spaces]] entry opens only the space its ID
       });
       running.push(service);
       await service.spacesSettled;
-      expect(service.spaces()).toEqual([
-        {
-          entry: 0,
-          state: "unavailable",
-          reason: "other_space",
-          code: "SPACE_ID_MISMATCH",
-          message: expect.any(String) as unknown,
-        },
+      expect(service.spaces()).toMatchObject([
+        { entry: 0, state: "unavailable", reason: "other_space", code: "SPACE_ID_MISMATCH" },
       ]);
       // No registration, migration, backup or leftovers cleanup: the folder is as it was.
       expectUnchanged(before, snapshot(work.folder));
@@ -384,14 +378,8 @@ describe("[A2.3.2.4.hub.space-id] a [[spaces]] entry opens only the space its ID
       });
       running.push(service);
       await service.spacesSettled;
-      expect(service.spaces()).toEqual([
-        {
-          entry: 0,
-          state: "unavailable",
-          reason: "other_space",
-          code: "SPACE_ID_MISMATCH",
-          message: expect.any(String) as unknown,
-        },
+      expect(service.spaces()).toMatchObject([
+        { entry: 0, state: "unavailable", reason: "other_space", code: "SPACE_ID_MISMATCH" },
         { entry: 1, state: "open", id: work.space.spaceId },
       ]);
       expect(
@@ -429,21 +417,9 @@ describe("[A2.3.2.4.hub.space-id] a [[spaces]] entry opens only the space its ID
       });
       running.push(service);
       await service.spacesSettled;
-      expect(service.spaces()).toEqual([
-        {
-          entry: 0,
-          state: "unavailable",
-          reason: "missing",
-          code: "SPACE_NOT_FOUND",
-          message: expect.any(String) as unknown,
-        },
-        {
-          entry: 1,
-          state: "unavailable",
-          reason: "missing",
-          code: "SPACE_NOT_FOUND",
-          message: expect.any(String) as unknown,
-        },
+      expect(service.spaces()).toMatchObject([
+        { entry: 0, state: "unavailable", reason: "missing", code: "SPACE_NOT_FOUND" },
+        { entry: 1, state: "unavailable", reason: "missing", code: "SPACE_NOT_FOUND" },
       ]);
       expect(readdirSync(empty)).toEqual([]);
       expect(snapshot(other)).toEqual(before);

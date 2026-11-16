@@ -1226,6 +1226,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.1.hub.space-retry",
+      "title": "space open of an unavailable space (its folder missing, its open failed) tries it again in one step, after what the failed open held was released. A space whose worker or open did not end within the close's bound is never opened beside it: space open is refused while it runs and opens the space once it has ended",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.13.hub.logs-content-free",
       "title": "The log takes only catalogue events and typed fields, drops free text cast past the types, takes error codes and classes from closed lists only, rotates at the file's real size only in the lock holder, stays bounded while the holder is idle, takes tasks-local/1's events whole with only their listed words, and a grep of a service's logs and crash files for fixture strings finds nothing",
       "source": "A2 3.13, A2 S27, A7 3.8 M1.08",
@@ -1373,6 +1380,54 @@
       "id": "A4.5.run.machine",
       "title": "The run machine's rules one by one: a cancel in every state, the claim committed before its reply and once, a refused or silent spawn, reports of a start, evidence, a failed check and exits into each final state through reconciling where A4 draws no direct edge, a stop that times out and settles later, restart recovery from a live shim, exit.json or none, also after the stop's time passed, and of an unknown run whose stop timed out, a damaged report that settles its run without the result, the sweep applying recovery's rule to every open run, a start failure after a Stop and one that arrives after a sweep settled the run lost (failed, or cancelled after a Stop, also after the stop timed out, on the in-memory store and the space database), and the claim window on the monotonic and the wall clock",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.kill",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.interrupt",
+      "title": "An interrupt (SIGINT to the agent's group, Ctrl+C on its console) reaches a stand-in agent, which prints its last words and exits, and its container is then empty",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.crash",
+      "title": "Killing the stand-in service by force leaves nothing of its runs and recover confirms each container empty by name; a service that lost its records recovers a live container from its name; on Windows a job handle held elsewhere keeps a run alive past the crash, confirm says occupied and recover ends it",
+      "source": "A4 3.11.8, A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.start",
+      "title": "A container's agent gets hostile arguments unchanged and none of the service's control pipes, a name in use is refused also when the service forgot it, and the probe creates, kills and confirms a real container",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.probe",
+      "title": "The container probe names why runs cannot be contained (no systemd, no cgroup v2, no user manager, not a service, no Delegate=yes, no cgroup.kill, no tasks-run.exe, another platform), and start refuses there",
+      "source": "A4 3.11.8",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.command-line",
+      "title": "A Windows command line quotes each argument as the C runtime reads it back",
+      "source": "A4 3.11.8",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2317,6 +2372,13 @@
       "id": "A3.3.4.write.applied-answer",
       "title": "an undo, redo, update, finish or reopen whose answer cannot be read from history after it applied reports what it applied, never a failure, and a replay of the undo answers with its tasks",
       "source": "A3 3.4.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.write.result-mismatch",
+      "title": "a write that applied but whose answer does not match its contract is answered as applied and reported to the service log; a read whose answer does not match stays an internal error",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]

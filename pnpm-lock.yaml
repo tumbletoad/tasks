@@ -347,10 +347,19 @@ importers:
       '@tasks/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tasks/files':
+        specifier: workspace:*
+        version: link:../files
       '@tasks/launch':
         specifier: workspace:*
         version: link:../launch
     devDependencies:
+      '@tasks/bridge':
+        specifier: workspace:*
+        version: link:../bridge
+      '@tasks/launcher-win':
+        specifier: workspace:*
+        version: link:../launcher-win
       '@tasks/testkit':
         specifier: workspace:*
         version: link:../testkit

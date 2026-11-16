@@ -3,3 +3,4 @@
 // store's run part; the rest arrives with M6.02–M6.07.
 export * from "./streams/index.ts";
 export * from "./machine.ts";
+export * from "./container/index.ts";
