@@ -697,6 +697,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.deepest",
+      "title": "The project a working folder belongs to: the deepest project folder that holds it, by whole names and the machine's case rule, exact when it is the project's folder, none for a sibling with a longer name; a project folder reached through a link holds the folders of its target",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },    {
       "id": "A1.3.15.folders.request-path",
       "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
       "source": "A1 3.15, A3 3.4.5",

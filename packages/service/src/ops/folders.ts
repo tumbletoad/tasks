@@ -258,11 +258,13 @@ export async function checkFolder(
  * project folders it lies in. A project folder holds it by its stored text with the machine's case
  * rule, or by identity, so a folder reached through a link still belongs to its project. A project
  * folder that does not answer is judged by its text alone. `exact`: the folder is the project's.
+ * `looks` keeps the project folders' identities for the next folder of the same call.
  */
 export async function deepestProject<P extends ProjectFolder>(
   folder: Folder,
   projects: readonly P[],
   facts: Pick<BindFacts, "home" | "platform">,
+  looks: Map<string, Promise<string | undefined>> = new Map(),
 ): Promise<{ project: P; exact: boolean } | undefined> {
   if (projects.length === 0) return undefined;
   const { platform } = facts;
@@ -285,10 +287,15 @@ export async function deepestProject<P extends ProjectFolder>(
   const byIdentity = await Promise.all(
     projects.map(async (p) => {
       if (up === "not_answering" || up.length === 0) return undefined;
-      const theirs = await bounded(() =>
-        identityOf(expanded(p.stored, facts.home, platform), platform),
-      );
-      if (theirs === undefined || theirs === "not_answering") return undefined;
+      let look = looks.get(p.stored);
+      if (look === undefined) {
+        look = bounded(() => identityOf(expanded(p.stored, facts.home, platform), platform)).then(
+          (found) => (found === "not_answering" ? undefined : found),
+        );
+        looks.set(p.stored, look);
+      }
+      const theirs = await look;
+      if (theirs === undefined) return undefined;
       const k = up.indexOf(theirs);
       return k === -1 ? undefined : k;
     }),

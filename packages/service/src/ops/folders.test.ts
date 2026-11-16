@@ -1,7 +1,11 @@
 // The stored form of a folder on Linux, macOS and Windows: the home as `~`, the separators made
-// plain, the Unicode form and a link's name kept. Fixture paths only: nothing here looks at a disk.
+// plain, the Unicode form and a link's name kept; and the project a working folder belongs to.
+// Fixture paths, and for a link a temporary folder of this test.
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { expanded, storedForm } from "./folders.ts";
+import { deepestProject, expanded, storedForm } from "./folders.ts";
 
 describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the home written as ~", () => {
   test("Linux and macOS: ~ in and out, separators made plain, case kept on Linux", () => {
@@ -60,5 +64,59 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
     expect(storedForm("C:work", home, "win32")).toBe("not_absolute");
     expect(storedForm("\\work", home, "win32")).toBe("not_absolute");
     expect(expanded("~\\Projects", home, "win32")).toBe("C:\\Users\\Mira\\Projects");
+  });
+});
+
+describe("[A1.3.15.folders.deepest] the project a working folder belongs to", () => {
+  const project = (name: string, stored: string) => ({ project: name, name, stored });
+
+  test("the deepest project folder that holds it, by whole names and the machine's case rule", async () => {
+    const home = "/home/mira";
+    const projects = [
+      project("portal", "~/work/portal"),
+      project("web", "~/work/portal/web"),
+      project("old", "~/work/old"),
+    ];
+    const at = (path: string, platform: NodeJS.Platform = "linux", own = home) => {
+      const folder = storedForm(path, own, platform);
+      if (typeof folder === "string") throw new Error(folder);
+      return deepestProject(folder, projects, { home: own, platform });
+    };
+    expect(await at("/home/mira/work/portal/web/app")).toMatchObject({
+      project: { project: "web" },
+      exact: false,
+    });
+    expect(await at("/home/mira/work/portal")).toMatchObject({
+      project: { project: "portal" },
+      exact: true,
+    });
+    expect(await at("/home/mira/work/portal-old/x")).toBeUndefined();
+    expect(await at("/home/mira/work/Portal/x")).toBeUndefined();
+    const windows = [project("portal", "~\\work\\portal")];
+    const folder = storedForm("C:\\Users\\Mira\\Work\\PORTAL\\api", "C:\\Users\\Mira", "win32");
+    if (typeof folder === "string") throw new Error(folder);
+    expect(
+      await deepestProject(folder, windows, { home: "C:\\Users\\Mira", platform: "win32" }),
+    ).toMatchObject({ project: { project: "portal" }, exact: false });
+  });
+
+  test("a project folder reached through a link holds the folders of its target", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tasks-deepest-"));
+    try {
+      const real = join(root, "real", "portal");
+      mkdirSync(join(real, "src"), { recursive: true });
+      const link = join(root, "linked");
+      symlinkSync(join(root, "real"), link, process.platform === "win32" ? "junction" : "dir");
+      const home = join(root, "home");
+      const folder = storedForm(join(real, "src"), home, process.platform);
+      if (typeof folder === "string") throw new Error(folder);
+      const found = await deepestProject(folder, [project("portal", join(link, "portal"))], {
+        home,
+        platform: process.platform,
+      });
+      expect(found).toMatchObject({ project: { project: "portal" }, exact: false });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

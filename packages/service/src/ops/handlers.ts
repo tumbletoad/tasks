@@ -1151,6 +1151,7 @@ async function draftFolders(
   const ops: Operation[] = [];
   const warnings: string[] = [];
   let projects: readonly ProjectFolderRow[] | undefined;
+  const looks = new Map<string, Promise<string | undefined>>();
   try {
     for (const [k, draft] of list.entries()) {
       const value = draft["folder"];
@@ -1164,7 +1165,7 @@ async function draftFolders(
         } catch (error) {
           throw storageFailure(error);
         }
-        const found = await deepestProject(folder, projects, facts);
+        const found = await deepestProject(folder, projects, facts, looks);
         if (found?.project.archived === true) {
           warnings.push(
             `${at}: the folder is in an archived project's folder, so the task is in no project. Unarchive the project to file tasks there.`,
