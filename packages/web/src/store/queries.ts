@@ -85,14 +85,26 @@ export interface QueryState<R> {
   /** A frozen search whose results may have changed: the page shows "Results changed · Refresh". */
   readonly changed: boolean;
   readonly more: boolean;
+  /** Why the last read failed, while `phase` is `failed`. */
+  readonly error?: unknown;
 }
 
 export const PAGE_SIZE = 50;
+
+export interface QueryOptions {
+  readonly pageSize?: number;
+  /**
+   * Whether a failed next page means its cursor expired (a search's, after a restart or 15
+   * minutes): the query then reads from page 1 again, the rows shown and one page more.
+   */
+  readonly expired?: (error: unknown) => boolean;
+}
 
 export class PagedQuery<R extends { readonly id: string }> {
   readonly def: QueryDef;
   readonly #source: PageSource<R>;
   readonly #pageSize: number;
+  readonly #expired: (error: unknown) => boolean;
   readonly #listeners = new Set<() => void>();
   #state: QueryState<R> = { rows: [], phase: "idle", changed: false, more: false };
   #next: string | undefined;
@@ -106,10 +118,11 @@ export class PagedQuery<R extends { readonly id: string }> {
    */
   #during = new Map<string, Readonly<Record<string, unknown>>>();
 
-  constructor(def: QueryDef, source: PageSource<R>, options: { pageSize?: number } = {}) {
+  constructor(def: QueryDef, source: PageSource<R>, options: QueryOptions = {}) {
     this.def = def;
     this.#source = source;
     this.#pageSize = options.pageSize ?? PAGE_SIZE;
+    this.#expired = options.expired ?? (() => false);
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -151,8 +164,11 @@ export class PagedQuery<R extends { readonly id: string }> {
    * restart, and the explicit Refresh of a frozen search.
    */
   refresh(): Promise<void> {
+    return this.#restart(Math.max(this.#pageSize, this.#state.rows.length));
+  }
+
+  #restart(limit: number): Promise<void> {
     const generation = this.#read();
-    const limit = Math.max(this.#pageSize, this.#state.rows.length);
     this.#stale = false;
     this.#set({ phase: "loading" });
     return this.#source({ after: undefined, limit }).then(
@@ -164,10 +180,11 @@ export class PagedQuery<R extends { readonly id: string }> {
           phase: "ready",
           changed: this.#stale,
           more: page.next !== undefined,
+          error: undefined,
         });
       },
-      () => {
-        if (generation === this.#generation) this.#set({ phase: "failed" });
+      (error: unknown) => {
+        if (generation === this.#generation) this.#set({ phase: "failed", error });
       },
     );
   }
@@ -187,10 +204,16 @@ export class PagedQuery<R extends { readonly id: string }> {
           rows: [...this.#state.rows, ...this.#current(page.rows.filter((r) => !seen.has(r.id)))],
           phase: "ready",
           more: page.next !== undefined,
+          error: undefined,
         });
       },
-      () => {
-        if (generation === this.#generation) this.#set({ phase: "failed" });
+      async (error: unknown) => {
+        if (generation !== this.#generation) return;
+        if (this.#expired(error)) {
+          await this.#restart(this.#state.rows.length + this.#pageSize);
+          return;
+        }
+        this.#set({ phase: "failed", error });
       },
     );
   }

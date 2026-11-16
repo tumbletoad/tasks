@@ -174,6 +174,19 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     expect(note.entry).toBe("n1");
   });
 
+  test("a draft with focus is starred for today, in the one create", async () => {
+    const s = await session("cli-interactive");
+    const added = TaskAddResult.parse(
+      await call(s, "task.add", {
+        tasks: [{ title: "Fixture starred capture", focus: true, inbox: true }],
+        request_id: rid(),
+      }),
+    );
+    const ref = added.tasks[0]?.ref ?? "";
+    const shown = TaskGetResult.parse(await call(s, "task.get", { task: ref }));
+    expect(shown.view === "digest" && shown.task.focus).toBe(true);
+  });
+
   test("errors become the contract's bodies", async () => {
     const s = await session("cli-script");
     const unknown = errorOf(await call(s, "task.nothing", {}).catch((e: unknown) => e));
