@@ -599,6 +599,9 @@ function decideMatched(
   // source an import named was linked then, so one that is not linked now was taken off by a
   // person, also when an import in between left it out. An undo that set links back voids its
   // import's list.
+  // A limit, accepted: when an import is undone and the person then takes off, with Ctrl+Z, a
+  // source they had linked by hand that the import also named, no record remembers that source
+  // any more, so a later import links it again while the prototype still names it.
   const before = new Set(
     found.bases.flatMap((b) => (b.voided.has("sources") ? [] : b.base.sources)),
   );
