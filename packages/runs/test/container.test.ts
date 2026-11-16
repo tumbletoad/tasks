@@ -193,6 +193,18 @@ describe("[A4.3.11.8.container.kill] after kill nothing a stand-in agent started
     await killAndConfirm(get(), name, token);
   });
 
+  test("Linux: an agent that moves into a cgroup of its own below the run's", async (ctx) => {
+    if (windows) ctx.skip("cgroups exist on Linux only");
+    need(ctx);
+    const { token, name } = await start(get(), "nest");
+    await waitFor(
+      "ready",
+      () => output(get(), name),
+      (o) => o.head.includes("ready"),
+    );
+    await killAndConfirm(get(), name, token);
+  });
+
   test("an agent that dies: its container is empty by itself", async (ctx) => {
     need(ctx);
     const { token, name } = await start(get(), "die");

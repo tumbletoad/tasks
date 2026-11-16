@@ -48,7 +48,6 @@ interface Live {
   readonly pid: number;
   /** The next answer line of each command, in order. */
   readonly waiting: ((line: string | undefined) => void)[];
-  empty: boolean;
   ended: boolean;
   readonly helperEnded: Promise<void>;
 }

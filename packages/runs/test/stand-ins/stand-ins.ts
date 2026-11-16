@@ -19,7 +19,8 @@ export type StandInMode =
   | "flood"
   | "die"
   | "handles"
-  | "argv";
+  | "argv"
+  | "nest";
 
 /** A fresh token: it marks every process of one stand-in tree. */
 export const newToken = (): string => randomBytes(8).toString("hex");

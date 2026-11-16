@@ -1339,7 +1339,7 @@
     },
     {
       "id": "A4.3.11.8.container.kill",
-      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
       "source": "A4 3.11.8",
       "owner": "M6",
       "kind": "ci",

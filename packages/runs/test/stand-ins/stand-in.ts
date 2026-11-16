@@ -15,6 +15,7 @@
 //   die          prints "ready" and exits 3
 //   handles      prints whether it holds file descriptors 3 and 4, then waits
 //   argv         prints the arguments after `--` as JSON and exits 0
+//   nest         Linux: moves itself into a new cgroup below its own, prints "ready", waits
 // Child roles: idle (waits), daemonize (starts a detached idle child, exits once it runs).
 //
 // Every process of a stand-in tree carries the token in its arguments, and on Windows also
@@ -22,7 +23,8 @@
 // alive without trusting the container. None outlives --max-ms (default 60 s), so a broken
 // container cannot leave a stand-in running for long.
 import { spawn, type StdioOptions } from "node:child_process";
-import { fstatSync, writeSync } from "node:fs";
+import { fstatSync, mkdirSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { join } from "node:path";
 import { createServer } from "node:net";
 import { parseArgs } from "node:util";
 
@@ -157,6 +159,15 @@ switch (mode) {
       }
     };
     say(`fd3 ${open(3)} fd4 ${open(4)}\n`);
+    break;
+  }
+  case "nest": {
+    // Linux: moves itself into a cgroup of its own below the run's.
+    const own = readFileSync("/proc/self/cgroup", "utf8").trim().slice(3);
+    const nested = join("/sys/fs/cgroup", own, "nested");
+    mkdirSync(nested);
+    writeFileSync(join(nested, "cgroup.procs"), String(process.pid), { flag: "r+" });
+    say("ready\n");
     break;
   }
   case "argv":
