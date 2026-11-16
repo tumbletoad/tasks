@@ -79,5 +79,11 @@ export const taskFinished = defineEntry({
       input: { checked_off: true },
       output: { rows: [] },
     },
+    {
+      title: "The page after M-3: what was finished before it",
+      actor: "user",
+      input: { cursor: `1775210400000.${M3.id}` },
+      output: { rows: [] },
+    },
   ],
 });

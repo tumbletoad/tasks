@@ -2077,6 +2077,24 @@ Result:
 }
 ```
 
+#### The page after M-3: what was finished before it
+
+Called by the user.
+
+```json
+{
+  "cursor": "1775210400000.t_3a9c7e1g5j2k4m6n8p0q1r3s5t"
+}
+```
+
+Result:
+
+```json
+{
+  "rows": []
+}
+```
+
 ## `task.get`
 
 Load a task as a bounded digest, or selected sections in full. With launch, bind first.

@@ -305,6 +305,7 @@ const VERIFIED = new Set([
   "task.get 2",
   "task.finished 0",
   "task.finished 1",
+  "task.finished 2",
   "task.update 0",
   "entry.add 0",
   "entry.add 1",
