@@ -22,7 +22,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   outcome and what was learned.
 - Deleting a task keeps its contents and history recoverable. Nothing empties the trash by itself.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
-  creation is undone.
+  creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task
   and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
   new work.
@@ -30,10 +30,14 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## Backups, restore and export
 
 - A backup stays consistent while people and agents change tasks.
-- A backup that is called verified has passed a trial restore.
+- A backup that is called verified has passed a trial restore. So has every backup you make with
+  `tasks space backup`.
 - While a space is open for changes, Tasks backs it up once a day. It keeps the backups of seven
   recent days and four recent weeks, and removes older scheduled ones. Backups you make by hand
   stay until you remove them.
+- When a daily backup fails, or the newest backup does not pass a trial restore, `tasks doctor`,
+  `tasks space list` and the page's space switcher say so and what to do, until a backup succeeds
+  again.
 - Clean-up never removes the newest backup that restores.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
@@ -46,7 +50,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   nothing.
 - An export refuses text that matches a known kind of secret, such as an access token or a private
   key, and says what kind it is and where, without printing it.
-- A space is upgraded only after a backup of it has been made and read back. A failed upgrade
+- A space is upgraded only after a backup of it has passed a trial restore. A failed upgrade
   leaves the old data readable.
 - An older version of Tasks never writes a newer data format.
 
@@ -113,10 +117,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo does not unsend a mail, reverse a commit or undo anything done outside Tasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
-- Restoring an older backup also brings back its counter for references. A task made after the
-  restore can get a reference that a task made after that backup had.
-- The backup made before an upgrade is read back but not trial restored, and a backup that fails,
-  for example on a full disk, is written to the log and not shown to you.
+- Two copies of one space that both take changes, such as a restored copy and its original used
+  in turn, give out references on their own: a task in one can get a reference a task in the
+  other has. A restore over a space whose database cannot be read at all goes on from the
+  backup's counter.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
