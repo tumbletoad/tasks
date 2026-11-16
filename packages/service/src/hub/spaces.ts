@@ -365,8 +365,14 @@ class Hosted {
   maintaining: Promise<void> | undefined;
   /** A restore in place or a claim through the manager, in progress. */
   replacing: Promise<unknown> | undefined;
-  /** A close timed out: the worker may still hold the database and its lock. */
-  stuck = false;
+  /**
+   * What did not end within a close's bound: a worker that did not close, or an open that kept
+   * running. Each leaves once it has ended. Kept across reset(): it belongs to the folder, not to
+   * one open.
+   */
+  readonly #hung = new Set<Promise<void>>();
+  /** Counts the opens begun since the entry was made, so a late release knows whether it is its. */
+  attempt = 0;
   /** The space closes: an open in progress releases what it took at its next step. */
   stopping = false;
   /** writer.lock was found deleted or replaced, and reported. */
@@ -401,8 +407,33 @@ class Hosted {
     this.registered = registered;
   }
 
+  /** A worker or an open of this space may still hold its database and its lock. */
+  get stuck(): boolean {
+    return this.#hung.size > 0;
+  }
+
+  /**
+   * `ending` did not end within its bound: the space stays stuck until it resolves. A rejection
+   * proves nothing ended, so it keeps the space stuck until the process exits.
+   */
+  hold(ending: Promise<unknown>): void {
+    const entry: Promise<void> = ending.then(
+      () => {
+        this.#hung.delete(entry);
+      },
+      () => new Promise<never>(() => undefined),
+    );
+    this.#hung.add(entry);
+  }
+
+  /** Resolves once nothing is stuck. Callers bound the wait. */
+  async unstuck(): Promise<void> {
+    while (this.#hung.size > 0) await Promise.race(this.#hung);
+  }
+
   /** Back to a new open's start, after a close (a restore in place or a claim). */
   reset(): void {
+    this.attempt += 1;
     this.state = "opening";
     this.id = undefined;
     this.name = undefined;
@@ -410,7 +441,6 @@ class Hosted {
     this.reason = undefined;
     this.code = undefined;
     this.holder = undefined;
-    this.stuck = false;
     this.stopping = false;
     this.lost = false;
     this.busy = undefined;
@@ -595,9 +625,12 @@ export class SpaceManager {
     if (known !== undefined) {
       // A forgotten folder opened again is listed again, as any folder opened for the first time.
       known.forgotten = false;
+      // A worker that has not ended yet may still hold the space: it gets one close's bound.
+      if (known.stuck) await within(known.unstuck(), this.#closeMs);
       const free = () => known.replacing === undefined && !known.stuck;
       // An entry its last open left unavailable (its folder was gone, its drive not mounted, its
-      // lock held elsewhere) is tried again: closed first, so it opens from the start.
+      // lock held elsewhere, its open failed) is tried again: closed first, which releases what
+      // that open still held, so it opens from the start.
       if (known.state === "unavailable" && free()) await this.#close(known, this.#closeMs);
       if (id !== undefined && id !== known.registered) {
         if (known.state !== "closed" || !free()) throw new UnexpectedSpace();
@@ -607,6 +640,9 @@ export class SpaceManager {
         known.reset();
         await this.#begin(known, retry);
         return known.index;
+      }
+      if ((known.state === "closed" || known.state === "unavailable") && known.stuck) {
+        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
       }
       if (known.busy !== undefined) await known.busy;
       if (retry && known.state === "read_only" && known.reason === "migration_failed") {
@@ -628,21 +664,20 @@ export class SpaceManager {
 
   /**
    * A space served read-only for a failed migration closes and opens again with its migration
-   * tried (A1 3.17). One change of the space at a time. A worker that did not close in time
-   * keeps the migration from being tried, as it keeps every change: the space opens again as
-   * before (confirmExcluded's rule), and the retry is refused.
+   * tried. One change of the space at a time. A worker or open that did not end in time may still
+   * hold the space, so nothing opens beside it: the retry is refused and the space stays closed
+   * until `space open` finds it ended.
    */
   async #retryMigration(space: Hosted): Promise<void> {
     await this.#exclusive(space, async () => {
       await this.#close(space, this.#closeMs);
-      const stuck = space.stuck;
+      if (space.stuck) {
+        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
+      }
       // Read again: the service may have begun to drain while the space closed.
       if (!this.#isDraining()) {
         space.reset();
-        await this.#begin(space, !stuck);
-      }
-      if (stuck) {
-        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
+        await this.#begin(space, true);
       }
     });
   }
@@ -879,10 +914,12 @@ export class SpaceManager {
     }
     await this.#exclusive(space, async () => {
       await this.#close(space, this.#closeMs);
+      // A worker or open that did not end in time may still hold the space: nothing opens beside
+      // it, and `space open` opens it once it has ended.
+      if (space.stuck) {
+        throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
+      }
       try {
-        if (space.stuck) {
-          throw new StorageError("SPACE_WRITER_TAKEN", "The space's last worker has not closed");
-        }
         recordSyncedConfirmed(
           this.#options.settingsDir,
           space.registered,
@@ -1070,6 +1107,7 @@ export class SpaceManager {
       space.reader = conn;
       if (await this.#stopped(space)) return;
       await this.#learnName(space);
+      if (await this.#stopped(space)) return;
     } catch (error) {
       await this.#refused(
         space,
@@ -1657,7 +1695,7 @@ export class SpaceManager {
       this.#unwatch(worker);
       return true;
     }
-    space.stuck = true;
+    space.hold(work);
     void work.then(() => {
       this.#unwatch(worker);
     });
@@ -1685,9 +1723,18 @@ export class SpaceManager {
         );
         await this.#release(space, Math.max(1, Math.round(deadline - performance.now())));
       } else {
-        // The open still runs: it releases what it took when it ends, and until then its worker
-        // may hold the space, so nothing else may change it (#replace).
-        space.stuck = true;
+        // The open still runs, and until it ends its worker may hold the space, so nothing else
+        // may change or open it. Once it has ended, what it still holds is released here: an open
+        // that saw the close released it already, one that did not would keep it. A new open
+        // begun since owns what the space holds then, so nothing is taken from it.
+        const attempt = space.attempt;
+        space.hold(
+          busy.then(async () => {
+            if (space.attempt !== attempt) return;
+            await this.#release(space);
+            if (space.attempt === attempt) space.state = "closed";
+          }),
+        );
       }
       space.state = "closed";
       if (wasServed) {

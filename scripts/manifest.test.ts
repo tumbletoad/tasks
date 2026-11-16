@@ -117,7 +117,7 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
         { ...entry("A7.kind"), kind: "sometimes" },
         { ...entry("A7.owner"), owner: "later" },
         { ...entry("A7.profile"), profiles: ["v2"] },
-        { ...entry("A7.empty"), source: "" },
+        { ...entry("A7.source"), source: 3 },
       ],
       [],
     );
@@ -126,7 +126,17 @@ describe("[A7.3.18.6.manifest-check] the test-manifest check", () => {
     expect(errors.join("\n")).toMatch(/A7\.kind.*kind/);
     expect(errors.join("\n")).toMatch(/A7\.owner.*owner/);
     expect(errors.join("\n")).toMatch(/A7\.profile.*profile/);
-    expect(errors.join("\n")).toMatch(/A7\.empty.*source/);
+    expect(errors.join("\n")).toMatch(/A7\.source.*source/);
+  });
+
+  test("takes an entry without a source, or with any text there", () => {
+    const bare: Record<string, unknown> = { ...entry("A7.bare") };
+    delete bare["source"];
+    const errors = run(
+      [bare, { ...entry("A7.free"), source: "" }],
+      [{ name: "[A7.bare] [A7.free] x", file: "a.test.ts" }],
+    );
+    expect(errors).toEqual([]);
   });
 
   test("fails on a manifest that is not the expected shape", () => {
