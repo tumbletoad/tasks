@@ -52,7 +52,7 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
   }) => {
     const tag = test.info().project.name;
     const person = `Tom Haas (${tag})`;
-    const [photos, invoice, other, capture, docs, lease] = await add(world, [
+    const [photos, invoice, other, capture, docs, lease, report] = await add(world, [
       { title: `New product photos (${tag})`, area: "home", status: "waiting", waiting_on: person },
       {
         title: `Invoice for the van (${tag})`,
@@ -69,6 +69,7 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
         status: "review",
       },
       { title: `Sign the lease (${tag})`, area: "home", priority: 2 },
+      { title: `Send the monthly report (${tag})`, area: "lumen" },
     ]);
     if (
       photos === undefined ||
@@ -76,7 +77,8 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
       other === undefined ||
       capture === undefined ||
       docs === undefined ||
-      lease === undefined
+      lease === undefined ||
+      report === undefined
     ) {
       throw new Error("the tasks were not added");
     }
@@ -194,6 +196,39 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     await sidebar(page).locator('a[data-view="open"]').click();
     await expect(row(page, lease)).toBeVisible({ timeout: SLOW_MS });
     await expect(row(page, lease).locator('[data-part="check"]')).not.toBeChecked();
+
+    // Agents: a task an agent finishes while the view is open stays there, checked, so the person
+    // who comes back sees what the agent did.
+    await sidebar(page).locator('a[data-view="agents"]').click();
+    await expect(page).toHaveURL(/\/agents$/);
+    const finished = await world.op(
+      world.mira.id,
+      "task.finish",
+      { task: report, outcome: `Sent to the clinic (${tag}).`, base: await asOf(world, report) },
+      "agent",
+    );
+    expect(finished).toMatchObject({ result: "completed", wrap_state: "wrapped" });
+    await expect(row(page, report)).toBeVisible({ timeout: SLOW_MS });
+    await expect(row(page, report).locator('[data-part="check"]')).toBeChecked();
+    await page.screenshot({ path: test.info().outputPath("views-agents.png"), fullPage: true });
+
+    // Completed: the wrapped task under its month, not "Checked off". Reopened by the person, then
+    // checked off again, its earlier outcome stays and its new wrap-up waits under "Checked off".
+    await sidebar(page).locator('a[data-view="completed"]').click();
+    await expect(row(page, report)).toBeVisible({ timeout: SLOW_MS });
+    await expect(checked.locator(`li[data-task="${report}"]`)).toHaveCount(0);
+    await row(page, report).locator('[data-part="title"]').click();
+    await page.locator('[data-part="reopen"]').click();
+    await expect(page.getByRole("status").filter({ hasText: "Reopened" })).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    await page.screenshot({ path: test.info().outputPath("views-reopened.png"), fullPage: true });
+    await sidebar(page).locator('a[data-view="open"]').click();
+    await expect(row(page, report)).toBeVisible({ timeout: SLOW_MS });
+    await world.op(world.mira.id, "task.finish", { task: report, base: await asOf(world, report) });
+    await sidebar(page).locator('a[data-view="completed"]').click();
+    await expect(checked.locator(`li[data-task="${report}"]`)).toBeVisible({ timeout: SLOW_MS });
+    await page.screenshot({ path: test.info().outputPath("views-rechecked.png"), fullPage: true });
     expect(await violations(page)).toEqual([]);
   });
 });
