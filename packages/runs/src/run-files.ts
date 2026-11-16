@@ -5,7 +5,8 @@
 // - `stdout.jsonl` and `stderr.log`: the agent's raw output for diagnosis, up to their caps.
 // Folders are 0700 and files 0600 on Linux and macOS, made through packages/files. On Windows they
 // inherit the access list of the state folder in the person's profile, as every file of Tasks does.
-import { closeSync, readFileSync } from "node:fs";
+// The supervisor removes old folders (supervisor.ts retain); nothing else removes one.
+import { closeSync, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, createFile, makeDir, removeStaleTemps, writeAll } from "@tasks/files";
 import { ANSWER_CAP_BYTES } from "@tasks/contracts/runs";
@@ -131,6 +132,32 @@ export class RunFiles implements RunFolders {
 
   removeTemps(id: string): void {
     removeStaleTemps(this.folder(id), [ANSWER_FILE]);
+  }
+
+  /** The run folders there are, each with when it last changed (ms), in no order. */
+  list(): { readonly id: string; readonly changedAt: number }[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.root);
+    } catch {
+      return [];
+    }
+    const found: { id: string; changedAt: number }[] = [];
+    for (const name of names) {
+      if (!RUN_ID.test(name)) continue;
+      try {
+        const stat = lstatSync(join(this.root, name));
+        if (stat.isDirectory()) found.push({ id: name, changedAt: stat.mtimeMs });
+      } catch {
+        // Gone meanwhile.
+      }
+    }
+    return found;
+  }
+
+  /** Removes a run's folder and everything in it. */
+  remove(id: string): void {
+    rmSync(this.folder(id), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 
   logs(id: string): RunLogs {

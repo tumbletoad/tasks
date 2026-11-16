@@ -1393,6 +1393,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.run.supervisor-model",
+      "title": "Property test of the supervisor over two spaces with in-memory stores and fake containers: runs queued, Stops, agents that finish, limits changed, a restart, an update's hold taken and released or its holder gone, tasks closed, starts refused, time passing and retention. At every container start the machine's, instance's and task's limits hold, no run stopped while queued starts, and nothing starts under a hold; once settled no queued run waits while there is room for it and each says why it waits; retention removes no folder of a run that is open, unconfirmed, still hosted or unsaved; and every run settles",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.run.queue-order",
+      "title": "The start plan: the oldest queued run its limits allow starts first, a run held back by its own instance or task holds back no younger run of another, no start takes the machine, an instance or a task past its limit, and every waiting run's reason is true",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.run.supervisor",
+      "title": "The supervisor's rules: a run whose starting commit reached the store after its deadline fails start_timed_out at the next round with nothing started; a queued run past its task's limit says so, a Stop cancels it at once and it never starts, and one whose folder is gone fails with why; retention removes an old saved run's folder and keeps those of open, unconfirmed and unsaved runs and of runs no open space knows",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.kill",
       "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
       "source": "A4 3.11.8",
