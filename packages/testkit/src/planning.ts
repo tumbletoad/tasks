@@ -1690,6 +1690,11 @@ export function buildPlanningFixture(): PlanningFixture {
           "reconcile writes a DONE line as the TODO line with its marker removed, '- [ ]' turned " +
           "into '- [x]', right-trimmed, then ' (done YYYY-MM-DD; <evidence>) <!-- task:<id> -->'. " +
           "New lines go after the first line of DONE.md, separated by blank lines",
+        identity:
+          "A task keeps its ID while its line changes: a marked line by its marker, a line " +
+          "reconcile moved to DONE.md by the marker reconcile writes, which for an unmarked line is " +
+          "its fallback ID. An unmarked line whose title or group changes has another fallback ID, " +
+          "so it is another task to a re-import. Its line number is no part of its identity",
         optionalFiles:
           "data/metadata.json: one object keyed by task ID (missing: {}); an entry that is no " +
           "object is ignored. The page keeps due only when it starts with YYYY-MM-DD, keeps the " +

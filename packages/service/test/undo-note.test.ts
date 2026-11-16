@@ -84,3 +84,49 @@ describe("[A3.3.7.actors.script-undo-note.unread] an undo whose note cannot be r
     LONG,
   );
 });
+
+describe("[A3.3.7.actors.script-undo-check] an undo that checks for a newer change by a script", () => {
+  test(
+    "undoes nothing and names both changes; the named commit undoes it; a retry of an applied undo replays it",
+    async () => {
+      const mine = await add("Fixture task the person checks");
+      const scripts = await add("Fixture task a script checks");
+      await set(mine, { summary: "Fixture summary kept" });
+      await set(scripts, { summary: "Fixture summary by a script, checked" }, SCRIPT);
+
+      const refused = await call("history.undo", { check_script: true, request_id: rid() }).then(
+        () => undefined,
+        (e: unknown) => (e as { toBody: () => Json }).toBody(),
+      );
+      expect(refused).toMatchObject({
+        code: "conflict",
+        data: {
+          reason: "script_change_after",
+          tasks: [mine],
+          task_count: 1,
+          change: "task.patch",
+          script_change: { task: scripts, change: "task.patch" },
+        },
+      });
+      // Nothing was undone.
+      expect((await show(mine))["summary"]).toBe("Fixture summary kept");
+
+      const commit = (refused?.["data"] as Json)["commit"];
+      const request_id = rid();
+      const undone = await call("history.undo", { commit, request_id });
+      expect(undone).toMatchObject({ result: "undone", commit, tasks: [mine] });
+      expect((await show(mine))["summary"]).toBe("");
+      // A person's change newer than the script's: nothing to ask.
+      await set(mine, { summary: "Fixture summary after the script" });
+      const checked = rid();
+      const applied = await call("history.undo", { check_script: true, request_id: checked });
+      expect(applied).toMatchObject({ result: "undone", tasks: [mine] });
+      // A script changes something after it; a retry of that undo replays it, and is not refused.
+      await set(scripts, { summary: "Fixture summary by a script, later" }, SCRIPT);
+      expect(await call("history.undo", { check_script: true, request_id: checked })).toMatchObject(
+        { replayed: true, commit: applied["commit"] },
+      );
+    },
+    LONG,
+  );
+});

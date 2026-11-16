@@ -126,6 +126,25 @@ export class DefaultSpace {
     return run;
   }
 
+  /**
+   * Unsets the default when it is `id`, a space the person just forgot: a default that names no
+   * listed space would refuse every command that names none. Best effort: when machine.toml cannot
+   * take it, the value stays for the next start, and this run forgets it. Never throws.
+   */
+  clear(id: string): Promise<void> {
+    const run = this.#queue.then(() => {
+      if (this.#current !== id) return;
+      this.#current = undefined;
+      const prepared = prepareEdit(this.#options.configDir, [
+        { op: "unset", table: ["service"], key: "default_space" },
+      ]);
+      if (prepared.ok) commitEdit(prepared.edit);
+    });
+    const done = run.catch(() => undefined);
+    this.#queue = done;
+    return done;
+  }
+
   #set(id: Id<"sp">, source: DefaultSource): { default: Id<"sp"> } {
     if (!this.#options.known().some((space) => space.id === id && space.state !== "closed")) {
       throw new AppError({

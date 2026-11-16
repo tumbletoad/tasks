@@ -4,6 +4,7 @@
 // (history.ts) read every row they change through these.
 import type { Row } from "../driver.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
+import { EXT_TABLES, isExtField } from "./fields.ts";
 
 /** An existing row's state: what coalescing, the base and the inversion guards compare. */
 export interface RowState {
@@ -27,8 +28,11 @@ function versionMap(
     throw invalidValue(table, column);
   }
   const map: Record<string, number> = {};
+  // A key of a row's `ext` map is a logical field of its own (A1 3.4: `ext.<key>`).
+  const ext = EXT_TABLES.has(table);
   for (const [field, seq] of Object.entries(value)) {
-    if (!Object.hasOwn(fields, field) || !inRange(seq, "seq")) throw invalidValue(table, column);
+    const known = Object.hasOwn(fields, field) || (ext && isExtField(field));
+    if (!known || !inRange(seq, "seq")) throw invalidValue(table, column);
     map[field] = seq;
   }
   return map;

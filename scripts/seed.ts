@@ -2,12 +2,14 @@
 //
 //   pnpm seed --out <folder> [--seed <text>] [--tasks <n>]
 //
-// The space goes to <folder>/mira, which must not exist yet. The same seed and size give the same
+// The space goes to <folder>/mira, which must not exist yet; <folder> is made when it is not there.
+// The same seed and size give the same
 // space on every machine: the script prints its content digest, which tests compare. The scale
 // corpus (--scale) and the synthetic prototype folder (--planning) arrive with the steps that need
 // them (M1.15, M7).
 import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { makeDir } from "../packages/files/src/index.ts";
 import {
   checkedDriver,
   DEFAULT_SEED,
@@ -43,6 +45,8 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   const out = isAbsolute(values.out) ? values.out : resolve(values.out);
+  // A folder that is not there yet is made, as the folder the space goes into.
+  makeDir(out);
   const seed = values.seed ?? DEFAULT_SEED;
   const space = await seedMira(out, { seed, tasks });
   const digest = digestSpace(await checkedDriver(), space.folder);

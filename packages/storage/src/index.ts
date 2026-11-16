@@ -197,6 +197,7 @@ export {
   backupSpace,
   backupsFolder,
   type BackupRecord,
+  type BackupSeams,
   type SpaceBackupOptions,
 } from "./backup/backup.ts";
 export {
@@ -270,8 +271,11 @@ export {
   checkRequest,
   DEDUPE_MODES,
   DEDUPE_WINDOW_DAYS,
+  EXT_KEY,
   formatAsOf,
+  IMPORT_OPERATIONS,
   incarnationTag,
+  isImportRequest,
   isRelPath,
   LAUNCH_EVIDENCE_FIELDS,
   LAUNCH_EVIDENCE_ID,
@@ -290,6 +294,14 @@ export {
   WRITE_LIMITS,
   type ActorKind,
   type Addressee,
+  type AliasAdd,
+  type AreaUpsert,
+  type ExchangeCreate,
+  type ExchangeItem,
+  type ImportUndo,
+  type JsonValue,
+  type PreviewGuard,
+  type ProjectUpsert,
   type AsOf,
   type Base,
   type ConflictEntity,
@@ -394,5 +406,9 @@ export {
   SYSTEM_SCOPE,
   type MachineInfo,
   type MachineOs,
+  type SubmitOptions,
   type WriterOptions,
+  type WriteSeams,
 } from "./write/writer.ts";
+export { planImportRevert, recomputeToken, type ImportRevert } from "./write/imports.ts";
+export { submitBehindBackup, type BarrierOptions, type BarrierResult } from "./backup/barrier.ts";

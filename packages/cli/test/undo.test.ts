@@ -38,10 +38,13 @@ describe("[A3.3.2.3.history] tasks undo and tasks redo", () => {
         0,
       );
       expect((await tasks(["set", "M-1", "summary=Fixture script step"], false)).code).toBe(0);
-      const stopped = await tasks(["undo"]);
+      // The other actor is a script: --yes undoes the person's older change without asking.
+      const stopped = await tasks(["undo", "--yes"]);
       expect(stopped.code).toBe(EXIT_CODES.conflict);
-      expect(stopped.stderr).toMatch(/^error conflict: .*\(tasks undo --partial\)/m);
-      const partial = await tasks(["undo", "--partial"]);
+      expect(stopped.stderr).toMatch(
+        /^error conflict: .*Undo the rest with tasks undo --partial, or set the value again\.$/m,
+      );
+      const partial = await tasks(["undo", "--partial", "--yes"]);
       expect(partial.stdout).toMatch(
         /^Undid part of your change to M-1 in Mira\nKept as others set them:\n {2}M-1 summary: script at \S+\n$/,
       );

@@ -27,6 +27,7 @@ import { rootsCommand } from "./roots.ts";
 import { serviceCommand } from "./service.ts";
 import { setupCommand, type SetupOptions } from "./setup.ts";
 import { spaceCommand } from "./space.ts";
+import { undoCommand } from "./undo.ts";
 import { asAppError, runVerb } from "./verbs.ts";
 import { viewCommand } from "./view.ts";
 
@@ -166,6 +167,9 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         }
         if (verb.entry === "launch.open") {
           return await briefCommand(io, globals, verb, args, options);
+        }
+        if (verb.entry === "history.undo") {
+          return await undoCommand(io, globals, verb, args, options);
         }
         return await runVerb(io, globals, verb, args, options);
       }

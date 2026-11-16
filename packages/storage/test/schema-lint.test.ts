@@ -16,6 +16,7 @@ import {
   FORBIDDEN_COLUMN_WORDS,
   JSON_COLUMNS,
   OPEN_SETS,
+  VERSIONLESS_TABLES,
   WITHOUT_ROWID_TABLES,
 } from "../src/schema.ts";
 import { LATEST_REVISION, openSpace } from "../src/space.ts";
@@ -386,7 +387,16 @@ describe("[A1.5.schema.lint] the schema of a freshly created space follows A1 3.
     const withHistory = tables
       .filter(({ name }) => columnsOf(name).some((c) => c.name === "created_seq"))
       .map((t) => t.name);
-    expect([...OPEN_SETS["changes.entity"]].sort()).toEqual(withHistory.sort());
+    // And the tables whose rows have no versions but change through change rows too.
+    for (const name of VERSIONLESS_TABLES) {
+      expect(
+        columnsOf(name).some((c) => c.name === "created_seq"),
+        name,
+      ).toBe(false);
+    }
+    expect([...OPEN_SETS["changes.entity"]].sort()).toEqual(
+      [...withHistory, ...VERSIONLESS_TABLES].sort(),
+    );
   });
 
   test("JSON columns are TEXT with a json_valid CHECK, and only they have one", () => {

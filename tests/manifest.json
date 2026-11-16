@@ -1002,6 +1002,46 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.15.importer.apply",
+      "title": "The apply of a dry run writes the fixture as one commit of the user with the import actor as author: tasks, aliases, reused and new areas, the prototype's instants, the exchange and its items, behind a verified pre-import backup; applying twice applies once; the same input again writes nothing; the token the writer recomputes in its transaction is the dry run's and another is refused; a space or a prototype that changed since the dry run, a failed backup and a full disk write nothing; and of two imports at once one applies",
+      "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.14, A1 3.18",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.reimport",
+      "title": "A re-import over a space the person changed applies exactly the fields the prototype changed, keeps and shows a field both sides changed until they agree, takes a field the person did not touch onto a completed task, never brings back a deleted task and keeps a moved one where the person put it",
+      "source": "A7 3.14 (M7.05), A7 3.15.6, A1 3.14",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.reimport-property",
+      "title": "Random prototype edits and random edits of the person between imports apply exactly the fields only the prototype changed, conflict and keep the space's value where both changed, settle where both agree, and the same input imported again gives zero operations",
+      "source": "A7 3.14 (M7.05, Verify), A7 3.15.6, A1 3.14",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.undo",
+      "title": "The undo of an import removes what it made, keeps every task someone changed since whole with its entries, links, place and area, lists those tasks, leaves the aliases and the exchange, is never on the undo stack, answers twice as once, and a re-import after it makes the undone tasks again",
+      "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.10",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.15.importer.apply-crash",
+      "title": "An apply killed for real during its barrier backup, after it, inside its transaction and after its commit leaves nothing of the import or all of it, and the same apply again applies it exactly once",
+      "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.7",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.3.seed.deterministic",
       "title": "pnpm seed with a fixed seed builds the same Mira sample space twice, proven by a content digest over every row that equals a fixed value on every OS",
       "source": "A7 3.3, A7 3.8 M1.03",
@@ -3342,6 +3382,22 @@
       "title": "Make default over the UI's route and space/use write [service] default_space to machine.toml; a new tab and an unbound call of the person use it, a tab that names its space and an agent's CLI never do, only the user changes it, and a default that is not served is space_unavailable, never another space",
       "source": "A2 3.1, A2 3.2.4, A2 3.10.5, A5 3.3, A7 3.12 M5.01",
       "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.actors.script-undo-check",
+      "title": "history.undo with check_script undoes nothing when a script changed the space after the person's newest change, and names that change (commit, tasks, kind) and the script's; the named commit then undoes it; a retry of an undo that applied replays it",
+      "source": "A3 3.7.4, A1 3.10.1",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.1.hub.space-forget",
+      "title": "A closed space keeps its name after a restart; space forget refuses an open space with the words to close it, takes a closed one off the list and out of machine.toml, touches no file of it, clears the default that named it, and space open of its folder lists it again",
+      "source": "A2 3.1, A2 3.2.4, A2 3.10.1",
+      "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
     },

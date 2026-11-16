@@ -59,6 +59,18 @@ export type Edit =
    */
   | { readonly op: "remove"; readonly array: string; readonly entries: Entries }
   /**
+   * Takes out the one element of `[[array]]` that `select` picks by its values as parsed, however
+   * it was written: its header line through its last key line, with the blank line before it. A
+   * comment above or below it stays. Refused `absent` when no element is picked, and
+   * `unsupported_layout` when more than one is, the array is written inline, or the element has a
+   * sub-table of its own.
+   */
+  | {
+      readonly op: "remove_element";
+      readonly array: string;
+      readonly select: (element: Readonly<Record<string, unknown>>) => boolean;
+    }
+  /**
    * Sets `key` in the one element of `[[array]]` that `select` picks by its values as parsed: the
    * value is replaced where the key is written, else a line is added after the element's last key.
    * Every other byte of the element stays, comments included. Refused `absent` when no element is
@@ -318,7 +330,8 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       return "refused" in found ? found : found.text;
     }
     case "set_in_element":
-      // Placed with the parsed document (elementSet), in applyEdits.
+    case "remove_element":
+      // Placed with the parsed document (elementSet, elementRemoval), in applyEdits.
       return { refused: "unsupported_layout" };
   }
 }
@@ -326,7 +339,7 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
 /** The index of the one element of `doc[array]` that `select` picks, or why there is none. */
 function pickedElement(
   doc: TomlDocument,
-  edit: Extract<Edit, { op: "set_in_element" }>,
+  edit: Extract<Edit, { op: "set_in_element" | "remove_element" }>,
 ): number | EditRefusal {
   const current = doc[edit.array];
   if (current === undefined) return "absent";
@@ -373,6 +386,45 @@ function elementSet(
   const before = text.slice(0, at);
   const lead = before === "" || before.endsWith("\n") ? "" : eol;
   return `${before}${lead}${keyText(edit.key)} = ${valueText(edit.value)}${eol}${text.slice(at)}`;
+}
+
+/**
+ * `remove_element`: the index-th `[[array]]` header and its own lines up to its last key line go,
+ * and the blank line before it (for the first element of a file, the one after it), so the file
+ * reads as if the element had never been appended.
+ */
+function elementRemoval(
+  text: string,
+  layout: Layout,
+  edit: Extract<Edit, { op: "remove_element" }>,
+  index: number,
+  count: number,
+): string | { refused: EditRefusal } {
+  const { eol, lines } = layout;
+  const elements = lines.filter(
+    (l): l is ScannedHeader => l.kind === "header" && l.array && samePath(l.path, [edit.array]),
+  );
+  const header = elements[index];
+  if (elements.length !== count || header === undefined) return { refused: "unsupported_layout" };
+  let end = header.end;
+  for (const line of lines.slice(lines.indexOf(header) + 1)) {
+    if (line.kind === "header") {
+      if (startsWithPath(line.path, [edit.array]) && !samePath(line.path, [edit.array])) {
+        return { refused: "unsupported_layout" };
+      }
+      break;
+    }
+    end = line.end;
+  }
+  let before = text.slice(0, header.start);
+  let after = text.slice(end);
+  const lineStart = (s: string) => s === "" || s.endsWith("\n");
+  if (before.endsWith(eol) && lineStart(before.slice(0, before.length - eol.length))) {
+    before = before.slice(0, before.length - eol.length);
+  } else if (before === "" && after.startsWith(eol)) {
+    after = after.slice(eol.length);
+  }
+  return before + after;
 }
 
 /**
@@ -461,7 +513,8 @@ function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | Edi
       changed[index] = { ...element, [edit.key]: parsedValue(edit.value) };
       return { ...doc, [edit.array]: changed };
     }
-    case "remove": {
+    case "remove":
+    case "remove_element": {
       const current = doc[edit.array];
       if (!Array.isArray(current)) return "absent";
       const left = (current as unknown[]).filter((_, i) => i !== index);
@@ -537,6 +590,13 @@ export function applyEdits(text: string, edits: readonly Edit[]): EditResult {
         if (typeof want === "string") return { ok: false, reason: want };
         const count = (doc[edit.array] as unknown[]).length;
         next = elementSet(current, layout, edit, index, count);
+      } else if (edit.op === "remove_element") {
+        const index = pickedElement(doc, edit);
+        if (typeof index === "string") return { ok: false, reason: index };
+        want = intended(doc, edit, index);
+        if (typeof want === "string") return { ok: false, reason: want };
+        const count = (doc[edit.array] as unknown[]).length;
+        next = elementRemoval(current, layout, edit, index, count);
       } else {
         want = intended(doc, edit);
         if (typeof want === "string") return { ok: false, reason: want };

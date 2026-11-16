@@ -6,9 +6,10 @@
 // range and days a zone skips, odd source URLs, paths, metadata keys and numbers) and puts every
 // operation of every plan through the writer's request check, which is pure: no space, no I/O.
 //
-// The parts the writer does not take yet (M7.05 adds them, A7 3.14) are checked against the rules
-// the space holds them to: an alias is the legacy ID and of the marker grammar, an instant is in
-// the space's range, and `ext.planning` is JSON whose strings SafeText keeps.
+// The parts only an import's request carries (M7.05: the alias, the creation and completion
+// instants, `ext.planning`) go through the same check with an import's credential, and are also
+// held to the rules the space holds them to: an alias is the legacy ID and of the marker grammar,
+// an instant is in the space's range, and `ext.planning` is JSON whose strings SafeText keeps.
 //
 // The importer never imports storage, so this test lives outside both packages. The folders are
 // generated from fixed seeds: the same pieces every run.
@@ -16,10 +17,11 @@ import { describe, expect, test } from "vitest";
 import { normaliseText } from "../../packages/contracts/src/index.ts";
 import {
   bindOperations,
+  decideApply,
   INSTANT_MAX,
   mapPrototype,
   parsePrototype,
-  type BoundOp,
+  type ApplySpace,
   type MappingOptions,
   type PrototypeInput,
 } from "../../packages/importer-planning/src/index.ts";
@@ -240,18 +242,13 @@ function folder(g: Gen): { input: PrototypeInput; options: MappingOptions } {
   };
 }
 
-/** The parts of a bound operation the writer takes today (M7.05 adds the rest to the writer). */
-function writerToday(op: BoundOp): Record<string, unknown> | undefined {
-  if (op.kind === "alias.add") return undefined;
-  const later = new Set(["created_at", "ext", "at"]);
-  return Object.fromEntries(Object.entries(op).filter(([field]) => !later.has(field)));
-}
-
 const SPACE = newId("sp");
+/** An import's credential (A7 3.15.5): the user as the principal, the import actor as author. */
 const ACTOR: Credential = {
   scope_id: "cli:import-fixture",
   principal_id: newId("ac"),
   actor_kind: "human",
+  author_id: newId("ac"),
   machine_id: newId("m"),
   origin: "import",
 };
@@ -301,8 +298,7 @@ describe("[A7.3.15.importer.writer-fit] every value of a plan is one the space s
           }
         }
         if (op.kind === "task.create") checkJson(op["ext"], `${where} ext`);
-        const sent = writerToday(op);
-        if (sent === undefined) continue;
+        const sent = op as Record<string, unknown>;
         const checked = checkRequest({
           space_id: SPACE,
           request_id: `import-check-${String(run).padStart(4, "0")}`,
@@ -314,5 +310,63 @@ describe("[A7.3.15.importer.writer-fit] every value of a plan is one the space s
       }
     }
     expect(ops).toBeGreaterThan(RUNS * 3);
+  });
+
+  test("a metadata entry at the input's size: its ext.planning and its exchange item fit the writer", () => {
+    // Unknown keys, a confidence and paths far over any daily size, in one entry the parser takes.
+    const big = (n: number, c: string) => c.repeat(n);
+    const metadata = JSON.stringify({
+      a1: {
+        next: "Plan it",
+        confidence: big(300_000, "c"),
+        paths: ["/home/mira/work/a1", `/home/mira/${big(200_000, "p")}`],
+        notes_long: big(400_000, "n"),
+        more_text: { nested: [big(300_000, "m")] },
+      },
+    });
+    const input: PrototypeInput = {
+      todo: `- [ ] **Big one** ${big(30_000, "b ")} <!-- task:a1 -->\n`,
+      done: "# Done\n",
+      metadata,
+      events: [],
+    };
+    const options: MappingOptions = {
+      me: "Mira Okafor",
+      roots: { work: "/home/mira/work" },
+      timeZone: "Europe/Amsterdam",
+    };
+    const plan = mapPrototype(parsePrototype(input), options);
+    expect(plan.tasks).toHaveLength(1);
+    const empty: ApplySpace = {
+      state: {
+        id: SPACE,
+        epoch: 1,
+        incarnation: "in_0000000000000000000000000",
+        refPrefix: "M",
+        nextRef: 1,
+        aliases: [],
+        sources: [],
+        areas: [],
+        projects: [],
+      },
+      matched: new Map(),
+      gone: [],
+    };
+    const decision = decideApply(plan, empty, {
+      exchange: newId("ex"),
+      dir: "exchange/planning/run/input",
+      idOf: () => newId("t"),
+      groupIdOf: (kind) => newId(kind === "area" ? "a" : "p"),
+      importedAt: Date.UTC(2026, 10, 15),
+    });
+    const ops = decision.ops.map((op) => ({ ...op }));
+    expect(ops.map((op) => op["kind"])).toContain("exchange.create");
+    const checked = checkRequest({
+      space_id: SPACE,
+      request_id: "import-check-big",
+      actor: ACTOR,
+      ops,
+    });
+    expect(checked.ops).toEqual(ops);
   });
 });

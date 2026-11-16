@@ -11,7 +11,8 @@ import { AS_OF, M14, requestId } from "./fixture.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
-const OpIndex = z.int().min(0).max(49).describe("Index of the operation in the request");
+/** At most 50 operations a request, and up to a million in an import's (A1 3.7, A7 3.15.5). */
+const OpIndex = z.int().min(0).max(999_999).describe("Index of the operation in the request");
 /** Any A1 ID: a task, note, log entry, source, place, area or project. */
 const RowId = z.string().regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$/u);
 /**
@@ -73,6 +74,8 @@ const ReceiptConflict = z.strictObject({
       "task_labels",
       "preferences",
       "runs",
+      "areas",
+      "projects",
     ])
     .describe("Table of the row"),
   id: z
@@ -124,7 +127,16 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("op"))
       .describe("An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo")
       .optional(),
-    results: z.array(ReceiptOpResult).max(50).describe("One result per operation"),
+    results: z
+      .array(ReceiptOpResult)
+      .max(50)
+      .describe("One result per operation, the first 50 of an import's"),
+    results_more: z
+      .int()
+      .min(1)
+      .max(1_000_000)
+      .describe("An import's results beyond those 50")
+      .optional(),
     conflicts: z
       .array(ReceiptConflict)
       .describe("Every conflicting field, without its value: read again")
@@ -180,7 +192,9 @@ export function receiptResult(
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.target === undefined ? {} : { target: result.target }),
-    results: result.results as z.input<typeof ReceiptOpResult>[],
+    // An import's commit can hold far more than a request's 50 operations (A1 3.7): the first 50.
+    results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
+    ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),
     ...(result.conflicts.length === 0
       ? {}
       : {

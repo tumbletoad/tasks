@@ -24,7 +24,11 @@ export interface ClientInfo {
   readonly pid: number;
   /** The package identity of a packaged parent (Windows), else null (A2 3.5 rule 7). */
   readonly package: string | null;
-  readonly tty: { readonly stdin: boolean; readonly stdout: boolean };
+  /**
+   * Which of the client's standard streams are terminals. `stderr` is absent from a client that
+   * does not send it, which reads as no terminal there.
+   */
+  readonly tty: { readonly stdin: boolean; readonly stdout: boolean; readonly stderr?: boolean };
 }
 
 export interface Challenge {
@@ -241,10 +245,23 @@ export function parseClientInfo(value: unknown): ClientInfo | undefined {
   if (!isLabel(version) || !isLabel(build)) return undefined;
   if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid < 0) return undefined;
   if (pkg !== null && (typeof pkg !== "string" || pkg.length > MAX_PACKAGE)) return undefined;
-  if (!isObject(tty) || !hasExactKeys(tty, ["stdin", "stdout"])) return undefined;
-  const { stdin, stdout } = tty;
+  if (
+    !isObject(tty) ||
+    !(hasExactKeys(tty, ["stdin", "stdout"]) || hasExactKeys(tty, ["stdin", "stdout", "stderr"]))
+  ) {
+    return undefined;
+  }
+  const { stdin, stdout, stderr } = tty;
   if (typeof stdin !== "boolean" || typeof stdout !== "boolean") return undefined;
-  return { kind: kind as ClientKind, version, build, pid, package: pkg, tty: { stdin, stdout } };
+  if (stderr !== undefined && typeof stderr !== "boolean") return undefined;
+  return {
+    kind: kind as ClientKind,
+    version,
+    build,
+    pid,
+    package: pkg,
+    tty: stderr === undefined ? { stdin, stdout } : { stdin, stdout, stderr },
+  };
 }
 
 function isLabel(value: unknown): value is string {

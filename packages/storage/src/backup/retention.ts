@@ -6,8 +6,8 @@
 //   is older than 24 hours.
 // - Kept: the newest daily backup of each of the 7 most recent local days that have one, the newest
 //   daily backup of each of the 4 most recent local weeks (Monday to Sunday) that have one,
-//   pre-migration backups for 30 days, manual backups always (the person asked for them), and never
-//   the newest complete backup of any kind.
+//   pre-migration and pre-import backups for 30 days, manual backups always (the person asked for
+//   them), and never the newest complete backup of any kind.
 // - Only complete backups (state "ok") of THIS space take part. A backups folder can hold another
 //   space's backups (a machine-local backup.dir set to one folder twice): those are neither kept,
 //   removed nor counted. A backup the listing could not verify is never removed here: a person
@@ -148,8 +148,9 @@ export function planRetention(
   pickNewestPer((ms) => localWeek(ms, offset), rules.weekly);
   for (const b of backups) {
     if (b.sidecar?.kind === "manual") keep.add(b.name);
+    // A barrier backup, before a migration or an import, is kept as long (A1 3.18).
     if (
-      b.sidecar?.kind === "pre-migrate" &&
+      (b.sidecar?.kind === "pre-migrate" || b.sidecar?.kind === "pre-import") &&
       clock.now - createdAt(b) < rules.preMigrateDays * DAY
     ) {
       keep.add(b.name);
