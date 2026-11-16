@@ -21,7 +21,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isAgentMarker } from "@tasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
-import { serviceStatus, startService, stopService } from "../src/install/commands.ts";
+import {
+  restartService,
+  serviceStatus,
+  startService,
+  stopService,
+} from "../src/install/commands.ts";
 import { defaultServiceContext, type ServiceContext } from "../src/install/context.ts";
 import {
   EXIT_MS,
@@ -105,7 +110,7 @@ function procStat(pid: number): string[] {
 describe.skipIf(!posix)(
   "[A2.3.3.5.service-install.commands] start, status and stop against the real service",
   () => {
-    test("without a user manager start runs the service detached and waits for its handshake; stop asks it to end", async () => {
+    test("without a user manager start runs the service detached and waits for its handshake; stop asks it to end; restart stops and starts it, or starts it", async () => {
       const ctx = context();
       if (ctx.platform === "darwin") return; // launchd's route; this one is Linux's fallback
       const before = await serviceStatus(ctx);
@@ -130,10 +135,28 @@ describe.skipIf(!posix)(
         service: { answers: true, state: "ready", pid: start.status.pid, endpoint: "unix" },
       });
 
+      // restart: stop, then start, on a service of its own that names the version that ran.
+      const restarted = await restartService(ctx);
+      expect(restarted).toMatchObject({
+        outcome: "restarted",
+        was: start.status.version,
+        stop: { outcome: "stopped", via: "shutdown" },
+        start: { outcome: "started", via: "manual", status: { state: "ready" } },
+      });
+      expect(restarted.start.status.pid).not.toBe(start.status.pid);
+
       expect(await stopService(ctx)).toEqual({ outcome: "stopped", via: "shutdown" });
       expect((await serviceStatus(ctx)).service).toEqual({ answers: false, reason: "not_running" });
       expect(await stopService(ctx)).toEqual({ outcome: "not_running", via: "none" });
-    }, 120_000);
+      // restart with no service running starts one.
+      expect(await restartService(ctx)).toMatchObject({
+        outcome: "started",
+        was: null,
+        stop: { outcome: "not_running" },
+        start: { outcome: "started" },
+      });
+      expect(await stopService(ctx)).toMatchObject({ outcome: "stopped" });
+    }, 180_000);
 
     test("[A2.3.3.3.service-install.start-by-hand] with a user manager and no unit, start runs the service by hand in a session of its own: the hang-up of the terminal that started it does not end it, and stop does", async () => {
       const ctx = context(true);

@@ -5,10 +5,14 @@
 // waits per peer; a heartbeat and a ping; a peer that reads nothing or answers no ping is closed
 // rather than buffered for.
 //
-//   service → page   {type:"hello", protocol, version, build}   first, on every connection
+//   service → page   {type:"hello", protocol, version, build,   first, on every connection
+//                     installed?}
 //                    {type:"snapshot", …} and {type:"batch", …}  feed.ts's forms; a snapshot
 //                                                                also names the instances
 //                                                                (launches.ts) for the tiles
+//                    {type:"installed", version?}                another version was installed
+//                                                                (or none any more), seen at a
+//                                                                heartbeat
 //                    {type:"error", code}                        the subscription ended
 //   page → service   {type:"subscribe", space?, cursor?}         a new subscription replaces the old
 //                    {type:"unsubscribe"}
@@ -74,6 +78,11 @@ export interface FeedOptions {
   readonly live: (grant: string) => boolean;
   /** The instances a snapshot names for the page's launch tiles (A5 3.15 step 1). Default none. */
   readonly instances?: () => readonly UiInstance[];
+  /**
+   * The version the install's `current` names when it is not this service's own: the page says
+   * that a restart switches to it. Default: none.
+   */
+  readonly installed?: () => string | undefined;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -123,6 +132,8 @@ class FeedSocket {
   /** The subscription the page asked for last, waiting for the read in progress to end. */
   #wanted: { readonly ref: string | undefined; readonly cursor: Cursor | undefined } | undefined;
   #subscribing = false;
+  /** The installed version this page was last told of. */
+  #installed: string | undefined;
   readonly #ping: ServerTimer;
 
   constructor(ws: WebSocket, hub: FeedHub, grant: string, conn: number) {
@@ -145,9 +156,14 @@ class FeedSocket {
       this.#ended("client");
     });
     const { version, build } = hub.options.build;
-    void this.#send({ type: "hello", protocol: FEED_PROTOCOL, version, build }).catch(
-      () => undefined,
-    );
+    this.#installed = hub.installed();
+    void this.#send({
+      type: "hello",
+      protocol: FEED_PROTOCOL,
+      version,
+      build,
+      ...(this.#installed === undefined ? {} : { installed: this.#installed }),
+    }).catch(() => undefined);
   }
 
   #timer(kind: HttpTimerKind, ms: number, fire: () => void) {
@@ -192,6 +208,14 @@ class FeedSocket {
     } catch {
       this.terminate("silent");
       return;
+    }
+    const installed = this.#hub.installed();
+    if (installed !== this.#installed) {
+      this.#installed = installed;
+      void this.#send({
+        type: "installed",
+        ...(installed === undefined ? {} : { version: installed }),
+      }).catch(() => undefined);
     }
     // A1 3.7: empty batches are the feed's heartbeat. The interval (seq, seq] covers nothing.
     const cursor = this.#cursor;
@@ -537,6 +561,15 @@ export class FeedHub {
 
   get size(): number {
     return this.#sockets.size;
+  }
+
+  /** @internal The installed version when it is not this service's; a failed read is none. */
+  installed(): string | undefined {
+    try {
+      return this.options.installed?.();
+    } catch {
+      return undefined;
+    }
   }
 
   /** @internal The machine a task's row shows its place on, or none when the host names none. */

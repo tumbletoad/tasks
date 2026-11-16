@@ -82,6 +82,8 @@ const SAMPLE = {
   open: 3,
   done: 1,
   more: "yes",
+  version: "0.2.0",
+  running: "0.1.0",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

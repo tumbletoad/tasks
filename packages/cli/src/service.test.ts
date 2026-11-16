@@ -37,22 +37,25 @@ describe("[A2.3.3.5.service-install.commands] tasks service through the CLI", ()
     try {
       for (const argv of [
         ["service"],
-        ["service", "restart"],
+        ["service", "reload"],
         ["service", "install", "--force-me"],
         ["service", "status", "secret-value"],
       ]) {
         const io = recorder(argv, { TASKS_HOME: home });
         expect(await main(io)).toBe(2);
         expect(io.err).toContain(
-          "tasks service takes one of install, uninstall, start, stop, status",
+          "tasks service takes one of install, uninstall, start, stop, restart, status",
         );
         expect(io.err).not.toMatch(/force-me|secret-value/);
       }
-      // An agent's shell may not install, uninstall or stop: refused before anything is read.
+      // An agent's shell may not install, uninstall, stop or restart: refused before anything is
+      // read.
       const agent = { TASKS_HOME: home, CODEX_THREAD_ID: "t1" };
-      const stop = recorder(["service", "stop"], agent);
-      expect(await main(stop)).toBe(5);
-      expect(stop.err).toContain("tasks service stop is not run from an agent's shell");
+      for (const verb of ["stop", "restart"]) {
+        const refused = recorder(["service", verb], agent);
+        expect(await main(refused)).toBe(5);
+        expect(refused.err).toContain(`tasks service ${verb} is not run from an agent's shell`);
+      }
       // --json is the CLI's global flag, and the entry prints one JSON document.
       const install = recorder(["--json", "service", "install", "--yes"], agent);
       expect(await main(install)).toBe(5);
@@ -63,7 +66,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service through the CLI", ()
       const help = recorder(["help"], { TASKS_HOME: home });
       expect(await main(help)).toBe(0);
       expect(help.out).toMatch(
-        /\n {2}service +Install, uninstall, start, stop or show the service/,
+        /\n {2}service +Install, uninstall, start, stop, restart or show the service/,
       );
     } finally {
       rmSync(home, { recursive: true, force: true });
