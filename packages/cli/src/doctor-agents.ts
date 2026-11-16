@@ -1006,7 +1006,7 @@ async function bridgeCheck(
       return {
         id,
         status: "warn",
-        detail: `${name(view)}: a status round trip took ${String(Math.round(first))} ms, over ${String(BRIDGE_ROUND_TRIP_MS)} ms. Run: ${CLI_NAME} doctor again; if it stays slow, restart the service: ${CLI_NAME} service stop, then ${CLI_NAME} service start`,
+        detail: `${name(view)}: a status round trip took ${String(Math.round(first))} ms, over ${String(BRIDGE_ROUND_TRIP_MS)} ms. Run: ${CLI_NAME} doctor again; if it stays slow, restart the service: ${CLI_NAME} service restart`,
       };
     }
     return {

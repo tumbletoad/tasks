@@ -71,7 +71,7 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     const { config } = parseMachineConfig(fixture("machine.linux.toml"), "linux");
     expect(config.instances.map((i) => [i.id, i.remoteAllowed, i.enabled])).toEqual([
       ["codex-work", false, true],
-      ["codex-personal", false, false],
+      ["codex-second", false, false],
       ["t3-codex-work", true, true],
       ["codex-app", false, true],
     ]);

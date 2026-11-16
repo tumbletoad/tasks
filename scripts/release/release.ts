@@ -1,8 +1,8 @@
 // Signing a release: SHA256SUMS over the release archives, signed with the Ed25519 release key in
 // both formats (SHA256SUMS.sig raw, SHA256SUMS.sshsig OpenSSH), and the release's install scripts
 // pinning the release keys beside them. Three ways in, one signing path (signFolder):
-//   - releaseSign: by hand on the owner's machine, the key in a file and its passphrase asked at a
-//     terminal. Refuses any CI.
+//   - releaseSign: by hand, the key in a file and its passphrase asked at a terminal. Refuses any
+//     CI.
 //   - ciReleaseSign: the release workflow's signing job, the key and its passphrase from that job's
 //     secrets. Refuses anything but a dispatch of the release workflow from main in the canonical
 //     repository, with the release environment's secrets present.
@@ -64,11 +64,11 @@ export const PASSPHRASE_SECRET = "RELEASE_KEY_PASSPHRASE";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-/** Refuses any CI environment: the terminal path is the owner's, on the owner's machine. */
+/** Refuses any CI environment: the terminal path is for signing by hand. */
 export function refuseInCi(env: Env): void {
   if ((env["CI"] ?? "") !== "" || env["GITHUB_ACTIONS"] === "true") {
     throw new Refusal(
-      "pnpm release sign is for the owner's machine. In CI a release is signed by the release workflow (pnpm release sign-ci), a rehearsal by pnpm release rehearse.",
+      "pnpm release sign is for signing by hand in a terminal, outside CI. In CI a release is signed by the release workflow (pnpm release sign-ci), a rehearsal by pnpm release rehearse.",
     );
   }
 }

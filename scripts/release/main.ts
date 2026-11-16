@@ -1,6 +1,6 @@
 // pnpm release <command>: making, signing, checking and publishing a release.
 //
-// On the owner's machine, in a terminal (the passphrase is asked without echo):
+// By hand in a terminal, outside CI (the passphrase is asked without echo):
 //   keygen --out <folder outside any checkout>
 //   sign --key <key file> --dist <folder> [--expect <.pub file>]
 // In the release workflow (.github/workflows/release.yml):

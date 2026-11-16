@@ -84,6 +84,8 @@ export interface AppOptions {
   readonly timers: StartHttpTimer;
   readonly redeemCheck: RedeemCheck;
   readonly visible?: Visibility;
+  /** The installed version when it is not the one this service runs (ws.ts FeedOptions). */
+  readonly installed?: () => string | undefined;
   /** The hub's launch service, for the page's tiles (launches.ts). None: no tile, Copy only. */
   readonly launch?: UiLaunchPort;
   /** The machine's default space (hub/default-space.ts). None: the page cannot change it. */
@@ -222,6 +224,7 @@ export class HttpApp {
       live: (grant) => this.#live(options.grants.get(grant)) !== undefined,
       instances: () => this.launches.instances(),
       ...(options.visible === undefined ? {} : { visible: options.visible }),
+      ...(options.installed === undefined ? {} : { installed: options.installed }),
     });
     const ops = new Set<string>(httpRoutes.map((r) => r.entry));
     this.#routes = {

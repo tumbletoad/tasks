@@ -7,8 +7,10 @@
 // - Every snapshot, batch and error goes to the store's frame queue in arrival order.
 // - The store asks for a fresh snapshot on a gap: the client subscribes again without a cursor.
 // - The socket reconnects after 1, 2, 4 and 8 s, then every 15 s, resuming from the cursor. 4401
-//   means signed out. A `hello` with another build than the page's shows the reload bar, and the
-//   page never reloads by itself.
+//   means signed out. A service of another build than the page's (its `hello`, or a request it
+//   refuses for the build) shows the reload bar, and the page never reloads by itself.
+// - `hello` and `installed` say when another version is installed than the service runs: the
+//   page says that a restart of the service switches to it.
 //
 // Each tab has its own socket and subscription, to the space its route names. Two tabs on two
 // spaces never share one.
@@ -46,6 +48,8 @@ export class Live {
   #stopped = false;
   /** A `hello` is being answered: it subscribes once, after the queue applied. */
   #greeting = false;
+  /** The service's version, from its last `hello`. */
+  #running: string | undefined;
 
   constructor(options: LiveOptions) {
     this.#options = options;
@@ -150,8 +154,13 @@ export class Live {
       if (this.#ws !== ws || this.#isStopped()) return;
       const message = parseMessage(event.data);
       if (message === undefined) return;
-      if (message.type === "hello") this.#hello(message.build);
-      else this.store.push(message);
+      if (message.type === "hello") {
+        this.#running = message.version;
+        this.store.setInstalled(message.installed, message.version);
+        this.#hello(message.build);
+      } else if (message.type === "installed") {
+        this.store.setInstalled(message.version, this.#running);
+      } else this.store.push(message);
     };
     ws.onclose = (event: CloseEvent) => {
       if (this.#ws !== ws) return;
