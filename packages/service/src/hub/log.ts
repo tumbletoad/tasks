@@ -323,6 +323,12 @@ export const EVENTS = {
       tried: "bool",
     },
   },
+  // A folder the check could not see was checked again and seen.
+  "space.folder_rechecked": {
+    lvl: "info",
+    c: "space",
+    fields: { entry: "int", verdict: ["local", "synced", "network"] },
+  },
   "space.unavailable": {
     lvl: "warn",
     c: "space",

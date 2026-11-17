@@ -48,6 +48,25 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
     expect(outcome?.["description"]).toBe("What changed and the evidence; agents must give it");
   });
 
+  test("the tools that create a task ask the agent to estimate its effort on the default scale", () => {
+    const effortOf = (schema: unknown): unknown[] => {
+      if (typeof schema !== "object" || schema === null) return [];
+      const here = (schema as Record<string, unknown>)["properties"] as
+        Record<string, { description?: unknown }> | undefined;
+      return [
+        ...(here?.["effort"] === undefined ? [] : [here["effort"].description]),
+        ...Object.values(schema).flatMap(effortOf),
+      ];
+    };
+    for (const entry of [taskAdd, taskFinish]) {
+      const said = effortOf(agentInputJsonSchema(entry));
+      expect(said, entry.name).not.toEqual([]);
+      for (const text of said) {
+        expect(text, entry.name).toMatch(/time and difficulty.*S under 30 min.*half a day/);
+      }
+    }
+  });
+
   test("rules apply at any depth, and an entry without rules gets its input as is", () => {
     const Outer = z.strictObject({
       items: z

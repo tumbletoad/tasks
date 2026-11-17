@@ -45,13 +45,14 @@ Usage: `tasks add <title> [flags]`
 | `--status` | `tasks[].status` | string | A status of the space; default open |
 | `--inbox` | `tasks[].inbox` | boolean | Put it in the Inbox for the user |
 | `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none |
-| `--effort` | `tasks[].effort` | string | Effort, such as S, M or L |
+| `--effort` | `tasks[].effort` | string | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
 | `--focus` | `tasks[].focus` | boolean | Star it for today, only when the user asks |
+| `--created` | `tasks[].created` | string | When it was created, only for work that existed before: ISO date or instant |
 | `--folder` | `tasks[].folder` | string | Its folder: "cwd", an absolute folder or one under ~ |
 | `--context` | `tasks[].context` | string | Markdown context |
-| `--log` | `tasks[].log` | string | Log entry; also added to a matched task |
+| `--log` | `tasks[].log` | string | Log entry; also added to a matched task that lacks it |
 | `--on-existing` | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | When a source key matches; default return |
 
 Only through `--input`: `tasks[].sources`.
@@ -95,6 +96,7 @@ Usage: `tasks done [<task>] [flags]`
 | `--status` | `status` | "done" \| "dropped" | dropped: abandoned |
 | `--outcome` | `outcome` | string | What changed and the evidence; agents must give it |
 | `--learning` | `learnings` | string | Lessons reusable beyond this task (repeatable) |
+| `--finished` | `finished` | string | When it was done, only for work done before it was recorded: ISO date or instant |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
 Only through `--input`: `follow_ups`.
@@ -107,7 +109,7 @@ Usage: `tasks find [<q>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<q>` | `q` | string | Words, "phrases" and filters, such as status:open p<=2 |
+| `<q>` | `q` | string | Words, "phrases", filters such as status:open p<=2, and sort:effort |
 | `--scope` | `scope` | "active" \| "finished" \| "all" \| "learnings" | active by default; finished is completed or archived |
 | `--limit` | `limit` | integer | Rows per page; default 15 |
 | `--cursor` | `cursor` | string | Next page: the last page's cursor, alone |
@@ -123,6 +125,7 @@ Usage: `tasks log [<task>] <text> [flags]`
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
 | `<text>` | `text` | string | The entry, in Markdown |
 | `--kind` | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | question flags it for the user; note: a note for the user |
+| `--at` | `at` | string | When a log entry was made, only for older work: ISO date or instant |
 
 Only through `--input`: `links`.
 
@@ -139,6 +142,7 @@ Sets `kind: "note"`.
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
 | `<text>` | `text` | string | The entry, in Markdown |
 | `--for-agents` | `for_agents` | boolean | Address the note to agents (user only) |
+| `--at` | `at` | string | When a log entry was made, only for older work: ISO date or instant |
 
 Only through `--input`: `links`.
 

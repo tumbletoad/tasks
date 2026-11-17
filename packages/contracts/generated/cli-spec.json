@@ -184,7 +184,7 @@
         {
           "field": "tasks[].effort",
           "flag": "--effort",
-          "help": "Effort, such as S, M or L",
+          "help": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -214,6 +214,14 @@
           "type": "boolean"
         },
         {
+          "field": "tasks[].created",
+          "flag": "--created",
+          "help": "When it was created, only for work that existed before: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "tasks[].folder",
           "flag": "--folder",
           "help": "Its folder: \"cwd\", an absolute folder or one under ~",
@@ -232,7 +240,7 @@
         {
           "field": "tasks[].log",
           "flag": "--log",
-          "help": "Log entry; also added to a matched task",
+          "help": "Log entry; also added to a matched task that lacks it",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -426,6 +434,14 @@
           "type": "string"
         },
         {
+          "field": "finished",
+          "flag": "--finished",
+          "help": "When it was done, only for work done before it was recorded: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "mode",
           "flag": "--mode",
           "help": "propose: ask the user to decide",
@@ -497,7 +513,7 @@
       "positionals": [
         {
           "field": "q",
-          "help": "Words, \"phrases\" and filters, such as status:open p<=2",
+          "help": "Words, \"phrases\", filters such as status:open p<=2, and sort:effort",
           "name": "q",
           "required": false,
           "type": "string"
@@ -528,6 +544,14 @@
             "question",
             "note"
           ]
+        },
+        {
+          "field": "at",
+          "flag": "--at",
+          "help": "When a log entry was made, only for older work: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
         }
       ],
       "inputOnly": [
@@ -571,6 +595,14 @@
           "required": false,
           "type": "boolean",
           "userOnly": true
+        },
+        {
+          "field": "at",
+          "flag": "--at",
+          "help": "When a log entry was made, only for older work: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
         }
       ],
       "inputOnly": [

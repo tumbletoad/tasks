@@ -7,6 +7,7 @@ import {
   AGENT_LIMITS,
   AsOf,
   ENTRY_KINDS_IN,
+  PastInput,
   Replayed,
   RequestId,
   TaskRef,
@@ -36,6 +37,9 @@ export const EntryAddInput = z.strictObject({
     .describe("Links that back the entry")
     .optional(),
   for_agents: z.boolean().describe("Address the note to agents").optional(),
+  at: PastInput.describe(
+    "When a log entry was made, only for older work: ISO date or instant",
+  ).optional(),
   request_id: RequestId,
 });
 

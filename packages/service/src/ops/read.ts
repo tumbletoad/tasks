@@ -1061,6 +1061,22 @@ export function keysOf(key: "tasks.statuses" | "tasks.effort_scale", row: unknow
     : [];
 }
 
+const EFFORT_SCALE: Statement = {
+  sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'",
+  mode: "get",
+};
+
+/** The status keys and the effort keys a task of the space may take, in their order. */
+export async function readTaskKeys(
+  reader: WorkerConnection,
+): Promise<{ status: string[]; effort: string[] }> {
+  const [statuses, efforts] = await snapshot(reader, [STATUS_ORDER, EFFORT_SCALE]);
+  return {
+    status: keysOf("tasks.statuses", statuses),
+    effort: keysOf("tasks.effort_scale", efforts),
+  };
+}
+
 function levelOf(row: unknown): "full" | "review" | "suggest" {
   const { value } = readPreference("autonomy.level", storedOf(row));
   return value === "full" || value === "suggest" ? value : "review";
@@ -1084,7 +1100,7 @@ export async function readStatus(
   autonomy: "full" | "review" | "suggest";
   statuses: { status: string; count: number }[];
   inbox: number;
-  sections: { name: string; tasks: Record<string, unknown>[] }[];
+  sections: { name: string; tasks: Record<string, unknown>[]; above?: number }[];
   /** The task rows `here` asked for, each with `x_own_here`. */
   here: Row[];
   /** The bound task, when one was asked for and it exists. */
@@ -1124,10 +1140,16 @@ export async function readStatus(
   // A task appears once, in its first section (A3 3.4.2).
   const shown = new Set<unknown>();
   const sections = include.map((name, i) => {
-    const rows = ((found[i] ?? []) as Row[]).filter((row) => !shown.has(row["id"]));
+    const all = (found[i] ?? []) as Row[];
+    const rows = all.filter((row) => !shown.has(row["id"]));
     const kept = rows.slice(0, SECTION_ROWS);
     for (const row of kept) shown.add(row["id"]);
-    return { name, tasks: kept.map((row) => taskRow(row, facts.refPrefix)) };
+    const above = all.length - rows.length;
+    return {
+      name,
+      tasks: kept.map((row) => taskRow(row, facts.refPrefix)),
+      ...(above === 0 ? {} : { above }),
+    };
   });
   return {
     space: facts,

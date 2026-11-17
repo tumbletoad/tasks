@@ -13,7 +13,7 @@ import type { McpChannel } from "../local/index.ts";
 import type { Bindings } from "../binding/index.ts";
 import { opCall, type OpsHost, type Slot } from "../ops/index.ts";
 import { bridgePrincipal, clientOf, instanceOf, spaceOf } from "./principal.ts";
-import { renderError, renderResult } from "./render.ts";
+import { renderError, renderResult, showsWhole } from "./render.ts";
 import { createServer, type ToolCall, type ToolResult } from "./server.ts";
 import { toolEntry, TOOLS } from "./tools.ts";
 import { ChannelTransport, type TransportLimits, type TransportReason } from "./transport.ts";
@@ -139,6 +139,7 @@ export function toolCaller(options: {
           client,
           home,
           ...(binding === undefined ? {} : { binding }),
+          shows: showsWhole,
         },
         { op: entry.name, input: args, ...(space === undefined ? {} : { space }) },
       );

@@ -137,6 +137,12 @@ export const SourceInput = z.strictObject({
  */
 export const FolderInput = z.string().min(1).max(4096);
 
+/**
+ * When something happened, for work that existed before it was added here: an ISO date or an
+ * instant with its offset, never in the future. The service reads it (ops/dates.ts).
+ */
+export const PastInput = z.string().max(40);
+
 /** One task to create (A3 3.4.5). */
 export const TaskDraft = z.strictObject({
   title: TitleInput.describe("Title"),
@@ -146,14 +152,19 @@ export const TaskDraft = z.strictObject({
   status: safeLine(40).describe("A status of the space; default open").optional(),
   inbox: z.boolean().describe("Put it in the Inbox for the user").optional(),
   priority: Priority.describe("1 highest, 4 none").optional(),
-  effort: safeLine(20).describe("Effort, such as S, M or L").optional(),
+  effort: safeLine(20)
+    .describe("Estimate time and difficulty; default scale S under 30 min, M half a day, L more")
+    .optional(),
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
+  created: PastInput.describe(
+    "When it was created, only for work that existed before: ISO date or instant",
+  ).optional(),
   folder: FolderInput.describe('Its folder: "cwd", an absolute folder or one under ~').optional(),
   sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
   context: ContextInput.describe("Markdown context").optional(),
-  log: LogInput.describe("Log entry; also added to a matched task").optional(),
+  log: LogInput.describe("Log entry; also added to a matched task that lacks it").optional(),
   on_existing: z
     .enum(["return", "add_sources", "create_new"])
     .describe("When a source key matches; default return")
@@ -230,6 +241,16 @@ export const Lifecycle = z.enum(["active", "completed", "archived"]).describe("L
 export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state");
 export const Replayed = z.boolean().describe("True when a retry returned the stored result");
 export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
+
+/** A new task's sources whose key another active task holds: each is linked without its key. */
+export const HeldSources = z
+  .array(
+    z.strictObject({
+      source: z.int().min(0).max(9).describe("Index in the draft's sources"),
+      held_by: TaskRef.describe("The task that holds its key"),
+    }),
+  )
+  .describe("Sources linked without their key, which another task holds");
 
 /**
  * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a

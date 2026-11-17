@@ -26,6 +26,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Adding work by a source that an open task or a recently finished one already has finds that task
   and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
   new work.
+- Work recreated from another tool can keep when each task was created and finished and when each
+  log entry was made. A time in the future is refused. Such a task finished long ago is still
+  found by its source for the usual number of days after it was recorded here, so a second pass
+  creates nothing.
+- New work that also names a source of its own is never folded into the task that holds a shared
+  one, such as a ticket two tasks are about: it becomes its own task, linked to the shared source,
+  and the answer says which task holds that source.
 
 ## Backups, restore and export
 
@@ -48,8 +55,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   side effect of something else.
 - An import first makes a backup that has passed a trial restore, and without one it changes
   nothing.
-- An export refuses text that matches a known kind of secret, such as an access token or a private
-  key, and says what kind it is and where, without printing it.
+- An export that holds text shaped like a known kind of secret, such as an access token or a
+  private key, is still written, and says what kind it is and where, without printing it.
 - A space is upgraded only after a backup of it has passed a trial restore. A failed upgrade
   leaves the old data readable.
 - An older version of Tasks never writes a newer data format.
@@ -165,7 +172,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
   export elsewhere. A lost disk then loses them with the space.
 - A space in a synced folder or on a network drive opens read-only, because a live database there
-  can be damaged. For a synced folder you confirm once that it is excluded from sync.
+  can be damaged. For a synced folder you confirm once that it is excluded from sync. When the folder
+  could not be checked, Tasks checks it again by itself for a few minutes and opens a local one for
+  changes.
 - An editor that had the configuration file open while Tasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a computer that several people sign in to, another person could serve a page at Tasks'

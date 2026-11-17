@@ -3,19 +3,19 @@
   "estimator": "ceil(utf8 bytes of the compact JSON / bytes_per_token), per tool (A3 3.2.5)",
   "tools": [
     {
-      "bytes": 1275,
+      "bytes": 1397,
       "name": "add_entry",
-      "tokens": 638
+      "tokens": 699
     },
     {
-      "bytes": 3153,
+      "bytes": 3358,
       "name": "add_tasks",
-      "tokens": 1577
+      "tokens": 1679
     },
     {
-      "bytes": 3648,
+      "bytes": 3993,
       "name": "complete_task",
-      "tokens": 1824
+      "tokens": 1997
     },
     {
       "bytes": 1379,
@@ -43,9 +43,9 @@
       "tokens": 664
     },
     {
-      "bytes": 1053,
+      "bytes": 1066,
       "name": "search",
-      "tokens": 527
+      "tokens": 533
     },
     {
       "bytes": 1189,
@@ -59,8 +59,8 @@
     }
   ],
   "total": {
-    "bytes": 20846,
-    "tokens": 10427,
+    "bytes": 21531,
+    "tokens": 10769,
     "tools": 11
   }
 }
