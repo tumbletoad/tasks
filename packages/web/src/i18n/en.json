@@ -118,6 +118,8 @@
   "row.copyFailed": "The browser did not allow copying.",
   "row.openIn": "Open in {label}",
   "row.openFailed": "The launch was not recorded. Try again.",
+  "row.openMarker": "This may not be the folder set for {of, select, project {the task's project} other {this task}}: {why, select, missing {its {product} marker is missing} other {its {product} marker names {owners}} unread {its {product} marker cannot be read}}. {folder}. Nothing was started.",
+  "row.openAnyway": "Use this folder",
   "row.openFolder": "{reason, select, path_missing {Folder not found on this computer} not_a_directory {The task's folder is a file on this computer} not_answering {The task's folder did not answer in time} other {The task's folder cannot be used on this computer}}: {folder}. Nothing was started.",
   "row.openWorkFolder": "The space's work folder cannot be used on this computer. Nothing was started.",
   "row.done": "Done: {title}",
@@ -193,6 +195,8 @@
   "place.elsewhere": "On {machine}",
   "place.workFolder": "{product} work folder",
   "place.workFolderTip": "This task has no folder: Open and Run use the space's {product} work folder",
+  "place.repo": " [{repo}]",
+  "place.repoTip": "The Git repository in this folder",
   "place.copy": "Copy path",
   "place.copied": "Path copied",
 
