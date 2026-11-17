@@ -13,9 +13,16 @@ export interface RowActions {
   readonly toggle: (task: TaskRow) => void;
   /** The tile shows a launch on its way or done: expand to its thread entry. */
   readonly expand: (task: TaskRow) => void;
-  readonly open: (task: TaskRow, instance: Instance) => void;
-  /** Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5). */
-  readonly copy: (task: TaskRow, pack?: boolean) => void;
+  /**
+   * Open the task in an instance, with the composer's `text` as the request. True once the
+   * service recorded a launch that did not fail.
+   */
+  readonly open: (task: TaskRow, instance: Instance, text?: string) => Promise<boolean>;
+  /**
+   * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5), with the
+   * composer's `text`. True once it is on the clipboard.
+   */
+  readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
   readonly star: (task: TaskRow, on: boolean) => void;
   /** The view's visible move out of it (A5 3.5): "Move to Open" or "Back to open". */
   readonly move: (task: TaskRow, kind: RowMove) => void;

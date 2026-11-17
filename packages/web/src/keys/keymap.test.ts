@@ -16,10 +16,10 @@ import {
   type KeyScope,
 } from "./keymap.ts";
 
-const SCOPES: readonly KeyScope[] = ["page", "list", "strip", "field"];
+const SCOPES: readonly KeyScope[] = ["page", "list", "strip", "field", "composer"];
 const ACTIONS = KEYMAP as readonly KeyAction[];
 
-/** Focus is in one of list, strip and field at a time; the page's keys are reached with each. */
+/** Focus is in one of list, strip, field and composer at a time; the page's keys with each. */
 const together = (a: KeyScope, b: KeyScope): boolean => a === b || a === "page" || b === "page";
 
 /** The key press that types `binding`, on `target`. */
@@ -164,6 +164,32 @@ describe("[A7.3.12.m5-11.keymap] one keymap: no key does two things, and single 
     document.body.innerHTML = '<div role="dialog" aria-modal="true"><button>x</button></div>';
     const inside = document.body.querySelector("button");
     expect(actionOf(press({ key: "k", mod: true }, inside), "page", true)).toBeUndefined();
+  });
+
+  test("in a task's composer: Enter saves a note, Shift+Enter is a new line, Ctrl+Enter opens, and a composition keeps its Enter", () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    const field = document.body.querySelector("textarea");
+    const enter = { key: "Enter" };
+    expect(actionOf(press(enter, field), "composer", true)).toBe("note");
+    expect(actionOf(press(enter, field), "composer", false)).toBe("note");
+    expect(actionOf(press(enter, field, { shiftKey: true }), "composer", true)).toBeUndefined();
+    expect(actionOf(press(enter, field, { altKey: true }), "composer", true)).toBeUndefined();
+    expect(actionOf(press({ key: "Enter", mod: true }, field), "composer", true)).toBe(
+      "open-first",
+    );
+    expect(actionOf(press(enter, field, { metaKey: true, ctrlKey: false }), "composer", true)).toBe(
+      "open-first",
+    );
+    // Ctrl+Shift+Enter is kept for Run: today it is nothing.
+    expect(
+      actionOf(press({ key: "Enter", mod: true, shift: true }, field), "composer", true),
+    ).toBeUndefined();
+    // The Enter that ends an input method's composition is the composition's.
+    expect(actionOf(press(enter, field, { isComposing: true }), "composer", true)).toBeUndefined();
+    expect(actionOf(press(enter, field, { keyCode: 229 }), "composer", true)).toBeUndefined();
+    expect(
+      actionOf(press({ key: "Enter", mod: true }, field, { isComposing: true }), "composer", true),
+    ).toBeUndefined();
   });
 
   test("the sheet lists what works: without single keys, an action keeps only its other keys", () => {

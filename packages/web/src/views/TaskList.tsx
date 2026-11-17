@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { requestId, type Instance, type Receipt } from "../api.ts";
+import { requestId, type Instance, type Receipt, type ReceiptState } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -40,6 +40,8 @@ import css from "./TaskList.module.css";
 const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
+/** A launch that ends here started nothing: the composer keeps its text. */
+const FAILED: ReadonlySet<ReceiptState> = new Set(["failed", "unknown"]);
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
@@ -454,18 +456,19 @@ export function TaskList({
     [loadReceipts],
   );
 
-  /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). */
+  /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. */
   const toClipboard = useCallback(
-    (text: string, pack = false) => {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
+    (text: string, pack = false): Promise<boolean> =>
+      navigator.clipboard.writeText(text).then(
+        () => {
           say(t(pack ? "row.packCopied" : "row.copied"));
-        })
-        .catch(() => {
+          return true;
+        },
+        () => {
           say(t("row.copyFailed"));
-        });
-    },
+          return false;
+        },
+      ),
     [say, t],
   );
 
@@ -492,30 +495,36 @@ export function TaskList({
       },
       // Open (A4's `launch.open`). An app that takes the brief by paste (Codex's assisted open)
       // gets it on the clipboard too.
-      open: (task: TaskRow, instance: Instance) => {
+      open: (task: TaskRow, instance: Instance, text?: string) => {
         watched.current.add(task.id);
-        api
-          .openLaunch(task.id, instance.key, requestId())
+        return api
+          .openLaunch(task.id, instance.key, requestId(), text === undefined ? {} : { text })
           .then(({ receipt, copy }) => {
             shown(task, receipt);
-            if (copy !== undefined) toClipboard(copy);
+            if (copy !== undefined) void toClipboard(copy);
+            return !FAILED.has(receipt.state);
           })
           .catch((error: unknown) => {
             if (!live.failed(error)) say(t("row.openFailed"));
+            return false;
           });
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
       // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).
-      copy: (task, pack = false) => {
+      copy: (task, pack = false, text) => {
         watched.current.add(task.id);
-        api
-          .openLaunch(task.id, undefined, requestId(), pack)
-          .then(({ receipt, copy: text }) => {
+        return api
+          .openLaunch(task.id, undefined, requestId(), {
+            pack,
+            ...(text === undefined ? {} : { text }),
+          })
+          .then(({ receipt, copy }) => {
             shown(task, receipt);
-            if (text !== undefined) toClipboard(text, pack);
+            return copy === undefined ? false : toClipboard(copy, pack);
           })
           .catch((error: unknown) => {
             if (!live.failed(error)) say(t("row.copyFailed"));
+            return false;
           });
       },
       // The star is a person's edit like any other (A5 3.11): shown at once, with a base, undoable.

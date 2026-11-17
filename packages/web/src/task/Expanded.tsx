@@ -8,17 +8,16 @@
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
 //
-// Below both, the composer: its field (Composer.tsx), where a click on an agent-only field (the
-// context, the outcome, a source's line, a learning, the summary in the header) starts a request
-// for an agent (A5 3.11), and until M5.07 builds the strip, a button per instance and Copy, as the
-// skeleton did. Everything a task holds is untrusted text: it is rendered as text or as Markdown
-// that is never HTML, and links open only through allowed schemes (A5 3.26).
+// Below both, the composer (Composer.tsx): its field and the strip of what the text goes to. A
+// click on an agent-only field (the context, the outcome, a source's line, a learning, the summary
+// in the header) starts a request for an agent there. Everything a task holds is untrusted text: it
+// is rendered as text or as Markdown that is never HTML, and links open only through allowed
+// schemes (A5 3.26).
 import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Instance, Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
-import { tileClick, tileState } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
@@ -31,7 +30,7 @@ import {
 import { safeHref } from "../row/model.ts";
 import { useClock } from "../row/useClock.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { ComposerField } from "./Composer.tsx";
+import { Composer } from "./Composer.tsx";
 import type { Detail, SourceOutput } from "./detail.ts";
 import css from "./Expanded.module.css";
 import { Facts } from "./Facts.tsx";
@@ -56,9 +55,6 @@ const styles = classes(css, [
   "hairline",
   "line",
   "composer",
-  "strip",
-  "button",
-  "glyph",
 ]);
 
 export interface ExpandedProps {
@@ -309,50 +305,6 @@ function Context({
   );
 }
 
-/** The composer's place until M5.07: a button per instance, then Copy. */
-function Strip({ task, receipts, instances, actions }: ExpandedProps) {
-  const t = useT();
-  return (
-    <div className={styles.strip} role="toolbar" aria-label={t("strip.label")}>
-      {instances.map((instance) => {
-        const state = tileState(receipts, instance.key);
-        return (
-          <button
-            key={instance.key}
-            type="button"
-            className={styles.button}
-            data-state={state}
-            data-ring={instance.ring}
-            aria-disabled={state === "opening"}
-            onClick={() => {
-              const action = tileClick(state);
-              if (action === "open") actions.open(task, instance);
-            }}
-          >
-            <span className={styles.glyph} aria-hidden="true">
-              {instance.glyph}
-            </span>
-            {t("row.openIn", { label: instance.label })}
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        className={styles.button}
-        aria-label={t("row.copyFor", { title: task.title })}
-        aria-description={t("row.copyTip")}
-        data-tip={t("row.copyTip")}
-        onClick={(event) => {
-          actions.copy(task, event.shiftKey);
-        }}
-      >
-        <CopyIcon />
-        {t("row.copy")}
-      </button>
-    </div>
-  );
-}
-
 export function Expanded({ task, receipts, instances, actions }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
@@ -446,8 +398,7 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
         ) : null}
       </div>
       <div className={styles.composer}>
-        <ComposerField task={task} />
-        <Strip task={task} receipts={receipts} instances={instances} actions={actions} />
+        <Composer task={task} receipts={receipts} instances={instances} actions={actions} />
       </div>
     </div>
   );

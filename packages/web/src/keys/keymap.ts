@@ -11,10 +11,10 @@ import type { MessageId } from "../i18n/intl.tsx";
 
 /**
  * Where an action is reached: `page` anywhere in the page, `list` on a task's row, `strip` on a day
- * of Today's week, `field` in the top field. Focus is in one of the last three at a time; `page`
- * is reached alongside each.
+ * of Today's week, `field` in the top field, `composer` in a task's composer. Focus is in one of
+ * the last four at a time; `page` is reached alongside each.
  */
-export type KeyScope = "page" | "list" | "strip" | "field";
+export type KeyScope = "page" | "list" | "strip" | "field" | "composer";
 
 export interface Binding {
   /** `event.key`: one character, or a named key such as `ArrowDown`, `Escape` or `F2`. */
@@ -100,6 +100,16 @@ export const KEYMAP = [
     label: "keys.suggestion",
     inFields: true,
   },
+
+  // Shift+Enter is the field's own new line. Ctrl+Shift+Enter is kept for Run.
+  { id: "note", scope: "composer", keys: [{ key: "Enter" }], label: "keys.note", inFields: true },
+  {
+    id: "open-first",
+    scope: "composer",
+    keys: [{ key: "Enter", mod: true }],
+    label: "keys.openFirst",
+    inFields: true,
+  },
 ] as const satisfies readonly KeyAction[];
 
 export type ActionId = (typeof KEYMAP)[number]["id"];
@@ -130,7 +140,9 @@ export function matches(press: KeyPress, binding: Binding): boolean {
   if (isSingle(binding)) return !mod && !alt && press.key === binding.key;
   if ((binding.mod === true) !== mod || alt) return false;
   if ((binding.shift === true) !== press.shiftKey) return false;
-  return binding.mod === true ? press.key.toLowerCase() === binding.key : press.key === binding.key;
+  return binding.mod === true
+    ? press.key.toLowerCase() === binding.key.toLowerCase()
+    : press.key === binding.key;
 }
 
 const TYPED_INPUTS = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color"]);

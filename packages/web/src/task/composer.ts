@@ -1,48 +1,38 @@
-// The composer's drafts and the seam for "click-to-ask" (A5 3.8, 3.11). M5.08 builds the field and
-// its draft; M5.07 builds what acts on it (Note, Open with the text, Run, Copy). An agent-only
-// field asks through `askFor`: the request's stub ("Change the summary: ") goes into the task's
-// draft after what the person had written there, and the field takes focus. Nothing is sent.
+// The composer's drafts and the seam for "click-to-ask". A draft is kept per space and task
+// (kept.ts) until it is saved as a note, goes with a launch, or is cleared, so a reload brings it
+// back. A draft read back is untrusted text, shown only as the text area's value.
 //
-// Drafts are kept per space and task in `localStorage` as a per-viewer convenience (A5 3.8): every
-// access is wrapped, losing a draft is harmless, and a draft read back is untrusted text, shown
-// only as the text area's value.
-import { PRODUCT_ID } from "@tasks/brand";
+// An agent-only field asks through `askFor`: the request's stub ("Change the summary: ") goes into
+// the task's draft after what the person had written there, and the field takes focus. Nothing is
+// sent until the person acts.
 import type { AskField } from "../row/actions.ts";
-import { browserStore } from "../stored.ts";
+import { keep, keptNames, onKept, readKept } from "../kept.ts";
 
-const PREFIX = `${PRODUCT_ID}.draft.`;
-/** A draft longer than this is not kept: the composer's text has A4's budget, far below it. */
-const MAX = 20_000;
+/** The composer's own limit: a longer draft is not kept. */
+export const DRAFT_MAX = 20_000;
 
-const keyOf = (space: string, task: string) => `${PREFIX}${space}.${task}`;
-
-/** This tab's drafts, so a blocked storage still keeps them for the tab's life. */
-const memory = new Map<string, string>();
+const nameOf = (space: string, task: string) => `draft.${space}.${task}`;
 
 export function readDraft(space: string, task: string): string {
-  const key = keyOf(space, task);
-  const kept = memory.get(key);
-  if (kept !== undefined) return kept;
-  const store = browserStore();
-  try {
-    const value: unknown = store?.getItem(key);
-    return typeof value === "string" && value.length <= MAX ? value : "";
-  } catch {
-    return "";
-  }
+  const value = readKept(nameOf(space, task));
+  return value !== undefined && value.length <= DRAFT_MAX ? value : "";
 }
 
 export function keepDraft(space: string, task: string, text: string): void {
-  const key = keyOf(space, task);
-  if (text === "") memory.delete(key);
-  else memory.set(key, text);
-  const store = browserStore();
-  try {
-    if (text === "" || text.length > MAX) store?.removeItem(key);
-    else store?.setItem(key, text);
-  } catch {
-    // Storage is blocked or full: the draft lives as long as the tab.
-  }
+  keep(nameOf(space, task), text === "" || text.length > DRAFT_MAX ? undefined : text);
+}
+
+/** Another tab changed this task's draft. */
+export function onDraft(space: string, task: string, listener: (text: string) => void): () => void {
+  return onKept(nameOf(space, task), (value) => {
+    listener(value !== undefined && value.length <= DRAFT_MAX ? value : "");
+  });
+}
+
+/** The tasks of `space` that hold a draft. */
+export function draftTasks(space: string): string[] {
+  const prefix = `draft.${space}.`;
+  return keptNames(prefix).map((name) => name.slice(prefix.length));
 }
 
 export interface Ask {
