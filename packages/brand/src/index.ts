@@ -36,6 +36,12 @@ export const MCP_SERVER_KEY = "tasks";
  */
 export const DATA_FOLDER = `.${PRODUCT_ID}`;
 
+/**
+ * The marker Tasks leaves in a project's or a task's folder, naming whose folder it is:
+ * `.tasks-marker/`. Not the data folder's name, which a project whose folder is the home would meet.
+ */
+export const FOLDER_MARKER = `.${PRODUCT_ID}-marker`;
+
 /** The folder of the data folder (or of TASKS_HOME) that holds spaces by default: `spaces/<slug>/`. */
 export const SPACES_FOLDER = "spaces";
 

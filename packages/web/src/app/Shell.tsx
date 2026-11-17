@@ -10,7 +10,7 @@ import { useT } from "../i18n/intl.tsx";
 import { actionOf } from "../keys/keymap.ts";
 import { Sheet, SheetContext } from "../keys/Sheet.tsx";
 import { askField } from "./field.ts";
-import { ToastContext } from "./frame.ts";
+import { ToastContext, type ToastAction } from "./frame.ts";
 import { Toast, type Shown, type ToastHandle } from "./Toast.tsx";
 import { MenuIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
@@ -56,10 +56,15 @@ export function Shell({ space }: { readonly space: string }) {
   );
   const path = useRouterState({ select: (s) => s.location.pathname });
 
-  // A plain message from any component; the edits' toasts carry their own action.
-  const say = useCallback((text: string) => {
+  // A message from any component, with an action when it asks something; the edits' toasts carry
+  // their own.
+  const say = useCallback((text: string, action?: ToastAction) => {
     plain.current -= 1;
-    setToast({ key: plain.current, kind: "info", text });
+    setToast(
+      action === undefined
+        ? { key: plain.current, kind: "info", text }
+        : { key: plain.current, kind: "error", text, action },
+    );
   }, []);
   useEffect(
     () =>

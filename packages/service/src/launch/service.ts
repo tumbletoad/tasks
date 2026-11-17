@@ -93,6 +93,7 @@ import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
+import type { FolderMarkers } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
 import {
   briefNames,
@@ -103,6 +104,7 @@ import {
   COPY_INSTANCE,
   glyphOf,
   LaunchFolderUnavailable,
+  LaunchFolderUnmarked,
   LaunchUnavailable,
   type Choice,
   type OpenTaskRequest,
@@ -249,6 +251,8 @@ export interface LaunchServiceOptions extends LaunchOptions {
    * is asked at each use, so instances `tasks setup instances` writes are used at once.
    */
   readonly instances?: readonly Instance[] | (() => readonly Instance[]);
+  /** The markers in projects' and tasks' folders (marker.ts). None: a launch checks no marker. */
+  readonly markers?: FolderMarkers;
 }
 
 interface Hosted {
@@ -646,6 +650,9 @@ export class LaunchService {
       }
       if (isUncPath(where.folder)) throw this.#unavailable("unc");
     }
+    if (choice.route !== "clipboard") {
+      await this.#checkMarker(space, task.folder, request.markFolder === true);
+    }
 
     const brief = await this.#briefOf(space, request, choice);
     // Decided on a reference of the real one's length: the real brief has the same length, so
@@ -779,8 +786,9 @@ export class LaunchService {
   }
 
   /**
-   * The folder a task opens in here, resolved now: where a background run works, so it works where
-   * a launch would, and never in another machine's stead. Undefined when a launch could not use it.
+   * The folder a task opens in here, resolved now, when its marker says it is the one set: where
+   * a background run works, so it works where a launch would, never in another machine's stead or
+   * in a folder that may be another. Undefined when a launch could not use it.
    */
   async runFolder(space: string, folder: TaskFolder): Promise<string | undefined> {
     let planned: PlanFolder | null;
@@ -790,12 +798,43 @@ export class LaunchService {
       return undefined;
     }
     const found = await this.resolveFolder(space, planned);
-    return found.status === "ok" ? found.folder : undefined;
+    if (found.status !== "ok") return undefined;
+    try {
+      await this.#checkMarker(space, folder, false);
+    } catch {
+      return undefined;
+    }
+    return found.folder;
   }
 
-  /** Whether the folder a task opens in here resolves now (`runFolder`). */
+  /** Whether the folder a task opens in here resolves now and is the one set (`runFolder`). */
   async folderUsable(space: string, folder: TaskFolder): Promise<boolean> {
     return (await this.runFolder(space, folder)) !== undefined;
+  }
+
+  /**
+   * The look at the folder's marker just before an agent starts (marker.ts): a folder whose
+   * marker names other owners only, or whose marker this machine wrote and is gone, throws
+   * LaunchFolderUnmarked. With `mark`, the person chose to use it: it is marked and opens.
+   */
+  async #checkMarker(space: string, folder: TaskFolder, mark: boolean): Promise<void> {
+    const markers = this.#options.markers;
+    if (markers === undefined || (folder.kind !== "task" && folder.kind !== "project")) return;
+    const owner = { space, kind: folder.kind, id: folder.owner };
+    if (mark) {
+      await markers.mark(owner, folder.path);
+      return;
+    }
+    const found = await markers.check(owner, folder.path);
+    if (found.kind === "ok") return;
+    const reason = found.kind === "missing" ? "marker_missing" : "marker_other";
+    this.#options.log.log("launch.folder_unmarked", { reason });
+    throw new LaunchFolderUnmarked(
+      reason,
+      folder.path,
+      folder.kind,
+      found.kind === "other" ? found.owners : [],
+    );
   }
 
   /** The route an instance takes here now (chooseRoute). Throws LaunchUnavailable. */

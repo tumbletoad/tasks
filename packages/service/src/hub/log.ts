@@ -562,6 +562,13 @@ export const EVENTS = {
     c: "launch",
     fields: { stage: ["open", "dispatch", "shim"], reason: RESOLVE_REASONS },
   },
+  // A launch's folder whose marker names other owners only or is gone (marker.ts): nothing started,
+  // and the person was asked. The reason word only.
+  "launch.folder_unmarked": {
+    lvl: "info",
+    c: "launch",
+    fields: { reason: ["marker_missing", "marker_other"] },
+  },
   "launch.failed": {
     lvl: "warn",
     c: "launch",
