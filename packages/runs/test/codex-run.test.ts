@@ -2,7 +2,7 @@
 // (codex-server.ts) installed as npm installs Codex, behind a `.cmd` shim on Windows and a link on
 // Linux and macOS, resolved before it starts, in a job object on Windows and without a process
 // group everywhere. What is alive is counted from the operating system (the stand-in census).
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
@@ -52,6 +52,8 @@ function installFake(prefix: string): string {
       "",
     ].join("\n"),
   );
+  // npm installs a package's bin script executable: a run's program is looked for as one.
+  chmodSync(entry, 0o755);
   writeFileSync(
     join(prefix, "node_modules", "@openai", "codex", "package.json"),
     '{"type":"module"}',
