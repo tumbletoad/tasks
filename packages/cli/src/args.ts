@@ -148,6 +148,7 @@ export interface PositionalSpec {
   readonly name: string;
   readonly required: boolean;
   readonly type: ScalarType;
+  readonly values?: readonly (string | number | boolean)[];
 }
 
 export interface KeySpec {

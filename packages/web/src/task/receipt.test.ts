@@ -44,7 +44,7 @@ describe("[A4.5.terminal.receipt] the receipt names the terminal and its source"
       ["gnome-terminal", "installed", "GNOME Terminal, the first installed"],
       ["x-terminal-emulator", "distribution", "x-terminal-emulator, the distribution's default"],
       ["kitty", "terminal_var", "kitty, from $TERMINAL"],
-      ["custom", "configured", "your custom terminal, set in machine.toml"],
+      ["custom", "configured", "your custom terminal, chosen in Settings"],
       ["konsole", "fallback", "Konsole, a fallback"],
     ];
     for (const [app, source, words] of cases) {

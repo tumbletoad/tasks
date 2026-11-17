@@ -23,14 +23,15 @@
 //    and is checked (integrity_check and the facts, as a backup's).
 // 2. The secret scan (A6 3.16.4): every text value of the product's tables, by the product's own
 //    table and column names (snapshot.ts productTables), never a name read out of the database. A
-//    hit writes nothing: EXPORT_SECRET_FOUND names the kind and the table and column, never the
-//    text.
+//    hit is a warning on the record (ExportRecord.secrets): its kind and the table and column,
+//    never the text. It does not stop the export: history keeps text that nothing can remove, so a
+//    refusal would keep one pasted token from ever leaving with its own space.
 // 3. Every file is checked against its kind's limit, and the files together against the count and
 //    the total (the shared BundlePolicy), before the archive is written.
 // 4. The archive is written in the work folder and flushed. Each attachment is read through the
 //    descriptor that was checked: the regular file of its row under the space's own `attachments/`,
 //    reached through no link, of the row's size, in no secrets folder, its bytes scanned for secrets
-//    and hashed to the row's hash while they are written.
+//    (a warning, as the rows') and hashed to the row's hash while they are written.
 // 5. A trial restore of the archive, the restore's own steps (restore/restore.ts restoreCopy) in
 //    the work folder: Tasks never publishes a bundle its restore would refuse.
 // 6. Publication: the archive takes its name `<mode>-<utc>-e<epoch>-s<seq>.zip` in the exports
@@ -81,7 +82,7 @@ import { stepPosition } from "../migrate/steps.ts";
 import { openReader, openWriter } from "../open.ts";
 import { inRange } from "../rows.ts";
 import type { SchemaStep } from "../schema.ts";
-import { findSecret, SECRET_OVERLAP } from "../secrets.ts";
+import { findSecret, SECRET_OVERLAP, type SecretKind } from "../secrets.ts";
 import { openSpaceWith, SOURCE_APP_VERSION } from "../space.ts";
 import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
@@ -149,6 +150,13 @@ export interface ExportOptions {
   busyTimeoutMs?: number;
 }
 
+/** A secret-shaped string the bundle holds: its kind and where, never the text. */
+export interface SecretFinding {
+  kind: SecretKind;
+  /** `<table>.<column>` by the product's own names, or `an attachment`. */
+  place: string;
+}
+
 /** A published bundle. */
 export interface ExportRecord {
   /** The file name, `<mode>-<utc>-e<epoch>-s<seq>.zip`. */
@@ -158,13 +166,15 @@ export interface ExportRecord {
   size: number;
   sha256: string;
   manifest: ExportManifest;
+  /** Each kind and place once, in the order the scan met them. */
+  secrets: SecretFinding[];
 }
 
 /** The points a crash or a fault is injected at, in order. */
 export type ExportPoint =
   /** The snapshot is in the work folder, vacuumed and checked. */
   | "snapshot"
-  /** The secret scan of the rows passed and the attachments are known. */
+  /** The secret scan of the rows ran and the attachments are known. */
   | "scanned"
   /** The archive is written and flushed in the work folder. */
   | "written"
@@ -194,7 +204,8 @@ export const exportsFolder = (spaceFolder: string): string =>
 /**
  * Exports the space at `folder` as a bundle (see the header). Opening the space refuses as a
  * reader's open does. Later failures keep their own code when it says what is wrong with the
- * space or the bundle (BUNDLE_LIMIT_EXCEEDED, BUNDLE_INVALID, EXPORT_SECRET_FOUND,
+ * space or the bundle (BUNDLE_LIMIT_EXCEEDED, BUNDLE_INVALID, EXPORT_SECRET_FOUND for a file in a
+ * secrets folder,
  * SPACE_SCHEMA_FOREIGN, SPACE_TOO_NEW, SPACE_VERSION_UNKNOWN), and are BACKUP_FAILED otherwise,
  * with the cause's code in the message.
  */
@@ -282,7 +293,8 @@ export async function exportBundleWith(
     // 2. The secret scan of the rows, data.jsonl, and the attachments the snapshot names.
     const snapshotTables = productTables(checked, steps, facts.userVersion) ?? [];
     const jsonl = options.withJsonl === true ? join(work, JSONL_FILE) : undefined;
-    const blobs = scanSnapshot(checked, db, snapshotTables, busy, {
+    const secrets = new Findings();
+    const blobs = scanSnapshot(checked, db, snapshotTables, busy, secrets, {
       file: jsonl,
       maxBytes: jsonlBudget(free, peak, policy),
     });
@@ -309,6 +321,7 @@ export async function exportBundleWith(
       space: dir,
       blobs,
       secretFolders: options.secretFolders ?? [],
+      secrets,
       jsonl,
       facts,
       options,
@@ -352,7 +365,14 @@ export async function exportBundleWith(
     }
     fsyncFolder(exportDir, io);
     seams.at?.("published");
-    return { name, file, size: digest.size, sha256: digest.sha256, manifest };
+    return {
+      name,
+      file,
+      size: digest.size,
+      sha256: digest.sha256,
+      manifest,
+      secrets: secrets.list(),
+    };
   } catch (error) {
     throw exportFailed(error);
   } finally {
@@ -460,17 +480,16 @@ const SHA256 = /^[0-9a-f]{64}$/;
 /** An attachment's path in a bundle and under a space (A1 3.18 "Attachments"). */
 const blobName = (sha256: string): string => `attachments/sha256/${sha256.slice(0, 2)}/${sha256}`;
 
-/**
- * A secret-shaped text refuses the export, naming where it is and never what it is. `table` and
- * `column` are the product's own names (snapshot.ts productTables).
- */
-function refuseSecret(table: string, column: string, text: string): void {
-  const kind = findSecret(text);
-  if (kind === undefined) return;
-  throw new StorageError(
-    "EXPORT_SECRET_FOUND",
-    `The export would hold a string shaped like a secret (${kind}) in ${table}.${column}. Nothing was written`,
-  );
+/** The secret-shaped strings an export met, each kind and place once. */
+class Findings {
+  readonly #seen = new Map<string, SecretFinding>();
+  add(kind: SecretKind, place: string): void {
+    const key = `${kind} ${place}`;
+    if (!this.#seen.has(key)) this.#seen.set(key, { kind, place });
+  }
+  list(): SecretFinding[] {
+    return [...this.#seen.values()];
+  }
 }
 
 /**
@@ -483,13 +502,19 @@ function scanSnapshot(
   db: string,
   tables: readonly ProductTable[],
   busy: { busyTimeoutMs?: number },
+  secrets: Findings,
   jsonl: { file: string | undefined; maxBytes: number },
 ): Blob[] {
+  // `table` and `column` are the product's own names (snapshot.ts productTables).
+  const see = (table: string, column: string, text: string): void => {
+    const kind = findSecret(text);
+    if (kind !== undefined) secrets.add(kind, `${table}.${column}`);
+  };
   const conn = openReader(checked, db, busy);
   try {
     if (jsonl.file !== undefined) {
-      writeJsonl(conn, jsonl.file, tables, { seeText: refuseSecret, maxBytes: jsonl.maxBytes });
-    } else scanText(conn, tables, refuseSecret);
+      writeJsonl(conn, jsonl.file, tables, { seeText: see, maxBytes: jsonl.maxBytes });
+    } else scanText(conn, tables, see);
     if (!tables.some((table) => table.name === "attachments")) return [];
     const rows = conn
       .prepare(
@@ -612,17 +637,20 @@ function checkPlanned(
   if (total > policy.maxTotalBytes) throw limitExceeded("the total expanded size");
 }
 
-/** A byte scan for secrets across chunks: the end of each chunk is kept in front of the next. */
-function byteScanner(): (chunk: Buffer) => void {
+/**
+ * A byte scan for secrets across chunks: the end of each chunk is kept in front of the next. One
+ * finding per attachment is enough to warn of it, so the scan stops looking after the first.
+ */
+function byteScanner(secrets: Findings): (chunk: Buffer) => void {
   let tail = "";
+  let found = false;
   return (chunk) => {
+    if (found) return;
     const text = tail + chunk.toString("latin1");
     const kind = findSecret(text);
     if (kind !== undefined) {
-      throw new StorageError(
-        "EXPORT_SECRET_FOUND",
-        `The export would hold a string shaped like a secret (${kind}) in an attachment. Nothing was written`,
-      );
+      secrets.add(kind, "an attachment");
+      found = true;
     }
     tail = text.slice(-SECRET_OVERLAP);
   };
@@ -636,6 +664,7 @@ interface ArchiveInput {
   space: string;
   blobs: readonly Blob[];
   secretFolders: readonly string[];
+  secrets: Findings;
   jsonl: string | undefined;
   facts: SnapshotFacts;
   options: ExportOptions;
@@ -671,7 +700,7 @@ async function writeArchive(archive: string, input: ArchiveInput): Promise<Expor
           fd,
           blob.size,
           entryLimit("attachment", policy),
-          byteScanner(),
+          byteScanner(input.secrets),
         );
       } finally {
         closeQuietly(fd);

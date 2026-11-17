@@ -45,7 +45,7 @@ Usage: `tasks add <title> [flags]`
 | `--status` | `tasks[].status` | string | A status of the space; default open |
 | `--inbox` | `tasks[].inbox` | boolean | Put it in the Inbox for the user |
 | `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none |
-| `--effort` | `tasks[].effort` | string | Effort, such as S, M or L |
+| `--effort` | `tasks[].effort` | string | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
 | `--focus` | `tasks[].focus` | boolean | Star it for today, only when the user asks |
@@ -109,7 +109,7 @@ Usage: `tasks find [<q>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<q>` | `q` | string | Words, "phrases" and filters, such as status:open p<=2 |
+| `<q>` | `q` | string | Words, "phrases", filters such as status:open p<=2, and sort:effort |
 | `--scope` | `scope` | "active" \| "finished" \| "all" \| "learnings" | active by default; finished is completed or archived |
 | `--limit` | `limit` | integer | Rows per page; default 15 |
 | `--cursor` | `cursor` | string | Next page: the last page's cursor, alone |
