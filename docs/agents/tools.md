@@ -1777,7 +1777,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `tasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1601, reported |
+| Definition, estimated tokens | 1604, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1792,7 +1792,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | `tasks[].status` | string, max 40 | no | A status of the space; default open |
 | `tasks[].inbox` | boolean | no | Put it in the Inbox for the user |
 | `tasks[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `tasks[].effort` | string, max 20 | no | Estimate from time and difficulty: S under 30 min, M to half a day, L more |
+| `tasks[].effort` | string, max 20 | no | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
@@ -1907,7 +1907,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `tasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1849, reported |
+| Definition, estimated tokens | 1852, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1926,7 +1926,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].status` | string, max 40 | no | A status of the space; default open |
 | `follow_ups[].inbox` | boolean | no | Put it in the Inbox for the user |
 | `follow_ups[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `follow_ups[].effort` | string, max 20 | no | Estimate from time and difficulty: S under 30 min, M to half a day, L more |
+| `follow_ups[].effort` | string, max 20 | no | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |

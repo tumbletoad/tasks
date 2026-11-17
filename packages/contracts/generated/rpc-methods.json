@@ -3787,7 +3787,7 @@
                   "type": "string"
                 },
                 "effort": {
-                  "description": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
+                  "description": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
                   "maxLength": 20,
                   "type": "string"
                 },
@@ -4086,7 +4086,7 @@
                   "type": "string"
                 },
                 "effort": {
-                  "description": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
+                  "description": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
                   "maxLength": 20,
                   "type": "string"
                 },

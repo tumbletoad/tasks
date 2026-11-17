@@ -184,7 +184,7 @@
         {
           "field": "tasks[].effort",
           "flag": "--effort",
-          "help": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
+          "help": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
           "repeat": false,
           "required": false,
           "type": "string"
