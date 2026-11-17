@@ -409,6 +409,33 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect((await search({ q: "status:open" })).rows[0]).not.toHaveProperty("snippet_from");
   });
 
+  test("sort:effort lists quick work first by the space's scale, sort:-effort big work first, none last", async () => {
+    const [large, none, small, medium] = created(
+      submit(fx, [
+        { kind: "task.create", title: "Sizeword large", effort: "L", priority: 1 },
+        { kind: "task.create", title: "Sizeword unsized", priority: 1 },
+        { kind: "task.create", title: "Sizeword small", effort: "S" },
+        { kind: "task.create", title: "Sizeword medium", effort: "M", due: { date: "2026-11-13" } },
+      ]),
+    ) as [string, string, string, string];
+    // With words, and without: the effort comes before the rank or the due date.
+    for (const q of ["sizeword sort:effort", "sort:effort status:open"]) {
+      const order = ids(await search({ q, limit: 50 })).filter((id) =>
+        [large, none, small, medium].includes(id),
+      );
+      expect(order, q).toEqual([small, medium, large, none]);
+    }
+    const big = ids(await search({ q: "sizeword sort:-Effort" }));
+    expect(big).toEqual([large, medium, small, none]);
+    expect((await search({ q: "sizeword sort:-Effort" })).parsed).toBe("sizeword sort:-Effort");
+    expect((await refusal(search({ q: "order:effort" }))).data["suggestions"]).toEqual(["sort"]);
+    // An order filters nothing, so it stands alone.
+    for (const q of ["sizeword -sort:effort", "sort:effort OR p:1", "sort:effort sort:-effort"]) {
+      expect((await refusal(search({ q }))).code, q).toBe("invalid_input");
+    }
+    expect((await refusal(search({ q: "sort:size" }))).hint).toContain("sort:effort");
+  });
+
   test("an agent never matches or sees an only-me note; the user does", async () => {
     const [hidden] = created(submit(fx, [{ kind: "task.create", title: "Audience test" }]));
     submit(fx, [{ kind: "note.add", task: hidden ?? "", body: "privateword in an only-me note" }]);

@@ -20,6 +20,7 @@ import {
   searchFields,
   searchGroups,
   searchSource,
+  sortsByEffort,
   type Found,
   type SearchRow,
 } from "./search.ts";
@@ -137,8 +138,9 @@ function Results({ q, typed, task, onExpand, onUnindexed }: ResultsProps) {
   shown.current = new Set([...open.state.rows, ...done.state.rows].map((row) => row.id));
   const filter = useCallback((row: TaskRow) => shown.current.has(row.id), []);
   const groups = useCallback<GroupsOf>(
-    (_tasks, held) => searchGroups(open.state.rows, done.state.rows, state.tasks, held),
-    [open.state.rows, done.state.rows, state.tasks],
+    (_tasks, held) =>
+      searchGroups(open.state.rows, done.state.rows, state.tasks, held, sortsByEffort(q)),
+    [open.state.rows, done.state.rows, state.tasks, q],
   );
 
   const ready = open.state.phase === "ready" && done.state.phase === "ready";

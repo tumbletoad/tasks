@@ -191,7 +191,13 @@ export interface StartOptions {
   /** The space manager's worker start and bounds. Tests pass others. */
   readonly spaceOptions?: Pick<
     SpaceManagerOptions,
-    "startWorker" | "openTimeoutMs" | "closeTimeoutMs" | "now" | "syncHost" | "build"
+    | "startWorker"
+    | "openTimeoutMs"
+    | "closeTimeoutMs"
+    | "now"
+    | "syncHost"
+    | "build"
+    | "recheckDelaysMs"
   >;
   /**
    * False: no backup upkeep and no projection for the spaces (tests that look at a space folder's

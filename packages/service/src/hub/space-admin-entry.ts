@@ -77,6 +77,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
           seq: manifest.seq,
           size: record.size,
           sha256: record.sha256,
+          secrets: record.secrets,
         },
       };
     }
@@ -107,29 +108,10 @@ async function run(job: AdminJob): Promise<AdminResult> {
   }
 }
 
-/**
- * Where an export's secret scan found a secret-shaped string: its kind and the table and column,
- * or "an attachment". Read from storage's fixed sentence, and passed on only when both parts are
- * plain words: never a path or text.
- */
-function secretPlace(error: unknown): { kind: string; place: string } | undefined {
-  const message = (error as { message?: unknown } | null)?.message;
-  if (typeof message !== "string") return undefined;
-  const match = /\(([a-z_]{1,32})\) in ([a-z_]{1,64}(?:\.[a-z_]{1,64})?|an attachment)\./.exec(
-    message,
-  );
-  return match === null ? undefined : { kind: match[1] ?? "", place: match[2] ?? "" };
-}
-
 try {
   reply({ ok: true, result: await run(workerData as AdminJob) });
 } catch (error) {
-  // Only the code crosses: the message can name a path. A secret's kind and place are words.
+  // Only the code crosses: the message can name a path.
   const code = (error as { code?: unknown } | null)?.code;
-  const secret = code === "EXPORT_SECRET_FOUND" ? secretPlace(error) : undefined;
-  reply({
-    ok: false,
-    ...(typeof code === "string" ? { code } : {}),
-    ...(secret === undefined ? {} : { secret }),
-  });
+  reply({ ok: false, ...(typeof code === "string" ? { code } : {}) });
 }

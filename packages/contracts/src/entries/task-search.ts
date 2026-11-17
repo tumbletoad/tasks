@@ -20,7 +20,9 @@ export const SEARCH_IDS = 10_000;
 export const CURSOR_PATTERN = /^c_[0-9a-hjkmnp-tv-z]{16}$/u;
 
 export const TaskSearchInput = z.strictObject({
-  q: safeLine(500).describe('Words, "phrases" and filters, such as status:open p<=2').optional(),
+  q: safeLine(500)
+    .describe('Words, "phrases", filters such as status:open p<=2, and sort:effort')
+    .optional(),
   scope: z
     .enum(SEARCH_SCOPES)
     .describe("active by default; finished is completed or archived")
