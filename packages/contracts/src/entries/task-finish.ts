@@ -10,6 +10,7 @@ import {
   Base,
   Cwd,
   DRAFT_AGENT_MAX,
+  HeldSources,
   Lifecycle,
   Mode,
   ProposalId,
@@ -56,6 +57,7 @@ export const TaskFinishResult = z.strictObject({
         result: z.enum(["created", "exists", "proposed"]).describe("What happened to the draft"),
         ref: TaskRef.optional(),
         title: z.string().describe("Title"),
+        held: HeldSources.optional(),
       }),
     )
     .describe("One row per follow-up draft"),

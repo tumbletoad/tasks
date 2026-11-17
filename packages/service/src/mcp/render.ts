@@ -545,8 +545,15 @@ function draftLine(row: Added, path: string): string {
             row.matched_by === "source_key" && "by source key",
             row.log_added && "log added",
           )
-      : `${row.result} ${row.ref ?? ""}`;
+      : join(`${row.result} ${row.ref ?? ""}`, ...heldParts(row.held));
   return `${path}: ${what.trimEnd()}`;
+}
+
+/** A new task's sources linked without their key, which another task holds, by their index. */
+function heldParts(held: readonly { source: number; held_by: string }[] = []): string[] {
+  return held.map(
+    (h) => `sources.${String(h.source)} linked without its key, which ${h.held_by} holds`,
+  );
 }
 
 /**
@@ -717,7 +724,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
           `${head} · as_of ${result.as_of}${replayed(result)}`,
           ...result.follow_ups.map(
             (f, k) =>
-              `follow_ups.${String(k)}: ${f.result}${f.ref === undefined ? "" : ` ${f.ref}`}`,
+              `follow_ups.${String(k)}: ${join(`${f.result} ${f.ref ?? ""}`.trimEnd(), ...heldParts(f.held))}`,
           ),
           ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),

@@ -416,6 +416,8 @@ interface StagedOp {
    * matched task, and its result is `existing`.
    */
   existing?: { match?: Match };
+  /** `source.add`: the active task that holds the source's key, so it was linked without it. */
+  heldBy?: Id<"t">;
   /** `task.wrap_up`: the IDs of the learnings it adds, one per text of `learnings.add`. */
   learnings?: Id<"lr">[];
   /** `task.wrap_up` with `once` on a task wrapped already that it would not change: no write. */
@@ -1374,6 +1376,11 @@ export class SpaceWriter {
     const dedupe = new Dedupe(conn, request.ops, at);
     const matched = new Map<string, Match>();
     /**
+     * The keys of a created draft that another active task holds, by `<draft>|<key>`, with that
+     * task: the draft's source of that key is linked without the key (Dedupe.decide).
+     */
+    const heldKeys = new Map<string, Id<"t">>();
+    /**
      * The tombstones earlier operations set (`true`) or clear (`false`): a later operation sees
      * the task as they leave it, so a restored task takes changes and a deleted one refuses them.
      */
@@ -1570,8 +1577,12 @@ export class SpaceWriter {
           // no source operation that can name it, so it has no keys.
           const keys = op.id === undefined ? [] : dedupe.keysOf(op.id);
           const mode = op.dedupe ?? "source_key";
+          let held: ReadonlyMap<string, Id<"t">> = new Map();
           if (mode !== "none" && keys.length > 0) {
-            const found = dedupe.match(keys, op.link_sources === true);
+            const found =
+              mode === "source_key"
+                ? dedupe.decide(keys, op.link_sources === true)
+                : { ...dedupe.match(keys, op.link_sources === true), held };
             if (mode === "new" && found.active.length > 0) {
               problem(
                 "VALIDATION_FAILED",
@@ -1597,9 +1608,14 @@ export class SpaceWriter {
                 existing: { match: hit },
               };
             }
+            held = found.held;
           }
           drafts.add(id);
-          dedupe.created(id, keys);
+          for (const [key, holder] of held) heldKeys.set(`${id}|${key}`, holder);
+          dedupe.created(
+            id,
+            keys.filter((key) => !held.has(key)),
+          );
           if (placed.sibling?.id === id) {
             problem(
               "VALIDATION_FAILED",
@@ -1800,6 +1816,28 @@ export class SpaceWriter {
         }
         case "source.add": {
           const parent = task(op.task, "task");
+          const heldBy =
+            op.source.key === undefined ? undefined : heldKeys.get(`${parent}|${op.source.key}`);
+          if (heldBy !== undefined && op.source.key !== undefined) {
+            // The key stays as the source's plain reference: the person sees which ticket it is,
+            // and a draft sent again finds this task by it (Dedupe.decide).
+            const { key: held, ...rest } = op.source;
+            const unkeyed =
+              rest.ref === undefined && Array.from(held).length <= WRITE_LIMITS.line
+                ? { ...rest, ref: held }
+                : rest;
+            dedupe.plain(held, parent);
+            const plain: Operation = { ...op, source: unkeyed };
+            return {
+              i,
+              op: plain,
+              target: newId("s", random),
+              task: parent,
+              touches: [],
+              record: { task: parent, ...inputOf(plain, "task") },
+              heldBy,
+            };
+          }
           const { key } = op.source;
           if (key !== undefined) dedupe.link(key, parent);
           let source: Id<"s"> | undefined = key === undefined ? undefined : draftSources.get(key);
@@ -2938,6 +2976,7 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           ref: refOf(task),
           version: new RowReader("task_sources", link).int("version", "seq"),
           ...(differs === undefined || differs.length === 0 ? {} : { differs }),
+          ...(staged.heldBy === undefined ? {} : { held_by: refOf(staged.heldBy) }),
         };
       }
       case "place.set": {

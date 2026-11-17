@@ -7,6 +7,7 @@ import {
   AsOf,
   Cwd,
   DRAFT_AGENT_MAX,
+  HeldSources,
   Lifecycle,
   Mode,
   ProposalId,
@@ -41,6 +42,7 @@ export const TaskAddResult = z.strictObject({
         matched_by: z.enum(["source_key"]).describe("How an existing task matched").optional(),
         ambiguous: z.array(TaskRef).describe("Several active matches: pick one").optional(),
         log_added: z.boolean().describe("The draft's log entry was added"),
+        held: HeldSources.optional(),
       }),
     )
     .describe("One row per draft, in order"),
@@ -70,7 +72,7 @@ export const taskAdd = defineEntry({
       tool: "add_tasks",
       title: "Add tasks",
       description:
-        "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists. folder \"cwd\" files a task in your folder's project; with no area or project it goes to the Inbox.",
+        "For work left for later and items from email, chat or tickets: 1 to 25 tasks a call, never TODOs in files. Key only the source a task is (jira:KEY): a match answers exists; other links take no key. folder \"cwd\" files a task in your folder's project; no area or project: the Inbox.",
     },
   },
   // A3 3.2.5: 25 drafts' lines at their longest fit whole, with the counts.

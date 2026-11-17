@@ -2302,6 +2302,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.bulk.shared-key",
+      "title": "Two drafts that share a ticket key and each carry a key of their own become two tasks: the second links the ticket without its key and its answer row names the task that holds it; a second pass matches each draft to its own task, and the ticket alone to the task that holds it",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.parser",
       "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",

@@ -757,6 +757,24 @@ function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>
   });
 }
 
+/**
+ * The sources of the draft at `path` that were linked without their key, because another active
+ * task holds it (Dedupe.decide), by their index in the draft.
+ */
+function heldOf(
+  result: WriteResult,
+  paths: ReadonlyMap<number, string>,
+  path: string,
+): { held?: { source: number; held_by: string }[] } {
+  const prefix = `${path}.sources.`;
+  const held = result.results.flatMap((op) => {
+    const at = paths.get(op.i);
+    if (op.held_by === undefined || at?.startsWith(prefix) !== true) return [];
+    return [{ source: Number(at.slice(prefix.length)), held_by: op.held_by }];
+  });
+  return held.length === 0 ? {} : { held };
+}
+
 function opAt(result: WriteResult, i: number): OpResult {
   const found = result.results.find((r) => r.i === i);
   if (found === undefined)
@@ -1716,6 +1734,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ...outcomes[k],
           title: String(draft["title"]),
           log_added: log?.status === "created",
+          ...heldOf(result, sourcePaths, at(k)),
         };
       }),
       warnings: [...differsWarnings(result, sourcePaths), ...kept],
@@ -1961,6 +1980,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         result: outcome.result,
         ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
         title: String(follow[k]?.["title"]),
+        ...heldOf(result, sourcePaths, at(k)),
       })),
       ...(warnings.length === 0 ? {} : { warnings }),
       as_of: result.as_of,

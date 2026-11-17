@@ -242,7 +242,7 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(created.results[0]).toMatchObject({ status: "created", id: first.id, ref: "M-1" });
 
     // The key as an agent may send it: A1 trims it and lower-cases its namespace (A3 3.11.1).
-    const again = draft([" JIRA:FIX-1", "jira:FIX-2"], {
+    const again = draft([" JIRA:FIX-1", "jira:FIX-1"], {
       title: "Answer the clinic again",
       log: "Seen again in the export.",
       place: true,
@@ -292,6 +292,48 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(bare.results.map((r) => r.status)).toEqual(["existing", "existing"]);
     expect(one("SELECT last_seq FROM space")).toBe(seq);
     expect(one("SELECT count(*) FROM receipts WHERE status = 'unchanged'")).toBe(1);
+  });
+
+  test("a draft with a key that matches nothing is new: a key another active task holds is linked to it without the key", () => {
+    const first = draft(["planning:p-1", "jira:FIX-1"]);
+    expectStatus(submit(first.ops), "applied");
+    const second = draft(["planning:p-2", "jira:FIX-1"], { log: "Seen in the export." });
+    const result = submit(second.ops);
+    expectStatus(result, "applied");
+    expect(result.results.map((r) => [r.status, r.task ?? r.id, r.held_by])).toEqual([
+      ["created", second.id, undefined],
+      ["created", second.id, undefined],
+      ["created", second.id, undefined],
+      ["created", second.id, "M-1"],
+    ]);
+    // Each key keeps one holder; the second task has the ticket as a plain link.
+    expect(holders(fx.reader, "jira:FIX-1")).toEqual([first.id]);
+    expect(holders(fx.reader, "planning:p-2")).toEqual([second.id]);
+    expect(
+      fx.reader
+        .prepare(
+          "SELECT s.source_key AS k FROM task_sources l JOIN sources s ON s.id = l.source_id " +
+            "WHERE l.task_id = $t ORDER BY l.position",
+        )
+        .all({ t: second.id })
+        .map((r) => r["k"]),
+    ).toEqual(["planning:p-2", null]);
+    // Sent again, each draft finds its own task by the keys it carries all of, and its log follows.
+    const again = submit(draft(["planning:p-2", "jira:FIX-1"], { log: "Again." }).ops);
+    expect(again.results.map((r) => [r.status, r.task])).toEqual([
+      ["existing", second.id],
+      ["created", second.id],
+      ["existing", second.id],
+      ["existing", second.id],
+    ]);
+    expect(submit(draft(["planning:p-1", "jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      task: first.id,
+    });
+    // The ticket alone, or with a key that matches nothing but asks to link: the ticket's task.
+    expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({ task: first.id });
+    const linking = draft(["planning:p-3", "jira:FIX-1"], { link: true });
+    expect(submit(linking.ops).results[0]).toMatchObject({ status: "existing", task: first.id });
   });
 
   test("link_sources links the draft's sources to an active match, so its other keys find the task too", () => {
@@ -711,6 +753,9 @@ type Predicted =
       linked: number;
       beside: number;
       past: number;
+      /** Drafts created with a key another task holds linked without it, and drafts matched by their own keys. */
+      linkedWithout: number;
+      own: number;
     }
   | { status: "rejected"; op: number };
 
@@ -729,6 +774,8 @@ interface ModelDraft {
 class SessionsModel {
   tasks = new Map<Id<"t">, ModelTask>();
   keys = new Map<string, Set<Id<"t">>>();
+  /** The tasks linked to a source of each key without the key, because another task held it. */
+  plain = new Map<string, Set<Id<"t">>>();
   #finished = 0;
   /** The window the clock stands in: each jump starts the next. */
   window = 0;
@@ -738,6 +785,7 @@ class SessionsModel {
     // On copies: a refused request changes nothing.
     const tasks = new Map([...this.tasks].map(([id, t]) => [id, { ...t }]));
     const keys = new Map([...this.keys].map(([k, held]) => [k, new Set(held)]));
+    const plain = new Map([...this.plain].map(([k, held]) => [k, new Set(held)]));
     const task = (t: Id<"t">): ModelTask => {
       const found = tasks.get(t);
       if (found === undefined) throw new Error("the model has no such task");
@@ -752,18 +800,56 @@ class SessionsModel {
     let linked = 0;
     let beside = 0;
     let past = 0;
-    for (const d of drafts) {
-      const holders = [...new Set(d.keys.flatMap((k) => [...(keys.get(k) ?? [])]))];
-      const active = holders
+    let linkedWithout = 0;
+    let own = 0;
+    const holdersOf = (ks: readonly string[]): Id<"t">[] => [
+      ...new Set(ks.flatMap((k) => [...(keys.get(k) ?? [])])),
+    ];
+    const activeOf = (ks: readonly string[]): Id<"t">[] =>
+      holdersOf(ks)
         .filter((t) => task(t).lifecycle === "active")
         .sort((a, b) => task(a).ref - task(b).ref);
-      const recent = holders.filter(
-        (t) => task(t).lifecycle === "completed" && task(t).window === this.window,
-      );
+    /** The match of a draft with keys `ks`: one active task, else several, else a recent finish. */
+    const matchOf = (ks: readonly string[]): Id<"t"> | undefined =>
+      activeOf(ks)[0] ??
+      holdersOf(ks)
+        .filter((t) => task(t).lifecycle === "completed" && task(t).window === this.window)
+        .sort((a, b) => task(b).finished - task(a).finished)[0];
+    for (const d of drafts) {
+      const holders = holdersOf(d.keys);
       const size = 1 + (d.log ? 1 : 0) + d.keys.length;
+      if (d.mode === "new" && activeOf(d.keys).length > 0) return { status: "rejected", op: index };
+      // A draft's own keys: one that matches nothing makes it new beside a ticket another task
+      // holds; when every key matches but not one task, the one task that has all of them.
+      let keyed = d.keys;
+      let mine: Id<"t"> | undefined;
+      const unkeyed = new Set<string>();
+      const distinct = [...new Set(d.keys)];
+      if (d.mode === "return" && distinct.length > 1 && matchOf(d.keys) !== undefined) {
+        const each = distinct.map((k) => ({ k, match: matchOf([k]) }));
+        if (each.some((e) => e.match === undefined)) {
+          for (const e of each) if (activeOf([e.k]).length > 0) unkeyed.add(e.k);
+          keyed = [];
+        } else {
+          const candidates = new Set([...each.flatMap((e) => e.match ?? []), ...activeOf(d.keys)]);
+          const has = (t: Id<"t">, k: string): boolean =>
+            keys.get(k)?.has(t) === true || plain.get(k)?.has(t) === true;
+          const covered = [...candidates].filter((t) => distinct.every((k) => has(t, k)));
+          if (candidates.size > 1 && covered.length === 1) {
+            mine = covered[0];
+            own += 1;
+          }
+        }
+      }
+      const active = mine === undefined ? activeOf(keyed) : [mine];
+      const recent = mine ?? matchOf(keyed);
       const [first] = active;
-      if (d.mode === "new" && first !== undefined) return { status: "rejected", op: index };
-      if (d.mode !== "new" && first !== undefined && active.length === 1) {
+      if (
+        d.mode !== "new" &&
+        first !== undefined &&
+        active.length === 1 &&
+        task(first).lifecycle === "active"
+      ) {
         // One active match: the draft's log follows it, and its sources with add_sources.
         results.push(`existing ${first}`);
         if (d.log) {
@@ -784,16 +870,15 @@ class SessionsModel {
           }
           hold(key, first);
         }
-      } else if (d.mode !== "new" && (first !== undefined || recent.length > 0)) {
+      } else if (d.mode !== "new" && recent !== undefined) {
         // Ambiguous, or finished within the window only (the one finished last): nothing of the
         // draft follows.
-        const named =
-          first ?? recent.sort((a, b) => task(b).finished - task(a).finished)[0] ?? d.id;
-        for (let k = 0; k < size; k += 1) results.push(`existing ${named}`);
+        for (let k = 0; k < size; k += 1) results.push(`existing ${recent}`);
       } else {
         if (holders.length > 0 && d.mode === "new") beside += 1;
         // Every holder finished before the window: a new task, as if the key were new.
-        if (holders.length > 0 && d.mode !== "new") past += 1;
+        if (holders.length > 0 && d.mode !== "new" && keyed.length > 0) past += 1;
+        if (unkeyed.size > 0) linkedWithout += 1;
         tasks.set(d.id, {
           ref: tasks.size + 1,
           lifecycle: "active",
@@ -801,7 +886,10 @@ class SessionsModel {
           window: this.window,
           logs: d.log ? 1 : 0,
         });
-        for (const key of d.keys) hold(key, d.id);
+        for (const key of d.keys) {
+          if (!unkeyed.has(key)) hold(key, d.id);
+          else plain.set(key, new Set([...(plain.get(key) ?? []), d.id]));
+        }
         for (let k = 0; k < size; k += 1) results.push(`created ${d.id}`);
         applied = true;
       }
@@ -809,7 +897,16 @@ class SessionsModel {
     }
     this.tasks = tasks;
     this.keys = keys;
-    return { status: applied ? "applied" : "unchanged", results, linked, beside, past };
+    this.plain = plain;
+    return {
+      status: applied ? "applied" : "unchanged",
+      results,
+      linked,
+      beside,
+      past,
+      linkedWithout,
+      own,
+    };
   }
 
   complete(t: Id<"t">): void {
@@ -954,6 +1051,8 @@ const sessionsProperty = (seen: Record<string, number>) =>
             if (predicted.linked > 0) count("source linked");
             if (predicted.beside > 0) count("created new");
             if (predicted.past > 0) count("created past the window");
+            if (predicted.linkedWithout > 0) count("linked without a key");
+            if (predicted.own > 0) count("matched by its own keys");
           }
           for (const r of result.results) {
             if (r.ambiguous !== undefined) count("ambiguous");
@@ -991,6 +1090,8 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
       "jump",
       "created past the window",
       "existing replayed after the window",
+      "linked without a key",
+      "matched by its own keys",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }

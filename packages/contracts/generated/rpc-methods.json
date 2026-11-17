@@ -3963,6 +3963,31 @@
                   },
                   "type": "array"
                 },
+                "held": {
+                  "description": "Sources linked without their key, which another task holds",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "held_by": {
+                        "description": "The task that holds its key",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "description": "Index in the draft's sources",
+                        "maximum": 9,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "held_by"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "id": {
                   "description": "Task ID",
                   "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
@@ -4289,6 +4314,31 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "held": {
+                  "description": "Sources linked without their key, which another task holds",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "held_by": {
+                        "description": "The task that holds its key",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "description": "Index in the draft's sources",
+                        "maximum": 9,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "held_by"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",

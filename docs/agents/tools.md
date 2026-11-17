@@ -1765,7 +1765,7 @@ Result:
 
 Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it.
 
-MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists. folder "cwd" files a task in your folder's project; with no area or project it goes to the Inbox.
+MCP tool `add_tasks`, "Add tasks": For work left for later and items from email, chat or tickets: 1 to 25 tasks a call, never TODOs in files. Key only the source a task is (jira:KEY): a match answers exists; other links take no key. folder "cwd" files a task in your folder's project; no area or project: the Inbox.
 
 | Property | Value |
 |---|---|
@@ -1825,6 +1825,9 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | `tasks[].matched_by` | "source_key" | no | How an existing task matched |
 | `tasks[].ambiguous` | string[] | no | Several active matches: pick one |
 | `tasks[].log_added` | boolean | yes | The draft's log entry was added |
+| `tasks[].held` | object[] | no | Sources linked without their key, which another task holds |
+| `tasks[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
+| `tasks[].held[].held_by` | string | yes | The task that holds its key |
 | `warnings` | string[] | yes | Warnings, one sentence each |
 | `proposal` | string | no | Proposal ID |
 | `replayed` | boolean | no | True when a retry returned the stored result |
@@ -1959,6 +1962,9 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].result` | "created" \| "exists" \| "proposed" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
 | `follow_ups[].title` | string | yes | Title |
+| `follow_ups[].held` | object[] | no | Sources linked without their key, which another task holds |
+| `follow_ups[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
+| `follow_ups[].held[].held_by` | string | yes | The task that holds its key |
 | `warnings` | string[] | no | Warnings, one sentence each |
 | `proposal` | string | no | Proposal ID |
 | `as_of` | string | yes | Read position; pass it as base on your next write |

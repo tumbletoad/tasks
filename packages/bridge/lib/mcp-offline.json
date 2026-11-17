@@ -133,7 +133,7 @@
             "openWorldHint": false,
             "readOnlyHint": false
           },
-          "description": "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists. folder \"cwd\" files a task in your folder's project; with no area or project it goes to the Inbox.",
+          "description": "For work left for later and items from email, chat or tickets: 1 to 25 tasks a call, never TODOs in files. Key only the source a task is (jira:KEY): a match answers exists; other links take no key. folder \"cwd\" files a task in your folder's project; no area or project: the Inbox.",
           "inputSchema": {
             "additionalProperties": false,
             "properties": {
@@ -1332,7 +1332,7 @@
             "openWorldHint": false,
             "readOnlyHint": false
           },
-          "description": "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists. folder \"cwd\" files a task in your folder's project; with no area or project it goes to the Inbox.",
+          "description": "For work left for later and items from email, chat or tickets: 1 to 25 tasks a call, never TODOs in files. Key only the source a task is (jira:KEY): a match answers exists; other links take no key. folder \"cwd\" files a task in your folder's project; no area or project: the Inbox.",
           "inputSchema": {
             "additionalProperties": false,
             "properties": {

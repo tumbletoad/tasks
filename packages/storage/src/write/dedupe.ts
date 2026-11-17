@@ -47,6 +47,10 @@ const SQL = {
     "AND source_id IN (SELECT value FROM json_each($sources))",
   task: "SELECT ref, lifecycle, completed_at, deleted_at, created_seq, fp FROM tasks WHERE id = $id",
   commitAt: "SELECT at FROM commits WHERE seq = $seq",
+  keysOf:
+    "SELECT coalesce(s.source_key, s.ref) AS k FROM task_sources l " +
+    "JOIN sources s ON s.id = l.source_id WHERE l.task_id = $task AND l.removed_at IS NULL " +
+    "AND s.deleted_at IS NULL AND coalesce(s.source_key, s.ref) IS NOT NULL",
 } as const;
 
 /** What a draft's keys matched (A1 3.6). */
@@ -123,6 +127,8 @@ export class Dedupe {
   readonly #holders = new Map<Id<"t">, Holder>();
   /** The tasks the request links each key to, so far. */
   readonly #links = new Map<string, Set<Id<"t">>>();
+  /** The tasks the request links to a source of each key without the key. */
+  readonly #plain = new Map<string, Set<Id<"t">>>();
   #drafts = 0;
 
   constructor(conn: Connection, ops: readonly Operation[], at: number) {
@@ -243,6 +249,69 @@ export class Dedupe {
       active,
       match: { task: last.id, lifecycle: last.lifecycle, follows: false, linkSources: false },
     };
+  }
+
+  /**
+   * What a draft's keys decide when they may name different tasks. A key says "this item is this
+   * task", so a draft with a key that matches nothing is new work, also when another key of it (a
+   * ticket two tasks share) matches: it is created, and each key an active task holds is linked to
+   * it without the key (`held`), so every key keeps one live holder. When every key matches, but
+   * not all the same task, the match is the one task that has every key of the draft, held or
+   * linked without it: the task such a draft created before. A draft that links its sources to a
+   * match (`linkSources`) says its keys name one item, and is matched as a whole.
+   */
+  decide(
+    keys: readonly string[],
+    linkSources: boolean,
+  ): { active: Id<"t">[]; match?: Match; held: ReadonlyMap<string, Id<"t">> } {
+    const found = this.match(keys, linkSources);
+    const held = new Map<string, Id<"t">>();
+    if (found.match === undefined || linkSources || keys.length < 2) return { ...found, held };
+    const each = keys.map((key) => ({ key, ...this.match([key], false) }));
+    if (each.some((k) => k.match === undefined)) {
+      for (const k of each) {
+        const [holder] = k.active;
+        if (holder !== undefined) held.set(k.key, holder);
+      }
+      return { active: found.active, held };
+    }
+    const candidates = new Set([...each.flatMap((k) => k.match?.task ?? []), ...found.active]);
+    if (candidates.size < 2) return { ...found, held };
+    const covered = [...candidates].filter((task) => {
+      const has = this.#keysHad(task);
+      return keys.every((key) => has.has(key));
+    });
+    const [own] = covered;
+    if (own === undefined || covered.length > 1) return { ...found, held };
+    const { lifecycle } = this.#holder(own);
+    const follows = lifecycle === "active";
+    return {
+      active: found.active,
+      match: { task: own, lifecycle, follows, linkSources: false },
+      held,
+    };
+  }
+
+  /** The request links `task` to a source of `key` without the key (`decide`'s `held`). */
+  plain(key: string, task: Id<"t">): void {
+    const tasks = this.#plain.get(key) ?? new Set();
+    tasks.add(task);
+    this.#plain.set(key, tasks);
+  }
+
+  /**
+   * The keys `task` has: those its live links hold, and those of its sources linked without
+   * their key (the source's `ref`), at the start and as the request adds them.
+   */
+  #keysHad(task: Id<"t">): Set<string> {
+    const keys = new Set<string>();
+    for (const row of this.#conn.prepare(SQL.keysOf).all({ task })) {
+      keys.add(new RowReader("sources", row).text("k"));
+    }
+    for (const links of [this.#links, this.#plain]) {
+      for (const [key, tasks] of links) if (tasks.has(task)) keys.add(key);
+    }
+    return keys;
   }
 
   /** The start-state holders of every key of the request: one read of the links per request. */

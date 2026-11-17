@@ -1242,6 +1242,41 @@ function expectedMatch(
   };
 }
 
+/**
+ * The oracle for a draft that returns a match: A1 3.6's match on all its keys, unless a key of it
+ * matches nothing (the draft is new), or its keys match several tasks and exactly one of them has
+ * every key of the draft, held or as a source linked without its key (that one).
+ */
+function expectedReturn(
+  conn: Connection,
+  keys: readonly string[],
+  at: number,
+): ReturnType<typeof expectedMatch> {
+  const all = expectedMatch(conn, keys, at);
+  const distinct = [...new Set(keys)];
+  if (all.match === undefined || distinct.length < 2) return all;
+  const each = distinct.map((k) => expectedMatch(conn, [k], at).match);
+  if (each.includes(undefined)) return { ...all, match: undefined };
+  const candidates = new Set([...each, ...all.active]);
+  if (candidates.size < 2) return all;
+  const had = (task: string | undefined): Set<string> =>
+    new Set(
+      conn
+        .prepare(
+          "SELECT coalesce(s.source_key, s.ref) AS k FROM task_sources l JOIN sources s " +
+            "ON s.id = l.source_id WHERE l.task_id = $task AND l.removed_at IS NULL " +
+            "AND s.deleted_at IS NULL",
+        )
+        .all({ task: task ?? "" })
+        .map((r) => String(r["k"])),
+    );
+  const covered = [...candidates].filter((t) => {
+    const has = had(t);
+    return distinct.every((k) => has.has(k));
+  });
+  return covered.length === 1 ? { ...all, match: covered[0] } : all;
+}
+
 type Cell = { value: string; fv: number; fp: number };
 
 /**
@@ -1455,7 +1490,11 @@ const property = (seen: Record<string, number>) =>
           // The first draft sees the state before its request only (A1 3.6): the oracle's input.
           const [first] = drafts;
           const oracle =
-            first === undefined ? undefined : expectedMatch(conn, first.keys, now + 1000);
+            first === undefined
+              ? undefined
+              : first.spec.mode === "return"
+                ? expectedReturn(conn, first.keys, now + 1000)
+                : expectedMatch(conn, first.keys, now + 1000);
           result = submit(
             space.request(
               as(s.actor),

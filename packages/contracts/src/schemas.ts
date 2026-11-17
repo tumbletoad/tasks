@@ -231,6 +231,16 @@ export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state"
 export const Replayed = z.boolean().describe("True when a retry returned the stored result");
 export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
 
+/** A new task's sources whose key another active task holds: each is linked without its key. */
+export const HeldSources = z
+  .array(
+    z.strictObject({
+      source: z.int().min(0).max(9).describe("Index in the draft's sources"),
+      held_by: TaskRef.describe("The task that holds its key"),
+    }),
+  )
+  .describe("Sources linked without their key, which another task holds");
+
 /**
  * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a
  * timed `due_at` with its IANA zone `due_tz`. A task without one leaves the field out.

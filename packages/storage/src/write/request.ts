@@ -253,6 +253,11 @@ export interface OpResult {
   version: number;
   /** `source.add` on an existing source: the fields the input gives otherwise (A1 3.6). */
   differs?: string[];
+  /**
+   * `source.add` of a new draft whose key another active task holds: that task's reference. The
+   * source was linked without the key (Dedupe.decide).
+   */
+  held_by?: string;
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;

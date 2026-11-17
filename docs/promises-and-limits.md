@@ -26,6 +26,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Adding work by a source that an open task or a recently finished one already has finds that task
   and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
   new work.
+- New work that also names a source of its own is never folded into the task that holds a shared
+  one, such as a ticket two tasks are about: it becomes its own task, linked to the shared source,
+  and the answer says which task holds that source.
 
 ## Backups, restore and export
 

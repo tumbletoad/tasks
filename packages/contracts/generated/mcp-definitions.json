@@ -8,7 +8,7 @@
       "tokens": 638
     },
     {
-      "bytes": 3153,
+      "bytes": 3154,
       "name": "add_tasks",
       "tokens": 1577
     },
@@ -59,7 +59,7 @@
     }
   ],
   "total": {
-    "bytes": 20846,
+    "bytes": 20847,
     "tokens": 10427,
     "tools": 11
   }
