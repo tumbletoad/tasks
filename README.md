@@ -35,7 +35,7 @@ pnpm verify
 | `pnpm build` | Version folder, archive and `SHA256SUMS` in `dist/` (needs the network). `--sign test` signs with a throwaway key and writes test install scripts |
 | `pnpm smoke --dist <folder> --work <new folder>` | Installs a test-signed build into a separate root through each signature verifier and checks that tampered downloads are refused |
 | `pnpm accept m<N>` | A milestone's acceptance script. `--installed <root>` runs it against an installed build |
-| `pnpm release` | Release key and signing (`keygen`, `sign`), for the holder of the release key |
+| `pnpm release` | Release key and signing (`keygen`, `sign`), for the holder of the release key. A release itself is made by its version tag: `.github/workflows/release.yml` |
 | `pnpm node-version` | Prints the Node version pnpm runs the project with |
 
 ## Where things live

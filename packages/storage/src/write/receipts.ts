@@ -18,7 +18,7 @@
 // and time of each conflicting field but not its values (the current one, and an undo's value
 // written and value to restore). The current value was a read at the time of the decision, a
 // replay is no fresh read, and so a receipt holds no task text at all. The stored
-// result is bounded by its request: at most 50 operation results, and at most one conflict per
+// result is bounded by its request: at most one result per operation, and at most one conflict per
 // (row, field) the request touches, each a few hundred bytes.
 import { createHash } from "node:crypto";
 import type { Connection, Row } from "../driver.ts";

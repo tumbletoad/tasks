@@ -10,7 +10,12 @@ import { openWriter } from "../src/open.ts";
 import { openSpace } from "../src/space.ts";
 import { StorageWorker } from "../src/worker/client.ts";
 import { intentFingerprint, readReceipt } from "../src/write/receipts.ts";
-import type { Operation, WriteRequest, WriteResult } from "../src/write/request.ts";
+import {
+  WRITE_LIMITS,
+  type Operation,
+  type WriteRequest,
+  type WriteResult,
+} from "../src/write/request.ts";
 import { SpaceWriter } from "../src/write/writer.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
 import {
@@ -138,15 +143,15 @@ describe("[A1.5.write.receipts] a repeated request ID returns the stored result"
     // One per operation at most, as many as a request may hold.
     const full = fx.writer.submit(
       fresh([{ kind: "task.create", title: "Full" }], {
-        warnings: Array.from({ length: 50 }, () => warning),
+        warnings: Array.from({ length: WRITE_LIMITS.ops }, () => warning),
       }),
     );
-    expect(full.warnings).toHaveLength(50);
-    // One line each, at most 50: anything else is a shape error, decided nowhere.
+    expect(full.warnings).toHaveLength(WRITE_LIMITS.ops);
+    // One line each, at most one per operation: anything else is a shape error, decided nowhere.
     for (const warnings of [
       ["two\nlines"],
       [""],
-      Array.from({ length: 51 }, () => warning),
+      Array.from({ length: WRITE_LIMITS.ops + 1 }, () => warning),
       ["x".repeat(501)],
       [3],
     ]) {
