@@ -116,7 +116,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   start one. A run may do whatever your agent setup allows, without asking: the network, other
   folders, other agents. An instance's `run_permission` narrows that.
 - Your request reaches the agent over its own connection, never on a command line. A run's
-  answer, or the agent's question when it needs you, is kept in the run's record.
+  answer, or the agent's question when it needs you, is kept in the run's record. A question
+  from a helper the agent started does not reach you: that helper hears that no one answered.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what Tasks could find of it: a process the agent detached from it may live on.
