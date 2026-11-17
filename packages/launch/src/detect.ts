@@ -331,6 +331,59 @@ function findHomes(host: DetectHost, def: TargetDef): FoundHome[] {
   return homes;
 }
 
+/** What a program an instance names is started as, or why it cannot be. */
+export type ResolvedProgram =
+  | { readonly ok: true; readonly command: string; readonly args: readonly string[] }
+  | { readonly ok: false; readonly reason: "not_found" | "cmd_shim" | "no_node" };
+
+/**
+ * The program to start for an instance's `exec` and `args_prefix`, as detection would have found
+ * it: a bare name from the agent environment's PATH; a Windows `.cmd` or `.bat` shim of the
+ * target's npm package as Node with the package's entry (the shim itself is never run: it would
+ * need cmd.exe, and its arguments would pass through cmd.exe's parsing); an npm link on Linux and
+ * macOS as Node with the script it points at.
+ */
+export function resolveProgram(
+  host: DetectHost,
+  exec: string,
+  argsPrefix: readonly string[],
+  target: string,
+): ResolvedProgram {
+  const p = pathOf(host.platform);
+  let file: string | undefined = exec;
+  if (!p.isAbsolute(exec)) {
+    file = /[\\/]/u.test(exec) ? undefined : onPath(host, exec);
+    if (file === undefined) return { ok: false, reason: "not_found" };
+  }
+  const npm = isBuiltInTarget(target) ? targetDef(target).detect.npm : undefined;
+  if (host.platform === "win32" && isShim(file)) {
+    if (npm === undefined || !/\.(cmd|bat)$/iu.test(file)) return { ok: false, reason: "cmd_shim" };
+    const entry = p.join(
+      p.dirname(file),
+      "node_modules",
+      ...npm.package.split("/"),
+      ...npm.entry.split("/"),
+    );
+    if (host.stat(entry)?.kind !== "file") return { ok: false, reason: "cmd_shim" };
+    const node = nodeFor(host, file);
+    return node === undefined
+      ? { ok: false, reason: "no_node" }
+      : { ok: true, command: node, args: [entry, ...argsPrefix] };
+  }
+  const facts = host.stat(file);
+  if (facts?.kind !== "file" || !facts.executable) return { ok: false, reason: "not_found" };
+  if (host.platform !== "win32") {
+    const real = host.realpath(file);
+    if (real !== undefined && /\.(c|m)?js$/u.test(real)) {
+      const node = nodeFor(host, file);
+      return node === undefined
+        ? { ok: false, reason: "no_node" }
+        : { ok: true, command: node, args: [real, ...argsPrefix] };
+    }
+  }
+  return { ok: true, command: file, args: [...argsPrefix] };
+}
+
 /** Wrapper scripts in `~/.local/bin` (A4 3.2). Linux and macOS only: Windows wrappers are shims. */
 function findWrappers(host: DetectHost, def: TargetDef): FoundWrapper[] {
   const prefix = def.detect.wrapperPrefix;

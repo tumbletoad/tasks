@@ -106,9 +106,8 @@ export function splitLines(bytes: Uint8Array): Uint8Array[] {
   return lines;
 }
 
-/** Where a graceful cancel came: Claude after its last assistant event, Codex at the end. */
-function cancelPoint(entry: FixtureEntry, lines: readonly Uint8Array[]): number {
-  if (entry.cli === "codex-exec") return lines.length;
+/** Where a graceful cancel came: after Claude's last assistant event. */
+function cancelPoint(_entry: FixtureEntry, lines: readonly Uint8Array[]): number {
   const decoder = new TextDecoder();
   let point = Math.min(1, lines.length); // after `system/init` when no assistant event came
   lines.forEach((line, i) => {

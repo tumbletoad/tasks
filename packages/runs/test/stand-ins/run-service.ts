@@ -74,7 +74,6 @@ const commands = new Map<string, AgentCommand>();
 const supervisor = new Supervisor({
   lanes: () => [lane],
   limits: () => config.limits ?? { ...QUEUE_LIMITS, runs: 10, perInstance: 10, perTask: 10 },
-  available: () => Promise.resolve(true),
   prepare: (_lane, run) => {
     const command = commands.get(run.id);
     commands.delete(run.id);

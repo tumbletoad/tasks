@@ -290,7 +290,14 @@ export class World {
     };
     this.boxes.set(name, box);
     this.#pids += 1;
-    return { name, pid: this.#pids, stdout: box.stdout, stderr: box.stderr, exited };
+    return {
+      name,
+      pid: this.#pids,
+      stdin: new PassThrough(),
+      stdout: box.stdout,
+      stderr: box.stderr,
+      exited,
+    };
   }
 
   #agentExit(box: Box, exit: AgentExit): void {

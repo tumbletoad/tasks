@@ -265,7 +265,9 @@ function spacesText(spaces: readonly { readonly state: string }[]): string {
 function runsText(runs: Extract<ServiceAnswer, { answers: true }>["runs"]): string | undefined {
   if (runs === null) return undefined;
   if (runs.available === null) return "not checked yet";
-  return runs.available ? "can run here" : `off. ${runs.message}`;
+  return runs.available
+    ? "each in a process group"
+    : `without a process group, so Stop ends what ${PRODUCT_NAME} can find. ${runs.message}`;
 }
 
 function uiText(http: Extract<ServiceAnswer, { answers: true }>["http"]): string {

@@ -103,10 +103,15 @@ import {
   type SpaceManagerOptions,
   type SpaceView,
 } from "./spaces.ts";
-import type { OpsHost } from "../ops/index.ts";
+import { personSpace, type OpsHost } from "../ops/index.ts";
 import { FolderMarkers, MARKS_FILE } from "../ops/marker.ts";
 import { MemoryGrants, type GrantStore } from "../local/index.ts";
-import { LaunchService, type LaunchOptions, type OpenTaskRequest } from "../launch/index.ts";
+import {
+  defaultShimCommand,
+  LaunchService,
+  type LaunchOptions,
+  type OpenTaskRequest,
+} from "../launch/index.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
 import {
   Bindings,
@@ -552,6 +557,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // The queue's limits are read from machine.toml at each round: a change applies without a
     // restart, which would end the runs.
     let runSettings = config.runs;
+    let runHome: string | undefined;
+    try {
+      runHome = homeFolder(facts);
+    } catch {
+      runHome = undefined;
+    }
     const runs = new RunService({
       ...options.runs,
       machine: machine.id,
@@ -567,6 +578,19 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         return runSettings;
       },
       instances: () => instances,
+      // What a run starts, from its record: the folder a launch would work in, the person's
+      // environment as Open's agents get it, and Tasks' own command for the bridge its agent is given.
+      agents: {
+        platform,
+        home: runHome,
+        version: BUILD.version,
+        instances: () => instances,
+        folder: async (space, folder) => launching.service?.runFolder(space, folder),
+        base: async () => launching.service?.environment.base(),
+        command: () =>
+          options.launch?.shimCommand ??
+          defaultShimCommand({ commandFolder: layout.bin, platform }),
+      },
       folderUsable: async (space, folder) => {
         const service = launching.service;
         if (service === undefined) return true;
@@ -659,11 +683,18 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     const launching: { service?: LaunchService } = {};
     // The grant gate (A3 3.7.8): an agent home's calls and tickets reach only the spaces its live
     // agent-home rows name, read from the grants table at each call.
-    const homes = homeGate({
+    const registered = homeGate({
       grants: grantsOf,
       spaces: () => made.spaces?.served() ?? [],
       defaultSpace: () => defaults.get(),
     });
+    // A run's agent was given Tasks' tools by Tasks itself: while the run runs, the run's own
+    // calls may use its space whether or not its home was set up for it. No other connection of
+    // that home may.
+    const homes: typeof registered = {
+      may: (home, space, run) =>
+        registered.may(home, space) || (run !== undefined && runs.allows(home, space, run)),
+    };
     // Session binding (A3 3.7): the launch side it needs is the launch service's, made below.
     const bindings = new Bindings({
       store: options.sessions ?? new FileSessionStore(layout.state),
@@ -671,10 +702,16 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       homes,
       spaces: () => made.spaces?.served() ?? [],
       launches: {
-        bridgeTicket: (ticket) => launching.service?.host.bridgeTicket(ticket),
-        redeemBridge: (ticket) => launching.service?.host.redeemBridge(ticket),
-        agentRuns: (launch) => launching.service?.host.agentRuns(launch) ?? false,
+        // A launch's ticket, else a run's: a run's bridge binds to a session of that run.
+        bridgeTicket: (ticket) =>
+          launching.service?.host.bridgeTicket(ticket) ?? runs.bridgeTicket(ticket),
+        redeemBridge: (ticket) =>
+          launching.service?.host.redeemBridge(ticket) ?? runs.redeemBridge(ticket),
+        agentRuns: (launch) =>
+          (launching.service?.host.agentRuns(launch) ?? false) || runs.agentRuns(launch),
         confirm: (space, launch, at, folder) => {
+          // A run has no launch record to confirm: its own record says it ran.
+          if (launch.startsWith("ru_")) return Promise.resolve(undefined);
           const service = launching.service;
           if (service === undefined) return Promise.reject(new Error("Launching is not ready"));
           return service.confirmBinding(space, launch, at, folder);
@@ -735,6 +772,19 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       bindings,
       defaults,
       runs,
+      runVerbs: {
+        runs,
+        space: (named: string | undefined) =>
+          personSpace(
+            {
+              machine,
+              spaces: () => made.spaces?.served() ?? [],
+              platform,
+              defaultSpace: () => defaults.get(),
+            },
+            named,
+          ),
+      },
       instances: {
         configDir: layout.config,
         stateDir: layout.state,

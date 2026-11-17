@@ -8,8 +8,10 @@
  * start creates the job Local\<name> (a name that exists is refused), with kill on close and no
  * breakaway, and starts <program> with <command line> already inside it: no moment exists in
  * which the agent runs outside the job, so neither it nor anything it starts, detached or not,
- * can leave. The agent gets its own console without a window, stdin on NUL, this process's
- * stdout and stderr, and no other handle. This process holds the only handle to the job, so when
+ * can leave. The agent gets its own console without a window, this process's stdin, stdout and
+ * stderr, and no other handle. This process never reads its stdin: the service writes there for
+ * the agent, and its end is the agent's end of input, never a command. This process holds the
+ * only handle to the job, so when
  * it ends, however it ends, Windows ends every process in the job. The service starts it as a
  * plain child, so it ends with the service.
  *
@@ -222,7 +224,7 @@ static HANDLE control_handle(int fd) {
 
 /* An inheritable copy of a standard handle, or an inheritable handle to NUL when it has none. */
 static HANDLE agent_handle(DWORD which) {
-    HANDLE own = which == STD_INPUT_HANDLE ? NULL : GetStdHandle(which);
+    HANDLE own = GetStdHandle(which);
     HANDLE copy = NULL;
     SECURITY_ATTRIBUTES inherit = {sizeof inherit, NULL, TRUE};
     if (own != NULL && own != INVALID_HANDLE_VALUE &&

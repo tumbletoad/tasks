@@ -388,9 +388,11 @@ export {
   type LaunchRecord,
 } from "./write/launches.ts";
 export {
+  decodeRun as decodeRunRow,
   FINAL_RUN_STATES,
   OPEN_RUN_STATES,
   RUN_APP_TOOLS,
+  RUN_CLEANUPS,
   RUN_EDGES,
   RUN_EVIDENCE_FIELDS,
   RUN_EVIDENCE_ID,
