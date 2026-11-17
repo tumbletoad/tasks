@@ -3,6 +3,9 @@
 //
 // Verify line: Open sends the shim to the fake terminal, the receipt reaches Confirmed, a log entry
 // appears. Two tabs on two spaces stay on their own space.
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect } from "@playwright/test";
 import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
@@ -63,6 +66,60 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
 
     expect(await violations(page)).toEqual([]);
     await page.screenshot({ path: test.info().outputPath("open-confirmed.png") });
+  });
+});
+
+test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why when it is gone", () => {
+  test("the expanded task shows its folder, and Open on a folder that went starts nothing and names it", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-folder-"));
+    try {
+      const folder = join(temp, "portal");
+      mkdirSync(folder);
+      const title = `Ship the portal release (${test.info().project.name})`;
+      const added = (await world.op(world.mira.id, "task.add", {
+        tasks: [{ title, inbox: true }],
+      })) as { tasks: readonly { ref: string }[] };
+      const ref = added.tasks[0]?.ref ?? "";
+      const set = (await world.op(world.mira.id, "folder.manage", {
+        action: "set",
+        task: ref,
+        folder,
+      })) as { folder: string };
+
+      await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+      await showsSpace(page, world.mira.name);
+      const row = page.locator(`li[data-task="${ref}"]`);
+      await row.locator('[data-part="title"]').click();
+      await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
+      const line = row.locator('[data-part="place"]');
+      await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
+      await expect(line).toContainText(set.folder);
+      await page.screenshot({ path: test.info().outputPath("open-folder-here.png") });
+
+      // The folder goes before the click: nothing reaches the terminal, and the page says why.
+      rmSync(folder, { recursive: true });
+      const before = world.terminal().length;
+      await row
+        .getByRole("toolbar")
+        .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+        .click();
+      const said = page
+        .getByRole("status")
+        .filter({
+          hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
+        });
+      await expect(said).toBeVisible({ timeout: SLOW_MS });
+      expect(world.terminal()).toHaveLength(before);
+      await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
+      expect(await violations(page)).toEqual([]);
+      await page.screenshot({ path: test.info().outputPath("open-folder-gone.png") });
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   });
 });
 
