@@ -587,7 +587,7 @@ export class LaunchService {
       throw this.#unavailable("other_machine");
     }
     // Copy starts nothing: its brief says where the task opens (#briefOf).
-    const folder = choice.route === "clipboard" ? null : this.planFolder(task.folder);
+    const folder = choice.route === "clipboard" ? null : this.#planFolder(task.folder);
     // A link opens the folder resolved now (and again at its dispatch); a UNC one cannot.
     if (choice.route === "link") {
       const where = await this.resolveFolder(space, folder);
@@ -716,12 +716,12 @@ export class LaunchService {
   }
 
   /**
-   * The folder a launch or a run of the task works in here: its own folder or its project's, `~`
-   * expanded with the account's home, or null for the space's work folder. A folder only on
-   * another machine throws LaunchUnavailable (`other_machine`): it is never this machine's work
-   * folder. A home path when the home is not known throws LaunchFolderUnavailable.
+   * The folder a launch of the task works in here: its own folder or its project's, `~` expanded
+   * with the account's home, or null for the space's work folder. A folder only on another
+   * machine throws LaunchUnavailable (`other_machine`): it is never this machine's work folder. A
+   * home path when the home is not known throws LaunchFolderUnavailable.
    */
-  planFolder(folder: TaskFolder): PlanFolder | null {
+  #planFolder(folder: TaskFolder): PlanFolder | null {
     if (folder.kind === "other_machine") throw new LaunchUnavailable("other_machine");
     if (folder.kind === "none") return null;
     const path = openPath(folder.path, this.#options.home, this.#options.platform);
@@ -755,7 +755,7 @@ export class LaunchService {
       else {
         let planned: PlanFolder | null | undefined;
         try {
-          planned = this.planFolder(own);
+          planned = this.#planFolder(own);
         } catch {
           planned = undefined;
         }
