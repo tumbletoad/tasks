@@ -36,7 +36,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
       detail: "Terminals open in Ghostty: the desktop's default.",
     });
     expect(row({ app: "kitty", source: "configured", found: true }).detail).toContain(
-      "set in machine.toml",
+      "your choice in Settings",
     );
     expect(row({ app: "console", source: "windows", found: true }).detail).toContain(
       "Windows' default terminal",
@@ -50,7 +50,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(ptyxis.status).toBe("warn");
     expect(ptyxis.detail).toContain("(org.gnome.Ptyxis.desktop)");
     expect(ptyxis.detail).toContain("GNOME Terminal (the first installed)");
-    expect(ptyxis.detail).toContain("[terminal] app");
+    expect(ptyxis.detail).toContain("open Settings and pick it under Terminal");
     expect(
       row({ app: "wt", source: "installed", found: true, unsupported: "other" }).detail,
     ).toContain("in Windows' settings");
@@ -79,6 +79,16 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(unreadDesktop.detail).toContain("kitty, its fallback");
     expect(row({ app: "wezterm", source: "configured", found: false }).status).toBe("warn");
     expect(row({ app: null, source: null, found: false }).detail).toContain("No terminal");
+    // The way to choose one is the page's Settings, never a file to edit by hand.
+    for (const terminal of [
+      { app: "wezterm", source: "configured", found: false },
+      { app: null, source: null, found: false },
+      { app: "kitty", source: "installed", found: true, unread: "desktop" },
+    ]) {
+      const detail = row(terminal).detail;
+      expect(detail, JSON.stringify(terminal)).toContain("Settings");
+      expect(detail, JSON.stringify(terminal)).not.toContain("machine.toml");
+    }
     expect(row(null).status).toBe("skip");
   });
 

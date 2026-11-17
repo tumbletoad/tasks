@@ -246,6 +246,7 @@ export {
   EXPORTS_FOLDER,
   type ExportOptions,
   type ExportRecord,
+  type SecretFinding,
 } from "./bundle/export.ts";
 export {
   decodeExport,

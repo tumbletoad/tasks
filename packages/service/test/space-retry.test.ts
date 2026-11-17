@@ -7,6 +7,7 @@ import { createSpace, newId, StorageWorker, type Id } from "@tasks/storage";
 import { checkedDriver } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
+import { storageFailureBody } from "../src/hub/space-errors.ts";
 import { Timeout } from "../src/hub/wait.ts";
 import {
   registerSpaces,
@@ -170,10 +171,14 @@ describe("[A2.3.1.hub.space-retry] space open tries an unavailable space again, 
       expect.objectContaining({ entry: 0, state: "unavailable", reason: "open_failed" }),
     ]);
     expect(hung.closes()).toBe(1);
-    // Its worker still runs: no second worker opens the space beside it, and the person is told.
-    await expect(service.spaceManager.open(space.folder)).rejects.toMatchObject({
-      code: "SPACE_WRITER_TAKEN",
-    });
+    // Its worker still runs: no second worker opens the space beside it, and the person is told
+    // what is the case and what to do.
+    const refused = await service.spaceManager.open(space.folder).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string },
+    );
+    expect(refused).toMatchObject({ code: "SPACE_WRITER_TAKEN" });
+    expect(storageFailureBody(refused?.code).message).toMatch(/has not ended yet\. Try again/);
     expect(pool.started()).toBe(1);
     expect(service.spaces()[0]?.state).toBe("unavailable");
     // A second try while it still runs is refused the same way.

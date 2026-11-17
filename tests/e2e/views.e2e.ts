@@ -20,8 +20,8 @@ interface Added {
   readonly tasks: readonly { readonly id: string; readonly ref: string }[];
 }
 
-const asOf = async (world: World, ref: string): Promise<string> =>
-  ((await world.op(world.mira.id, "task.get", { task: ref })) as { as_of: string }).as_of;
+const asOf = async (world: World, ref: string, space = world.mira.id): Promise<string> =>
+  ((await world.op(space, "task.get", { task: ref })) as { as_of: string }).as_of;
 
 async function add(world: World, drafts: readonly Record<string, unknown>[]): Promise<string[]> {
   const added = (await world.op(world.mira.id, "task.add", { tasks: drafts })) as Added;
@@ -228,6 +228,86 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     await expect(checked.locator(`li[data-task="${report}"]`)).toBeVisible({ timeout: SLOW_MS });
     await page.screenshot({ path: test.info().outputPath("views-rechecked.png"), fullPage: true });
     expect(await violations(page)).toEqual([]);
+  });
+});
+
+/** Where each entry of the sidebar is, by its text: views, areas, projects and Settings. */
+async function sidebarPlaces(page: Page): Promise<Record<string, number>> {
+  return sidebar(page)
+    .locator("a")
+    .evaluateAll((links) =>
+      Object.fromEntries(
+        links.map((link) => [
+          // A counted view's name holds its count: its label alone keys it.
+          link.querySelector("span:not([aria-hidden])")?.textContent ??
+            link.getAttribute("aria-label") ??
+            link.textContent,
+          Math.round(link.getBoundingClientRect().top),
+        ]),
+      ),
+    );
+}
+
+test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps its place", () => {
+  test("an empty space shows every view, quieter, in its place; nothing moves when a task arrives or a view opens", async ({
+    page,
+    world,
+  }) => {
+    await open(page, world, "today", world.quiet);
+    const links = sidebar(page).locator("a[data-view]");
+    await expect(links).toHaveCount(VIEWS.length);
+    expect(
+      await links.evaluateAll((items) =>
+        items.map((item) => item.querySelector("span")?.textContent ?? ""),
+      ),
+    ).toEqual(VIEWS);
+    for (const view of ["inbox", "open", "waiting", "review", "backlog"]) {
+      const link = sidebar(page).locator(`a[data-view="${view}"]`);
+      await expect(link).toHaveAttribute("data-empty", "true");
+      await expect(link).toHaveAttribute("aria-label", /, no tasks$/);
+    }
+    await expect(sidebar(page).getByRole("link", { name: "Settings" })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("sidebar-empty-space.png") });
+    const empty = await sidebarPlaces(page);
+
+    // A task arrives in the Inbox and another view opens: the entries stay where they were.
+    const [first] = (
+      (await world.op(world.quiet.id, "task.add", {
+        tasks: [{ title: "First thought", inbox: true }],
+      })) as { tasks: { ref: string }[] }
+    ).tasks;
+    const inbox = sidebar(page).locator('a[data-view="inbox"]');
+    await expect(inbox).toHaveAttribute("aria-label", "Inbox, 1 task", { timeout: SLOW_MS });
+    await sidebar(page).locator('a[data-view="backlog"]').click();
+    await expect(page).toHaveURL(/\/backlog$/);
+    expect(await sidebarPlaces(page)).toEqual(empty);
+    // The space's views are left empty as they were found: the tests of a worker share it.
+    if (first !== undefined) {
+      await world.op(world.quiet.id, "task.finish", {
+        task: first.ref,
+        base: await asOf(world, first.ref, world.quiet.id),
+      });
+    }
+    await expect(inbox).toHaveAttribute("aria-label", "Inbox, no tasks", { timeout: SLOW_MS });
+    expect(await sidebarPlaces(page)).toEqual(empty);
+  });
+
+  test("an area's projects are always listed, so opening an area or a project moves no entry", async ({
+    page,
+    world,
+  }) => {
+    await open(page, world, "today");
+    const portal = sidebar(page).getByRole("link", { name: "Lumen portal", exact: true });
+    await expect(portal).toBeVisible({ timeout: SLOW_MS });
+    const before = await sidebarPlaces(page);
+    await sidebar(page).getByRole("link", { name: "Home", exact: true }).click();
+    await expect(page).toHaveURL(/\/area\//);
+    expect(await sidebarPlaces(page)).toEqual(before);
+    await portal.click();
+    await expect(page).toHaveURL(/\/project\//);
+    await expect(portal).toHaveAttribute("aria-current", "page");
+    expect(await sidebarPlaces(page)).toEqual(before);
+    await page.screenshot({ path: test.info().outputPath("sidebar-projects.png") });
   });
 });
 

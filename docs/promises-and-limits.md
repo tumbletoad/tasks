@@ -53,8 +53,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A restored copy cannot be edited until you make it the current copy.
 - Apart from that clean-up of scheduled backups, Tasks never deletes your data or a backup as a
   side effect of something else.
-- An export refuses text that matches a known kind of secret, such as an access token or a private
-  key, and says what kind it is and where, without printing it.
+- An export that holds text shaped like a known kind of secret, such as an access token or a
+  private key, is still written, and says what kind it is and where, without printing it.
 - A space is upgraded only after a backup of it has passed a trial restore. A failed upgrade
   leaves the old data readable.
 - An older version of Tasks never writes a newer data format.
@@ -154,7 +154,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
   export elsewhere. A lost disk then loses them with the space.
 - A space in a synced folder or on a network drive opens read-only, because a live database there
-  can be damaged. For a synced folder you confirm once that it is excluded from sync.
+  can be damaged. For a synced folder you confirm once that it is excluded from sync. When the folder
+  could not be checked, Tasks checks it again by itself for a few minutes and opens a local one for
+  changes.
 - An editor that had the configuration file open while Tasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a computer that several people sign in to, another person could serve a page at Tasks'

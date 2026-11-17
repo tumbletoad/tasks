@@ -420,6 +420,13 @@ export async function spaceCommand(
           io.stdout(
             "The bundle is a plain, unencrypted copy of the space. Keep it where only you can read it.\n",
           );
+          const secrets = (bundle["secrets"] ?? []) as { kind: string; place: string }[];
+          if (secrets.length > 0) {
+            const where = secrets.map((s) => `${s.kind.replaceAll("_", " ")} in ${s.place}`);
+            io.stdout(
+              `Warning: it holds text shaped like a secret (${where.join(", ")}). Whoever reads the bundle can use it.\n`,
+            );
+          }
         });
         return 0;
       }

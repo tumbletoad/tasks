@@ -57,6 +57,11 @@ export interface AdminExport {
   readonly seq: number;
   readonly size: number;
   readonly sha256: string;
+  /**
+   * The secret-shaped strings the bundle holds: each kind and place (`<table>.<column>` or `an
+   * attachment`) once. Words only, never text.
+   */
+  readonly secrets: readonly { readonly kind: string; readonly place: string }[];
 }
 
 export type AdminResult =
@@ -78,25 +83,17 @@ export type AdminResult =
       readonly failed: readonly string[];
     };
 
-/** Where an export's secret scan found a secret-shaped string: words only, never text. */
-export interface SecretPlace {
-  readonly kind: string;
-  readonly place: string;
-}
-
 export type AdminReply =
   | { readonly ok: true; readonly result: AdminResult }
-  | { readonly ok: false; readonly code?: string; readonly secret?: SecretPlace };
+  | { readonly ok: false; readonly code?: string };
 
 /** A job that failed: its storage code, which maps to an error body (A3 3.5). */
 export class AdminFailed extends Error {
   override readonly name = "AdminFailed";
   readonly code: string | undefined;
-  readonly secret: SecretPlace | undefined;
-  constructor(code: string | undefined, secret?: SecretPlace) {
+  constructor(code: string | undefined) {
     super("The space's storage work failed");
     this.code = code;
-    this.secret = secret;
   }
 }
 
@@ -110,7 +107,7 @@ export function runAdmin(job: AdminJob): Promise<AdminResult> {
     worker.once("message", (reply: AdminReply) => {
       settled = true;
       if (reply.ok) resolve(reply.result);
-      else reject(new AdminFailed(reply.code, reply.secret));
+      else reject(new AdminFailed(reply.code));
       void worker.terminate();
     });
     worker.once("error", () => {

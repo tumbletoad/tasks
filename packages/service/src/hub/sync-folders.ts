@@ -38,7 +38,8 @@
 // only for a name that is not there, so a look that failed, a step that stopped because it cannot
 // see (`unseen()`), a step that never ran, a time-out and a fault all leave a step not done, and a
 // folder with any step not done is `unchecked`: served as a synced folder is, read-only until the
-// person confirms it is local and excluded from sync. A step never catches a look's failure and
+// person confirms it is local and excluded from sync, or a later check sees it is (spaces.ts
+// #recheck). A step never catches a look's failure and
 // never falls back to the path as given or to "none": a new step either completes on what it read
 // or leaves the folder unchecked. Signals found before a step stopped still count.
 //

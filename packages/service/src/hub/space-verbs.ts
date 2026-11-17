@@ -192,15 +192,7 @@ const EXPORT_MODES = ["backup", "fork", "transfer"] as const;
 /** A storage failure, or a worker's code, as A3's error body. */
 function failure(error: unknown): AppError {
   if (error instanceof AppError) return error;
-  if (error instanceof AdminFailed) {
-    const body = storageFailureBody(error.code);
-    // An export's secret scan says what kind of secret it found and where: words, never text.
-    return new AppError(
-      error.secret === undefined
-        ? body
-        : { ...body, data: { ...body.data, secret: { ...error.secret } } },
-    );
-  }
+  if (error instanceof AdminFailed) return new AppError(storageFailureBody(error.code));
   if (error instanceof StorageError) return new AppError(storageFailureBody(error.code));
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
 }

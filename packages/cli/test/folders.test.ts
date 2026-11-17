@@ -1,10 +1,10 @@
 // Folders at the command line: `tasks add` and `tasks set` give a task its folder with --folder,
 // a folder relative to the working one, --here and folder=, and clear it; `tasks area` makes a
-// project with its folder, and with --create makes the folder first, removed after a refusal and
-// kept after a lost reply; one undo takes the whole act back; `tasks area list` shows the folders;
-// the old --place and place= name --folder. The CLI in
-// this process against a service in this process; fixture text and temporary folders only.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// project with its folder, and with --create makes the folder first, as the person's mkdir would,
+// removed after a refusal and kept after a lost reply; one undo takes the whole act back; `tasks
+// area list` shows the folders; the old --place and place= name --folder. The CLI in this process
+// against a service in this process; fixture text and temporary folders only.
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { LocalError } from "@tasks/bridge/protocol";
@@ -80,6 +80,10 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
       group: { kind: "project", name: "Fixture fresh", folder: ends("fresh") },
     });
     expect(existsSync(made)).toBe(true);
+    // An ordinary folder for the person's work, as their own mkdir makes it: not user-only.
+    const plain = join(empty, "plain");
+    mkdirSync(plain);
+    expect(statSync(made).mode & 0o777).toBe(statSync(plain).mode & 0o777);
     const listed = await tasks(["area", "list"], w.root);
     expect(listed.stdout).toMatch(/\n {2}Fixture fresh \(0\) {2}.*fresh\n/u);
 

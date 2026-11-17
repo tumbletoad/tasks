@@ -74,7 +74,8 @@ export async function folderVerb(
         const folder = holder["folder"];
         if (!create) return;
         if (typeof folder !== "string") throw new UsageError("--create needs --folder or --here");
-        made = makeDir(expandHome(folder, io), 0o700, { platform: io.platform });
+        // A folder for the person's work, as their own mkdir would make it.
+        made = makeDir(expandHome(folder, io), "umask", { platform: io.platform });
       },
       failed: (body) => {
         if (body.data?.["retryable"] === true) call.uncertain = true;
