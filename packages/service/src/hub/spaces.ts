@@ -129,6 +129,7 @@ import {
 import {
   checkFolder,
   folderMessage,
+  isUnchecked,
   UNCHECKED,
   type FolderCheck,
   type SyncHost,
@@ -241,11 +242,23 @@ export interface SpaceManagerOptions {
    */
   readonly syncHost?: SyncHost;
   /**
+   * When a folder the check could not see is checked again, each delay after the last look.
+   * Default: RECHECK_DELAYS_MS.
+   */
+  readonly recheckDelaysMs?: readonly number[];
+  /**
    * This build, which a failed migration's record names: another build tries the migration again
    * (A1 3.17). Default: BUILD. Tests pass others.
    */
   readonly build?: BuildIdentity;
 }
+
+/**
+ * A folder check that could not see (a slow start of the system, a tool that did not answer) is
+ * tried again by itself after these delays, so a local folder does not stay read-only until the
+ * person acts.
+ */
+export const RECHECK_DELAYS_MS: readonly number[] = [5_000, 20_000, 60_000, 300_000];
 
 /** How a person has a failed migration tried again now (A1 3.17): `space/open`'s option. */
 export const RETRY_MIGRATION = `${CLI_NAME} space open <folder> --retry-migration`;
@@ -378,6 +391,8 @@ class Hosted {
   projection: ProjectionRunner | undefined;
   /** The hourly check whether the next daily backup is due. */
   daily: NodeJS.Timeout | undefined;
+  /** The next look at a folder the check could not see (#recheck). */
+  recheck: NodeJS.Timeout | undefined;
   /** The maintenance run in progress. */
   maintaining: Promise<void> | undefined;
   /** Whether the space's backups work, as its upkeep and the person's backups last found. */
@@ -1356,6 +1371,7 @@ export class SpaceManager {
       await this.#learnName(space);
       space.message = reason === "check_failed" ? CHECK_FAILED : folderMessage(check);
       this.#readOnly(space, reason, undefined, { ms: Math.round(performance.now() - t0) });
+      if (reason === "synced_folder" && isUnchecked(check)) this.#recheck(space, 0);
       return true;
     } catch (error) {
       await this.#release(space);
@@ -1602,6 +1618,54 @@ export class SpaceManager {
     });
   }
 
+  /**
+   * A space read-only because its folder could not be checked: the check runs again after the
+   * `n`th delay. A local folder opens the space again for changes; a synced or network one keeps it
+   * read-only, now in the words of what was found; a folder still unseen waits for the next delay.
+   */
+  #recheck(space: Hosted, n: number): void {
+    const delay = (this.#options.recheckDelaysMs ?? RECHECK_DELAYS_MS)[n];
+    if (delay === undefined) return;
+    const attempt = space.attempt;
+    const current = (): boolean =>
+      space.attempt === attempt &&
+      !space.stopping &&
+      !this.#draining &&
+      space.state === "read_only" &&
+      space.reason === "synced_folder";
+    clearTimeout(space.recheck);
+    space.recheck = setTimeout(() => {
+      space.recheck = undefined;
+      void (async () => {
+        if (!current()) return;
+        const check = await this.checkFolder(space.folder);
+        if (!current()) return;
+        if (check.verdict === "local") {
+          this.#options.log.log("space.folder_rechecked", { entry: space.index, verdict: "local" });
+          await this.#exclusive(space, async () => {
+            await this.#close(space, this.#closeMs);
+            if (space.stuck || this.#isDraining()) return;
+            space.reset();
+            await this.#begin(space);
+          });
+        } else if (isUnchecked(check)) {
+          this.#recheck(space, n + 1);
+        } else {
+          this.#options.log.log("space.folder_rechecked", {
+            entry: space.index,
+            verdict: check.verdict,
+          });
+          space.check = check;
+          space.message = folderMessage(check);
+          if (check.verdict === "network") this.#readOnly(space, "network_filesystem", undefined);
+        }
+      })().catch(() => {
+        // A change of the space in progress: the person's own step decides now.
+      });
+    }, delay);
+    space.recheck.unref();
+  }
+
   #unavailable(space: Hosted, error: unknown): void {
     const reason = reasonFor(error);
     const code = codeOf(error);
@@ -1774,6 +1838,8 @@ export class SpaceManager {
     space.projection = undefined;
     clearInterval(space.daily);
     space.daily = undefined;
+    clearTimeout(space.recheck);
+    space.recheck = undefined;
     const work = (async () => {
       // The projection first: its batch in progress asks the writer for its bookkeeping, and its
       // reader holds the database open (a restore in place swaps the folder after this).

@@ -304,7 +304,7 @@ describe("[A1.5.sync.read-only] the service serves a synced or network space rea
   );
 
   test(
-    "a folder the check cannot see is served read-only, confirmable, never writable on its own",
+    "a folder the check never sees is served read-only, confirmable, never writable on its own",
     async () => {
       const world = setUp("syuc");
       const folder = join(world.root, "spaces", "mira");
@@ -327,6 +327,100 @@ describe("[A1.5.sync.read-only] the service serves a synced or network space rea
       // The person's word opens it, as for a synced folder.
       const confirmed = await call(s, "space/open", { path: folder, excluded: true });
       expect(confirmed["space"]).toMatchObject({ state: "open" });
+    },
+    LONG,
+  );
+});
+
+/**
+ * A host whose check fails its first `blind` rounds, as a slow start of the system would, then
+ * sees. A round begins with a look at the space's folder itself.
+ */
+function seesAfter(world: World, folder: string, blind: number, facts: SyncFacts = {}): SyncHost {
+  const host = fixtureHost(world.root, facts);
+  let rounds = 0;
+  return {
+    ...host,
+    kind: (path) => {
+      if (path === folder) rounds += 1;
+      return rounds <= blind ? Promise.reject(new Error("a stand-in fault")) : host.kind(path);
+    },
+  };
+}
+
+async function until(what: string, ok: () => boolean, ms = 60_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+describe("[A1.5.sync.recheck] a folder the check could not see is checked again by itself", () => {
+  test(
+    "a check that fails twice and then sees a local folder opens the space for changes",
+    async () => {
+      const world = setUp("syrl");
+      const folder = join(world.root, "spaces", "mira");
+      const created = await existingSpace(world, folder);
+      registerSpaces(world.home, [folder]);
+      const service = await startService({
+        env: serviceEnv(world.home),
+        identity: () => ({ root: false, elevated: false, package: null }),
+        maintenance: false,
+        say: () => undefined,
+        spaceOptions: { syncHost: seesAfter(world, folder, 2), recheckDelaysMs: [50, 50, 50] },
+      });
+      running.push(service);
+      await service.spacesSettled;
+      await until("the space to open", () => service.spaces()[0]?.state === "open");
+      const s = await user(world, service);
+      expect(await addTask(s, created.space.spaceId)).toMatchObject({
+        tasks: [{ result: "created" }],
+      });
+      expect(service.spaces()[0]?.message).toBeUndefined();
+      expect(readLog(world.home).filter((e) => e["ev"] === "space.folder_rechecked")).toMatchObject(
+        [{ verdict: "local" }],
+      );
+      // Nothing was confirmed on the person's behalf.
+      expect(
+        readSpaceSettings(stateOf(world.home), created.space.spaceId).syncedFolderConfirmed,
+      ).toBeUndefined();
+    },
+    LONG,
+  );
+
+  test(
+    "a check that fails and then sees a synced folder keeps the space read-only, in its words",
+    async () => {
+      const world = setUp("syrc");
+      mkdirSync(join(world.root, "Sync", ".stfolder"), { recursive: true });
+      const folder = join(world.root, "Sync", "spaces", "mira");
+      const created = await existingSpace(world, folder);
+      registerSpaces(world.home, [folder]);
+      const service = await startService({
+        env: serviceEnv(world.home),
+        identity: () => ({ root: false, elevated: false, package: null }),
+        maintenance: false,
+        say: () => undefined,
+        spaceOptions: { syncHost: seesAfter(world, folder, 1), recheckDelaysMs: [50, 50] },
+      });
+      running.push(service);
+      await service.spacesSettled;
+      await until("the recheck", () => service.spaces()[0]?.message === SYNCTHING);
+      expect(service.spaces()[0]).toMatchObject({
+        state: "read_only",
+        reason: "synced_folder",
+        folder_check: { verdict: "synced", provider: "syncthing" },
+      });
+      // No later look changes it.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(service.spaces()[0]).toMatchObject({ state: "read_only", reason: "synced_folder" });
+      const s = await user(world, service);
+      expect(await rejected(addTask(s, created.space.spaceId))).toMatchObject({
+        code: "read_only",
+        message: SYNCTHING,
+      });
     },
     LONG,
   );

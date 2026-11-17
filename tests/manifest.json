@@ -905,6 +905,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.sync.recheck",
+      "title": "A space read-only because its folder could not be checked is checked again by itself: a folder then seen local opens for changes with nothing confirmed for the person, and one then seen synced stays read-only in the words of what was found",
+      "source": "A1 3.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.sync.read-only",
       "title": "The service serves a space in a synced folder read-only with A1's words until the person confirms the folder is excluded, per machine and per path, and kept across a restart; a network file system refuses a new space, is read-only when found and takes no confirmation; writes are refused with the same words",
       "source": "A1 3.2, A1 5",
