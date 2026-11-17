@@ -3,7 +3,7 @@
 // kept for this computer, the same in every space and browser here. Only what works is here. The
 // agent apps are the one exception: switches that change other apps' settings wait for Apply.
 import { useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
   Heading,
@@ -79,12 +79,31 @@ export function SettingsPage() {
   );
 }
 
-/** The agent apps, for the tab's space: what a new entry names. */
+/**
+ * The agent apps, for the tab's space: what a new entry names. When what Open offers changed, the
+ * tab takes a fresh snapshot as the person leaves Settings, so the tiles show it and this page
+ * keeps its place meanwhile.
+ */
 function Apps() {
   const { space } = useParams({ strict: false });
   const refresh = useRefreshSession();
+  const changed = useRef(false);
+  useEffect(
+    () => () => {
+      if (changed.current) refresh();
+    },
+    [refresh],
+  );
   if (space === undefined) return null;
-  return <AgentApps space={space} onOpenChanged={refresh} headingClass={styles.heading} />;
+  return (
+    <AgentApps
+      space={space}
+      onOpenChanged={() => {
+        changed.current = true;
+      }}
+      headingClass={styles.heading}
+    />
+  );
 }
 
 function Appearance() {

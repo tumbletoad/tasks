@@ -59,8 +59,9 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
   let json: ServiceJson | undefined;
   const sessions: RpcSession[] = [];
   try {
-    const home = join(temp.root, "h");
+    // The data folder in the scratch home, where an install puts it, so the page shows it as ~.
     const agentHome = join(temp.root, "u");
+    const home = join(agentHome, ".tasks");
     mkdirSync(join(agentHome, ".claude"), { recursive: true });
     mkdirSync(join(agentHome, ".codex"), { recursive: true });
     const fakes = installFakeAgents(join(temp.root, "fakes"), agentHome);

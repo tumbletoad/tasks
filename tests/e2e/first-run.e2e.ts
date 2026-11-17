@@ -104,7 +104,6 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
     const detail = changes(page).locator("pre");
     await expect(detail).toContainText("[[instance]]");
     await expect(detail).toContainText("mcp add");
-    await page.screenshot({ path: test.info().outputPath("first-start-apps-1440.png") });
 
     await page.getByRole("button", { name: "Apply" }).click();
     await showsSpace(page, "Studio");
@@ -126,7 +125,8 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
     await expect(row.locator('[data-part="tile"]')).toHaveAccessibleName("Open in Claude Code", {
       timeout: SLOW_MS,
     });
-    await expect(row.getByText(/^ST-1$/u)).toBeVisible();
+    // The prefix the person chose numbers its tasks.
+    await expect(row).toHaveAttribute("data-task", "ST-1");
   });
 });
 
@@ -254,7 +254,7 @@ test.describe("[A7.3.12.m5-12.e2e.screens] The first start and the agent apps in
           await nameField(page).fill(space);
           await page.getByRole("button", { name: "Make the space" }).click();
           await expect(appsHeading(page)).toBeVisible({ timeout: SLOW_MS });
-          await page.getByRole("button", { name: "Show exactly what is written" }).click();
+          // The details name the fake agents' own paths in this run's scratch folder: not shot.
           await shoot(page, `start-apps-${theme}`, "main");
           await page.getByRole("button", { name: "Skip for now" }).click();
           await showsSpace(page, space);
