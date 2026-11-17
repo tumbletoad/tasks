@@ -10,7 +10,7 @@ import type { SpawnRequest, SpawnedProcess } from "../src/terminals/accept.ts";
 
 const WINDOWS_FOLDER = "C:\\Users\\mira\\Work\\R&D #2 (50%+) Café";
 const LINUX_FOLDER = "/home/mira/work/R&D #2 (50%+) Café";
-const BRIEF = 'TT Tasks task M-14 (launch L7KQ21).\nLook at A & B, 100% + #3.';
+const BRIEF = "TT Tasks task M-14 (launch L7KQ21).\nLook at A & B, 100% + #3.";
 
 const Q =
   "TT%20Tasks%20task%20M-14%20%28launch%20L7KQ21%29.%0ALook%20at%20A%20%26%20B%2C%20100%25%20%2B%20%233.";
