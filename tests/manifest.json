@@ -209,6 +209,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.codex-app-server.fixture-content",
+      "title": "The recorded codex app-server exchanges hold only what their sanitiser writes (protocol words, synthetic IDs, fixture paths, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, account, machine name, prompts, answers and ticket, and the check refuses any other value",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.7.m0-bridge-bench.self-test",
       "title": "The M0 bridge harness runs B01 to B07 at a tiny size, reads process memory from outside, writes a result file per row and judges none of them",
       "source": "A7 3.7 (M0.06), A2 3.7.7",
