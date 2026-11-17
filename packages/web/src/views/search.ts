@@ -5,7 +5,8 @@
 // tasks are the live store's anyway; finished ones come a page at a time with "Show more".
 //
 // A row keeps the group it was found in. A task checked off from the results stays under To do,
-// checked, until the person refreshes: results do not move under the pointer.
+// checked, until the person refreshes: results do not move under the pointer. A search that sorts
+// by effort (`sort:effort`) splits To do into one group per effort, in the service's order.
 import type { Client } from "@tasks/contracts/generated/client.ts";
 import type { Group } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
@@ -186,6 +187,7 @@ const FIELDS_OF: Readonly<Record<string, readonly string[]>> = {
   pri: ["priority"],
   priority: ["priority"],
   effort: ["effort"],
+  sort: ["effort"],
   due: ["due"],
   area: ["area", "grouping"],
   project: ["project", "grouping"],
@@ -240,41 +242,76 @@ export function searchFields(q: string): readonly string[] {
   return [...fields];
 }
 
+/** Whether the query sorts by effort: its open results are then grouped by effort. */
+export function sortsByEffort(q: string): boolean {
+  return termsOf(q).some((term) => term.filter && /^sort:-?effort$/iu.test(term.text));
+}
+
 const LABEL: Readonly<Record<Found, MessageId>> = {
   open: "search.tasks",
   finished: "search.completed",
 };
 
+interface Shown {
+  readonly key: string;
+  readonly label: MessageId;
+  readonly labelValues?: Readonly<Record<string, string>>;
+  readonly tasks: TaskRow[];
+}
+
 /**
- * The results as the list's groups: To do, then Completed, each hidden when empty. A row the live
- * store holds is shown with the store's row, which carries the person's edits at once; another
- * with the search's row, which the feed keeps current. `held` is the expanded task, kept at its
- * place when a refresh no longer finds it.
+ * The results as the list's groups: To do, then Completed, each hidden when empty. With
+ * `byEffort`, To do is one group per effort, as the search found it, in the search's order. A row
+ * the live store holds is shown with the store's row, which carries the person's edits at once;
+ * another with the search's row, which the feed keeps current. `held` is the expanded task, kept at
+ * its place when a refresh no longer finds it.
  */
 export function searchGroups(
   open: readonly FoundRow[],
   finished: readonly FoundRow[],
   live: ReadonlyMap<string, TaskRow>,
   held?: HeldRow,
+  byEffort = false,
 ): Group[] {
+  const shown = (row: FoundRow): TaskRow => live.get(row.id) ?? row;
+  const groups: Shown[] = [];
+  for (const row of open) {
+    const key = byEffort ? `s:open:${row.effort ?? ""}` : "s:open";
+    let last = groups.at(-1);
+    if (last?.key !== key) {
+      last = !byEffort
+        ? { key, label: LABEL.open, tasks: [] }
+        : row.effort === undefined
+          ? { key, label: "search.noEffort", tasks: [] }
+          : { key, label: "search.effort", labelValues: { effort: row.effort }, tasks: [] };
+      groups.push(last);
+    }
+    last.tasks.push(shown(row));
+  }
   // The two searches are separate snapshots, so one task can be in both (checked off from the
   // results, then Completed read again): it stays where the person saw it first.
   const inOpen = new Set(open.map((row) => row.id));
-  const lists: Record<Found, TaskRow[]> = {
-    open: open.map((row) => live.get(row.id) ?? row),
-    finished: finished.filter((row) => !inOpen.has(row.id)).map((row) => live.get(row.id) ?? row),
+  const done: Shown = {
+    key: "s:finished",
+    label: LABEL.finished,
+    tasks: finished.filter((row) => !inOpen.has(row.id)).map(shown),
   };
+  groups.push(done);
   if (held !== undefined && ![...open, ...finished].some((row) => row.id === held.task.id)) {
-    const into: Found = held.group === "s:finished" ? "finished" : "open";
-    const list = lists[into];
-    list.splice(Math.min(held.index ?? 0, list.length), 0, held.task);
+    let into = groups.find((group) => group.key === held.group);
+    if (into === undefined) {
+      into = groups[0] === done ? { key: "s:open", label: LABEL.open, tasks: [] } : groups[0];
+      if (into !== undefined && !groups.includes(into)) groups.unshift(into);
+    }
+    into?.tasks.splice(Math.min(held.index ?? 0, into.tasks.length), 0, held.task);
   }
-  return (["open", "finished"] as const)
-    .filter((found) => lists[found].length > 0)
-    .map((found): Group => ({
-      key: `s:${found}`,
+  return groups
+    .filter((group) => group.tasks.length > 0)
+    .map((group): Group => ({
+      key: group.key,
       kind: "section",
-      label: LABEL[found],
-      sections: [{ key: `s:${found}`, tasks: lists[found] }],
+      label: group.label,
+      ...(group.labelValues === undefined ? {} : { labelValues: group.labelValues }),
+      sections: [{ key: group.key, tasks: group.tasks }],
     }));
 }

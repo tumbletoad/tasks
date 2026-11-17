@@ -245,6 +245,34 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
   });
 });
 
+test.describe("[A7.3.12.e2e.effort-sort] A search sorted by effort shows quick work first, one group per effort", () => {
+  test("sort:effort groups To do by the scale's order, tasks without an effort last; sort:-effort turns it round", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("bramble");
+    await addTasks(world, [
+      { title: `Rebuild the ${word} shed`, area: "home", effort: "L" },
+      { title: `Oil the ${word} gate`, area: "home", effort: "S" },
+      { title: `Think about ${word} paths`, area: "home" },
+      { title: `Paint the ${word} fence`, area: "home", effort: "M" },
+    ]);
+    await openSearch(page, world, `${word} sort:effort`);
+    const headings = page.locator("main section[aria-label]");
+    await expect(headings).toHaveCount(4);
+    expect(
+      await headings.evaluateAll((all) => all.map((s) => s.getAttribute("aria-label"))),
+    ).toEqual(["Effort S", "Effort M", "Effort L", "No effort set"]);
+    await expect(titles(page, "Effort S")).toHaveText([`Oil the ${word} gate`]);
+    await expect(titles(page, "No effort set")).toHaveText([`Think about ${word} paths`]);
+    await page.screenshot({ path: test.info().outputPath("search-effort-1440.png") });
+
+    await searching(page).fill(`${word} sort:-effort`);
+    await expect(headings.first()).toHaveAttribute("aria-label", "Effort L");
+    await expect(headings.last()).toHaveAttribute("aria-label", "No effort set");
+  });
+});
+
 test.describe("[A7.3.12.m5-10.e2e.changes] A result that changes while the list is open stays put and offers a refresh", () => {
   test("a new match and a task that stops matching show only after Refresh; an edit shows in place", async ({
     page,

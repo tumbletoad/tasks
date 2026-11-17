@@ -13,6 +13,7 @@ import {
   searchFields,
   searchGroups,
   searchSource,
+  sortsByEffort,
   type FoundRow,
   type Search,
   type SearchRow,
@@ -189,6 +190,53 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(isUnindexed(Object.assign(new Error("busy"), { code: "space_unavailable" }))).toBe(
       false,
     );
+  });
+
+  test("a search sorted by effort shows To do as one group per effort, in the search's order", () => {
+    expect(sortsByEffort("fence sort:effort")).toBe(true);
+    expect(sortsByEffort("sort:-Effort")).toBe(true);
+    expect(sortsByEffort("fence effort:S")).toBe(false);
+    expect(sortsByEffort('"sort:effort"')).toBe(false);
+    const open = (
+      [
+        [1, "S"],
+        [2, "S"],
+        [3, "L"],
+        [4, undefined],
+      ] as const
+    ).map(
+      ([n, effort]) =>
+        rowOf(taskRow(n, effort === undefined ? {} : { effort }), "open") as FoundRow,
+    );
+    const done = [rowOf(taskRow(5, { lifecycle: "completed", effort: "M" }), "finished")];
+    // A live edit of the effort shows on the row; the row stays in the group it was found in.
+    const live = new Map<string, TaskRow>([
+      [open[0]?.id ?? "", { ...(open[0] as TaskRow), effort: "L", version: 2 }],
+    ]);
+    const groups = searchGroups(open, done as FoundRow[], live, undefined, true);
+    expect(groups.map((g) => [g.label, g.labelValues])).toEqual([
+      ["search.effort", { effort: "S" }],
+      ["search.effort", { effort: "L" }],
+      ["search.noEffort", undefined],
+      ["search.completed", undefined],
+    ]);
+    expect(groups.map((g) => g.sections[0]?.tasks.map((t) => t.ref))).toEqual([
+      ["M-1", "M-2"],
+      ["M-3"],
+      ["M-4"],
+      ["M-5"],
+    ]);
+    expect(groups[0]?.sections[0]?.tasks[0]?.effort).toBe("L");
+    // The expanded task a refresh no longer finds stays in its effort's group.
+    const kept = searchGroups(
+      [open[0], open[2], open[3]] as FoundRow[],
+      [],
+      new Map(),
+      { task: open[1] as TaskRow, group: groups[0]?.key ?? "", index: 1 },
+      true,
+    );
+    expect(kept[0]?.sections[0]?.tasks.map((t) => t.ref)).toEqual(["M-1", "M-2"]);
+    expect(searchFields("fence sort:effort")).toEqual(["effort"]);
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {

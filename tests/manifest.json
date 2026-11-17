@@ -3879,6 +3879,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.e2e.effort-sort",
+      "title": "In Chromium and Firefox against the real service: a search with sort:effort shows To do as one group per effort in the scale's order with tasks without an effort last, and sort:-effort turns the order round",
+      "source": "A5 3.13",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.search",
       "title": "In Chromium and Firefox against the real service: / starts a search and the field says so, results are the one list (expand into the URL, check-off with the toast and Ctrl+Z, the row staying checked after its hold), finished tasks are a group of their own, a search with words offers to add it as a task, and Escape returns to the view with the draft as it was",
       "source": "A5 3.13, A7 3.12 M5.10",
@@ -4240,7 +4248,7 @@
     },
     {
       "id": "A5.3.13.web.search",
-      "title": "Search results: every open match read at once and finished ones a page at a time by the service's cursor, an expired cursor starting the search again with one page more, two groups that keep their rows (the live row when the store holds it), the expanded task kept at its place, the filters alone for a space without the word index, and the fields that make a change offer a refresh",
+      "title": "Search results: every open match read at once and finished ones a page at a time by the service's cursor, an expired cursor starting the search again with one page more, two groups that keep their rows (the live row when the store holds it), the expanded task kept at its place, the filters alone for a space without the word index, To do split into one group per effort for a search sorted by effort, and the fields that make a change offer a refresh",
       "source": "A5 3.13, A3 3.9.5, A7 3.12 M5.10",
       "owner": "M5",
       "kind": "ci",
