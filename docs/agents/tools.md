@@ -1959,6 +1959,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].result` | "created" \| "exists" \| "proposed" | yes | What happened to the draft |
 | `follow_ups[].ref` | string | no | Task reference |
 | `follow_ups[].title` | string | yes | Title |
+| `warnings` | string[] | no | Warnings, one sentence each |
 | `proposal` | string | no | Proposal ID |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |

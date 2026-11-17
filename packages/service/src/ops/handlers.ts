@@ -1900,9 +1900,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const ids = named.list.map(() => newId("t"));
     const folders = await draftFolders(call, named.list, ids, at);
     const agent = call.principal.actorKind !== "human";
-    // task.finish's result has no warnings (A3 3.4.8): a follow-up's source_differs stays in the
-    // receipt's operation results, and one that an archived project's folder leaves in no project
-    // is not announced.
     const sourcePaths = new Map<number, string>();
     const follow = folders.list;
     const firsts: number[] = [];
@@ -1921,8 +1918,16 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, sent, {
         ...(own > 1 ? { wrapUp: 1 } : {}),
         inserted: { at: own, count: groups.length },
+        warnings: folders.warnings,
       }),
     );
+    const outcomes = follow.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
+    // A matched follow-up takes no folder, so its folder's warning does not apply.
+    const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
+    const warnings = [
+      ...differsWarnings(result, sourcePaths),
+      ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
+    ];
     const done = opAt(result, 0);
     // Whether the call finished or wrapped up the task, from the operations' stored results; its
     // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a
@@ -1950,14 +1955,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
               : 0
             : facts.changes.filter((c) => c.entity === "learnings" && c.field === null).length,
       // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
-      follow_ups: follow.map((draft, k) => {
-        const outcome = draftOutcome(result, firsts[k] ?? 0);
-        return {
-          result: outcome.result,
-          ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
-          title: String(draft["title"]),
-        };
-      }),
+      follow_ups: outcomes.map((outcome, k) => ({
+        result: outcome.result,
+        ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
+        title: String(follow[k]?.["title"]),
+      })),
+      ...(warnings.length === 0 ? {} : { warnings }),
       as_of: result.as_of,
       ...replayed(result),
     };

@@ -719,6 +719,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
             (f, k) =>
               `follow_ups.${String(k)}: ${f.result}${f.ref === undefined ? "" : ` ${f.ref}`}`,
           ),
+          ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),
       ],
       more: `Read them with ${getTask}.`,

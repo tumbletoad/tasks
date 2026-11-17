@@ -19,6 +19,7 @@ import {
   TaskRef,
   TaskRefInput,
   USER_LIMITS,
+  Warnings,
   WrapState,
 } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
@@ -58,6 +59,7 @@ export const TaskFinishResult = z.strictObject({
       }),
     )
     .describe("One row per follow-up draft"),
+  warnings: Warnings.optional(),
   proposal: ProposalId.optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),

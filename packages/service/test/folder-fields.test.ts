@@ -9,7 +9,9 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   GroupManageResult,
+  HistoryUndoResult,
   TaskAddResult,
+  TaskFinishResult,
   TaskGetResult,
   TaskSearchResult,
   TaskUpdateResult,
@@ -165,6 +167,23 @@ describe("[A3.3.4.folders.agent] an agent's task in the folder it works in", () 
     expect(await filed(added.tasks[0]?.ref ?? "")).toEqual({
       folder: { path: ends("pages"), of: "task" },
     });
+
+    // A follow-up from the same folder says so too.
+    const read = TaskGetResult.parse(
+      await call(user, "task.get", { task: added.tasks[0]?.ref ?? "" }),
+    );
+    const done = TaskFinishResult.parse(
+      await call(agent, "task.finish", {
+        task: added.tasks[0]?.ref ?? "",
+        outcome: "Fixture outcome.",
+        follow_ups: [{ title: "Fixture old follow-up", folder: "cwd" }],
+        cwd: folder("old-site", "pages"),
+        base: read.as_of,
+        request_id: rid(),
+      }),
+    );
+    expect(done.warnings).toEqual([expect.stringMatching(/^follow_ups\.0\.folder:.*archived/u)]);
+    expect((await filed(done.follow_ups[0]?.ref ?? "")).project).toBeUndefined();
   });
 
   test("a draft that names its group keeps it, and its folder", async () => {
@@ -213,7 +232,7 @@ describe("[A3.3.4.folders.agent] an agent's task in the folder it works in", () 
 });
 
 describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
-  test("a project's folder is set to cwd and cleared, each one undo step, and listed", async () => {
+  test("an agent sets a project's folder to cwd, it is listed, and the agent clears it", async () => {
     const at = folder("billing");
     await call(agent, "group.manage", {
       action: "create",
@@ -250,6 +269,29 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
     expect(
       after.areas.flatMap((a) => a.projects).find((p) => p.name === "Billing")?.folder,
     ).toBeUndefined();
+  });
+
+  test("the person's set_folder is one undo step", async () => {
+    const at = folder("ledger");
+    await call(user, "group.manage", {
+      action: "create",
+      path: "Client work/Ledger",
+      request_id: rid(),
+    });
+    const projectFolder = async () =>
+      GroupManageResult.parse(await call(user, "group.manage", { action: "list" }))
+        .areas.flatMap((a) => a.projects)
+        .find((p) => p.name === "Ledger")?.folder;
+    await call(user, "group.manage", {
+      action: "set_folder",
+      path: "Client work/Ledger",
+      folder: at,
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(await projectFolder()).toEqual(ends("ledger"));
+    HistoryUndoResult.parse(await call(user, "history.undo", { request_id: rid() }));
+    expect(await projectFolder()).toBeUndefined();
   });
 
   test("creating a project with a folder another project has answers exists with that project", async () => {
