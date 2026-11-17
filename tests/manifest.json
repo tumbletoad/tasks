@@ -1105,6 +1105,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.15.importer.folders",
+      "title": "The import gives folders on the machine that applies it: a task's first path that is a folder there becomes its folder, a project gets the one task folder that holds all its tasks' folders and that task none of its own, a project without one or whose folder another live project has gets none and its tasks keep theirs, and a path that is not a folder there gives none with a warning; the folders come and go with the import's apply and undo, the same input writes nothing, a folder the person changed stays theirs, one only the prototype changed follows it, and a space imported before folders gets them once",
+      "source": "A7 3.15.3, A7 3.15.6",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.15.importer.apply",
       "title": "The apply of a dry run writes the fixture as one commit of the user with the import actor as author: tasks, aliases, reused and new areas, the prototype's instants, the exchange and its items, behind a verified pre-import backup; applying twice applies once; the same input again writes nothing; the token the writer recomputes in its transaction is the dry run's and another is refused; a space or a prototype that changed since the dry run, a failed backup and a full disk write nothing; and of two imports at once one applies",
       "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.14, A1 3.18",

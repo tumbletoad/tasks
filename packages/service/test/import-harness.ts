@@ -73,6 +73,8 @@ export interface ImportWorld {
   /** The person's own change, through the writer, on the space as it is now. */
   edit(ops: Operation[]): WriteResult;
   rows(sql: string, params?: Record<string, string | number | null>): Row[];
+  /** A statement on the writer's own connection, outside any write: to make a past state. */
+  sql(sql: string, params?: Record<string, string | number | null>): void;
   /** The space's last seq. */
   seq(): number;
   close(): void;
@@ -232,6 +234,9 @@ export async function attachWorld(
         ops,
       }),
     rows: (sql, params = {}) => conn.prepare(sql).all(params),
+    sql: (sql, params = {}) => {
+      opened.conn.prepare(sql).run(params);
+    },
     seq: () => writer.asOf().seq,
     close: () => {
       conn.close();

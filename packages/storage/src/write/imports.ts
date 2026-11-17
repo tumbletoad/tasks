@@ -228,9 +228,7 @@ export function planImportRevert(
       .all({ id })
       .some((row) => !going.has(`tasks|${String(row["id"])}`));
   const made = new Set(
-    plan.inversions
-      .filter((i) => i.kind === "tombstone" && i.entity === "projects")
-      .map((i) => i.id),
+    changes.filter((c) => c.action === "create" && c.entity === "projects").map((c) => c.entityId),
   );
   keep("projects", holds);
   // A project the import made that stays keeps the folder the import gave it with it.

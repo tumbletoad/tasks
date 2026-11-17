@@ -141,6 +141,13 @@ export interface ImportRows {
 }
 
 const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
+/**
+ * A removed folder row `f` that an import made and its undo took back: as if it never was, so a
+ * new import gives the folder again.
+ */
+const UNDONE_IMPORT =
+  "(f.deleted_at IS NOT NULL AND EXISTS (SELECT 1 FROM commits k WHERE k.seq = f.created_seq " +
+  "AND k.origin = 'import' AND k.reverted_by IS NOT NULL))";
 const IMPORT_READS: readonly Statement[] = [
   SPACE,
   {
@@ -185,7 +192,7 @@ const IMPORT_READS: readonly Statement[] = [
       "SELECT f.owner_id AS project, p.title AS title, f.path AS path, f.version AS version, " +
       "f.deleted_at IS NOT NULL AS removed FROM folders f JOIN projects p ON p.id = f.owner_id " +
       "WHERE f.machine_id = $machine AND f.owner_kind = 'project' AND p.deleted_at IS NULL " +
-      "ORDER BY f.created_seq, f.id",
+      `AND NOT ${UNDONE_IMPORT} ORDER BY f.created_seq, f.id`,
     mode: "all",
   },
 ];
@@ -248,8 +255,9 @@ const APPLY_READS: readonly Statement[] = [
   {
     // Each task's folder rows on this machine, removed ones too: a removed folder is a change.
     sql:
-      "SELECT owner_id AS task, path, version, deleted_at FROM folders " +
-      `WHERE owner_kind = 'task' AND machine_id = $machine AND owner_id IN (${ALIASED})`,
+      "SELECT owner_id AS task, path, version, deleted_at FROM folders f " +
+      `WHERE owner_kind = 'task' AND machine_id = $machine AND owner_id IN (${ALIASED}) ` +
+      `AND NOT ${UNDONE_IMPORT}`,
     mode: "all",
   },
   {
