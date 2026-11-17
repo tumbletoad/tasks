@@ -428,7 +428,8 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     const big = ids(await search({ q: "sizeword sort:-Effort" }));
     expect(big).toEqual([large, medium, small, none]);
     expect((await search({ q: "sizeword sort:-Effort" })).parsed).toBe("sizeword sort:-Effort");
-    expect((await refusal(search({ q: "order:effort" }))).data["suggestions"]).toEqual(["sort"]);
+    // An alias is read as its key.
+    expect(ids(await search({ q: "sizeword order:-effort" }))).toEqual(big);
     // An order filters nothing, so it stands alone.
     for (const q of ["sizeword -sort:effort", "sort:effort OR p:1", "sort:effort sort:-effort"]) {
       expect((await refusal(search({ q }))).code, q).toBe("invalid_input");
