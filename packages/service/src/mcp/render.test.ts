@@ -218,7 +218,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       "waiting_on",
       "area",
       "project",
-      "place",
+      "folder",
       "focus",
       "context",
     ];

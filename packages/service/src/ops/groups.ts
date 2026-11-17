@@ -74,7 +74,7 @@ function elsewhere(names: GroupNames, found: readonly GroupName[], path: string)
   });
 }
 
-/** A group a call makes has no slug yet (`slug` empty): its title names it. */
+/** A group matches by its ID, its slug or its title. */
 const exact = (group: GroupName, wanted: string): boolean =>
   group.id === wanted ||
   (group.slug !== "" && group.slug === fold(wanted)) ||

@@ -13,8 +13,9 @@
 // over to the bridge before it loads this module at all (mcp.ts); this route is the same verb for
 // callers of main().
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { splitGlobals, UsageError, verbSpec, type Globals } from "./args.ts";
+import { splitGlobals, takesFolder, UsageError, verbSpec, type Globals } from "./args.ts";
 import { briefCommand, type BriefOptions } from "./brief.ts";
+import { folderVerb } from "./folders.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
 import { helpText, shortHelp } from "./help.ts";
@@ -173,6 +174,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         if (verb.entry === "history.undo") {
           return await undoCommand(io, globals, verb, args, options);
         }
+        if (takesFolder(verb)) return await folderVerb(io, globals, verb, args, options);
         return await runVerb(io, globals, verb, args, options);
       }
     }

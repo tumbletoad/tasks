@@ -8,8 +8,8 @@ import {
   Base,
   ContextInput,
   Cwd,
+  FolderInput,
   Mode,
-  PlaceInput,
   Priority,
   ProposalId,
   Replayed,
@@ -25,7 +25,15 @@ import {
 } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
-const CLEARABLE = ["summary", "priority", "effort", "due", "waiting_on", "place", "focus"] as const;
+const CLEARABLE = [
+  "summary",
+  "priority",
+  "effort",
+  "due",
+  "waiting_on",
+  "folder",
+  "focus",
+] as const;
 
 export const TaskUpdateInput = z.strictObject({
   task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
@@ -41,7 +49,7 @@ export const TaskUpdateInput = z.strictObject({
       waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
       area: safeLine(120).describe("Area name or slug").optional(),
       project: safeLine(120).describe("Project name or slug").optional(),
-      place: PlaceInput.describe('"cwd", an absolute folder, or root and path').optional(),
+      folder: FolderInput.describe('"cwd", an absolute folder or one under ~').optional(),
       focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
     })
     .describe("Fields to change")
@@ -93,8 +101,8 @@ export const taskUpdate = defineEntry({
     "task.move",
     "source.add",
     "source.unlink",
-    "place.set",
-    "place.clear",
+    "task.folder_set",
+    "task.folder_clear",
     // A new area or project name creates it, in the same commit as the move into it.
     "area.create",
     "project.create",

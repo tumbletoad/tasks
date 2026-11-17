@@ -19,6 +19,7 @@ import {
   TaskRef,
   TaskRefInput,
   USER_LIMITS,
+  Warnings,
   WrapState,
 } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
@@ -58,6 +59,7 @@ export const TaskFinishResult = z.strictObject({
       }),
     )
     .describe("One row per follow-up draft"),
+  warnings: Warnings.optional(),
   proposal: ProposalId.optional(),
   as_of: AsOf,
   replayed: Replayed.optional(),
@@ -71,7 +73,7 @@ export const taskFinish = defineEntry({
   scope: "space:write",
   remote: "write",
   audience: "caller",
-  // A follow-up is a task draft, as for task.add: its log entry, sources and place too.
+  // A follow-up is a task draft, as for task.add: its log entry, sources and folder too.
   ops: [
     "task.complete",
     "task.archive",
@@ -79,7 +81,7 @@ export const taskFinish = defineEntry({
     "task.create",
     "log.add",
     "source.add",
-    "place.set",
+    "task.folder_set",
     // A follow-up's new area or project name creates it, in the same commit.
     "area.create",
     "project.create",
