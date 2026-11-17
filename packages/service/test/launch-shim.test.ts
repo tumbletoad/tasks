@@ -342,6 +342,16 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
           folder: folder.stored,
         });
       }
+      // A background run checks the same folder before it starts: there, a work folder, not there,
+      // a file, or only on another machine, which is never this machine's work folder.
+      const usable = (folder: Parameters<typeof l.running.launches.folderUsable>[1]) =>
+        l.running.launches.folderUsable(l.spaceId, folder);
+      expect(await usable({ kind: "task", path: l.folder })).toBe(true);
+      expect(await usable({ kind: "none" })).toBe(true);
+      expect(await usable({ kind: "project", path: missing })).toBe(false);
+      expect(await usable({ kind: "task", path: file })).toBe(false);
+      expect(await usable({ kind: "other_machine", machine: "mira-laptop" })).toBe(false);
+
       // It resolves at the click; its folder goes before the person confirms.
       const intent = await l.open(l.plan());
       renameSync(l.folder, `${l.folder}-moved`);

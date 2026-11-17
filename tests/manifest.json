@@ -1744,7 +1744,7 @@
     },
     {
       "id": "A4.5.shim.folder",
-      "title": "The launch's folder (A4 3.3): resolved right before the launch, or the space's work folder for a task without a folder; the terminal starts in it and the claim's reply alone carries its check; the shim checks its own working directory before anything else and starts the agent there without a working-directory option: an unchanged folder runs the agent in exactly that directory, a folder swapped after the resolve is refused with folder_changed and starts nothing, a folder that is not there or is a file refuses the click with its reason, and one removed between the click and the dispatch fails the launch and starts nothing",
+      "title": "The launch's folder (A4 3.3): resolved right before the launch, or the space's work folder for a task without a folder; the terminal starts in it and the claim's reply alone carries its check; the shim checks its own working directory before anything else and starts the agent there without a working-directory option: an unchanged folder runs the agent in exactly that directory, a folder swapped after the resolve is refused with folder_changed and starts nothing, a folder that is not there or is a file refuses the click with its reason, and one removed between the click and the dispatch fails the launch and starts nothing; a background run checks the same folder before it starts, and a folder only on another machine is never usable here",
       "source": "A4 3.3, A4 3.6.3, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
