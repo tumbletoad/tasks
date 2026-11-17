@@ -247,9 +247,9 @@ function Slots({
             onClick={(event) => {
               const action = tileClick(launch.state);
               if (action === "open" && launch.instance !== undefined)
-                actions.open(task, launch.instance);
+                void actions.open(task, launch.instance);
               else if (action === "expand") actions.expand(task);
-              else if (action === "copy") actions.copy(task, event.shiftKey);
+              else if (action === "copy") void actions.copy(task, event.shiftKey);
             }}
           >
             {launch.state === "copy_only" ? <CopyIcon /> : launch.instance?.glyph}

@@ -12,6 +12,7 @@ import { Api } from "../api.ts";
 import { Session, type SessionValue } from "../context.ts";
 import { Live } from "../live.ts";
 import { changeLogOf } from "./changes.ts";
+import { forgetGone } from "./leftovers.ts";
 import { useMachine } from "./machine.ts";
 
 /** The browser's sign-in: its token, the build that served the page, and the way out. */
@@ -66,8 +67,15 @@ export function SpaceSession({
     // Today's Changes counts from the session's start, whichever view the tab opens on.
     changeLogOf(live);
     setValue({ api, live });
+    // Once the space is live, the kept text of its tasks that are gone for good is forgotten.
+    const stopWatching = live.subscribe(() => {
+      if (live.getState().phase !== "live") return;
+      stopWatching();
+      void forgetGone(space, api, (task) => live.getState().tasks.has(task));
+    });
     live.start();
     return () => {
+      stopWatching();
       live.stop();
     };
   }, [auth, space]);

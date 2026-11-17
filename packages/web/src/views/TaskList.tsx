@@ -467,18 +467,19 @@ export function TaskList({
     });
   }, []);
 
-  /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). */
+  /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. */
   const toClipboard = useCallback(
-    (text: string, pack = false) => {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
+    (text: string, pack = false): Promise<boolean> =>
+      navigator.clipboard.writeText(text).then(
+        () => {
           say(t(pack ? "row.packCopied" : "row.copied"));
-        })
-        .catch(() => {
+          return true;
+        },
+        () => {
           say(t("row.copyFailed"));
-        });
-    },
+          return false;
+        },
+      ),
     [say, t],
   );
 
@@ -506,18 +507,25 @@ export function TaskList({
       // Open (A4's `launch.open`). An app that takes the brief by paste (Codex's assisted open)
       // gets it on the clipboard too.
       // A folder whose marker says it may be another one opens only when the person says so: the
-      // toast asks, and its action opens it there and marks it.
-      open: (task: TaskRow, instance: Instance) => {
-        const launch = (markFolder: boolean): void => {
+      // toast asks, and its action opens it there and marks it. The composer's words stay in its
+      // field until then.
+      open: (task: TaskRow, instance: Instance, text?: string) => {
+        const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
-          api
-            .openLaunch(task.id, instance.key, requestId(), false, markFolder)
-            .then(({ receipt, copy }) => {
+          return api
+            .openLaunch(task.id, instance.key, requestId(), {
+              markFolder,
+              ...(text === undefined ? {} : { text }),
+            })
+            .then(async ({ receipt, copy }) => {
+              refuse(task.id, undefined);
               shown(task, receipt);
-              if (copy !== undefined) toClipboard(copy);
+              // The app takes the brief by paste: without it on the clipboard the words did not go.
+              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
+              return receipt;
             })
             .catch((error: unknown) => {
-              if (live.failed(error)) return;
+              if (live.failed(error)) return undefined;
               const refused = folderRefusal(error);
               // The folder line says what the refusal found, unless the folder is there and
               // only its marker asks.
@@ -530,27 +538,32 @@ export function TaskList({
                 say(t("row.openMarker", markerWords(refused)), {
                   label: { id: "row.openAnyway" },
                   run: () => {
-                    launch(true);
+                    void launch(true);
                   },
                 });
               } else if (refused.folder === undefined) say(t("row.openWorkFolder"));
               else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
+              return undefined;
             });
         };
-        launch(false);
+        return launch(false);
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
       // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).
-      copy: (task, pack = false) => {
+      copy: (task, pack = false, text) => {
         watched.current.add(task.id);
-        api
-          .openLaunch(task.id, undefined, requestId(), pack)
-          .then(({ receipt, copy: text }) => {
+        return api
+          .openLaunch(task.id, undefined, requestId(), {
+            pack,
+            ...(text === undefined ? {} : { text }),
+          })
+          .then(({ receipt, copy }) => {
             shown(task, receipt);
-            if (text !== undefined) toClipboard(text, pack);
+            return copy === undefined ? false : toClipboard(copy, pack);
           })
           .catch((error: unknown) => {
             if (!live.failed(error)) say(t("row.copyFailed"));
+            return false;
           });
       },
       // The star is a person's edit like any other (A5 3.11): shown at once, with a base, undoable.
