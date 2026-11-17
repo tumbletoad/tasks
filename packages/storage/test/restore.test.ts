@@ -523,9 +523,14 @@ describe("[A1.5.restore.claim] restore in place claims the copy", () => {
           epoch: 2,
           incarnation: claim.incarnation,
           parent: claim.parent,
+          // The live space had given references up to 4 since the backup: the counter goes on
+          // from there, never back to the backup's 3.
+          next_ref: 5,
         },
       },
     ]);
+    expect(facts.space.nextRef).toBe(5);
+    expect(live.space.nextRef).toBe(5);
     // The commit's time never goes below the previous commit's (A1 3.9), and the lineage says so.
     expect(commit["at"]).toBeGreaterThanOrEqual(at);
     expect(facts.space.lineage.incarnations.at(-1)).toEqual({
