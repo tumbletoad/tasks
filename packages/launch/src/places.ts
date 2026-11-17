@@ -259,15 +259,38 @@ export function isPlacePath(path: string, platform: NodeJS.Platform = process.pl
 export function absoluteFolder(
   given: string,
   platform: NodeJS.Platform = process.platform,
-):
+): AbsoluteFolder {
+  return absoluteWith(given, platform, PATH_FORBIDDEN);
+}
+
+type AbsoluteFolder =
   | { readonly ok: true; readonly path: string }
-  | { readonly ok: false; readonly reason: BindReason } {
+  | { readonly ok: false; readonly reason: BindReason };
+
+// C0 and C1 controls and DEL, which the folders a person binds never hold. Built from escapes, so
+// the source holds no invisible character.
+// eslint-disable-next-line no-control-regex -- the controls are what this refuses.
+const CONTROLS = new RegExp("[\\u0000-\\u001f\\u007f-\\u009f]", "u");
+
+/**
+ * A person's folder as the space stores it, made ready for `realpath` as `absoluteFolder` makes a
+ * root, but with the characters any folder name may hold: a zero-width joiner in an emoji or in
+ * Persian text, or a bidirectional mark, is part of a real folder's name.
+ */
+export function folderPath(
+  given: string,
+  platform: NodeJS.Platform = process.platform,
+): AbsoluteFolder {
+  return absoluteWith(given, platform, CONTROLS);
+}
+
+function absoluteWith(given: string, platform: NodeJS.Platform, forbidden: RegExp): AbsoluteFolder {
   if (given === "" || given.includes("\u0000") || given.length > 4096) {
     return { ok: false, reason: "not_absolute" };
   }
   // A lone surrogate is not text: Node would replace it (with U+FFFD) before the file system saw
   // it, so it would name another folder.
-  if (!given.isWellFormed() || PATH_FORBIDDEN.test(given.replaceAll("\\", "/"))) {
+  if (!given.isWellFormed() || forbidden.test(given.replaceAll("\\", "/"))) {
     return { ok: false, reason: "invalid_path" };
   }
   let path = given;
@@ -552,7 +575,7 @@ export async function resolveFolder(
 ): Promise<FolderResolution> {
   const platform = options.platform ?? process.platform;
   const failed = (reason: ResolveReason): FolderResolution => ({ status: "failed", reason });
-  const ready = absoluteFolder(given, platform);
+  const ready = folderPath(given, platform);
   if (!ready.ok) return failed("invalid_path");
   let found: BigIntStats;
   try {

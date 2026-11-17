@@ -25,6 +25,7 @@ import {
   identityOf,
   isPlacePath,
   placeOf,
+  resolveFolder,
   resolvePlace,
   rootNaming,
   sameIdentity,
@@ -619,6 +620,31 @@ describe("[A1.3.15.places.syntax] the path rules per OS", () => {
     // A lone surrogate, which Node would turn into U+FFFD: another name.
     expect(reason("/home/name-\ud800", "linux")).toBe("invalid_path");
     expect(reason("C:\\work\\name-\udc00", "win32")).toBe("invalid_path");
+  });
+
+  test("a person's folder opens whatever characters its name holds: a zero-width joiner, a non-joiner, a direction mark", async () => {
+    const dir = tempDir();
+    // An emoji sequence, Persian text and a mark: each a name a person gives a folder.
+    for (const name of [
+      "team-\u{1F469}\u200d\u{1F4BB}",
+      "\u0646\u0627\u0645\u0647\u200c\u0647\u0627",
+      "notes\u200e",
+    ]) {
+      const path = join(dir, name);
+      mkdirSync(path);
+      const s = statSync(path, { bigint: true });
+      expect(await resolveFolder(path)).toMatchObject({
+        status: "ok",
+        folder: path,
+        identity: { dev: s.dev, ino: s.ino },
+      });
+    }
+    // Controls are still no name, and a missing folder is never another one.
+    expect(await resolveFolder(join(dir, "a\u0007b"))).toEqual({
+      status: "failed",
+      reason: "invalid_path",
+    });
+    expect(await resolveFolder(join(dir, "gone"))).toMatchObject({ status: "failed" });
   });
 
   test("a folder named with U+FFFD is not reached through a lone surrogate", async () => {

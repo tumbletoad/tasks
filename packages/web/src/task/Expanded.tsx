@@ -203,21 +203,19 @@ function PlaceLine({
           </span>
           {missing ? <span className={styles.muted}> {t("place.missing")}</span> : null}
         </span>
-        {missing ? null : (
-          <span className={styles.acts}>
-            <button
-              type="button"
-              className={styles.act}
-              aria-label={t("place.copy")}
-              data-tip={t("place.copy")}
-              onClick={() => {
-                copy(folder.path);
-              }}
-            >
-              <CopyIcon />
-            </button>
-          </span>
-        )}
+        <span className={styles.acts}>
+          <button
+            type="button"
+            className={styles.act}
+            aria-label={t("place.copy")}
+            data-tip={t("place.copy")}
+            onClick={() => {
+              copy(folder.path);
+            }}
+          >
+            <CopyIcon />
+          </button>
+        </span>
       </li>
     );
   }

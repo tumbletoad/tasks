@@ -12,9 +12,9 @@
 //
 // `here` orients: it names tasks and opens nothing, and a launch decides its folder again. A folder
 // that is not there or does not answer in time matches nothing.
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
-import { absoluteFolder } from "@tasks/launch";
+import { folderPath } from "@tasks/launch";
 import type { Row } from "@tasks/storage";
 import { bounded, openPath } from "./folders.ts";
 
@@ -38,11 +38,12 @@ function segmentsOf(real: string, platform: NodeJS.Platform): { root: string; pa
 
 /** The real path of an absolute folder of this machine, or undefined when it is none now. */
 async function realFolder(given: string, platform: NodeJS.Platform): Promise<string | undefined> {
-  const ready = absoluteFolder(given, platform);
+  const ready = folderPath(given, platform);
   if (!ready.ok) return undefined;
   const found = await bounded(async () => {
     try {
-      return await realpath(ready.path);
+      const real = await realpath(ready.path);
+      return (await stat(real)).isDirectory() ? real : undefined;
     } catch {
       return undefined;
     }

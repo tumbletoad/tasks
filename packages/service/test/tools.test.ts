@@ -3,7 +3,7 @@
 // the paging of a sections read; update_task's folder clear and context append; add_entry's links;
 // `unbound` with candidates; and the fields a later step brings, each refused with that step. A
 // service in this process, fixture text and temporary folders only.
-import { mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { PRODUCT_NAME } from "@tasks/brand";
@@ -235,6 +235,36 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
       } finally {
         await call("task.finish", { task: ref, base: await asOf(), request_id: rid() }, USER);
         rmSync(link, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "here: a folder named with a zero-width joiner matches, and one that became a file matches nothing",
+    async () => {
+      const joined = folder("work", "team-\u{1F469}‍\u{1F4BB}");
+      const moved = folder("work", "moved");
+      const [named, replaced] = await add(
+        "Fixture task in a folder with a joined emoji",
+        "Fixture task whose folder became a file",
+      );
+      await own(named ?? "", joined);
+      await own(replaced ?? "", moved);
+      rmSync(moved, { recursive: true });
+      writeFileSync(moved, "");
+      try {
+        const matches = async (cwd: string) =>
+          ((await call("space.status", { cwd }))["here"] as Json[])
+            .filter((r) => r["ref"] === named || r["ref"] === replaced)
+            .map((r) => [r["ref"], r["match"]]);
+        expect(await matches(joined)).toEqual([[named, "exact"]]);
+        expect(await matches(join(w.root, "work"))).toEqual([[named, "below"]]);
+      } finally {
+        for (const ref of [named, replaced]) {
+          await call("task.finish", { task: ref, base: await asOf(), request_id: rid() }, USER);
+        }
+        rmSync(moved, { force: true });
       }
     },
     LONG,
