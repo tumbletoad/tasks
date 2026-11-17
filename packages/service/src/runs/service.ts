@@ -347,10 +347,10 @@ export class RunService {
       throw refusal(
         "instance",
         asked.instance !== undefined
-          ? "No instance with this ID can run tasks here."
+          ? "No instance with this ID on this computer can run a task."
           : able.length === 0
-            ? "No instance here can run tasks: runs use a Codex instance."
-            : "Several instances can run tasks here.",
+            ? "No instance on this computer can run a task: runs use a Codex instance."
+            : "Several instances on this computer can run a task.",
         able.length === 0
           ? `Set one up with: ${CLI_NAME} setup instances`
           : `Name one with --instance: ${ids}`,
