@@ -253,13 +253,13 @@ export class Dedupe {
   }
 
   /**
-   * What a draft's keys decide when they may name different tasks. A key says "this item is this
-   * task", so a draft with a key that matches nothing is new work, also when another key of it (a
-   * ticket two tasks share) matches: it is created, and each key an active task holds is linked to
-   * it without the key (`held`), so every key keeps one live holder. When every key matches, but
-   * not all the same task, the match is the one task that has every key of the draft, held or
-   * linked without it: the task such a draft created before. A draft that links its sources to a
-   * match (`linkSources`) says its keys name one item, and is matched as a whole.
+   * What a draft's keys decide when they may name different tasks. The one matched task that has
+   * every key of the draft, held or linked without it, is the match: the task such a draft created
+   * before. Else a key says "this item is this task", so a draft with a key that matches nothing is
+   * new work, also when another key of it (a ticket two tasks share) matches: it is created, and
+   * each key an active task holds is linked to it without the key (`held`), so every key keeps one
+   * live holder. A draft that links its sources to a match (`linkSources`) says its keys name one
+   * item, and is matched as a whole.
    */
   decide(
     keys: readonly string[],
@@ -269,6 +269,23 @@ export class Dedupe {
     const held = new Map<string, Id<"t">>();
     if (found.match === undefined || linkSources || keys.length < 2) return { ...found, held };
     const each = keys.map((key) => ({ key, ...this.match([key], false) }));
+    // The task that has every key comes first: a key that matches nothing any more (its holder
+    // finished long ago or was deleted) must not make the draft's own task new work again.
+    const candidates = new Set([...each.flatMap((k) => k.match?.task ?? []), ...found.active]);
+    const covered = [...candidates].filter((task) => {
+      const has = this.#keysHad(task);
+      return keys.every((key) => has.has(key));
+    });
+    const [own] = covered;
+    if (own !== undefined && covered.length === 1) {
+      const { lifecycle } = this.#holder(own);
+      const follows = lifecycle === "active";
+      return {
+        active: found.active,
+        match: { task: own, lifecycle, follows, linkSources: false },
+        held,
+      };
+    }
     if (each.some((k) => k.match === undefined)) {
       for (const k of each) {
         const [holder] = k.active;
@@ -276,21 +293,7 @@ export class Dedupe {
       }
       return { active: found.active, held };
     }
-    const candidates = new Set([...each.flatMap((k) => k.match?.task ?? []), ...found.active]);
-    if (candidates.size < 2) return { ...found, held };
-    const covered = [...candidates].filter((task) => {
-      const has = this.#keysHad(task);
-      return keys.every((key) => has.has(key));
-    });
-    const [own] = covered;
-    if (own === undefined || covered.length > 1) return { ...found, held };
-    const { lifecycle } = this.#holder(own);
-    const follows = lifecycle === "active";
-    return {
-      active: found.active,
-      match: { task: own, lifecycle, follows, linkSources: false },
-      held,
-    };
+    return { ...found, held };
   }
 
   /** The request links `task` to a source of `key` without the key (`decide`'s `held`). */

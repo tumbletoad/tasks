@@ -1242,9 +1242,9 @@ function expectedMatch(
 }
 
 /**
- * The oracle for a draft that returns a match: A1 3.6's match on all its keys, unless a key of it
- * matches nothing (the draft is new), or its keys match several tasks and exactly one of them has
- * every key of the draft, held or as a source linked without its key (that one).
+ * The oracle for a draft that returns a match: of the tasks its keys match, the one that has every
+ * key of the draft, held or as a source linked without its key; else none when a key of it matches
+ * nothing (the draft is new); else A1 3.6's match on all its keys.
  */
 function expectedReturn(
   conn: Connection,
@@ -1255,9 +1255,7 @@ function expectedReturn(
   const distinct = [...new Set(keys)];
   if (all.match === undefined || distinct.length < 2) return all;
   const each = distinct.map((k) => expectedMatch(conn, [k], at).match);
-  if (each.includes(undefined)) return { ...all, match: undefined };
-  const candidates = new Set([...each, ...all.active]);
-  if (candidates.size < 2) return all;
+  const candidates = new Set([...each.filter((t) => t !== undefined), ...all.active]);
   const had = (task: string | undefined): Set<string> =>
     new Set(
       conn
@@ -1273,7 +1271,8 @@ function expectedReturn(
     const has = had(t);
     return distinct.every((k) => has.has(k));
   });
-  return covered.length === 1 ? { ...all, match: covered[0] } : all;
+  if (covered.length === 1) return { ...all, match: covered[0] };
+  return each.includes(undefined) ? { ...all, match: undefined } : all;
 }
 
 type Cell = { value: string; fv: number; fp: number };

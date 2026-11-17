@@ -336,6 +336,29 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(submit(linking.ops).results[0]).toMatchObject({ status: "existing", task: first.id });
   });
 
+  test("a task that has every key of a draft is found again once the shared key's holder is gone", () => {
+    const first = draft(["planning:p-1", "jira:FIX-1"]);
+    submit(first.ops);
+    const second = draft(["planning:p-2", "jira:FIX-1"]);
+    submit(second.ops);
+    // The ticket's holder finished long ago: its key matches nothing, the draft's task still has it.
+    complete(first.id);
+    clock.now += (DEDUPE_WINDOW_DAYS + 1) * DAY;
+    expect(submit(draft(["planning:p-2", "jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      task: second.id,
+    });
+    expectStatus(
+      submit([{ kind: "task.delete", task: first.id }], { actor: "human", base: fx.base() }),
+      "applied",
+    );
+    expect(submit(draft(["planning:p-2", "jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      task: second.id,
+    });
+    expect(one("SELECT count(*) FROM tasks")).toBe(2);
+  });
+
   test("link_sources links the draft's sources to an active match, so its other keys find the task too", () => {
     const first = draft(["jira:FIX-1"]);
     submit(first.ops);
@@ -822,26 +845,25 @@ class SessionsModel {
       const holders = holdersOf(d.keys);
       const size = 1 + (d.log ? 1 : 0) + d.keys.length;
       if (d.mode === "new" && activeOf(d.keys).length > 0) return { status: "rejected", op: index };
-      // A draft's own keys: one that matches nothing makes it new beside a ticket another task
-      // holds; when every key matches but not one task, the one task that has all of them.
+      // A draft's own keys: the one matched task that has all of them is the draft's; else one
+      // that matches nothing makes it new beside a ticket another task holds.
       let keyed = d.keys;
       let mine: Id<"t"> | undefined;
       const unkeyed = new Set<string>();
       const distinct = [...new Set(d.keys)];
       if (d.mode === "return" && distinct.length > 1 && matchOf(d.keys) !== undefined) {
         const each = distinct.map((k) => ({ k, match: matchOf([k]) }));
-        if (each.some((e) => e.match === undefined)) {
+        const unmatched = each.some((e) => e.match === undefined);
+        const candidates = new Set([...each.flatMap((e) => e.match ?? []), ...activeOf(d.keys)]);
+        const has = (t: Id<"t">, k: string): boolean =>
+          keys.get(k)?.has(t) === true || plain.get(k)?.has(t) === true;
+        const covered = [...candidates].filter((t) => distinct.every((k) => has(t, k)));
+        if (covered.length === 1) {
+          mine = covered[0];
+          if (candidates.size > 1 || unmatched) own += 1;
+        } else if (unmatched) {
           for (const e of each) if (activeOf([e.k]).length > 0) unkeyed.add(e.k);
           keyed = [];
-        } else {
-          const candidates = new Set([...each.flatMap((e) => e.match ?? []), ...activeOf(d.keys)]);
-          const has = (t: Id<"t">, k: string): boolean =>
-            keys.get(k)?.has(t) === true || plain.get(k)?.has(t) === true;
-          const covered = [...candidates].filter((t) => distinct.every((k) => has(t, k)));
-          if (candidates.size > 1 && covered.length === 1) {
-            mine = covered[0];
-            own += 1;
-          }
         }
       }
       const active = mine === undefined ? activeOf(keyed) : [mine];
