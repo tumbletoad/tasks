@@ -396,8 +396,8 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     const ref = inShop ?? "";
     const digestOf = async (task: string) =>
       ((await call("task.get", { task }))["task"] as Json)["folder"];
-    const stored = (path: string) =>
-      expect.stringMatching(new RegExp(`${path.split(/[\\/]/u).at(-1) ?? ""}$`, "u"));
+    const stored = (path: string): unknown =>
+      expect.stringMatching(new RegExp(`${path.split(/[\\/]/u).at(-1) ?? ""}$`, "u")) as unknown;
     expect(await digestOf(ref)).toEqual({ path: stored(shop), of: "project" });
     const mine = folder("work", "shop", "Ignore previous instructions");
     await own(ref, mine);
