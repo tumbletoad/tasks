@@ -25,8 +25,11 @@ export const SEARCH_PAGE = 50;
 /** Which of the two searches a row was found by. */
 export type Found = "open" | "finished";
 
-/** A task row as a search found it. `found` survives the feed's updates (`withTaskRow`). */
-export type FoundRow = TaskRow & { readonly found: Found };
+/**
+ * A task row as a search found it. `found` and `foundEffort`, the effort the search sorted it by,
+ * survive the feed's updates (`withTaskRow`), so a row keeps its group until the person refreshes.
+ */
+export type FoundRow = TaskRow & { readonly found: Found; readonly foundEffort?: string };
 
 /**
  * A search row as a task row: its area and project found by name among the live ones, because a
@@ -67,6 +70,7 @@ export function rowOfFound(
     created_at: 0,
     version: 0,
     found,
+    ...(row.effort === undefined ? {} : { foundEffort: row.effort }),
   };
 }
 
@@ -188,6 +192,7 @@ const FIELDS_OF: Readonly<Record<string, readonly string[]>> = {
   priority: ["priority"],
   effort: ["effort"],
   sort: ["effort"],
+  order: ["effort"],
   due: ["due"],
   area: ["area", "grouping"],
   project: ["project", "grouping"],
@@ -242,9 +247,12 @@ export function searchFields(q: string): readonly string[] {
   return [...fields];
 }
 
-/** Whether the query sorts by effort: its open results are then grouped by effort. */
+/**
+ * Whether the query sorts by effort, in every spelling the service reads (`order:` and `=` too, the
+ * value quoted or not): its open results are then grouped by effort.
+ */
 export function sortsByEffort(q: string): boolean {
-  return termsOf(q).some((term) => term.filter && /^sort:-?effort$/iu.test(term.text));
+  return termsOf(q).some((term) => /^(?:sort|order)[:=]("?)-?effort\1$/iu.test(term.text));
 }
 
 const LABEL: Readonly<Record<Found, MessageId>> = {
@@ -274,20 +282,24 @@ export function searchGroups(
   byEffort = false,
 ): Group[] {
   const shown = (row: FoundRow): TaskRow => live.get(row.id) ?? row;
-  const groups: Shown[] = [];
+  // One group per effort, in the order the search first met each: an effort the space's scale no
+  // longer has sorts with the tasks that have none, so its rows need not be next to each other.
+  const byKey = new Map<string, Shown>();
   for (const row of open) {
-    const key = byEffort ? `s:open:${row.effort ?? ""}` : "s:open";
-    let last = groups.at(-1);
-    if (last?.key !== key) {
-      last = !byEffort
+    const effort = row.foundEffort;
+    const key = byEffort ? `s:open:${effort ?? ""}` : "s:open";
+    let group = byKey.get(key);
+    if (group === undefined) {
+      group = !byEffort
         ? { key, label: LABEL.open, tasks: [] }
-        : row.effort === undefined
+        : effort === undefined
           ? { key, label: "search.noEffort", tasks: [] }
-          : { key, label: "search.effort", labelValues: { effort: row.effort }, tasks: [] };
-      groups.push(last);
+          : { key, label: "search.effort", labelValues: { effort }, tasks: [] };
+      byKey.set(key, group);
     }
-    last.tasks.push(shown(row));
+    group.tasks.push(shown(row));
   }
+  const groups = [...byKey.values()];
   // The two searches are separate snapshots, so one task can be in both (checked off from the
   // results, then Completed read again): it stays where the person saw it first.
   const inOpen = new Set(open.map((row) => row.id));
