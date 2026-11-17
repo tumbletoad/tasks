@@ -213,6 +213,35 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
   });
 });
 
+test.describe("[A7.3.12.request.e2e.unread] An agent that never reads the request leaves the words in the field, and the page says so", () => {
+  test("the words go on no command line, the agent ends without reading them, and they stay with a notice", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Water the plants (${tag})`, area: "home" });
+    world.leaveUnread(ref);
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    const open = stripOf(page, ref).getByRole("button", {
+      name: `Open in ${FAKE_INSTANCE.label}`,
+    });
+    const words = `Only the ferns, not the cactus (${tag})`;
+    const before = world.terminal().length;
+    await composer.fill(words);
+    await open.click();
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
+    expect(JSON.stringify(world.terminal().at(-1))).not.toContain("Only the ferns");
+    // The agent ran and ended without reading them: they stay, and the page says so.
+    await expect(toast(page)).toHaveText(
+      `${FAKE_INSTANCE.label} did not read your request. It is still in the field.`,
+      { timeout: SLOW_MS },
+    );
+    await expect(composer).toHaveValue(words);
+    expect(Object.values(await kept(page))).toContain(words);
+  });
+});
+
 test.describe("[A7.3.12.m5-07.e2e.keys] The composer's keys: never while an input method composes, and listed on the sheet", () => {
   test("an Enter or Ctrl+Enter that ends a composition sends nothing, the sheet lists the keys, and a key in the sheet is the sheet's", async ({
     page,

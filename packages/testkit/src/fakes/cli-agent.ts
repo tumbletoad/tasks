@@ -10,13 +10,14 @@
 // - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
 //   (TASKS_HOME): it reads the task as its brief says when the tools are missing, `show --launch
 //   <reference>` with `--json`, and its report holds the request it got, in hex, so a test finds
-//   the words nowhere else on disk.
+//   the words nowhere else on disk. FAKE_CLI_UNREAD names a file of task references, one a line:
+//   on those tasks it reads nothing, as an agent without Tasks' tools or a shell.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** What the fake CLI writes to its report file. */
@@ -45,16 +46,26 @@ const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
 
-/** The launch reference in the brief's first line, as an agent reads it. */
-function referenceOf(args: readonly string[]): string | undefined {
+/** The task's and the launch's references in the brief's first line, as an agent reads them. */
+function referencesOf(args: readonly string[]): { task: string; launch: string } | undefined {
   const brief = args[args.indexOf("--") + 1] ?? "";
-  return /^\S.* \(launch (L[0-9A-Z]{5})\)\./u.exec(brief.split("\n")[0] ?? "")?.[1];
+  const found = / task (\S+) \(launch (L[0-9A-Z]{5})\)\./u.exec(brief.split("\n")[0] ?? "");
+  return found === null ? undefined : { task: found[1] ?? "", launch: found[2] ?? "" };
+}
+
+/** Whether the task is one this fake leaves unread (FAKE_CLI_UNREAD). */
+function leftUnread(task: string): boolean {
+  const list = env["FAKE_CLI_UNREAD"];
+  if (list === undefined || list === "" || !existsSync(list)) return false;
+  return readFileSync(list, "utf8").split(/\r?\n/u).includes(task);
 }
 
 /** `show --launch <reference> --json` through the product's command, as the brief says. */
 function readTask(spec: string): CliAgentReport["read"] {
-  const reference = referenceOf(argv);
-  if (reference === undefined) return { code: null, error: "no_reference" };
+  const references = referencesOf(argv);
+  if (references === undefined) return { code: null, error: "no_reference" };
+  if (leftUnread(references.task)) return { code: null, error: "left_unread" };
+  const reference = references.launch;
   const { argv: command, home } = JSON.parse(spec) as { argv: string[]; home: string };
   const [file, ...rest] = command;
   if (file === undefined) return { code: null, error: "no_command" };

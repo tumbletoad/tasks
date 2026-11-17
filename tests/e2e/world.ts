@@ -5,7 +5,7 @@
 // `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
 // as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
@@ -24,7 +24,7 @@ import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
 import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
-import { FAKE_INSTANCE_TOML, type TerminalCall } from "./fake-terminal.ts";
+import { fakeInstanceToml, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
@@ -76,6 +76,8 @@ export interface World {
   machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */
   terminal(): TerminalCall[];
+  /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
+  leaveUnread(ref: string): void;
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -167,7 +169,13 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       { mode: 0o600 },
     );
     // The fake agent is this machine's one instance: the page draws its tile (A5 3.6).
-    registerSpaces(home, [{ path: seeded.folder, id: opened.space.spaceId }], FAKE_INSTANCE_TOML);
+    const unread = join(temp.root, "unread.txt");
+    writeFileSync(unread, "");
+    registerSpaces(
+      home,
+      [{ path: seeded.folder, id: opened.space.spaceId }],
+      fakeInstanceToml(home, unread),
+    );
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
@@ -283,6 +291,9 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== "")
           .map((line) => JSON.parse(line) as TerminalCall),
+      leaveUnread: (ref) => {
+        appendFileSync(unread, `${ref}\n`);
+      },
       agentLog: async (space, taskId, text) => {
         logs += 1;
         await agent.call(
