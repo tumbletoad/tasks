@@ -1054,6 +1054,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `instance` | string, max 64 | no | The instance to open in, from this machine's; leave out to Copy |
 | `text` | string, max 65536 | no | Your words for the agent: they replace the brief's last line |
 | `pack` | boolean | no | Copy the context pack: the task's text, for an app without the tools |
+| `mark_folder` | boolean | no | Open although the folder's marker is gone or another's, and mark it |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output

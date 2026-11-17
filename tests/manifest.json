@@ -745,6 +745,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.marker",
+      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written, a marker that cannot be read; an old folder without one is marked quietly; what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.15.folders.repo",
       "title": "The repository a project's folder holds, by name, from the folder's own Git configuration: origin's or the first remote's, none for no remote, a local remote or a folder that is not a checkout, the name alone for an address with a token, and none when the configuration does not answer in time",
       "source": "A1 3.15",
@@ -2328,6 +2336,13 @@
       "id": "A4.5.routes.folders",
       "title": "A launch opens in the task's own folder, else its project's, else the space's work folder, in the terminal route, the link and Copy alike; a folder only on another machine opens nothing here and never the work folder, and Copy names that machine",
       "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.markers",
+      "title": "A launch reads its folder's marker before an agent starts: a folder set through the service is marked with IDs only; its own marker opens; a checkout moved aside with an unrelated one at its path opens nothing, says its marker is missing and opens once the person opens it anyway, marking it; a task's folder whose marker names another project opens nothing and names that project; Copy reads no marker; a folder that takes no marker opens as before",
+      "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
     },

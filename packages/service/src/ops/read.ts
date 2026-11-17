@@ -1325,7 +1325,12 @@ export interface LaunchTaskRead {
  * where one is; or none, when it uses the space's work folder.
  */
 export type TaskFolder =
-  | { readonly kind: "task" | "project"; readonly path: string }
+  | {
+      readonly kind: "task" | "project";
+      readonly path: string;
+      /** The task's or the project's ID: whose folder it is. */
+      readonly owner: string;
+    }
   | { readonly kind: "other_machine"; readonly machine: string }
   | { readonly kind: "none" };
 
@@ -1338,11 +1343,16 @@ export function taskFolderOf(
   const ownRows = own.map(ownerFolder);
   const projectRows = project.map(ownerFolder);
   const names = new Map([...ownRows, ...projectRows].map((f) => [f.machine, f.machineName]));
+  const owners = new Map([...own, ...project].map((r) => [text(r["id"]), text(r["owner_id"])]));
   const decided = decideLaunchFolder(ownRows, projectRows, machine, (id) => names.get(id));
   switch (decided.kind) {
     case "task":
     case "project":
-      return { kind: decided.kind, path: decided.folder.path };
+      return {
+        kind: decided.kind,
+        path: decided.folder.path,
+        owner: owners.get(decided.folder.id) ?? "",
+      };
     case "other_machine":
       return { kind: "other_machine", machine: decided.machine.name };
     case "none":

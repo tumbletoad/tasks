@@ -11,7 +11,7 @@
 //
 // A write's result is built from the writer's result and the caller's input only, so a replay of
 // the same request ID gives the same result (A3 3.4.1), marked `replayed`.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import {
   findEntry,
   AppError,
@@ -71,6 +71,7 @@ import {
 } from "./copies.ts";
 import {
   LaunchFolderUnavailable,
+  LaunchFolderUnmarked,
   LaunchUnavailable,
   type OpenTaskRequest,
   type OpenTaskResult,
@@ -107,6 +108,7 @@ import {
   storageFailure,
   unsupported,
 } from "./errors.ts";
+import type { FolderMarkers } from "./marker.ts";
 import { repoName } from "./repo.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
@@ -200,6 +202,8 @@ export interface OpsHost {
   readonly home?: string;
   /** Tasks' own data folder (the Tasks home): no folder is bound inside it. */
   readonly dataFolder?: string;
+  /** The markers in projects' and tasks' folders (marker.ts). None: no folder is marked. */
+  readonly markers?: FolderMarkers;
   /** Milliseconds since 1970. Default: Date.now. */
   readonly now?: () => number;
   /** The space's time zone. Default: this machine's. */
@@ -1177,6 +1181,65 @@ async function folderMove(
   return { carry: true, inside: plan.inside, missing };
 }
 
+/** An owner's folder here that a write cleared, which loses that owner's marker. */
+interface Cleared {
+  readonly kind: "project" | "task";
+  readonly id: string;
+  readonly stored: string;
+}
+
+/** The owner's folder here before a clear, for its marker. Undefined when it has none. */
+async function clearedOf(
+  call: Call,
+  owner: { readonly kind: "project" | "task"; readonly id: string },
+): Promise<Cleared | undefined> {
+  if (call.host.markers === undefined) return undefined;
+  const read = await readMove(readerOf(call.space), owner, call.host.machine.id).catch(
+    () => undefined,
+  );
+  if (read?.current === undefined || read.owner === undefined) return undefined;
+  return { kind: owner.kind, id: read.owner, stored: read.current };
+}
+
+/**
+ * After a write applied (marker.ts): each folder it gave an owner takes that owner's marker, a
+ * folder it cleared loses it, and the folders that moved along keep theirs, which moved with them.
+ * A folder that takes no marker changes nothing here.
+ */
+async function markersAfter(
+  call: Call,
+  ops: readonly Operation[],
+  result: WriteResult,
+  extra: { readonly move?: FolderMove; readonly cleared?: Cleared | undefined } = {},
+): Promise<void> {
+  const markers = call.host.markers;
+  const space = call.space.id;
+  if (markers === undefined || space === undefined) return;
+  if (result.status !== "applied" || result.replayed === true) return;
+  for (const [k, op] of ops.entries()) {
+    if (op.kind !== "project.folder_set" && op.kind !== "task.folder_set") continue;
+    // A draft that matched a task takes no folder.
+    if (result.results[k]?.status === "existing") continue;
+    const id =
+      op.kind === "project.folder_set"
+        ? op.project
+        : isId(op.task, "t")
+          ? op.task
+          : result.results[k]?.task;
+    if (id === undefined) continue;
+    const kind = op.kind === "project.folder_set" ? "project" : "task";
+    await markers.mark({ space, kind, id }, op.path);
+  }
+  if (extra.move?.carry === true) {
+    for (const f of extra.move.inside)
+      markers.moved({ space, kind: f.kind, id: f.owner }, f.from, f.to);
+  }
+  const cleared = extra.cleared;
+  if (cleared !== undefined) {
+    await markers.unmark({ space, kind: cleared.kind, id: cleared.id }, cleared.stored);
+  }
+}
+
 /** At most this many folders that moved along or stayed are named in an answer. */
 const FOLLOWERS_SHOWN = 20;
 
@@ -1795,6 +1858,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         inserted: { at: 0, count: named.groups.length },
       }),
     );
+    await markersAfter(call, ops, result);
     const outcomes = list.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
     // A matched draft takes no folder and creates no task, so the warnings of its folder and its
     // title do not apply: each starts with the draft's path.
@@ -1920,6 +1984,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         });
       } else if (ops.length === 0) ops.push({ kind: "task.folder_clear", task });
     }
+    const cleared = clearFolder ? await clearedOf(call, { kind: "task", id: task }) : undefined;
     if (clearFolder) ops.push({ kind: "task.folder_clear", task });
     fields.push(...Object.keys(set), ...clear);
     if (context !== undefined) fields.push("context");
@@ -1934,6 +1999,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }),
     );
     const updated = result.status === "applied";
+    await markersAfter(call, ops, result, { move, cleared });
     const first = opAt(result, 0);
     const named = [...new Set(fields)];
     const facts = updated ? await commitOf(call, first, result.seq) : undefined;
@@ -2036,6 +2102,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         warnings: folders.warnings,
       }),
     );
+    await markersAfter(call, ops, result);
     const outcomes = follow.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
     // A matched follow-up takes no folder, so its folder's warning does not apply.
     const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
@@ -2152,6 +2219,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         composer: text,
         requestId,
         ...(pack === undefined ? {} : { pack }),
+        ...(input["mark_folder"] === true ? { markFolder: true } : {}),
         // Over budget, the person's words become a note addressed to agents (A4 3.15.3): the
         // note entry's own request path, under a request ID the click's derives, so a repeated
         // click replays the note instead of adding a second one.
@@ -2170,6 +2238,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         },
       });
     } catch (error) {
+      if (error instanceof LaunchFolderUnmarked) throw await unmarkedError(call, error);
       throw launchError(error);
     }
     return {
@@ -2585,6 +2654,7 @@ async function folderWrite(
       { kind: "project.folder_set", project: projectId, path: folder.stored },
     );
     const result = await submit(call, ops);
+    await markersAfter(call, ops, result);
     const project = result.results.find((r) => isId(r.id, "p"));
     return {
       action,
@@ -2635,7 +2705,9 @@ async function folderWrite(
       : owner.kind === "project"
         ? { kind: "project.folder_clear", project: owner.id }
         : { kind: "task.folder_clear", task: owner.id };
+  const cleared = action === "clear" && !replay ? await clearedOf(call, owner) : undefined;
   const result = await submit(call, [op]);
+  await markersAfter(call, [op], result, { move, cleared });
   const done = result.results[0];
   const changed = result.status === "applied";
   if (owner.kind === "project" && owner.id === REPLAY_GROUP) {
@@ -2783,6 +2855,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   let group: WrittenGroup;
   let done = GROUP_DONE[action] ?? "no_change";
   let move = NO_MOVE;
+  let cleared: Cleared | undefined;
   if (action === "create") {
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {
@@ -2878,6 +2951,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       });
       group = { ...group, folder: folder.stored };
     } else if (action === "clear_folder") {
+      cleared = await clearedOf(call, { kind: "project", id });
       ops.push({ kind: "project.folder_clear", project: id });
     } else {
       const archive = action === "archive";
@@ -2893,6 +2967,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   let replay = false;
   if (ops.length > 0) {
     const result = await submit(call, ops);
+    await markersAfter(call, ops, result, { move, cleared });
     asOf = result.as_of;
     replay = result.replayed === true;
     if (result.status === "applied") outcome = done;
@@ -3304,6 +3379,51 @@ function packOf(read: TaskRead): PackContent {
     })),
     logTotal: read.counts.log,
   };
+}
+
+/**
+ * A launch whose folder's marker is gone or names other owners (marker.ts), as the person reads
+ * it: whose the folder is instead, by a project's name, a task's reference or another space's
+ * name, and the way on. The folder is named as the space stores it.
+ */
+async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<AppError> {
+  const whose = error.of === "project" ? "this task's project" : "this task";
+  const space = call.space.id;
+  const names: string[] = [];
+  let groups: GroupNames | undefined;
+  for (const owner of error.owners.slice(0, 3)) {
+    if (owner.space !== space) {
+      const other = call.host.spaces().find((s) => s.id === owner.space)?.name;
+      names.push(other === undefined ? "another space" : `the space ${other}`);
+      continue;
+    }
+    if (owner.kind === "project") {
+      groups ??= await readGroupNames(readerOf(call.space)).catch(() => undefined);
+      const name = groups?.projects.find((p) => p.id === owner.id)?.title;
+      names.push(name === undefined ? "another project" : `the project ${name}`);
+    } else {
+      const ref = await readTaskRef(readerOf(call.space), owner.id).catch(() => undefined);
+      names.push(ref === undefined ? "another task" : `the task ${ref}`);
+    }
+  }
+  const why =
+    error.reason === "marker_missing"
+      ? `its ${APP_NAME} marker is missing`
+      : names.length === 0
+        ? `its ${APP_NAME} marker cannot be read`
+        : `its ${APP_NAME} marker names ${[...new Set(names)].join(", ")}`;
+  return new AppError({
+    code: "invalid_input",
+    message: `This may not be the folder that was set for ${whose}: ${why}. Nothing was started.`,
+    hint: `To use this folder and mark it, open again with mark_folder. Or give ${whose} another folder.`,
+    data: {
+      field: "task",
+      reason: error.reason,
+      folder: error.folder,
+      of: error.of,
+      ...(names.length === 0 ? {} : { owners: [...new Set(names)] }),
+    },
+  });
 }
 
 function launchError(error: unknown): unknown {

@@ -2457,6 +2457,10 @@
             "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
             "type": "string"
           },
+          "mark_folder": {
+            "description": "Open although the folder's marker is gone or another's, and mark it",
+            "type": "boolean"
+          },
           "pack": {
             "description": "Copy the context pack: the task's text, for an app without the tools",
             "type": "boolean"
