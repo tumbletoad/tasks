@@ -1614,6 +1614,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.json-rpc.lines",
+      "title": "JSON-RPC over lines with requests in both directions: answers matched by ID, error answers with their code, the other side's requests answered by the handler or with method not found and never with a handler's private error, a slow answer holding up nothing after it, a request left open answered later, lines read whole in bounded memory with bad and over-long lines skipped, and every open request ended when the connection ends",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.ungrouped",
       "title": "Without a process group a run still starts on every OS: the agent reads its stdin and its end is no command, Stop ends the agent and the children it started (also ones that ignore the interrupt or keep forking), counted from the operating system, and no confirmation claims more than that",
       "owner": "M6",
