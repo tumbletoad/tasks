@@ -1,5 +1,5 @@
 // The theme a page shows: `sumi` (the default), `washi`, or `system`, which follows the browser's
-// colour scheme live through the stylesheet alone. The choice is this computer's: the service keeps
+// colour scheme live through the stylesheet alone. The choice is this machine's: the service keeps
 // it in machine.toml, the shell arrives with it on the root element, so the first paint is already
 // in it, and the feed brings each change to every tab.
 import { PRODUCT_ID } from "@tasks/brand";
@@ -24,12 +24,12 @@ export function applyTheme(root: HTMLElement, choice: ThemeChoice): void {
   root.dataset["theme"] = choice;
 }
 
-/** Where builds before this computer kept the choice kept it, per browser. */
+/** Where older builds kept the choice, one per browser. */
 export const LEGACY_THEME_KEY = `${PRODUCT_ID}.theme`;
 
 /**
  * A choice an older build kept in this browser, other than the default: the page hands it to this
- * computer once, so nobody loses their theme to the update. Anything else stored is no choice.
+ * machine once, so nobody loses their theme to the update. Anything else stored is no choice.
  */
 export function legacyTheme(store: TokenStore | undefined): ThemeChoice | undefined {
   let value: unknown;

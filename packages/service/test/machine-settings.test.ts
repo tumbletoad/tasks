@@ -1,4 +1,4 @@
-// Settings for this computer over the page's routes (A7 M5.11): the theme and the single-letter
+// Settings for this machine over the page's routes (A7 M5.11): the theme and the single-letter
 // keys are machine preferences in machine.toml, the person's own lines and comments kept; every
 // open tab's feed follows a change, a new tab gets them after `hello`, and the shell paints the
 // theme from the first byte. Open's terminal: which one and why, the ones found here, a choice
@@ -40,7 +40,7 @@ const isMachine = (m: Record<string, unknown>) => m["type"] === "machine";
 const themeOf = (m: Record<string, unknown>) =>
   (m["preferences"] as { key: string; value: unknown }[]).find((p) => p.key === "ui.theme")?.value;
 
-describe("[A7.3.12.m5-11.machine-settings] this computer's settings, kept in machine.toml", () => {
+describe("[A7.3.12.m5-11.machine-settings] this machine's settings, kept in machine.toml", () => {
   test(
     "the theme and the keys are set and reset in machine.toml, and every tab and the shell follow at once",
     SLOW,
@@ -57,7 +57,7 @@ describe("[A7.3.12.m5-11.machine-settings] this computer's settings, kept in mac
         (await send(port, { path: "/", headers: { "sec-fetch-site": "none" } })).body;
       expect(await shell()).toContain('data-theme="sumi"');
 
-      // An open tab gets this computer's settings right after hello.
+      // An open tab gets this machine's settings right after hello.
       const tab = await openFeed(port, token);
       const first = await tab.next(isMachine);
       expect(first["preferences"]).toEqual([

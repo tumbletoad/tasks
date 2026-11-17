@@ -129,12 +129,12 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
         .click();
       const said = page.getByRole("status").filter({
-        hasText: `The folder ${set.folder} was not found on this computer. Nothing was started.`,
+        hasText: `The folder ${set.folder} was not found on this machine. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       // The expanded task's folder line says the same at once, not "here" until a reload.
       await expect(line).toHaveAttribute("data-state", "missing");
-      await expect(line).toContainText(`${set.folder} · not found on this computer`);
+      await expect(line).toContainText(`${set.folder} · not found on this machine`);
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);

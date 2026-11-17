@@ -100,12 +100,12 @@ export interface AppOptions {
   readonly launch?: UiLaunchPort;
   /** The machine's default space (hub/default-space.ts). None: the page cannot change it. */
   readonly defaults?: UiDefaultSpace;
-  /** This computer's settings (hub/machine-settings.ts). None: Settings changes nothing here. */
+  /** This machine's settings (hub/machine-settings.ts). None: Settings changes nothing here. */
   readonly machine?: UiMachine;
 }
 
 /**
- * This computer's settings as the page reads and changes them: the theme and the single-letter
+ * This machine's settings as the page reads and changes them: the theme and the single-letter
  * keys, which every tab's feed carries, and the terminal Open uses.
  */
 export interface UiMachine {
@@ -786,7 +786,7 @@ export class HttpApp {
             };
           });
         // A space that never opened has no ID or name yet, but the person must still learn that
-        // it is there and why it is not open, never that the computer has no space.
+        // it is there and why it is not open, never that the machine has no space.
         const unopened = all
           .filter((s) => s.id === undefined)
           .map((s) => ({ state: s.state, ...reasonOf(s) }));
@@ -813,7 +813,7 @@ export class HttpApp {
   }
 
   /**
-   * `POST /api/v1/machine/<action>`: Settings for this computer. The UI's grant is the person,
+   * `POST /api/v1/machine/<action>`: Settings for this machine. The UI's grant is the person,
    * the only one who changes these. `pref` sets `{key, value}` (null resets it); `terminal` reads
    * Open's terminal, and with `{app}` chooses it (`auto`: the operating system's default).
    */
@@ -828,7 +828,7 @@ export class HttpApp {
       if (machine === undefined) {
         throw new AppError({
           code: "service_unavailable",
-          message: "This service cannot change this computer's settings.",
+          message: "This service cannot change this machine's settings.",
           data: { reason: "ui_unavailable", retryable: false },
         });
       }

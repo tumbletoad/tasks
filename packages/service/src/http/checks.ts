@@ -44,7 +44,7 @@ export const LAUNCH_ACTIONS: readonly string[] = ["list"];
 /** The page's space switcher (M5.01): this machine's spaces, and Make default. */
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default"];
-/** Settings (M5.11): this computer's preferences the page sets, and Open's terminal. */
+/** Settings (M5.11): this machine's preferences the page sets, and Open's terminal. */
 export const MACHINE_PREFIX = "/api/v1/machine/";
 export const MACHINE_ACTIONS: readonly string[] = ["pref", "terminal"];
 export const HEALTHZ_PATH = "/healthz";

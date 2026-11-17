@@ -226,7 +226,7 @@ export interface HelloMessage {
   readonly installed: string | undefined;
 }
 
-/** A setting of this computer as the feed carries it: its key and value, or its default. */
+/** A setting of this machine as the feed carries it: its key and value, or its default. */
 export interface MachinePreference {
   readonly key: string;
   readonly value: unknown;
@@ -234,7 +234,7 @@ export interface MachinePreference {
   readonly state: string;
 }
 
-/** This computer's settings of the page, after `hello` and again on each change. */
+/** This machine's settings of the page, after `hello` and again on each change. */
 export interface MachineMessage {
   readonly type: "machine";
   readonly preferences: readonly MachinePreference[];

@@ -2661,7 +2661,7 @@
     },
     {
       "id": "A5.3.3.e2e.not-open",
-      "title": "In Chromium and Firefox: a computer whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
+      "title": "In Chromium and Firefox: a machine whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
       "source": "A5 3.3, A2 3.1",
       "owner": "M5",
       "kind": "ci",
@@ -2700,7 +2700,7 @@
     },
     {
       "id": "A2.3.10.cli.space-words",
-      "title": "tasks space says what is so and the ways it names work: claim of another computer's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
+      "title": "tasks space says what is so and the ways it names work: claim of another machine's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
       "source": "A2 3.10.1, A2 3.10.5, A6 3.5, A1 3.18",
       "owner": "M3",
       "kind": "installed",
@@ -4056,7 +4056,7 @@
     },
     {
       "id": "A7.3.12.m5-11.machine-page",
-      "title": "The page's copy of this computer's settings: a change shows at once, stays once the service kept it even before the feed says so, and goes back when the service refuses it",
+      "title": "The page's copy of this machine's settings: a change shows at once, stays once the service kept it even before the feed says so, and goes back when the service refuses it",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -4080,7 +4080,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.theme",
-      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this computer once",
+      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this machine once",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -4088,7 +4088,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.terminal",
-      "title": "In Chromium and Firefox against the real service: Settings says which terminal Open uses and why, lists the terminals found, keeps another one across a reload and goes back to this computer's default",
+      "title": "In Chromium and Firefox against the real service: Settings says which terminal Open uses and why, lists the terminals found, keeps another one across a reload and goes back to this machine's default",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",

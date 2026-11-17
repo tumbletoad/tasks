@@ -646,7 +646,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
   });
 
   test(
-    "refused before anything is recorded: an instance not set up, a route not built here, a folder not found on this computer",
+    "refused before anything is recorded: an instance not set up, a route not built here, a folder not found on this machine",
     { timeout: 300_000 },
     async () => {
       const r = await rig("refusals");
@@ -673,7 +673,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       });
       expect(await refusal({ task: placed.ref, instance: "claude" })).toMatchObject({
         code: "invalid_input",
-        message: "Folder not found on this computer.",
+        message: "Folder not found on this machine.",
         hint: expect.stringContaining("give the task or its project another folder") as unknown,
         data: { field: "task", reason: "path_missing", folder: placed.folder },
       });
@@ -695,7 +695,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       // Nothing was recorded for any of them; Copy still works and says the folder is not here.
       const copied = await open(r, { task: placed.ref });
       expect(copied.result.copy).toContain(
-        `Folder: ${placed.folder ?? ""} (not found on this computer)`,
+        `Folder: ${placed.folder ?? ""} (not found on this machine)`,
       );
       const launches: LaunchIntent | undefined = await r.lab.running.launches.read(
         r.lab.spaceId,

@@ -59,26 +59,26 @@ the behaviour it describes, and keep each one to a sentence or two.
   leaves the old data readable.
 - An older version of Tasks never writes a newer data format.
 
-## Your spaces on this computer
+## Your spaces on this machine
 
 - A space you create, open, restore or claim opens again after a restart, and one you close stays
   closed. Tasks never takes a space off its list by itself.
 - Recording this keeps your own comments and settings in the configuration file. When the file
   cannot be written, Tasks says so and names the command that records it once the file is fixed.
-- When several copies of one space are on this computer, a command without a folder reaches the
+- When several copies of one space are on this machine, a command without a folder reaches the
   copy that takes changes, and after a restart that is still the copy you last changed.
 
 ## Projects and folders
 
-- A project has at most one folder on each computer, and a task may have its own. Two projects
-  that are not deleted never share one folder on one computer: adding a folder that a project has
+- A project has at most one folder on each machine, and a task may have its own. Two projects
+  that are not deleted never share one folder on one machine: adding a folder that a project has
   answers with that project instead of making a second one.
 - A new task that an agent files from its working folder, with no project named, joins the project
   whose folder holds that folder most closely. In an archived project's folder it joins no project,
   and the agent is told.
 - When you move a folder on disk and then give its project or task the new folder, every folder
   Tasks knows inside the old one moves along, other projects' and tasks' included, as one undo
-  step on that computer. When the old folder is still there, nothing else moves, and you are told
+  step on that machine. When the old folder is still there, nothing else moves, and you are told
   which folders stayed. Tasks itself never moves files.
 - An archived project keeps its folder, and a deleted one frees it.
 - A project made for a folder is named after it unless you name it. The Git repository in a
@@ -106,10 +106,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - Open uses the folder that was set, or says that it is not there. It never picks another folder
   silently.
-- Open and a background run start nothing in a folder that this computer marked for the task or
+- Open and a background run start nothing in a folder that this machine marked for the task or
   its project when its marker is gone or now names only other projects, tasks or spaces. Open says
   so, and you choose to use the folder, which marks it, or to give the task another folder. A
-  folder this computer never marked for it is marked at its next Open without a question.
+  folder this machine never marked for it is marked at its next Open without a question.
 - Opening with a particular account uses that account's settings of the agent app.
 - Tasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
@@ -132,7 +132,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what Tasks could find of it: a process the agent detached from it may live on.
 - What a run's agent changes through Tasks' own tools is recorded as that run's.
-- A run's folder on this computer keeps the agent's raw output and its answer, which are task
+- A run's folder on this machine keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
   record. The agent's own history, such as Codex's sessions, keeps the run's conversation as it
   keeps any session of yours, and Tasks leaves it there.
@@ -164,9 +164,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 ## Where the protection stops
 
-- A program that runs as you, or an administrator of the computer, can read and change your
+- A program that runs as you, or an administrator of the machine, can read and change your
   spaces. Tasks guards against mistakes and against agents that are misled, not against software
-  on your own computer that works against it on purpose.
+  on your own machine that works against it on purpose.
 - An agent with a shell can reach every space through the command line, also spaces outside its
   grant.
 - Tasks cannot make an agent ignore instructions hidden in a task, a mail or another source it
@@ -188,7 +188,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   changes.
 - An editor that had the configuration file open while Tasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
-- On a computer that several people sign in to, another person could serve a page at Tasks'
+- On a machine that several people sign in to, another person could serve a page at Tasks'
   address while Tasks is stopped.
 - An edit that could not be saved is kept in the open page. Reloading the page loses it.
 - Undo, redo and restore compare folders by the text they were given in, not by what is on disk.

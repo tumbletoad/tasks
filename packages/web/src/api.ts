@@ -186,7 +186,7 @@ export class Api {
     };
   }
 
-  /** Sets one of this computer's settings of the page, or resets it with null. */
+  /** Sets one of this machine's settings of the page, or resets it with null. */
   async setMachinePreference(
     key: string,
     value: unknown,

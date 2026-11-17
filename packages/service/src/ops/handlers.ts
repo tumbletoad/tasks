@@ -3498,12 +3498,12 @@ function launchError(error: unknown): unknown {
       code: "invalid_input",
       message:
         reason === "path_missing"
-          ? "Folder not found on this computer."
+          ? "Folder not found on this machine."
           : reason === "not_a_directory"
-            ? "The task's folder is a file on this computer, not a folder."
+            ? "The task's folder is a file on this machine, not a folder."
             : reason === "not_answering"
               ? "The task's folder did not answer in time."
-              : "This task's folder cannot be used on this computer.",
+              : "This task's folder cannot be used on this machine.",
       ...(folder === undefined
         ? {}
         : {

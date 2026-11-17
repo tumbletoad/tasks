@@ -82,7 +82,7 @@ export interface HttpOptions extends HttpStart {
   readonly log: HttpLog;
   /** The machine's default space, which the page's Make default changes. */
   readonly defaults?: UiDefaultSpace;
-  /** This computer's settings, which the page's Settings reads and changes. */
+  /** This machine's settings, which the page's Settings reads and changes. */
   readonly machine?: UiMachine;
   /** The status changed (a block, a move back): the hub rewrites service.json. */
   readonly onChange?: () => void;

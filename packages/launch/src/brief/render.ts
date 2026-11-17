@@ -117,7 +117,7 @@ export function folderLine(folder: BriefFolder): string {
     case "folder":
       return folder.found
         ? `Folder: ${sanitisePath(folder.path)}`
-        : `Folder: ${sanitisePath(folder.path)} (not found on this computer)`;
+        : `Folder: ${sanitisePath(folder.path)} (not found on this machine)`;
     case "work_folder":
       return folder.absolute === undefined
         ? `Folder: ${PRODUCT_NAME} work folder`
