@@ -1,32 +1,29 @@
 name: release
 
-# A release, made the same way every time: each platform's archive is built once from one commit
-# on main and checked there (the runtime gate, a second build compared byte for byte), the
-# signing job signs exactly those bytes with the release key from the protected `release`
-# environment, fresh machines install the signed files with the release's own install scripts,
-# GitHub attestations are made for every file, and a DRAFT release gets them. Publishing the draft
-# is a separate run (mode `publish`), which downloads the draft and checks every file first.
+# A release, started by making its version tag (`v` and package.json's version, on a commit on
+# main) and by nothing else. One run goes all the way: a release made in GitHub's page with the
+# tag becomes a draft again at once, so nobody downloads it before its files are complete; the plan
+# checks the tag and the repository's release settings before anything is built; each platform's
+# archive is built once from the tagged commit and checked there (the runtime gate, a second build
+# compared byte for byte); the signing job signs exactly those bytes with the release key from the
+# `release` environment; fresh machines install the signed files with the release's own install
+# scripts; GitHub attestations are made for every file; and the publish job fills the release's
+# draft, downloads every file back, checks it, and publishes it.
 #
 # A rehearsal runs the same path without any secret and publishes nothing: the signing key is made
 # in memory in the signing job, the versions are `-rehearsal.<run>.<n>`, the install scripts are
-# test builds, there are no attestations and no release. It also builds the commit it upgrades
-# from (a pull request's base, else the newest release tag before the commit), installs that, and
-# upgrades it to the rehearsal's build. Every pull request that changes the release path runs one.
+# test builds, there are no attestations and no release. Its plan reads the release settings and
+# GitHub's releases as a tag's plan does, and warns of what a tag on main would meet. It also builds
+# the commit it upgrades from (a pull request's base, else the newest release tag before the
+# commit), installs that, and upgrades it to the rehearsal's build. Every pull request that changes
+# the release path runs one, and so does a manual start.
 #
 # This repository is public: its logs and artifacts are too. Only the `sign` job sees a secret,
 # and only in its signing step.
 on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: "rehearsal (no secret, publishes nothing), release (a draft) or publish (the draft of `version`)"
-        type: choice
-        options: [rehearsal, release, publish]
-        default: rehearsal
-      version:
-        description: "publish only: the version whose draft to publish"
-        type: string
-        required: false
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -39,20 +36,23 @@ on:
 permissions: {}
 
 concurrency:
-  # Releases and publishing queue one after another; a pull request's rehearsal gives way to its
-  # next push.
-  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.event.pull_request.number) || (inputs.mode == 'rehearsal' && format('release-rehearsal-{0}', github.run_id) || 'release') }}
+  # A tag's runs queue one after another; a pull request's rehearsal gives way to its next push.
+  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && format('release-{0}', github.ref) || format('release-rehearsal-{0}', github.run_id)) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   plan:
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
-      (github.event_name == 'workflow_dispatch' && inputs.mode != 'publish')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !github.event.deleted)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
+      # Reading the `release` environment's rules on refs.
+      actions: read
+      deployments: read
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
       commit: ${{ steps.plan.outputs.commit }}
@@ -64,21 +64,15 @@ jobs:
       - id: mode
         env:
           EVENT: ${{ github.event_name }}
-          MODE: ${{ inputs.mode }}
-          REF_NAME: ${{ github.ref }}
         run: |
-          if [ "$EVENT" = pull_request ]; then mode=rehearsal; else mode="$MODE"; fi
-          if [ "$mode" = release ] && [ "$REF_NAME" != refs/heads/main ]; then
-            echo "A release runs only from main, not $REF_NAME." >&2
-            exit 1
-          fi
+          if [ "$EVENT" = push ]; then mode=release; else mode=rehearsal; fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The plan reads package.json at the commit and at the build it upgrades from, checks
-          # that a release's commit is on main, and that its version has no tag yet.
+          # The plan reads package.json at the commit and at the build it upgrades from, and checks
+          # that a release's tag names a commit on main.
           fetch-depth: 0
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -89,17 +83,48 @@ jobs:
 
       - id: plan
         env:
+          GH_TOKEN: ${{ github.token }}
           MODE: ${{ steps.mode.outputs.mode }}
+          TAG: ${{ github.ref_name }}
           # The commit the run is on: GitHub's attestations name it as the source.
           REF: ${{ github.sha }}
           BASE: ${{ github.event.pull_request.base.sha }}
           RUN: ${{ github.run_number }}
         run: |
-          if [ -n "$BASE" ]; then
-            pnpm release plan --mode "$MODE" --ref "$REF" --base "$BASE" --run "$RUN"
+          if [ "$MODE" = release ]; then
+            pnpm release plan --mode release --tag "$TAG" --run "$RUN"
+          elif [ -n "$BASE" ]; then
+            pnpm release plan --mode rehearsal --ref "$REF" --base "$BASE" --run "$RUN"
           else
-            pnpm release plan --mode "$MODE" --ref "$REF" --run "$RUN"
+            pnpm release plan --mode rehearsal --ref "$REF" --run "$RUN"
           fi
+
+  # A release made in GitHub's page with the tag is public at once, with no files: it becomes a
+  # draft again straight away, beside the plan and whatever the plan decides, so nobody downloads
+  # it before its files are complete and a refused tag does not leave it public. It runs the tag's
+  # own scripts, as the whole run does: the workflow itself is the tag's.
+  hold:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !github.event.deleted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Hold a release published without its files as a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: pnpm release hold --tag "$TAG"
 
   # Each archive is built once, from the commit, by that commit's own `pnpm build`: the runtime
   # gate runs on its own platform, and the release's build is made a second time and compared byte
@@ -190,14 +215,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The release's signing, the only job that holds a secret. It runs only for a dispatch from main
-  # in the `release` environment, whose secrets RELEASE_KEY and RELEASE_KEY_PASSPHRASE only this
-  # step sees. It runs the release scripts of the commit it releases (on main, reviewed), with
+  # The release's signing, the only job that holds a secret. It runs only in a version tag's run, in
+  # the `release` environment, whose secrets RELEASE_KEY and RELEASE_KEY_PASSPHRASE only this step
+  # sees. It runs the release scripts of the commit it releases (on main, reviewed), with
   # dependencies from the lockfile and no cache; the workspace runs no dependency's install script
   # (pnpm-workspace.yaml). sign-ci refuses again by itself anything but this job.
   sign:
-    needs: [plan, build]
-    if: needs.plan.outputs.mode == 'release' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [plan, hold, build]
+    if: needs.plan.outputs.mode == 'release' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
@@ -304,11 +329,13 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/signed/current/*
 
-  # The draft release with every file. A rerun uploads only what an earlier run did not; a file
-  # GitHub already has must be these bytes, and a published release is never changed.
-  draft:
-    needs: [plan, attest]
-    if: always() && needs.plan.outputs.mode == 'release' && needs.attest.result == 'success'
+  # The draft is made if there is none, and gets every file (a rerun uploads only what an earlier
+  # one did not, and a file GitHub has already must be these bytes), every file is downloaded back
+  # and checked as a person's machine checks it, the tag must still name the commit on main, and
+  # the draft is published. A published release is never changed.
+  publish:
+    needs: [plan, hold, attest]
+    if: always() && needs.plan.outputs.mode == 'release' && needs.hold.result == 'success' && needs.attest.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -318,6 +345,8 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.plan.outputs.commit }}
+          # Publishing checks again that the commit is on main.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
@@ -330,38 +359,9 @@ jobs:
           name: signed
           path: ${{ runner.temp }}/signed
 
-      - name: Create or resume the draft release
+      - name: Fill the draft, check every file and publish it
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.plan.outputs.version }}
           COMMIT: ${{ needs.plan.outputs.commit }}
-        run: pnpm release draft --dist "$RUNNER_TEMP/signed/current" --version "$VERSION" --commit "$COMMIT"
-
-  # Publishing, as its own run: the draft's files downloaded from GitHub and checked as a person's
-  # machine checks them, with the release keys of main, its commit checked against main and the
-  # tag, then the draft published.
-  publish:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment: release
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # Publishing checks that the draft's commit is on main.
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-        with:
-          cache: false
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Check the draft's files and publish it
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
-        run: pnpm release publish --version "$VERSION" --work "$RUNNER_TEMP/published"
+        run: pnpm release publish --dist "$RUNNER_TEMP/signed/current" --version "$VERSION" --commit "$COMMIT" --work "$RUNNER_TEMP/published"

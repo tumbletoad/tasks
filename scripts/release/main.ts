@@ -3,24 +3,25 @@
 // By hand in a terminal, outside CI (the passphrase is asked without echo):
 //   keygen --out <folder outside any checkout>
 //   sign --key <key file> --dist <folder> [--expect <.pub file>]
-// In the release workflow (.github/workflows/release.yml):
-//   plan --mode rehearsal|release --ref <commit> [--base <commit>] --run <n>
+// In the release workflow (.github/workflows/release.yml), which a version tag starts:
+//   plan --mode release --tag <v-tag> --run <n> [--repo <owner/name>]
+//   plan --mode rehearsal --ref <commit> [--base <commit>] --run <n> [--repo <owner/name>]
+//   hold --tag <v-tag> [--repo <owner/name>]
 //   gather --from <artifacts folder> --prefix <artifact name prefix> --version <v> --out <new folder>
 //   sign-ci --dist <folder>             the release key from the job's secrets RELEASE_KEY and
 //                                       RELEASE_KEY_PASSPHRASE, never from an argument or a file
 //   rehearse --dist <folder> [--trust-from <commit>]
 //   check-install --dist <signed folder> [--from <previous signed folder>] --work <new folder>
-//   draft --dist <signed folder> --version <v> --commit <sha> [--repo <owner/name>]
-//   publish --version <v> --work <new folder> [--repo <owner/name>]
+//   publish --dist <signed folder> --version <v> --commit <sha> --work <new folder> [--repo <owner/name>]
+//
+// The secrets are in the environment until takeSecrets runs, which is after every static import
+// has run. So this file imports statically only what signing needs, none of it a dependency's code
+// (a test holds that); every other command loads its own modules when it runs.
 import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { RELEASE_PUBLIC_KEYS } from "../../packages/service/src/version/release-keys.ts";
 import { repoRoot } from "../run.ts";
-import { gatherArchives } from "./gather.ts";
-import { draftRelease, publishRelease } from "./github.ts";
-import { installCheck } from "./install-check.ts";
-import { keysAt, planOutputs, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
   createReleaseKey,
@@ -39,11 +40,12 @@ const USAGE = [
   "       pnpm release sign --key <release key file> --dist <folder of archives> [--expect <.pub file>]",
   "       pnpm release sign-ci --dist <folder of archives>",
   "       pnpm release rehearse --dist <folder of archives> [--trust-from <commit>]",
-  "       pnpm release plan --mode rehearsal|release --ref <commit> [--base <commit>] --run <n>",
+  "       pnpm release plan --mode release --tag <v-tag> --run <n> [--repo <owner/name>]",
+  "       pnpm release plan --mode rehearsal --ref <commit> [--base <commit>] --run <n> [--repo <owner/name>]",
+  "       pnpm release hold --tag <v-tag> [--repo <owner/name>]",
   "       pnpm release gather --from <folder> --prefix <name> --version <v> --out <new folder>",
   "       pnpm release check-install --dist <signed folder> [--from <signed folder>] --work <new folder>",
-  "       pnpm release draft --dist <signed folder> --version <v> --commit <sha> [--repo <owner/name>]",
-  "       pnpm release publish --version <v> --work <new folder> [--repo <owner/name>]",
+  "       pnpm release publish --dist <signed folder> --version <v> --commit <sha> --work <new folder> [--repo <owner/name>]",
 ].join("\n");
 
 /** Reads one line from the terminal without echoing it. Ctrl+C ends the script with nothing done. */
@@ -167,6 +169,7 @@ async function main(
     case "rehearse": {
       const values = options(rest, { dist: str, "trust-from": str }, ["dist"]);
       const from = values["trust-from"];
+      const { keysAt } = await import("./plan.ts");
       printSigned(
         rehearsalSign(
           resolve(values.dist ?? ""),
@@ -177,21 +180,54 @@ async function main(
       return 0;
     }
     case "plan": {
-      const values = options(rest, { mode: str, ref: str, base: str, run: str }, [
-        "mode",
-        "ref",
-        "run",
-      ]);
-      if (values.mode !== "rehearsal" && values.mode !== "release") throw new Refusal(USAGE);
+      const values = options(
+        rest,
+        { mode: str, tag: str, ref: str, base: str, run: str, repo: str },
+        ["mode", "run"],
+      );
       const run = Number(values.run);
       if (!Number.isSafeInteger(run) || run < 1) throw new Refusal("--run is the run's number.");
-      const plan = planRun({
-        root: repoRoot,
-        mode: values.mode,
-        ref: values.ref ?? "",
-        ...(values.base === undefined ? {} : { base: values.base }),
-        run,
-      });
+      const { packageVersion, planOutputs, planRun } = await import("./plan.ts");
+      const { releaseReadiness } = await import("./github.ts");
+      const { TRY_AGAIN } = await import("./version.ts");
+      let plan: ReturnType<typeof planRun>;
+      if (values.mode === "release" && values.tag !== undefined) {
+        try {
+          plan = planRun({ root: repoRoot, mode: "release", ref: values.tag, run });
+        } catch (error) {
+          if (error instanceof Refusal) throw new Refusal(`${error.message}\n${TRY_AGAIN}`);
+          throw error;
+        }
+        // Before anything is built or signed.
+        const problems = releaseReadiness(repository(values.repo), plan.version);
+        if (problems.length > 0) throw new Refusal(problems.join("\n"));
+      } else if (values.mode === "rehearsal" && values.ref !== undefined) {
+        plan = planRun({
+          root: repoRoot,
+          mode: "rehearsal",
+          ref: values.ref,
+          ...(values.base === undefined ? {} : { base: values.base }),
+          run,
+        });
+        // What a tag on this commit would meet, told and not enforced: a pull request does not
+        // change the settings, and need not raise the version.
+        const repo = values.repo ?? process.env["GITHUB_REPOSITORY"];
+        if (repo !== undefined) {
+          const version = packageVersion(repoRoot, plan.commit);
+          let problems: string[];
+          try {
+            problems = releaseReadiness(repository(repo), version);
+          } catch (error) {
+            problems = [error instanceof Error ? error.message : String(error)];
+          }
+          for (const problem of problems) {
+            console.log(`::warning title=A tag v${version} would be refused::${problem}`);
+          }
+          if (problems.length === 0) console.log(`A tag v${version} on main would be released.`);
+        }
+      } else {
+        throw new Refusal(USAGE);
+      }
       const out = planOutputs(plan);
       process.stdout.write(out);
       const file = process.env["GITHUB_OUTPUT"];
@@ -205,6 +241,7 @@ async function main(
         "version",
         "out",
       ]);
+      const { gatherArchives } = await import("./gather.ts");
       const names = gatherArchives({
         from: resolve(values.from ?? ""),
         prefix: values.prefix ?? "",
@@ -216,6 +253,7 @@ async function main(
     }
     case "check-install": {
       const values = options(rest, { dist: str, from: str, work: str }, ["dist", "work"]);
+      const { installCheck } = await import("./install-check.ts");
       installCheck({
         dist: values.dist ?? "",
         ...(values.from === undefined ? {} : { from: values.from }),
@@ -225,26 +263,25 @@ async function main(
       log("check-install passed");
       return 0;
     }
-    case "draft": {
-      const values = options(rest, { dist: str, version: str, commit: str, repo: str }, [
+    case "hold": {
+      const values = options(rest, { tag: str, repo: str }, ["tag"]);
+      const { holdRelease } = await import("./github.ts");
+      holdRelease({ repo: repository(values.repo), tag: values.tag ?? "", log });
+      return 0;
+    }
+    case "publish": {
+      const values = options(rest, { dist: str, version: str, commit: str, work: str, repo: str }, [
         "dist",
         "version",
         "commit",
+        "work",
       ]);
-      draftRelease({
+      const { publishRelease } = await import("./github.ts");
+      publishRelease({
         repo: repository(values.repo),
         dist: resolve(values.dist ?? ""),
         version: values.version ?? "",
         commit: values.commit ?? "",
-        log,
-      });
-      return 0;
-    }
-    case "publish": {
-      const values = options(rest, { version: str, work: str, repo: str }, ["version", "work"]);
-      publishRelease({
-        repo: repository(values.repo),
-        version: values.version ?? "",
         work: resolve(values.work ?? ""),
         log,
       });

@@ -3299,7 +3299,7 @@
     },
     {
       "id": "A2.3.12.8.build.release-ci-sign",
-      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any event but a manual dispatch, any ref but main, a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment first and appear in no message or child process",
+      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any run but the push of the archives' own version tag (a pull request, a manual start, a branch, another tag), a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment before any dependency's code is loaded, and appear in no message or child process",
       "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
@@ -3315,7 +3315,23 @@
     },
     {
       "id": "A2.3.12.8.build.release-version",
-      "title": "A release's version is package.json's at a commit on main, dev and rehearsal versions are never released, a draft is created, resumed or left as it is, and a tag on another commit, other bytes, a draft for another commit or a change to a published release are refused",
+      "title": "Dev and rehearsal versions are never released, a release's draft is filled, resumed or left as it is, and other bytes (a draft's to be removed, a published release's needing a new version), a tag moved or deleted during the run or a change to a published release are refused",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-tag",
+      "title": "A version tag releases the commit it names with package.json's version, and is refused with one sentence when it is not that version, its commit is not on main, the version is a development one or was released before, GitHub has two releases for it, or a release setting cannot be read; a release made in GitHub's page with the tag is turned back into a draft first, with the tag sent again, a branch as its target and pre-release as its version says, nothing else is changed, and two releases for the tag stop the run before signing; publishing makes the draft, uploads every file, checks them downloaded back and needs the tag to still name the built commit on main before it publishes, and the release becomes the latest unless it is a pre-release or a higher version is published",
+      "source": "A2 3.12.8",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.8.build.release-settings",
+      "title": "A release is refused when the release environment does not exist or gives its secrets to more than tags v*, or no active tag ruleset for v* restricts creating, moving and deleting tags, or the workflow's own token may bypass it",
       "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
