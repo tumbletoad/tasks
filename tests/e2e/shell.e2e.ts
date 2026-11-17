@@ -422,6 +422,59 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
   });
 });
 
+test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so calmly in the switcher", () => {
+  test("the switcher carries a mark, and its popover names what to run; the mark goes when backups work again", async ({
+    page,
+    world,
+  }) => {
+    // The service's answer for an open space whose daily backup failed for want of disk space.
+    let failing = true;
+    await page.route("**/api/v1/space/list", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as {
+        result: { spaces: { id: string }[] } & Record<string, unknown>;
+      };
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          result: {
+            ...body.result,
+            spaces: body.result.spaces.map((s) =>
+              s.id === world.mira.id && failing ? { ...s, backup: "disk_full" } : s,
+            ),
+          },
+        },
+      });
+    });
+    // Screenshots of the popover as it stands, not as it fades in.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    const trigger = page.getByRole("button", {
+      name: `Space ${world.mira.name}. Its backups need attention. Switch space`,
+    });
+    await expect(trigger.locator('[data-part="backup-attention"]')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("switcher-backup-mark.png") });
+    await trigger.click();
+    const note = spaces(page).locator('[data-part="backup-trouble"]');
+    await expect(note).toHaveAttribute("data-why", "disk_full");
+    await expect(note).toContainText(`${world.mira.name}: the daily backup failed`);
+    await expect(note).toContainText(`${CLI_NAME} space backup`);
+    await page.screenshot({ path: test.info().outputPath("switcher-backup-note.png") });
+
+    // A backup works again while the page stays open: coming back to the tab clears the mark
+    // without opening the switcher.
+    await page.keyboard.press("Escape");
+    await expect(note).toBeHidden();
+    failing = false;
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(
+      page.getByRole("button", { name: `Space ${world.mira.name}. Switch space` }),
+    ).toBeVisible();
+    await expect(page.locator('[data-part="backup-attention"]')).toHaveCount(0);
+  });
+});
+
 test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart into it", () => {
   test("the page names the installed version and the restart; after the restart it offers a reload and does not call the service down", async ({
     page,

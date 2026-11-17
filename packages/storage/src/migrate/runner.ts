@@ -10,8 +10,9 @@
 //
 // When a space's revision is older than the build's latest:
 // 1. The runner notes PRAGMA data_version on the writer's connection, then takes the barrier backup
-//    through a separate read-only connection and verifies it. If that fails, nothing starts: the
-//    outcome is `failed` at the `backup` stage with BACKUP_FAILED, and the space stays as it was.
+//    through a separate read-only connection and trial restores it (backup/barrier.ts). If either
+//    fails, nothing starts: the outcome is `failed` at the `backup` stage with BACKUP_FAILED (or
+//    BUNDLE_LIMIT_EXCEEDED for a full disk), and the space stays as it was.
 // 2. PRAGMA foreign_keys = OFF (it cannot change inside a transaction), then BEGIN IMMEDIATE. Inside,
 //    the runner first proves the backup is the state it is about to change: data_version is as
 //    noted (no other connection committed since before the snapshot), and user_version, last_seq,
@@ -37,7 +38,8 @@
 // with a stale space.json, which the next writer rebuilds and a reader reads past. The barrier
 // backup's own crash windows are in backup/backup.ts.
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
-import { backupSpaceWith, type BackupRecord, type BackupSeams } from "../backup/backup.ts";
+import type { BackupRecord, BackupSeams } from "../backup/backup.ts";
+import { provenBackup } from "../backup/barrier.ts";
 import type { Connection } from "../driver.ts";
 import { misuse, StorageError, type MigrationAttempt } from "../errors.ts";
 import { osRandom, type RandomSource } from "../ids.ts";
@@ -198,7 +200,7 @@ export async function migrateOpened(
   const dataVersion = conn.pragma("data_version");
   let backup: BackupRecord;
   try {
-    backup = await backupSpaceWith(
+    backup = await provenBackup(
       checked,
       opened.folder,
       {

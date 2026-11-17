@@ -32,9 +32,14 @@ export interface MaintenanceReport {
   readonly leftovers: number;
   readonly backup: "taken" | "not_due";
   readonly removed: number;
+  /** Backups newer than the newest that restores which do not restore, or are no longer whole. */
   readonly unverified: number;
   /** The backup found the space's search index damaged: the space's writer repairs it. */
   readonly searchIndexDamaged?: true;
+  /** Retention ran and trial restored the newest backups, until one passed. */
+  readonly checked?: true;
+  /** When the newest backup that passed was made, when one did. */
+  readonly verifiedAt?: number;
 }
 
 export type MaintenanceReply =

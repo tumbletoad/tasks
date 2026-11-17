@@ -148,7 +148,13 @@ function checkPurpose(purpose: unknown): WriterPurpose {
   if (p?.["kind"] === "claim") {
     const epochs = p["knownEpochs"];
     if (!Array.isArray(epochs)) throw misuse("A claim names the epochs this machine knows");
-    return { kind: "claim", knownEpochs: epochs as number[] };
+    const floor = p["refFloor"];
+    if (floor !== undefined && typeof floor !== "number") throw misuse("refFloor is a number");
+    return {
+      kind: "claim",
+      knownEpochs: epochs as number[],
+      ...(floor === undefined ? {} : { refFloor: floor }),
+    };
   }
   throw misuse("A space's writer opens to write or to claim");
 }
@@ -395,12 +401,13 @@ export function serve(
         handle: number,
         opened: OpenedSpace,
         machine: MachineInfo,
-        knownEpochs: number[],
+        goal: Extract<WriterPurpose, { kind: "claim" }>,
         appVersion: string | undefined,
       ): OpenedSpaceInfo => {
         const claim = claimCopy(opened, {
           machineId: machine.id,
-          knownEpochs,
+          knownEpochs: goal.knownEpochs,
+          ...(goal.refFloor === undefined ? {} : { refFloor: goal.refFloor }),
           now: Date.now(),
           random: osRandom,
           appVersion: appVersion ?? SOURCE_APP_VERSION,
@@ -505,7 +512,7 @@ export function serve(
               const opened = opening.finish();
               if (goal.kind === "claim") {
                 try {
-                  return claimHeld(handle, opened, record, goal.knownEpochs, appVersion);
+                  return claimHeld(handle, opened, record, goal, appVersion);
                 } finally {
                   opened.conn.close();
                 }
@@ -525,7 +532,15 @@ export function serve(
             },
           }));
         },
-        restoreInPlace: async ({ backupFile, folder, machineId, knownEpochs, holder, ...rest }) => {
+        restoreInPlace: async ({
+          backupFile,
+          folder,
+          machineId,
+          knownEpochs,
+          refFloor,
+          holder,
+          ...rest
+        }) => {
           const { dir, lock } = await lockSpace(checked, folder, holder, {
             check: checkSwapPath,
           });
@@ -534,7 +549,13 @@ export function serve(
               checked,
               backupFile,
               dir,
-              { machineId, knownEpochs, ...optional(rest), swap: swapGuard(lock, dir) },
+              {
+                machineId,
+                knownEpochs,
+                ...(refFloor === undefined ? {} : { refFloor }),
+                ...optional(rest),
+                swap: swapGuard(lock, dir),
+              },
               restoreSeams,
             );
           } finally {
