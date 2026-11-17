@@ -87,6 +87,14 @@ export interface Leaving {
   readonly at?: number;
 }
 
+/** Where the edits that wait are kept across a reload (keep.ts). */
+export interface UnsavedKeeper {
+  /** The space's kept edits, each once. */
+  load(): Unsaved[];
+  /** The tab's edits that wait now, as the edits' state holds them (one under each field). */
+  save(unsaved: ReadonlyMap<string, Unsaved>): void;
+}
+
 export interface EditState {
   readonly unsaved: ReadonlyMap<string, Unsaved>;
   readonly leaving: ReadonlyMap<string, Leaving>;
@@ -113,6 +121,7 @@ export interface EditDeps {
   /** False once the tab's session stopped: an unanswered request is not asked about any more. */
   readonly alive?: () => boolean;
   readonly timers?: Timers;
+  readonly keeper?: UnsavedKeeper;
 }
 
 /** An undo's commit: named, or the commit of the tab's own write, resolved in the undo's turn. */
@@ -352,6 +361,12 @@ export class Edits {
 
   constructor(deps: EditDeps) {
     this.#deps = deps;
+    // What waited when the page was last closed or reloaded waits again, each under its fields.
+    const restored = new Map<string, Unsaved>();
+    for (const unsaved of deps.keeper?.load() ?? []) {
+      for (const field of unsaved.change.fields) restored.set(keyOf(unsaved.task, field), unsaved);
+    }
+    if (restored.size > 0) this.#state = { ...this.#state, unsaved: restored };
     deps.onChanges(({ changes }) => {
       this.#heard(changes);
     });
@@ -1279,7 +1294,9 @@ export class Edits {
   }
 
   #set(state: EditState): void {
+    const before = this.#state;
     this.#state = state;
+    if (state.unsaved !== before.unsaved) this.#deps.keeper?.save(state.unsaved);
     for (const listener of this.#listeners) listener();
   }
 }

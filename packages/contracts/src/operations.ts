@@ -101,12 +101,6 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "exchange.create": user(),
   "exchange.apply": user(),
   "exchange.abandon": user(),
-  // The prototype import's own (A7 3.15.5): only the user applies and undoes an import, through
-  // its user-only entries, and only an import request carries these (storage: isImportRequest).
-  "alias.add": user(),
-  "area.upsert": user(),
-  "project.upsert": user(),
-  "import.undo": user(),
   undo: user(),
   redo: user(),
   revert: user(),

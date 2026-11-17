@@ -216,19 +216,24 @@ export class Api {
   /**
    * A click on a tile, or on Copy without an instance (A4's `launch.open`): the launch's receipt,
    * and for Copy (or an open whose app takes the brief by paste) the text for the clipboard.
+   * `text` is what the person typed in the composer: the agent's request.
    */
   async openLaunch(
     task: string,
     instance: string | undefined,
     id: string,
-    pack = false,
-    markFolder = false,
+    {
+      pack = false,
+      text,
+      markFolder = false,
+    }: { readonly pack?: boolean; readonly text?: string; readonly markFolder?: boolean } = {},
   ): Promise<{ receipt: Receipt; copy: string | undefined }> {
     const result = await this.client.launch.open({
       task,
       ...(instance === undefined ? {} : { instance }),
       // Shift+Copy (A4 3.15.5): the context pack in place of the pointer brief.
       ...(pack ? { pack: true } : {}),
+      ...(text === undefined || text.trim() === "" ? {} : { text }),
       // The person chose to open the task in a folder whose marker is gone or another's.
       ...(markFolder ? { mark_folder: true } : {}),
       request_id: id,

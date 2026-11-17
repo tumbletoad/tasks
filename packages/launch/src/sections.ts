@@ -28,7 +28,7 @@ import {
 
 // ---------------------------------------------------------------------------------------------
 // Roots: a named folder an older place was relative to. machine.toml's `[roots]` is no longer
-// read; the planning importer still maps a prototype's places to the roots given to it.
+// read.
 
 /** A root ID: lower case, at most 32 characters, never changed. */
 export const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/u;

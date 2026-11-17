@@ -15,8 +15,8 @@ import { isAppVersion } from "../manifest.ts";
 import { inRange } from "../rows.ts";
 
 /**
- * Why a backup was taken. Each kind has its own retention (retention.ts). `pre-import` is the
- * barrier backup before an import of the earlier prototype applies (A7 3.15.5).
+ * Why a backup was taken. Each kind has its own retention (retention.ts). `pre-import` is no longer
+ * taken: an earlier build took it before an import, and such a backup in a space still reads.
  */
 export const BACKUP_KINDS = ["daily", "manual", "pre-migrate", "pre-import"] as const;
 export type BackupKind = (typeof BACKUP_KINDS)[number];
