@@ -14,6 +14,7 @@ import {
   OPERATION_KINDS,
   type Operation,
   type WriteResult,
+  WRITE_LIMITS,
 } from "../src/write/request.ts";
 import { SpaceWriter } from "../src/write/writer.ts";
 import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
@@ -924,7 +925,7 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       "request_id",
     ]);
     expect(error({ ops: [] })).toEqual(["rejected", "VALIDATION_FAILED", "ops"]);
-    expect(error({ ops: Array.from({ length: 51 }, () => patch) })).toEqual([
+    expect(error({ ops: Array.from({ length: WRITE_LIMITS.ops + 1 }, () => patch) })).toEqual([
       "rejected",
       "TOO_LARGE",
       "ops",
@@ -955,7 +956,7 @@ describe("[A1.5.write.operations] the five task operations, their checks and the
       error({
         ops: [
           { kind: "task.patch", task: id, set: { context: "x".repeat(60_000) } },
-          ...Array.from({ length: 9 }, () => ({
+          ...Array.from({ length: Math.ceil(WRITE_LIMITS.requestBytes / 60_000) }, () => ({
             kind: "task.patch",
             task: id,
             set: { context: "y".repeat(60_000) },

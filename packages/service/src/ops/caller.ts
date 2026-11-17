@@ -39,6 +39,12 @@ export interface Caller {
    * call's whose ticket maps to a live session. Absent: the connection cannot bind.
    */
   readonly binding?: Slot;
+  /**
+   * Whether the caller's face shows an entry's result whole: an agent's tool text has a budget.
+   * A page of search then holds only the rows it shows, so its cursor goes on from the first row
+   * left out. Absent: every row a page holds is shown.
+   */
+  readonly shows?: (entry: string, result: unknown) => boolean;
 }
 
 export interface Principal {

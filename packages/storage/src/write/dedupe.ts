@@ -20,13 +20,14 @@
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
 //   and nothing follows: the caller decides whether to reopen it or create anew.
 //
-// A task finished at its `completed_at`, else at the instant of the commit whose write its
-// lifecycle holds (an archived task has no completion time): its provenance, so an undo or redo
-// that sets a finish back keeps the finish's own instant (A1 3.10). Commit instants never go back,
-// so two finishes can share one: the later commit is the one finished last. A removed link or a
-// deleted task never matches, so an undone create holds no key. Everything is read inside the
-// writer's transaction, so two requests never both create a task for one key: the single writer
-// decides them one after the other (A1 3.9).
+// A task finished, for the window, when this space recorded it: at the instant of the commit whose
+// write its lifecycle holds, its provenance, so an undo or redo that sets a finish back keeps the
+// finish's own instant (A1 3.10). A completion dated earlier (an import, or work an agent recreates
+// from another tool) is recent here all the same, so sending the same work again finds it. Commit
+// instants never go back, so two finishes can share one: the later commit is the one finished
+// last. A removed link or a deleted task never matches, so an undone create holds no key.
+// Everything is read inside the writer's transaction, so two requests never both create a task for
+// one key: the single writer decides them one after the other (A1 3.9).
 //
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
@@ -45,8 +46,12 @@ const SQL = {
   holders:
     "SELECT source_id, task_id FROM task_sources WHERE removed_at IS NULL " +
     "AND source_id IN (SELECT value FROM json_each($sources))",
-  task: "SELECT ref, lifecycle, completed_at, deleted_at, created_seq, fp FROM tasks WHERE id = $id",
+  task: "SELECT ref, lifecycle, deleted_at, created_seq, fp FROM tasks WHERE id = $id",
   commitAt: "SELECT at FROM commits WHERE seq = $seq",
+  keysOf:
+    "SELECT coalesce(s.source_key, s.ref) AS k FROM task_sources l " +
+    "JOIN sources s ON s.id = l.source_id WHERE l.task_id = $task AND l.removed_at IS NULL " +
+    "AND s.deleted_at IS NULL AND coalesce(s.source_key, s.ref) IS NOT NULL",
 } as const;
 
 /** What a draft's keys matched (A1 3.6). */
@@ -92,7 +97,7 @@ const byFinish = (a: Holder, b: Holder): number =>
 /**
  * The commit whose write a task's lifecycle holds: its provenance (`fp`, A1 3.10), else its
  * create. Not the commit that last wrote it (`fv`): an undo of a reopen writes the lifecycle back,
- * and the task finished when the write it holds again was made, as its `completed_at` says.
+ * and the task finished when the write it holds again was made.
  */
 function lifecycleSeq(r: RowReader): number {
   const fp = r.json("fp");
@@ -123,6 +128,8 @@ export class Dedupe {
   readonly #holders = new Map<Id<"t">, Holder>();
   /** The tasks the request links each key to, so far. */
   readonly #links = new Map<string, Set<Id<"t">>>();
+  /** The tasks the request links to a source of each key without the key. */
+  readonly #plain = new Map<string, Set<Id<"t">>>();
   #drafts = 0;
 
   constructor(conn: Connection, ops: readonly Operation[], at: number) {
@@ -245,6 +252,72 @@ export class Dedupe {
     };
   }
 
+  /**
+   * What a draft's keys decide when they may name different tasks. The one matched task that has
+   * every key of the draft, held or linked without it, is the match: the task such a draft created
+   * before. Else a key says "this item is this task", so a draft with a key that matches nothing is
+   * new work, also when another key of it (a ticket two tasks share) matches: it is created, and
+   * each key an active task holds is linked to it without the key (`held`), so every key keeps one
+   * live holder. A draft that links its sources to a match (`linkSources`) says its keys name one
+   * item, and is matched as a whole.
+   */
+  decide(
+    keys: readonly string[],
+    linkSources: boolean,
+  ): { active: Id<"t">[]; match?: Match; held: ReadonlyMap<string, Id<"t">> } {
+    const found = this.match(keys, linkSources);
+    const held = new Map<string, Id<"t">>();
+    if (found.match === undefined || linkSources || keys.length < 2) return { ...found, held };
+    const each = keys.map((key) => ({ key, ...this.match([key], false) }));
+    // The task that has every key comes first: a key that matches nothing any more (its holder
+    // finished long ago or was deleted) must not make the draft's own task new work again.
+    const candidates = new Set([...each.flatMap((k) => k.match?.task ?? []), ...found.active]);
+    const covered = [...candidates].filter((task) => {
+      const has = this.#keysHad(task);
+      return keys.every((key) => has.has(key));
+    });
+    const [own] = covered;
+    if (own !== undefined && covered.length === 1) {
+      const { lifecycle } = this.#holder(own);
+      const follows = lifecycle === "active";
+      return {
+        active: found.active,
+        match: { task: own, lifecycle, follows, linkSources: false },
+        held,
+      };
+    }
+    if (each.some((k) => k.match === undefined)) {
+      for (const k of each) {
+        const [holder] = k.active;
+        if (holder !== undefined) held.set(k.key, holder);
+      }
+      return { active: found.active, held };
+    }
+    return { ...found, held };
+  }
+
+  /** The request links `task` to a source of `key` without the key (`decide`'s `held`). */
+  plain(key: string, task: Id<"t">): void {
+    const tasks = this.#plain.get(key) ?? new Set();
+    tasks.add(task);
+    this.#plain.set(key, tasks);
+  }
+
+  /**
+   * The keys `task` has: those its live links hold, and those of its sources linked without
+   * their key (the source's `ref`), at the start and as the request adds them.
+   */
+  #keysHad(task: Id<"t">): Set<string> {
+    const keys = new Set<string>();
+    for (const row of this.#conn.prepare(SQL.keysOf).all({ task })) {
+      keys.add(new RowReader("sources", row).text("k"));
+    }
+    for (const links of [this.#links, this.#plain]) {
+      for (const [key, tasks] of links) if (tasks.has(task)) keys.add(key);
+    }
+    return keys;
+  }
+
   /** The start-state holders of every key of the request: one read of the links per request. */
   #startHolders(): Map<string, Id<"t">[]> {
     if (this.#start !== undefined) return this.#start;
@@ -283,7 +356,7 @@ export class Dedupe {
     let finished: Holder["finished"] = null;
     if (lifecycle !== "active") {
       const seq = lifecycleSeq(r);
-      finished = { at: r.optInt("completed_at", "instant") ?? this.#commitAt(seq), seq };
+      finished = { at: this.#commitAt(seq), seq };
     }
     const holder: Holder = {
       lifecycle,

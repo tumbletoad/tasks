@@ -117,8 +117,8 @@ describe("[A5.3.5.service.finished] the read of finished tasks behind Completed"
   const dropped: string[] = [];
 
   beforeAll(() => {
-    // 2,500 completed and wrapped up in one month, 25 at a time (a request holds 50 operations), so
-    // 25 share each instant.
+    // 2,500 completed and wrapped up in one month, 25 at a time, so 25 share
+    // each instant.
     for (let i = 0; i < 100; i += 1) {
       wrapped.push(...finish(25, Date.UTC(2026, 10, 20, 10) + i * HOUR, "wrapped"));
     }

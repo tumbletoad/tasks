@@ -15,6 +15,7 @@ import {
   clip,
   entryLines,
   fit,
+  fitsWhole,
   fixed,
   textLines,
   type Part,
@@ -155,7 +156,9 @@ function statusParts(result: Status, bound?: boolean): Part[] {
   for (const section of result.sections ?? []) {
     parts.push({
       data: true,
-      title: (kept, total) => `${section.name} (${String(kept)} of ${String(total)}):`,
+      // A task is listed once, in its first section: the count says where the rest are.
+      title: (kept, total) =>
+        `${section.name} (${String(kept)} of ${String(total)}${section.above === undefined ? "" : `, ${String(section.above)} listed above`}):`,
       units: section.tasks.map((row) => [`  ${rowLine(row)}`]),
     });
   }
@@ -559,13 +562,37 @@ function draftLine(row: Added, path: string): string {
             row.matched_by === "source_key" && "by source key",
             row.log_added && "log added",
           )
-      : `${row.result} ${row.ref ?? ""}`;
+      : join(`${row.result} ${row.ref ?? ""}`.trimEnd(), heldCount(row.held));
   return `${path}: ${what.trimEnd()}`;
 }
 
+type Held = readonly { source: number; held_by: string }[] | undefined;
+
+/** How many of a new task's sources were linked without their key: a short, fixed length. */
+function heldCount(held: Held): string | false {
+  const n = held?.length ?? 0;
+  return (
+    n > 0 &&
+    `${String(n)} ${n === 1 ? "source linked without its key" : "sources linked without their key"}`
+  );
+}
+
 /**
- * `add_tasks`' text (A3 3.4.5): the counts, every draft's line, never cut, then the warnings, which
- * a cut takes from the end, because 25 drafts' lines fit the budget alone (A3 3.2.5).
+ * Which task holds each key a new task's source was linked without, one line each. They may be
+ * cut, so every draft's line, with its reference, always shows.
+ */
+function heldLines(rows: readonly { held?: Held }[], at: string): string[][] {
+  return rows.flatMap((row, k) =>
+    (row.held ?? []).map((h) => [
+      `${at}.${String(k)}.sources.${String(h.source)}: its key is held by ${h.held_by}`,
+    ]),
+  );
+}
+
+/**
+ * `add_tasks`' text (A3 3.4.5): the counts and every draft's line, never cut, then which task
+ * holds each key a draft's source was linked without, then the warnings, which a cut takes from
+ * the end, because 25 drafts' lines fit the budget alone (A3 3.2.5).
  */
 function addRendered(result: OutputOf<"task.add">): Rendered {
   const created = result.tasks.filter((t) => t.result !== "exists").length;
@@ -575,9 +602,10 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
         `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)} · as_of ${result.as_of}${replayed(result)}`,
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
       ),
+      { units: heldLines(result.tasks, "tasks") },
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
     ],
-    more: "Send fewer tasks per call to see every warning.",
+    more: "Send fewer tasks per call to see every line.",
   };
 }
 
@@ -731,10 +759,11 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
           `${head} · as_of ${result.as_of}${replayed(result)}`,
           ...result.follow_ups.map(
             (f, k) =>
-              `follow_ups.${String(k)}: ${f.result}${f.ref === undefined ? "" : ` ${f.ref}`}`,
+              `follow_ups.${String(k)}: ${join(`${f.result} ${f.ref ?? ""}`.trimEnd(), heldCount(f.held))}`,
           ),
           ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),
+        { units: heldLines(result.follow_ups, "follow_ups") },
       ],
       more: `Read them with ${getTask}.`,
     };
@@ -779,21 +808,39 @@ export const hasRenderer = (entryName: string): boolean => Object.hasOwn(RENDERE
 
 /** An entry's result as its compact text, within the entry's result budget (A3 3.2.5). */
 export function renderResult(entryName: string, result: unknown, random?: Random): string {
-  const renderer = RENDERERS[entryName];
-  const entry = findEntry(entryName);
-  const max = entry?.budget?.max ?? LIMITS.result;
-  if (renderer === undefined) {
+  const shaped = rendered(entryName, result);
+  if (shaped === undefined) {
     // No tool without a renderer is listed; a later entry gets one with its tool.
     return fit(
-      { parts: [fixed("ok"), { data: true, units: [[JSON.stringify(result)]] }], more: "" },
-      max,
+      {
+        parts: [fixed("ok"), { data: true, units: [[JSON.stringify(result)]] }],
+        more: "",
+      },
+      budgetOf(entryName),
       random,
     );
   }
-  const rendered = (
+  return fit(shaped.text, shaped.max, random);
+}
+
+/** Whether an entry's result shows whole in its tool's text: nothing of it is cut. */
+export function showsWhole(entryName: string, result: unknown): boolean {
+  const shaped = rendered(entryName, result);
+  return shaped === undefined || fitsWhole(shaped.text, shaped.max);
+}
+
+const budgetOf = (entryName: string): number => findEntry(entryName)?.budget?.max ?? LIMITS.result;
+
+/** An entry's result as its renderer lays it out, with the budget it fits. */
+function rendered(entryName: string, result: unknown): { text: Rendered; max: number } | undefined {
+  const renderer = RENDERERS[entryName];
+  if (renderer === undefined) return undefined;
+  const entry = findEntry(entryName);
+  const max = budgetOf(entryName);
+  const text = (
     renderer as (r: unknown, t: { getTask: string; tool: string }) => Rendered & { max?: number }
   )(result, { getTask: toolOf("task.get"), tool: entry?.faces.mcp?.tool ?? entryName });
-  return fit(rendered, Math.min(max, rendered.max ?? max, LIMITS.result), random);
+  return { text, max: Math.min(max, text.max ?? max, LIMITS.result) };
 }
 
 // ---------------------------------------------------------------------------------------------
