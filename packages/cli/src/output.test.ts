@@ -442,14 +442,14 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
       write({
         moved: 2,
         followed: [
-          { kind: "task", ref: "M-14", folder: "~/Dev/portal/web" },
-          { kind: "project", name: "Portal api", folder: "~/Dev/portal/api", missing: true },
+          { kind: "task", ref: "M-14", folder: "~/code/portal/web" },
+          { kind: "project", name: "Portal api", folder: "~/code/portal/api", missing: true },
         ],
       }),
     ).toEqual([
       "The old folder was moved: 2 folders inside it moved along.",
-      "  M-14  ~/Dev/portal/web",
-      "  project Portal api  ~/Dev/portal/api  (not there now)",
+      "  M-14  ~/code/portal/web",
+      "  project Portal api  ~/code/portal/api  (not there now)",
     ]);
     expect(
       write({ stayed: 1, kept: [{ kind: "task", ref: "M-15", folder: "~/work/portal/docs" }] }),

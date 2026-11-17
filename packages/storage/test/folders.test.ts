@@ -133,18 +133,18 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(live()[`task:${inside}`]).toBe("~/Code/portal/web/header");
     // A task's folder moved on disk carries what is inside it as well, a project's included.
     expectStatus(
-      submit([{ kind: "task.folder_set", task: same, path: "~/Dev/portal", carry: true }]),
+      submit([{ kind: "task.folder_set", task: same, path: "~/code/portal-moved", carry: true }]),
       "applied",
     );
     expect(live()).toMatchObject({
-      [`project:${project}`]: "~/Dev/portal",
-      [`project:${nested}`]: "~/Dev/portal/api",
-      [`task:${loose}`]: "~/Dev/portal/other",
+      [`project:${project}`]: "~/code/portal-moved",
+      [`project:${nested}`]: "~/code/portal-moved/api",
+      [`task:${loose}`]: "~/code/portal-moved/other",
     });
     // Clearing the project's folder leaves the folders inside it as they are.
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");
     expect(live()[`project:${project}`]).toBeUndefined();
-    expect(live()[`task:${inside}`]).toBe("~/Dev/portal/web/header");
+    expect(live()[`task:${inside}`]).toBe("~/code/portal-moved/web/header");
     // A clear of nothing is no change.
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "unchanged");
   });
