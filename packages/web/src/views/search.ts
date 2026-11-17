@@ -8,6 +8,7 @@
 // checked, until the person refreshes: results do not move under the pointer. A search that sorts
 // by effort (`sort:effort`) splits To do into one group per effort, in the service's order.
 import type { Client } from "@tasks/contracts/generated/client.ts";
+import { filterOf, QUERY_KEYS } from "@tasks/contracts/query-terms";
 import type { Group } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { Page, PageSource } from "../store/queries.ts";
@@ -136,9 +137,12 @@ function dataOf(error: unknown): Readonly<Record<string, unknown>> | undefined {
 interface Term {
   readonly text: string;
   readonly filter: boolean;
+  /** A filter's key in lower case. */
+  readonly key?: string;
+  /** A filter's value, or a word's text, as written and without a negating `-`. */
+  readonly value: string;
+  readonly negated: boolean;
 }
-
-const FILTER = /^-?[A-Za-z]+(?::|<=|>=|<|>)/u;
 
 function termsOf(q: string): Term[] {
   const terms: Term[] = [];
@@ -163,7 +167,14 @@ function termsOf(q: string): Term[] {
       i += 1;
     }
     const text = q.slice(start, i);
-    terms.push({ text, filter: FILTER.test(text) });
+    const negated = text.length > 1 && text.startsWith("-");
+    const body = negated ? text.slice(1) : text;
+    const filter = filterOf(body);
+    terms.push(
+      filter === undefined
+        ? { text, filter: false, value: body, negated }
+        : { text, filter: true, key: filter.key, value: body.slice(filter.length), negated },
+    );
   }
   return terms;
 }
@@ -171,6 +182,27 @@ function termsOf(q: string): Term[] {
 /** Whether a query has words besides its filters: the part an older space cannot search. */
 export function hasWords(q: string): boolean {
   return termsOf(q).some((term) => !term.filter && term.text !== "OR");
+}
+
+const KEYS: ReadonlySet<string> = new Set(QUERY_KEYS);
+
+/**
+ * The words of a query as a task's title: its filters, `OR` and the words it leaves out (`-word`)
+ * dropped, and a phrase without its quotes. A word that only looks like a filter (`https://…`,
+ * `bug:123`) is the person's text and stays.
+ */
+export function wordsOf(q: string): string {
+  return termsOf(q)
+    .filter((term) => !term.negated && term.text !== "OR" && !KEYS.has(term.key ?? ""))
+    .map((term) =>
+      term.filter
+        ? term.text
+        : term.value.startsWith('"')
+          ? term.value.replace(/^"|"$/gu, "").replaceAll('""', '"')
+          : term.value,
+    )
+    .filter((word) => word !== "")
+    .join(" ");
 }
 
 /** The query's filters alone, for a space without the word index. */
@@ -189,23 +221,15 @@ export function filtersOnly(q: string): string {
 /** A filter's key, as the service reads it, and the logical task fields it reads (A1's names). */
 const FIELDS_OF: Readonly<Record<string, readonly string[]>> = {
   status: ["status"],
-  state: ["status"],
   p: ["priority"],
-  prio: ["priority"],
-  pri: ["priority"],
-  priority: ["priority"],
   effort: ["effort"],
   sort: ["effort"],
-  order: ["effort"],
   due: ["due"],
   area: ["area", "grouping"],
   project: ["project", "grouping"],
-  proj: ["project", "grouping"],
   is: ["inbox", "focus", "due", "wrap"],
   on: ["grouping"],
   updated: ["*"],
-  modified: ["*"],
-  changed: ["*"],
 };
 
 /** Every logical field a task has: what a filter on any change reads. */
@@ -238,8 +262,7 @@ export function searchFields(q: string): readonly string[] {
   const terms = termsOf(q);
   for (const term of terms) {
     if (!term.filter) continue;
-    const key = /^-?([A-Za-z]+)/u.exec(term.text)?.[1]?.toLowerCase() ?? "";
-    for (const field of FIELDS_OF[key] ?? []) {
+    for (const field of FIELDS_OF[term.key ?? ""] ?? []) {
       if (field === "*") for (const each of EVERY_FIELD) fields.add(each);
       else fields.add(field);
     }
@@ -252,11 +275,13 @@ export function searchFields(q: string): readonly string[] {
 }
 
 /**
- * Whether the query sorts by effort, in every spelling the service reads (`order:` and `=` too, the
- * value quoted or not): its open results are then grouped by effort.
+ * Whether the query sorts by effort, as the service reads it (`sort=` too, the value quoted or
+ * not): its open results are then grouped by effort.
  */
 export function sortsByEffort(q: string): boolean {
-  return termsOf(q).some((term) => /^(?:sort|order)[:=]("?)-?effort\1$/iu.test(term.text));
+  return termsOf(q).some(
+    (term) => term.key === "sort" && !term.negated && /^("?)-?effort\1$/iu.test(term.value),
+  );
 }
 
 const LABEL: Readonly<Record<Found, MessageId>> = {

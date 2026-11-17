@@ -350,8 +350,8 @@ export interface Placement {
  * `source.add` operations of the request that name the draft's ID.
  * - `source_key` (the default): an active task that holds a key is returned (`existing`), else a
  *   task finished within the window, else the task is created.
- * - `new`: a new task beside finished ones (A3's `create_new`); an active task holding a key
- *   refuses the request.
+ * - `new`: a new task whatever the keys match (A3's `create_new`). A key an active task holds is
+ *   linked to the new task without the key, so it keeps its one active holder.
  * - `none`: no lookup: the task is created.
  */
 export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
@@ -622,6 +622,19 @@ export const LAUNCH_FAIL_REASONS = [
   "agent_exited",
   "folder_mismatch",
   "interrupted",
+  // The folder's own reason, when it no longer resolved right before the launch.
+  "invalid_path",
+  "root_missing",
+  "root_unavailable",
+  "path_missing",
+  "not_a_directory",
+  "not_a_file",
+  "escapes_root",
+  "identity_mismatch",
+  "identity_unavailable",
+  "folder_changed",
+  "unsafe_folder",
+  "not_answering",
 ] as const;
 
 /** A4's reason codes of Unknown. */

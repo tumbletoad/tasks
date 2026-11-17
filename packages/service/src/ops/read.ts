@@ -592,9 +592,11 @@ const SECTION_ROWS = 8;
 /**
  * The sections `include` asks for (A3 3.4.2). A task appears once, in its first section, so each
  * statement reads enough rows to fill its section after the earlier sections took theirs: at most
- * 8 rows for each of the 5 other sections, plus its own 8.
+ * 8 rows for each of the 5 other sections, plus its own 8. One row more says whether there are
+ * more than it counts.
  */
-const SECTION_LIMIT = `LIMIT ${String(SECTION_ROWS * 6)}`;
+const SECTION_READ = SECTION_ROWS * 6;
+const SECTION_LIMIT = `LIMIT ${String(SECTION_READ + 1)}`;
 const SECTION_SQL: Readonly<Record<string, Statement>> = {
   today: {
     sql:
@@ -763,7 +765,13 @@ export async function readStatus(
   autonomy: "full" | "review" | "suggest";
   statuses: { status: string; count: number }[];
   inbox: number;
-  sections: { name: string; tasks: Record<string, unknown>[]; above?: number }[];
+  sections: {
+    name: string;
+    tasks: Record<string, unknown>[];
+    total: number;
+    more?: true;
+    above?: number;
+  }[];
   /** The task rows `here` asked for, each with `x_own_here`. */
   here: Row[];
   /** The bound task, when one was asked for and it exists. */
@@ -803,7 +811,9 @@ export async function readStatus(
   // A task appears once, in its first section (A3 3.4.2).
   const shown = new Set<unknown>();
   const sections = include.map((name, i) => {
-    const all = (found[i] ?? []) as Row[];
+    const read = (found[i] ?? []) as Row[];
+    const more = read.length > SECTION_READ;
+    const all = more ? read.slice(0, SECTION_READ) : read;
     const rows = all.filter((row) => !shown.has(row["id"]));
     const kept = rows.slice(0, SECTION_ROWS);
     for (const row of kept) shown.add(row["id"]);
@@ -811,6 +821,9 @@ export async function readStatus(
     return {
       name,
       tasks: kept.map((row) => taskRow(row, facts.refPrefix)),
+      total: rows.length,
+      // The statement's own limit cut the section: its count is a lower bound.
+      ...(more ? { more: true as const } : {}),
       ...(above === 0 ? {} : { above }),
     };
   });

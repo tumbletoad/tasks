@@ -6,8 +6,8 @@
 // plain data.
 //
 // Anatomy, inline start to end: marker, check, title (+ status chip) and summary (+ area dot and
-// project on views that mix areas), then fixed columns: due, age, priority, sources, folder, star,
-// launch. Every column keeps its width when it is empty, so columns line up on every row.
+// project on views that mix areas), then fixed columns: due, age, priority, effort, sources,
+// folder, star, launch. Every column keeps its width when it is empty, so columns line up on every row.
 import type { Instance, Receipt } from "../api.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../store/rows.ts";
@@ -163,6 +163,8 @@ export interface RowModel {
   /** Absent in Completed, whose row shows the completion date instead (A5 3.5). */
   readonly age?: { readonly text: Msg; readonly tip: Msg };
   readonly priority?: { readonly level: 1 | 2 | 3; readonly text: Msg };
+  /** The effort estimate's key, as the space's scale names it. */
+  readonly effort?: { readonly key: string; readonly tip: Msg };
   /** The view's own move out of it, as a visible button (A5 3.5). */
   readonly move?: { readonly kind: RowMove; readonly text: Msg };
   readonly sources: {
@@ -209,8 +211,15 @@ function fullDate(date: string, clock: Clock): Msg {
 }
 
 /**
+ * How many days off a date shows its month and year instead of its day and month: a day and month
+ * alone read as the coming one, and past ten months the month says more than the day. The year
+ * form is also what keeps every date inside the due column.
+ */
+const FAR_DAYS = 300;
+
+/**
  * The compact day of a date relative to today (A5 3.6 "Due"): "Today", "Tomorrow", "Sat 14" within
- * six days, "21 Nov" later, "12 Jan 2027" in another year. Past days give their date.
+ * six days, "21 Nov" later, "Sep 2027" from ten months off. Past days give their date.
  */
 function compactDay(date: string, clock: Clock): { text: Msg; days: number } {
   const day = dayNumber(date) ?? 0;
@@ -222,9 +231,10 @@ function compactDay(date: string, clock: Clock): { text: Msg; days: number } {
     return { text: msg("row.weekday", { weekday: p.weekdayShort, day: p.day }), days };
   }
   return {
-    text: p.sameYear
-      ? msg("row.date", { day: p.day, month: p.monthShort })
-      : msg("row.dateYear", { day: p.day, month: p.monthShort, year: p.year }),
+    text:
+      Math.abs(days) < FAR_DAYS
+        ? msg("row.date", { day: p.day, month: p.monthShort })
+        : msg("row.monthYear", { month: p.monthShort, year: p.year }),
     days,
   };
 }
@@ -274,6 +284,16 @@ function dueOf(task: TaskRow, ctx: RowContext): { model: DueModel; describe: Msg
   return planned(waitingRow ? "follow_up" : "planned");
 }
 
+/**
+ * How late, in at most two digits so it fits the due column: days, then weeks from 100 days, then
+ * years. The description says the days in full.
+ */
+function lateText(days: number): Msg {
+  if (days < 100) return msg("row.late", { days });
+  if (days < 700) return msg("row.lateWeeks", { weeks: Math.floor(days / 7) });
+  return msg("row.lateYears", { years: Math.floor(days / 365) });
+}
+
 function dueDay(
   date: string,
   full: Msg,
@@ -283,7 +303,7 @@ function dueDay(
 ): { model: DueModel; describe: Msg } {
   if (days < 0) {
     return {
-      model: { text: msg("row.late", { days: -days }), tone: "late", tip },
+      model: { text: lateText(-days), tone: "late", tip },
       describe: msg("row.desc.late", { days: -days, date: full }),
     };
   }
@@ -491,6 +511,12 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
       : undefined;
   if (priority !== undefined) description.push(msg("row.desc.priority", { level: priority.level }));
 
+  const effort: RowModel["effort"] =
+    !finished && task.effort !== undefined && task.effort !== ""
+      ? { key: task.effort, tip: msg("row.effortTip", { effort: task.effort }) }
+      : undefined;
+  if (effort !== undefined) description.push(msg("row.desc.effort", { effort: effort.key }));
+
   const age = finished ? undefined : ageOf(row, ctx);
   if (age !== undefined) description.push(age.describe);
 
@@ -542,6 +568,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     ...(due === undefined ? {} : { due: due.model }),
     ...(age === undefined ? {} : { age: age.model }),
     ...(priority === undefined ? {} : { priority }),
+    ...(effort === undefined ? {} : { effort }),
     ...(move === undefined ? {} : { move }),
     sources: sourcesOf(row.sources ?? [], row.sourcesMore),
     folder: folderOf(row.place),

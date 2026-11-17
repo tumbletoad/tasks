@@ -88,6 +88,8 @@ export const SpaceStatusResult = z.strictObject({
       z.strictObject({
         name: z.enum(INCLUDE).describe("Section"),
         tasks: z.array(TaskRow).describe("Up to 8 tasks"),
+        total: Count.describe("Its tasks not listed in an earlier section"),
+        more: z.literal(true).describe("It has more tasks than total says").optional(),
         above: z
           .int()
           .min(1)
@@ -204,6 +206,7 @@ export const spaceStatus = defineEntry({
                 project: "Lumen Health",
               },
             ],
+            total: 1,
           },
         ],
       },

@@ -334,12 +334,11 @@ export function spaceUnavailable(
       reason === "opening"
         ? "The space is still opening."
         : "The service does not serve that space now.",
-    hint:
-      reason === "opening"
-        ? "Try again in a moment."
-        : wayOut === undefined
-          ? "Run tasks space list."
-          : `${wayOut} Run tasks space list for its folder.`,
+    hint: retryable
+      ? "Try again in a moment."
+      : wayOut === undefined
+        ? "Run tasks space list."
+        : `${wayOut} Run tasks space list for its folder.`,
     data: { reason, retryable, ...(state === undefined ? {} : { state }) },
   });
 }

@@ -44,6 +44,42 @@ export const EDGES: Readonly<Record<IntentState, readonly IntentState[]>> = {
 /** Whether `from → to` is an edge of A4's state machine. */
 export const isEdge = (from: IntentState, to: IntentState): boolean => EDGES[from].includes(to);
 
+/** Why a place does not resolve to a folder, or a working folder fails its check. A closed list. */
+export const RESOLVE_REASONS = [
+  /** The relative path is not a place's path (A1 3.15). */
+  "invalid_path",
+  /** This machine has no root with the place's root ID. */
+  "root_missing",
+  /** The root's folder is not there, is not a folder or cannot be reached. */
+  "root_unavailable",
+  /** The place's folder is not there or cannot be reached (a dangling link included). */
+  "path_missing",
+  /** The place is a folder and a file is there (through a link to a file included). */
+  "not_a_directory",
+  /** The place is a file and something else is there. */
+  "not_a_file",
+  /** The path leads outside the root's folder, through a link or a junction. */
+  "escapes_root",
+  /** The folder holds another repository than the one the place recorded, or none it can read. */
+  "identity_mismatch",
+  /** The volume gives no file number (0), so the folder has no identity to check: never guessed. */
+  "identity_unavailable",
+  /**
+   * The working folder is not the directory `resolvePlace` found, or no longer lies at the depth
+   * it found below the root's directory: the tree changed in between.
+   */
+  "folder_changed",
+  /**
+   * A folder Tasks makes and owns (the space's work folder, A4 3.3) is not one it may work
+   * in: a link, a junction or another reparse point, another user's, open to other users (POSIX),
+   * or not inside its parent by identity.
+   */
+  "unsafe_folder",
+  /** The folder's drive or share did not answer in time: nothing was started. */
+  "not_answering",
+] as const;
+export type ResolveReason = (typeof RESOLVE_REASONS)[number];
+
 /**
  * The fixed reason codes of Failed and Unknown (A4 3.9.1, 3.9.2, 3.9.3). A record holds a code,
  * never a message: the UI words it (A4 3.9.4, 3.18).
@@ -65,6 +101,8 @@ export const FAIL_REASONS = [
   "folder_mismatch",
   /** Clipboard: the service stopped before the copy was reported. */
   "interrupted",
+  /** The folder no longer resolved right before the launch: its own reason. */
+  ...RESOLVE_REASONS,
 ] as const;
 export type FailReason = (typeof FAIL_REASONS)[number];
 

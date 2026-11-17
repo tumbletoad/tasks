@@ -27,7 +27,7 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
-import { folderRefusal, MARKER_REASONS, markerWords } from "../row/launch.ts";
+import { folderRefusal, MARKER_REASONS, markerWords, type FolderRefusal } from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
@@ -455,6 +455,18 @@ export function TaskList({
     [loadReceipts],
   );
 
+  /** Each task's last Open refused on its folder, until an Open of it goes through. */
+  const [refusals, setRefusals] = useState<ReadonlyMap<string, FolderRefusal>>(new Map());
+  const refuse = useCallback((task: string, refused: FolderRefusal | undefined) => {
+    setRefusals((known) => {
+      if (known.get(task) === refused) return known;
+      const next = new Map(known);
+      if (refused === undefined) next.delete(task);
+      else next.set(task, refused);
+      return next;
+    });
+  }, []);
+
   /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). True once it is there. */
   const toClipboard = useCallback(
     (text: string, pack = false): Promise<boolean> =>
@@ -506,6 +518,7 @@ export function TaskList({
               ...(text === undefined ? {} : { text }),
             })
             .then(async ({ receipt, copy }) => {
+              refuse(task.id, undefined);
               shown(task, receipt);
               // The app takes the brief by paste: without it on the clipboard the words did not go.
               if (copy !== undefined && !(await toClipboard(copy))) return undefined;
@@ -514,6 +527,12 @@ export function TaskList({
             .catch((error: unknown) => {
               if (live.failed(error)) return undefined;
               const refused = folderRefusal(error);
+              // The folder line says what the refusal found, unless the folder is there and
+              // only its marker asks.
+              refuse(
+                task.id,
+                refused === undefined || MARKER_REASONS.has(refused.reason) ? undefined : refused,
+              );
               if (refused === undefined) say(t("row.openFailed"));
               else if (MARKER_REASONS.has(refused.reason)) {
                 say(t("row.openMarker", markerWords(refused)), {
@@ -568,7 +587,7 @@ export function TaskList({
         setCurrent(task.id);
       },
     };
-  }, [api, live, edits, expandTask, chosen, collapse, say, shown, t, toClipboard]);
+  }, [api, live, edits, expandTask, chosen, collapse, refuse, say, shown, t, toClipboard]);
 
   const onCurrent = useCallback((key: string) => {
     setCurrent(key);
@@ -600,6 +619,7 @@ export function TaskList({
       setsize={item.setsize}
       actions={actions}
       leaving={leavingOf(item.key)}
+      refused={refusals.get(item.key)}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}
