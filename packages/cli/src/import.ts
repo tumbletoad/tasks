@@ -1,8 +1,8 @@
 // `tasks import planning` (A7 3.15.4, 3.15.5): the import of the Planning prototype, through the
 // service's user-only entries `import.planning.*` (A3 3.2.3):
 //
-//   tasks import planning <folder> --dry-run [--me <name>] [--roots <id>=<folder>[,...]]
-//         [--actions <export.json>] [--checked-as completed|review] [--include-orphans]
+//   tasks import planning <folder> --dry-run [--me <name>] [--actions <export.json>]
+//         [--checked-as completed|review] [--include-orphans]
 //         [--space <space>] [--json]
 //   tasks import planning --apply <run> --token <token> [--space <space>] [--json]
 //   tasks import planning --undo <run> [--space <space>] [--json]
@@ -37,7 +37,6 @@ Run again over a space that holds an earlier import, it changes only what change
 and never a field you changed since: such a field is listed as a conflict and kept as you have it.
 
   --me <name>                      The owner name that is you: those tasks get no owner
-  --roots <id>=<folder>[,...]      Roots for the task folders, beside this machine's own
   --actions <file>                 The page's actions export (planning-actions-<date>.json)
   --checked-as completed|review    A checked task: completed (default) or kept in Review
   --include-orphans                Create metadata entries without a task line, in Backlog
@@ -48,9 +47,6 @@ The dry run's token stops being valid when the space or the prototype folder cha
 run again. Only the user can run this, in an interactive terminal.
 `;
 
-const ROOT = /^([a-z0-9][a-z0-9_-]{0,31})=(.+)$/s;
-/** A comma that starts the next `<id>=` of a --roots list: a folder may hold commas. */
-const NEXT_ROOT = /,(?=[a-z0-9][a-z0-9_-]{0,31}=)/;
 const RUN = /^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 /** Seconds an apply or an undo may take before the CLI stops waiting: the service's own limit. */
 const LONG_CALL_S = 30 * 60;
@@ -72,7 +68,6 @@ function parse(io: Io, args: readonly string[]): Parsed {
   let actions: string | undefined;
   let checkedAs: string | undefined;
   let orphans = false;
-  const roots: { id: string; folder: string }[] = [];
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? "";
     const [flag, inline] =
@@ -115,13 +110,6 @@ function parse(io: Io, args: readonly string[]): Parsed {
       case "--include-orphans":
         orphans = true;
         break;
-      case "--roots":
-        for (const part of value().split(NEXT_ROOT)) {
-          const m = ROOT.exec(part);
-          if (m === null) throw new UsageError("--roots takes <id>=<folder>, comma-separated");
-          roots.push({ id: m[1] ?? "", folder: at(m[2] ?? "") });
-        }
-        break;
       default:
         if (arg.startsWith("--")) {
           throw new UsageError(
@@ -136,8 +124,7 @@ function parse(io: Io, args: readonly string[]): Parsed {
     me !== undefined ||
     actions !== undefined ||
     checkedAs !== undefined ||
-    orphans ||
-    roots.length > 0;
+    orphans;
   const chosen = [dryRun, apply !== undefined, undo !== undefined].filter(Boolean).length;
   if (chosen !== 1) {
     throw new UsageError("tasks import planning takes one of --dry-run, --apply and --undo");
@@ -161,7 +148,6 @@ function parse(io: Io, args: readonly string[]): Parsed {
     input: {
       folder: at(folder),
       ...(me === undefined ? {} : { me }),
-      ...(roots.length === 0 ? {} : { roots }),
       ...(actions === undefined ? {} : { actions }),
       ...(checkedAs === undefined ? {} : { checked_as: checkedAs }),
       ...(orphans ? { include_orphans: true } : {}),
@@ -187,8 +173,11 @@ function summary(r: ImportPlanningPreviewResult): string {
   );
   add(
     `Areas ${String(c.areas)} (${String(c.areas_existing)} in the space), projects ${String(c.projects)} ` +
-      `(${String(c.projects_existing)}), sources ${String(c.sources)} (${String(c.sources_existing)}), ` +
-      `places ${String(c.places)} (${String(c.places_missing)} missing here).`,
+      `(${String(c.projects_existing)}), sources ${String(c.sources)} (${String(c.sources_existing)}).`,
+  );
+  add(
+    `Task folders: ${String(c.folders)}, ${String(c.folders_missing)} not on this machine. ` +
+      `Projects with a folder: ${String(c.project_folders)} of ${String(c.projects)}.`,
   );
   if (c.actions_events > 0) {
     add(
@@ -208,12 +197,21 @@ function summary(r: ImportPlanningPreviewResult): string {
   if (r.owners.length > 0) {
     add(`Owners: ${r.owners.map((o) => `${str(o.name)}${o.me ? " (you)" : ""}`).join(", ")}`);
   }
-  for (const root of r.roots) {
-    add(
-      root.origin === "proposed"
-        ? `Proposed root ${root.id} ${str(root.folder)}: ${String(root.places)} folders. Name it with --roots ${root.id}=<folder>.`
-        : `Root ${root.id} ${str(root.folder)} (${root.origin}): ${String(root.places)} places, ${String(root.missing)} missing here.`,
-    );
+  const foldered = r.project_folders.filter((p) => p.folder !== undefined || p.none === "taken");
+  if (foldered.length > 0) {
+    add("Project folders on this machine:");
+    for (const p of foldered) {
+      add(
+        p.folder !== undefined
+          ? `  ${str(p.project)}: ${str(p.folder)}`
+          : `  ${str(p.project)}: none, ${str(p.holder ?? "another project")} has that folder`,
+      );
+      if (p.current !== undefined)
+        add(`    has ${str(p.current)} now, kept unless only the prototype changed it`);
+    }
+  }
+  if (r.tasks.some((t) => t.folder?.state === "other_machine")) {
+    add("Some folders are paths of another kind of machine: import there to give them.");
   }
   add();
   if (r.blocked || r.token === undefined) {
@@ -249,6 +247,18 @@ function applied(r: ImportPlanningApplyResult): string {
     for (const t of conflicts) {
       add(`  ${t.ref ?? t.legacy_id}  ${(t.conflicts ?? []).join(", ")}`);
     }
+  }
+  const projects = r.projects ?? [];
+  const set = projects.filter((p) => p.outcome === "set");
+  if (set.length > 0) {
+    add();
+    add(`Project folders set on this machine: ${set.map((p) => str(p.project)).join(", ")}.`);
+  }
+  const kept = projects.filter((p) => p.outcome === "conflict");
+  if (kept.length > 0) {
+    add();
+    add("Project folders changed in the prototype and in the space, kept as the space has them:");
+    for (const p of kept) add(`  ${str(p.project)}`);
   }
   const unlisted = c.conflicts - conflicts.length;
   if (unlisted > 0) {

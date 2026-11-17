@@ -547,7 +547,7 @@ Apply a dry run of the Planning prototype import, behind a verified backup.
 | Scope | `space:write` |
 | Remote class | never |
 | Audience filter | none |
-| A1 operations | `task.create`, `task.patch`, `task.move`, `task.complete`, `task.reopen`, `task.wrap_up`, `log.add`, `source.add`, `place.set`, `alias.add`, `area.upsert`, `project.upsert`, `exchange.create` |
+| A1 operations | `task.create`, `task.patch`, `task.move`, `task.complete`, `task.reopen`, `task.wrap_up`, `log.add`, `source.add`, `project.folder_set`, `task.folder_set`, `alias.add`, `area.upsert`, `project.upsert`, `exchange.create` |
 | Faces | UI |
 | Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `space_unavailable`, `read_only`, `request_id_conflict` |
 
@@ -579,9 +579,12 @@ Apply a dry run of the Planning prototype import, behind a verified backup.
 | `tasks[].legacy_id` | string, max 1024 | yes | The prototype's ID |
 | `tasks[].ref` | string | no | Its task |
 | `tasks[].outcome` | "created" \| "updated" \| "unchanged" \| "deleted" | yes | What happened |
-| `tasks[].changed` | ("title" \| "summary" \| "context" \| "status" \| "priority" \| "owner" \| "waiting_on" \| "source_at" \| "reviewed_at" \| "due" \| "focus" \| "grouping" \| "lifecycle" \| "wrap" \| "ext.planning" \| "place" \| "evidence" \| "sources")[] | no | Fields it changed |
-| `tasks[].conflicts` | ("title" \| "summary" \| "context" \| "status" \| "priority" \| "owner" \| "waiting_on" \| "source_at" \| "reviewed_at" \| "due" \| "focus" \| "grouping" \| "lifecycle" \| "wrap" \| "ext.planning" \| "place" \| "evidence" \| "sources")[] | no | Fields both sides changed: kept as the space has them |
+| `tasks[].changed` | ("title" \| "summary" \| "context" \| "status" \| "priority" \| "owner" \| "waiting_on" \| "source_at" \| "reviewed_at" \| "due" \| "focus" \| "grouping" \| "lifecycle" \| "wrap" \| "ext.planning" \| "folder" \| "evidence" \| "sources")[] | no | Fields it changed |
+| `tasks[].conflicts` | ("title" \| "summary" \| "context" \| "status" \| "priority" \| "owner" \| "waiting_on" \| "source_at" \| "reviewed_at" \| "due" \| "focus" \| "grouping" \| "lifecycle" \| "wrap" \| "ext.planning" \| "folder" \| "evidence" \| "sources")[] | no | Fields both sides changed: kept as the space has them |
 | `tasks_more` | integer, 0 to 1000000000 | yes | Tasks beyond those, in the run's apply.json |
+| `projects` | object[], max 2000 items | no | Projects whose folder on this machine the import set or did not change |
+| `projects[].project` | string | yes | Project title |
+| `projects[].outcome` | "set" \| "conflict" | yes | set: the prototype's folder; conflict: both changed it, kept as it is |
 | `gone` | (string, max 1024)[], max 2000 items | yes | Legacy IDs gone from the prototype |
 | `as_of` | string | no | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
@@ -650,9 +653,6 @@ Dry run of the Planning prototype import: a report and a preview token.
 |---|---|---|---|
 | `folder` | string, 1 to 4096 | yes | The prototype folder, an absolute path |
 | `me` | string, 1 to 300 | no | The owner name that is you: no owner |
-| `roots` | object[], max 64 items | no | Roots for places, beside this machine's own |
-| `roots[].id` | string, max 32 | yes | The root's ID |
-| `roots[].folder` | string, 1 to 4096 | yes | Its folder on this machine, an absolute path |
 | `actions` | string, 1 to 4096 | no | The page's actions export, an absolute path |
 | `checked_as` | "completed" \| "review" | no | A checked task: completed (default) or kept in Review |
 | `include_orphans` | boolean | no | Create metadata entries without a task line, in Backlog |
@@ -669,7 +669,7 @@ Dry run of the Planning prototype import: a report and a preview token.
 | `blocked` | boolean | yes | An error blocks the preview: no token |
 | `token` | string | no | The preview token --apply needs |
 | `time_zone` | string | yes | IANA zone the days are placed in |
-| `options` | object | yes | The options the plan was made with; its roots are under roots |
+| `options` | object | yes | The options the plan was made with |
 | `options.me` | string | no | --me |
 | `options.checked_as` | "completed" \| "review" | yes | --checked-as |
 | `options.include_orphans` | boolean | yes | --include-orphans |
@@ -698,8 +698,9 @@ Dry run of the Planning prototype import: a report and a preview token.
 | `counts.sources` | integer, 0 to 1000000000 | yes | Distinct sources |
 | `counts.sources_existing` | integer, 0 to 1000000000 | yes | Of those, keys the space holds: linked |
 | `counts.links` | integer, 0 to 1000000000 | yes | Links from tasks to sources |
-| `counts.places` | integer, 0 to 1000000000 | yes | Tasks with a place |
-| `counts.places_missing` | integer, 0 to 1000000000 | yes | Of those, folders missing on this machine |
+| `counts.folders` | integer, 0 to 1000000000 | yes | Tasks with a folder in the prototype |
+| `counts.folders_missing` | integer, 0 to 1000000000 | yes | Of those, not a folder on this machine |
+| `counts.project_folders` | integer, 0 to 1000000000 | yes | Projects that get a folder on this machine |
 | `counts.duplicates_left_out` | integer, 0 to 1000000000 | yes | Task lines left out for an ID another line has |
 | `counts.orphans_included` | integer, 0 to 1000000000 | yes | Metadata entries without a task line, created |
 | `counts.text_sanitised` | integer, 0 to 1000000000 | yes | Fields whose text the sanitiser changed |
@@ -712,22 +713,23 @@ Dry run of the Planning prototype import: a report and a preview token.
 | `statuses[].prototype` | "open" \| "waiting" \| "needs_review" \| "delegated" \| "backlog" \| "none" | yes | The prototype's status, none without one |
 | `statuses[].status` | "open" \| "waiting" \| "review" \| "backlog" | yes | Its status here |
 | `statuses[].count` | integer, 0 to 1000000000 | yes | Tasks |
-| `roots` | object[] | yes | Roots |
-| `roots[].id` | string | yes | Root ID |
-| `roots[].folder` | string | yes | Its folder on this machine |
-| `roots[].origin` | "machine" \| "given" \| "proposed" | yes | machine.toml's, --roots, or proposed: name it with --roots |
-| `roots[].places` | integer, 0 to 1000000000 | yes | Task folders under it |
-| `roots[].missing` | integer, 0 to 1000000000 | yes | Of those, missing on this machine |
+| `project_folders` | object[] | yes | Per project, the folder it gets or why none, in creation order |
+| `project_folders[].project` | string | yes | Project title |
+| `project_folders[].area` | string | yes | Its area's title |
+| `project_folders[].folder` | string | no | The folder it gets on this machine, the home as ~ |
+| `project_folders[].none` | "no_folders" \| "no_common_folder" \| "taken" | no | Why none: no task folder here, none holds the others, or another has it |
+| `project_folders[].holder` | string | no | For taken: the project that has the folder |
+| `project_folders[].current` | string | no | The folder it has here now, when another: kept unless only the prototype changed |
 | `owners` | object[] | yes | Every distinct owner |
 | `owners[].name` | string | yes | As first written |
 | `owners[].me` | boolean | yes | It is you (--me): no owner |
 | `owners[].tasks` | integer, 0 to 1000000000 | yes | Tasks |
 | `attention` | object[] | yes | Needs attention: every problem code found, errors first |
-| `attention[].code` | "file-missing" \| "file-too-large" \| "invalid-utf8" \| "byte-order-mark" \| "line-too-long" \| "too-many-task-lines" \| "too-many-entries" \| "too-many-items" \| "too-many-event-files" \| "events-too-large" \| "duplicate-id" \| "open-copy-hidden" \| "date-invalid" \| "date-trimmed" \| "json-invalid" \| "json-wrong-shape" \| "entry-not-object" \| "field-type" \| "status-unknown" \| "priority-invalid" \| "source-invalid" \| "path-not-absolute" \| "metadata-orphan" \| "jira-row-without-key" \| "event-invalid" \| "event-too-large" \| "event-not-ready" \| "event-duplicate-id" \| "event-unknown-task" \| "actions-invalid" \| "actions-conflict" \| "not-a-regular-file" \| "destination-exists" \| "destination-inside-source" \| "read-failed" \| "write-failed" \| "source-changed" \| "fallback-id" \| "title-cut" \| "title-empty" \| "text-cut" \| "text-sanitised" \| "checked-item" \| "ticked-in-file" \| "ticked-unchecked" \| "metadata-state-key" \| "done-date-unknown" \| "date-out-of-range" \| "path-outside-roots" \| "paths-extra" \| "source-title-generic" \| "source-key-shared" \| "source-key-unavailable" \| "source-dropped" \| "source-file-link" \| "source-not-shown" \| "extra-key-reserved" \| "extra-dropped" \| "orphan-id-invalid" \| "source-key-exists" \| "place-missing" \| "legacy-id-imported" \| "actions-not-given" | yes | Problem code |
+| `attention[].code` | "file-missing" \| "file-too-large" \| "invalid-utf8" \| "byte-order-mark" \| "line-too-long" \| "too-many-task-lines" \| "too-many-entries" \| "too-many-items" \| "too-many-event-files" \| "events-too-large" \| "duplicate-id" \| "open-copy-hidden" \| "date-invalid" \| "date-trimmed" \| "json-invalid" \| "json-wrong-shape" \| "entry-not-object" \| "field-type" \| "status-unknown" \| "priority-invalid" \| "source-invalid" \| "path-not-absolute" \| "metadata-orphan" \| "jira-row-without-key" \| "event-invalid" \| "event-too-large" \| "event-not-ready" \| "event-duplicate-id" \| "event-unknown-task" \| "actions-invalid" \| "actions-conflict" \| "not-a-regular-file" \| "destination-exists" \| "destination-inside-source" \| "read-failed" \| "write-failed" \| "source-changed" \| "fallback-id" \| "title-cut" \| "title-empty" \| "text-cut" \| "text-sanitised" \| "checked-item" \| "ticked-in-file" \| "ticked-unchecked" \| "metadata-state-key" \| "done-date-unknown" \| "date-out-of-range" \| "paths-extra" \| "source-title-generic" \| "source-key-shared" \| "source-key-unavailable" \| "source-dropped" \| "source-file-link" \| "source-not-shown" \| "extra-key-reserved" \| "extra-dropped" \| "orphan-id-invalid" \| "source-key-exists" \| "folder-missing" \| "folder-reserved" \| "folder-taken" \| "legacy-id-imported" \| "actions-not-given" | yes | Problem code |
 | `attention[].severity` | "error" \| "warning" | yes | An error blocks |
 | `attention[].count` | integer, 0 to 1000000000 | yes | How often |
 | `problems` | object[] | yes | Every problem, up to 2,000 |
-| `problems[].code` | "file-missing" \| "file-too-large" \| "invalid-utf8" \| "byte-order-mark" \| "line-too-long" \| "too-many-task-lines" \| "too-many-entries" \| "too-many-items" \| "too-many-event-files" \| "events-too-large" \| "duplicate-id" \| "open-copy-hidden" \| "date-invalid" \| "date-trimmed" \| "json-invalid" \| "json-wrong-shape" \| "entry-not-object" \| "field-type" \| "status-unknown" \| "priority-invalid" \| "source-invalid" \| "path-not-absolute" \| "metadata-orphan" \| "jira-row-without-key" \| "event-invalid" \| "event-too-large" \| "event-not-ready" \| "event-duplicate-id" \| "event-unknown-task" \| "actions-invalid" \| "actions-conflict" \| "not-a-regular-file" \| "destination-exists" \| "destination-inside-source" \| "read-failed" \| "write-failed" \| "source-changed" \| "fallback-id" \| "title-cut" \| "title-empty" \| "text-cut" \| "text-sanitised" \| "checked-item" \| "ticked-in-file" \| "ticked-unchecked" \| "metadata-state-key" \| "done-date-unknown" \| "date-out-of-range" \| "path-outside-roots" \| "paths-extra" \| "source-title-generic" \| "source-key-shared" \| "source-key-unavailable" \| "source-dropped" \| "source-file-link" \| "source-not-shown" \| "extra-key-reserved" \| "extra-dropped" \| "orphan-id-invalid" \| "source-key-exists" \| "place-missing" \| "legacy-id-imported" \| "actions-not-given" | yes | A code of the fixed table |
+| `problems[].code` | "file-missing" \| "file-too-large" \| "invalid-utf8" \| "byte-order-mark" \| "line-too-long" \| "too-many-task-lines" \| "too-many-entries" \| "too-many-items" \| "too-many-event-files" \| "events-too-large" \| "duplicate-id" \| "open-copy-hidden" \| "date-invalid" \| "date-trimmed" \| "json-invalid" \| "json-wrong-shape" \| "entry-not-object" \| "field-type" \| "status-unknown" \| "priority-invalid" \| "source-invalid" \| "path-not-absolute" \| "metadata-orphan" \| "jira-row-without-key" \| "event-invalid" \| "event-too-large" \| "event-not-ready" \| "event-duplicate-id" \| "event-unknown-task" \| "actions-invalid" \| "actions-conflict" \| "not-a-regular-file" \| "destination-exists" \| "destination-inside-source" \| "read-failed" \| "write-failed" \| "source-changed" \| "fallback-id" \| "title-cut" \| "title-empty" \| "text-cut" \| "text-sanitised" \| "checked-item" \| "ticked-in-file" \| "ticked-unchecked" \| "metadata-state-key" \| "done-date-unknown" \| "date-out-of-range" \| "paths-extra" \| "source-title-generic" \| "source-key-shared" \| "source-key-unavailable" \| "source-dropped" \| "source-file-link" \| "source-not-shown" \| "extra-key-reserved" \| "extra-dropped" \| "orphan-id-invalid" \| "source-key-exists" \| "folder-missing" \| "folder-reserved" \| "folder-taken" \| "legacy-id-imported" \| "actions-not-given" | yes | A code of the fixed table |
 | `problems[].severity` | "error" \| "warning" | yes | An error blocks the preview |
 | `problems[].file` | string, max 120 | yes | The file in the prototype folder, with forward slashes |
 | `problems[].line` | integer, 1 to 1000000000 | no | 1-based line of a ledger |
@@ -743,10 +745,9 @@ Dry run of the Planning prototype import: a report and a preview token.
 | `tasks[].status` | "open" \| "waiting" \| "review" \| "backlog" | yes | Status |
 | `tasks[].lifecycle` | "active" \| "completed" | yes | Lifecycle |
 | `tasks[].wrap` | "pending" \| "wrapped" | no | Wrap-up of a completed task |
-| `tasks[].place` | object | no | Its folder |
-| `tasks[].place.root` | string | yes | Root ID |
-| `tasks[].place.path` | string | yes | Path below the root, with forward slashes |
-| `tasks[].place_missing` | boolean | no | The folder is not on this machine |
+| `tasks[].folder` | object | no | Its folder |
+| `tasks[].folder.path` | string | yes | The folder as stored here, the home as ~; else as the prototype has it |
+| `tasks[].folder.state` | "own" \| "project" \| "missing" \| "other_machine" \| "reserved" | yes | Its own, its project's, or why none: missing, other_machine, reserved |
 | `tasks[].due` | string | no | Due date |
 | `tasks[].focus` | string | no | Starred: focus_on |
 | `tasks[].imported` | boolean | no | The space already holds its legacy ID |
@@ -757,24 +758,14 @@ Dry run of the Planning prototype import: a report and a preview token.
 
 ### Examples
 
-#### Mira's prototype folder, with her name and her roots
+#### Mira's prototype folder, with her name
 
 Called by the user.
 
 ```json
 {
   "folder": "/home/mira/planning",
-  "me": "Mira Okafor",
-  "roots": [
-    {
-      "id": "work",
-      "folder": "/home/mira/work"
-    },
-    {
-      "id": "oss",
-      "folder": "/home/mira/oss"
-    }
-  ]
+  "me": "Mira Okafor"
 }
 ```
 
@@ -820,8 +811,9 @@ Result:
     "sources": 11,
     "sources_existing": 1,
     "links": 12,
-    "places": 4,
-    "places_missing": 0,
+    "folders": 6,
+    "folders_missing": 1,
+    "project_folders": 3,
     "duplicates_left_out": 1,
     "orphans_included": 0,
     "text_sanitised": 0,
@@ -845,20 +837,16 @@ Result:
       "count": 22
     }
   ],
-  "roots": [
+  "project_folders": [
     {
-      "id": "work",
-      "folder": "/home/mira/work",
-      "origin": "given",
-      "places": 3,
-      "missing": 0
+      "project": "Lumen portal",
+      "area": "Lumen",
+      "none": "no_common_folder"
     },
     {
-      "id": "documents",
-      "folder": "/home/mira/Documents",
-      "origin": "proposed",
-      "places": 1,
-      "missing": 0
+      "project": "Clinic sync (Q4)",
+      "area": "Lumen",
+      "folder": "~/work/lumen/clinic-sync"
     }
   ],
   "owners": [
@@ -903,9 +891,9 @@ Result:
       "project": "Lumen portal",
       "status": "open",
       "lifecycle": "active",
-      "place": {
-        "root": "work",
-        "path": "lumen/portal"
+      "folder": {
+        "path": "~/work/lumen/portal",
+        "state": "own"
       },
       "due": "2026-11-20"
     }

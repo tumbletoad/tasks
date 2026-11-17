@@ -1,20 +1,22 @@
-// The dry run's report and token (A7 3.15.4), pure: what blocks, what reconciles, the proposed
-// roots, report.md, and a token that changes with everything the apply depends on and with
+// The dry run's report and token, pure: what blocks, what reconciles, the folders projects and
+// tasks get, report.md, and a token that changes with everything the apply depends on and with
 // nothing else. Small synthetic inputs and the committed fixture; hosts are example domains.
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ImportPlanningPreviewResult } from "@tasks/contracts";
 import { beforeAll, describe, expect, test } from "vitest";
 import {
+  folderDecisionOf,
   mapPrototype,
   parsePrototype,
   placeGroups,
   placeProjects,
   previewOf,
   previewToken,
-  proposeRoots,
   readInput,
   renderPreview,
+  type FolderDecision,
+  type FolderFact,
   type ImportPlan,
   type MappingOptions,
   type PreviewRun,
@@ -26,7 +28,6 @@ import {
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const options: MappingOptions = {
   me: "Mira Okafor",
-  roots: { work: "/home/mira/work" },
   timeZone: "Europe/Lisbon",
 };
 const space: PreviewRun["space"] = {
@@ -40,12 +41,15 @@ const space: PreviewRun["space"] = {
   areas: [],
   projects: [],
 };
+/** No folder on this machine. */
+const NO_FOLDERS: FolderDecision = { projects: new Map(), tasks: new Map(), problems: [] };
 const runOf = (more: Partial<PreviewRun> = {}): PreviewRun => ({
   run: "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
   folder: "/home/mira/.tasks/spaces/mira/exchange/planning/ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
   source: { folder: "/home/mira/planning" },
   options,
-  roots: [{ id: "work", folder: "/home/mira/work", origin: "machine" }],
+  folders: NO_FOLDERS,
+  os: "linux",
   inputs: [
     { path: "TODO.md", size: 10, sha256: "a".repeat(64) },
     { path: "DONE.md", size: 0, sha256: "b".repeat(64) },
@@ -53,7 +57,6 @@ const runOf = (more: Partial<PreviewRun> = {}): PreviewRun => ({
   problems: [],
   verified: [],
   space,
-  missing: new Set(),
   ...more,
 });
 
@@ -77,6 +80,11 @@ const META = JSON.stringify({
   },
   b: { category: "Lumen", paths: ["/home/mira/Documents/notes"] },
 });
+/** `a`'s folder is here, `b`'s is not. */
+const FACTS = new Map<string, FolderFact>([
+  ["a", { state: "present", stored: "~/work/lumen/portal" }],
+  ["b", { state: "missing" }],
+]);
 
 let fixture: { parse: PrototypeParse; plan: ImportPlan };
 
@@ -105,7 +113,7 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     // Four tables, each with a delimiter row Markdown reads as one: never escaped like a value.
     const lines = md.split("\n");
     const delimiters = lines.filter((l) => /^\|( --- \|)+$/.test(l));
-    expect(delimiters.map((l) => l.split("|").length - 2)).toEqual([2, 3, 5, 8]);
+    expect(delimiters.map((l) => l.split("|").length - 2)).toEqual([2, 3, 3, 8]);
     for (const d of delimiters) {
       const header = lines[lines.indexOf(d) - 1] ?? "";
       expect(header.split(" | ").length).toBe(d.split("|").length - 2);
@@ -155,29 +163,28 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     });
   });
 
-  test("what only the space and this machine tell: held keys, earlier imports, missing folders", () => {
+  test("what only the space and this machine tell: held keys, earlier imports, folders", () => {
     const { parse, plan } = small({ todo: TODO, metadata: META });
+    const state = {
+      ...space,
+      aliases: [{ alias: "a", task: "t_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 3 }],
+      sources: [{ key: "jira:LUM-7", id: "s_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 2 }],
+      areas: [{ slug: "lumen", id: "ar_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 1 }],
+    };
     const { report } = previewOf(
       parse,
       plan,
-      runOf({
-        space: {
-          ...space,
-          aliases: [{ alias: "a", task: "t_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 3 }],
-          sources: [{ key: "jira:LUM-7", id: "s_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 2 }],
-          areas: [{ slug: "lumen", id: "ar_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 1 }],
-        },
-        missing: new Set(["a"]),
-      }),
+      runOf({ space: state, folders: folderDecisionOf(plan, state, FACTS, "linux") }),
     );
     expect(report.counts).toMatchObject({
       sources_existing: 1,
       areas_existing: 1,
       projects_existing: 0,
-      places: 1,
-      places_missing: 1,
+      folders: 2,
+      folders_missing: 1,
+      project_folders: 1,
     });
-    expect(report.problems.filter((p) => /exists|imported|missing/.test(p.code))).toEqual([
+    expect(report.problems.filter((p) => /exists|imported|folder/.test(p.code))).toEqual([
       { code: "legacy-id-imported", severity: "warning", file: "TODO.md", line: 2, task: "a" },
       {
         code: "source-key-exists",
@@ -187,34 +194,81 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
         field: "sources",
       },
       {
-        code: "place-missing",
+        code: "folder-missing",
         severity: "warning",
         file: "data/metadata.json",
-        task: "a",
+        task: "b",
         field: "paths",
+        index: 0,
       },
     ]);
+    // The one task folder of the project is the project's; the missing one is shown as written.
     expect(report.tasks[0]).toMatchObject({
       legacy_id: "a",
       area: "Lumen",
       project: "Portal",
-      place: { root: "work", path: "lumen/portal" },
-      place_missing: true,
+      folder: { path: "~/work/lumen/portal", state: "project" },
       imported: true,
     });
-    // The folder under no root gets a proposed root, named by its last folder.
-    expect(report.roots).toEqual([
-      { id: "work", folder: "/home/mira/work", origin: "machine", places: 1, missing: 1 },
-      {
-        id: "documents",
-        folder: "/home/mira/Documents",
-        origin: "proposed",
-        places: 1,
-        missing: 0,
-      },
+    expect(report.tasks[1]?.folder).toEqual({
+      path: "/home/mira/Documents/notes",
+      state: "missing",
+    });
+    expect(report.project_folders).toEqual([
+      { project: "Portal", area: "Lumen", folder: "~/work/lumen/portal" },
     ]);
     expect(report.statuses).toEqual([{ prototype: "none", status: "open", count: 3 }]);
     expect(report.owners).toEqual([{ name: "Tomas", me: false, tasks: 1 }]);
+    const md = renderPreview(report);
+    expect(md).toContain("| Portal | Lumen | \\~/work/lumen/portal |");
+    expect(md).toContain("/home/mira/Documents/notes (not on this machine: no folder)");
+  });
+
+  test("the project folders section says why a project gets none, and what it has now", () => {
+    const { parse, plan } = small({
+      todo:
+        "- [ ] **A** <!-- task:a -->\n- [ ] **B** <!-- task:b -->\n" +
+        "- [ ] **C** <!-- task:c -->\n- [ ] **D** <!-- task:d -->\n",
+      metadata: JSON.stringify({
+        a: { category: "Lumen", project: "Portal", paths: ["/home/mira/work/portal"] },
+        b: { category: "Lumen", project: "Portal", paths: ["/home/mira/work/admin"] },
+        c: { category: "Lumen", project: "Clinic", paths: ["/home/mira/work/clinic"] },
+        d: { category: "Lumen", project: "Notes", paths: ["C:\\Users\\mira\\notes"] },
+      }),
+    });
+    const state = {
+      ...space,
+      areas: [{ slug: "lumen", id: "a_lumen", version: 1, title: "Lumen" }],
+      projects: [
+        { slug: "notes", id: "p_notes", version: 1, area: "lumen", title: "Notes" },
+        { slug: "sync", id: "p_sync", version: 1, area: "lumen", title: "Sync" },
+      ],
+      projectFolders: [
+        { project: "p_notes", title: "Notes", path: "~/notes" },
+        { project: "p_sync", title: "Sync", path: "~/work/clinic" },
+      ],
+    };
+    const facts = new Map<string, FolderFact>([
+      ["a", { state: "present", stored: "~/work/portal" }],
+      ["b", { state: "present", stored: "~/work/admin" }],
+      ["c", { state: "present", stored: "~/work/clinic" }],
+      ["d", { state: "other_machine" }],
+    ]);
+    const { report } = previewOf(
+      parse,
+      plan,
+      runOf({ space: state, folders: folderDecisionOf(plan, state, facts, "linux") }),
+    );
+    expect(report.project_folders).toEqual([
+      { project: "Portal", area: "Lumen", none: "no_common_folder" },
+      { project: "Clinic", area: "Lumen", none: "taken", holder: "Sync" },
+      { project: "Notes", area: "Lumen", none: "no_folders", current: "~/notes" },
+    ]);
+    const md = renderPreview(report);
+    expect(md).toContain("none: no task's folder holds all the others");
+    expect(md).toContain("none: Sync has that folder");
+    expect(md).toContain("has \\~/notes here now");
+    expect(md).toContain("Some folders are paths of another kind of machine.");
   });
 
   test("the token changes with everything the apply depends on, and with nothing else", () => {
@@ -224,6 +278,13 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
     // The same run gives the same token: one plan, one hash.
     expect(previewToken(small({ todo: TODO, metadata: META }).plan, runOf())).toBe(token);
     const row = { slug: "lumen", id: "ar_0c4g8k2n6r0v4y8b2e6h0m4q8t", version: 1 };
+    const here = folderDecisionOf(base.plan, space, FACTS, "linux");
+    const moved = folderDecisionOf(
+      base.plan,
+      space,
+      new Map<string, FolderFact>([["a", { state: "present", stored: "~/work/portal" }]]),
+      "linux",
+    );
     const changes: [string, string][] = [
       ["run", previewToken(base.plan, runOf({ run: "ex_1c4g8k2n6r0v4y8b2e6h0m4q8t" }))],
       ["epoch", previewToken(base.plan, runOf({ space: { ...space, epoch: 2 } }))],
@@ -244,13 +305,6 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
       ],
       ["--me", previewToken(base.plan, runOf({ options: { ...options, me: "Tomas" } }))],
       [
-        "--roots",
-        previewToken(
-          base.plan,
-          runOf({ options: { ...options, roots: { work: "/home/mira/work2" } } }),
-        ),
-      ],
-      [
         "--checked-as",
         previewToken(base.plan, runOf({ options: { ...options, checkedAs: "review" } })),
       ],
@@ -263,6 +317,8 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
         previewToken(base.plan, runOf({ options: { ...options, timeZone: "Europe/Paris" } })),
       ],
       ["the plan", previewToken(small({ todo: `${TODO}- [ ] **More**\n` }).plan, runOf())],
+      ["a folder here", previewToken(base.plan, runOf({ folders: here }))],
+      ["another folder here", previewToken(base.plan, runOf({ folders: moved }))],
       [
         "an area the plan reuses",
         previewToken(base.plan, runOf({ space: { ...space, areas: [row] } })),
@@ -294,36 +350,23 @@ describe("[A7.3.15.importer.preview] the dry run's report and token", () => {
       seen.add(changed);
     }
     expect(seen.size).toBe(changes.length + 1);
-    // Rows the plan does not meet, the folder, the roots' origin and the next reference: unpinned.
+    // Rows the plan does not meet, the folder, a missing folder's state and the next reference:
+    // unpinned.
+    const otherMachine = folderDecisionOf(
+      base.plan,
+      space,
+      new Map<string, FolderFact>([["b", { state: "other_machine" }]]),
+      "linux",
+    );
     for (const same of [
       runOf({ space: { ...space, nextRef: 99, refPrefix: "X" } }),
       runOf({ space: { ...space, areas: [{ ...row, slug: "home" }] } }),
       runOf({ space: { ...space, sources: [{ key: "jira:LUM-8", id: "s_x", version: 1 }] } }),
       runOf({ folder: "/elsewhere" }),
-      runOf({ missing: new Set(["a"]) }),
+      runOf({ folders: otherMachine }),
     ]) {
       expect(previewToken(base.plan, same)).toBe(token);
     }
-  });
-
-  test("proposed roots: grouped by a person's folder, named, never taking an ID in use", () => {
-    expect(
-      proposeRoots(
-        [
-          "/home/mira/Documents/health",
-          "/home/mira/Documents/tax",
-          "/mnt/shed/fence-plans",
-          "/home/mira/Café Notes/x",
-          "C:\\Users\\mira\\Work Files\\a",
-        ],
-        ["documents"],
-      ),
-    ).toEqual([
-      { id: "documents-2", folder: "/home/mira/Documents", places: 2 },
-      { id: "fence-plans", folder: "/mnt/shed/fence-plans", places: 1 },
-      { id: "cafe-notes", folder: "/home/mira/Café Notes", places: 1 },
-      { id: "work-files", folder: "C:\\Users\\mira\\Work Files", places: 1 },
-    ]);
   });
 
   test("report.md writes the person's own text as text, never as markup", () => {

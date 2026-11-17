@@ -74,6 +74,9 @@
         "label": "Chat",
         "url": "https://chat.lumen.example/room/clinic-sync/thread/Fixture42"
       }
+    ],
+    "paths": [
+      "/home/mira/work/lumen/clinic-sync"
     ]
   },
   "t-b5679597": {
@@ -155,6 +158,9 @@
         "label": "LUM-1042 Report API migration",
         "url": "https://tickets.lumen.example/browse/LUM-1042"
       }
+    ],
+    "paths": [
+      "/home/mira/work/lumen/clinic-sync/reports-api"
     ]
   },
   "t-f857f3b4": {

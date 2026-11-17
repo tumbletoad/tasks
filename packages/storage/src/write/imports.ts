@@ -16,8 +16,8 @@
 // keeps a person's work whole: a task that someone changed since the import (a field, a note, a
 // deletion) stays as it is, with everything the import gave it, and is listed. A source stays while
 // a task that stays links it; an area or a project stays while it holds a task or a project that
-// stays. The import's aliases and its exchange are never inverted: they record what the import made,
-// which a later import reads (A7 3.15.6).
+// stays, a project with the folder the import gave it. The import's aliases and its exchange are
+// never inverted: they record what the import made, which a later import reads.
 import { createHash } from "node:crypto";
 import type { Connection } from "../driver.ts";
 import { isId, type Id } from "../ids.ts";
@@ -82,6 +82,7 @@ const SQL = {
   linksOf: "SELECT task_id FROM task_sources WHERE source_id = $id AND removed_at IS NULL",
   tasksIn: "SELECT id FROM tasks WHERE deleted_at IS NULL AND (area_id = $id OR project_id = $id)",
   projectsIn: "SELECT id FROM projects WHERE deleted_at IS NULL AND area_id = $id",
+  folderOwner: "SELECT owner_kind, owner_id FROM folders WHERE id = $id",
 } as const;
 
 const byFirst = <T extends readonly unknown[]>(rows: T[]): T[] =>
@@ -226,7 +227,20 @@ export function planImportRevert(
       .prepare(SQL.tasksIn)
       .all({ id })
       .some((row) => !going.has(`tasks|${String(row["id"])}`));
+  const made = new Set(
+    plan.inversions
+      .filter((i) => i.kind === "tombstone" && i.entity === "projects")
+      .map((i) => i.id),
+  );
   keep("projects", holds);
+  // A project the import made that stays keeps the folder the import gave it with it.
+  keep("folders", (id, going) => {
+    const owner = conn.prepare(SQL.folderOwner).get({ id });
+    const project = String(owner?.["owner_id"]);
+    return (
+      owner?.["owner_kind"] === "project" && made.has(project) && !going.has(`projects|${project}`)
+    );
+  });
   keep(
     "areas",
     (id, going) =>

@@ -15,8 +15,6 @@ import { IMPORT_PROBLEM_CODES, ImportProblem, type ImportProblemCode } from "../
 const Count = z.int().min(0).max(1_000_000_000);
 /** An absolute path on this machine, as the CLI resolves it. */
 const Path = z.string().min(1).max(4096);
-/** A root ID as `machine.toml` names it (A1 3.15). */
-const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/u;
 /** The run's ID: the ID of the exchange the apply records for it (A1 3.14). */
 export const IMPORT_RUN = /^ex_[0-7][0-9a-hjkmnp-tv-z]{25}$/u;
 /** `pv1_` and the base64url SHA-256 of what the preview pins (A7 3.15.4). */
@@ -29,16 +27,6 @@ const codes = Object.keys(IMPORT_PROBLEM_CODES) as [ImportProblemCode, ...Import
 export const ImportPlanningPreviewInput = z.strictObject({
   folder: Path.describe("The prototype folder, an absolute path"),
   me: z.string().min(1).max(300).describe("The owner name that is you: no owner").optional(),
-  roots: z
-    .array(
-      z.strictObject({
-        id: z.string().max(32).regex(ROOT_ID).describe("The root's ID"),
-        folder: Path.describe("Its folder on this machine, an absolute path"),
-      }),
-    )
-    .max(64)
-    .describe("Roots for places, beside this machine's own")
-    .optional(),
   actions: Path.describe("The page's actions export, an absolute path").optional(),
   checked_as: z
     .enum(["completed", "review"])
@@ -75,18 +63,29 @@ export const ImportPlanningCounts = z.strictObject({
   sources: Count.describe("Distinct sources"),
   sources_existing: Count.describe("Of those, keys the space holds: linked"),
   links: Count.describe("Links from tasks to sources"),
-  places: Count.describe("Tasks with a place"),
-  places_missing: Count.describe("Of those, folders missing on this machine"),
+  folders: Count.describe("Tasks with a folder in the prototype"),
+  folders_missing: Count.describe("Of those, not a folder on this machine"),
+  project_folders: Count.describe("Projects that get a folder on this machine"),
   duplicates_left_out: Count.describe("Task lines left out for an ID another line has"),
   orphans_included: Count.describe("Metadata entries without a task line, created"),
   text_sanitised: Count.describe("Fields whose text the sanitiser changed"),
   source_changes: Count.describe("Inputs that changed during the run: must be 0"),
 });
 
-const Place = z.strictObject({
-  root: z.string().describe("Root ID"),
-  path: z.string().describe("Path below the root, with forward slashes"),
+/** What becomes of a task's folder: the first absolute path the prototype gives it. */
+const TaskFolder = z.strictObject({
+  path: z
+    .string()
+    .describe("The folder as stored here, the home as ~; else as the prototype has it"),
+  // own: the task's folder; project: its project's, so none of its own; missing: no folder here;
+  // other_machine: a path of another kind of machine; reserved: inside the app's own data.
+  state: z
+    .enum(["own", "project", "missing", "other_machine", "reserved"])
+    .describe("Its own, its project's, or why none: missing, other_machine, reserved"),
 });
+
+/** Why a project gets no folder. */
+export const PROJECT_FOLDER_NONE = ["no_folders", "no_common_folder", "taken"] as const;
 
 export const ImportPlanningPreviewResult = z.strictObject({
   run: z.string().regex(IMPORT_RUN).describe("The run: --apply names it"),
@@ -106,7 +105,7 @@ export const ImportPlanningPreviewResult = z.strictObject({
       checked_as: z.enum(["completed", "review"]).describe("--checked-as"),
       include_orphans: z.boolean().describe("--include-orphans"),
     })
-    .describe("The options the plan was made with; its roots are under roots"),
+    .describe("The options the plan was made with"),
   counts: ImportPlanningCounts.describe("Counts and reconciliation"),
   reconciled: z.boolean().describe("Every task line is one task or a left-out duplicate"),
   sources_by_kind: z
@@ -128,19 +127,26 @@ export const ImportPlanningPreviewResult = z.strictObject({
       }),
     )
     .describe("Status mapping"),
-  roots: z
+  project_folders: z
     .array(
       z.strictObject({
-        id: z.string().describe("Root ID"),
-        folder: z.string().describe("Its folder on this machine"),
-        origin: z
-          .enum(["machine", "given", "proposed"])
-          .describe("machine.toml's, --roots, or proposed: name it with --roots"),
-        places: Count.describe("Task folders under it"),
-        missing: Count.describe("Of those, missing on this machine"),
+        project: z.string().describe("Project title"),
+        area: z.string().describe("Its area's title"),
+        folder: z.string().describe("The folder it gets on this machine, the home as ~").optional(),
+        none: z
+          .enum(PROJECT_FOLDER_NONE)
+          .describe("Why none: no task folder here, none holds the others, or another has it")
+          .optional(),
+        holder: z.string().describe("For taken: the project that has the folder").optional(),
+        current: z
+          .string()
+          .describe(
+            "The folder it has here now, when another: kept unless only the prototype changed",
+          )
+          .optional(),
       }),
     )
-    .describe("Roots"),
+    .describe("Per project, the folder it gets or why none, in creation order"),
   owners: z
     .array(
       z.strictObject({
@@ -171,8 +177,7 @@ export const ImportPlanningPreviewResult = z.strictObject({
         status: z.enum(["open", "waiting", "review", "backlog"]).describe("Status"),
         lifecycle: z.enum(["active", "completed"]).describe("Lifecycle"),
         wrap: z.enum(["pending", "wrapped"]).describe("Wrap-up of a completed task").optional(),
-        place: Place.describe("Its folder").optional(),
-        place_missing: z.boolean().describe("The folder is not on this machine").optional(),
+        folder: TaskFolder.describe("Its folder").optional(),
         due: z.string().describe("Due date").optional(),
         focus: z.string().describe("Starred: focus_on").optional(),
         imported: z.boolean().describe("The space already holds its legacy ID").optional(),
@@ -219,15 +224,11 @@ export const importPlanningPreview = defineEntry({
   errors: ["invalid_input", "not_found", "forbidden", "space_unavailable", "read_only"],
   examples: [
     {
-      title: "Mira's prototype folder, with her name and her roots",
+      title: "Mira's prototype folder, with her name",
       actor: "user",
       input: {
         folder: "/home/mira/planning",
         me: "Mira Okafor",
-        roots: [
-          { id: "work", folder: "/home/mira/work" },
-          { id: "oss", folder: "/home/mira/oss" },
-        ],
       },
       output: {
         run: "ex_0c4g8k2n6r0v4y8b2e6h0m4q8t",
@@ -262,8 +263,9 @@ export const importPlanningPreview = defineEntry({
           sources: 11,
           sources_existing: 1,
           links: 12,
-          places: 4,
-          places_missing: 0,
+          folders: 6,
+          folders_missing: 1,
+          project_folders: 3,
           duplicates_left_out: 1,
           orphans_included: 0,
           text_sanitised: 0,
@@ -275,15 +277,9 @@ export const importPlanningPreview = defineEntry({
           { kind: "email", count: 1 },
         ],
         statuses: [{ prototype: "open", status: "open", count: 22 }],
-        roots: [
-          { id: "work", folder: "/home/mira/work", origin: "given", places: 3, missing: 0 },
-          {
-            id: "documents",
-            folder: "/home/mira/Documents",
-            origin: "proposed",
-            places: 1,
-            missing: 0,
-          },
+        project_folders: [
+          { project: "Lumen portal", area: "Lumen", none: "no_common_folder" },
+          { project: "Clinic sync (Q4)", area: "Lumen", folder: "~/work/lumen/clinic-sync" },
         ],
         owners: [
           { name: "Mira Okafor", me: true, tasks: 24 },
@@ -311,7 +307,7 @@ export const importPlanningPreview = defineEntry({
             project: "Lumen portal",
             status: "open",
             lifecycle: "active",
-            place: { root: "work", path: "lumen/portal" },
+            folder: { path: "~/work/lumen/portal", state: "own" },
             due: "2026-11-20",
           },
         ],

@@ -1,13 +1,13 @@
-// import.planning.preview (A7 3.15.4): the dry run of the Planning prototype import, for the user
-// only (op/call's gate refuses every other class first). It writes no operation. In the space's
-// folder it makes one run folder, `exchange/planning/<run>/`, which A7 3.15.1 allows: the input
-// copy (`input/`), the actions export's copy (`actions.json`), `report.json` and `report.md`. It
-// reads the prototype folder only to copy it, and never runs or evaluates a file of it.
+// import.planning.preview: the dry run of the Planning prototype import, for the user only
+// (op/call's gate refuses every other class first). It writes no operation. In the space's folder
+// it makes one run folder, `exchange/planning/<run>/`: the input copy (`input/`), the actions
+// export's copy (`actions.json`), `report.json` and `report.md`. It reads the prototype folder only
+// to copy it, and never runs or evaluates a file of it.
 //
 //   folder and options checked → run folder → copy (copyInput, copyActions) → read the copy →
-//   parse → plan → the rows of the space the plan meets (one snapshot) → which places resolve on
-//   this machine → the source checked again (verifySource, verifyActions) → report and token →
-//   report.json and report.md written
+//   parse → plan → the rows of the space the plan meets (one snapshot) → what each task's folder
+//   is on this machine → the folders the import gives → the source checked again (verifySource,
+//   verifyActions) → report and token → report.json and report.md written
 //
 // Every error blocks: the report then has no token. A folder that is not there, options that are
 // not usable, a prototype folder that holds the space's run folders, and a run folder parent that
@@ -36,35 +36,36 @@ import {
   copyActions,
   copyInput,
   decideApply,
+  folderDecisionOf,
   hashInputs,
   judgedNames,
   mapPrototype,
   MappingOptionsError,
   parsePrototype,
+  placeGroups,
   previewOf,
   previewPinned,
   previewToken,
   readCopy,
   readInput,
   renderPreview,
-  ROOT_ID,
   sourceIdentity,
   verifyActions,
   verifySource,
   type ApplySpace,
   type BaseField,
+  type FolderFact,
   type ImportPlan,
   type InputFile,
   type ItemBase,
   type MappingOptions,
   type MatchedTask,
-  type PreviewRoot,
   type PreviewRun,
   type Problem,
+  type ProjectFolderState,
   type RecordedBase,
   type SpaceState,
 } from "@tasks/importer-planning";
-import { resolvePlace, type Root } from "@tasks/launch";
 import {
   formatTaskRef,
   isId,
@@ -80,6 +81,7 @@ import {
 } from "@tasks/storage";
 import { createFile, makeDir } from "@tasks/files";
 import { invalid, resultFailure, storageFailure } from "./errors.ts";
+import { checkFolder, osOf, storedForm, type FolderHost } from "./folders.ts";
 import {
   readApplyRows,
   readCommitFields,
@@ -93,15 +95,12 @@ import {
 /** The run folders of an import, inside the space's folder (A7 3.15.1). */
 export const RUNS_FOLDER = ["exchange", "planning"] as const;
 
-export interface PlanningPreviewCall {
+export interface PlanningPreviewCall extends FolderHost {
   /** The space's folder on this machine. */
   readonly folder: string;
   readonly reader: WorkerConnection;
   /** The input after the contract. */
   readonly input: Record<string, unknown>;
-  /** This machine's roots (machine.toml). */
-  readonly roots: readonly Root[];
-  readonly platform: NodeJS.Platform;
   /** The import machine's IANA zone: days are placed in it. */
   readonly timeZone: string;
 }
@@ -115,31 +114,36 @@ function absolute(value: string, path: string): string {
   return resolve(value);
 }
 
-const same = (a: string, b: string, platform: NodeJS.Platform): boolean =>
-  platform === "win32" || platform === "darwin" ? a.toLowerCase() === b.toLowerCase() : a === b;
-
-/** The roots the mapping uses: this machine's, and the given ones, which may not rename a root. */
-function rootsOf(call: PlanningPreviewCall): PreviewRoot[] {
-  const out: PreviewRoot[] = call.roots.map((r) => ({
-    id: r.id,
-    folder: r.path,
-    origin: "machine",
-  }));
-  const given = (call.input["roots"] ?? []) as { id: string; folder: string }[];
-  for (const [i, r] of given.entries()) {
-    if (!ROOT_ID.test(r.id)) throw invalid(`roots.${String(i)}.id`, "Not a root ID");
-    const folder = absolute(r.folder, `roots.${String(i)}.folder`);
-    const known = out.find((o) => o.id === r.id);
-    if (known === undefined) out.push({ id: r.id, folder, origin: "given" });
-    else if (!same(resolve(known.folder), folder, call.platform)) {
-      throw invalid(
-        `roots.${String(i)}.id`,
-        "This machine has a root with that ID in another folder",
-        "Use another ID, or leave the root out: this machine's own roots are used.",
-      );
+/**
+ * What this machine says of each task's folder path, by legacy ID: its stored form when it is a
+ * folder here, else why not. Each distinct path is looked at once, each look bounded.
+ */
+async function folderFacts(plan: ImportPlan, host: FolderHost): Promise<Map<string, FolderFact>> {
+  const looked = new Map<string, FolderFact>();
+  const facts = new Map<string, FolderFact>();
+  for (const t of plan.tasks) {
+    if (t.folder === undefined) continue;
+    let fact = looked.get(t.folder.path);
+    if (fact === undefined) {
+      fact = await folderFact(t.folder.path, host);
+      looked.set(t.folder.path, fact);
     }
+    facts.set(t.legacyId, fact);
   }
-  return out;
+  return facts;
+}
+
+async function folderFact(path: string, host: FolderHost): Promise<FolderFact> {
+  const form = storedForm(path, host.home, host.platform);
+  if (form === "not_absolute") return { state: "other_machine" };
+  if (typeof form === "string") return { state: "missing" };
+  const problem = await checkFolder(form, {
+    home: host.home,
+    platform: host.platform,
+    reserved: host.reserved,
+  });
+  if (problem === undefined) return { state: "present", stored: form.stored };
+  return { state: problem.reason === "folder_reserved" ? "reserved" : "missing" };
 }
 
 /** Whether `to` is `from` or lies under it, by whole path parts. */
@@ -202,12 +206,10 @@ export async function planningPreview(
   }
   const actionsFile = text(input, "actions");
   const actionsSource = actionsFile === undefined ? undefined : absolute(actionsFile, "actions");
-  const roots = rootsOf(call);
   const checkedAs = text(input, "checked_as");
   const me = text(input, "me");
   const options: MappingOptions = {
     ...(me === undefined ? {} : { me }),
-    roots: Object.fromEntries(roots.map((r) => [r.id, r.folder])),
     ...(checkedAs === "review" || checkedAs === "completed" ? { checkedAs } : {}),
     ...(input["include_orphans"] === true ? { includeOrphans: true } : {}),
     timeZone: call.timeZone,
@@ -253,20 +255,18 @@ export async function planningPreview(
   });
   const plan: ImportPlan = mapPrototype(parse, options);
 
-  const rows = await readImportRows(call.reader, {
-    aliases: plan.tasks.map((t) => t.legacyId),
-    keys: plan.sources.flatMap((s) => (s.key === undefined ? [] : [s.key])),
-    areas: plan.areas.map((a) => a.slug),
-  });
-
-  // Which places resolve here: through the launch package's own resolution, as Open would.
-  const rootFolders = roots.map((r) => ({ id: r.id, path: r.folder }));
-  const missing = new Set<string>();
-  for (const t of plan.tasks) {
-    if (t.place === undefined) continue;
-    const found = await resolvePlace(t.place, rootFolders, { platform: call.platform });
-    if (found.status !== "ok") missing.add(t.legacyId);
-  }
+  const rows = await readImportRows(
+    call.reader,
+    {
+      aliases: plan.tasks.map((t) => t.legacyId),
+      keys: plan.sources.flatMap((s) => (s.key === undefined ? [] : [s.key])),
+      areas: plan.areas.map((a) => a.slug),
+    },
+    call.machine,
+  );
+  const space = spaceState(rows);
+  const os = osOf(call.platform);
+  const folders = folderDecisionOf(plan, space, await folderFacts(plan, call), os);
 
   // The source again, after everything was read from the copy: it fails closed. What the copy
   // already reported (a file over its bound) is the same state, not a change.
@@ -287,13 +287,13 @@ export async function planningPreview(
       ...(actionsSource === undefined ? {} : { actions: actionsSource }),
     },
     options,
-    roots,
+    folders,
+    os,
     inputs: copied.files,
     ...(actions === undefined ? {} : { actions }),
     problems,
     verified,
-    space: spaceState(rows),
-    missing,
+    space,
   });
   writeNew(join(folder, "report.json"), `${JSON.stringify(preview.report, null, 2)}\n`);
   writeNew(join(folder, "report.md"), renderPreview(preview.report));
@@ -313,32 +313,32 @@ function spaceState(rows: ImportRows): SpaceState {
     areas: rows.areas,
     projects: rows.projects,
     landed: rows.landed,
+    projectFolders: rows.projectFolders
+      .filter((f) => f.removed === 0)
+      .map((f) => ({ project: f.project, title: f.title, path: f.path })),
   };
 }
 
 // ---------------------------------------------------------------------------------------------
 // import.planning.apply and import.planning.undo (A7 3.15.5, 3.15.6)
 //
-//   the run's folder and report → a receipt for its request ID? replay → the roots it used are
-//   this machine's → the source checked again (verifySource, verifyActions) → the plan made again
-//   from the copy → the space read in one snapshot → the token again → the decision (apply.ts)
-//   → the request behind a verified barrier backup (the writer recomputes the token inside its
-//   transaction) → apply.json in the run folder
+//   the run's folder and report → a receipt for its request ID? replay → the source checked again
+//   (verifySource, verifyActions) → the plan made again from the copy → the task folders looked at
+//   again → the space read in one snapshot → the folders the import gives → the token again → the
+//   decision (apply.ts) → the request behind a verified barrier backup (the writer recomputes the
+//   token inside its transaction) → apply.json in the run folder
 //
 // Nothing of the space is written before the writer's transaction, and the transaction is the one
 // commit: everything, or nothing. A refusal before it changes nothing.
 
-export interface PlanningApplyCall {
+export interface PlanningApplyCall extends FolderHost {
   /** The space's folder on this machine. */
   readonly folder: string;
   readonly reader: WorkerConnection;
   readonly writer: SpaceWriterHandle;
   /** The input after the contract. */
   readonly input: Record<string, unknown>;
-  /** This machine's roots (machine.toml). */
-  readonly roots: readonly Root[];
-  readonly platform: NodeJS.Platform;
-  /** The user, who applies it, and the import actor, who writes it (A1 3.21). */
+  /** The user, who applies it, and the import actor, who writes it. */
   readonly principal: Id<"ac">;
   /** The import actor's ID: it joins the space on its first act, so only when an apply writes. */
   readonly importer: () => Promise<Id<"ac">>;
@@ -381,7 +381,6 @@ interface RunReport {
     readonly include_orphans: boolean;
   };
   readonly time_zone: string;
-  readonly roots: readonly { id: string; folder: string; origin: string }[];
 }
 
 /** The largest report.json an apply reads: a report of the input bounds' size (A7 3.15.2). */
@@ -429,7 +428,6 @@ function readReport(folder: string): RunReport {
     typeof r.blocked !== "boolean" ||
     typeof r.time_zone !== "string" ||
     typeof r.source?.folder !== "string" ||
-    !Array.isArray(r.roots) ||
     typeof r.options !== "object"
   ) {
     throw invalid("run", "The run's report does not read");
@@ -437,27 +435,11 @@ function readReport(folder: string): RunReport {
   return r as RunReport;
 }
 
-const sameFolder = (a: string, b: string, platform: NodeJS.Platform): boolean =>
-  same(resolve(a), resolve(b), platform);
-
-/** The mapping's options as the dry run made its plan: its report holds them (A7 3.15.4). */
-function optionsOf(report: RunReport, call: PlanningApplyCall): MappingOptions {
-  const used = report.roots.filter((r) => r.origin === "machine" || r.origin === "given");
-  // A place stores a root's ID: each root the plan used must be this machine's, with its folder.
-  for (const root of used) {
-    const here = call.roots.find((r) => r.id === root.id);
-    if (here === undefined || !sameFolder(here.path, root.folder, call.platform)) {
-      throw invalid(
-        "run",
-        "A root the dry run used is not this machine's",
-        "Add it with tasks roots add <id> <folder>, or run the dry run again.",
-      );
-    }
-  }
+/** The mapping's options as the dry run made its plan: its report holds them. */
+function optionsOf(report: RunReport): MappingOptions {
   const o = report.options;
   return {
     ...(o.me === undefined ? {} : { me: o.me }),
-    roots: Object.fromEntries(used.map((r) => [r.id, r.folder])),
     ...(o.checked_as === "review" ? { checkedAs: "review" as const } : {}),
     ...(o.include_orphans ? { includeOrphans: true } : {}),
     timeZone: report.time_zone,
@@ -532,7 +514,7 @@ const TASK_BASE_FIELDS: readonly BaseField[] = [
 function voidedField(entity: string, field: string | null): string | undefined {
   if (entity === "tasks") return field ?? undefined;
   if (entity === "task_sources") return "sources";
-  if (entity === "places") return "place";
+  if (entity === "folders") return "folder";
   if (entity === "log_entries") return "evidence";
   return undefined;
 }
@@ -556,7 +538,7 @@ function itemBase(text: unknown): ItemBase | undefined {
 }
 
 /** The tasks that hold the plan's legacy IDs, as the apply's decision reads them (apply.ts). */
-function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask> {
+function matchedOf(apply: ApplyRows, refPrefix: string, machine: string): Map<string, MatchedTask> {
   const byTask = <T>(rows: Row[], map: (row: Row) => T): Map<string, T[]> => {
     const out = new Map<string, T[]>();
     for (const row of rows) {
@@ -567,7 +549,7 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
     }
     return out;
   };
-  const places = byTask(apply.places, (r) => r);
+  const folders = byTask(apply.folders, (r) => r);
   const links = byTask(apply.links, (r) =>
     sourceIdentity({
       ...(typeof r["key"] === "string" ? { key: r["key"] } : {}),
@@ -604,14 +586,13 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
     } catch {
       planning = null;
     }
-    const own = places.get(id) ?? [];
-    const live = own.find((p) => p["deleted_at"] === null);
-    // The place's version covers its folder and its tombstone: a place cleared and then brought
-    // back (an undo of the clear) holds the same folder, but it changed since, as A1 3.14 counts.
-    const placeVersion =
-      live !== undefined
-        ? Math.max(num(live["folder_version"]), num(live["deleted_version"]))
-        : Math.max(0, ...own.map((p) => num(p["deleted_version"])));
+    const own = folders.get(id) ?? [];
+    const live = own.find((f) => f["deleted_at"] === null);
+    // A folder row's version covers its path and its removal: a folder cleared and then brought
+    // back (an undo of the clear) holds the same path, but it changed since. Without a live one,
+    // the newest removal here; 0 when it never had a folder here.
+    const folderVersion =
+      live !== undefined ? num(live["version"]) : Math.max(0, ...own.map((f) => num(f["version"])));
     const values: Record<string, unknown> = {
       title: row["title"],
       summary: row["summary"],
@@ -631,13 +612,10 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
       lifecycle: row["lifecycle"],
       wrap: row["wrap_state"] === "wrapped" ? (row["outcome"] ?? null) : null,
       "ext.planning": comparedPlanning(planning),
-      place:
-        live === undefined
-          ? null
-          : { root: String(live["root_id"]), path: String(live["rel_path"]) },
+      folder: { machine, path: live === undefined ? null : String(live["path"]) },
       evidence: null,
     };
-    const fieldVersions: Record<string, number> = { place: placeVersion, evidence: 0 };
+    const fieldVersions: Record<string, number> = { folder: folderVersion, evidence: 0 };
     for (const field of TASK_BASE_FIELDS) fieldVersions[field] = fv[field] ?? created;
     const recorded: RecordedBase[] = [];
     for (const b of bases.get(id) ?? []) {
@@ -665,6 +643,49 @@ function matchedOf(apply: ApplyRows, refPrefix: string): Map<string, MatchedTask
 }
 
 /**
+ * Each live project's folder on this machine as the apply's decision reads it: its live folder,
+ * the version of its newest folder change here, and the newest base an import that stands
+ * recorded for it here.
+ */
+function projectFoldersOf(rows: ImportRows, apply: ApplyRows): Map<string, ProjectFolderState> {
+  const out = new Map<string, { path: string | null; version: number; base?: ProjectBase }>();
+  for (const f of rows.projectFolders) {
+    const known = out.get(f.project) ?? { path: null, version: 0 };
+    out.set(f.project, {
+      ...known,
+      path: f.removed === 0 ? f.path : known.path,
+      version: Math.max(known.version, f.version),
+    });
+  }
+  for (const b of apply.projectBases) {
+    const project = textOf(b["project"]);
+    if (project === null) continue;
+    const seq = num(b["seq"]);
+    const known = out.get(project) ?? { path: null, version: 0 };
+    if (known.base !== undefined && known.base.seq >= seq) continue;
+    out.set(project, { ...known, base: { folder: textOf(b["folder"]), seq } });
+  }
+  return out;
+}
+
+interface ProjectBase {
+  readonly folder: string | null;
+  readonly seq: number;
+}
+
+/** Each planned project's title as the space shows it: a project the import reuses keeps its own. */
+function projectTitlesOf(plan: ImportPlan, state: SpaceState): Map<string, string> {
+  const { projects } = placeGroups(plan, state);
+  const live = new Map(state.projects.map((p) => [p.id, p.title]));
+  return new Map(
+    plan.projects.map((p) => {
+      const reuses = projects.get(p.slug)?.reuses;
+      return [p.slug, (reuses === undefined ? undefined : live.get(reuses)) ?? p.title];
+    }),
+  );
+}
+
+/**
  * One row per task of an apply's result, and the counts: every row, conflicts first, so a cut
  * answer (capped) never drops a conflict before a task that only changed.
  */
@@ -672,6 +693,7 @@ function applyResult(
   run: string,
   decision: ReturnType<typeof decideApply>,
   refs: ReadonlyMap<string, string>,
+  titles: ReadonlyMap<string, string>,
 ): Omit<ImportPlanningApplyResult, "status" | "as_of"> {
   const rows = decision.tasks.map((t) => {
     const ref = t.ref ?? (t.task === undefined ? undefined : refs.get(t.task));
@@ -699,6 +721,14 @@ function applyResult(
     },
     tasks: listed,
     tasks_more: 0,
+    ...(decision.projects.length === 0
+      ? {}
+      : {
+          projects: decision.projects.map((p) => ({
+            project: titles.get(p.slug) ?? p.slug,
+            outcome: p.outcome,
+          })),
+        }),
     gone: [...decision.gone],
   };
 }
@@ -712,6 +742,7 @@ function capped<T extends Omit<ImportPlanningApplyResult, "status" | "as_of">>(f
     ...full,
     tasks: full.tasks.slice(0, PREVIEW_ROWS),
     tasks_more: full.tasks_more + Math.max(0, full.tasks.length - PREVIEW_ROWS),
+    ...(full.projects === undefined ? {} : { projects: full.projects.slice(0, PREVIEW_ROWS) }),
     gone: full.gone.slice(0, PREVIEW_ROWS),
   };
 }
@@ -816,8 +847,12 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
   if (report.token !== token) {
     throw invalid("token", "The token is not this run's", "Use the token its dry run printed.");
   }
-  const options = optionsOf(report, call);
+  const options = optionsOf(report);
   const { plan, inputs, actions } = await planAgain(folder, report, options);
+  // The folders as they are on this machine now: one that came or went since the dry run gives
+  // other folders, and the token tells.
+  const facts = await folderFacts(plan, call);
+  const os = osOf(call.platform);
 
   const names = judgedNames(plan, { areas: [], projects: [] });
   const ids = new Map<string, string>();
@@ -828,6 +863,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
   // and decide again, before any backup. The first import that writes registers the import actor,
   // which is such a write.
   let decision: ReturnType<typeof decideApply> | undefined;
+  let titles = new Map<string, string>();
   let submitted: { result: WriteResult; backup?: { name: string } } | undefined;
   for (let attempt = 1; submitted === undefined; attempt += 1) {
     const { rows, apply } = await readApplyRows(
@@ -836,28 +872,35 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
       call.machine,
     );
     const state = spaceState(rows);
+    const folders = folderDecisionOf(plan, state, facts, os);
     const previewRun: PreviewRun = {
       run,
       folder,
       source: report.source,
       options,
-      roots: [],
+      folders,
+      os,
       inputs,
       ...(actions === undefined ? {} : { actions }),
       problems: [],
       verified: [],
       space: state,
-      missing: new Set(),
     };
-    if (previewToken(plan, previewRun) !== token) throw stale("The space");
+    if (previewToken(plan, previewRun) !== token) {
+      throw stale("The space, the prototype folder or a folder it names");
+    }
 
     const planned = new Set(plan.tasks.map((t) => t.legacyId));
     const space: ApplySpace = {
       state,
-      matched: matchedOf(apply, rows.refPrefix),
+      matched: matchedOf(apply, rows.refPrefix, call.machine),
       gone: apply.aliases.map((r) => String(r["alias"])).filter((a) => !planned.has(a)),
+      projectFolders: projectFoldersOf(rows, apply),
     };
+    titles = projectTitlesOf(plan, state);
     decision = decideApply(plan, space, {
+      machine: call.machine,
+      folders,
       exchange: run,
       dir: [...RUNS_FOLDER, run, "input"].join("/"),
       idOf: (legacy) => {
@@ -874,7 +917,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
     });
     if (decision.ops.length === 0) {
       return {
-        ...capped(applyResult(run, decision, new Map())),
+        ...capped(applyResult(run, decision, new Map(), titles)),
         status: "unchanged",
         as_of: rows.asOf,
       };
@@ -943,7 +986,7 @@ export async function planningApply(call: PlanningApplyCall): Promise<ImportPlan
     if (r.task !== undefined && r.ref !== undefined) refs.set(r.task, r.ref);
   }
   const answer: ImportPlanningApplyResult = {
-    ...applyResult(run, decision, refs),
+    ...applyResult(run, decision, refs, titles),
     status: result.status === "applied" ? "applied" : "unchanged",
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(submitted.backup === undefined ? {} : { backup: submitted.backup.name }),

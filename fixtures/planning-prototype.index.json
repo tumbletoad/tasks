@@ -23,10 +23,7 @@
     "hosts": "Every URL host is a reserved example domain (RFC 2606)"
   },
   "me": "Mira Okafor",
-  "roots": {
-    "work": "/home/mira/work",
-    "oss": "/home/mira/oss"
-  },
+  "home": "/home/mira",
   "spaceTask": {
     "seed": "mira",
     "tasks": 24,
@@ -1304,6 +1301,26 @@
         }
       ]
     },
+    "folder-no-project": {
+      "description": "A task with a folder and no project: it keeps its own folder",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-5216665d",
+          "key": "paths"
+        }
+      ]
+    },
+    "folder-not-here": {
+      "description": "A folder that is not on the machine (the tests leave it missing): no folder, and the task comes without it",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "home-fence",
+          "key": "paths"
+        }
+      ]
+    },
     "generic-source-label": {
       "description": "A source label that only names the kind (\"Email\", \"Chat\")",
       "where": [
@@ -2007,36 +2024,6 @@
         }
       ]
     },
-    "path-in-root": {
-      "description": "A first path under a root",
-      "where": [
-        {
-          "file": "data/metadata.json",
-          "task": "t-eb2a8db7",
-          "key": "paths"
-        },
-        {
-          "file": "data/metadata.json",
-          "task": "t-0e7b3bc1",
-          "key": "paths"
-        }
-      ]
-    },
-    "path-outside-roots": {
-      "description": "A path under none of the roots in `roots`",
-      "where": [
-        {
-          "file": "data/metadata.json",
-          "task": "t-5216665d",
-          "key": "paths"
-        },
-        {
-          "file": "data/metadata.json",
-          "task": "home-fence",
-          "key": "paths"
-        }
-      ]
-    },
     "paths-extra": {
       "description": "More than one path: paths[1...] go to ext.planning.paths",
       "where": [
@@ -2084,6 +2071,46 @@
           "file": "data/metadata.json",
           "task": "t-b5679597",
           "key": "priority"
+        }
+      ]
+    },
+    "project-folder": {
+      "description": "A project whose task folders all sit in one task's folder: the project gets that folder, and that task none of its own",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-7e820ac6",
+          "key": "paths"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "lum_report-api",
+          "key": "paths"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-0e7b3bc1",
+          "key": "paths"
+        }
+      ]
+    },
+    "project-folder-none": {
+      "description": "A project whose task folders share no containing folder: the project gets none, and each task keeps its own",
+      "where": [
+        {
+          "file": "data/metadata.json",
+          "task": "t-eb2a8db7",
+          "key": "paths"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-8ae0f771",
+          "key": "paths"
+        },
+        {
+          "file": "data/metadata.json",
+          "task": "t-b5679597",
+          "key": "paths"
         }
       ]
     },

@@ -92,10 +92,7 @@ export const IMPORT_PROBLEM_CODES = {
   /** A date or time outside the space's range (1970 to 9999), or a day the import's time zone
    * skips: dropped. */
   "date-out-of-range": "warning",
-  /** The first absolute path under no root, or not a folder a place can name (a climb, a hidden
-   * character, a spelling SafeText would change): no place. */
-  "path-outside-roots": "warning",
-  /** Every path that is not the place's, kept in `ext.planning.paths`. */
+  /** Every path but the first absolute one, the task's folder: kept in `ext.planning.paths`. */
   "paths-extra": "warning",
   /** A source label that only names the kind: the title is a short form of the URL. */
   "source-title-generic": "warning",
@@ -121,8 +118,14 @@ export const IMPORT_PROBLEM_CODES = {
   // What only the space and this machine can tell (the dry run, A7 3.15.4).
   /** A source key the space already holds: the apply links that row. */
   "source-key-exists": "warning",
-  /** A place whose folder is not on this machine. */
-  "place-missing": "warning",
+  /** A task's folder that is not a folder on this machine: not there, not a folder, or a path of
+   * another kind of machine. The task comes without it. */
+  "folder-missing": "warning",
+  /** A task's folder inside the app's own data, where an agent's work would change it: no folder. */
+  "folder-reserved": "warning",
+  /** A project's folder that another live project has on this machine, or that a project earlier
+   * in the import gets: the project gets none, and its tasks keep their own. */
+  "folder-taken": "warning",
   /** A legacy ID the space already holds as an alias: an earlier import created it. */
   "legacy-id-imported": "warning",
   /** No actions export (`--actions`): check-offs and stars held only in the page's browser storage

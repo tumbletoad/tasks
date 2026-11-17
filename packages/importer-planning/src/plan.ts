@@ -39,7 +39,7 @@ export interface PlanningExt {
   readonly status?: "delegated";
   readonly rank?: number;
   readonly confidence?: string;
-  /** Every path that is not the task's place: `paths[1…]`, and `paths[0]` when it has none. */
+  /** Every path but the first absolute one, which is the task's folder (PlannedTask.folder). */
   readonly paths?: readonly string[];
   /** A completion without a date: completed at the import time. */
   readonly done_date_unknown?: true;
@@ -115,14 +115,6 @@ export interface PlannedSourceAdd {
   readonly role: "origin";
 }
 
-/** `place.set` on the applying machine. */
-export interface PlannedPlaceSet {
-  readonly kind: "place.set";
-  readonly task: Draft;
-  readonly root: string;
-  readonly path: string;
-}
-
 export interface PlannedLogAdd {
   readonly kind: "log.add";
   readonly task: Draft;
@@ -142,12 +134,7 @@ export interface PlannedTaskComplete {
 }
 
 export type PlannedOp =
-  | PlannedTaskCreate
-  | PlannedAliasAdd
-  | PlannedSourceAdd
-  | PlannedPlaceSet
-  | PlannedLogAdd
-  | PlannedTaskComplete;
+  PlannedTaskCreate | PlannedAliasAdd | PlannedSourceAdd | PlannedLogAdd | PlannedTaskComplete;
 
 export interface PlannedArea {
   readonly slug: string;
@@ -190,8 +177,12 @@ export interface PlannedTask {
   readonly lifecycle: "active" | "completed";
   /** For a completed task. */
   readonly wrap?: "pending" | "wrapped";
-  readonly place?: { readonly root: string; readonly path: string };
-  /** Create, alias, sources, place, log entries, then the completion. */
+  /**
+   * The first absolute path of its metadata, as written, and its place in the file's list: its
+   * folder, when it is one on the machine that applies the import (folders.ts).
+   */
+  readonly folder?: { readonly path: string; readonly index: number };
+  /** Create, alias, sources, log entries, then the completion. */
   readonly ops: readonly PlannedOp[];
 }
 
@@ -217,8 +208,8 @@ export interface PlanCounts {
   readonly sources: number;
   readonly sourcesByKind: Readonly<Partial<Record<PlannedSourceKind, number>>>;
   readonly links: number;
-  readonly places: number;
-  readonly placesByRoot: Readonly<Record<string, number>>;
+  /** Tasks with a folder (PlannedTask.folder). */
+  readonly folders: number;
   /** Later task lines with an ID an earlier line has (`duplicate-id`): not planned. */
   readonly duplicatesLeftOut: number;
   /** Metadata entries without a task line that `--include-orphans` creates. */

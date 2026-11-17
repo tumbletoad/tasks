@@ -130,6 +130,14 @@ export interface ImportRows {
     readonly areas: ReadonlyMap<string, string>;
     readonly projects: ReadonlyMap<string, string>;
   };
+  /** The live projects' folder rows on this machine, removed ones too. */
+  readonly projectFolders: {
+    project: string;
+    title: string;
+    path: string;
+    version: number;
+    removed: number;
+  }[];
 }
 
 const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
@@ -170,6 +178,16 @@ const IMPORT_READS: readonly Statement[] = [
       "AND json_extract(ei.base, '$.groups') IS NOT NULL GROUP BY 1",
     mode: "all",
   },
+  {
+    // The live projects' folders on this machine: the folders another project holds, and whether a
+    // project ever had one here (a removed row).
+    sql:
+      "SELECT f.owner_id AS project, p.title AS title, f.path AS path, f.version AS version, " +
+      "f.deleted_at IS NOT NULL AS removed FROM folders f JOIN projects p ON p.id = f.owner_id " +
+      "WHERE f.machine_id = $machine AND f.owner_kind = 'project' AND p.deleted_at IS NULL " +
+      "ORDER BY f.created_seq, f.id",
+    mode: "all",
+  },
 ];
 
 /** The newest record of each group identity, from the rows of IMPORT_READS' last statement. */
@@ -208,8 +226,9 @@ const ALIASED = `SELECT entity_id FROM aliases WHERE namespace = 'planning' AND 
 /**
  * What an import's apply reads besides the rows its preview met (A7 3.15.5, 3.15.6), in the same
  * snapshot: each task that holds a legacy ID of the plan, with its grouping's slugs and what made
- * its tombstone; its place on this machine; its live source links; its recorded bases from every
- * applied import; the fields an import's undo set back since; and the legacy IDs of live tasks.
+ * its tombstone; its folders on this machine; its live source links; its recorded bases from every
+ * applied import; the fields an import's undo set back since; the legacy IDs of live tasks; and
+ * the projects' folder bases on this machine.
  */
 const APPLY_READS: readonly Statement[] = [
   {
@@ -227,12 +246,9 @@ const APPLY_READS: readonly Statement[] = [
     mode: "all",
   },
   {
-    // Each task's live place on this machine with its folder's version, else the newest version
-    // of a place it had here: a cleared place is a change too.
+    // Each task's folder rows on this machine, removed ones too: a removed folder is a change.
     sql:
-      "SELECT owner_id AS task, root_id, rel_path, deleted_at, " +
-      "coalesce(json_extract(fv, '$.folder'), created_seq) AS folder_version, " +
-      "coalesce(json_extract(fv, '$.deleted'), created_seq) AS deleted_version FROM places " +
+      "SELECT owner_id AS task, path, version, deleted_at FROM folders " +
       `WHERE owner_kind = 'task' AND machine_id = $machine AND owner_id IN (${ALIASED})`,
     mode: "all",
   },
@@ -265,20 +281,35 @@ const APPLY_READS: readonly Statement[] = [
       "WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND t.deleted_at IS NULL",
     mode: "all",
   },
+  {
+    // The folder each import that stands settled for a project on this machine: the base of the
+    // project's folder. The items of its tasks repeat it, so once per project, folder and import.
+    sql:
+      "SELECT json_extract(ei.base, '$.groups.project.id') AS project, " +
+      "json_extract(ei.base, '$.groups.project.folder.path') AS folder, x.applied_seq AS seq " +
+      "FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
+      "JOIN commits k ON k.seq = x.applied_seq " +
+      "WHERE x.state = 'applied' AND k.reverted_by IS NULL " +
+      "AND json_extract(ei.base, '$.import') = 'planning' " +
+      "AND json_extract(ei.base, '$.groups.project.folder.machine') = $machine " +
+      "GROUP BY 1, 2, 3",
+    mode: "all",
+  },
 ];
 
 /** What an import's apply read (APPLY_READS), as rows. */
 export interface ApplyRows {
   readonly tasks: Row[];
-  readonly places: Row[];
+  readonly folders: Row[];
   readonly links: Row[];
   readonly bases: Row[];
   readonly undone: Row[];
   readonly aliases: Row[];
+  readonly projectBases: Row[];
 }
 
 function importRows(row: unknown, lists: unknown[]): ImportRows {
-  const [aliases, sources, areas, projects, groups] = lists;
+  const [aliases, sources, areas, projects, groups, projectFolders] = lists;
   const space = decodeSpaceRow(row as Row);
   return {
     spaceId: space.spaceId,
@@ -297,22 +328,25 @@ function importRows(row: unknown, lists: unknown[]): ImportRows {
     areas: areas as ImportRows["areas"],
     projects: projects as ImportRows["projects"],
     landed: landedOf((groups as Row[] | undefined) ?? []),
+    projectFolders: (projectFolders ?? []) as ImportRows["projectFolders"],
   };
 }
 
 /**
  * The rows an import plan meets, in one snapshot: the space's authority and next reference, the
  * tasks that hold its legacy IDs as planning aliases, the live sources and areas with its keys and
- * slugs, and every live project, each with its version.
+ * slugs, and every live project, each with its version, and their folders on `machine`.
  */
 export async function readImportRows(
   reader: WorkerConnection,
   names: ImportNames,
+  machine: string,
 ): Promise<ImportRows> {
   const [row, ...lists] = await snapshot(reader, IMPORT_READS, {
     aliases: JSON.stringify(names.aliases),
     keys: JSON.stringify(names.keys),
     areas: JSON.stringify(names.areas),
+    machine,
   });
   return importRows(row, lists);
 }
@@ -405,7 +439,7 @@ export async function readApplyRows(
   names: ImportNames,
   machine: string,
 ): Promise<{ rows: ImportRows; apply: ApplyRows }> {
-  const [row, aliases, sources, areas, projects, groups, ...apply] = await snapshot(
+  const [row, aliases, sources, areas, projects, groups, projectFolders, ...apply] = await snapshot(
     reader,
     [...IMPORT_READS, ...APPLY_READS],
     {
@@ -415,16 +449,17 @@ export async function readApplyRows(
       machine,
     },
   );
-  const [tasks, places, links, bases, undone, all] = apply as Row[][];
+  const [tasks, folders, links, bases, undone, all, projectBases] = apply as Row[][];
   return {
-    rows: importRows(row, [aliases, sources, areas, projects, groups]),
+    rows: importRows(row, [aliases, sources, areas, projects, groups, projectFolders]),
     apply: {
       tasks: tasks ?? [],
-      places: places ?? [],
+      folders: folders ?? [],
       links: links ?? [],
       bases: bases ?? [],
       undone: undone ?? [],
       aliases: all ?? [],
+      projectBases: projectBases ?? [],
     },
   };
 }

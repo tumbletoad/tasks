@@ -1,16 +1,17 @@
-// The dry run's report and its preview token (A7 3.15.4). Pure: the service gathers what only the
-// space and this machine can tell (the space's state the plan meets, the folders that are missing
-// here) and the run's copy, and this module judges, counts and hashes.
+// The dry run's report and its preview token. Pure: the service gathers what only the space and
+// this machine can tell (the space's state the plan meets, what each task's folder is here) and the
+// run's copy, and this module judges, counts and hashes.
 //
-// The report has A7's six sections: counts and reconciliation, the status mapping, the roots
-// (with proposals for paths under none), needs attention (every problem, errors first), each task,
-// and what is not imported. Every error blocks: a blocked report has no token.
+// The report has six sections: counts and reconciliation, the status mapping, the project
+// folders, needs attention (every problem, errors first), each task, and what is not imported.
+// Every error blocks: a blocked report has no token.
 //
-// The token pins everything the apply depends on, so the apply (M7.05) recomputes it and refuses
-// any difference: the run, the space it was judged against (ID, authority epoch and incarnation),
-// the hash of every input and of the actions export, the options, the plan's hash, and the rows of
-// the space the plan meets (the aliases of its legacy IDs, the sources of its keys, the areas and
-// projects the placement looked at) with their versions. It is a hash, no secret.
+// The token pins everything the apply depends on, so the apply recomputes it and refuses any
+// difference: the run, the space it was judged against (ID, authority epoch and incarnation), the
+// hash of every input and of the actions export, the options, the plan's hash, the folders the
+// import gives on this machine, and the rows of the space the plan meets (the aliases of its legacy
+// IDs, the sources of its keys, the areas and projects the placement looked at) with their
+// versions. It is a hash, no secret.
 
 import { createHash } from "node:crypto";
 import {
@@ -20,11 +21,19 @@ import {
   type ImportProblemCode,
 } from "@tasks/contracts";
 import { ACTIONS_FILE } from "./events.ts";
+import {
+  decideFolders,
+  pinnedFolders,
+  within,
+  type FolderDecision,
+  type FolderFact,
+  type FolderOs,
+  type ProjectFolderRow,
+} from "./folders.ts";
 import type { InputFile } from "./input-copy.ts";
 import type { MappingOptions } from "./mapping.ts";
 import { METADATA_FILE, STATUSES, type PrototypeStatus } from "./metadata.ts";
 import type { ImportPlan, PlannedTask, PlannedTaskCreate } from "./plan.ts";
-import { isAbsolutePath, ROOT_ID, split } from "./places.ts";
 import { problem, type Problem } from "./problems.ts";
 import type { PrototypeParse } from "./prototype.ts";
 import { groupKey, numberedSlug } from "./slug.ts";
@@ -60,6 +69,8 @@ export interface SpaceState {
   readonly projects: readonly SpaceProject[];
   /** Where earlier imports landed groups: absent when none did. */
   readonly landed?: Landed;
+  /** The live projects' live folders on this machine. */
+  readonly projectFolders?: readonly ProjectFolderRow[];
 }
 
 /**
@@ -295,11 +306,22 @@ export function placeProjects(
   return { placements: placed.projects, met: placed.met };
 }
 
-/** A root the mapping used: this machine's (machine.toml) or one `--roots` gave. */
-export interface PreviewRoot {
-  readonly id: string;
-  readonly folder: string;
-  readonly origin: "machine" | "given";
+/**
+ * The folders the plan gives on this machine (folders.ts), with the projects placed in `space`: a
+ * project the import reuses keeps its own folder out of the projects that hold one.
+ */
+export function folderDecisionOf(
+  plan: ImportPlan,
+  space: Pick<SpaceState, "areas" | "projects" | "landed" | "projectFolders">,
+  facts: ReadonlyMap<string, FolderFact>,
+  os: FolderOs,
+): FolderDecision {
+  const { projects } = placeGroups(plan, space);
+  return decideFolders(plan, facts, {
+    os,
+    holders: space.projectFolders ?? [],
+    reuses: (slug) => projects.get(slug)?.reuses,
+  });
 }
 
 /** One dry run's facts beside its parse and plan. */
@@ -309,9 +331,12 @@ export interface PreviewRun {
   readonly folder: string;
   /** What was copied: the prototype folder and the actions export, as given. */
   readonly source: { readonly folder: string; readonly actions?: string };
-  /** The options the plan was made with; `roots` holds every root of `roots` below. */
+  /** The options the plan was made with. */
   readonly options: MappingOptions;
-  readonly roots: readonly PreviewRoot[];
+  /** The folders the import gives on this machine (folderDecisionOf). */
+  readonly folders: FolderDecision;
+  /** This machine's case rule, which the folders compare by. */
+  readonly os: FolderOs;
   /** The input copy's files, in copy order. */
   readonly inputs: readonly InputFile[];
   /** The actions export's copy, when one was given. */
@@ -321,8 +346,6 @@ export interface PreviewRun {
   /** The source checked again after the plan (`verifySource`, `verifyActions`). */
   readonly verified: readonly Problem[];
   readonly space: SpaceState;
-  /** Legacy IDs whose place's folder is not on this machine. */
-  readonly missing: ReadonlySet<string>;
 }
 
 export interface Preview {
@@ -392,36 +415,37 @@ function judged(plan: ImportPlan, space: SpaceState) {
 }
 
 /**
- * What the token pins that the run folder holds (A7 3.15.4): the run, the inputs' and the actions
- * export's hashes, the options and the plan's hash. The apply recomputes these from the folder,
- * and the writer hashes them with the space's identity and the rows the plan meets, which it reads
- * in the applying transaction (storage: recomputeToken).
+ * What the token pins that the run folder holds: the run, the inputs' and the actions export's
+ * hashes, the options and the plan's hash. The apply recomputes these from the folder, and the
+ * writer hashes them with the space's identity and the rows the plan meets, which it reads in the
+ * applying transaction (storage: recomputeToken).
  *
- * Also each record of where an earlier import landed one of the plan's groups, with whether that
- * group is live: the apply reads the records in the snapshot it decides on, and the barrier holds
- * the space at that snapshot until the writer's transaction, so the writer takes them as given.
+ * Also what the apply decides from its own snapshot and this machine's disk, which the barrier
+ * holds until the writer's transaction, so the writer takes them as given: each record of where an
+ * earlier import landed one of the plan's groups, with whether that group is live, and the folders
+ * the import gives here.
  */
 export function previewPinned(
   plan: ImportPlan,
-  run: Pick<PreviewRun, "run" | "inputs" | "actions" | "options"> & {
+  run: Pick<PreviewRun, "run" | "inputs" | "actions" | "options" | "folders"> & {
     readonly space?: Pick<SpaceState, "areas" | "projects" | "landed">;
   },
 ): Record<string, unknown> {
   const o = run.options;
   return {
-    v: 1,
+    v: 2,
     run: run.run,
     inputs: run.inputs.map((f) => [f.path, f.sha256]),
     actions: run.actions?.sha256 ?? null,
     options: {
       me: o.me ?? null,
-      roots: Object.entries(o.roots ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
       checked_as: o.checkedAs ?? "completed",
       include_orphans: o.includeOrphans === true,
       time_zone: o.timeZone,
     },
     plan: planHash(plan),
     landed: run.space === undefined ? [] : landedOf(plan, run.space),
+    folders: pinnedFolders(plan, run.folders),
   };
 }
 
@@ -481,56 +505,6 @@ export function previewToken(plan: ImportPlan, run: PreviewRun): string {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Roots
-
-/** Proposed roots for the task folders under none: their common folders, named (A7 3.15.4). */
-export function proposeRoots(
-  folders: readonly string[],
-  taken: readonly string[],
-): { id: string; folder: string; places: number }[] {
-  // Grouped by the first three folders below the top (a drive counts as one more), which is the
-  // depth of a person's own folder for work (`/home/<user>/<folder>`, `C:\Users\<user>\<folder>`).
-  const groups = new Map<string, { folder: string; places: number }>();
-  for (const path of folders) {
-    const parts = split(path);
-    if (parts === undefined || parts.segments.length === 0) continue;
-    const depth = parts.windows ? 4 : 3;
-    const head = parts.segments.slice(0, depth);
-    const folder = parts.windows
-      ? `${head.join("\\")}${head.length === 1 ? "\\" : ""}`
-      : `/${head.join("/")}`;
-    const key = parts.windows ? folder.toLowerCase() : folder;
-    const group = groups.get(key) ?? { folder, places: 0 };
-    group.places += 1;
-    groups.set(key, group);
-  }
-  const used = new Set(taken);
-  const out: { id: string; folder: string; places: number }[] = [];
-  for (const { folder, places } of groups.values()) {
-    const last =
-      folder
-        .split(/[\\/]/)
-        .filter((s) => s !== "")
-        .at(-1) ?? "";
-    const base =
-      last
-        .normalize("NFKD")
-        .replace(/\p{M}/gu, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, "-")
-        .replace(/^[-_]+/, "")
-        .slice(0, 28)
-        .replace(/[-_]+$/, "") || "root";
-    let id = base;
-    for (let n = 2; used.has(id); n += 1) id = `${base}-${String(n)}`;
-    if (!ROOT_ID.test(id)) continue;
-    used.add(id);
-    out.push({ id, folder, places });
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------------------------
 // The report
 
 const KIND_ORDER = ["ticket", "email", "chat", "doc", "calendar", "pr", "issue", "session", "web"];
@@ -559,11 +533,7 @@ function spaceProblems(plan: ImportPlan, run: PreviewRun): Problem[] {
       );
     }
   }
-  for (const t of plan.tasks) {
-    if (t.place !== undefined && run.missing.has(t.legacyId)) {
-      out.push(problem("place-missing", { file: METADATA_FILE, task: t.legacyId, field: "paths" }));
-    }
-  }
+  out.push(...run.folders.problems);
   return out;
 }
 
@@ -589,9 +559,6 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
   const keys = new Set(run.space.sources.map((s) => s.key));
   const aliased = new Set(run.space.aliases.map((a) => a.alias));
   const c = plan.counts;
-  const placesMissing = plan.tasks.filter(
-    (t) => t.place !== undefined && run.missing.has(t.legacyId),
-  ).length;
 
   // Statuses: the prototype's (none without one) and the space's, per pair.
   const pairs = new Map<string, number>();
@@ -616,32 +583,6 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
         STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status),
     );
 
-  // Roots: the ones used, then proposals for the task folders under none.
-  const missingByRoot = new Map<string, number>();
-  for (const t of plan.tasks) {
-    if (t.place !== undefined && run.missing.has(t.legacyId)) {
-      missingByRoot.set(t.place.root, (missingByRoot.get(t.place.root) ?? 0) + 1);
-    }
-  }
-  const outside = plan.tasks.flatMap((t) => {
-    if (t.place !== undefined) return [];
-    const first = parse.metadata.get(t.legacyId)?.paths.find(isAbsolutePath);
-    return first === undefined ? [] : [first];
-  });
-  const roots = [
-    ...run.roots.map((r) => ({
-      id: r.id,
-      folder: r.folder,
-      origin: r.origin,
-      places: Object.hasOwn(c.placesByRoot, r.id) ? (c.placesByRoot[r.id] ?? 0) : 0,
-      missing: missingByRoot.get(r.id) ?? 0,
-    })),
-    ...proposeRoots(
-      outside,
-      run.roots.map((r) => r.id),
-    ).map((p) => ({ ...p, origin: "proposed" as const, missing: 0 })),
-  ];
-
   const attention = CODE_ORDER.map((code) => ({
     code,
     severity: IMPORT_PROBLEM_CODES[code],
@@ -664,8 +605,36 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
     const title = placed.reuses === undefined ? undefined : spaceProjects.get(placed.reuses)?.title;
     if (title !== undefined) projectTitles.set(slug, title);
   }
+
+  // Each project's folder here, or why none; and the folder a project the import reuses has here
+  // now, when that is another: the apply keeps it unless only the prototype changed.
+  const held = new Map((run.space.projectFolders ?? []).map((f) => [f.project, f.path]));
+  const projectFolders = plan.projects.map((p) => {
+    const decided = run.folders.projects.get(p.slug) ?? { none: "no_folders" as const };
+    const reuses = placements.get(p.slug)?.reuses;
+    const current = reuses === undefined ? undefined : held.get(reuses);
+    const gets = "folder" in decided ? decided.folder : undefined;
+    const same =
+      current !== undefined &&
+      gets !== undefined &&
+      within(current, gets, run.os) &&
+      within(gets, current, run.os);
+    return {
+      project: projectTitles.get(p.slug) ?? p.title,
+      area: areaTitles.get(p.area) ?? p.area,
+      ...("folder" in decided
+        ? { folder: decided.folder }
+        : {
+            none: decided.none,
+            ...(decided.holder === undefined ? {} : { holder: decided.holder }),
+          }),
+      ...(current === undefined || same ? {} : { current }),
+    };
+  });
+
   const tasks = plan.tasks.map((t, i) => {
     const create = createOf(t);
+    const folder = run.folders.tasks.get(t.legacyId);
     return {
       legacy_id: t.legacyId,
       ref: `${run.space.refPrefix}-${String(run.space.nextRef + i)}`,
@@ -674,8 +643,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
       status: t.status,
       lifecycle: t.lifecycle,
       ...(t.wrap === undefined ? {} : { wrap: t.wrap }),
-      ...(t.place === undefined ? {} : { place: t.place }),
-      ...(t.place !== undefined && run.missing.has(t.legacyId) ? { place_missing: true } : {}),
+      ...(folder === undefined ? {} : { folder: { path: folder.path, state: folder.state } }),
       ...(create.due === undefined ? {} : { due: create.due.date }),
       ...(create.focus === undefined ? {} : { focus: create.focus }),
       ...(aliased.has(t.legacyId) ? { imported: true } : {}),
@@ -728,8 +696,11 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
       sources: c.sources,
       sources_existing: plan.sources.filter((s) => s.key !== undefined && keys.has(s.key)).length,
       links: c.links,
-      places: c.places,
-      places_missing: placesMissing,
+      folders: c.folders,
+      folders_missing: [...run.folders.tasks.values()].filter(
+        (f) => f.state !== "own" && f.state !== "project",
+      ).length,
+      project_folders: projectFolders.filter((p) => "folder" in p).length,
       duplicates_left_out: c.duplicatesLeftOut,
       orphans_included: c.orphansIncluded,
       text_sanitised: count("text-sanitised"),
@@ -742,7 +713,7 @@ export function previewOf(parse: PrototypeParse, plan: ImportPlan, run: PreviewR
       .map(([kind, n]) => ({ kind, count: n }))
       .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)),
     statuses,
-    roots,
+    project_folders: projectFolders,
     owners: plan.owners.map((o) => ({ name: o.name, me: o.me, tasks: o.tasks })),
     attention,
     problems,

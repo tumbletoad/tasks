@@ -10,10 +10,12 @@ import { fileURLToPath } from "node:url";
 import { ImportProblem } from "@tasks/contracts";
 import { beforeAll, describe, expect, test } from "vitest";
 import {
+  decideFolders,
   IMPORT_LOG,
   mapPrototype,
   parsePrototype,
   readInput,
+  type FolderFact,
   type ImportPlan,
   type MappingOptions,
   type PlannedOp,
@@ -36,7 +38,7 @@ interface Where {
 }
 interface Index {
   me: string;
-  roots: Record<string, string>;
+  home: string;
   spaceTask: { key: string };
   counts: Record<string, number>;
   tasks: { id: string; file: string; line: number; group: string; title: string; body: string }[];
@@ -69,7 +71,7 @@ beforeAll(async () => {
   expect(folder.problems).toEqual([]);
   input = folder.input;
   parse = parsePrototype(input);
-  options = { me: index.me, roots: index.roots, timeZone: ZONE };
+  options = { me: index.me, timeZone: ZONE };
   plan = mapPrototype(parse, options);
 });
 
@@ -97,6 +99,24 @@ const ext = (id: string, p: ImportPlan = plan): Record<string, unknown> =>
 const problemsOf = (code: string, id: string, p: ImportPlan = plan) =>
   p.problems.filter((x) => x.code === code && x.task === id);
 const meta = (id: string): Record<string, unknown> => raw[id] ?? {};
+/**
+ * The folders on a Linux machine whose home is the fixture's and holds every folder under it: each
+ * path there is a folder, stored with `~`, and every other path is missing.
+ */
+const folders = () => {
+  const facts = new Map<string, FolderFact>();
+  for (const t of plan.tasks) {
+    if (t.folder === undefined) continue;
+    const { path } = t.folder;
+    facts.set(
+      t.legacyId,
+      path.startsWith(`${index.home}/`)
+        ? { state: "present", stored: `~${path.slice(index.home.length)}` }
+        : { state: "missing" },
+    );
+  }
+  return decideFolders(plan, facts, { os: "linux", holders: [], reuses: () => undefined });
+};
 const indexed = (id: string) => index.tasks.find((t) => t.id === id);
 /** 09:00 on a day in the fixture's zone, written out: +02:00 until 25 October, +01:00 after. */
 const nine = (day: string): number =>
@@ -570,29 +590,63 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
     },
   },
   {
-    row: "paths[0]: a place under the longest matching root; under no root, reported, no place",
-    cases: ["path-in-root", "path-outside-roots"],
+    row: "paths[0]: the task's folder on this machine; a project gets the one that holds all its tasks' folders",
+    cases: ["project-folder", "project-folder-none", "folder-no-project"],
     check() {
-      for (const id of ids("path-in-root")) {
+      const decided = folders();
+      const projectOf = (id: string) => taskOf(id).project ?? "";
+      const stored = (id: string) =>
+        `~${((meta(id)["paths"] as string[])[0] ?? "").slice(index.home.length)}`;
+      // The project gets the folder that holds the others; that task none of its own.
+      const projects = new Set(ids("project-folder").map(projectOf));
+      for (const slug of projects) {
+        const tasks = ids("project-folder").filter((id) => projectOf(id) === slug);
+        const outer = tasks.map(stored).find((p) => tasks.every((t) => stored(t).startsWith(p)));
+        expect(decided.projects.get(slug)).toEqual({ folder: outer });
+        for (const id of tasks) {
+          expect(decided.tasks.get(id)).toEqual({
+            path: stored(id),
+            state: stored(id) === outer ? "project" : "own",
+          });
+        }
+      }
+      // No folder holds them all: no project folder, and each task keeps its own.
+      const none = projectOf(ids("project-folder-none")[0] ?? "");
+      expect(decided.projects.get(none)).toEqual({ none: "no_common_folder" });
+      for (const id of ids("project-folder-none")) {
+        expect(decided.tasks.get(id)).toEqual({ path: stored(id), state: "own" });
+      }
+      for (const id of ids("folder-no-project")) {
+        expect(taskOf(id).project).toBeUndefined();
+        expect(decided.tasks.get(id)).toEqual({ path: stored(id), state: "own" });
+      }
+      expect(decided.problems.filter((p) => p.code !== "folder-missing")).toEqual([]);
+    },
+  },
+  {
+    row: "paths[0] not a folder on this machine: no folder, reported, the task all the same",
+    cases: ["folder-not-here"],
+    check() {
+      const decided = folders();
+      for (const id of ids("folder-not-here")) {
         const path = (meta(id)["paths"] as string[])[0] ?? "";
-        const root = Object.entries(index.roots).find(([, folder]) =>
-          path.startsWith(`${folder}/`),
-        );
-        expect(root).toBeDefined();
-        expect(opsOf(id, "place.set")).toEqual([
+        expect(taskOf(id).folder).toEqual({ path, index: 0 });
+        expect(decided.tasks.get(id)).toEqual({ path, state: "missing" });
+        expect(decided.problems.filter((p) => p.task === id)).toEqual([
           {
-            kind: "place.set",
-            task: { draft: id },
-            root: root?.[0],
-            path: path.slice((root?.[1] ?? "").length + 1),
+            code: "folder-missing",
+            severity: "warning",
+            file: "data/metadata.json",
+            task: id,
+            field: "paths",
+            index: 0,
           },
         ]);
-      }
-      for (const id of ids("path-outside-roots")) {
-        expect(opsOf(id, "place.set")).toEqual([]);
-        expect(problemsOf("path-outside-roots", id)).toHaveLength(1);
-        // Kept, so nothing of the prototype is lost.
-        expect(ext(id)["paths"]).toEqual(meta(id)["paths"]);
+        // Its project holds no folder of it.
+        const project = decided.projects.get(taskOf(id).project ?? "");
+        expect(project === undefined || !("folder" in project) || project.folder !== path).toBe(
+          true,
+        );
       }
     },
   },
@@ -603,7 +657,7 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
       for (const id of ids("paths-extra")) {
         expect(ext(id)["paths"]).toEqual((meta(id)["paths"] as string[]).slice(1));
         expect(problemsOf("paths-extra", id)).toHaveLength(1);
-        expect(opsOf(id, "place.set")).toHaveLength(1);
+        expect(taskOf(id).folder?.path).toBe((meta(id)["paths"] as string[])[0]);
       }
     },
   },

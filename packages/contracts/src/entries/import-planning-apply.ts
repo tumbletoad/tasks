@@ -42,7 +42,7 @@ export const IMPORT_FIELDS = [
   "lifecycle",
   "wrap",
   "ext.planning",
-  "place",
+  "folder",
   "evidence",
   "sources",
 ] as const;
@@ -89,6 +89,18 @@ export const ImportPlanningApplyResult = z.strictObject({
     )
     .describe("Each task created, changed, deleted or in conflict, conflicts first, up to 2,000"),
   tasks_more: Count.describe("Tasks beyond those, in the run's apply.json"),
+  projects: z
+    .array(
+      z.strictObject({
+        project: z.string().describe("Project title"),
+        outcome: z
+          .enum(["set", "conflict"])
+          .describe("set: the prototype's folder; conflict: both changed it, kept as it is"),
+      }),
+    )
+    .max(PREVIEW_ROWS)
+    .describe("Projects whose folder on this machine the import set or did not change")
+    .optional(),
   gone: z.array(LegacyId).max(PREVIEW_ROWS).describe("Legacy IDs gone from the prototype"),
   as_of: AsOf.optional(),
   replayed: Replayed.optional(),
@@ -140,7 +152,8 @@ const APPLY_OPS = [
   "task.wrap_up",
   "log.add",
   "source.add",
-  "place.set",
+  "project.folder_set",
+  "task.folder_set",
   "alias.add",
   "area.upsert",
   "project.upsert",

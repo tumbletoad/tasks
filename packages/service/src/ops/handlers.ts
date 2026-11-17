@@ -96,6 +96,7 @@ import {
   reservedBy,
   storedForm,
   type Folder,
+  type FolderHost,
 } from "./folders.ts";
 import {
   byOf,
@@ -1963,8 +1964,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         folder,
         reader,
         input: call.input,
-        roots: call.host.roots?.() ?? [],
-        platform: call.host.platform ?? process.platform,
+        ...folderHost(call),
         timeZone: (call.host.timeZone ?? localTimeZone)(),
       });
     } catch (error) {
@@ -1991,8 +1991,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         reader,
         writer,
         input: call.input,
-        roots: call.host.roots?.() ?? [],
-        platform: call.host.platform ?? process.platform,
+        ...folderHost(call),
         principal,
         importer: () => writer.actor("import", "import"),
         scope: call.principal.scope,
@@ -2290,24 +2289,37 @@ function projectNamed(names: GroupNames, given: string): { id: string; name: str
   return { id, name: names.projects.find((p) => p.id === id)?.title ?? name };
 }
 
+/** This machine as a folder's checks need it: its ID, OS, the person's home and the app's data. */
+function folderHost(call: Call): FolderHost {
+  const { host } = call;
+  if (host.home === undefined) {
+    throw new AppError({ code: "internal", message: "This service has no home folder to bind." });
+  }
+  return {
+    machine: host.machine.id,
+    platform: host.platform ?? process.platform,
+    home: host.home,
+    reserved: [
+      ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
+      ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
+    ],
+  };
+}
+
 async function folderWrite(
   call: Call,
   action: string,
   given: string | undefined,
 ): Promise<unknown> {
-  const { input, host } = call;
-  const platform = host.platform ?? process.platform;
-  const home = host.home;
-  if (home === undefined) {
-    throw new AppError({ code: "internal", message: "This service has no home folder to bind." });
-  }
+  const { input } = call;
+  const { platform, home, reserved } = folderHost(call);
   let stored: Folder | undefined;
   if (given !== undefined) {
     const form = storedForm(given, home, platform);
     if (typeof form === "string") throw folderRefused("folder", form);
     stored = form;
   }
-  const machine = host.machine.id;
+  const machine = call.host.machine.id;
   const replay = await applied(call);
   const reader = readerOf(call.space);
   let names: GroupNames;
@@ -2316,10 +2328,6 @@ async function folderWrite(
   } catch (error) {
     throw storageFailure(error);
   }
-  const reserved = [
-    ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
-    ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
-  ];
   const facts = { home, platform, reserved };
 
   if (action === "add_project") {

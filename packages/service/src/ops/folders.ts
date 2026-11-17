@@ -201,6 +201,17 @@ export interface ProjectFolder {
   readonly stored: string;
 }
 
+/** This machine as a folder's checks need it. */
+export interface FolderHost {
+  /** This machine's ID: folders are stored per machine. */
+  readonly machine: string;
+  readonly platform: NodeJS.Platform;
+  /** The person's home here: a folder under it is stored with `~`. */
+  readonly home: string;
+  /** The app's own data: its home and the folder of each space this machine registers. */
+  readonly reserved: readonly string[];
+}
+
 export interface BindFacts {
   readonly home: string;
   readonly platform: NodeJS.Platform;

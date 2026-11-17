@@ -467,13 +467,27 @@ describe("[A7.3.14.planning-fixture.index] the synthetic prototype and its index
       const sources = metaValue(w) as { label: string }[];
       expect(sources.some((s) => s.label === "Email" || s.label === "Chat")).toBe(true);
     }
-    const roots = Object.values(PLANNING.roots);
-    const under = (path: string) => roots.some((r) => path === r || path.startsWith(`${r}/`));
-    for (const w of where("path-outside-roots")) {
-      expect((metaValue(w) as string[]).some((p) => !under(p))).toBe(true);
+    // The folder cases' first paths: one project's all inside one of them, another's not, the
+    // missing one outside the home a test makes, and one task's without a project.
+    const firstPaths = (name: string) => {
+      const out = new Map<unknown, string[]>();
+      for (const w of where(name)) {
+        const project = metadata[w.task ?? ""]?.["project"];
+        out.set(project, [...(out.get(project) ?? []), (metaValue(w) as string[])[0] ?? ""]);
+      }
+      return [...out.values()];
+    };
+    const inside = (path: string, outer: string) => path === outer || path.startsWith(`${outer}/`);
+    const holds = (paths: string[]) => paths.some((o) => paths.every((p) => inside(p, o)));
+    expect(firstPaths("project-folder").every(holds)).toBe(true);
+    expect(firstPaths("project-folder").some((paths) => paths.length > 1)).toBe(true);
+    expect(firstPaths("project-folder-none").some((paths) => !holds(paths))).toBe(true);
+    for (const w of where("folder-not-here")) {
+      expect(inside((metaValue(w) as string[])[0] ?? "", PLANNING.home)).toBe(false);
     }
-    for (const w of where("path-in-root"))
-      expect(under((metaValue(w) as string[])[0] ?? "")).toBe(true);
+    for (const w of where("folder-no-project")) {
+      expect(metadata[w.task ?? ""]?.["project"]).toBeUndefined();
+    }
     const ranks = where("rank-tie").map((w) => [metadata[w.task ?? ""]?.["project"], metaValue(w)]);
     expect(ranks).toHaveLength(2);
     expect(ranks[0]).toEqual(ranks[1]);

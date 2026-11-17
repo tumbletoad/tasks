@@ -1,5 +1,5 @@
 // The mapping's rules on small synthetic inputs (A7 3.15.1, 3.15.3): what the fixture cannot show
-// in one folder. Source kinds and keys, generic labels, slugs, roots, days and instants in a zone,
+// in one folder. Source kinds and keys, generic labels, slugs, folders, days and instants in a zone,
 // cutting and SafeText with their problems, duplicates, orphans, unknown metadata keys, and a plan
 // that is pure and deterministic and binds its drafts to IDs. Hosts are reserved example domains.
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -7,6 +7,7 @@ import {
   bindOperations,
   classifyUrl,
   cutAtWord,
+  decideFolders,
   eventMillis,
   fileLinkPath,
   groupSlug,
@@ -18,11 +19,13 @@ import {
   nineOClock,
   numberedSlug,
   parsePrototype,
-  placeFor,
   shortUrl,
+  type FolderFact,
+  type FolderOs,
   type ImportPlan,
   type MappingOptions,
   type PlannedOp,
+  type PlannedTask,
   type PlannedTaskCreate,
   type PrototypeInput,
 } from "./index.ts";
@@ -30,7 +33,6 @@ import {
 const ZONE = "Europe/Amsterdam";
 const options: MappingOptions = {
   me: "Mira Okafor",
-  roots: { work: "/home/mira/work" },
   timeZone: ZONE,
 };
 
@@ -53,6 +55,22 @@ const codes = (p: ImportPlan, id?: string) =>
     .map((x) => `${x.code} ${x.field ?? ""}`);
 const line = (title: string, id: string, body = "") =>
   `- [ ] **${title}** ${body} <!-- task:${id} -->\n`;
+/** A planned task as the folder rules read it. */
+const task = (legacyId: string, project?: string): PlannedTask => ({
+  legacyId,
+  file: "TODO.md",
+  marked: true,
+  area: "work",
+  ...(project === undefined ? {} : { project }),
+  status: "open",
+  lifecycle: "active",
+  ops: [],
+});
+/** Every path a folder on this machine, stored as given. */
+const present = (folders: Record<string, string>) =>
+  new Map<string, FolderFact>(
+    Object.entries(folders).map(([id, stored]) => [id, { state: "present", stored }]),
+  );
 
 afterEach(() => {
   vi.useRealTimers();
@@ -221,29 +239,145 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     expect(performance.now() - started).toBeLessThan(5_000);
   });
 
-  test("a path's place: the longest root by whole segments, never a climb or a hidden character", () => {
-    const roots = { work: "/home/mira/work", lumen: "/home/mira/work/lumen" };
-    expect(placeFor("/home/mira/work/lumen/portal", roots)).toEqual({
-      root: "lumen",
-      path: "portal",
+  test("a project gets the one task folder that holds the others, by whole names", () => {
+    const tasks = (folders: Record<string, string>, project = "portal") => ({
+      tasks: Object.keys(folders).map((id) => ({
+        ...task(id, project),
+        folder: { path: folders[id] ?? "", index: 0 },
+      })),
+      projects: [{ slug: project, title: "Portal", area: "work", key: "k" }],
     });
-    expect(placeFor("/home/mira/work/oss/./a//b/", roots)).toEqual({
-      root: "work",
-      path: "oss/a/b",
+    const decide = (folders: Record<string, string>, os: FolderOs = "linux") =>
+      decideFolders(tasks(folders), present(folders), { os, holders: [], reuses: () => undefined });
+
+    const held = decide({ a: "~/work/portal", b: "~/work/portal/docs", c: "~/work/portal/api/v2" });
+    expect(held.projects.get("portal")).toEqual({ folder: "~/work/portal" });
+    expect([...held.tasks].map(([id, f]) => [id, f.state])).toEqual([
+      ["a", "project"],
+      ["b", "own"],
+      ["c", "own"],
+    ]);
+    // A sibling is no folder inside another, nor a name that starts the same.
+    const apart = decide({ a: "~/work/portal", b: "~/work/portal-old" });
+    expect(apart.projects.get("portal")).toEqual({ none: "no_common_folder" });
+    expect([...apart.tasks.values()].map((f) => f.state)).toEqual(["own", "own"]);
+    // One folder twice is one folder: the project's, and neither task keeps it.
+    const twice = decide({ a: "~/work/portal", b: "~/work/portal" });
+    expect(twice.projects.get("portal")).toEqual({ folder: "~/work/portal" });
+    expect([...twice.tasks.values()].map((f) => f.state)).toEqual(["project", "project"]);
+    // Windows and macOS compare without case, Linux with.
+    expect(
+      decide({ a: "~\\Work\\Portal", b: "~\\work\\portal\\docs" }, "windows").projects,
+    ).toEqual(new Map([["portal", { folder: "~\\Work\\Portal" }]]));
+    expect(decide({ a: "~/Work/Portal", b: "~/work/portal/docs" }).projects).toEqual(
+      new Map([["portal", { none: "no_common_folder" }]]),
+    );
+  });
+
+  test("a project's folder another project has goes to none of them; nested ones are fine", () => {
+    const plan = {
+      tasks: [
+        { ...task("a", "one"), folder: { path: "~/work/portal", index: 0 } },
+        { ...task("b", "two"), folder: { path: "~/work/portal", index: 2 } },
+        { ...task("c", "three"), folder: { path: "~/work/portal/api", index: 0 } },
+        { ...task("d", "four"), folder: { path: "~/work/clinic", index: 0 } },
+      ],
+      projects: ["one", "two", "three", "four"].map((slug) => ({
+        slug,
+        title: slug,
+        area: "work",
+        key: slug,
+      })),
+    };
+    const facts = present({
+      a: "~/work/portal",
+      b: "~/work/portal",
+      c: "~/work/portal/api",
+      d: "~/work/clinic",
     });
-    expect(placeFor("/home/mira/work", roots)).toEqual({ root: "work", path: "" });
-    expect(placeFor("/home/mira/workshop/x", roots)).toBeUndefined();
-    expect(placeFor("/home/mira/work/../secret", roots)).toBeUndefined();
-    expect(placeFor("/Home/mira/work/x", roots)).toBeUndefined();
-    expect(placeFor("work/x", roots)).toBeUndefined();
-    expect(placeFor("/home/mira/work/a\u200bb", roots)).toBeUndefined();
-    expect(placeFor("/home/mira/work/a\\b", roots)).toBeUndefined();
-    const windows = { work: "C:\\Users\\Mira\\Work" };
-    expect(placeFor("c:\\users\\mira\\work\\Lumen\\Portal", windows)).toEqual({
-      root: "work",
-      path: "Lumen/Portal",
+    const holders = [{ project: "p_space", title: "Clinic", path: "~/work/clinic" }];
+    const decided = decideFolders(plan, facts, { os: "linux", holders, reuses: () => undefined });
+    expect(Object.fromEntries(decided.projects)).toEqual({
+      one: { folder: "~/work/portal" },
+      two: { none: "taken", holder: "one" },
+      three: { folder: "~/work/portal/api" },
+      four: { none: "taken", holder: "Clinic" },
     });
-    expect(placeFor("/home/mira/work/x", windows)).toBeUndefined();
+    // The tasks of a project without its folder keep their own.
+    expect(decided.tasks.get("b")).toEqual({ path: "~/work/portal", state: "own" });
+    expect(decided.tasks.get("d")).toEqual({ path: "~/work/clinic", state: "own" });
+    expect(decided.problems).toEqual([
+      {
+        code: "folder-taken",
+        severity: "warning",
+        file: "data/metadata.json",
+        task: "b",
+        field: "paths",
+        index: 2,
+      },
+      {
+        code: "folder-taken",
+        severity: "warning",
+        file: "data/metadata.json",
+        task: "d",
+        field: "paths",
+        index: 0,
+      },
+    ]);
+    // The project the import goes to keeps its own folder: no other project has it.
+    const own = decideFolders(plan, facts, {
+      os: "linux",
+      holders,
+      reuses: (slug) => (slug === "four" ? "p_space" : undefined),
+    });
+    expect(own.projects.get("four")).toEqual({ folder: "~/work/clinic" });
+  });
+
+  test("a folder not on this machine is no folder, reported; it holds no project's folder", () => {
+    const plan = {
+      tasks: [
+        { ...task("a", "portal"), folder: { path: "/home/mira/work/portal", index: 1 } },
+        { ...task("b", "portal"), folder: { path: "/home/mira/work/portal/docs", index: 0 } },
+        { ...task("c", "portal"), folder: { path: "C:\\work\\x", index: 0 } },
+        { ...task("d", "portal"), folder: { path: "/home/mira/.tasks/spaces/s", index: 0 } },
+        { ...task("e"), folder: { path: "/home/mira/notes", index: 0 } },
+      ],
+      projects: [{ slug: "portal", title: "Portal", area: "work", key: "k" }],
+    };
+    const facts = new Map<string, FolderFact>([
+      ["a", { state: "missing" }],
+      ["b", { state: "present", stored: "~/work/portal/docs" }],
+      ["c", { state: "other_machine" }],
+      ["d", { state: "reserved" }],
+      ["e", { state: "present", stored: "~/notes" }],
+    ]);
+    const decided = decideFolders(plan, facts, {
+      os: "linux",
+      holders: [],
+      reuses: () => undefined,
+    });
+    // The one folder here holds itself: the project gets it.
+    expect(decided.projects.get("portal")).toEqual({ folder: "~/work/portal/docs" });
+    expect(Object.fromEntries(decided.tasks)).toEqual({
+      a: { path: "/home/mira/work/portal", state: "missing" },
+      b: { path: "~/work/portal/docs", state: "project" },
+      c: { path: "C:\\work\\x", state: "other_machine" },
+      d: { path: "/home/mira/.tasks/spaces/s", state: "reserved" },
+      // No project: its own.
+      e: { path: "~/notes", state: "own" },
+    });
+    expect(decided.problems.map((p) => [p.code, p.task, p.index])).toEqual([
+      ["folder-missing", "a", 1],
+      ["folder-missing", "c", 0],
+      ["folder-reserved", "d", 0],
+    ]);
+    // A project none of whose tasks has a folder here.
+    const none = decideFolders(plan, new Map(), {
+      os: "linux",
+      holders: [],
+      reuses: () => undefined,
+    });
+    expect(none.projects.get("portal")).toEqual({ none: "no_folders" });
   });
 
   test("a day is 09:00 in the import's zone; a star's day is the instant's day there", () => {
@@ -529,19 +663,28 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     ]);
   });
 
-  test("the place is the first absolute path, the folder the page shows; rank 0 sorts last", () => {
+  test("the folder is the first absolute path, the folder the page shows; rank 0 sorts last", () => {
     const p = plan({
       todo: line("A", "x1") + line("B", "x2") + line("C", "x3"),
       metadata: metadata({
         x1: { paths: ["notes/a", "/home/mira/work/a", "/home/mira/work/b"], rank: 0 },
-        x2: { rank: 2 },
-        x3: { rank: 1 },
+        x2: { rank: 2, paths: ["C:\\Users\\mira\\code\\portal"] },
+        x3: { rank: 1, paths: ["work/x"] },
       }),
     });
-    expect(opsOf(p, "x1", "place.set")).toEqual([
-      { kind: "place.set", task: { draft: "x1" }, root: "work", path: "a" },
-    ]);
+    expect(p.tasks.find((t) => t.legacyId === "x1")?.folder).toEqual({
+      path: "/home/mira/work/a",
+      index: 1,
+    });
+    expect(p.tasks.find((t) => t.legacyId === "x2")?.folder).toEqual({
+      path: "C:\\Users\\mira\\code\\portal",
+      index: 0,
+    });
+    expect(p.tasks.find((t) => t.legacyId === "x3")?.folder).toBeUndefined();
+    expect(p.counts.folders).toBe(2);
     expect(createOf(p, "x1").ext.planning.paths).toEqual(["notes/a", "/home/mira/work/b"]);
+    expect(createOf(p, "x2").ext.planning.paths).toBeUndefined();
+    expect(createOf(p, "x3").ext.planning.paths).toEqual(["work/x"]);
     expect(createOf(p, "x1").ext.planning.rank).toBe(0);
     expect(p.tasks.map((t) => t.legacyId)).toEqual(["x3", "x2", "x1"]);
   });
@@ -685,19 +828,17 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     ]);
   });
 
-  test("a place's path is one the writer stores as it is: SafeText leaves it unchanged", () => {
-    const roots = { work: "/home/mira/work" };
-    expect(placeFor("/home/mira/work/café", roots)).toEqual({ root: "work", path: "café" });
-    // A decomposed é would be stored composed: on Linux another folder.
-    expect(placeFor("/home/mira/work/cafe\u0301", roots)).toBeUndefined();
-    expect(placeFor("/home/mira/work/a\u{e0041}", roots)).toBeUndefined();
+  test("a folder's path is kept exactly as written; the other paths pass SafeText", () => {
+    // A decomposed é made composed would name another folder on Linux.
     const p = plan({
       todo: line("A", "x1"),
-      metadata: metadata({ x1: { paths: ["/home/mira/work/cafe\u0301"] } }),
+      metadata: metadata({
+        x1: { paths: ["/home/mira/work/cafe\u0301", "/home/mira/cafe\u0301"] },
+      }),
     });
-    expect(opsOf(p, "x1", "place.set")).toEqual([]);
-    expect(createOf(p, "x1").ext.planning.paths).toEqual(["/home/mira/work/café"]);
-    expect(codes(p, "x1")).toEqual(["path-outside-roots paths", "text-sanitised paths"]);
+    expect(p.tasks[0]?.folder?.path).toBe("/home/mira/work/cafe\u0301");
+    expect(createOf(p, "x1").ext.planning.paths).toEqual(["/home/mira/caf\u00e9"]);
+    expect(codes(p, "x1")).toEqual(["paths-extra paths", "text-sanitised paths"]);
   });
 
   test("a star's day outside the space's range is dropped and reported", () => {
@@ -756,18 +897,6 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     });
     const over = `${"A".repeat(299)}-1`;
     expect(classifyUrl(url(over))).toEqual({ kind: "web", key: `url:${url(over)}` });
-  });
-
-  test("the plan's counts are own keys whatever a root is called", () => {
-    const p = plan(
-      {
-        todo: line("A", "x1"),
-        metadata: metadata({ x1: { paths: ["/home/mira/work/a"] } }),
-      },
-      { roots: { constructor: "/home/mira/work" } },
-    );
-    expect(p.counts.placesByRoot).toEqual({ constructor: 1 });
-    expect(Object.hasOwn(p.counts.placesByRoot, "constructor")).toBe(true);
   });
 
   test("one title is one area; distinct titles with one slug get numbered slugs", () => {
@@ -907,7 +1036,6 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     });
     expect(p.problems.map((x) => `${x.code} ${x.field ?? ""} ${String(x.index ?? "")}`)).toEqual([
       "source-dropped sources 1",
-      "path-outside-roots paths 1",
       "paths-extra paths 2",
     ]);
   });
@@ -992,11 +1120,9 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     const refused = (more: Partial<MappingOptions>) => () =>
       mapPrototype(input, { ...options, ...more });
     expect(refused({ timeZone: "+01:00" })).toThrow(MappingOptionsError);
-    expect(refused({ roots: { Work: "/w" } })).toThrow(MappingOptionsError);
-    expect(refused({ roots: { work: "w" } })).toThrow(MappingOptionsError);
     expect(refused({ checkedAs: "later" as "review" })).toThrow(MappingOptionsError);
     try {
-      refused({ roots: { "secret-name!": "/w" } })();
+      refused({ timeZone: "secret-name!" })();
     } catch (error) {
       expect(String(error)).not.toContain("secret-name");
     }

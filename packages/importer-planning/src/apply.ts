@@ -1,7 +1,7 @@
 // The apply of an import plan (A7 3.15.5) and the idempotent re-import (3.15.6): the operations
 // one import writes, decided from the plan and the space's state as one read found it. Pure: the
 // service reads the state (the tasks that hold the plan's legacy IDs, their values, versions,
-// places, source links and recorded bases) and draws the new tasks' IDs, and this module decides.
+// folders, source links and recorded bases) and draws the new tasks' IDs, and this module decides.
 // The writer then checks, in its transaction, that nothing the decision read has changed: the
 // preview token pins the matched tasks' versions and the rows the plan meets, and the request's
 // base covers every field it changes (A1 3.5).
@@ -28,12 +28,17 @@
 // of either stands (kept or in conflict), the other is a conflict too, so neither overwrites it.
 //
 // Besides the task's own fields: a source the prototype names that no earlier import named is
-// linked (never one it dropped, and never one the person removed); a place is set when its folder
-// changed in the prototype and not in the space (never cleared); a changed evidence text adds an
+// linked (never one it dropped, and never one the person removed); a changed evidence text adds an
 // evidence entry. Areas and projects are placed by placeGroups and upserted by slug, only those an
 // operation needs, and each item records where its task's groups landed for the next import.
 //
+// Folders on the machine that applies (folders.ts): a task's own folder is a compared field, and a
+// project's folder is compared the same way, with its base recorded in the items of its tasks.
+// Neither is ever cleared by an import. One that never had a folder on this machine and has no
+// base takes the prototype's: setting a folder where there never was one overwrites nothing.
+//
 // The same input twice gives no operation: an import that changes nothing writes no exchange.
+import { ownFolder, projectFolder, type FolderDecision } from "./folders.ts";
 import type { ImportPlan, PlannedSource, PlannedSourceFields, PlannedTask } from "./plan.ts";
 import { placeGroups, type SpaceState } from "./preview.ts";
 
@@ -54,7 +59,7 @@ export const BASE_FIELDS = [
   "lifecycle",
   "wrap",
   "ext.planning",
-  "place",
+  "folder",
   "evidence",
 ] as const;
 export type BaseField = (typeof BASE_FIELDS)[number];
@@ -93,6 +98,8 @@ export interface ItemBase {
 export interface LandedGroup {
   readonly key: string;
   readonly id: string;
+  /** A project's folder on the applying machine this import settled: the next import's base. */
+  readonly folder?: FolderValue;
 }
 
 /** One recorded base of a task: its item's base and the seq of the import that recorded it. */
@@ -125,6 +132,16 @@ export interface MatchedTask {
   readonly bases: readonly RecordedBase[];
 }
 
+/** A live project's folder on the applying machine, as the apply's read found it. */
+export interface ProjectFolderState {
+  /** Its live folder here, as stored. */
+  readonly path: string | null;
+  /** The version of its newest folder change here, a removal included; 0 when it never had one. */
+  readonly version: number;
+  /** The folder the newest import that is not undone settled for it, with that import's seq. */
+  readonly base?: { readonly folder: string | null; readonly seq: number };
+}
+
 /** The space as the apply's read found it. */
 export interface ApplySpace {
   readonly state: SpaceState;
@@ -132,6 +149,8 @@ export interface ApplySpace {
   readonly matched: ReadonlyMap<string, MatchedTask>;
   /** Legacy IDs live tasks hold as aliases that the plan does not name: gone from the prototype. */
   readonly gone: readonly string[];
+  /** By project ID, for the live projects. */
+  readonly projectFolders?: ReadonlyMap<string, ProjectFolderState>;
 }
 
 /** An operation in the writer's request shape (storage: Operation). */
@@ -149,10 +168,21 @@ export interface AppliedTask {
   readonly conflicts: readonly BaseField[];
 }
 
+/** A project whose folder the import set, or left as the space has it against the prototype. */
+export interface AppliedProject {
+  /** Its planned slug. */
+  readonly slug: string;
+  readonly outcome: "set" | "conflict";
+}
+
 export interface ApplyDecision {
-  /** Upserts, then each task's operations in plan order, then the exchange: or none at all. */
+  /**
+   * Upserts, then the projects' folders, then each task's operations in plan order, then the
+   * exchange: or none at all.
+   */
   readonly ops: readonly ApplyOp[];
   readonly tasks: readonly AppliedTask[];
+  readonly projects: readonly AppliedProject[];
   readonly gone: readonly string[];
 }
 
@@ -167,7 +197,28 @@ export interface ApplyOptions {
   readonly groupIdOf: (kind: "area" | "project", key: string) => string;
   /** The instant the apply was made: `ext.planning.imported_at` of a task it creates. */
   readonly importedAt: number;
+  /** The folders the import gives on this machine (preview.ts: folderDecisionOf). */
+  readonly folders: FolderDecision;
+  /** This machine's ID: a folder and its base are of one machine. */
+  readonly machine: string;
 }
+
+/**
+ * The value of a folder field: one machine's folder, or none there. A base is of the machine that
+ * recorded it: another machine's folder says nothing about this one's.
+ */
+export interface FolderValue {
+  readonly machine: string;
+  readonly path: string | null;
+}
+
+const folderValue = (value: unknown): FolderValue | undefined =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as FolderValue).machine === "string" &&
+  ((value as FolderValue).path === null || typeof (value as FolderValue).path === "string")
+    ? (value as FolderValue)
+    : undefined;
 
 /** E: the values the plan gives a task, in the form the base and the space's values take. */
 export interface Expected {
@@ -202,13 +253,20 @@ function compared(planning: Readonly<Record<string, unknown>> | null): Record<st
 /** The space's value of `ext.planning` in the compared form. */
 export const comparedPlanning = compared;
 
-/** E for one planned task, with the area and project slugs its placement gives. */
-export function expectedOf(task: PlannedTask, area: string, project: string | undefined): Expected {
+/**
+ * E for one planned task, with the area and project slugs its placement gives and its own folder on
+ * this machine (folders.ts: ownFolder).
+ */
+export function expectedOf(
+  task: PlannedTask,
+  area: string,
+  project: string | undefined,
+  folder: FolderValue,
+): Expected {
   const create = task.ops[0];
   if (create?.kind !== "task.create") throw new Error("A planned task starts with its create");
   let completedAt: number | undefined;
   let outcome: string | null = null;
-  let place: { root: string; path: string } | null = null;
   let evidence: string | null = null;
   let evidenceAt: number | undefined;
   const sources = new Map<string, PlannedSourceFields>();
@@ -218,8 +276,7 @@ export function expectedOf(task: PlannedTask, area: string, project: string | un
       completed = true;
       completedAt = op.at;
       outcome = op.outcome ?? null;
-    } else if (op.kind === "place.set") place = { root: op.root, path: op.path };
-    else if (op.kind === "source.add") sources.set(sourceIdentity(op.source), op.source);
+    } else if (op.kind === "source.add") sources.set(sourceIdentity(op.source), op.source);
     else if (op.kind === "log.add" && op.log_kind === "evidence") {
       evidence = op.body;
       evidenceAt = op.at;
@@ -242,7 +299,7 @@ export function expectedOf(task: PlannedTask, area: string, project: string | un
       lifecycle: completed ? "completed" : "active",
       wrap: completed ? outcome : null,
       "ext.planning": compared(create.ext.planning),
-      place,
+      folder,
       evidence,
     },
     sources,
@@ -267,19 +324,58 @@ function spell(value: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${spell(record[k])}`).join(",")}}`;
 }
 
-/** B for one field: the newest recorded value that is not voided, with its import's seq. */
-function baseOf(task: MatchedTask, field: BaseField): { value: unknown; seq: number } | undefined {
+/**
+ * B for one field: the newest recorded value that is not voided, with its import's seq. For the
+ * folder, the newest of `machine`'s.
+ */
+function baseOf(
+  task: MatchedTask,
+  field: BaseField,
+  machine: string,
+): { value: unknown; seq: number } | undefined {
   for (const recorded of task.bases) {
     if (recorded.voided.has(field)) continue;
-    if (Object.hasOwn(recorded.base.fields, field)) {
-      return { value: recorded.base.fields[field], seq: recorded.seq };
-    }
+    if (!Object.hasOwn(recorded.base.fields, field)) continue;
+    const value = recorded.base.fields[field];
+    if (field === "folder" && folderValue(value)?.machine !== machine) continue;
+    return { value, seq: recorded.seq };
   }
   return undefined;
 }
 
 /** What a re-import does with one field (the module header). */
 type Verdict = "apply" | "settle" | "keep" | "conflict";
+
+/** The three-way compare of E, the space's C at `version`, and the base B. */
+function threeWay(
+  e: unknown,
+  c: unknown,
+  b: { value: unknown; seq: number } | undefined,
+  version: number,
+): Verdict {
+  if (same(e, c)) return "settle";
+  if (b === undefined) return "conflict";
+  if (same(e, b.value)) return "keep";
+  return version <= b.seq ? "apply" : "conflict";
+}
+
+/**
+ * A folder's verdict on one machine: the three-way compare of the paths, but a folder an import
+ * would clear stays, and an owner that never had a folder on this machine and has no base takes E.
+ */
+function folderVerdict(
+  e: string | null,
+  c: string | null,
+  b: { value: unknown; seq: number } | undefined,
+  version: number,
+): Verdict {
+  const base = b === undefined ? undefined : { value: folderValue(b.value)?.path, seq: b.seq };
+  const v =
+    base === undefined && c === null && version === 0 && e !== null
+      ? "apply"
+      : threeWay(e, c, base, version);
+  return v === "apply" && e === null ? "keep" : v;
+}
 
 /** The fields a `task.patch` sets, by base field. */
 const PATCHED: ReadonlySet<BaseField> = new Set([
@@ -329,7 +425,8 @@ export function decideApply(
   for (const task of plan.tasks) {
     const area = areaSlug(task.area);
     const project = projectSlug(task.project);
-    const expected = expectedOf(task, area, project);
+    const folder = ownFolder(options.folders, task.legacyId);
+    const expected = expectedOf(task, area, project, { machine: options.machine, path: folder });
     const found = space.matched.get(task.legacyId);
     if (found?.state === "deleted") {
       tasks.push({
@@ -360,6 +457,7 @@ export function decideApply(
             ...(project === undefined ? {} : { project }),
             ext: { planning: { ...op.ext.planning, imported_at: options.importedAt } },
           });
+          if (folder !== null) taskOps.push({ kind: "task.folder_set", task: id, path: folder });
         } else if (op.kind === "source.add") {
           taskOps.push({ ...rest, kind: op.kind, task: id, source: sourceFields(op.source) });
         } else taskOps.push({ ...rest, kind: op.kind, task: id });
@@ -416,10 +514,50 @@ export function decideApply(
     });
   }
 
+  // Each project's folder here: E from the decision, C and the base from the space. A project the
+  // import creates has neither, and takes E. Only a project with a task in this import: the items of
+  // its tasks record its base.
+  const applied: AppliedProject[] = [];
+  /** The projects whose folder this import sets, and the folder each settles: the next base. */
+  const setFolder = new Map<string, string>();
+  const settledFolder = new Map<string, FolderValue>();
+  const recorded = new Set(items.flatMap((i) => (i.project === undefined ? [] : [i.project])));
+  for (const p of plan.projects) {
+    if (!recorded.has(p.slug)) continue;
+    const e = projectFolder(options.folders, p.slug);
+    const reuses = placements.get(p.slug)?.reuses;
+    if (reuses === undefined) {
+      if (!projects.has(p.slug)) continue;
+      if (e !== null) {
+        setFolder.set(p.slug, e);
+        applied.push({ slug: p.slug, outcome: "set" });
+      }
+      settledFolder.set(p.slug, { machine: options.machine, path: e });
+      continue;
+    }
+    const now = space.projectFolders?.get(reuses);
+    const base =
+      now?.base === undefined
+        ? undefined
+        : { value: { machine: options.machine, path: now.base.folder }, seq: now.base.seq };
+    const v = folderVerdict(e, now?.path ?? null, base, now?.version ?? 0);
+    if (v === "apply" && e !== null) {
+      setFolder.set(p.slug, e);
+      applied.push({ slug: p.slug, outcome: "set" });
+    }
+    if (v === "conflict") applied.push({ slug: p.slug, outcome: "conflict" });
+    if (v === "apply" || v === "settle") {
+      settledFolder.set(p.slug, { machine: options.machine, path: e });
+      if (v === "settle" && (base === undefined || base.value.path !== e)) refreshed = true;
+    }
+  }
+
   // The same input twice: nothing to write, not even the exchange. An import that changes no task
   // still records where the prototype and the space came to agree (a field both set to one value):
   // from then on a person's change of it counts from this import.
-  if (taskOps.length === 0 && !refreshed) return { ops: [], tasks, gone: space.gone };
+  if (taskOps.length === 0 && setFolder.size === 0 && !refreshed) {
+    return { ops: [], tasks, projects: applied, gone: space.gone };
+  }
 
   // The groups the operations need that the space lacks, at the slugs their placement gives, with
   // IDs of the apply's own, so the items can record where each group landed.
@@ -438,13 +576,14 @@ export function decideApply(
       landedAreas.set(a.slug, { key: a.key, id });
     }
   }
+  const folderOps: ApplyOp[] = [];
   for (const p of plan.projects) {
     const placed = placements.get(p.slug);
     if (placed === undefined) continue;
-    if (placed.reuses !== undefined) {
-      landedProjects.set(p.slug, { key: p.key, id: placed.reuses });
-    } else if (projects.has(p.slug)) {
-      const id = options.groupIdOf("project", p.key);
+    let id: string;
+    if (placed.reuses !== undefined) id = placed.reuses;
+    else if (projects.has(p.slug)) {
+      id = options.groupIdOf("project", p.key);
       upserts.push({
         kind: "project.upsert",
         slug: placed.slug,
@@ -452,8 +591,15 @@ export function decideApply(
         area: areaSlug(p.area),
         id,
       });
-      landedProjects.set(p.slug, { key: p.key, id });
-    }
+    } else continue;
+    const settled = settledFolder.get(p.slug);
+    landedProjects.set(p.slug, {
+      key: p.key,
+      id,
+      ...(settled === undefined ? {} : { folder: settled }),
+    });
+    const path = setFolder.get(p.slug);
+    if (path !== undefined) folderOps.push({ kind: "project.folder_set", project: id, path });
   }
   const exchange: ApplyOp = {
     kind: "exchange.create",
@@ -474,7 +620,14 @@ export function decideApply(
       };
     }),
   };
-  return { ops: [...upserts, ...taskOps, exchange], tasks, gone: space.gone };
+  // A project's folder before its tasks' own: a change of a project's folder moves the task folders
+  // inside the old one along, and a task's folder the import then sets is the prototype's.
+  return {
+    ops: [...upserts, ...folderOps, ...taskOps, exchange],
+    tasks,
+    projects: applied,
+    gone: space.gone,
+  };
 }
 
 /** The three-way compare of one live task (the module header). */
@@ -500,27 +653,28 @@ function decideMatched(
    * an apply into a keep or a conflict, never a conflict or a keep into anything else.
    */
   const verdict = new Map<BaseField, Verdict>();
+  const folder = expected.values.folder as FolderValue;
+  const base = (field: BaseField) => baseOf(found, field, folder.machine);
   for (const field of BASE_FIELDS) {
     const e = expected.values[field];
     const c = found.values[field];
+    const b = base(field);
     if (field === "evidence") {
       // An evidence entry is only ever added, so no person's change can meet it: a changed text
       // adds one, a text the prototype dropped adds nothing, and without a base the first import
       // wrote it.
-      const b = baseOf(found, field);
       verdict.set(
         field,
         b === undefined || same(e, b.value) ? "settle" : e === null ? "keep" : "apply",
       );
       continue;
     }
-    const b = baseOf(found, field);
-    let v: Verdict;
-    if (b === undefined) v = same(e, c) ? "settle" : "conflict";
-    else if (same(e, b.value)) v = same(e, c) ? "settle" : "keep";
-    else if (found.versions[field] <= b.seq) v = same(e, c) ? "settle" : "apply";
-    else v = same(e, c) ? "settle" : "conflict";
-    verdict.set(field, v);
+    verdict.set(
+      field,
+      field === "folder"
+        ? folderVerdict(folder.path, folderValue(c)?.path ?? null, b, found.versions[field])
+        : threeWay(e, c, b, found.versions[field]),
+    );
   }
   // A completion or a reopen writes the lifecycle and the wrap-up together, and a wrap-up needs
   // the lifecycle the person left: when either is the person's (kept or in conflict), applying
@@ -531,14 +685,10 @@ function decideMatched(
   if (lifecycleV === "apply" && personal(wrapV)) verdict.set("lifecycle", "conflict");
   if (wrapV === "apply" && personal(lifecycleV)) verdict.set("wrap", "conflict");
   // A changed outcome alone wraps the finished task up again. An outcome the prototype dropped
-  // stays: an import never unwraps a task, as it never removes a place or an evidence entry.
+  // stays: an import never unwraps a task, as it never removes a folder or an evidence entry.
   if (verdict.get("wrap") === "apply" && verdict.get("lifecycle") !== "apply") {
     const done = (found.values.lifecycle as string) !== "active";
     if (expected.values.wrap === null || !done) verdict.set("wrap", "keep");
-  }
-  // Never deleted by an import: a place the prototype no longer names stays (A1 3.14).
-  if (verdict.get("place") === "apply" && expected.values.place === null) {
-    verdict.set("place", "keep");
   }
 
   const ops: ApplyOp[] = [];
@@ -582,9 +732,8 @@ function decideMatched(
     ops.push({ kind: "task.wrap_up", task: id, outcome });
   }
 
-  if (verdict.get("place") === "apply") {
-    const place = expected.values.place as { root: string; path: string };
-    ops.push({ kind: "place.set", task: id, root: place.root, path: place.path });
+  if (verdict.get("folder") === "apply") {
+    ops.push({ kind: "task.folder_set", task: id, path: folder.path });
   }
   if (verdict.get("evidence") === "apply") {
     ops.push({
@@ -618,7 +767,7 @@ function decideMatched(
     if (v === "apply") changed.push(field);
     if (v === "conflict") conflicts.push(field);
     if (v === "settle") {
-      const b = baseOf(found, field);
+      const b = base(field);
       if (b === undefined || !same(b.value, expected.values[field])) refreshed = true;
     }
   }

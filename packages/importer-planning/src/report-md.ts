@@ -41,6 +41,24 @@ const NOT_IMPORTED: Readonly<Record<Report["not_imported"][number]["what"], stri
     "Check-offs and stars the page holds only in its browser storage: save the page's actions export and run the dry run again with --actions <file>",
 };
 
+const PROJECT_NONE: Readonly<
+  Record<NonNullable<Report["project_folders"][number]["none"]>, string>
+> = {
+  no_folders: "none: none of its tasks has a folder on this machine",
+  no_common_folder: "none: no task's folder holds all the others",
+  taken: "none: another project has that folder",
+};
+
+const TASK_FOLDER: Readonly<
+  Record<NonNullable<Report["tasks"][number]["folder"]>["state"], string>
+> = {
+  own: "",
+  project: " (the project's)",
+  missing: " (not on this machine: no folder)",
+  other_machine: " (another kind of machine's path: no folder)",
+  reserved: " (inside this app's own data: no folder)",
+};
+
 /** report.md's text. */
 export function renderPreview(r: Report): string {
   const c = r.counts;
@@ -96,7 +114,8 @@ export function renderPreview(r: Report): string {
   row("Projects (the space has)", `${String(c.projects)} (${String(c.projects_existing)})`);
   row("Sources (the space has)", `${String(c.sources)} (${String(c.sources_existing)})`);
   row("Links to sources", c.links);
-  row("Places (missing here)", `${String(c.places)} (${String(c.places_missing)})`);
+  row("Task folders (not on this machine)", `${String(c.folders)} (${String(c.folders_missing)})`);
+  row("Projects that get a folder", c.project_folders);
   row("Lines left out for an ID another line has", c.duplicates_left_out);
   row("Orphans created", c.orphans_included);
   row("Texts the sanitiser changed", c.text_sanitised);
@@ -117,14 +136,31 @@ export function renderPreview(r: Report): string {
   for (const s of r.statuses) row(s.prototype, s.status, s.count);
   line();
 
-  line("## 3. Roots");
+  line("## 3. Project folders");
   line();
-  head("Root", "Folder", "From", "Places", "Missing here");
-  for (const root of r.roots) row(root.id, root.folder, root.origin, root.places, root.missing);
-  if (r.roots.some((root) => root.origin === "proposed")) {
+  line(
+    "A project gets the folder of one of its tasks that holds every other task folder of the project. A task whose folder is the project's gets none of its own; the other tasks keep theirs.",
+  );
+  line();
+  head("Project", "Area", "Folder on this machine");
+  for (const p of r.project_folders) {
+    const folder =
+      p.folder ??
+      (p.none === "taken"
+        ? `none: ${p.holder ?? "another project"} has that folder`
+        : PROJECT_NONE[p.none ?? "no_folders"]);
+    row(p.project, p.area, folder);
+    if (p.current !== undefined) {
+      line(
+        `|  |  | ${cell(`has ${p.current} here now: kept unless only the prototype changed it`)} |`,
+      );
+    }
+  }
+  if (r.project_folders.length === 0) line("No projects.");
+  if (r.tasks.some((t) => t.folder?.state === "other_machine")) {
     line();
     line(
-      "A proposed root holds task folders under no root. Name it with `--roots <id>=<folder>`, or add it with `tasks roots add`, and run the dry run again.",
+      "Some folders are paths of another kind of machine. Run the import on the machine they are on to give the tasks and projects their folders.",
     );
   }
   line();
@@ -157,20 +193,17 @@ export function renderPreview(r: Report): string {
 
   line("## 5. Per task");
   line();
-  head("Legacy ID", "Reference", "Area", "Project", "Status", "Place", "Due", "Focus");
+  head("Legacy ID", "Reference", "Area", "Project", "Status", "Folder", "Due", "Focus");
   for (const t of r.tasks) {
     const status = t.lifecycle === "completed" ? `completed (${t.wrap ?? "pending"})` : t.status;
-    const place =
-      t.place === undefined
-        ? ""
-        : `${t.place.root}/${t.place.path}${t.place_missing === true ? " (missing here)" : ""}`;
+    const folder = t.folder === undefined ? "" : `${t.folder.path}${TASK_FOLDER[t.folder.state]}`;
     row(
       t.legacy_id + (t.imported === true ? " (in the space)" : ""),
       t.ref,
       t.area,
       t.project ?? "",
       status,
-      place,
+      folder,
       t.due ?? "",
       t.focus ?? "",
     );

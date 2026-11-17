@@ -89,7 +89,6 @@ export {
   type PlannedLogAdd,
   type PlannedOp,
   type PlannedOwner,
-  type PlannedPlaceSet,
   type PlannedProject,
   type PlannedSource,
   type PlannedSourceAdd,
@@ -109,9 +108,21 @@ export {
   localDay,
   nineOClock,
 } from "./local-time.ts";
-export { placeFor, ROOT_ID, type PlannedPlace, type Roots } from "./places.ts";
+export {
+  decideFolders,
+  folderNames,
+  within,
+  type FolderDecision,
+  type FolderFact,
+  type FolderOs,
+  type ProjectFolder,
+  type ProjectFolderNone,
+  type ProjectFolderRow,
+  type TaskFolder,
+} from "./folders.ts";
 export {
   canonicalJson,
+  folderDecisionOf,
   judgedNames,
   placeGroups,
   placeProjects,
@@ -119,9 +130,7 @@ export {
   previewOf,
   previewPinned,
   previewToken,
-  proposeRoots,
   type Preview,
-  type PreviewRoot,
   type PreviewRun,
   type GroupPlacement,
   type ProjectPlacement,
@@ -137,6 +146,7 @@ export {
   expectedOf,
   FIRST_IMPORT_KEYS,
   sourceIdentity,
+  type AppliedProject,
   type AppliedTask,
   type ApplyDecision,
   type ApplyOp,
@@ -145,8 +155,10 @@ export {
   type BaseField,
   type Changed,
   type Expected,
+  type FolderValue,
   type ItemBase,
   type MatchedTask,
+  type ProjectFolderState,
   type RecordedBase,
 } from "./apply.ts";
 export { groupKey, groupSlug, numberedSlug, SLUG_MAX } from "./slug.ts";

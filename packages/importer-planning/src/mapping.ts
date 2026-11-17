@@ -26,7 +26,6 @@ import {
   type PlannedTaskCreate,
   type PlanningExt,
 } from "./plan.ts";
-import { isAbsolutePath, placeFor, ROOT_ID, type Roots } from "./places.ts";
 import { problem, type Problem, type ProblemCode, type ProblemField } from "./problems.ts";
 import type { PrototypeParse } from "./prototype.ts";
 import { groupKey, groupSlug, numberedSlug, storedKey } from "./slug.ts";
@@ -43,8 +42,6 @@ import {
 export interface MappingOptions {
   /** `--me`: the owner name that is the user, compared without case and outer spaces. */
   readonly me?: string;
-  /** `--roots`, or the proposed roots the user named: root ID to absolute folder. */
-  readonly roots?: Roots;
   /** `--checked-as`: a checked task is completed (the default) or kept active in Review. */
   readonly checkedAs?: CheckedAs;
   /** `--include-orphans`: create metadata entries without a task line, in Backlog. */
@@ -90,13 +87,10 @@ export function checkMappingOptions(options: MappingOptions): void {
   if (options.checkedAs !== undefined && !CHECKED_AS.includes(options.checkedAs)) {
     throw new MappingOptionsError("checkedAs is completed or review");
   }
-  for (const [id, folder] of Object.entries(options.roots ?? {})) {
-    if (!ROOT_ID.test(id)) throw new MappingOptionsError("A root ID is a-z, 0-9, _ and -");
-    if (typeof folder !== "string" || !isAbsolutePath(folder)) {
-      throw new MappingOptionsError("A root's folder is an absolute path");
-    }
-  }
 }
+
+/** A POSIX absolute path, a Windows drive path or a share: the paths the page shows as folders. */
+const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/;
 
 // ---------------------------------------------------------------------------------------------
 // Text
@@ -567,22 +561,19 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
     ext["confidence"] = report.clean(meta.confidence, "text", e.metaAt, "confidence");
   }
 
-  // The place from the first absolute path, the folder the page shows; every other path, and the
-  // paths of `file:` links, go to ext.planning.paths. Problems name a path's place in the file's
-  // list, which a path the parser left out does not shift.
+  // The first absolute path is the task's folder, the one the page shows, kept exactly as written:
+  // a folder's name is not text to clean. Every other path, and the paths of `file:` links, go to
+  // ext.planning.paths. Problems name a path's place in the file's list, which a path the parser
+  // left out does not shift.
   const paths = meta?.paths ?? [];
   const pathAt = (i: number): number => meta?.pathIndexes?.[i] ?? i;
-  let place: { root: string; path: string } | undefined;
-  const folder = paths.findIndex(isAbsolutePath);
-  if (folder >= 0) {
-    place = placeFor(paths[folder] ?? "", options.roots ?? {});
-    if (place === undefined) report.add("path-outside-roots", e.metaAt, "paths", pathAt(folder));
-  }
-  const extra = paths.findIndex((_, i) => i !== folder);
+  const first = paths.findIndex((p) => ABSOLUTE.test(p));
+  const folder = first < 0 ? undefined : { path: paths[first] ?? "", index: pathAt(first) };
+  const extra = paths.findIndex((_, i) => i !== first);
   if (extra >= 0) report.add("paths-extra", e.metaAt, "paths", pathAt(extra));
   const others: string[] = [];
   for (const [i, p] of paths.entries()) {
-    if (i === folder && place !== undefined) continue;
+    if (i === first) continue;
     others.push(report.clean(p, "text", e.metaAt, "paths", pathAt(i)));
   }
   others.push(...(cx.fileLinks.get(e) ?? []));
@@ -689,7 +680,6 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   for (const row of cx.sources.get(e) ?? []) {
     ops.push({ kind: "source.add", task: draft, source: row.fields, role: "origin" });
   }
-  if (place !== undefined) ops.push({ kind: "place.set", task: draft, ...place });
   if (meta?.evidence !== undefined) {
     const evidence = report.fit(
       report.clean(meta.evidence, "text", e.metaAt, "evidence"),
@@ -723,7 +713,7 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
     ...(complete === undefined
       ? {}
       : { wrap: complete.outcome === undefined ? ("pending" as const) : ("wrapped" as const) }),
-    ...(place === undefined ? {} : { place }),
+    ...(folder === undefined ? {} : { folder }),
     ops,
   };
 }
@@ -814,15 +804,9 @@ export function mapPrototype(parse: PrototypeParse, options: MappingOptions): Im
     generic: row.generic,
     tasks: [...new Set(row.links.map((l) => l.entry.id))],
   }));
-  // Counted in Maps: a root may be called `constructor`, which a plain object already has.
   const byKind = new Map<PlannedSourceKind, number>();
   for (const s of sources) byKind.set(s.kind, (byKind.get(s.kind) ?? 0) + 1);
-  const byRoot = new Map<string, number>();
-  for (const t of tasks) {
-    if (t.place !== undefined) byRoot.set(t.place.root, (byRoot.get(t.place.root) ?? 0) + 1);
-  }
   const sourcesByKind = Object.fromEntries(byKind) as Partial<Record<PlannedSourceKind, number>>;
-  const placesByRoot: Record<string, number> = Object.fromEntries(byRoot);
   const completed = tasks.filter((t) => t.lifecycle === "completed");
   const ownerList: PlannedOwner[] = [...owners.values()];
 
@@ -843,8 +827,7 @@ export function mapPrototype(parse: PrototypeParse, options: MappingOptions): Im
       sources: sources.length,
       sourcesByKind,
       links: sources.reduce((n, s) => n + s.tasks.length, 0),
-      places: tasks.filter((t) => t.place !== undefined).length,
-      placesByRoot,
+      folders: tasks.filter((t) => t.folder !== undefined).length,
       duplicatesLeftOut: duplicates,
       orphansIncluded: entries.filter((e) => e.line === undefined).length,
     },

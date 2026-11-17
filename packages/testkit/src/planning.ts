@@ -24,8 +24,8 @@ export const PLANNING = {
   actions: "planning-prototype.actions.json",
   /** `--me`: the owner name that means the user. */
   me: MIRA.owner,
-  /** `--roots`: the roots the fixture's paths are under, or deliberately not. */
-  roots: { work: "/home/mira/work", oss: "/home/mira/oss" },
+  /** The home the fixture's folders are under: a test makes them under a home of its own. */
+  home: "/home/mira",
 } as const;
 
 /** A line end: each separator Python's str.splitlines() splits at. CRLF is one separator. */
@@ -85,7 +85,8 @@ export interface PlanningIndex {
   generator: string;
   conventions: Record<string, string>;
   me: string;
-  roots: Record<string, string>;
+  /** The home the fixture's folders are under. */
+  home: string;
   /** The task of the Mira sample space that already holds a legacy task's source key. */
   spaceTask: { seed: string; tasks: number; ref: string; title: string; key: string };
   counts: {
@@ -213,7 +214,9 @@ const CASES: Record<string, string> = {
   "source-date-missing": "No source_date",
   "invalid-date": "Any invalid date: due, reviewed, source_date, added or done",
   "generic-source-label": 'A source label that only names the kind ("Email", "Chat")',
-  "path-outside-roots": "A path under none of the roots in `roots`",
+  "folder-not-here":
+    "A folder that is not on the machine (the tests leave it missing): no folder, and the task " +
+    "comes without it",
   "metadata-orphan": "A metadata entry with no task line",
   "event-ready": "A file named web-* with its .ready file: it counts",
   "event-web-without-ready":
@@ -295,7 +298,13 @@ const CASES: Record<string, string> = {
   "source-issue": "A code-host issue",
   "source-web": "A web source of no other kind",
   "multiple-sources": "Two sources on one task",
-  "path-in-root": "A first path under a root",
+  "project-folder":
+    "A project whose task folders all sit in one task's folder: the project gets that folder, " +
+    "and that task none of its own",
+  "project-folder-none":
+    "A project whose task folders share no containing folder: the project gets none, and each " +
+    "task keeps its own",
+  "folder-no-project": "A task with a folder and no project: it keeps its own folder",
   "paths-extra": "More than one path: paths[1...] go to ext.planning.paths",
   "unknown-metadata-key": "A metadata key the importer does not know: ext.planning.<key>",
   "event-tie-by-id": "Two events with the same instant: the event ID, as text, orders them",
@@ -351,7 +360,7 @@ export const ROW_CASES: readonly string[] = [
   "source-date-missing",
   "invalid-date",
   "generic-source-label",
-  "path-outside-roots",
+  "folder-not-here",
   "metadata-orphan",
   "event-ready",
   "event-web-without-ready",
@@ -415,9 +424,9 @@ interface EventInput {
   expect?: Record<string, unknown>;
 }
 
-const HOME = "/home/mira";
-const WORK = PLANNING.roots.work;
-const OSS = PLANNING.roots.oss;
+const HOME = PLANNING.home;
+const WORK = `${HOME}/work`;
+const OSS = `${HOME}/oss`;
 
 class Builder {
   readonly #rng = new Rng(`tasks-planning:${DEFAULT_SEED}`);
@@ -718,7 +727,7 @@ export function buildPlanningFixture(): PlanningFixture {
       "due-valid@due",
       "source-ticket@sources",
       "shared-source-space@sources",
-      "path-in-root@paths",
+      "project-folder-none@paths",
     ],
   });
   b.task({
@@ -774,7 +783,7 @@ export function buildPlanningFixture(): PlanningFixture {
       ],
       paths: [`${WORK}/lumen/portal/docs/roadmap`],
     },
-    cases: ["rank-tie@rank", "source-doc@sources"],
+    cases: ["rank-tie@rank", "source-doc@sources", "project-folder-none@paths"],
   });
   b.task({
     bold: "Answer the clinic about sync delays",
@@ -791,6 +800,7 @@ export function buildPlanningFixture(): PlanningFixture {
       sources: [
         { label: "Chat", url: "https://chat.lumen.example/room/clinic-sync/thread/Fixture42" },
       ],
+      paths: [`${WORK}/lumen/clinic-sync`],
     },
     cases: [
       "no-added-clause",
@@ -802,6 +812,7 @@ export function buildPlanningFixture(): PlanningFixture {
       "confidence-number@confidence",
       "generic-source-label@sources",
       "source-chat@sources",
+      "project-folder@paths",
     ],
   });
   b.task({
@@ -830,6 +841,7 @@ export function buildPlanningFixture(): PlanningFixture {
       "confidence-free-text@confidence",
       "source-drive@sources",
       "paths-extra@paths",
+      "project-folder-none@paths",
     ],
   });
   b.task({
@@ -926,8 +938,9 @@ export function buildPlanningFixture(): PlanningFixture {
           url: "https://tickets.lumen.example/browse/LUM-1042",
         },
       ],
+      paths: [`${WORK}/lumen/clinic-sync/reports-api`],
     },
-    cases: ["shared-source-legacy@sources", "source-ticket@sources"],
+    cases: ["shared-source-legacy@sources", "source-ticket@sources", "project-folder@paths"],
   });
   b.task({
     bold: "Read the accessibility audit",
@@ -968,7 +981,7 @@ export function buildPlanningFixture(): PlanningFixture {
       "no-project@project",
       "due-invalid@due",
       "invalid-date@due",
-      "path-outside-roots@paths",
+      "folder-no-project@paths",
       "metadata-state-key@checked",
       "metadata-state-key@focus",
     ],
@@ -1027,7 +1040,7 @@ export function buildPlanningFixture(): PlanningFixture {
       rank: 2,
       paths: ["/mnt/shed/fence-plans"],
     },
-    cases: ["owner-me@owner", "path-outside-roots@paths"],
+    cases: ["owner-me@owner", "folder-not-here@paths"],
   });
   const zoe = "Reply to Zoë about the café booking";
   b.task({
@@ -1204,7 +1217,7 @@ export function buildPlanningFixture(): PlanningFixture {
       "source-issue@sources",
       "source-pr@sources",
       "multiple-sources@sources",
-      "path-in-root@paths",
+      "project-folder@paths",
     ],
   });
   b.end();
@@ -1708,7 +1721,7 @@ export function buildPlanningFixture(): PlanningFixture {
         hosts: "Every URL host is a reserved example domain (RFC 2606)",
       },
       me: PLANNING.me,
-      roots: { ...PLANNING.roots },
+      home: PLANNING.home,
       spaceTask: {
         seed: DEFAULT_SEED,
         tasks: DEFAULT_TASKS,

@@ -926,7 +926,8 @@
         "task.wrap_up",
         "log.add",
         "source.add",
-        "place.set",
+        "project.folder_set",
+        "task.folder_set",
         "alias.add",
         "area.upsert",
         "project.upsert",
@@ -1016,6 +1017,33 @@
             "description": "A replay without apply.json: counts from the commit, conflicts unknown",
             "type": "boolean"
           },
+          "projects": {
+            "description": "Projects whose folder on this machine the import set or did not change",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "outcome": {
+                  "description": "set: the prototype's folder; conflict: both changed it, kept as it is",
+                  "enum": [
+                    "set",
+                    "conflict"
+                  ],
+                  "type": "string"
+                },
+                "project": {
+                  "description": "Project title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "project",
+                "outcome"
+              ],
+              "type": "object"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
           "replayed": {
             "description": "True when a retry returned the stored result",
             "type": "boolean"
@@ -1057,7 +1085,7 @@
                       "lifecycle",
                       "wrap",
                       "ext.planning",
-                      "place",
+                      "folder",
                       "evidence",
                       "sources"
                     ],
@@ -1084,7 +1112,7 @@
                       "lifecycle",
                       "wrap",
                       "ext.planning",
-                      "place",
+                      "folder",
                       "evidence",
                       "sources"
                     ],
@@ -1188,33 +1216,6 @@
             "maxLength": 300,
             "minLength": 1,
             "type": "string"
-          },
-          "roots": {
-            "description": "Roots for places, beside this machine's own",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "folder": {
-                  "description": "Its folder on this machine, an absolute path",
-                  "maxLength": 4096,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "id": {
-                  "description": "The root's ID",
-                  "maxLength": 32,
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "folder"
-              ],
-              "type": "object"
-            },
-            "maxItems": 64,
-            "type": "array"
           }
         },
         "required": [
@@ -1284,7 +1285,6 @@
                     "metadata-state-key",
                     "done-date-unknown",
                     "date-out-of-range",
-                    "path-outside-roots",
                     "paths-extra",
                     "source-title-generic",
                     "source-key-shared",
@@ -1296,7 +1296,9 @@
                     "extra-dropped",
                     "orphan-id-invalid",
                     "source-key-exists",
-                    "place-missing",
+                    "folder-missing",
+                    "folder-reserved",
+                    "folder-taken",
                     "legacy-id-imported",
                     "actions-not-given"
                   ],
@@ -1406,6 +1408,18 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "folders": {
+                "description": "Tasks with a folder in the prototype",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "folders_missing": {
+                "description": "Of those, not a folder on this machine",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
               "links": {
                 "description": "Links from tasks to sources",
                 "maximum": 1000000000,
@@ -1430,14 +1444,8 @@
                 "minimum": 0,
                 "type": "integer"
               },
-              "places": {
-                "description": "Tasks with a place",
-                "maximum": 1000000000,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "places_missing": {
-                "description": "Of those, folders missing on this machine",
+              "project_folders": {
+                "description": "Projects that get a folder on this machine",
                 "maximum": 1000000000,
                 "minimum": 0,
                 "type": "integer"
@@ -1540,8 +1548,9 @@
               "sources",
               "sources_existing",
               "links",
-              "places",
-              "places_missing",
+              "folders",
+              "folders_missing",
+              "project_folders",
               "duplicates_left_out",
               "orphans_included",
               "text_sanitised",
@@ -1590,7 +1599,7 @@
           },
           "options": {
             "additionalProperties": false,
-            "description": "The options the plan was made with; its roots are under roots",
+            "description": "The options the plan was made with",
             "properties": {
               "checked_as": {
                 "description": "--checked-as",
@@ -1700,7 +1709,6 @@
                     "metadata-state-key",
                     "done-date-unknown",
                     "date-out-of-range",
-                    "path-outside-roots",
                     "paths-extra",
                     "source-title-generic",
                     "source-key-shared",
@@ -1712,7 +1720,9 @@
                     "extra-dropped",
                     "orphan-id-invalid",
                     "source-key-exists",
-                    "place-missing",
+                    "folder-missing",
+                    "folder-reserved",
+                    "folder-taken",
                     "legacy-id-imported",
                     "actions-not-given"
                   ],
@@ -1793,55 +1803,52 @@
             "minimum": 0,
             "type": "integer"
           },
-          "reconciled": {
-            "description": "Every task line is one task or a left-out duplicate",
-            "type": "boolean"
-          },
-          "roots": {
-            "description": "Roots",
+          "project_folders": {
+            "description": "Per project, the folder it gets or why none, in creation order",
             "items": {
               "additionalProperties": false,
               "properties": {
+                "area": {
+                  "description": "Its area's title",
+                  "type": "string"
+                },
+                "current": {
+                  "description": "The folder it has here now, when another: kept unless only the prototype changed",
+                  "type": "string"
+                },
                 "folder": {
-                  "description": "Its folder on this machine",
+                  "description": "The folder it gets on this machine, the home as ~",
                   "type": "string"
                 },
-                "id": {
-                  "description": "Root ID",
+                "holder": {
+                  "description": "For taken: the project that has the folder",
                   "type": "string"
                 },
-                "missing": {
-                  "description": "Of those, missing on this machine",
-                  "maximum": 1000000000,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "origin": {
-                  "description": "machine.toml's, --roots, or proposed: name it with --roots",
+                "none": {
+                  "description": "Why none: no task folder here, none holds the others, or another has it",
                   "enum": [
-                    "machine",
-                    "given",
-                    "proposed"
+                    "no_folders",
+                    "no_common_folder",
+                    "taken"
                   ],
                   "type": "string"
                 },
-                "places": {
-                  "description": "Task folders under it",
-                  "maximum": 1000000000,
-                  "minimum": 0,
-                  "type": "integer"
+                "project": {
+                  "description": "Project title",
+                  "type": "string"
                 }
               },
               "required": [
-                "id",
-                "folder",
-                "origin",
-                "places",
-                "missing"
+                "project",
+                "area"
               ],
               "type": "object"
             },
             "type": "array"
+          },
+          "reconciled": {
+            "description": "Every task line is one task or a left-out duplicate",
+            "type": "boolean"
           },
           "run": {
             "description": "The run: --apply names it",
@@ -1950,6 +1957,32 @@
                   "description": "Starred: focus_on",
                   "type": "string"
                 },
+                "folder": {
+                  "additionalProperties": false,
+                  "description": "Its folder",
+                  "properties": {
+                    "path": {
+                      "description": "The folder as stored here, the home as ~; else as the prototype has it",
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "Its own, its project's, or why none: missing, other_machine, reserved",
+                      "enum": [
+                        "own",
+                        "project",
+                        "missing",
+                        "other_machine",
+                        "reserved"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "state"
+                  ],
+                  "type": "object"
+                },
                 "imported": {
                   "description": "The space already holds its legacy ID",
                   "type": "boolean"
@@ -1965,29 +1998,6 @@
                     "completed"
                   ],
                   "type": "string"
-                },
-                "place": {
-                  "additionalProperties": false,
-                  "description": "Its folder",
-                  "properties": {
-                    "path": {
-                      "description": "Path below the root, with forward slashes",
-                      "type": "string"
-                    },
-                    "root": {
-                      "description": "Root ID",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "root",
-                    "path"
-                  ],
-                  "type": "object"
-                },
-                "place_missing": {
-                  "description": "The folder is not on this machine",
-                  "type": "boolean"
                 },
                 "project": {
                   "description": "Project title",
@@ -2054,7 +2064,7 @@
           "reconciled",
           "sources_by_kind",
           "statuses",
-          "roots",
+          "project_folders",
           "owners",
           "attention",
           "problems",
