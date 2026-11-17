@@ -436,6 +436,19 @@ const LINK_TO_FILE: [[Spec[], string[]]][] = [
   ],
 ];
 
+/**
+ * One world that meets every outcome and both sides of case by construction, so the counts below
+ * never rest on what the random worlds happen to reach: a folder `a` beside `A` (one name where the
+ * volume folds case, two where it keeps it), a file, a link out of the root, a missing name and an
+ * invalid path.
+ */
+const EVERY_OUTCOME: [[Spec[], string[]]] = [
+  [
+    [dir(["a"]), dir(["A"]), file(["c d"]), link(["b"], "outside", [])],
+    ["", "A", "a", "b", "c d", "missing", ".."],
+  ],
+];
+
 describe("[A1.3.15.places.prop] resolve returns exactly the directory a model of the tree names, or its reason", () => {
   test("random trees with links, random paths, checked against the model", async () => {
     // The real resolver, counting its outcomes, and how the model met case.
@@ -448,11 +461,9 @@ describe("[A1.3.15.places.prop] resolve returns exactly the directory a model of
       return r;
     };
     // fast-check counts the examples among the runs: 100 random worlds still run after them.
-    await fc.assert(property(counting, met), {
-      numRuns: 100 + LINK_TO_FILE.length,
-      examples: LINK_TO_FILE,
-    });
-    // The trees reach every outcome, so the property is not met by trees that never escape.
+    const examples = [EVERY_OUTCOME, ...LINK_TO_FILE];
+    await fc.assert(property(counting, met), { numRuns: 100 + examples.length, examples });
+    // Every outcome was met, so the property is not met by trees that never escape.
     for (const outcome of [
       "ok",
       "escapes_root",
@@ -506,7 +517,11 @@ describe("[A1.3.15.places.prop] resolve returns exactly the directory a model of
       ["no containment check", noContainment],
       ["parent of a missing folder", parentFallback],
     ] as const) {
-      const outcome = await fc.check(property(wrong), { numRuns: 120, endOnFailure: true });
+      const outcome = await fc.check(property(wrong), {
+        numRuns: 120,
+        endOnFailure: true,
+        examples: [EVERY_OUTCOME],
+      });
       expect([name, outcome.failed]).toEqual([name, true]);
     }
   }, 240_000);
