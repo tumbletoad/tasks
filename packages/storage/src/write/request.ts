@@ -2308,7 +2308,8 @@ function sourceFields(f: Fields): SourceFields {
   }
   const who = f.optText("who", line);
   if (who !== undefined) source.who = who;
-  const ref = f.optText("ref", line);
+  // A key a source is linked without stays as its reference (Dedupe.decide).
+  const ref = f.optText("ref", { chars: WRITE_LIMITS.sourceKey, line: true });
   if (ref !== undefined) source.ref = ref;
   const url = f.optText("url", { chars: WRITE_LIMITS.url, line: true });
   if (url !== undefined) source.url = url;

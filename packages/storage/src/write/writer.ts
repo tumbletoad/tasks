@@ -1853,10 +1853,7 @@ export class SpaceWriter {
             // The key stays as the source's plain reference: the person sees which ticket it is,
             // and a draft sent again finds this task by it (Dedupe.decide).
             const { key: held, ...rest } = op.source;
-            const unkeyed =
-              rest.ref === undefined && Array.from(held).length <= WRITE_LIMITS.line
-                ? { ...rest, ref: held }
-                : rest;
+            const unkeyed = rest.ref === undefined ? { ...rest, ref: held } : rest;
             dedupe.plain(held, parent);
             const plain: Operation = { ...op, source: unkeyed };
             return {

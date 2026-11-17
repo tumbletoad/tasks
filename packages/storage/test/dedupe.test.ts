@@ -359,6 +359,24 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(one("SELECT count(*) FROM tasks")).toBe(2);
   });
 
+  test("a held key of any length the key takes stays on the plain link, so the draft finds its task again", () => {
+    const long = `email:<${"x".repeat(480)}@mail.example>`;
+    submit(draft(["planning:p-1", long]).ops);
+    const second = draft(["planning:p-2", long]);
+    submit(second.ops);
+    expect(
+      one(
+        "SELECT s.ref FROM task_sources l JOIN sources s ON s.id = l.source_id " +
+          "WHERE l.task_id = $t AND s.source_key IS NULL",
+        { t: second.id },
+      ),
+    ).toBe(long);
+    expect(submit(draft(["planning:p-2", long]).ops).results[0]).toMatchObject({
+      status: "existing",
+      task: second.id,
+    });
+  });
+
   test("link_sources links the draft's sources to an active match, so its other keys find the task too", () => {
     const first = draft(["jira:FIX-1"]);
     submit(first.ops);
