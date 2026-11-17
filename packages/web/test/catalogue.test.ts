@@ -72,6 +72,7 @@ const SAMPLE = {
   terminal: "ghostty",
   source: "desktop",
   value: "P1",
+  effort: "S",
   wrote: "P1",
   now: "P2",
   restore: "P3",
