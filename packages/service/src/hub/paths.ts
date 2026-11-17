@@ -153,7 +153,10 @@ export function resolveLayout(facts: HostFacts): Layout {
 }
 
 /** Where a new space goes unless the person picks a folder: `<spaces>/<the name in lower case>`. */
-export function defaultSpaceFolder(layout: Pick<Layout, "platform" | "spaces">, name: string): string {
+export function defaultSpaceFolder(
+  layout: Pick<Layout, "platform" | "spaces">,
+  name: string,
+): string {
   const slug = name
     .normalize("NFKD")
     .toLowerCase()

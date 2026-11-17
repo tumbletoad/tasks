@@ -540,7 +540,8 @@ export async function agentsCommand(
             });
           }
           const done: Outcome[] = [];
-          for (const item of items) done.push(await applyWithRow(input, item, space, rowCall(call)));
+          for (const item of items)
+            done.push(await applyWithRow(input, item, space, rowCall(call)));
           return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
         return report(io, globals, "apply", outcomes, [], blocks);
