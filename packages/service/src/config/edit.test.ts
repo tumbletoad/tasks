@@ -121,9 +121,6 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
     expect(config.instances.map((i) => [i.id, i.env])).toEqual([
       ["codex-second", { CODEX_HOME: "/home/mira/.codex-second" }],
     ]);
-    expect(config.roots).toEqual([
-      { id: "work", label: "work", path: "/home/mira/work", runs: true },
-    ]);
     expect(config.terminal.app).toBe("ghostty");
   });
 

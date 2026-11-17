@@ -66,12 +66,15 @@ export interface PlanContext {
   readonly machine: string;
   /** The bound session's task: its area is boosted. */
   readonly boundTask?: string;
-  /** Tasks whose place here matches `cwd`; undefined without `cwd`. */
-  readonly here?: readonly string[];
+  /**
+   * What `cwd` relates to on this machine (ops/here.ts): tasks by their own folder, projects by
+   * theirs; undefined without `cwd`.
+   */
+  readonly here?: HereSets;
+  /** The space has its folders (schema 0.5 on): without them no task opens on any machine. */
+  readonly folders: boolean;
   /** Tasks with a live session: `is:bound`. */
   readonly live: readonly string[];
-  /** Whether the space's schema holds folders (0.5 on). */
-  readonly folders: boolean;
   /**
    * A `folder:` value as this machine stores it, with its OS's case rule: `cwd` is the caller's
    * working folder. `no_cwd` without one, `not_a_folder` for a value that names no folder here.
@@ -180,6 +183,27 @@ class Binder {
   list(values: readonly string[]): string {
     return `(SELECT value FROM json_each(${this.bind(JSON.stringify(values))}))`;
   }
+}
+
+/** What a working folder relates to on this machine: tasks by their own folder, and projects. */
+export interface HereSets {
+  readonly tasks: readonly string[];
+  readonly projects: readonly string[];
+}
+
+/**
+ * The tasks that work where `here` points: those of `here.tasks`, and those of `here.projects`
+ * with no folder of their own on this machine, which open in their project's folder.
+ */
+function hereWhere(here: HereSets, ctx: PlanContext, b: Binder): string {
+  if (!ctx.folders) return "0";
+  const own =
+    "EXISTS (SELECT 1 FROM folders f WHERE f.owner_kind = 'task' AND f.owner_id = t.id " +
+    `AND f.machine_id = ${b.bind(ctx.machine)} AND f.deleted_at IS NULL)`;
+  return (
+    `(t.id IN ${b.list(here.tasks)} OR (t.project_id IN ${b.list(here.projects)} ` +
+    `AND NOT ${own}))`
+  );
 }
 
 /** A task's due day: its date, or the UTC day of a timed due (M8's reminders bring zones). */
@@ -461,16 +485,20 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
       );
     }
     case "on": {
-      const placed =
-        "EXISTS (SELECT 1 FROM places pl WHERE pl.owner_kind = 'task' AND pl.owner_id = t.id " +
-        "AND pl.deleted_at IS NULL AND pl.machine_id ";
       if (value === "cwd") {
         if (ctx.here === undefined) {
           throw queryProblem("on:cwd needs the working folder", "Pass cwd with the query.");
         }
-        return `t.id IN ${b.list(ctx.here)}`;
+        return hereWhere(ctx.here, ctx, b);
       }
-      if (value === "this-machine") return `${placed}= ${b.bind(ctx.machine)})`;
+      // A task works on a machine where it or its project has a folder.
+      const placed = (machines: string): string =>
+        ctx.folders
+          ? `EXISTS (SELECT 1 FROM folders f WHERE f.deleted_at IS NULL AND f.machine_id IN ${machines} ` +
+            "AND ((f.owner_kind = 'task' AND f.owner_id = t.id) OR (f.owner_kind = 'project' " +
+            "AND f.owner_id = t.project_id)))"
+          : "0";
+      if (value === "this-machine") return placed(b.list([ctx.machine]));
       const machines = v.machines.filter((m) => lowerOf(m.name) === value).map((m) => m.id);
       if (machines.length === 0) {
         throw queryProblem(
@@ -482,7 +510,7 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
           ),
         );
       }
-      return `${placed}IN ${b.list(machines)})`;
+      return placed(b.list(machines));
     }
     case "folder":
       return folderCondition(term, ctx, b);
@@ -586,8 +614,8 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     "CASE WHEN t.touched > coalesce((SELECT k.seq FROM commits k WHERE k.at < " +
       `${b.bind(ctx.now - 7 * 24 * HOUR)} ORDER BY k.seq DESC LIMIT 1), 0) THEN 1.1 ELSE 1.0 END`,
   ];
-  if (ctx.here !== undefined && ctx.here.length > 0) {
-    boosts.push(`CASE WHEN t.id IN ${b.list(ctx.here)} THEN 1.3 ELSE 1.0 END`);
+  if (ctx.here !== undefined && (ctx.here.tasks.length > 0 || ctx.here.projects.length > 0)) {
+    boosts.push(`CASE WHEN ${hereWhere(ctx.here, ctx, b)} THEN 1.3 ELSE 1.0 END`);
   }
   if (ctx.boundTask !== undefined) {
     boosts.push(

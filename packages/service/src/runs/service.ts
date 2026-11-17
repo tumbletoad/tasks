@@ -33,7 +33,7 @@ import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.t
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ServedSpace } from "../ops/index.ts";
-import { readLaunchTask, readTaskRef } from "../ops/read.ts";
+import { readLaunchTask, readTaskRef, type TaskFolder } from "../ops/read.ts";
 
 /** What a start of the service may set for runs. Tests pass their containers or times. */
 export interface RunOptions {
@@ -42,13 +42,6 @@ export interface RunOptions {
   /** Windows: tasks-run.exe. Default: the one in this version folder's `bin`. */
   readonly runHelper?: string;
   readonly times?: Partial<RunTimes>;
-}
-
-/** A task's place as a run's folder check reads it. */
-export interface RunPlace {
-  readonly root: string;
-  readonly path: string;
-  readonly gitRemote?: string;
 }
 
 export interface RunServiceOptions extends RunOptions {
@@ -63,8 +56,11 @@ export interface RunServiceOptions extends RunOptions {
   readonly settings?: () => RunSettings;
   /** The agent instances machine.toml names now. Default: not checked. */
   readonly instances?: () => readonly { readonly id: string }[];
-  /** Whether a task's place still resolves to a folder runs can use. Default: not checked. */
-  readonly folderUsable?: (space: string, place: RunPlace) => Promise<boolean>;
+  /**
+   * Whether the folder a task opens in here, as a launch decides it, is one a run can use now.
+   * Default: not checked.
+   */
+  readonly folderUsable?: (space: string, folder: TaskFolder) => Promise<boolean>;
   /** Whether an update of this install has not finished (its journal is there). Default: no. */
   readonly updating?: () => boolean;
 }
@@ -375,12 +371,9 @@ export class RunService {
         throw error;
       }
       if (!task.active) return "task_closed";
-      if (run.place !== null) {
-        if (task.place?.id !== run.place) return "folder_gone";
-        const usable = this.#options.folderUsable;
-        if (usable !== undefined && !(await usable(served.id ?? "", task.place))) {
-          return "folder_gone";
-        }
+      const usable = this.#options.folderUsable;
+      if (usable !== undefined && !(await usable(served.id ?? "", task.folder))) {
+        return "folder_gone";
       }
     }
     const instances = this.#options.instances?.();

@@ -4597,7 +4597,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "state": {
-                          "description": "Its folder here, or missing",
+                          "description": "Its or its project's folder here, or missing",
                           "enum": [
                             "here",
                             "missing"
@@ -4630,7 +4630,7 @@
                       "type": "object"
                     }
                   ],
-                  "description": "Its place's state on this machine"
+                  "description": "Where it opens on this machine: its folder there, or another machine"
                 },
                 "planned_for": {
                   "description": "Day planned for",
@@ -4943,8 +4943,13 @@
                       {
                         "additionalProperties": false,
                         "properties": {
+                          "missing": {
+                            "const": true,
+                            "description": "Not found on this machine now",
+                            "type": "boolean"
+                          },
                           "of": {
-                            "description": "The task's own folder, or its project's",
+                            "description": "The task's own folder or its project's",
                             "enum": [
                               "task",
                               "project"
@@ -4952,7 +4957,7 @@
                             "type": "string"
                           },
                           "path": {
-                            "description": "The folder on this machine, the home as ~",
+                            "description": "The folder, the home written as ~",
                             "type": "string"
                           }
                         },
@@ -4966,7 +4971,7 @@
                         "additionalProperties": false,
                         "properties": {
                           "machine": {
-                            "description": "Only on this other machine",
+                            "description": "The machine its folder is on: it opens there",
                             "type": "string"
                           }
                         },
@@ -4976,7 +4981,7 @@
                         "type": "object"
                       }
                     ],
-                    "description": "Its folder: its own, else its project's"
+                    "description": "Where it opens on this machine; none: in the space's work folder"
                   },
                   "id": {
                     "description": "Task ID",
