@@ -3,7 +3,7 @@
 // what an older space without the word index can still search.
 import { describe, expect, test } from "vitest";
 import { PagedQuery } from "../store/queries.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { withTaskRow, type TaskRow } from "../store/rows.ts";
 import {
   filtersOnly,
   hasWords,
@@ -13,6 +13,7 @@ import {
   searchFields,
   searchGroups,
   searchSource,
+  sortsByEffort,
   type FoundRow,
   type Search,
   type SearchRow,
@@ -246,6 +247,68 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(isUnindexed(Object.assign(new Error("busy"), { code: "space_unavailable" }))).toBe(
       false,
     );
+  });
+
+  test("a search sorted by effort shows To do as one group per effort, in the search's order", () => {
+    expect(sortsByEffort("fence sort:effort")).toBe(true);
+    expect(sortsByEffort("sort:-Effort")).toBe(true);
+    expect(sortsByEffort("fence effort:S")).toBe(false);
+    expect(sortsByEffort('"sort:effort"')).toBe(false);
+    for (const q of ["sort=effort", 'sort:"-effort"', "order:effort"]) {
+      expect(sortsByEffort(q)).toBe(true);
+    }
+    expect(searchFields("order:effort")).toContain("effort");
+    // The search's order: S, S, L, then XL (no longer in the scale) among the tasks without one.
+    const found = (
+      [
+        [1, "S"],
+        [2, "S"],
+        [3, "L"],
+        [6, "XL"],
+        [4, undefined],
+        [7, "XL"],
+      ] as const
+    ).map(
+      ([n, effort]) =>
+        rowOf(taskRow(n, effort === undefined ? {} : { effort }), "open") as FoundRow,
+    );
+    // The feed brings an edit of the second task's effort; the store has the first one's edit.
+    const open = found.map((row, i) =>
+      i === 1 ? withTaskRow(row, { ...taskRow(2, { effort: "L" }), version: 2 }) : row,
+    );
+    const done = [rowOf(taskRow(5, { lifecycle: "completed", effort: "M" }), "finished")];
+    const live = new Map<string, TaskRow>([
+      [open[0]?.id ?? "", { ...(open[0] as TaskRow), effort: "L", version: 2 }],
+    ]);
+    const groups = searchGroups(open, done as FoundRow[], live, undefined, true);
+    // Each row stays in the group it was found in, and each effort is one group.
+    expect(groups.map((g) => [g.label, g.labelValues])).toEqual([
+      ["search.effort", { effort: "S" }],
+      ["search.effort", { effort: "L" }],
+      ["search.effort", { effort: "XL" }],
+      ["search.noEffort", undefined],
+      ["search.completed", undefined],
+    ]);
+    expect(groups.map((g) => g.sections[0]?.tasks.map((t) => t.ref))).toEqual([
+      ["M-1", "M-2"],
+      ["M-3"],
+      ["M-6", "M-7"],
+      ["M-4"],
+      ["M-5"],
+    ]);
+    expect(new Set(groups.map((g) => g.key)).size).toBe(groups.length);
+    // The edits show on the rows.
+    expect(groups[0]?.sections[0]?.tasks.map((t) => t.effort)).toEqual(["L", "L"]);
+    // The expanded task a refresh no longer finds stays in its effort's group.
+    const kept = searchGroups(
+      [open[0], open[2], open[3]] as FoundRow[],
+      [],
+      new Map(),
+      { task: open[1] as TaskRow, group: groups[0]?.key ?? "", index: 1 },
+      true,
+    );
+    expect(kept[0]?.sections[0]?.tasks.map((t) => t.ref)).toEqual(["M-1", "M-2"]);
+    expect(searchFields("fence sort:effort")).toEqual(["effort"]);
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {
