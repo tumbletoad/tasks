@@ -170,8 +170,9 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
         return next;
       });
       if (receipt === undefined || before.has(receipt.id) || request === "") return;
-      // Tasks holds the words for the agent: the field clears once it read them.
-      if (receipt.request === "waiting") carry(space, task.id, receipt.id, request);
+      // Tasks holds the words for the agent: the field clears once it read them, which may be
+      // before this answer came.
+      if (receipt.request !== undefined) carry(space, task.id, receipt.id, request);
     });
   };
 

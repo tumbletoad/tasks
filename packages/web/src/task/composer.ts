@@ -68,16 +68,38 @@ export function delivered(receipt: Receipt): Delivery {
 }
 
 /**
- * The launches that carry a composer's words, by draft, until they settle. Kept for the tab, so a
- * task collapsed and expanded again still clears what its launch delivered.
+ * The launches that carry a task's words, by receipt, until they settle. Kept with the draft, since
+ * an agent may read them long after the click: a reload still clears what it read.
  */
-const carrying = new Map<string, Map<string, string>>();
+const carryOf = (space: string, task: string) => `carry.${space}.${task}`;
+
+/** The most launches kept for one task: one that never settles is let go after these. */
+const CARRIED_MAX = 16;
+
+function readCarrying(space: string, task: string): Map<string, string> {
+  const value = browserKept.json(carryOf(space, task));
+  const launches = new Map<string, string>();
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return launches;
+  for (const [receipt, words] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof words === "string" && words !== "" && words.length <= DRAFT_MAX) {
+      launches.set(receipt, words);
+    }
+  }
+  return launches;
+}
+
+function keepCarrying(space: string, task: string, launches: Map<string, string>): void {
+  const kept = [...launches].slice(-CARRIED_MAX);
+  browserKept.keep(
+    carryOf(space, task),
+    kept.length === 0 ? undefined : JSON.stringify(Object.fromEntries(kept)),
+  );
+}
 
 export function carry(space: string, task: string, receipt: string, words: string): void {
-  const name = nameOf(space, task);
-  const launches = carrying.get(name) ?? new Map<string, string>();
+  const launches = readCarrying(space, task);
   launches.set(receipt, words);
-  carrying.set(name, launches);
+  keepCarrying(space, task, launches);
 }
 
 /** A launch that settled with the words it carried. */
@@ -89,9 +111,8 @@ export interface Settled {
 
 /** The task's launches that settled, with their words; each one is let go. */
 export function settled(space: string, task: string, receipts: readonly Receipt[]): Settled[] {
-  const name = nameOf(space, task);
-  const launches = carrying.get(name);
-  if (launches === undefined) return [];
+  const launches = readCarrying(space, task);
+  if (launches.size === 0) return [];
   const done: Settled[] = [];
   for (const receipt of receipts) {
     const words = launches.get(receipt.id);
@@ -101,7 +122,7 @@ export function settled(space: string, task: string, receipts: readonly Receipt[
     launches.delete(receipt.id);
     done.push({ words, receipt, delivery });
   }
-  if (launches.size === 0) carrying.delete(name);
+  if (done.length > 0) keepCarrying(space, task, launches);
   return done;
 }
 

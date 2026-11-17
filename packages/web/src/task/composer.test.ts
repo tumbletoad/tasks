@@ -3,7 +3,7 @@
 // What a task's composer sends and when its words count as gone (composer.ts): the words as typed,
 // one request ID for one note across a reload, and a launch's words clear only once they reached
 // the agent.
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Receipt, ReceiptState } from "../api.ts";
 import {
   carry,
@@ -93,5 +93,15 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     ]);
     // Each launch settles once.
     expect(settled(SPACE, "tk_1", [receipt("l2", "confirmed", "read")])).toEqual([]);
+  });
+
+  test("a launch still carries its words after a reload, so its agent's late read still clears them", async () => {
+    carry(SPACE, "tk_1", "l1", "Compare the listings");
+    vi.resetModules();
+    const reloaded = await import("./composer.ts");
+    expect(reloaded.settled(SPACE, "tk_1", [receipt("l1", "dispatched", "waiting")])).toEqual([]);
+    const done = reloaded.settled(SPACE, "tk_1", [receipt("l1", "dispatched", "read")]);
+    expect(done.map((d) => [d.words, d.delivery])).toEqual([["Compare the listings", "reached"]]);
+    expect(reloaded.settled(SPACE, "tk_1", [receipt("l1", "dispatched", "read")])).toEqual([]);
   });
 });
