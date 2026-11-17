@@ -36,9 +36,9 @@ export function distinctLabels<O extends Offer>(
 }
 
 /** The block machine.toml gets for an entry, as its editor writes it. */
-export const blockOf = (entry: ReadonlyMap<string, InstanceValue>): string[] => [
+export const blockOf = (entry: ReadonlyMap<string, InstanceValue | EditValue>): string[] => [
   "[[instance]]",
-  ...[...entry].map(([k, v]) => `${keyText(k)} = ${valueText(v as EditValue)}`),
+  ...[...entry].map(([k, v]) => `${keyText(k)} = ${valueText(v)}`),
 ];
 
 /** An entry as the service's `instances/add` takes it. */
