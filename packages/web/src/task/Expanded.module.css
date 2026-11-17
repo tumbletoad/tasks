@@ -579,7 +579,7 @@ a + .muted,
 }
 
 /* Who it waits on: an outlined text field. */
-.text {
+.waitingField {
   width: 100%;
   height: 26px;
   padding: 0 10px;
@@ -587,10 +587,11 @@ a + .muted,
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--k-control);
   background: transparent;
+  color: var(--k-text);
   font-size: 0.8125rem;
 }
 
-.text::placeholder {
+.waitingField::placeholder {
   color: var(--k-muted);
 }
 

@@ -123,7 +123,7 @@ process.stdin.on("data", (chunk: Buffer) => {
 process.stdin.on("end", () => {
   input.end();
 });
-// Never outlives two minutes, so a run the test leaves cannot keep it for long.
-setTimeout(() => process.exit(124), 120_000).unref();
+// Never outlives ten minutes, so a run a test leaves cannot keep it for long.
+setTimeout(() => process.exit(124), 600_000).unref();
 const fake = serveCodex(input, process.stdout, scenario);
 process.exit(await fake.done);

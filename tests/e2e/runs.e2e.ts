@@ -16,7 +16,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
-import { CODEX_INSTANCE, SLOW_MS, type World } from "./world.ts";
+import { CODEX_INSTANCE, CODEX_OTHER, SLOW_MS, type World } from "./world.ts";
+
+const OTHER_LABEL = CODEX_OTHER.label;
 
 /** What a run asks for when the person typed nothing (the service's runs/agent.ts). */
 const WORK_ON_IT = "Work on this task until it is done, then reply with what you did.";
@@ -111,6 +113,13 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
     await expect(said.locator("li")).toHaveCount(80);
     await said.locator("li").last().scrollIntoViewIfNeeded();
     await expect(said.locator("li").last()).toBeInViewport();
+
+    // The person's other agent is one click away, in the menu beside Run.
+    await stripOf(page, ref).getByRole("button", { name: "Run with another agent" }).click();
+    await page.getByRole("menuitem", { name: `Run with ${OTHER_LABEL}` }).click();
+    const fourth = runsOf(page, ref).nth(3);
+    await expect(fourth).toContainText(OTHER_LABEL);
+    await expect(stateOf(fourth)).toContainText("Done.", { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
   });
 });
@@ -282,6 +291,8 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
     browser,
     runs: world,
   }) => {
+    // Two themes, two widths, two tasks and a check of each: slow, never stuck.
+    test.setTimeout(420_000);
     const working = await addTask(world, "Screens: a run that works");
     const ended = await addTask(world, "Screens: runs that ended");
     world.codex(working, ["hold", "answer"]);
@@ -350,21 +361,34 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
           await shot.screenshot({ path: test.info().outputPath(`run-${name}-${theme}-390.png`) });
           await shot.setViewportSize({ width: 1440, height: 1000 });
         }
+        // The other agent that can run is one click away, in the menu beside Run.
+        await openTask(shot, world, ended);
+        await stripOf(shot, ended).getByRole("button", { name: "Run with another agent" }).click();
+        await expect(shot.getByRole("menuitem", { name: `Run with ${OTHER_LABEL}` })).toBeVisible();
+        await rowOf(shot, ended).locator('[data-part="strip"]').scrollIntoViewIfNeeded();
+        await shot.screenshot({ path: test.info().outputPath(`run-menu-${theme}-1440.png`) });
+        await shot.keyboard.press("Escape");
+
         await shot.goto(await world.signInUrl(`/s/${world.mira.id}/agents`));
         await showsSpace(shot, world.mira.name);
         await expect(rowOf(shot, ended)).toBeVisible({ timeout: SLOW_MS });
+        await expect(markerOf(shot, ended)).toHaveAttribute("data-kind", "needs_input");
+        await expect(markerOf(shot, working)).toHaveAttribute("data-kind", "working");
         await shot.screenshot({ path: test.info().outputPath(`run-agents-${theme}-1440.png`) });
+        await shot.setViewportSize({ width: 390, height: 900 });
+        await shot.screenshot({ path: test.info().outputPath(`run-agents-${theme}-390.png`) });
       } finally {
         await context.close();
       }
     }
     await world.machine("ui.theme", null);
     // The run that works is stopped, so the world ends with no run of this test left.
-    const page2 = await (await browser.newContext()).newPage();
-    await openTask(page2, world, working);
-    for (const stop of await runsOf(page2, working).getByRole("button", { name: /^Stop/u }).all()) {
-      await stop.click();
-    }
-    await page2.context().close();
+    const last = await (await browser.newContext()).newPage();
+    await openTask(last, world, working);
+    await runsOf(last, working).first().getByRole("button", { name: /^Stop/u }).click();
+    await expect(stateOf(runsOf(last, working).nth(1))).toContainText("Done.", {
+      timeout: SLOW_MS,
+    });
+    await last.context().close();
   });
 });

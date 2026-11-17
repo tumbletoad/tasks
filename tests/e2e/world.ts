@@ -111,8 +111,10 @@ export interface WorldOptions {
   readonly runs?: boolean;
 }
 
-/** The fake Codex's instance in a world with runs. */
+/** The fake Codex's instance in a world with runs: the first that can run, Run's default. */
 export const CODEX_INSTANCE = { key: "codex-fake", label: "Codex · test", glyph: "Cx" } as const;
+/** A second instance of the fake Codex, for a person's other agent: in Run's menu. */
+export const CODEX_OTHER = { key: "codex-other", label: "Codex · other", glyph: "Cx" } as const;
 
 const FAKE_CODEX = fileURLToPath(new URL("./fake-codex.ts", import.meta.url));
 
@@ -188,14 +190,18 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       [{ path: seeded.folder, id: opened.space.spaceId }],
       FAKE_INSTANCE_TOML +
         (options.runs === true
-          ? instanceToml({
-              id: CODEX_INSTANCE.key,
-              target: "codex-cli",
-              label: CODEX_INSTANCE.label,
-              exec: process.execPath,
-              args_prefix: [FAKE_CODEX],
-              env: { FAKE_CODEX_CASES: cases },
-            })
+          ? [CODEX_INSTANCE, CODEX_OTHER]
+              .map((codex) =>
+                instanceToml({
+                  id: codex.key,
+                  target: "codex-cli",
+                  label: codex.label,
+                  exec: process.execPath,
+                  args_prefix: [FAKE_CODEX],
+                  env: { FAKE_CODEX_CASES: cases },
+                }),
+              )
+              .join("")
           : ""),
     );
 
