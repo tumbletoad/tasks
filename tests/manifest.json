@@ -1574,6 +1574,30 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.run.supervisor-model",
+      "title": "Property test of the supervisor over two spaces with in-memory stores and fake containers: runs queued, Stops, agents that finish, limits changed, a restart, an update's hold taken and released or its holder gone, tasks closed, starts refused, time passing and retention. At every container start the machine's, instance's and task's limits hold, no run stopped while queued starts, and nothing starts under a hold; once settled no queued run waits while there is room for it and each says why it waits; retention removes no folder of a run that is open, unconfirmed, still hosted or unsaved; and every run settles",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.run.queue-order",
+      "title": "The start plan: the oldest queued run its limits allow starts first, a run held back by its own instance or task holds back no younger run of another, no start takes the machine, an instance or a task past its limit, and every waiting run's reason is true",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.run.supervisor",
+      "title": "The supervisor's rules: a run whose starting commit reached the store after its deadline fails start_timed_out at the next round with nothing started; a queued run past its task's limit says so, a Stop cancels it at once and it never starts, and one whose folder is gone fails with why; retention removes an old saved run's folder and keeps those of open, unconfirmed and unsaved runs and of runs no open space knows",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.kill",
       "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
       "source": "A4 3.11.8",
@@ -1641,6 +1665,22 @@
       "id": "A4.3.11.9.run.service",
       "title": "The service probes its containers at start and says why runs cannot be contained where they cannot, refusing its internal call to start one there; on Windows it hosts a run started through that call to its answer, and a run left open by a stopped service ends at the next start as interrupted with its last saved answer",
       "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.queue",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows): four runs with room for two run two and keep two queued, saying why and with nothing of them alive, and each Stop starts the oldest waiting one; a run that reaches its total time and one quiet too long end timed out with their answers; under an update's hold nothing new starts, the running runs are named, stopping all of them keeps each answer, and the queue moves once the hold goes; every test counts what lives from the operating system",
+      "source": "A4 3.11.9, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.update-hold",
+      "title": "An update's hold over the local endpoint, on every OS with containers on no operating system: an agent's connection may not take it; it names the running run with its space and task reference; a run queued meanwhile waits with the reason update; stop_held stops the run, which keeps its answer; and closing the hold's connection, as an updater that died does, lets the queue move",
+      "source": "A4 3.11.9, A2 3.12.6, A7 3.13 M6.03",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4009,6 +4049,22 @@
       "id": "A2.3.12.6.update.switch",
       "title": "The update self-tests the candidate before current changes, writes the journal before each step that needs it, switches current, swaps changed Windows launchers one at a time, records install.json, restarts the service and waits for the new version; both versions stay; a failed self-test changes nothing; a service that does not come back is rolled back; --rollback goes to the previous version; a person's data is byte-identical through an update and a rollback",
       "source": "A2 3.12.6, A2 3.2.3, SL-02, SL-08, A7 3.13 M6.12",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.3.service-install.delegate",
+      "title": "Linux: a unit an earlier version wrote without Delegate=yes gets that line at the end of its [Service] section with every other byte kept, and systemd reads it again; a unit that sets Delegate itself, or is not this install's, is left as it is",
+      "source": "A2 3.3.3, A7 3.13 M6.03",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.6.update.runs",
+      "title": "Before anything changes an update holds new background runs back and names the runs a restart would cut short; runs that finish during the wait let it go on without a question; still running after the wait, the person's answer decides: giving up changes nothing, stopping them goes on, with the hold kept until the restart and let go after it",
+      "source": "A2 3.12.6, A7 3.13 M6.03",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

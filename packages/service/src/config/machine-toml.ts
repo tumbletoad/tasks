@@ -5,7 +5,8 @@
 //
 // Sections have owners. This appendix (A2) owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]`
 // and `[[spaces]]`, checked here. A4 owns `[terminal]`, `[[instance]]`, `[approvals]` and, with A1,
-// `[roots]`: @tasks/launch checks those. A1 owns `[preferences]` (3.16), checked here with the
+// `[roots]`: @tasks/launch checks those. `[runs]`, background runs' guidelines, is checked here.
+// A1 owns `[preferences]` (3.16), checked here with the
 // preferences registry of @tasks/contracts. `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
 // `[security]` (A6) are reserved: the steps that use them check them, and until then they are
 // passed by without a problem. Any other top-level key is an `unknown_key` warning.
@@ -35,6 +36,7 @@ import {
   type Verdict,
 } from "@tasks/launch";
 import { fitsShape, preferenceSpec, type PrefValue } from "@tasks/contracts";
+import { QUEUE_LIMITS, RUN_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
 import { isId, type Id } from "@tasks/storage";
 import {
   currentPerson,
@@ -96,6 +98,49 @@ export interface MachineConfig {
    * a value of its declared shape. A key not here takes the registry's default.
    */
   readonly preferences: ReadonlyMap<string, PrefValue>;
+  /** `[runs]`: background runs' guidelines (RunSettings). */
+  readonly runs: RunSettings;
+}
+
+/**
+ * `[runs]`: how many background runs run at once (`at_once`, `per_instance`, `per_task`), and
+ * how long a run may take in total and without output (`max_minutes`, `max_quiet_minutes`), for
+ * the runs queued after a change. Guidelines a person sets: a lower limit stops nothing that runs.
+ */
+export interface RunSettings {
+  readonly limits: QueueLimits;
+  readonly wallMs: number;
+  readonly idleMs: number;
+}
+
+export const DEFAULT_RUN_SETTINGS: RunSettings = {
+  limits: QUEUE_LIMITS,
+  wallMs: RUN_LIMITS.task.wallMs,
+  idleMs: RUN_LIMITS.task.idleMs,
+};
+
+/** `[runs]`. A bad value drops itself with its problem, and its default applies. */
+function readRuns(doc: TomlDocument, problems: Problems): RunSettings {
+  const runs = tableOf(doc, "runs", problems);
+  if (runs === undefined) return DEFAULT_RUN_SETTINGS;
+  const d = DEFAULT_RUN_SETTINGS;
+  const count = (name: string, fallback: number) =>
+    runs.int(name, { min: 1, max: 100 }) ?? fallback;
+  const minutes = (name: string, fallback: number) => {
+    const value = runs.int(name, { min: 1, max: 24 * 60 });
+    return value === undefined ? fallback : value * 60_000;
+  };
+  const settings: RunSettings = {
+    limits: {
+      runs: count("at_once", d.limits.runs),
+      perInstance: count("per_instance", d.limits.perInstance),
+      perTask: count("per_task", d.limits.perTask),
+    },
+    wallMs: minutes("max_minutes", d.wallMs),
+    idleMs: minutes("max_quiet_minutes", d.idleMs),
+  };
+  runs.done();
+  return settings;
 }
 
 /** The configuration of a machine without machine.toml. */
@@ -112,6 +157,7 @@ export const DEFAULT_CONFIG: MachineConfig = {
   approvals: new Map(),
   setup: { managedPaths: [] },
   preferences: new Map(),
+  runs: DEFAULT_RUN_SETTINGS,
 };
 
 /**
@@ -289,6 +335,7 @@ export function checkMachineConfig(
     approvals: readApprovals(doc["approvals"], problems),
     setup: { managedPaths: readSetup(doc, platform, problems) },
     preferences: readMachinePreferences(doc, platform, problems),
+    runs: readRuns(doc, problems),
   };
   return { config, problems: problems.list };
 }

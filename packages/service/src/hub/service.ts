@@ -1,4 +1,4 @@
-// The service's lifecycle (A2 3.3.1): starting → binding → ready → draining → stopped.
+// The service's lifecycle: starting → binding → ready → draining → stopped.
 //
 //   starting  Refuse root, an elevated Administrator and package identity (64) before anything is
 //             written. Create the state folder user-only and refuse one that others can write (64).
@@ -6,26 +6,28 @@
 //             service's is touched. Then, as the holder only: machine.json, ipc.key, service.json
 //             with state "starting". An update cut off by a crash is finished or rolled back
 //             first (version/repair.ts); when current then names another version, exit 75.
-//   binding   Pick the endpoint (A2 3.2.1), remove a stale socket file from this install's own
+//   binding   Pick the endpoint, remove a stale socket file from this install's own
 //             socket folder, listen. A Windows pipe name that is taken gets a new instance ID,
 //             three tries in all, then exit 70.
 //   ready     service.json says "ready". Spaces open in parallel after it (STARTUP below).
-//   draining  Stop accepting connections, let them finish for up to 5 s, close each space within
-//             its bound (an open in progress is not waited for past it), release the writer
-//             locks, remove service.json if it is still ours, release service.lock. Then the
-//             exit: 0, 75 for a requested restart, 70 after lost ownership. A step that fails is
-//             skipped, so the drain always ends with its exit code.
+//   draining  End the background runs (their containers are killed), stop accepting
+//             connections, let them finish for up to 5 s, close each space within its bound (an
+//             open in progress is not waited for past it), release the writer locks, remove
+//             service.json if it is still ours, release service.lock. Then the exit: 0, 75 for a
+//             requested restart, 70 after lost ownership. A step that fails is skipped, so the
+//             drain always ends with its exit code.
 //
 // A crash at any point leaves what the next start recovers from: a lock the OS released, a stale
 // service.json, a stale socket file, a temporary file of an atomic write. A start that fails after
 // the lock removes its own service.json.
 import { randomBytes } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { envVar, PRODUCT_NAME } from "@tasks/brand";
 import type { Instance, Root } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
+  DEFAULT_CONFIG,
   fatalProblems,
   loadMachineConfig,
   sectionOf,
@@ -114,6 +116,7 @@ import {
   type SessionStore,
 } from "../binding/index.ts";
 import { repairIfIdle, supervisorReplaced, type RepairOutcome } from "../version/repair.ts";
+import { UPDATE_JOURNAL } from "../version/journal.ts";
 import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
@@ -505,6 +508,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       return undefined;
     });
     if (afterRepair(log, atStart, manager)) throw new ServiceExit(EXIT.restart, "restart");
+    // An update that can be neither finished nor rolled back restarts nothing: its journal then
+    // holds no run back.
+    let repairStuck = atStart?.kind === "stuck";
 
     const temps = removeStaleTemps(layout.state, [
       SERVICE_FILE,
@@ -531,6 +537,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     }
     // Background runs: the probe starts now, before the service starts any other process, since on
     // Linux it moves the service into its unit's `main` cgroup. Each space's recovery waits for it.
+    // The queue's limits are read from machine.toml at each round: a change applies without a
+    // restart, which would end the runs.
+    let runSettings = config.runs;
     const runs = new RunService({
       ...options.runs,
       machine: machine.id,
@@ -538,6 +547,22 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       platform,
       spaces: () => made.spaces?.served() ?? [],
       log,
+      settings: () => {
+        // A file that cannot be used as a whole, one saved halfway for one, keeps the last
+        // settings read: the person's limits do not fall back to the defaults meanwhile.
+        const loaded = loadMachineConfig(layout.config, platform);
+        if (!loaded.present || loaded.config !== DEFAULT_CONFIG) runSettings = loaded.config.runs;
+        return runSettings;
+      },
+      instances: () => instances,
+      folderUsable: async (space, place) => {
+        const service = launching.service;
+        if (service === undefined) return true;
+        return (await service.resolveFolder(space, place)).status === "ok";
+      },
+      // From the journal's write to its removal an update may restart the service, a repair
+      // included, whether or not its updater still holds the queue.
+      updating: () => !repairStuck && existsSync(join(layout.state, UPDATE_JOURNAL)),
     });
     void runs.probe();
 
@@ -581,6 +606,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       endpoint,
       spaces: made.spaces?.described().filter((space) => space.forgotten !== true) ?? [],
       http: httpRunning?.status() ?? null,
+      runs: runs.status(),
     });
     const serviceJson = join(layout.state, SERVICE_FILE);
     /** `beforeRename`: a last check right before the new file replaces the old (atomicWrite). */
@@ -704,6 +730,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       bindings,
       defaults,
+      runs,
       roots: {
         configDir: layout.config,
         stateDir: layout.state,
@@ -1217,6 +1244,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       void repairIfIdle(updateRepair)
         .then(
           (outcome) => {
+            if (outcome !== undefined) repairStuck = outcome.kind === "stuck";
             if (outcome?.kind === "stuck") {
               if (reported === "stuck") return;
               reported = "stuck";

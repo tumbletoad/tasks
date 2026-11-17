@@ -7,6 +7,11 @@ level = "SENTINEL-loud"
 [http]
 port = 80
 
+[runs]
+at_once = 0
+max_minutes = "SENTINEL-an-hour"
+per_task = 2
+
 [[spaces]]
 id = "sp_3z8sm956jp8dajmtsar5kx026c"
 path = "SENTINEL-relative/work"

@@ -274,45 +274,6 @@ No action removes a person's data or a backup as a side effect. What an action r
 | `background_runs` | on | Run in the strip and `Shift+R` |
 | `agents_view` | on | The Agents view (sessions and runs still show in threads) |
 
-### 3.21 Keyboard
-
-Single-letter keys work only when focus is not in a text field or an IME composition. Modifier shortcuts work everywhere unless noted. On macOS `Ctrl` reads as `Cmd`. Letters match `event.key`, so mnemonics survive other layouts. Digits match `event.code`, so they work on AZERTY.
-
-| Scope | Keys |
-|---|---|
-| Global | `/` search · `n` new task · `Ctrl+K` top field · `g` then `t` Today, `i` Inbox, `o` Open, `w` Waiting, `r` Review, `b` Backlog, `c` Completed, `a` Agents · `Ctrl+,` settings · `Ctrl+Z` undo · `Ctrl+Shift+Z` or `Ctrl+Y` redo · `F6` cycle sidebar, main and toast · `?` shortcut sheet · `Esc` closes the innermost tooltip, popover, editor, drawer or expanded task |
-| Rows | `j`/`k` or arrows move · `Home`/`End` · `[`/`]` previous or next group · `Enter` expands or collapses · `x` done · `Shift+X` drop · `s` star · `1`–`3` priority, `0` clears · `e` effort · `d` due · `w` waiting · `b` backlog · `o` back to open · `a` area · `l` open in the effective instance · `Shift+L` focus the strip with digits on its buttons · `Shift+R` run (first Run asks once) · `f` open folder · `m` focus the composer |
-| Composer | `Enter` note · `Shift+Enter` newline · `Ctrl+Enter` open in the default instance · `Ctrl+Shift+Enter` run (the first Run per instance asks once) · `Esc` leave the field and keep the draft |
-| Review | `y` accept · `Backspace` reject (on a focused proposal) |
-| Editors | `Enter` apply · `Esc` cancel · arrows and `PageUp`/`PageDown` in the calendar |
-
-Built so far: the list's moves (`j`/`k`, arrows, `Home`/`End`, `[`/`]`) and `Esc`, which collapses the expanded row from anywhere inside the list and focuses its title (`A5.3.22.web.list-keys`), and `F2` on a row's title, which edits it in place, where every key is the field's (`A7.3.12.m5-06.e2e.keyboard`). The other single keys arrive with `ui.keys.single` and the keymap.
-
-There is no single-key Run, so a stray keystroke cannot start a background run with full permissions. Run needs `Shift+R` on a row or a two-modifier chord in the composer.
-
-**Turning keys off.** The preference `ui.keys.single` is `on` (default), `off`, or `alt` (each single key then needs `Alt`), per WCAG 2.1.4. Settings › Keyboard remaps any action and flags conflicts inline. The shortcut sheet and tooltip hints are generated from the same keymap the handlers use, so they cannot drift.
-
-**Firefox.** A page can take `/`, single letters, `Ctrl+K` and `Ctrl+Enter` with `preventDefault`, which also stops Firefox's quick find. Shortcuts Firefox reserves (`Ctrl+T`, `Ctrl+W`, `Ctrl+N`, `Ctrl+Tab`) are never used. M0-2 (section 5) confirms this in real Firefox.
-
-### 3.22 Accessibility
-
-Target: WCAG 2.2 AA from the first UI milestone. A full audit before 1.0.
-
-- **Landmarks.** `nav` (sidebar), `header` (top bar), `main` (view). A skip link to the main list.
-- **Lists.** Each view is a `ul`. Area and project groups are `role="group"` named by their title through `aria-label`, not `aria-labelledby`, because a virtualised list may have unmounted the heading. Each project's rows are a `ul` whose `aria-posinset` and `aria-setsize` count against that list's true size. Today sections are `section` elements with `h2` headings, named by `aria-label` like the groups.
-- **Row pattern.** The title is a `button` with `aria-expanded` and `aria-controls`. The checkbox (`input type="checkbox"`, "Done: <title>"), star, source links, folder and launch tile are siblings of the title, never its children. A roving tabindex puts only the focused row's title in the tab order. `j`/`k` move it, and `Tab` walks the row's other controls.
-- **Row description** (`aria-describedby`), built by the row function in a fixed order: project (when shown), status (when not implied), due ("due Friday 13 November"), priority (P1–P3 only), age ("created 10 November"), starred, marker ("changed by Codex", "needs your input"), launch state.
-- **Expanded task.** `role="region"` labelled by the title. Facts are a `dl`. Segmented controls are `radiogroup`s. The strip is a `toolbar`. The date popover follows React Aria's date-picker pattern, with the text field as the primary input.
-- **Virtualised lists** keep `aria-setsize` and `aria-posinset` on rows, so screen readers announce the true size. Lists of 200 rows or fewer are not virtualised. Browser find (`Ctrl+F`) cannot see unrendered rows, so `/` search covers every task.
-- **Live regions.** Toasts and status bars use a polite region. Errors use an assertive one. Burst summaries follow 3.15.
-- **Focus.** A 2 px `focus` ring on every focusable element via `:focus-visible`, offset 2 px from accent fills. `scroll-padding` keeps focused rows clear of the top bar and the sticky composer. Check-off moves focus to the next row. Popovers return focus to their trigger.
-- **Hover equals focus.** One tooltip component shows on hover after 500 ms, at once on keyboard focus, and after a 500 ms long press. It is dismissible with `Esc` and hoverable (WCAG 1.4.13). Every action shown on hover is also shown on focus. Until that component is built, the row writes each tooltip's text into `data-tip`, and the names and descriptions carry it for assistive technology.
-- **Colour.** Never the only signal: due text, status chip text, marker shapes, diff glyphs, monograms with labels.
-- **Targets.** At least 24 × 24 px (WCAG 2.5.8).
-- **Text and zoom.** All sizes in rem. Works at 200 % zoom and reflows to 320 CSS px.
-- **Forced colours.** In Windows high-contrast mode, controls use system colours, focus uses `Highlight`, and markers keep their shapes.
-- **Reduced motion.** As in 3.20.
-
 ### 3.25 Performance
 
 Targets hold on a real Ubuntu 24.04 machine, in the Firefox snap, with a seeded space at A1's **design scale**: **5,000 open tasks** and 50,000 completed, 30 areas and 200 projects, with 10 agent sessions writing and the service already running. A1 owns these numbers. Its larger stress corpus is for A1 and A3's query budgets, not for these targets.
