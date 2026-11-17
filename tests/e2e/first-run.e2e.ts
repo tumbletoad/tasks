@@ -176,7 +176,10 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     expect(fresh.codexConfig()).not.toContain("[mcp_servers.tasks]");
     expect(fresh.machineToml()).not.toContain('id = "claude"');
     // Open no longer offers it in this tab: leaving Settings took a fresh snapshot.
-    await page.getByRole("link", { name: /^Inbox/u }).first().click();
+    await page
+      .getByRole("link", { name: /^Inbox/u })
+      .first()
+      .click();
     const row = page.locator("li[data-task]", { hasText: "Draft the spring newsletter" });
     await expect(row.locator('[data-part="tile"]')).toBeVisible();
     await expect(row.locator('[data-part="tile"]')).not.toHaveAccessibleName("Open in Claude Code");
