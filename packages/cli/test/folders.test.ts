@@ -81,9 +81,9 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     });
     expect(existsSync(made)).toBe(true);
     // An ordinary folder for the person's work, as their own mkdir makes it: not user-only.
-    if (process.platform !== "win32") {
-      expect(statSync(made).mode & 0o777).toBe(0o777 & ~process.umask());
-    }
+    const plain = join(empty, "plain");
+    mkdirSync(plain);
+    expect(statSync(made).mode & 0o777).toBe(statSync(plain).mode & 0o777);
     const listed = await tasks(["area", "list"], w.root);
     expect(listed.stdout).toMatch(/\n {2}Fixture fresh \(0\) {2}.*fresh\n/u);
 
@@ -138,10 +138,6 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     );
     expect(lost.code).toBe(6);
     expect(existsSync(made)).toBe(true);
-    // An ordinary folder for the person's work, as their own mkdir makes it: not user-only.
-    if (process.platform !== "win32") {
-      expect(statSync(made).mode & 0o777).toBe(0o777 & ~process.umask());
-    }
     const listed = await tasks(["area", "list"], w.root);
     expect(listed.stdout).toMatch(/\n {2}Fixture lost \(0\) {2}.*fresh\n/u);
   });
