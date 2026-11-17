@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
 import { openSpace } from "../../packages/storage/src/index.ts";
 import {
+  instanceToml,
   registerSpaces,
   removeRuntimeDir,
   Services,
@@ -25,6 +26,7 @@ import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
 import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
+import type { FakeCodexCase } from "./codex-cases.ts";
 import { FAKE_INSTANCE_TOML, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
@@ -75,6 +77,8 @@ export interface World {
   machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */
   terminal(): TerminalCall[];
+  /** The cases the next runs of the task `ref` play, in order (a world with runs). */
+  codex(ref: string, cases: readonly FakeCodexCase[]): void;
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -100,7 +104,17 @@ export interface WorldOptions {
   readonly bulk?: number;
   /** Finished fixture tasks to add to Mira's space before the service opens it (bulk.ts). */
   readonly finished?: FinishedCounts;
+  /**
+   * A second instance, after the fake agent: the fake Codex (fake-codex.ts), which can work on a
+   * task in the background. `World.codex` picks the cases its runs play.
+   */
+  readonly runs?: boolean;
 }
+
+/** The fake Codex's instance in a world with runs. */
+export const CODEX_INSTANCE = { key: "codex-fake", label: "Codex · test", glyph: "Cx" } as const;
+
+const FAKE_CODEX = fileURLToPath(new URL("./fake-codex.ts", import.meta.url));
 
 export async function startWorld(ui: string, options: WorldOptions = {}): Promise<World> {
   const temp = tempRoot("e2e");
@@ -165,8 +179,25 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       }),
       { mode: 0o600 },
     );
-    // The fake agent is this machine's one instance: the page draws its tile (A5 3.6).
-    registerSpaces(home, [{ path: seeded.folder, id: opened.space.spaceId }], FAKE_INSTANCE_TOML);
+    // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). A world
+    // with runs has the fake Codex after it.
+    const cases = join(temp.root, "codex-cases.json");
+    writeFileSync(cases, "{}");
+    registerSpaces(
+      home,
+      [{ path: seeded.folder, id: opened.space.spaceId }],
+      FAKE_INSTANCE_TOML +
+        (options.runs === true
+          ? instanceToml({
+              id: CODEX_INSTANCE.key,
+              target: "codex-cli",
+              label: CODEX_INSTANCE.label,
+              exec: process.execPath,
+              args_prefix: [FAKE_CODEX],
+              env: { FAKE_CODEX_CASES: cases },
+            })
+          : ""),
+    );
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
@@ -285,6 +316,11 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         }
         const reply = await post(port, "/api/v1/machine/pref", { key, value }, { token });
         if (reply.status !== 200) throw new Error(`machine/pref answered ${String(reply.status)}`);
+      },
+      codex: (task, next) => {
+        const known = JSON.parse(readFileSync(cases, "utf8")) as Record<string, FakeCodexCase[]>;
+        known[task] = [...next];
+        writeFileSync(cases, JSON.stringify(known));
       },
       terminal: () =>
         readFileSync(record, "utf8")

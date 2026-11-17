@@ -46,7 +46,7 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
     });
   });
 
-  test("done shows the answer and how its processes ended; a stop says what was ended", () => {
+  test("done shows the answer, and what it left only when something had to be ended; a stop always says what was ended", () => {
     const done = runView(
       run({
         state: "succeeded",
@@ -57,10 +57,12 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
       "Codex",
     );
     expect(done.tone).toBe("done");
-    expect(ids(done)).toEqual(["run.done", "run.cleanup.confirmed"]);
+    expect(ids(done)).toEqual(["run.done"]);
     expect(done.said).toEqual({ kind: "answer", text: "Updated the export.", cut: false });
-    const stopped = runView(run({ state: "cancelled", cleanup: "ended_leftovers" }), "Codex");
-    expect(ids(stopped)).toEqual(["run.stopped", "run.cleanup.leftovers"]);
+    const left = runView(run({ state: "succeeded", cleanup: "ended_leftovers" }), "Codex");
+    expect(ids(left)).toEqual(["run.done", "run.cleanup.leftovers"]);
+    const stopped = runView(run({ state: "cancelled", cleanup: "confirmed" }), "Codex");
+    expect(ids(stopped)).toEqual(["run.stopped", "run.cleanup.confirmed"]);
     const early = runView(run({ state: "cancelled", started_at: null }), "Codex");
     expect(ids(early)).toEqual(["run.stoppedBeforeStart"]);
   });

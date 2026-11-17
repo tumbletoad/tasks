@@ -2325,6 +2325,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.run-feed",
+      "title": "A run's change in the feed names its task and carries the task's row, which shows the newest run working or needing the person, in batches and in the snapshot",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "M6.page.run-view",
       "title": "The page's view of a run: no words when the person gave none, why a queued run waits, its answer or question and how it ended; Run checks the task, the request ID, the instance and the words' size before anything is queued",
       "owner": "M6",
@@ -2341,6 +2348,41 @@
     {
       "id": "M6.page.run-follow",
       "title": "The page shows a run as the service has it: a read keeps a newer state the page shows (its own Stop) and a run queued after the read began; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.run",
+      "title": "In the browser: Run without words works on the task, Ctrl+Shift+Enter runs with the words, which clear once queued; the answer is the agent's text rendered as the thread renders text, a long one folded",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.stop",
+      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.needs",
+      "title": "In the browser: a run that needs the person shows its question and is findable from the row and Agents; a signed-out agent's failure is said in its own words",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.refused",
+      "title": "In the browser: a run whose folder is gone or whose marker is missing starts nothing, says why, and keeps the words",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.e2e.screens",
+      "title": "In the browser: a run's states (working, queued, done, needs you, failed) at 1,440 and 390 px in Sumi and Washi, axe clean, no horizontal scroll",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

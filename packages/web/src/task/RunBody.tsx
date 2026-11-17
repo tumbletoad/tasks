@@ -12,7 +12,16 @@ import css from "./Expanded.module.css";
 import { Markdown } from "./markdown.tsx";
 import { runView } from "./runs.ts";
 
-const styles = classes(css, ["asked", "runState", "stop", "said", "question", "more", "error"]);
+const styles = classes(css, [
+  "asked",
+  "runState",
+  "stop",
+  "said",
+  "question",
+  "more",
+  "error",
+  "text",
+]);
 
 export interface RunBodyProps {
   readonly run: Run;
@@ -35,7 +44,7 @@ function Folded({ text, className }: { readonly text: string; readonly className
   return (
     <div className={className}>
       <div ref={box} data-clamped={!open} data-part="run-said">
-        <Markdown text={text} />
+        <Markdown text={text} className={styles.text} />
       </div>
       {long || open ? (
         <button

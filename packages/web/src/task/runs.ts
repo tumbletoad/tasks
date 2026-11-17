@@ -55,10 +55,13 @@ const NOT_STARTED: ReadonlySet<string> = new Set([
 
 /** A run as its thread entry shows it. */
 export function runView(run: Run, label: string): RunView {
-  const cleanup =
+  // How its processes ended is said after a stop or a time limit, where the person asked for an
+  // end; after an end of its own only when something it left had to be ended.
+  const ended =
     run.cleanup === undefined || CLEANUP[run.cleanup] === undefined
       ? []
       : [msg(CLEANUP[run.cleanup] ?? "run.cleanup.confirmed")];
+  const cleanup = run.cleanup === "ended_leftovers" ? ended : [];
   const text = run.answer ?? "";
   const said = (kind: "answer" | "question" | "last") =>
     text.trim() === "" ? {} : { said: { kind, text, cut: run.answer_cut } };
@@ -87,17 +90,14 @@ export function runView(run: Run, label: string): RunView {
     case "cancelled":
       return {
         tone: "stopped",
-        status: [
-          msg(run.started_at === null ? "run.stoppedBeforeStart" : "run.stopped"),
-          ...cleanup,
-        ],
+        status: [msg(run.started_at === null ? "run.stoppedBeforeStart" : "run.stopped"), ...ended],
         ...said("last"),
         stoppable: false,
       };
     case "timed_out":
       return {
         tone: "failed",
-        status: [msg("run.timedOut", { limit: run.reason ?? "wall" }), ...cleanup],
+        status: [msg("run.timedOut", { limit: run.reason ?? "wall" }), ...ended],
         ...said("last"),
         ...error,
         stoppable: false,
