@@ -1,18 +1,29 @@
 // `/`, what a new tab opens (A2 3.1, A5 3.3): the machine's default space, at its landing view, or
 // at the task `tasks open <task>` named. A machine without a default opens its one space; when it
-// has several, or its default is not open, the person chooses, and nothing is chosen for them.
-import { Link, Navigate } from "@tanstack/react-router";
+// has several, or its default is not open, the person chooses, and nothing is chosen for them. A
+// machine with no space open asks for a name and makes one, then shows the agent apps it found,
+// which can be skipped: a space is all a person needs to start.
+import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { SignedOut } from "../api.ts";
+import { SignedOut, type MadeSpace } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import css from "./Landing.module.css";
 import { useAuth, useMachineApi } from "./session.tsx";
+import { AgentApps } from "./AgentApps.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
-import { isServed, landingSpace, listSpaces, notOpen, type SpaceList } from "./spaces.ts";
+import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
+import {
+  isServed,
+  landingSpace,
+  listSpaces,
+  notOpen,
+  type NotOpen,
+  type SpaceList,
+} from "./spaces.ts";
 import { LANDING } from "./views.ts";
 import { classes } from "./css.ts";
 
-const styles = classes(css, ["line", "page", "space", "spaces"]);
+const styles = classes(css, ["line", "page", "space", "spaces", "start"]);
 
 export function Landing({ task }: { readonly task?: string }) {
   const t = useT();
@@ -52,15 +63,7 @@ export function Landing({ task }: { readonly task?: string }) {
   }
   const served = list.spaces.filter(isServed);
   const closed = notOpen(list);
-  if (served.length === 0) {
-    return closed.length === 0 ? (
-      <p className={styles.line}>{t("app.noSpaces")}</p>
-    ) : (
-      <main className={styles.page}>
-        <NotOpenNotes spaces={closed} className={styles.line} />
-      </main>
-    );
-  }
+  if (served.length === 0) return <FirstStart closed={closed} />;
   return (
     <main className={styles.page}>
       <p className={styles.line}>{t("app.pickSpace")}</p>
@@ -89,6 +92,50 @@ export function Landing({ task }: { readonly task?: string }) {
         ))}
       </ul>
       <NotOpenNotes spaces={closed} className={styles.line} />
+    </main>
+  );
+}
+
+/** No space open yet: a name makes one, then the agent apps, then the space itself. */
+function FirstStart({ closed }: { readonly closed: readonly NotOpen[] }) {
+  const navigate = useNavigate();
+  const [step, setStep] = useState<{ readonly mode: SpaceFormMode } | { readonly made: MadeSpace }>(
+    { mode: "new" },
+  );
+  return (
+    <main className={styles.start}>
+      <NotOpenNotes spaces={closed} className={styles.line} />
+      {"mode" in step ? (
+        <SpaceForm
+          mode={step.mode}
+          onMode={(mode) => {
+            setStep({ mode });
+          }}
+          onMade={(made) => {
+            setStep({ made });
+          }}
+        />
+      ) : (
+        <>
+          {step.made.notRemembered === undefined ? null : (
+            <p className={styles.line} role="alert">
+              {step.made.notRemembered}
+            </p>
+          )}
+          <AgentApps
+            space={step.made.id}
+            firstStart
+            headingLevel={1}
+            onDone={() => {
+              void navigate({
+                to: "/s/$space/$view",
+                params: { space: step.made.id, view: LANDING },
+                replace: true,
+              });
+            }}
+          />
+        </>
+      )}
     </main>
   );
 }

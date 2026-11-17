@@ -102,6 +102,26 @@ export interface AppOptions {
   readonly defaults?: UiDefaultSpace;
   /** This computer's settings (hub/machine-settings.ts). None: Settings changes nothing here. */
   readonly machine?: UiMachine;
+  /** New space and Open folder (hub/page-spaces.ts). None: the page makes no space. */
+  readonly spaces?: UiSpaces;
+  /** This computer's agent apps (hub/agent-apps.ts). None: the page shows none. */
+  readonly apps?: UiApps;
+}
+
+/** A page's call into one of the hub's verbs: the UI's sign-in is the person. */
+type UiVerb = (input: Record<string, unknown>) => Promise<unknown>;
+
+/** New space and Open folder: a name's proposal, a new space, a space folder served. */
+export interface UiSpaces {
+  readonly propose: UiVerb;
+  readonly create: UiVerb;
+  readonly open: UiVerb;
+}
+
+/** This computer's agent apps: what was found and each switch, and the switches turned over. */
+export interface UiApps {
+  readonly view: UiVerb;
+  readonly apply: UiVerb;
 }
 
 /**
@@ -795,6 +815,20 @@ export class HttpApp {
         });
         return;
       }
+      if (action === "propose" || action === "create" || action === "open") {
+        const verbs = this.options.spaces;
+        if (verbs === undefined) {
+          throw new AppError({
+            code: "service_unavailable",
+            message: "This service cannot make or open a space from the page.",
+            data: { reason: "ui_unavailable", retryable: false },
+          });
+        }
+        const result = await verbs[action](input);
+        if (action !== "propose") this.feed.poke();
+        this.#json(res, port, 200, { result });
+        return;
+      }
       if (defaults === undefined) {
         throw new AppError({
           code: "service_unavailable",
@@ -824,6 +858,19 @@ export class HttpApp {
     input: Record<string, unknown>,
   ): Promise<void> {
     try {
+      if (action === "apps" || action === "apps_apply") {
+        const apps = this.options.apps;
+        if (apps === undefined) {
+          throw new AppError({
+            code: "service_unavailable",
+            message: "This service cannot set up agent apps from the page.",
+            data: { reason: "ui_unavailable", retryable: false },
+          });
+        }
+        const result = action === "apps" ? await apps.view(input) : await apps.apply(input);
+        this.#json(res, port, 200, { result });
+        return;
+      }
       const machine = this.options.machine;
       if (machine === undefined) {
         throw new AppError({

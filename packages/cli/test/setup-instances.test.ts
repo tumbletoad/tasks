@@ -14,7 +14,7 @@ import { configOf, stateOf } from "@tasks/service/test/harness";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "@tasks/service/test/http-world";
 import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
 import type { AgentsSetupOptions } from "../src/setup-agents.ts";
-import { distinctLabels, type Offer } from "../src/setup-instances.ts";
+import { distinctLabels, type Offer } from "@tasks/service/setup";
 import { runMain } from "./cli-harness.ts";
 
 const SLOW = 300_000;
