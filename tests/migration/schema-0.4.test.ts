@@ -25,7 +25,6 @@ import {
 } from "../../packages/storage/src/search/documents.ts";
 import { openSpace } from "../../packages/storage/src/space.ts";
 import { CheckedDriver } from "../../packages/storage/src/startup-check.ts";
-import { StorageWorker } from "../../packages/storage/src/worker/client.ts";
 import type { MachineInfo } from "../../packages/storage/src/write/writer.ts";
 import {
   createSpaceAt,
@@ -206,7 +205,8 @@ describe("[A1.5.migration.from-0.3] the 0.3 fixture migrates to 0.4 behind its v
   test("every 0.3 row stays, the search index holds every document and finds a task by a word of its title, the schema is a new 0.4 space's, and the backup restores the fixture", async () => {
     const before = fixture.facts;
     const folder = copyOf();
-    const worker = await StorageWorker.start({ driver: "node:sqlite" });
+    // The 0.4 builds' chain: this test is the 0.4 step's (schema-0.5.test.ts migrates to 0.5).
+    const worker = await workerWithSteps("0.4");
     try {
       const writer = await worker.openSpaceWriter(folder, { machine: fixture.machine });
       expect(writer.revision).toEqual({ major: 0, minor: 4 });
@@ -228,7 +228,8 @@ describe("[A1.5.migration.from-0.3] the 0.3 fixture migrates to 0.4 behind its v
     }
 
     const checked = await checkedDriver();
-    const opened = openSpace(checked, folder, { role: "reader" });
+    // Read as a 0.4 build reads it: this build would read a 0.4 space as older than its own.
+    const opened = openSpaceAt(checked, folder, { role: "reader" }, STEPS_0_4);
     let migratedSchema: unknown[];
     try {
       const { conn } = opened;

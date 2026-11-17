@@ -371,6 +371,9 @@ function checkChildHistory(conn: Connection): void {
     { table: "log_entries", ...id, fields: CHILD_FIELDS.log_entries },
     { table: "sources", ...id, fields: CHILD_FIELDS.sources },
     { table: "preferences", key: "key", fields: CHILD_FIELDS.preferences },
+    { table: "areas", ...id, fields: CHILD_FIELDS.areas },
+    { table: "projects", ...id, fields: CHILD_FIELDS.projects },
+    { table: "folders", ...id, fields: CHILD_FIELDS.folders },
   ] as const;
   for (const { table, key, fields } of kinds) {
     if (!exists(table)) continue;
@@ -382,6 +385,38 @@ function checkChildHistory(conn: Connection): void {
         .prepare("SELECT * FROM changes WHERE entity = $table AND entity_id = $id ORDER BY seq, n")
         .all<ChangeRow>({ table, id: row.entity_id });
       const create = history[0];
+      // The fixture's areas and project went in beside the writer at seq 0, with no create row:
+      // each field starts at the before-value of its first change, else at what the row holds.
+      if (row["created_seq"] === 0 && create?.action !== "create") {
+        const start: Record<string, unknown> = { ...row };
+        for (const [field, columns] of Object.entries(fields) as [string, readonly string[]][]) {
+          const first = history.find((c) => c.field === field);
+          if (first === undefined || first.before === null) continue;
+          const before = JSON.parse(first.before) as unknown;
+          if (columns.length === 1) start[columns[0] ?? ""] = before;
+          else Object.assign(start, before);
+        }
+        const maps = {
+          fv: JSON.parse(row.fv) as Record<string, number>,
+          fp: JSON.parse(row.fp) as Record<string, number>,
+        };
+        let version = 0;
+        for (const [field, columns] of Object.entries(fields) as [string, readonly string[]][]) {
+          const at = checkChain(
+            `${table} ${row.entity_id}`,
+            history,
+            { seq: 0, row: start },
+            row,
+            columns,
+            maps,
+            field,
+            commits,
+          );
+          version = Math.max(version, at);
+        }
+        expect(row["version"], `${table} ${row.entity_id} version`).toBe(version);
+        continue;
+      }
       expect(create?.action, `${table} ${row.entity_id} starts with its create`).toBe("create");
       if (create === undefined) continue;
       const created = { seq: create.seq, row: JSON.parse(create.after) as Record<string, unknown> };

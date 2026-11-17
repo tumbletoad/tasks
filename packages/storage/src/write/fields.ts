@@ -55,8 +55,9 @@ export type PatchableField = (typeof PATCHABLE_FIELDS)[number];
  * `run.transition` writes as a unit with its reason, evidence, times and result (A4 3.11.2), a
  * learning's tombstone, which a wrap-up sets when it removes the learning (A1 3.11.2), the
  * tombstone `deleted` of notes, log entries and sources, which undo writes when it inverts their
- * create (A1 3.10), and a preference's `value` (A1 3.16, `pref.set`). Later steps add the fields
- * their operations change (`note.patch`, `source.patch`, the deletes).
+ * create (A1 3.10), a preference's `value` (A1 3.16, `pref.set`), the fields of areas and
+ * projects, and a folder's path and tombstone. Later steps add the fields their operations change
+ * (`note.patch`, `source.patch`, the deletes).
  */
 export const CHILD_FIELDS = {
   task_sources: { removed: ["removed_at"] },
@@ -69,10 +70,26 @@ export const CHILD_FIELDS = {
   sources: { deleted: ["deleted_at"] },
   // A preference's value with the version of its shape, which `pref.set` writes as a unit.
   preferences: { value: ["value", "schema_ver"] },
-  // An area's and a project's tombstone, which undo writes when it inverts an import's upsert
-  // (A1 3.10, A7 3.15.5). The `area.*` and `project.*` operations add the rest (A1 3.6).
-  areas: { deleted: ["deleted_at"] },
-  projects: { deleted: ["deleted_at"] },
+  // An area's and a project's fields as the `area.*` and `project.*` operations change them. A
+  // project's grouping is its area and its place among that area's projects, which move together.
+  // The slug never changes: it is the group's stable name in references.
+  areas: {
+    title: ["title"],
+    brief: ["brief"],
+    color: ["color"],
+    lifecycle: ["lifecycle"],
+    deleted: ["deleted_at"],
+  },
+  projects: {
+    title: ["title"],
+    brief: ["brief"],
+    color: ["color"],
+    grouping: ["area_id", "position"],
+    lifecycle: ["lifecycle"],
+    deleted: ["deleted_at"],
+  },
+  // A folder's path on its machine, and its tombstone. Its owner and machine never change.
+  folders: { path: ["path"], deleted: ["deleted_at"] },
   // An alias's target, which `alias.add` moves from a task whose import was undone (A7 3.15.6). An
   // alias row has no versions: its last change row is its version and its provenance.
   aliases: { entity: ["entity_kind", "entity_id"] },

@@ -509,7 +509,7 @@ describe("[A1.5.writer.named-space] a writer named for one space never opens ano
     const b = await createFixtureSpace(parent, "b");
     const beforeB = snapshot(b.folder);
     // A build one revision further: a writer that opened b would migrate it first.
-    const worker = await workerWithSteps("0.5");
+    const worker = await workerWithSteps("0.6");
     workers.push(worker);
     const call = worker.call.bind(worker);
     worker.call = (kind, args) => {
@@ -534,7 +534,7 @@ describe("[A1.5.writer.named-space] a writer named for one space never opens ano
       machine: MACHINE,
       spaceId: b.space.spaceId,
     });
-    expect(writer.revision).toEqual({ major: 0, minor: 4 });
+    expect(writer.revision).toEqual({ major: 0, minor: 5 });
     await writer.close();
   });
 });

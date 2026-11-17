@@ -36,6 +36,7 @@ export const ID_PREFIXES = {
   attachment: "at",
   label: "lb",
   place: "pl",
+  folder: "fo",
   device: "dv",
   remoteCommand: "rc",
   incarnation: "ai",

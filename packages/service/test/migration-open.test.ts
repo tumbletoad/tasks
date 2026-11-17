@@ -17,7 +17,7 @@ import {
 import { join } from "node:path";
 import type { RpcSession } from "@tasks/bridge/protocol";
 import { backupsFolder, listBackups, StorageWorker, type Id } from "@tasks/storage";
-import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_0_4 } from "@tasks/storage/revisions";
+import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@tasks/storage/revisions";
 import { checkedDriver, digestSpace } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeCommits } from "../../storage/test/backup-helpers.ts";
@@ -555,7 +555,7 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       // What the space list and doctor tell the person: the revisions, and the backup from before.
       expect(readSpaceSettings(stateOf(home), id).lastMigration).toMatchObject({
         from: "0.1",
-        to: "0.4",
+        to: "0.5",
         backup,
       });
       const user = await session(home, service, "cli-interactive");
@@ -566,23 +566,23 @@ describe("[A2.3.1.hub.migration-timeout] a migration that runs past the open's b
       });
       expect(added).toHaveProperty("tasks");
       const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.4", backup });
+      expect(listed[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5", backup });
       // Past the time retention keeps a barrier backup, the list no longer names it.
       recordMigration(
         stateOf(home),
         id,
-        { from: 1, to: 4, ...(backup === undefined ? {} : { backup }) },
+        { from: 1, to: 5, ...(backup === undefined ? {} : { backup }) },
         new Date(Date.now() - 31 * 86_400_000),
       );
       const later = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
-      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.4" });
+      expect(later[0]?.["migrated"]).toMatchObject({ from: "0.1", to: "0.5" });
       expect(later[0]?.["migrated"]).not.toHaveProperty("backup");
       await stop(service);
       const after = await dbState(space.folder);
-      expect(after.revision).toEqual({ major: 0, minor: 4 });
-      // The fixture's commits, then the migration's three, this machine's registration and the
+      expect(after.revision).toEqual({ major: 0, minor: 5 });
+      // The fixture's commits, then the migration's four, this machine's registration and the
       // task's.
-      expect(after.lastSeq).toBe(before.lastSeq + 5);
+      expect(after.lastSeq).toBe(before.lastSeq + 6);
     },
     LONG,
   );
@@ -649,7 +649,7 @@ describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a
       const id = space.space.spaceId;
       const service = await start(home, space.folder);
       expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
-      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 4 } });
+      expect(await dbState(space.folder)).toMatchObject({ revision: { major: 0, minor: 5 } });
       const user = await session(home, service, "cli-interactive");
 
       // What the space held before its migration is found by its words.
@@ -699,7 +699,7 @@ describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a
         await checkedDriver(),
         join(spaces, "work"),
         { name: "Work", ownerLabel: "Mira Okafor", machineId: MACHINE },
-        STEPS_0_4,
+        STEPS_LATEST,
       );
       const id = created.space.spaceId;
       const service = await start(home, created.folder);

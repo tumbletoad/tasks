@@ -378,6 +378,33 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
         "",
       ].join("\n"),
     );
+    // A write says what it did first.
+    const created = render(
+      "group.manage",
+      {
+        action: "create",
+        as_of: "1.1047.5n0w8k3q",
+        areas: [{ name: "Client work", active: 0, projects: [{ name: "Northwind", active: 0 }] }],
+        projects: [],
+        result: "created",
+        group: { kind: "project", id: "p_9m3q7w1y5c9g3k7p1t5x9b3f7k", name: "Northwind" },
+      },
+      "Mira",
+    );
+    expect(created.split("\n")[0]).toBe("Created project Northwind");
+    const same = render(
+      "group.manage",
+      {
+        action: "create",
+        as_of: "1.1047.5n0w8k3q",
+        areas: [],
+        projects: [],
+        result: "no_change",
+        group: { kind: "area", id: "a_8n2r6v0z4c8f2j6n0r4v8z2c6f", name: "Home" },
+      },
+      "Mira",
+    );
+    expect(same).toBe("No change to area Home\n");
     const got = render(
       "prefs.manage",
       {

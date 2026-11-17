@@ -46,6 +46,7 @@ const CONFLICT_ENTITIES: ReadonlySet<string> = new Set<ConflictEntity>([
   "runs",
   "areas",
   "projects",
+  "folders",
 ]);
 
 const IN = (param: string): string => `IN (SELECT value FROM json_each(${param}))`;
