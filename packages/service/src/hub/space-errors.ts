@@ -1,6 +1,6 @@
 // A storage code from a space verb as A3's error body (A3 3.5's table). The worker threads
 // hand over only the code, so the sentence is a fixed one per kind of failure.
-import { PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { a1ErrorBody, type ErrorBody } from "@tasks/contracts";
 
 const MESSAGES: Readonly<Record<string, string>> = {
@@ -16,7 +16,8 @@ const MESSAGES: Readonly<Record<string, string>> = {
   BUNDLE_INVALID: "The bundle is not a valid export of a space, or does not verify.",
   EXPORT_SECRET_FOUND: `A file of the space lies in ${PRODUCT_NAME}'s secrets folder. Nothing was exported.`,
   SPACE_SCHEMA_FOREIGN: `The space's database holds tables, indexes or views that ${PRODUCT_NAME} does not make, so a restore would refuse its bundle. Nothing was exported.`,
-  SPACE_WRITER_TAKEN: "Another writer still holds the space.",
+  // Mostly the space's last open or close, still running past its bound in this service.
+  SPACE_WRITER_TAKEN: `The space's last open has not ended yet. Try again in a moment. If it does not end, ${CLI_NAME} service restart ends it.`,
   SPACE_LOCKED_ELSEWHERE: "Another process holds the space.",
   SPACE_CHANGED: "The space changed meanwhile. Nothing was replaced.",
   STORAGE_MISUSE: "The space is not in a state for this.",
