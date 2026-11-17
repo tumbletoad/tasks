@@ -129,12 +129,12 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
         .click();
       const said = page.getByRole("status").filter({
-        hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
+        hasText: `The folder ${set.folder} was not found on this computer. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       // The expanded task's folder line says the same at once, not "here" until a reload.
       await expect(line).toHaveAttribute("data-state", "missing");
-      await expect(line).toContainText(`${set.folder} Not found on this computer`);
+      await expect(line).toContainText(`${set.folder} · not found on this computer`);
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);
@@ -191,7 +191,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
       await open.click();
       const said = page.getByRole("status").filter({
-        hasText: `This may not be the folder set for this task: its Tasks marker is missing. ${set.folder}. Nothing was started.`,
+        hasText: `The folder ${set.folder} has no Tasks marker, so it may not be the folder set for this task. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);

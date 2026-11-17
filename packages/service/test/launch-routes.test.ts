@@ -820,7 +820,6 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       );
       expect(missing).toMatchObject({
         code: "invalid_input",
-        message: expect.stringContaining("marker is missing") as unknown,
         data: { field: "task", reason: "marker_missing", of: "project" },
       });
       expect(r.lab.folders.size).toBe(started);

@@ -3461,13 +3461,13 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   }
   const why =
     error.reason === "marker_missing"
-      ? `its ${APP_NAME} marker is missing`
+      ? `The folder has no ${APP_NAME} marker`
       : names.length === 0
-        ? `its ${APP_NAME} marker cannot be read`
-        : `its ${APP_NAME} marker names ${[...new Set(names)].join(", ")}`;
+        ? `The folder's ${APP_NAME} marker cannot be read`
+        : `The folder's ${APP_NAME} marker names ${[...new Set(names)].join(", ")}`;
   return new AppError({
     code: "invalid_input",
-    message: `This may not be the folder that was set for ${whose}: ${why}. Nothing was started.`,
+    message: `${why}, so it may not be the folder set for ${whose}. Nothing was started.`,
     hint: `To use this folder and mark it, open it again with --mark-folder. Or give ${whose} another folder.`,
     data: {
       field: "task",
