@@ -239,6 +239,7 @@ test.describe("[A7.3.12.request.e2e.unread] An agent that never reads the reques
     );
     await expect(composer).toHaveValue(words);
     expect(Object.values(await kept(page))).toContain(words);
+    await page.screenshot({ path: test.info().outputPath("request-unread.png") });
   });
 });
 
