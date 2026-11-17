@@ -1586,20 +1586,11 @@ export class SpaceWriter {
           const keys = op.id === undefined ? [] : dedupe.keysOf(op.id);
           const mode = op.dedupe ?? "source_key";
           let held: ReadonlyMap<string, Id<"t">> = new Map();
-          if (mode !== "none" && keys.length > 0) {
-            const found =
-              mode === "source_key"
-                ? dedupe.decide(keys, op.link_sources === true)
-                : { ...dedupe.match(keys, op.link_sources === true), held };
-            if (mode === "new" && found.active.length > 0) {
-              problem(
-                "VALIDATION_FAILED",
-                "An open task holds a source key of this draft: leave out create_new to get that task, or send that source without its key",
-                i,
-                "dedupe",
-              );
-            }
-            const hit = mode === "source_key" ? found.match : undefined;
+          if (mode === "new" && keys.length > 0) {
+            held = dedupe.held(keys);
+          } else if (mode === "source_key" && keys.length > 0) {
+            const found = dedupe.decide(keys, op.link_sources === true);
+            const hit = found.match;
             if (hit !== undefined) {
               matched.set(id, hit);
               // The draft's sources will link to the match: later drafts find it by them too.

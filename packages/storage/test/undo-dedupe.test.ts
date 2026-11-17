@@ -651,7 +651,8 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
     applied(undo());
     const fresh = probe(["jira:FIX-1"], { dedupe: "new" });
     expect(fresh.results[0]).toMatchObject({ status: "created" });
-    // A task a redo restored holds its key again: a draft finds it, dedupe new is refused.
+    // A task a redo restored holds its key again: a draft finds it, and one with dedupe new is
+    // created beside it with the key's source linked without the key.
     const c = draft(["jira:FIX-2"]);
     applied(send("human", c.ops));
     applied(undo());
@@ -661,10 +662,13 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
       id: c.id,
       lifecycle: "active",
     });
-    expect(probe(["jira:FIX-2"], { dedupe: "new" }).error).toMatchObject({
-      code: "VALIDATION_FAILED",
-      field: "dedupe",
-    });
+    const beside = probe(["jira:FIX-2"], { dedupe: "new" });
+    const still = probe(["jira:FIX-2"]).results[0];
+    expect(still).toMatchObject({ status: "existing", id: c.id });
+    expect(beside.results.map((r) => [r.status, r.held_by])).toEqual([
+      ["created", undefined],
+      ["created", still?.ref],
+    ]);
   });
 
   test("a check-off undone is no finish, and a finish an undo or redo sets back keeps its own instant", async () => {
@@ -1501,6 +1505,12 @@ const property = (seen: Record<string, number>) =>
               : first.spec.mode === "return"
                 ? expectedReturn(conn, first.keys, now + 1000)
                 : expectedMatch(conn, first.keys, now + 1000);
+          const heldBefore = new Map(
+            (first?.keys ?? []).map((key) => [
+              key,
+              expectedMatch(conn, [key], now + 1000).active[0],
+            ]),
+          );
           result = submit(
             space.request(
               as(s.actor),
@@ -1509,28 +1519,26 @@ const property = (seen: Record<string, number>) =>
             ),
           );
           if (result.status === "rejected") {
-            // A dedupe new against an active task, or a link an undo removed that only its
-            // link version revives (A1 3.5).
-            expect(["VALIDATION_FAILED dedupe", "BASE_REQUIRED link_version"]).toContain(
-              `${String(result.error?.code)} ${String(result.error?.field)}`,
+            // A link an undo removed, which only its link version revives (A1 3.5).
+            expect(`${String(result.error?.code)} ${String(result.error?.field)}`).toBe(
+              "BASE_REQUIRED link_version",
             );
-            if (result.error?.field === "dedupe" && result.error.op === 0) {
-              expect(first?.spec.mode).toBe("new");
-              expect(oracle?.active.length).toBeGreaterThan(0);
-            }
-            count(
-              result.error?.code === "BASE_REQUIRED"
-                ? "revival needs its link version"
-                : "refused new",
-            );
+            count("revival needs its link version");
           } else {
             expect(["applied", "unchanged"]).toContain(result.status);
             if (result.results.some((r) => r.matched_by !== undefined)) count("matched");
             const r0 = result.results[0];
             if (first !== undefined && oracle !== undefined) {
               if (first.spec.mode === "new") {
-                expect(oracle.active).toEqual([]);
+                // A new task whatever its keys match: a key an active task holds stays that
+                // task's, and the new one has its source without the key.
                 expect(r0?.status).toBe("created");
+                first.keys.forEach((key, k) => {
+                  const holder = heldBefore.get(key);
+                  const added = result?.results[1 + (first.spec.log ? 1 : 0) + k];
+                  expect([key, added?.held_by !== undefined]).toEqual([key, holder !== undefined]);
+                });
+                if (oracle.active.length > 0) count("new beside an active holder");
               } else if (oracle.match === undefined) {
                 expect(r0?.status, JSON.stringify(r0)).toBe("created");
               } else {
@@ -1588,17 +1596,10 @@ const property = (seen: Record<string, number>) =>
               { base: space.base(), ...undoable(s.actor) },
             ),
           );
-          if (result.status === "rejected") {
-            // An active task holds the key: the first draft's dedupe new refuses it.
-            expect(`${String(result.error?.code)} ${String(result.error?.field)}`).toBe(
-              "VALIDATION_FAILED dedupe",
-            );
-            count("refused new");
-          } else {
-            expectStatus(result, "applied");
-            count("several tasks with one key");
-            if (s.save !== undefined) slots.set(s.save, finished.id);
-          }
+          expectStatus(result, "applied");
+          if (s.save !== undefined) slots.set(s.save, finished.id);
+          // Where an active task holds the key, the second draft finds it instead.
+          if (result.results.at(-2)?.status === "created") count("several tasks with one key");
         } else if (s.kind === "delete" || s.kind === "restore") {
           const deleted = conn
             .prepare("SELECT id FROM tasks WHERE deleted_at IS NOT NULL ORDER BY ref")
@@ -1854,7 +1855,7 @@ describe("[A1.5.history.property] undo and redo with dedupe by source key", () =
       "undo of a delete held off by an active holder",
       "archive undo kept from an active wrap-up",
       "archived finish set back",
-      "refused new",
+      "new beside an active holder",
       "replayed",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(2);

@@ -521,20 +521,16 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
     expect(read.task.log).toHaveLength(1);
     expect(read.task.title).toBe("Fixture upsert task");
 
-    // create_new against an active match: invalid_input, so a refresh never makes two.
-    const refused = await call(
-      s,
-      "task.add",
-      {
-        tasks: [{ title: "Fixture duplicate", sources: [ticket(1)], on_existing: "create_new" }],
-        request_id: rid(),
-      },
-      mira,
-    ).catch((e: unknown) => e);
-    expect(errorOf(refused)).toMatchObject({
-      code: "invalid_input",
-      data: { cause: "VALIDATION_FAILED", op: 0, field: "dedupe" },
-    });
+    // create_new against an active match: a new task, and the key stays with the task that held
+    // it, so a refresh without create_new still finds that one.
+    const split = await add([
+      { title: "Fixture split off", sources: [ticket(1)], on_existing: "create_new" },
+    ]);
+    expect(split.tasks[0]).toMatchObject({ result: "created", lifecycle: "active" });
+    expect(split.tasks[0]?.ref).not.toBe(ref);
+    expect((await add([{ title: "Fixture upsert", sources: [ticket(1)] }])).tasks[0]).toMatchObject(
+      { result: "exists", ref },
+    );
 
     // add_sources links the draft's other source, which then finds the task too.
     const linked = await add([

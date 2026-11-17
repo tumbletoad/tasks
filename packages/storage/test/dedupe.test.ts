@@ -476,14 +476,31 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(submit(draft(["jira:FIX-1"]).ops).results[0]?.status).toBe("created");
   });
 
-  test("dedupe new creates beside finished tasks and is refused against an active one; none never matches", () => {
+  test("dedupe new always creates: beside an active holder its key stays that task's, beside finished ones the new task holds it; none never matches", () => {
     const first = draft(["jira:FIX-1"]);
     submit(first.ops);
-    // Refused while an active task holds the key, decided and stored (A3 3.4.5: invalid_input).
-    const refused = submit(draft(["jira:FIX-1"], { dedupe: "new" }).ops);
-    expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", op: 0, field: "dedupe" });
-    expect(one("SELECT count(*) FROM receipts WHERE status = 'rejected'")).toBe(1);
+    // Beside an active holder: a new task with the ticket linked without its key, and with its
+    // other keys, so the key keeps its one active holder and later drafts still find that task.
+    const beside = draft(["jira:FIX-1", "jira:FIX-5"], { dedupe: "new", log: "Split off." });
+    const created = submit(beside.ops);
+    expectStatus(created, "applied");
+    expect(created.results.map((r) => [r.status, r.task ?? r.id, r.held_by])).toEqual([
+      ["created", beside.id, undefined],
+      ["created", beside.id, undefined],
+      ["created", beside.id, "M-1"],
+      ["created", beside.id, undefined],
+    ]);
+    expect(holders(fx.reader, "jira:FIX-1")).toEqual([first.id]);
+    expect(holders(fx.reader, "jira:FIX-5")).toEqual([beside.id]);
+    expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      id: first.id,
+    });
+    // It finds its own task again by the keys it carries all of.
+    expect(submit(draft(["jira:FIX-1", "jira:FIX-5"]).ops).results[0]).toMatchObject({
+      status: "existing",
+      id: beside.id,
+    });
     // Beside a finished one: a new active task, which later drafts find first.
     complete(first.id);
     const anew = draft(["jira:FIX-1"], { dedupe: "new" });
@@ -498,7 +515,7 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     const legacy = draft(["jira:FIX-1"], { dedupe: "none" });
     expect(submit(legacy.ops).results[0]).toMatchObject({ status: "created", id: legacy.id });
     expect(holders(fx.reader, "jira:FIX-1")).toEqual([first.id, anew.id, legacy.id].sort());
-    expect(one("SELECT count(*) FROM sources")).toBe(1);
+    expect(one("SELECT count(*) FROM sources WHERE source_key = 'jira:FIX-1'")).toBe(1);
   });
 
   test("a removed link and a deleted task never match", async () => {
@@ -780,28 +797,25 @@ interface ModelTask {
   logs: number;
 }
 
-/**
- * What a request returns: its status and, when accepted, each operation's `<status> <task>` in
- * order; when refused, the operation of the `new` draft an active task refused.
- */
-type Predicted =
-  | {
-      status: "applied" | "unchanged";
-      results: string[];
-      /**
-       * Sources add_sources linked to a match, `new` drafts created beside finished tasks, and
-       * other drafts created because every task with their keys finished before the window.
-       */
-      linked: number;
-      beside: number;
-      past: number;
-      /** Drafts created with a key another task holds linked without it, and drafts matched by their own keys. */
-      linkedWithout: number;
-      own: number;
-      /** Matched drafts whose log entry the task had already. */
-      again: number;
-    }
-  | { status: "rejected"; op: number };
+/** What a request returns: its status and each operation's `<status> <task>` in order. */
+interface Predicted {
+  status: "applied" | "unchanged";
+  results: string[];
+  /**
+   * Sources add_sources linked to a match, `new` drafts created beside finished tasks, and
+   * other drafts created because every task with their keys finished before the window.
+   */
+  linked: number;
+  beside: number;
+  past: number;
+  /** Drafts created with a key another task holds linked without it, and drafts matched by their own keys. */
+  linkedWithout: number;
+  own: number;
+  /** Matched drafts whose log entry the task had already. */
+  again: number;
+  /** `new` drafts created beside an active task that holds one of their keys. */
+  newBesideActive: number;
+}
 
 interface ModelDraft {
   id: Id<"t">;
@@ -826,7 +840,6 @@ class SessionsModel {
 
   /** Predicts a request of `drafts` and changes the model as the writer would. */
   add(drafts: readonly ModelDraft[]): Predicted {
-    // On copies: a refused request changes nothing.
     const tasks = new Map([...this.tasks].map(([id, t]) => [id, { ...t }]));
     const keys = new Map([...this.keys].map(([k, held]) => [k, new Set(held)]));
     const plain = new Map([...this.plain].map(([k, held]) => [k, new Set(held)]));
@@ -840,13 +853,13 @@ class SessionsModel {
     };
     const results: string[] = [];
     let applied = false;
-    let index = 0;
     let linked = 0;
     let beside = 0;
     let past = 0;
     let linkedWithout = 0;
     let own = 0;
     let again = 0;
+    let newBesideActive = 0;
     const holdersOf = (ks: readonly string[]): Id<"t">[] => [
       ...new Set(ks.flatMap((k) => [...(keys.get(k) ?? [])])),
     ];
@@ -863,13 +876,17 @@ class SessionsModel {
     for (const d of drafts) {
       const holders = holdersOf(d.keys);
       const size = 1 + (d.log ? 1 : 0) + d.keys.length;
-      if (d.mode === "new" && activeOf(d.keys).length > 0) return { status: "rejected", op: index };
       // A draft's own keys: the one matched task that has all of them is the draft's; else one
       // that matches nothing makes it new beside a ticket another task holds.
       let keyed = d.keys;
       let mine: Id<"t"> | undefined;
       const unkeyed = new Set<string>();
       const distinct = [...new Set(d.keys)];
+      // A new task whatever its keys match: each key an active task holds stays that task's.
+      if (d.mode === "new") {
+        for (const k of distinct) if (activeOf([k]).length > 0) unkeyed.add(k);
+        if (unkeyed.size > 0) newBesideActive += 1;
+      }
       if (d.mode === "return" && distinct.length > 1 && matchOf(d.keys) !== undefined) {
         const each = distinct.map((k) => ({ k, match: matchOf([k]) }));
         const unmatched = each.some((e) => e.match === undefined);
@@ -926,7 +943,7 @@ class SessionsModel {
         if (holders.length > 0 && d.mode === "new") beside += 1;
         // Every holder finished before the window: a new task, as if the key were new.
         if (holders.length > 0 && d.mode !== "new" && keyed.length > 0) past += 1;
-        if (unkeyed.size > 0) linkedWithout += 1;
+        if (unkeyed.size > 0 && d.mode !== "new") linkedWithout += 1;
         tasks.set(d.id, {
           ref: tasks.size + 1,
           lifecycle: "active",
@@ -941,7 +958,6 @@ class SessionsModel {
         for (let k = 0; k < size; k += 1) results.push(`created ${d.id}`);
         applied = true;
       }
-      index += size;
     }
     this.tasks = tasks;
     this.keys = keys;
@@ -955,6 +971,7 @@ class SessionsModel {
       linkedWithout,
       own,
       again,
+      newBesideActive,
     };
   }
 
@@ -1089,24 +1106,16 @@ const sessionsProperty = (seen: Record<string, number>) =>
           const result = space.writer.submit(request);
           sent.push({ request, result, window: model.window });
           expect(result.status, JSON.stringify(result.error)).toBe(predicted.status);
-          if (predicted.status === "rejected") {
-            expect(result.error).toMatchObject({
-              code: "VALIDATION_FAILED",
-              op: predicted.op,
-              field: "dedupe",
-            });
-            count("refused new");
-          } else {
-            expect(result.results.map((r) => `${r.status} ${r.task ?? r.id}`)).toEqual(
-              predicted.results,
-            );
-            if (predicted.linked > 0) count("source linked");
-            if (predicted.beside > 0) count("created new");
-            if (predicted.past > 0) count("created past the window");
-            if (predicted.linkedWithout > 0) count("linked without a key");
-            if (predicted.own > 0) count("matched by its own keys");
-            if (predicted.again > 0) count("log there already");
-          }
+          expect(result.results.map((r) => `${r.status} ${r.task ?? r.id}`)).toEqual(
+            predicted.results,
+          );
+          if (predicted.linked > 0) count("source linked");
+          if (predicted.beside > 0) count("created new");
+          if (predicted.newBesideActive > 0) count("created new beside an active task");
+          if (predicted.past > 0) count("created past the window");
+          if (predicted.linkedWithout > 0) count("linked without a key");
+          if (predicted.own > 0) count("matched by its own keys");
+          if (predicted.again > 0) count("log there already");
           for (const r of result.results) {
             if (r.ambiguous !== undefined) count("ambiguous");
             else if (r.lifecycle === "completed") count("existing completed");
@@ -1133,7 +1142,7 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
       "existing active",
       "existing completed",
       "ambiguous",
-      "refused new",
+      "created new beside an active task",
       "created new",
       "source linked",
       "replayed",

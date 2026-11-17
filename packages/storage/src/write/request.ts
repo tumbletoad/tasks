@@ -380,8 +380,8 @@ export interface Placement {
  * `source.add` operations of the request that name the draft's ID.
  * - `source_key` (the default): an active task that holds a key is returned (`existing`), else a
  *   task finished within the window, else the task is created.
- * - `new`: a new task beside finished ones (A3's `create_new`); an active task holding a key
- *   refuses the request.
+ * - `new`: a new task whatever the keys match (A3's `create_new`). A key an active task holds is
+ *   linked to the new task without the key, so it keeps its one active holder.
  * - `none`: no lookup, as the importer creates each legacy task (A7 3.15.3).
  */
 export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
