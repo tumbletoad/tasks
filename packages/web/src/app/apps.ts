@@ -147,8 +147,9 @@ export function initialChoices(view: AppsView, propose: boolean): Map<string, bo
 }
 
 /**
- * A switch turned over by the person. Claude Desktop's tools can be in one of its settings files
- * only: turning them on in one turns them off in the others.
+ * A switch turned over by the person. Claude Desktop's settings files that have no entry yet share
+ * one instance, so only one of them can take the tools in one apply: turning one on turns the
+ * others off. One that has the tools already keeps them until the person turns it off.
  */
 export function choose(
   view: AppsView,
@@ -162,8 +163,7 @@ export function choose(
   for (const other of view.rows) {
     const tools = other.tools;
     if (other.key === row.key || other.app !== "claude-desktop" || tools === undefined) continue;
-    if (tools.on && tools.change !== "remove") continue;
-    choices.set(switchKey(other.key, "tools"), false);
+    if (!tools.on) choices.set(switchKey(other.key, "tools"), false);
   }
   return choices;
 }

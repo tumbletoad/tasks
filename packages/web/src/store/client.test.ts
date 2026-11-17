@@ -235,13 +235,21 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     socket().receive({ type: "hello", build: "b" });
     receive(snapshot(5, [task("a", "One")]));
     const before = live.getState().instances;
+    // A batch that arrived before the refresh, its frame not run yet, still applies.
+    const changed: string[] = [];
+    live.onChanges(({ changes }) => {
+      changed.push(...changes.map((c) => c.id));
+    });
+    socket().receive(batch(5, 6, [taskEvent(task("a", "Two"), 6)]));
     live.refresh();
+    expect(live.getState().tasks.get("a")?.title).toBe("Two");
+    expect(changed).toEqual(["a"]);
     expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
     // A batch from before the new snapshot is not applied over it.
-    receive(batch(5, 6, [taskEvent(task("a", "Old"))]));
-    expect(live.getState().tasks.get("a")?.title).toBe("One");
+    receive(batch(6, 7, [taskEvent(task("a", "Old"), 7)]));
+    expect(live.getState().tasks.get("a")?.title).toBe("Two");
     const instance = { key: "claude", label: "Claude Code", glyph: "C", ring: 0, route: "cli" };
-    receive({ ...snapshot(7, [task("a", "One")]), instances: [instance] });
+    receive({ ...snapshot(8, [task("a", "Two")]), instances: [instance] });
     expect(live.getState().phase).toBe("live");
     expect(live.getState().instances).not.toBe(before);
     expect(live.getState().instances.map((i) => i.key)).toEqual(["claude"]);

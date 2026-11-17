@@ -101,6 +101,8 @@ export class Live {
    */
   refresh(): void {
     if (this.#stopped) return;
+    // What the feed sent before the ask applies first: its changes are still the person's to see.
+    this.store.flush();
     this.store.resnapshot();
     if (!this.#greeting) this.#subscribe(undefined);
   }

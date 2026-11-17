@@ -96,7 +96,7 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
     ]);
   });
 
-  test("several Claude Desktop files: none is proposed, and turning one on turns the others off", () => {
+  test("several Claude Desktop files: none is proposed, and turning one on turns off the others that are off", () => {
     const desktop = (key: string, tools: ReturnType<typeof part> & { why?: string }) => ({
       key,
       app: "claude-desktop",
@@ -109,20 +109,18 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
       space: "sp_one",
       rows: [
         desktop("a", { ...part(false, "add"), why: "several" }),
-        desktop("b", part(true, "remove")),
-        desktop("c", { ...part(true, null), why: "edited" }),
+        desktop("b", { ...part(false, "add"), why: "several" }),
+        desktop("c", part(true, "remove")),
       ],
     });
     expect(pendingOf(view, initialChoices(view, true))).toEqual([]);
-    const row = view.rows[0];
-    if (row === undefined) throw new Error("no row");
-    const chosen = choose(view, initialChoices(view, false), row, "tools", true);
-    expect(pendingOf(view, chosen).map((p) => [p.row.key, p.on])).toEqual([
-      ["a", true],
-      ["b", false],
-    ]);
-    // One Tasks cannot take out stays as it shows.
-    expect(chosen.get(switchKey("c", "tools"))).toBe(true);
+    const [a, b] = view.rows;
+    if (a === undefined || b === undefined) throw new Error("no rows");
+    const one = choose(view, initialChoices(view, false), a, "tools", true);
+    const other = choose(view, one, b, "tools", true);
+    // The last one turned on is the one applied; one that has the tools keeps them.
+    expect(pendingOf(view, other).map((p) => [p.row.key, p.on])).toEqual([["b", true]]);
+    expect(other.get(switchKey("c", "tools"))).toBe(true);
   });
 
   test("an answer of another shape is refused, and an applied one is read with its outcomes", () => {

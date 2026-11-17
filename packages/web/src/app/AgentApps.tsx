@@ -51,7 +51,7 @@ const switches = classes(settingsCss, ["switch", "track", "thumb", "name"]);
 type Said =
   | { readonly kind: "done"; readonly desktop: boolean }
   | { readonly kind: "partly"; readonly labels: readonly string[] }
-  | { readonly kind: "stale" | "failed" | "busy" };
+  | { readonly kind: "stale" | "failed" | "unknown" | "busy" };
 
 export function AgentApps({
   space,
@@ -156,7 +156,8 @@ export function AgentApps({
           setDetails(false);
           const failed = answer.outcomes.filter((o) => o.result === "failed");
           const done = answer.outcomes.filter((o) => o.result === "done");
-          if (done.some((o) => o.part === "open")) onOpenChanged?.();
+          // A failed one may have changed machine.toml too: the tiles follow either way.
+          if (answer.outcomes.some((o) => o.part === "open")) onOpenChanged?.();
           if (failed.length > 0) {
             const labels = failed.flatMap(
               (o) => pending.find((p) => p.row.key === o.key && p.part === o.part)?.row.label ?? [],
@@ -178,15 +179,18 @@ export function AgentApps({
             setSaid({ kind: "busy" });
             return;
           }
-          // Part of it may have been written: the page shows how things stand now.
-          setSaid({ kind: "failed" });
-          readApps(api, space).then(
+          // Part of it may have been written: the page shows how things stand now, or says that it
+          // could not tell.
+          return readApps(api, space).then(
             (found) => {
               setView(found);
               setChoices((before) => carryChoices(found, before));
+              setSaid({ kind: "failed" });
               onOpenChanged?.();
             },
-            () => undefined,
+            (again: unknown) => {
+              if (!signedOut(again)) setSaid({ kind: "unknown" });
+            },
           );
         },
       )
@@ -369,7 +373,9 @@ function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
               ? "apps.stale"
               : said.kind === "busy"
                 ? "apps.busy"
-                : "apps.applyFailed",
+                : said.kind === "unknown"
+                  ? "apps.unknown"
+                  : "apps.applyFailed",
           )}
         </p>
       );

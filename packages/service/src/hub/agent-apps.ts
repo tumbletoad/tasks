@@ -274,8 +274,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   const installed = isFolder(host.root) && isFile(host.tasks);
   const views = userHome === "" ? [] : await survey(input);
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
-  // engine changes none of them on its own, and here the person picks one with its switch. The
-  // grants table keeps one home per instance, so turning one on turns the others off (apps.ts).
+  // engine changes none of them on its own, and here the person picks one with its switch.
   const plan = planOf(input, views, space).map((item): Planned =>
     item.change === "ambiguous"
       ? { view: item.view, change: planOf(input, [item.view], space)[0]?.change, several: true }
