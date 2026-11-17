@@ -36,8 +36,8 @@ async function fresh() {
   return { world, prototype, root };
 }
 
-async function imported(world: ImportWorld, prototype: string, me: string | undefined = ME) {
-  const preview = await world.preview({ folder: prototype, ...(me === undefined ? {} : { me }) });
+async function imported(world: ImportWorld, prototype: string, me: string | null = ME) {
+  const preview = await world.preview({ folder: prototype, ...(me === null ? {} : { me }) });
   expect(ImportPlanningPreviewResult.safeParse(preview).success).toBe(true);
   expect(preview.blocked).toBe(false);
   const result = await world.apply(preview.run, preview.token ?? "");
@@ -47,21 +47,23 @@ async function imported(world: ImportWorld, prototype: string, me: string | unde
 
 /** The live task a legacy ID names now. */
 const taskOf = (world: ImportWorld, legacy: string): string =>
-  String(
+  idOf(
     world.rows(
       "SELECT t.id FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
         "WHERE a.namespace = 'planning' AND a.alias = $a AND t.deleted_at IS NULL",
       { a: legacy },
-    )[0]?.["id"] ?? "",
+    ),
   );
+
+/** The ID of the first row, or "" when there is none. */
+const idOf = (rows: readonly Record<string, unknown>[]): string => {
+  const id = rows[0]?.["id"];
+  return typeof id === "string" ? id : "";
+};
 
 /** The live project with this title. */
 const projectOf = (world: ImportWorld, title: string): string =>
-  String(
-    world.rows("SELECT id FROM projects WHERE title = $t AND deleted_at IS NULL", {
-      t: title,
-    })[0]?.["id"] ?? "",
-  );
+  idOf(world.rows("SELECT id FROM projects WHERE title = $t AND deleted_at IS NULL", { t: title }));
 
 /** An owner's live folder on the world's machine, as stored, or null. */
 const folderOf = (world: ImportWorld, owner: string): string | null => {
@@ -299,7 +301,7 @@ describe("[A7.3.15.importer.folders] the folders an import gives on this machine
           { id: "pc", title: "Look inside", meta: { paths: [world.folder] } },
         ],
       });
-      const { preview, result } = await imported(world, prototype, undefined);
+      const { preview, result } = await imported(world, prototype, null);
       expect(preview.project_folders).toEqual([
         { project: "Atlas", area: "Other", none: "taken", holder: "Holder" },
       ]);
@@ -350,7 +352,7 @@ describe("[A7.3.15.importer.folders] the folders an import gives on this machine
           { id: "pb", title: "Write it", meta: { project: "Atlas", paths: [join(atlas, "docs")] } },
         ],
       });
-      const { preview } = await imported(world, prototype, undefined);
+      const { preview } = await imported(world, prototype, null);
       const project = projectOf(world, "Atlas");
       const pb = taskOf(world, "pb");
       expect(folderOf(world, project)).toBe(stored(atlas));
