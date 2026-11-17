@@ -27,7 +27,7 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
-import { folderRefusal } from "../row/launch.ts";
+import { folderRefusal, MARKER_REASONS, markerWords } from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
@@ -493,21 +493,33 @@ export function TaskList({
       },
       // Open (A4's `launch.open`). An app that takes the brief by paste (Codex's assisted open)
       // gets it on the clipboard too.
+      // A folder whose marker says it may be another one opens only when the person says so: the
+      // toast asks, and its action opens it there and marks it.
       open: (task: TaskRow, instance: Instance) => {
-        watched.current.add(task.id);
-        api
-          .openLaunch(task.id, instance.key, requestId())
-          .then(({ receipt, copy }) => {
-            shown(task, receipt);
-            if (copy !== undefined) toClipboard(copy);
-          })
-          .catch((error: unknown) => {
-            if (live.failed(error)) return;
-            const refused = folderRefusal(error);
-            if (refused === undefined) say(t("row.openFailed"));
-            else if (refused.folder === undefined) say(t("row.openWorkFolder"));
-            else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
-          });
+        const launch = (markFolder: boolean): void => {
+          watched.current.add(task.id);
+          api
+            .openLaunch(task.id, instance.key, requestId(), false, markFolder)
+            .then(({ receipt, copy }) => {
+              shown(task, receipt);
+              if (copy !== undefined) toClipboard(copy);
+            })
+            .catch((error: unknown) => {
+              if (live.failed(error)) return;
+              const refused = folderRefusal(error);
+              if (refused === undefined) say(t("row.openFailed"));
+              else if (MARKER_REASONS.has(refused.reason)) {
+                say(t("row.openMarker", markerWords(refused)), {
+                  label: { id: "row.openAnyway" },
+                  run: () => {
+                    launch(true);
+                  },
+                });
+              } else if (refused.folder === undefined) say(t("row.openWorkFolder"));
+              else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
+            });
+        };
+        launch(false);
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
       // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).

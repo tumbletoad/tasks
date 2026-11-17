@@ -33,6 +33,10 @@ export const LaunchOpenInput = z.strictObject({
     .boolean()
     .describe("Copy the context pack: the task's text, for an app without the tools")
     .optional(),
+  mark_folder: z
+    .boolean()
+    .describe("Open although the folder's marker is gone or another's, and mark it")
+    .optional(),
   request_id: RequestId,
 });
 

@@ -20,6 +20,7 @@ import {
   type Route,
 } from "@tasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
+import type { MarkerOwner } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
 
 /** Why an instance cannot open a task here: one word, which the page and the CLI word for people. */
@@ -52,6 +53,34 @@ export class LaunchFolderUnavailable extends Error {
     super(`The task's folder cannot be used on this machine: ${reason}`);
     this.reason = reason;
     this.folder = folder;
+  }
+}
+
+/**
+ * A click whose folder may not be the one set for the task (marker.ts): its marker names other
+ * owners only (`marker_other`), or this machine marked it and the marker is gone
+ * (`marker_missing`). Nothing starts; the person may open it anyway, which marks it.
+ */
+export class LaunchFolderUnmarked extends Error {
+  override readonly name = "LaunchFolderUnmarked";
+  readonly reason: "marker_missing" | "marker_other";
+  /** The folder as the space stores it. */
+  readonly folder: string;
+  /** Whose folder the launch uses: the task's own or its project's. */
+  readonly of: "task" | "project";
+  /** The owners the marker names instead. */
+  readonly owners: readonly MarkerOwner[];
+  constructor(
+    reason: "marker_missing" | "marker_other",
+    folder: string,
+    of: "task" | "project",
+    owners: readonly MarkerOwner[] = [],
+  ) {
+    super(`The task's folder may be another folder: ${reason}`);
+    this.reason = reason;
+    this.folder = folder;
+    this.of = of;
+    this.owners = owners;
   }
 }
 
@@ -97,6 +126,11 @@ export interface OpenTaskRequest {
    * place of the pointer brief. Only with Copy (no instance).
    */
   readonly pack?: PackContent;
+  /**
+   * The person chose to open the task in its folder although its marker named another owner or
+   * was gone: the folder is marked as this task's or its project's, and opens.
+   */
+  readonly markFolder?: boolean;
 }
 
 /** What the context pack takes of the task (A4 3.15.5); the launch adds its reference and folder. */

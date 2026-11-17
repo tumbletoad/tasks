@@ -11,6 +11,7 @@ import {
   Cwd,
   FolderInput,
   idPattern,
+  InsideFolders,
   Mode,
   ProposalId,
   Replayed,
@@ -57,6 +58,7 @@ const ProjectRow = z.strictObject({
   name: z.string().describe("Name"),
   active: Count.describe("Active tasks"),
   folder: Folder.optional(),
+  repo: z.string().max(255).describe("The Git repository in its folder, by name").optional(),
 });
 
 const AreaRow = z.strictObject({
@@ -100,7 +102,7 @@ export const GroupManageResult = z.strictObject({
     })
     .describe("A write: the group it changed")
     .optional(),
-  moved: Count.describe("Task folders that moved along with the project's").optional(),
+  ...InsideFolders,
   proposal: ProposalId.optional(),
   replayed: Replayed.optional(),
 });
