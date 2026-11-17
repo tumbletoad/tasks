@@ -6,9 +6,9 @@
 // What is found: on Linux the agent's process group (its own, from the start) and every process
 // whose parents lead back to the agent, read from /proc at the kill; on Windows the agent's tree as
 // `taskkill /T` walks it while the agent lives. A process that left the group and lost its parent
-// (a daemon) is not found. On Windows a child of the service ends with the service (Node holds its
-// children in a job of its own); on Linux the agent's stdin ends with the service, which ends an
-// agent that reads its protocol from there.
+// (a daemon) is not found. When the service ends, the agent's stdin ends, which ends an agent that
+// reads its protocol from there; on Windows the agent itself ends with the service too (Node holds
+// its own children in a job), but what the agent started does not.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
