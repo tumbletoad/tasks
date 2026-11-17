@@ -4,8 +4,8 @@
 // reader are the real ones; only the worker's message passing is left out, so the tests and the
 // crash child run the service's code against a real space, fast. Fixture data only, in temporary
 // folders the caller removes by their full names.
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type {
   ImportPlanningApplyResult,
   ImportPlanningPreviewResult,
@@ -28,7 +28,8 @@ import {
   type WriteResult,
   type WriteSeams,
 } from "@tasks/storage";
-import { checkedDriver, MIRA, seedMira } from "@tasks/testkit";
+import { checkedDriver, MIRA, PLANNING, seedMira } from "@tasks/testkit";
+import { osOf, type FolderHost } from "../src/ops/folders.ts";
 import { planningApply, planningPreview, planningUndo } from "../src/ops/import-planning.ts";
 
 /** The import's time zone in every test: days are 09:00 there. */
@@ -50,13 +51,18 @@ export interface WorldOptions {
   beforeBarrier?: (() => void) | undefined;
   /** Seams of the writer's transaction. */
   readonly write?: WriteSeams;
-  /** This machine's roots. */
-  readonly roots?: readonly { id: string; path: string }[];
+  /**
+   * The person's home on this machine: a folder under it is stored with `~`. Default: a folder
+   * `home` beside the space's folder, which the world makes.
+   */
+  readonly home?: string;
 }
 
 export interface ImportWorld {
   readonly folder: string;
   readonly machine: Id<"m">;
+  /** This machine as the import's folders see it: its home is the world's own. */
+  readonly here: FolderHost;
   readonly user: Id<"ac">;
   readonly writer: SpaceWriter;
   /** The reader's own connection: what the tests read the space with. */
@@ -134,6 +140,19 @@ export async function openWorld(root: string, options: WorldOptions = {}): Promi
     seed: options.seed ?? "import",
     tasks: options.tasks ?? 6,
   });
+  // The sample's machine is this one, and its folders are of this machine's kind: on Windows its
+  // record says so. The sample's own folders keep their Linux form, as another machine's would.
+  const os = osOf(process.platform);
+  if (os !== MIRA.machine.os) {
+    const opened = openSpace(await checkedDriver(), seeded.folder, { role: "writer" });
+    try {
+      opened.conn
+        .prepare("UPDATE machines SET os = $os WHERE id = $id")
+        .run({ os, id: seeded.machine });
+    } finally {
+      opened.conn.close();
+    }
+  }
   return attachWorld(seeded.folder, seeded.machine, options);
 }
 
@@ -147,7 +166,7 @@ export async function attachWorld(
   const opened = openSpace(checked, folder, { role: "writer" });
   const writer = SpaceWriter.open(
     opened,
-    { machine: { id: machine, name: MIRA.machine.name, os: MIRA.machine.os } },
+    { machine: { id: machine, name: MIRA.machine.name, os: osOf(process.platform) } },
     options.write ?? {},
   );
   const read = openSpace(checked, folder, { role: "reader" });
@@ -155,12 +174,14 @@ export async function attachWorld(
   const reader = readerOf(conn);
   const handle = handleOf(checked, writer, options.barrier ?? {}, () => options.beforeBarrier?.());
   const user = writer.actor("human", "");
-  // This machine's roots as machine.toml gives them.
-  const roots = (options.roots ?? []).map((r) => ({ ...r, label: r.id, runs: false }));
+  const home = options.home ?? join(dirname(dirname(folder)), "home");
+  mkdirSync(home, { recursive: true });
+  const here = { machine, platform: process.platform, home, reserved: [dirname(folder)] };
   const principal = { scope: SCOPE, machine };
   return {
     folder,
     machine,
+    here,
     user,
     writer,
     conn,
@@ -169,8 +190,7 @@ export async function attachWorld(
         folder,
         reader,
         input,
-        roots,
-        platform: process.platform,
+        ...here,
         timeZone: ZONE,
       }),
     apply: async (run, token) =>
@@ -179,8 +199,7 @@ export async function attachWorld(
         reader,
         writer: handle,
         input: { run, token },
-        roots,
-        platform: process.platform,
+        ...here,
         principal: user,
         importer: () => Promise.resolve(writer.actor("import", "import")),
         scope: principal.scope,
@@ -267,4 +286,25 @@ export function writePrototype(folder: string, proto: Prototype): void {
   for (const e of proto.events ?? []) {
     writeFileSync(join(folder, "events", `${e.id}.json`), `${JSON.stringify(e, null, 2)}\n`);
   }
+}
+
+/** The committed synthetic prototype. */
+export const FIXTURE = join(import.meta.dirname, "..", "..", "..", "fixtures", PLANNING.folder);
+
+/**
+ * Copies the synthetic prototype to `prototype` with its folders under `home` instead of the
+ * fixture's, each made there, so the import finds them on this machine. A folder outside the
+ * fixture's home stays as written and is not made: it is missing here.
+ */
+export function copyFixture(prototype: string, home: string): void {
+  cpSync(FIXTURE, prototype, { recursive: true });
+  // In the file's own text, so every other value stays exactly as the fixture writes it.
+  const file = join(prototype, "data", "metadata.json");
+  const under = new RegExp(`"${PLANNING.home}/([^"\\\\]*)"`, "gu");
+  const text = readFileSync(file, "utf8").replace(under, (_, rest: string) => {
+    const moved = join(home, ...rest.split("/"));
+    mkdirSync(moved, { recursive: true });
+    return JSON.stringify(moved);
+  });
+  writeFileSync(file, text);
 }

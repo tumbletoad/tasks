@@ -360,8 +360,9 @@ function threeWay(
 }
 
 /**
- * A folder's verdict on one machine: the three-way compare of the paths, but a folder an import
- * would clear stays, and an owner that never had a folder on this machine and has no base takes E.
+ * A folder's verdict on one machine: the three-way compare of the paths, but a prototype that names
+ * no folder leaves the one there as it is, and an owner that never had a folder on this machine and
+ * has no base takes E.
  */
 function folderVerdict(
   e: string | null,
@@ -369,12 +370,10 @@ function folderVerdict(
   b: { value: unknown; seq: number } | undefined,
   version: number,
 ): Verdict {
+  if (e === null) return c === null ? "settle" : "keep";
   const base = b === undefined ? undefined : { value: folderValue(b.value)?.path, seq: b.seq };
-  const v =
-    base === undefined && c === null && version === 0 && e !== null
-      ? "apply"
-      : threeWay(e, c, base, version);
-  return v === "apply" && e === null ? "keep" : v;
+  if (base === undefined && c === null && version === 0) return "apply";
+  return threeWay(e, c, base, version);
 }
 
 /** The fields a `task.patch` sets, by base field. */

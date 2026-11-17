@@ -232,9 +232,6 @@ function folder(g: Gen): { input: PrototypeInput; options: MappingOptions } {
     },
     options: {
       me: "Mira Okafor",
-      roots: g.chance(0.5)
-        ? { work: "/home/mira/work" }
-        : { work: "/home/mira/work", w: "C:\\Work" },
       timeZone: g.pick(ZONES),
       ...(g.chance(0.3) ? { checkedAs: "review" as const } : {}),
       ...(g.chance(0.5) ? { includeOrphans: true } : {}),
@@ -332,7 +329,6 @@ describe("[A7.3.15.importer.writer-fit] every value of a plan is one the space s
     };
     const options: MappingOptions = {
       me: "Mira Okafor",
-      roots: { work: "/home/mira/work" },
       timeZone: "Europe/Amsterdam",
     };
     const plan = mapPrototype(parsePrototype(input), options);
@@ -358,6 +354,8 @@ describe("[A7.3.15.importer.writer-fit] every value of a plan is one the space s
       idOf: () => newId("t"),
       groupIdOf: (kind) => newId(kind === "area" ? "a" : "p"),
       importedAt: Date.UTC(2026, 10, 15),
+      machine: ACTOR.machine_id,
+      folders: { projects: new Map(), tasks: new Map(), problems: [] },
     });
     const ops = decision.ops.map((op) => ({ ...op }));
     expect(ops.map((op) => op["kind"])).toContain("exchange.create");

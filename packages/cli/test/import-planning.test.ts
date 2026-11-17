@@ -25,7 +25,6 @@ const ACTIONS = join(ROOT, "fixtures", "planning-prototype.actions.json");
 
 interface Index {
   me: string;
-  roots: Record<string, string>;
   counts: Record<string, number>;
   actions: { events: number; added: string[] };
 }
@@ -147,16 +146,13 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
       "--dry-run",
       "--me",
       index.me,
-      "--roots",
-      Object.entries(index.roots)
-        .map(([id, folder]) => `${id}=${folder}`)
-        .join(","),
     ]);
     expect(ran.code, ran.stdout).toBe(0);
     expect(ran.stdout).toContain("nothing was written to the space");
     expect(ran.stdout).toMatch(/Preview token: pv1_/);
     expect(ran.stdout).toContain(`${index.me} (you)`);
     expect(ran.stdout).toContain("ticked-in-file");
+    expect(ran.stdout).toMatch(/Task folders: \d+, \d+ not on this machine\./);
   }, 120_000);
 
   test("the actions export adds the browser's own events and the unfinished write", async () => {
@@ -277,7 +273,6 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
       ["import", "planning", FIXTURE, "--dry-run", "--undo", run0, "--json"],
       ["import", "elsewhere", FIXTURE, "--dry-run", "--json"],
       ["import", "planning", FIXTURE, "--dry-run", "--checked-as", "maybe", "--json"],
-      ["import", "planning", FIXTURE, "--dry-run", "--roots", "Work=/x", "--json"],
     ]) {
       const ran = await run(argv);
       expect(ran.code, argv.join(" ")).toBe(2);

@@ -6,20 +6,19 @@
 // runs the same apply again, which applies it once: the import's tasks exist exactly once. Fixture
 // data only, in temporary folders removed by their full names.
 import { spawn } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { attachWorld, openWorld, type ImportWorld } from "./import-harness.ts";
+import type { ImportPlanningPreviewResult } from "@tasks/contracts";
+import { attachWorld, copyFixture, openWorld, type ImportWorld } from "./import-harness.ts";
 
 const REPO = join(import.meta.dirname, "..", "..", "..");
-const FIXTURE = join(REPO, "fixtures", "planning-prototype");
 const CHILD = join(import.meta.dirname, "import-crash-child.ts");
 const index = JSON.parse(
   readFileSync(join(REPO, "fixtures", "planning-prototype.index.json"), "utf8"),
-) as { me: string; roots: Record<string, string> };
-const ROOTS = Object.entries(index.roots).map(([id, path]) => ({ id, path }));
+) as { me: string };
 
 /** The points, in the order the apply reaches them, and whether the import is in after it. */
 const POINTS = [
@@ -70,16 +69,24 @@ function killAt(env: Record<string, string>, point: string): Promise<{ reached: 
 
 const count = (world: ImportWorld, sql: string): number => Number(world.rows(sql)[0]?.["n"] ?? 0);
 
+/** The tasks whose folder is their project's: they get none of their own. */
+const projectTasks = (preview: ImportPlanningPreviewResult): number =>
+  preview.tasks.filter((t) => t.folder?.state === "project").length;
+
 describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points", () => {
   for (const { point, committed } of POINTS) {
     test(`killed at ${point}: ${committed ? "all" : "nothing"} of it, and a retry applies it once`, async () => {
       const root = join(scratch, point);
+      const world = await openWorld(root);
       const prototype = join(root, "prototype");
-      cpSync(FIXTURE, prototype, { recursive: true });
-      const world = await openWorld(root, { roots: ROOTS });
+      copyFixture(prototype, world.here.home);
       const preview = await world.preview({ folder: prototype, me: index.me });
+      // The import gives folders: its commit holds folder operations of both kinds.
+      expect(preview.counts.project_folders).toBeGreaterThan(0);
       const tasks = count(world, "SELECT count(*) AS n FROM tasks");
+      const folders = count(world, "SELECT count(*) AS n FROM folders WHERE deleted_at IS NULL");
       const { folder, machine } = world;
+      const home = world.here.home;
       world.close();
 
       await killAt(
@@ -87,7 +94,7 @@ describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points",
           TASKS_IMPORT_CRASH: JSON.stringify({
             folder,
             machine,
-            roots: ROOTS,
+            home,
             run: preview.run,
             token: preview.token,
             point,
@@ -96,7 +103,9 @@ describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points",
         point,
       );
 
-      const again = await attachWorld(folder, machine, { roots: ROOTS });
+      const again = await attachWorld(folder, machine, { home });
+      const given = (world: ImportWorld) =>
+        count(world, "SELECT count(*) AS n FROM folders WHERE deleted_at IS NULL") - folders;
       try {
         const imports = count(again, "SELECT count(*) AS n FROM commits WHERE origin = 'import'");
         expect(imports).toBe(committed ? 1 : 0);
@@ -104,6 +113,11 @@ describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points",
         expect(count(again, "SELECT count(*) AS n FROM tasks")).toBe(
           committed ? tasks + preview.counts.tasks : tasks,
         );
+        const all =
+          preview.counts.project_folders +
+          (preview.counts.folders - preview.counts.folders_missing) -
+          projectTasks(preview);
+        expect(given(again)).toBe(committed ? all : 0);
         // The same apply again: applied once, whether the first one committed or not.
         const result = await again.apply(preview.run, preview.token ?? "");
         expect(result.status).toBe("applied");
@@ -116,6 +130,7 @@ describe("[A7.3.15.importer.apply-crash] an apply killed at each of its points",
           ),
         ).toEqual([]);
         expect(count(again, "SELECT count(*) AS n FROM exchange_items")).toBe(preview.counts.tasks);
+        expect(given(again)).toBe(all);
         expect(again.rows("PRAGMA integrity_check")[0]?.["integrity_check"]).toBe("ok");
       } finally {
         again.close();

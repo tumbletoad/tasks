@@ -11,10 +11,11 @@
 // removed by their full names.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Operation } from "@tasks/storage";
+import { storedForm } from "../src/ops/folders.ts";
 import { openWorld, writePrototype, type ImportWorld, type ProtoTask } from "./import-harness.ts";
 
 const IDS = ["pa", "pb", "pc"] as const;
@@ -41,8 +42,8 @@ const POOLS = {
   grouping: ["Work", "Home", "Errands"],
   lifecycle: ["active", "completed", "done"],
   wrap: ["Shipped", "Parked", "Noted"],
-  // The task's folder under the root `work`: a place is a row of its own, with its own version.
-  place: [null, "a", "b"],
+  // The task's folder, by its last name: a folder is a row of its own, with its own version.
+  folder: [null, "a", "b"],
   sources: [["a"], [], ["a", "b"]],
 } as const;
 type Field = Exclude<keyof typeof POOLS, "sources">;
@@ -125,12 +126,13 @@ afterAll(() => {
 
 /** A field's value in the space, in the model's form. */
 function spaceValue(world: ImportWorld, id: string, field: Field): unknown {
-  if (field === "place") {
-    const place = world.rows(
-      "SELECT rel_path FROM places WHERE owner_kind = 'task' AND owner_id = $id AND deleted_at IS NULL",
-      { id },
+  if (field === "folder") {
+    const folder = world.rows(
+      "SELECT path FROM folders WHERE owner_kind = 'task' AND owner_id = $id " +
+        "AND machine_id = $machine AND deleted_at IS NULL",
+      { id, machine: world.machine },
     )[0];
-    return place?.["rel_path"] ?? null;
+    return folder === undefined ? null : basename(String(folder["path"]));
   }
   const row =
     world.rows(
@@ -194,9 +196,9 @@ function touched(op: Operation): Field[] {
       return ["wrap"];
     case "task.move":
       return ["grouping"];
-    case "place.set":
-    case "place.clear":
-      return ["place"];
+    case "task.folder_set":
+    case "task.folder_clear":
+      return ["folder"];
     case "task.patch":
       return Object.keys(op.set ?? {}) as Field[];
     default:
@@ -212,14 +214,16 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
         const root = join(scratch, `r${String(runs)}`);
         const prototype = join(root, "prototype");
         const places = join(root, "places");
-        for (const folder of POOLS.place) {
+        for (const folder of POOLS.folder) {
           if (folder !== null) mkdirSync(join(places, folder), { recursive: true });
         }
-        const world = await openWorld(root, {
-          tasks: 3,
-          seed: `prop-${String(runs)}`,
-          roots: [{ id: "work", path: places }],
-        });
+        const world = await openWorld(root, { tasks: 3, seed: `prop-${String(runs)}` });
+        /** A folder as the space stores it on this machine. */
+        const stored = (name: string): string => {
+          const form = storedForm(join(places, name), world.here.home, world.here.platform);
+          if (typeof form === "string") throw new Error(form);
+          return form.stored;
+        };
         try {
           const editable = Object.keys(POOLS) as Editable[];
           const proto = new Map<Legacy, Values>();
@@ -264,7 +268,7 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                   priority: `P${String(v.priority)}`,
                   ...(v.summary === "" ? {} : { next: v.summary }),
                   ...(v.due === null ? {} : { due: v.due }),
-                  ...(v.place === null ? {} : { paths: [join(places, v.place)] }),
+                  ...(v.folder === null ? {} : { paths: [join(places, v.folder)] }),
                   ...(v.sources.length === 0
                     ? {}
                     : { sources: v.sources.map((n) => ({ label: `Notes ${n}`, url: URLS[n] })) }),
@@ -412,10 +416,10 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                 const form = e.field === "grouping" ? slug(String(value)) : value;
                 if (form !== spaceValue(world, id, e.field)) {
                   op =
-                    e.field === "place"
+                    e.field === "folder"
                       ? value === null
-                        ? { kind: "place.clear", task: id }
-                        : { kind: "place.set", task: id, root: "work", path: String(value) }
+                        ? { kind: "task.folder_clear", task: id }
+                        : { kind: "task.folder_set", task: id, path: stored(String(value)) }
                       : e.field === "grouping"
                         ? { kind: "task.move", task: id, area: slug(String(value)) }
                         : {
@@ -486,10 +490,10 @@ describe("[A7.3.15.importer.reimport-property] random edits on both sides betwee
                 const active = spaceValue(world, task, "lifecycle") === "active";
                 if (expectedOf(v, "wrap") === null || active) own.set("wrap", "keep");
               }
-              // An import never clears a place: one the prototype no longer names stays (A7
-              // 3.15.6), and the base stays the place it last settled.
-              if (own.get("place") === "apply" && expectedOf(v, "place") === null) {
-                own.set("place", "keep");
+              // An import never clears a folder: when the prototype names none, the space's stays,
+              // and the base stays the folder it last settled.
+              if (expectedOf(v, "folder") === null) {
+                own.set("folder", spaceValue(world, task, "folder") === null ? "settle" : "keep");
               }
               for (const [f, verdict] of own) {
                 verdicts.set(`${id}|${f}`, verdict);

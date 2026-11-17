@@ -37,7 +37,6 @@ const REPO = join(import.meta.dirname, "..", "..");
 
 interface Index {
   me: string;
-  roots: Record<string, string>;
   spaceTask: { seed: string; tasks: number; ref: string; title: string; key: string };
   cases: Record<string, { where: { task?: string }[] }>;
 }
@@ -77,7 +76,6 @@ beforeAll(async () => {
   const { input } = await readInput(join(REPO, "fixtures", "planning-prototype"));
   plan = mapPrototype(parsePrototype(input), {
     me: index.me,
-    roots: index.roots,
     timeZone: "Europe/Amsterdam",
   });
 

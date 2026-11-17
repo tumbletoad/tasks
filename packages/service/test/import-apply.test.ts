@@ -22,8 +22,10 @@ import {
   ReceiptGetResult,
   receiptResult,
 } from "@tasks/contracts";
-import { applyRequestId } from "../src/ops/import-planning.ts";
+import { osOf } from "../src/ops/folders.ts";
+import { applyRequestId, folderFacts } from "../src/ops/import-planning.ts";
 import {
+  folderDecisionOf,
   hashInputs,
   judgedNames,
   mapPrototype,
@@ -41,6 +43,7 @@ import {
   type PreviewGuard,
 } from "@tasks/storage";
 import {
+  copyFixture,
   openWorld,
   writePrototype,
   ZONE,
@@ -50,21 +53,14 @@ import {
 } from "./import-harness.ts";
 
 const REPO = join(import.meta.dirname, "..", "..", "..");
-const FIXTURE = join(REPO, "fixtures", "planning-prototype");
 
 interface Index {
   me: string;
-  roots: Record<string, string>;
 }
 const index = JSON.parse(
   readFileSync(join(REPO, "fixtures", "planning-prototype.index.json"), "utf8"),
 ) as Index;
-const ROOTS = Object.entries(index.roots).map(([id, path]) => ({ id, path }));
-const OPTIONS: MappingOptions = {
-  me: index.me,
-  roots: Object.fromEntries(ROOTS.map((r) => [r.id, r.path])),
-  timeZone: ZONE,
-};
+const OPTIONS: MappingOptions = { me: index.me, timeZone: ZONE };
 
 let scratch = "";
 let n = 0;
@@ -81,9 +77,9 @@ afterAll(() => {
 async function fresh(options: WorldOptions = {}) {
   n += 1;
   const root = join(scratch, `w${String(n)}`);
+  const world = await openWorld(root, options);
   const prototype = join(root, "prototype");
-  cpSync(FIXTURE, prototype, { recursive: true });
-  const world = await openWorld(root, { roots: ROOTS, ...options });
+  copyFixture(prototype, world.here.home);
   return { world, prototype, root };
 }
 
@@ -121,6 +117,15 @@ const taskOf = (world: ImportWorld, legacy: string): Id<"t"> =>
 
 const task = (world: ImportWorld, id: string) =>
   world.rows("SELECT * FROM tasks WHERE id = $id", { id })[0] ?? {};
+
+/** An owner's live folders on the world's machine, as stored. */
+const liveFolders = (world: ImportWorld, owner: string): string[] =>
+  world
+    .rows(
+      "SELECT path FROM folders WHERE owner_id = $o AND machine_id = $m AND deleted_at IS NULL",
+      { o: owner, m: world.machine },
+    )
+    .map((r) => String(r["path"]));
 
 /** The fixture's metadata: an object keyed by legacy ID. */
 function metadata(prototype: string): Record<string, Record<string, unknown>> {
@@ -172,7 +177,17 @@ async function guardOf(world: ImportWorld, folder: string, run: string, token: s
     }));
   const guard: PreviewGuard = {
     token,
-    pinned: previewPinned(plan, { run, inputs: files, options: OPTIONS }) as PreviewGuard["pinned"],
+    pinned: previewPinned(plan, {
+      run,
+      inputs: files,
+      options: OPTIONS,
+      folders: folderDecisionOf(
+        plan,
+        { areas, projects },
+        await folderFacts(plan, world.here),
+        osOf(process.platform),
+      ),
+    }) as PreviewGuard["pinned"],
     ...judgedNames(plan, { areas, projects }),
   };
   return { plan, guard };
@@ -458,7 +473,7 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
     const places = join(root, "places");
     mkdirSync(join(places, "old"), { recursive: true });
     mkdirSync(join(places, "new"), { recursive: true });
-    const options: WorldOptions = { roots: [{ id: "work", path: places }] };
+    const options: WorldOptions = {};
     const world = await openWorld(root, options);
     const prototype = join(root, "prototype");
     try {
@@ -472,23 +487,19 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       });
       const preview = await world.preview({ folder: prototype });
       // The person clears the task's folder in another window just after the apply read the space.
-      // A place is a row of its own: the token's task versions do not see it.
+      // A folder is a row of its own: the token's task versions do not see it.
       let handed = 0;
       options.beforeBarrier = () => {
         handed += 1;
         if (handed === 1) {
-          expect(world.edit([{ kind: "place.clear", task: ta }]).status).toBe("applied");
+          expect(world.edit([{ kind: "task.folder_clear", task: ta }]).status).toBe("applied");
         }
       };
       const result = await world.apply(preview.run, preview.token ?? "");
-      const live = world.rows(
-        "SELECT root_id, rel_path FROM places WHERE owner_id = $t AND deleted_at IS NULL",
-        { t: ta },
-      );
-      expect(live).toEqual([]);
-      // Decided again on the cleared place: both sides changed it, a conflict, nothing written.
+      expect(liveFolders(world, ta)).toEqual([]);
+      // Decided again on the cleared folder: both sides changed it, a conflict, nothing written.
       expect(result.status).toBe("unchanged");
-      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["place"]);
+      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["folder"]);
 
       // A space that keeps changing at that moment: refused, nothing of the import written.
       writePrototype(prototype, {
@@ -760,7 +771,7 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
     const root = join(scratch, `w${String(n)}`);
     const places = join(root, "places");
     for (const folder of ["a", "b"]) mkdirSync(join(places, folder), { recursive: true });
-    const world = await openWorld(root, { roots: [{ id: "work", path: places }] });
+    const world = await openWorld(root);
     const prototype = join(root, "prototype");
     try {
       const at = (folder: string) => ({
@@ -770,7 +781,7 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
       await importedSynthetic(world, prototype);
       const ta = taskOf(world, "pa");
       // The person clears the folder by mistake and takes it back with Ctrl+Z.
-      expect(world.edit([{ kind: "place.clear", task: ta }]).status).toBe("applied");
+      expect(world.edit([{ kind: "task.folder_clear", task: ta }]).status).toBe("applied");
       const undo = world.writer.submit({
         space_id: world.writer.spaceId,
         request_id: `undo-clear-${String(world.seq()).padStart(8, "0")}`,
@@ -784,15 +795,12 @@ describe("[A7.3.15.importer.reimport] a re-import over a space the person change
         ops: [{ kind: "undo" }],
       });
       expect(undo.status).toBe("applied");
-      const folder = () =>
-        world.rows("SELECT rel_path FROM places WHERE owner_id = $t AND deleted_at IS NULL", {
-          t: ta,
-        });
-      expect(folder()).toEqual([{ rel_path: "a" }]);
+      const a = [expect.stringMatching(/[\\/]a$/u)];
+      expect(liveFolders(world, ta)).toEqual(a);
       writePrototype(prototype, at("b"));
       const { result } = await importedSynthetic(world, prototype);
-      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["place"]);
-      expect(folder()).toEqual([{ rel_path: "a" }]);
+      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["folder"]);
+      expect(liveFolders(world, ta)).toEqual(a);
     } finally {
       world.close();
     }

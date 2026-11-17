@@ -5,7 +5,7 @@
 // apply never reaches it, it prints the outcome and ends. Tests only.
 //
 // The parent passes the run as JSON in TASKS_IMPORT_CRASH: the space's folder and machine, this
-// machine's roots, the run, its token and the point.
+// person's home the world used, the run, its token and the point.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
 import "@tasks/bridge/safe-exit";
 import { writeSync } from "node:fs";
@@ -20,7 +20,7 @@ const say = (line: string): void => {
 interface Arm {
   readonly folder: string;
   readonly machine: Id<"m">;
-  readonly roots: readonly { id: string; path: string }[];
+  readonly home: string;
   readonly run: string;
   readonly token: string;
   readonly point: string;
@@ -38,7 +38,7 @@ function stopHere(point: string): void {
 }
 
 const world = await attachWorld(arm.folder, arm.machine, {
-  roots: arm.roots,
+  home: arm.home,
   barrier: { at: stopHere },
   write: { at: stopHere },
 });

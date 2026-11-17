@@ -39,8 +39,10 @@ async function refusal(space: string, folder: string, timeZone = "Europe/Lisbon"
       folder: space,
       reader: {} as WorkerConnection,
       input: { folder },
-      roots: [],
+      machine: "m_0c4g8k2n6r0v4y8b2e6h0m4q8t",
       platform: process.platform,
+      home: scratch,
+      reserved: [],
       timeZone,
     });
   } catch (error) {
