@@ -6,8 +6,8 @@
 //
 // A space whose backups are not working (its daily backup failed, or the newest one does not
 // restore) has a quiet mark on the trigger and a note in the popover that says what to run. The
-// list is read when the switcher appears and each time it opens, so the mark goes once a backup
-// succeeds again.
+// list is read when the switcher appears, each time it opens, when the tab is shown again and every
+// few minutes while it is shown, so the mark comes and goes with the backups.
 //
 // "New space" and "Open folder" need a folder picker and the space verbs over HTTP; they arrive with
 // first-run setup (M5.12). Until then the CLI makes and opens spaces.
@@ -49,6 +49,8 @@ const styles = classes(css, [
   "trigger",
 ]);
 
+const RELIST_MS = 5 * 60_000;
+
 export function SpaceSwitcher({
   space,
   name,
@@ -80,7 +82,19 @@ export function SpaceSwitcher({
     });
   }, [api, failed]);
 
-  useEffect(load, [load]);
+  // A page left open for days still learns when a daily backup fails or works again.
+  useEffect(() => {
+    load();
+    const visible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const timer = setInterval(visible, RELIST_MS);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [load]);
 
   const troubles = list === undefined || list === "failed" ? [] : backupTrouble(list);
   const attention =

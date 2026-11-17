@@ -2545,7 +2545,7 @@
     },
     {
       "id": "A5.3.3.e2e.backup-trouble",
-      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup",
+      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
       "source": "A5 3.3, A1 3.18",
       "owner": "M5",
       "kind": "ci",

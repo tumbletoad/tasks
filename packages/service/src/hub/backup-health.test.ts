@@ -3,6 +3,7 @@ import {
   afterFailure,
   afterProvenBackup,
   afterRun,
+  BackupWatch,
   troubleView,
   type BackupHealth,
 } from "./backup-health.ts";
@@ -19,11 +20,12 @@ const run = (extra: Partial<MaintenanceReport> = {}): MaintenanceReport => ({
 const AT = Date.UTC(2026, 10, 14, 3, 15);
 
 describe("[A1.5.backup.failure-shown] what a space's backups report, run by run", () => {
-  test("a failure for want of disk space says so; another names its code; both say what to run", () => {
+  test("a refusal for want of disk space says so; another failure names its code; both say what to run", () => {
     const full = troubleView(afterFailure({}, "BUNDLE_LIMIT_EXCEEDED"));
     expect(full).toMatchObject({ why: "disk_full", code: "BUNDLE_LIMIT_EXCEEDED" });
     expect(full?.message).toMatch(/^The daily backup failed: the disk has too little free space/);
-    expect(troubleView(afterFailure({}, "DURABILITY_FAILED"))?.why).toBe("disk_full");
+    // A write that failed may be a full disk or a failing one: the report does not guess.
+    expect(troubleView(afterFailure({}, "DURABILITY_FAILED"))?.why).toBe("failed");
     const other = troubleView(afterFailure({}, "BACKUP_FAILED"));
     expect(other?.why).toBe("failed");
     for (const view of [full, other]) expect(view?.message).toContain("space backup <folder>");
@@ -54,5 +56,37 @@ describe("[A1.5.backup.failure-shown] what a space's backups report, run by run"
   test("a backup the person made that passed its trial restore clears every report", () => {
     expect(afterProvenBackup(AT)).toEqual({ lastGood: AT });
     expect(troubleView(afterProvenBackup(AT))).toBeUndefined();
+  });
+
+  test("a run that began before a person's proven backup does not bring back its report", () => {
+    const watch = new BackupWatch();
+    const failing = watch.begin();
+    watch.failed(failing, "BUNDLE_LIMIT_EXCEEDED");
+    expect(watch.view()?.why).toBe("disk_full");
+
+    // An hourly run is under way, still seeing yesterday's backups, when the person makes one now.
+    const slow = watch.begin();
+    watch.proven(AT);
+    watch.ran(slow, run({ checked: true, unverified: 1, verifiedAt: AT - 86_400_000 }));
+    expect(watch.view()).toBeUndefined();
+    watch.failed(slow, "BACKUP_FAILED");
+    expect(watch.view()).toBeUndefined();
+
+    // A run begun after it reports as usual.
+    const next = watch.begin();
+    watch.ran(next, run({ checked: true, unverified: 1 }));
+    expect(watch.view()).toMatchObject({
+      why: "unverified",
+      last_good: new Date(AT).toISOString(),
+    });
+  });
+
+  test("a closed space forgets its report, and a run begun before the close adds nothing", () => {
+    const watch = new BackupWatch();
+    const before = watch.begin();
+    watch.failed(watch.begin(), "BACKUP_FAILED");
+    watch.reset();
+    watch.failed(before, "BACKUP_FAILED");
+    expect(watch.view()).toBeUndefined();
   });
 });

@@ -104,14 +104,7 @@ import {
 } from "./lock.ts";
 import type { Reconciled } from "@tasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
-import {
-  afterFailure,
-  afterProvenBackup,
-  afterRun,
-  troubleView,
-  type BackupHealth,
-  type BackupTroubleView,
-} from "./backup-health.ts";
+import { BackupWatch, type BackupTroubleView } from "./backup-health.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
 import { ProjectionRunner } from "./projection.ts";
@@ -387,7 +380,7 @@ class Hosted {
   /** The maintenance run in progress. */
   maintaining: Promise<void> | undefined;
   /** Whether the space's backups work, as its upkeep and the person's backups last found. */
-  backupHealth: BackupHealth = {};
+  readonly backups = new BackupWatch();
   /** A restore in place or a claim through the manager, in progress. */
   replacing: Promise<unknown> | undefined;
   /**
@@ -472,7 +465,7 @@ class Hosted {
     this.closing = undefined;
     this.check = undefined;
     this.message = undefined;
-    this.backupHealth = {};
+    this.backups.reset();
   }
 
   /** What a person reads about the state: its own message, else its way out (space-ways.ts). */
@@ -483,7 +476,7 @@ class Hosted {
   view(): SpaceView {
     const check = this.check;
     const message = this.shown();
-    const backup = this.state === "open" ? troubleView(this.backupHealth) : undefined;
+    const backup = this.state === "open" ? this.backups.view() : undefined;
     return {
       entry: this.index,
       state: this.state,
@@ -894,7 +887,7 @@ export class SpaceManager {
    * with its backups is over.
    */
   backedUp(entry: number, at: number): void {
-    this.#space(entry).backupHealth = afterProvenBackup(at);
+    this.#space(entry).backups.proven(at);
   }
 
   /** A backup of the space found its search index damaged: its writer repairs it (#repairSearch). */
@@ -1656,6 +1649,7 @@ export class SpaceManager {
     if (maintenance === undefined || spaceId === undefined) return;
     const now = (this.#options.now?.() ?? new Date()).getTime();
     const t0 = performance.now();
+    const begun = space.backups.begin();
     space.maintaining = maintenance
       .run({
         folder: space.folder,
@@ -1679,14 +1673,14 @@ export class SpaceManager {
             unverified: report.unverified,
             ms: Math.round(performance.now() - t0),
           });
-          space.backupHealth = afterRun(space.backupHealth, report);
+          space.backups.ran(begun, report);
           if (report.searchIndexDamaged === true) this.#repairSearch(space);
         },
         (error: unknown) => {
           // A run the service's drain ended is no failure of the space.
           if (error instanceof MaintenanceFailed && error.stopped) return;
           const code = error instanceof MaintenanceFailed ? error.code : undefined;
-          space.backupHealth = afterFailure(space.backupHealth, code);
+          space.backups.failed(begun, code);
           log.log("space.maintenance_failed", {
             entry: space.index,
             space: spaceId,
@@ -1980,20 +1974,28 @@ export class SpaceManager {
     for (const other of this.#spaces) {
       if (other === space || (other.id ?? other.registered) !== id) continue;
       if (canonicalFolder(other.folder) === self) continue;
-      const next = await this.#nextRefOf(other, worker).catch(() => undefined);
+      const next = await this.#nextRefOf(other, id, worker).catch(() => undefined);
       if (next !== undefined && (floor === undefined || next > floor)) floor = next;
     }
     return floor;
   }
 
-  async #nextRefOf(space: Hosted, worker: StorageWorker): Promise<number | undefined> {
+  /** The next task reference of the copy `space`, while its folder still holds the space `id`. */
+  async #nextRefOf(
+    space: Hosted,
+    id: Id<"sp">,
+    worker: StorageWorker,
+  ): Promise<number | undefined> {
     const read = async (conn: WorkerConnection): Promise<number | undefined> => {
       const row = await bounded(
-        conn.get<{ next_ref?: unknown }>("SELECT next_ref FROM space WHERE one = 1"),
+        conn.get<{ next_ref?: unknown; space_id?: unknown }>(
+          "SELECT next_ref, space_id FROM space WHERE one = 1",
+        ),
         this.#openMs,
       );
       const next = row?.next_ref;
-      return typeof next === "number" &&
+      return row?.space_id === id &&
+        typeof next === "number" &&
         Number.isSafeInteger(next) &&
         next >= RANGES.taskRef.min &&
         next <= RANGES.taskRef.max + 1
