@@ -562,8 +562,9 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   }
 
   // The first absolute path is the task's folder, the one the page shows, kept exactly as written:
-  // a folder's name is not text to clean. Every other path, and the paths of `file:` links, go to
-  // ext.planning.paths. Problems name a path's place in the file's list, which a path the parser
+  // a folder's name is not text to clean. Every path, the folder's too, and the paths of `file:`
+  // links are kept in ext.planning.paths, so a folder that is not on the machine that applies the
+  // import is not lost. Problems name a path's place in the file's list, which a path the parser
   // left out does not shift.
   const paths = meta?.paths ?? [];
   const pathAt = (i: number): number => meta?.pathIndexes?.[i] ?? i;
@@ -571,13 +572,9 @@ function mapEntry(e: Entry, cx: Context): PlannedTask {
   const folder = first < 0 ? undefined : { path: paths[first] ?? "", index: pathAt(first) };
   const extra = paths.findIndex((_, i) => i !== first);
   if (extra >= 0) report.add("paths-extra", e.metaAt, "paths", pathAt(extra));
-  const others: string[] = [];
-  for (const [i, p] of paths.entries()) {
-    if (i === first) continue;
-    others.push(report.clean(p, "text", e.metaAt, "paths", pathAt(i)));
-  }
-  others.push(...(cx.fileLinks.get(e) ?? []));
-  if (others.length > 0) ext["paths"] = others;
+  const kept = paths.map((p, i) => report.clean(p, "text", e.metaAt, "paths", pathAt(i)));
+  kept.push(...(cx.fileLinks.get(e) ?? []));
+  if (kept.length > 0) ext["paths"] = kept;
 
   // The completion.
   let lifecycle: "active" | "completed" = "active";

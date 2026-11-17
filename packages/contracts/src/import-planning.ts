@@ -92,7 +92,8 @@ export const IMPORT_PROBLEM_CODES = {
   /** A date or time outside the space's range (1970 to 9999), or a day the import's time zone
    * skips: dropped. */
   "date-out-of-range": "warning",
-  /** Every path but the first absolute one, the task's folder: kept in `ext.planning.paths`. */
+  /** A path besides the first absolute one, the task's folder: no folder, kept with the others in
+   * `ext.planning.paths`. */
   "paths-extra": "warning",
   /** A source label that only names the kind: the title is a short form of the URL. */
   "source-title-generic": "warning",

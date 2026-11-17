@@ -39,7 +39,7 @@ export interface PlanningExt {
   readonly status?: "delegated";
   readonly rank?: number;
   readonly confidence?: string;
-  /** Every path but the first absolute one, which is the task's folder (PlannedTask.folder). */
+  /** Every path of the task, its folder's too (PlannedTask.folder), and its `file:` links' paths. */
   readonly paths?: readonly string[];
   /** A completion without a date: completed at the import time. */
   readonly done_date_unknown?: true;

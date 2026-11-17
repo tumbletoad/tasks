@@ -632,6 +632,8 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
         const path = (meta(id)["paths"] as string[])[0] ?? "";
         expect(taskOf(id).folder).toEqual({ path, index: 0 });
         expect(decided.tasks.get(id)).toEqual({ path, state: "missing" });
+        // Kept, so nothing of the prototype is lost.
+        expect(ext(id)["paths"]).toEqual([path]);
         expect(decided.problems.filter((p) => p.task === id)).toEqual([
           {
             code: "folder-missing",
@@ -651,11 +653,11 @@ const ROWS: { row: string; cases: string[]; check: () => void }[] = [
     },
   },
   {
-    row: "paths[1…]: ext.planning.paths, reported",
+    row: "paths: all kept in ext.planning.paths; paths[1…] are no folder, reported",
     cases: ["paths-extra"],
     check() {
       for (const id of ids("paths-extra")) {
-        expect(ext(id)["paths"]).toEqual((meta(id)["paths"] as string[]).slice(1));
+        expect(ext(id)["paths"]).toEqual(meta(id)["paths"]);
         expect(problemsOf("paths-extra", id)).toHaveLength(1);
         expect(taskOf(id).folder?.path).toBe((meta(id)["paths"] as string[])[0]);
       }

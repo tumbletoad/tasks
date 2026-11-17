@@ -167,6 +167,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     // The file: links are no sources: their paths join the task's other paths.
     expect(opsOf(p, "l", "source.add").map((o) => o.source.kind)).toEqual(["session", "email"]);
     expect(createOf(p, "l").ext.planning.paths).toEqual([
+      "/home/mira/work/a",
       "/home/mira/work/b c",
       "file://server.example/share",
     ]);
@@ -682,8 +683,13 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     });
     expect(p.tasks.find((t) => t.legacyId === "x3")?.folder).toBeUndefined();
     expect(p.counts.folders).toBe(2);
-    expect(createOf(p, "x1").ext.planning.paths).toEqual(["notes/a", "/home/mira/work/b"]);
-    expect(createOf(p, "x2").ext.planning.paths).toBeUndefined();
+    // Every path is kept: a folder not on the machine that applies the import is not lost.
+    expect(createOf(p, "x1").ext.planning.paths).toEqual([
+      "notes/a",
+      "/home/mira/work/a",
+      "/home/mira/work/b",
+    ]);
+    expect(createOf(p, "x2").ext.planning.paths).toEqual(["C:\\Users\\mira\\code\\portal"]);
     expect(createOf(p, "x3").ext.planning.paths).toEqual(["work/x"]);
     expect(createOf(p, "x1").ext.planning.rank).toBe(0);
     expect(p.tasks.map((t) => t.legacyId)).toEqual(["x3", "x2", "x1"]);
@@ -828,7 +834,7 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
     ]);
   });
 
-  test("a folder's path is kept exactly as written; the other paths pass SafeText", () => {
+  test("a folder's path is kept exactly as written; ext.planning keeps every path through SafeText", () => {
     // A decomposed é made composed would name another folder on Linux.
     const p = plan({
       todo: line("A", "x1"),
@@ -837,8 +843,15 @@ describe("[A7.3.15.importer.mapping-rules] the mapping's rules on small inputs",
       }),
     });
     expect(p.tasks[0]?.folder?.path).toBe("/home/mira/work/cafe\u0301");
-    expect(createOf(p, "x1").ext.planning.paths).toEqual(["/home/mira/caf\u00e9"]);
-    expect(codes(p, "x1")).toEqual(["paths-extra paths", "text-sanitised paths"]);
+    expect(createOf(p, "x1").ext.planning.paths).toEqual([
+      "/home/mira/work/caf\u00e9",
+      "/home/mira/caf\u00e9",
+    ]);
+    expect(codes(p, "x1")).toEqual([
+      "paths-extra paths",
+      "text-sanitised paths",
+      "text-sanitised paths",
+    ]);
   });
 
   test("a star's day outside the space's range is dropped and reported", () => {

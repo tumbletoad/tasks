@@ -497,9 +497,12 @@ describe("[A7.3.15.importer.apply] the apply of a dry run", () => {
       };
       const result = await world.apply(preview.run, preview.token ?? "");
       expect(liveFolders(world, ta)).toEqual([]);
-      // Decided again on the cleared folder: both sides changed it, a conflict, nothing written.
-      expect(result.status).toBe("unchanged");
-      expect(result.tasks.find((t) => t.legacy_id === "pa")?.conflicts).toEqual(["folder"]);
+      // Decided again on the cleared folder: both sides changed it, a conflict, and it stays cleared.
+      // The prototype's list of paths is the import's own, and follows the prototype.
+      expect(result.tasks.find((t) => t.legacy_id === "pa")).toMatchObject({
+        changed: ["ext.planning"],
+        conflicts: ["folder"],
+      });
 
       // A space that keeps changing at that moment: refused, nothing of the import written.
       writePrototype(prototype, {
