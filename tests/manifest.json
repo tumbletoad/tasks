@@ -216,6 +216,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.door-claude",
+      "title": "tasks run with a Claude Code instance: the request reaches the agent on its input and on no process's command line, the run's tools are a private file in the run's folder with the only Tasks entry and a ticket no command line carries, the agent's calls through it bind to the run's session and are recorded with the run's ID, its entry opens nothing once the run ended, the request, the answer and the ticket are in no file of the state folder but the run's own, a person with more than one instance names one, Stop cancels a Claude Code run during its turn, and a signed-out Claude Code ends the run with the command to sign in",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.claude.run",
       "title": "A Claude Code run in the run host with real processes, behind its npm shim, in a job object on Windows and without a process group everywhere: start to answer with the request on the program's input and on no command line, Stop during a turn and during start-up over the program's input, a program that does not exit after its work is ended with its answer kept, a process the agent left behind is ended and the cleanup says so, and nothing of a run is left alive",
       "owner": "M6",
