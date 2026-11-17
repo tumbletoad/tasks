@@ -1,4 +1,4 @@
-// The write path (A1 3.7, 3.8, X11, X12): the one way a space changes. A request of 1 to 50
+// The write path (A1 3.7, 3.8, X11, X12): the one way a space changes. A request of one or more
 // operations is checked, then decided in one BEGIN IMMEDIATE transaction on the space's writer
 // connection:
 //
