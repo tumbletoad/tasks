@@ -22,7 +22,7 @@ export {
 } from "@tasks/contracts/runs";
 
 /** The print-mode adapters' stream formats: one parser each. */
-export const STREAM_KINDS = ["claude-print", "codex-exec"] as const;
+export const STREAM_KINDS = ["claude-print"] as const;
 export type StreamKind = (typeof STREAM_KINDS)[number];
 
 export function emptyCounts(): StreamCounts {

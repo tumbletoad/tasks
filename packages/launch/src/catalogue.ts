@@ -98,7 +98,7 @@ export interface TargetDef {
   readonly permissionArgs: Readonly<
     Record<Permission, { readonly open: readonly string[]; readonly run: readonly string[] | null }>
   >;
-  readonly run?: "claude-print" | "codex-exec";
+  readonly run?: "claude-print" | "codex";
 }
 
 /** No flags for any mode: targets whose permission Tasks cannot set. */
@@ -294,7 +294,7 @@ export const CATALOGUE: readonly TargetDef[] = [
       },
       "read-only": { open: ["-s", "read-only", "-a", "on-request"], run: ["-s", "read-only"] },
     },
-    run: "codex-exec",
+    run: "codex",
   },
   {
     id: "claude-desktop",

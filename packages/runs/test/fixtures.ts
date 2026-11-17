@@ -34,7 +34,7 @@ export function fixtureIndex(): FixtureEntry[] {
 
 /** The stream files on disk, as `<cli>/<name>.jsonl`. */
 export function fixtureFiles(): string[] {
-  return ["claude-print", "codex-exec"].flatMap((cli) =>
+  return ["claude-print"].flatMap((cli) =>
     readdirSync(join(STREAMS_DIR, cli))
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => `${cli}/${f}`),

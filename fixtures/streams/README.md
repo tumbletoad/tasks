@@ -1,6 +1,6 @@
 # Stream fixtures
 
-Recorded output streams of the two v1 run adapters (A4 3.11.3, 3.11.4), turned into fixture text. They are the only part of the M0 lab that survives M0 (A7 3.7 lab rules). M6.05 builds the stream parsers on them and its fake agents replay them.
+Recorded output streams of `claude -p` (A4 3.11.3, 3.11.4), turned into fixture text. They are the only part of the M0 lab that survives M0 (A7 3.7 lab rules). The print-mode stream parser is built on them and its fake agents replay them. The `codex exec --json` recordings this lab also made went with their parser: Codex runs speak its app server, recorded in `fixtures/codex-app-server/`.
 
 Recorded on 2026-11-12 in lab run N (step M0.11, rows N01, N02, N03, N05) with Claude Code 2.1.322 and codex-cli 0.167.2:
 
@@ -14,7 +14,6 @@ Every run used fixture prompts only ("Call the tool probe_echo with the text hel
 | File | What |
 |---|---|
 | `claude-print/<os>-<case>.jsonl` | `claude -p --output-format stream-json --verbose` stdout, one event per line |
-| `codex-exec/<os>-<case>.jsonl` | `codex exec --json` stdout, one event per line |
 | `index-<os>.json` | One entry per fixture: case, exit code, signal, cancel method, whether the cancel had to be forced, stderr class (from a fixed list), line count, final-line kind |
 | `fields-<os>.json` | The field inventory: for each event key (`type`, `type/subtype` or `type:item.type`), every field path seen in the raw streams with its JSON types and what the sanitiser did with it. Names and types only |
 

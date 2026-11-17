@@ -151,11 +151,9 @@ describe("[A4.5.parsers.events] claude-print events", () => {
     const stream =
       jsonl({ type: { toString: null } }, { type: ["user"] }) +
       `{"type":${"[".repeat(100_000)}${"]".repeat(100_000)}}\n`;
-    for (const kind of ["claude-print", "codex-exec"] as const) {
-      const { outcome } = parseStream(kind, stream, exit0);
-      expect(outcome.counts.handlerFaults).toBe(0);
-      expect(outcome.counts.unknownEvents).toBe(3);
-    }
+    const { outcome } = parseStream("claude-print", stream, exit0);
+    expect(outcome.counts.handlerFaults).toBe(0);
+    expect(outcome.counts.unknownEvents).toBe(3);
   });
 
   test("a BOM before a line is dropped the same way by push() and line()", () => {
@@ -273,127 +271,10 @@ describe("[A4.5.parsers.events] claude-print events", () => {
   });
 });
 
-const thread = (id = ID) => ({ type: "thread.started", thread_id: id });
-const item = (type: string, item: object) => ({ type, item });
-
-describe("[A4.5.parsers.events] codex-exec events", () => {
-  test("a repeated thread.started (exec resume) gives one native ID", () => {
-    const { events } = parseStream("codex-exec", jsonl(thread(), thread()), exit0);
-    expect(ofKind(events, "native-id")).toHaveLength(1);
-  });
-
-  test("one label per item; Tasks's MCP server is told apart; the last agent message is the result", () => {
-    const cmd = { id: "i1", type: "command_execution", status: "in_progress" };
-    const { events, outcome } = parseStream(
-      "codex-exec",
-      jsonl(
-        thread(),
-        { type: "turn.started" },
-        item("item.started", cmd),
-        item("item.updated", cmd),
-        item("item.completed", { ...cmd, status: "completed" }),
-        item("item.started", {
-          id: "i2",
-          type: "mcp_tool_call",
-          server: "tasks",
-          status: "in_progress",
-        }),
-        item("item.started", {
-          id: "i3",
-          type: "mcp_tool_call",
-          server: "other",
-          status: "in_progress",
-        }),
-        item("item.completed", { id: "i4", type: "file_change", status: "completed" }),
-        item("item.completed", { id: "i5", type: "web_search" }),
-        item("item.completed", { id: "i6", type: "todo_list" }),
-        item("item.completed", { id: "i7", type: "reasoning", text: "r" }),
-        item("item.started", { id: "i8", type: "agent_message", text: "partial" }),
-        item("item.completed", { id: "i8", type: "agent_message", text: "one" }),
-        item("item.completed", { id: "i9", type: "agent_message", text: "three" }),
-        { type: "turn.completed", usage: { input_tokens: 1 } },
-      ),
-      exit0,
-    );
-    expect(ofKind(events, "progress").map((e) => e.label)).toEqual([
-      "command",
-      "tasks",
-      "tool",
-      "edit",
-      "web",
-      "plan",
-    ]);
-    expect(ofKind(events, "message")).toHaveLength(2);
-    expect(outcome.result?.length).toBe(5);
-    expect(outcome.reason).toBe("success");
-  });
-
-  test("a declined command is counted once", () => {
-    const cmd = { id: "i1", type: "command_execution", status: "declined" };
-    const { outcome } = parseStream(
-      "codex-exec",
-      jsonl(thread(), item("item.updated", cmd), item("item.completed", cmd)),
-      exit0,
-    );
-    expect(outcome.counts.declined).toBe(1);
-  });
-
-  test("usage is summed over turns, and each usage event carries the total", () => {
-    const usage = {
-      input_tokens: 10,
-      cached_input_tokens: 4,
-      output_tokens: 2,
-      reasoning_output_tokens: 1,
-    };
-    const { events } = parseStream(
-      "codex-exec",
-      jsonl(thread(), { type: "turn.completed", usage }, { type: "turn.completed", usage }),
-      exit0,
-    );
-    expect(ofKind(events, "usage").at(-1)).toEqual({
-      kind: "usage",
-      inputTokens: 20,
-      cachedInputTokens: 8,
-      outputTokens: 4,
-      reasoningOutputTokens: 2,
-    });
-  });
-
-  test("the last turn event decides; a recovered error does not fail the run", () => {
-    const judge = (exit: ProcessExit, ...events: object[]) =>
-      parseStream("codex-exec", jsonl(thread(), ...events), exit).outcome;
-    const completed = { type: "turn.completed", usage: {} };
-    const failed = { type: "turn.failed", error: { message: "bad" } };
-    expect(judge(exit0, { type: "error", message: "retrying" }, completed)).toMatchObject({
-      ok: true,
-      reason: "success",
-      error: null,
-    });
-    const f = judge({ code: 1, signal: null }, { type: "turn.started" }, failed);
-    expect(f.reason).toBe("agent_error");
-    expect(f.error?.length).toBe(3);
-    expect(judge({ code: 1, signal: null }, completed).reason).toBe("exit_status");
-    expect(judge({ code: 1, signal: null }, { type: "turn.started" }).reason).toBe("no_result");
-    expect(judge({ code: 0, signal: null }, { type: "turn.started" }).reason).toBe("no_result");
-  });
-
-  test("an error item is kept as the last error, and an unknown item type is counted", () => {
-    const { outcome } = parseStream(
-      "codex-exec",
-      jsonl(
-        thread(),
-        item("item.completed", { id: "e", type: "error", message: "abc" }),
-        item("item.completed", { id: "x", type: "hologram" }),
-      ),
-      { code: 1, signal: null },
-    );
-    expect(outcome.error?.length).toBe(3);
-    expect(outcome.counts.unknownEvents).toBe(1);
-  });
-
+describe("[A4.5.parsers.events] a stream without events", () => {
   test("a stream with no event at all is no_output, whatever the exit", () => {
-    expect(parseStream("codex-exec", "", exit0).outcome.reason).toBe("no_output");
-    expect(parseStream("codex-exec", "garbage\n\n", exit0).outcome.reason).toBe("no_output");
+    expect(parseStream("claude-print", "", exit0).outcome.reason).toBe("no_output");
+    expect(parseStream("claude-print", "garbage\n\n", exit0).outcome.reason).toBe("no_output");
     expect(parseStream("claude-print", "", { code: 1, signal: null }).outcome.reason).toBe(
       "no_output",
     );

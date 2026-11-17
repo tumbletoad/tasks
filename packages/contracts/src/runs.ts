@@ -15,7 +15,7 @@
 // Adapters and caps
 
 /** The run adapters: the driver a run's agent is spoken to with. */
-export const RUN_ADAPTERS = ["claude-print", "codex-exec", "codex"] as const;
+export const RUN_ADAPTERS = ["claude-print", "codex"] as const;
 export type RunAdapterId = (typeof RUN_ADAPTERS)[number];
 
 /**

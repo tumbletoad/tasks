@@ -130,10 +130,6 @@ describe("[A4.5.fake-agents.replay] fake agents replay the recordings", () => {
     expect(tail("claude-print/windows-cancel-ctrl-c-early.jsonl").after).toBe(2);
     const b = tail("claude-print/windows-cancel-ctrl-break.jsonl");
     expect([b.after, b.p.graceful, b.p.exitCode]).toEqual([1, "SIGBREAK", 0]);
-    // Codex flushed nothing after a cancel.
-    const x = tail("codex-exec/linux-cancel-sigint-group.jsonl");
-    expect([x.after, x.p.graceful, x.p.exitCode]).toEqual([0, "SIGINT", 1]);
-    expect(tail("codex-exec/windows-cancel-ctrl-break.jsonl").p.exitCode).toBe(3221225786);
     // Killed runs write everything and wait for the kill.
     for (const f of killed) {
       const k = tail(f);
@@ -151,7 +147,7 @@ describe("[A4.5.fake-agents.replay] fake agents replay the recordings", () => {
     const results = await Promise.all(
       plain.map(async (file) => ({ file, r: await startFake(file).exited })),
     );
-    expect(plain.length).toBeGreaterThanOrEqual(11);
+    expect(plain.length).toBeGreaterThanOrEqual(5);
     for (const { file, r } of results) {
       const entry = fixtureEntry(file);
       expect([file, r.code, r.signal]).toEqual([file, entry.exit, null]);
@@ -212,8 +208,6 @@ describe("[A4.5.fake-agents.replay] fake agents replay the recordings", () => {
       for (const file of [
         "claude-print/windows-cancel-ctrl-c.jsonl",
         "claude-print/windows-cancel-ctrl-c-early.jsonl",
-        "codex-exec/linux-cancel-sigint-group.jsonl",
-        "codex-exec/windows-cancel-ctrl-c.jsonl",
       ]) {
         const entry = fixtureEntry(file);
         const plan = replayPlan(entry, fixtureBytes(file));
@@ -232,7 +226,7 @@ describe("[A4.5.fake-agents.replay] fake agents replay the recordings", () => {
   );
 
   test("a wait for more bytes than the fake writes fails once it ends", async () => {
-    const file = "codex-exec/windows-resume.jsonl";
+    const file = "claude-print/windows-resume.jsonl";
     const fake = startFake(file);
     await expect(fake.bytes(fixtureBytes(file).length + 1)).rejects.toThrow(/ended before/);
     expect((await fake.exited).code).toBe(fixtureEntry(file).exit);
@@ -240,12 +234,12 @@ describe("[A4.5.fake-agents.replay] fake agents replay the recordings", () => {
   });
 
   test("a holding fake ends itself after --max-ms", async () => {
-    const r = await startFake("codex-exec/windows-cancel-terminate.jsonl", { maxMs: 300 }).exited;
+    const r = await startFake("claude-print/windows-cancel-terminate.jsonl", { maxMs: 300 }).exited;
     expect([r.code, r.signal]).toEqual([FAKE_AGENT_GUARD_EXIT, null]);
   });
 
   test("a line delay spreads the stream over time", async () => {
-    const file = "codex-exec/windows-success-tool-call.jsonl";
+    const file = "claude-print/windows-success-tool-call.jsonl";
     const lines = replayPlan(fixtureEntry(file), fixtureBytes(file)).lines.length;
     const started = performance.now();
     const fake = startFake(file, { lineDelayMs: 40 });
@@ -258,7 +252,7 @@ describe("[A4.5.fake-agents.replay] fake agents replay the recordings", () => {
   test("a wrong fixture name or option exits 2 with a fixed message", async () => {
     const bad = await startFake("claude-print/../../../package.json").exited;
     expect([bad.code, bad.stderr]).toEqual([2, "fake-agent: unknown fixture\n"]);
-    const delay = await startFake("codex-exec/windows-resume.jsonl", { lineDelayMs: -1 }).exited;
+    const delay = await startFake("claude-print/windows-resume.jsonl", { lineDelayMs: -1 }).exited;
     expect(delay.code).toBe(2);
   });
 });

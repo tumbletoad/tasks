@@ -213,7 +213,7 @@ function fillEmpty03(conn: Connection): void {
       run(
         `INSERT INTO runs (id, task_id, instance_id, machine_id, adapter, state, queued_at,
            created_seq, version)
-         VALUES ('ru_fixture', $task, 'codex-work', $machine, 'codex-exec', 'queued', $at,
+         VALUES ('ru_fixture', $task, 'codex-work', $machine, 'codex', 'queued', $at,
            $seq, $seq)`,
       );
     }

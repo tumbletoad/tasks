@@ -207,7 +207,6 @@ describe("[A7.3.7.m0-runs.fixture-content] stream fixtures pass the content chec
     const machine = machineDenyList();
     const all = streams();
     expect(all.some((f) => rel(f).startsWith("claude-print/"))).toBe(true);
-    expect(all.some((f) => rel(f).startsWith("codex-exec/"))).toBe(true);
     for (const f of all) {
       expect(checkStreamFixture(rel(f), readFileSync(f, "utf8"), machine), rel(f)).toEqual([]);
     }
