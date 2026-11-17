@@ -172,6 +172,40 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     });
   });
 
+  test("a found task's ending stays while it stays finished, and goes when it is reopened", async () => {
+    const found = rowOf(
+      taskRow(7, { lifecycle: "completed", ending: "Shipped." }),
+      "finished",
+    ) as FoundRow;
+    const query = new PagedQuery<FoundRow>({ kind: "search" }, () =>
+      Promise.resolve({ rows: [found] }),
+    );
+    await query.refresh();
+    // The feed's compact row: a task's columns, no ending and no group.
+    const columns = Object.fromEntries(
+      Object.entries(found).filter(([key]) => !["ending", "found", "wrap_state"].includes(key)),
+    );
+    const feed = (version: number, more: Record<string, unknown>) => ({
+      changes: [
+        {
+          type: "task",
+          id: found.id,
+          changed: ["priority"],
+          after: { ...columns, version, ...more },
+        },
+      ],
+      reset: false,
+    });
+    // An edit that keeps it wrapped up keeps how it ended.
+    query.apply(feed(2, { lifecycle: "completed", wrap_state: "wrapped" }) as never);
+    expect(query.getState().rows[0]?.ending).toBe("Shipped.");
+    // Reopened, then checked off again without an outcome: that ending was an earlier finish's.
+    query.apply(feed(3, { lifecycle: "active" }) as never);
+    query.apply(feed(4, { lifecycle: "completed", wrap_state: "pending" }) as never);
+    expect(query.getState().rows[0]?.ending).toBeUndefined();
+    expect(query.getState().rows[0]?.found).toBe("finished");
+  });
+
   test("a task both searches found shows once, where it was first: under To do", () => {
     // Checked off from the results, then Completed read again after its cursor expired.
     const open = [1, 2].map((n) => rowOf(taskRow(n), "open") as FoundRow);

@@ -44,7 +44,8 @@ export interface TaskRow {
   readonly waiting_since?: number;
   /**
    * How a finished task ended, one line: why it was dropped, or its outcome once wrapped up. Only
-   * the read of finished tasks gives it; the feed's rows never carry it, so a feed row leaves it.
+   * a read gives it (Completed, a search); the feed's rows never carry it, so a feed row leaves it
+   * while the task stays finished the same way (`withTaskRow`).
    */
   readonly ending?: string;
   readonly deleted_at?: number;
@@ -116,15 +117,20 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
 /**
  * A row a paged query shows, brought up to a task's post-change compact row from the feed. The
  * compact row leaves out what is null, so each task column is taken from it or removed; what else
- * the shown row carries (a search snippet) stays. A row at a newer version than the feed's stays
- * as it is: the feed brings the newer change too.
+ * the shown row carries (a search snippet) stays. Its `ending` stays only while the task is finished
+ * the same way: a reopen or a new wrap-up makes it an earlier finish's, which the feed cannot
+ * replace. A row at a newer version than the feed's stays as it is: the feed brings the newer change
+ * too.
  */
 export function withTaskRow<R>(shown: R, after: Readonly<Record<string, unknown>>): R {
   const row = shown as Readonly<Record<string, unknown>>;
   const have = row["version"];
   const next = after["version"];
   if (typeof have === "number" && typeof next === "number" && have >= next) return shown;
-  const kept = Object.entries(row).filter(([column]) => !TASK_COLUMNS.has(column));
+  const same = row["lifecycle"] === after["lifecycle"] && row["wrap_state"] === after["wrap_state"];
+  const kept = Object.entries(row).filter(
+    ([column]) => !TASK_COLUMNS.has(column) && (same || column !== "ending"),
+  );
   return { ...Object.fromEntries(kept), ...after } as R;
 }
 
