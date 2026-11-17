@@ -17,7 +17,6 @@ import { App } from "./app/App.tsx";
 import { I18n } from "./i18n/intl.tsx";
 import { pagePath, readFragment } from "./route.ts";
 import { browserStore, keepToken, readToken } from "./stored.ts";
-import { applyTheme, readTheme } from "./theme/preference.ts";
 
 /** The build of the service that served this page (its `__TASKS_BUILD__`), or "" from a dev build. */
 function servedBuild(): string {
@@ -26,8 +25,6 @@ function servedBuild(): string {
 }
 
 const store = browserStore();
-// The theme first, so the first paint is already in it.
-applyTheme(document.documentElement, readTheme(store));
 
 const fragment = readFragment(location.hash);
 const path = pagePath(location.pathname);

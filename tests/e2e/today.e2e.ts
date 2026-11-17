@@ -11,12 +11,9 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-const THEME_KEY = `${PRODUCT_ID}.theme`;
 
 /** The local calendar day `days` from today: its date and the names the page shows. */
 function day(days: number) {
@@ -199,12 +196,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: the strip and its sections", () 
       });
       try {
         const page = await context.newPage();
-        await page.addInitScript(
-          (value) => {
-            localStorage.setItem(value.key, value.theme);
-          },
-          { key: THEME_KEY, theme },
-        );
+        await world.machine("ui.theme", theme);
         await openToday(page, world);
         await expect(row(page, tasks.star)).toBeVisible({ timeout: SLOW_MS });
         await page.screenshot({
@@ -257,5 +249,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: the strip and its sections", () 
         await context.close();
       }
     }
+    // The tests of a worker share its service: the theme goes back to its default.
+    await world.machine("ui.theme", null);
   });
 });

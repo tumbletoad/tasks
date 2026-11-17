@@ -1,8 +1,12 @@
 // What the page asks of the top field (TopBar.tsx) from elsewhere, and the field of the results:
 // the search results' "Add … as a task" hands its text to the field's add mode, where the
-// shortcuts show before anything is saved; Enter in the search field asks the results of that
-// search for focus. One listener per mounted top bar and result list; a tab has one of each.
-type Request = { readonly kind: "add"; readonly text: string };
+// shortcuts show before anything is saved; the page's keys ask for a new task or a search; Enter
+// in the search field asks the results of that search for focus. One listener per mounted top bar
+// and result list; a tab has one of each.
+type Request =
+  | { readonly kind: "add"; readonly text: string }
+  | { readonly kind: "new" }
+  | { readonly kind: "search" };
 
 const listeners = new Set<(request: Request) => void>();
 

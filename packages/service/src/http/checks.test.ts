@@ -69,6 +69,8 @@ const PATHS = {
   unknownLaunch: "/api/v1/launch/open",
   space: "/api/v1/space/default",
   unknownSpace: "/api/v1/space/rename",
+  machine: "/api/v1/machine/terminal",
+  unknownMachine: "/api/v1/machine/name",
   apiOther: "/api/v1/nothing",
   other: "/nothing",
   // The page's own routes (A5 3.3) are the shell; a path of another shape is not.
@@ -124,6 +126,8 @@ const API = new Set([
   "unknownLaunch",
   "space",
   "unknownSpace",
+  "machine",
+  "unknownMachine",
   "apiOther",
 ]);
 const GOOD_HOST = new Set(["ip", "name", "upper"]);
@@ -161,6 +165,8 @@ describe("[A2.3.8.http.matrix] the request checks", () => {
                 "unknownLaunch",
                 "space",
                 "unknownSpace",
+                "machine",
+                "unknownMachine",
               ].includes(c.path)
             ? c.method !== "POST"
             : c.method !== "GET"
@@ -175,6 +181,8 @@ describe("[A2.3.8.http.matrix] the request checks", () => {
           "unknownLaunch",
           "space",
           "unknownSpace",
+          "machine",
+          "unknownMachine",
           "apiOther",
         ].includes(c.path) &&
         !c.bearer
@@ -183,9 +191,15 @@ describe("[A2.3.8.http.matrix] the request checks", () => {
       else if (c.path === "ws" && !c.upgrade) expected = 426;
       else if (c.path !== "ws" && c.upgrade) expected = 404;
       else if (
-        ["apiOther", "other", "unknownOp", "unknownLaunch", "unknownSpace", "notApp"].includes(
-          c.path,
-        )
+        [
+          "apiOther",
+          "other",
+          "unknownOp",
+          "unknownLaunch",
+          "unknownSpace",
+          "unknownMachine",
+          "notApp",
+        ].includes(c.path)
       )
         expected = 404;
       else expected = 200;
@@ -194,7 +208,7 @@ describe("[A2.3.8.http.matrix] the request checks", () => {
       }
       if (verdict.ok) passed += 1;
     }
-    expect(total).toBe(8 * 7 * 5 * 6 * 6 * 2 * 2 * 20);
+    expect(total).toBe(8 * 7 * 5 * 6 * 6 * 2 * 2 * 22);
     expect(passed).toBeGreaterThan(0);
   });
 
@@ -209,7 +223,7 @@ describe("[A2.3.8.http.matrix] the request checks", () => {
       // A request that may start work (any POST but the probe) always names our origin.
       if (c.method === "POST" && c.path !== "probe") expect(GOOD_ORIGIN.has(c.origin)).toBe(true);
       // Every API route but redeem, probe and the WebSocket's ticket-checked upgrade has a token.
-      if (["ticket", "op", "launch", "space", "apiOther"].includes(c.path))
+      if (["ticket", "op", "launch", "space", "machine", "apiOther"].includes(c.path))
         expect(c.bearer).toBe(true);
       // The page's own routes are the shell: a GET without a body or a token.
       if (["app", "appTask"].includes(c.path)) expect(c.method).toBe("GET");

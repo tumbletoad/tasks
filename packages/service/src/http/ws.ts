@@ -10,6 +10,9 @@
 //                    {type:"snapshot", …} and {type:"batch", …}  feed.ts's forms; a snapshot
 //                                                                also names the instances
 //                                                                (launches.ts) for the tiles
+//                    {type:"machine", preferences}               this computer's settings of the
+//                                                                page (the theme, the keys): after
+//                                                                hello, and again on each change
 //                    {type:"installed", version?}                another version was installed
 //                                                                (or none any more), seen at a
 //                                                                heartbeat
@@ -25,6 +28,7 @@
 // A socket's subscription and its output belong to it only while it is open: closing it ends any
 // read in progress (the generation moves on), and every continuation after an await checks that
 // before it acts.
+import type { PreferenceRead } from "@tasks/contracts";
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
 import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";
@@ -78,6 +82,8 @@ export interface FeedOptions {
   readonly live: (grant: string) => boolean;
   /** The instances a snapshot names for the page's launch tiles (A5 3.15 step 1). Default none. */
   readonly instances?: () => readonly UiInstance[];
+  /** This computer's settings of the page, which every tab follows (hub/machine-settings.ts). */
+  readonly machine?: () => readonly PreferenceRead[];
   /**
    * The version the install's `current` names when it is not this service's own: the page says
    * that a restart switches to it. Default: none.
@@ -164,6 +170,14 @@ class FeedSocket {
       build,
       ...(this.#installed === undefined ? {} : { installed: this.#installed }),
     }).catch(() => undefined);
+    this.machine();
+  }
+
+  /** Sends this computer's settings of the page, when the service has them. */
+  machine(): void {
+    const preferences = this.#hub.options.machine?.();
+    if (preferences === undefined || this.#closed) return;
+    void this.#send({ type: "machine", preferences }).catch(() => undefined);
   }
 
   #timer(kind: HttpTimerKind, ms: number, fire: () => void) {
@@ -636,6 +650,11 @@ export class FeedHub {
       if (space !== undefined && id !== space) continue;
       for (const socket of entry.sockets) socket.pump();
     }
+  }
+
+  /** This computer's settings changed: every open tab follows. */
+  machineChanged(): void {
+    for (const socket of this.#sockets) socket.machine();
   }
 
   /** Closes every feed of a revoked grant. */

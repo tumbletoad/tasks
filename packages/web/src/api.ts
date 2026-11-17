@@ -38,10 +38,31 @@ export interface Receipt {
   readonly terminal?: { readonly app: string; readonly source: string };
 }
 
+/** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
+export interface TerminalView {
+  /** machine.toml's choice: `auto` follows the operating system's default. */
+  readonly chosen: string;
+  readonly used: { readonly app: string; readonly source: string; readonly found: boolean } | null;
+  readonly unsupported: string | null;
+  readonly unread: "windows" | "desktop" | null;
+  readonly installed: readonly string[];
+}
+
 /** The service refused the token: it expired or was revoked. */
 export class SignedOut extends Error {}
 /** The service runs another build than the one that served this page. */
 export class StaleBuild extends Error {}
+/** The service answered with an error: its code, or `unknown` when the answer had none. */
+export class Refused extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
 
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
 export const requestId = (): string => crypto.randomUUID();
@@ -102,9 +123,10 @@ export class Api {
 
   async #result<T>(path: string, input: unknown): Promise<T> {
     const reply = await this.post(path, JSON.stringify(input));
-    const parsed = JSON.parse(reply.body) as { result?: T };
+    const parsed = JSON.parse(reply.body) as { result?: T; error?: { code?: unknown } };
     if (reply.status !== 200 || parsed.result === undefined) {
-      throw new Error(`The service answered ${String(reply.status)}`);
+      const code = parsed.error?.code;
+      throw new Refused(reply.status, typeof code === "string" ? code : "unknown");
     }
     return parsed.result;
   }
@@ -154,6 +176,23 @@ export class Api {
       },
       copy: result.copy,
     };
+  }
+
+  /** Sets one of this computer's settings of the page, or resets it with null. */
+  async setMachinePreference(
+    key: string,
+    value: unknown,
+  ): Promise<{ readonly key: string; readonly value: unknown; readonly state: string }> {
+    return this.#result("/api/v1/machine/pref", { key, value });
+  }
+
+  /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */
+  async terminal(app?: string): Promise<TerminalView | null> {
+    const reply = await this.#result<{ terminal: TerminalView | null }>(
+      "/api/v1/machine/terminal",
+      app === undefined ? {} : { app },
+    );
+    return reply.terminal;
   }
 
   async receipts(task: string): Promise<Receipt[]> {

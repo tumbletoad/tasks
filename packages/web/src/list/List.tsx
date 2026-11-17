@@ -26,7 +26,9 @@ import {
   type ReactNode,
 } from "react";
 import { classes } from "../app/css.ts";
+import { useMachine } from "../app/machine.ts";
 import { useT } from "../i18n/intl.tsx";
+import { actionOf, is, type ActionId } from "../keys/keymap.ts";
 import css from "./List.module.css";
 import {
   moveFrom,
@@ -38,6 +40,16 @@ import {
 } from "./items.ts";
 
 const styles = classes(css, ["list", "group", "head", "dot", "section", "label", "name", "rows"]);
+
+/** The list's moves, by the keymap's action. */
+const MOVES: Partial<Record<ActionId, Parameters<typeof moveFrom>[2]>> = {
+  next: "next",
+  previous: "previous",
+  first: "first",
+  last: "last",
+  "next-group": "next-group",
+  "previous-group": "previous-group",
+};
 
 /** Lists over this many rows are virtualised (A5 3.22: "Lists under 200 rows are not"). */
 export const VIRTUAL_ABOVE = 200;
@@ -170,6 +182,7 @@ export function List({
   empty,
 }: ListProps) {
   const t = useT();
+  const { singleKeys } = useMachine();
   const root = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState<string | undefined>(undefined);
   const shownBefore = useRef<Items | undefined>(undefined);
@@ -264,40 +277,17 @@ export function List({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     const line = target.closest("[data-row-line]");
-    if (event.key === "Escape" && expanded !== undefined && !event.defaultPrevented) {
+    if (is(event.nativeEvent, "close") && expanded !== undefined && !event.defaultPrevented) {
       event.preventDefault();
       pending.current = expanded;
       onCollapse();
       return;
     }
-    // A text field in the row (the title being edited) keeps its keys (A5 3.21).
-    const typing =
-      target.isContentEditable ||
-      target instanceof HTMLTextAreaElement ||
-      (target instanceof HTMLInputElement && target.type !== "checkbox");
-    if (
-      line === null ||
-      typing ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey ||
-      event.nativeEvent.isComposing
-    ) {
-      return;
-    }
+    // A text field in the row (the title being edited) keeps its keys (keymap.ts).
+    const action = line === null ? undefined : actionOf(event.nativeEvent, "list", singleKeys);
+    const move = action === undefined ? undefined : MOVES[action];
     const from = current === undefined ? undefined : index.get(current);
     if (from === undefined) return;
-    const moves: Readonly<Record<string, Parameters<typeof moveFrom>[2]>> = {
-      ArrowDown: "next",
-      j: "next",
-      ArrowUp: "previous",
-      k: "previous",
-      Home: "first",
-      End: "last",
-      "]": "next-group",
-      "[": "previous-group",
-    };
-    const move = moves[event.key];
     if (move === undefined) return;
     event.preventDefault();
     moveTo(moveFrom(items, from, move));
