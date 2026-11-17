@@ -38,6 +38,7 @@ export const KEYS = [
   "updated",
   "completed",
   "on",
+  "folder",
   "id",
 ] as const;
 export type Key = (typeof KEYS)[number];
@@ -64,6 +65,7 @@ const KEY_OPS: Readonly<Record<Key, readonly Op[]>> = {
   updated: COMPARISONS,
   completed: COMPARISONS,
   on: EQUALS,
+  folder: EQUALS,
   id: EQUALS,
 };
 
@@ -103,7 +105,14 @@ const IS_LATER: Readonly<Partial<Record<IsValue, string>>> = {
   changed: "M5.09 (the seen cursor)",
 };
 
-export const HAS_VALUES = ["place", "sources", "learnings", "notes", "questions"] as const;
+export const HAS_VALUES = [
+  "folder",
+  "place",
+  "sources",
+  "learnings",
+  "notes",
+  "questions",
+] as const;
 export type HasValue = (typeof HAS_VALUES)[number];
 
 /** `due:` words beside dates and relative days. */
@@ -259,7 +268,8 @@ function checkValue(key: Key, op: Op, value: string): void {
       if (/^[A-Za-z]{1,6}-[1-9][0-9]{0,9}$/.test(value) || /^t_[0-9a-z]{26}$/.test(value)) return;
       throw queryProblem("An id: value is a task reference such as M-14", "Use id:M-14.");
     default:
-      // status, area, project, effort, source and on name the space's own values (plan.ts).
+      // status, area, project, effort, source, on and folder name the space's own values or this
+      // machine's folders (plan.ts).
       return;
   }
 }

@@ -100,6 +100,7 @@ import {
 import { canonicalJson } from "./canonical.ts";
 import { markProjected, queueProjection, type ProjectedBatch } from "./outbox.ts";
 import { isPosition, positionBetween } from "./positions.ts";
+import { freeSlug } from "./slugs.ts";
 import {
   decodeRun,
   FINAL_RUN_STATES,
@@ -3322,30 +3323,6 @@ function resolveGroupRow(conn: Connection, kind: "area" | "project", ref: string
   if (row === undefined) return problem("NOT_FOUND", `No ${kind} has this ID or slug`, op, kind);
   if (row["deleted_at"] !== null) return problem("DELETED", `The ${kind} is deleted`, op, kind);
   return row;
-}
-
-/** The longest slug the writer makes from a title, before its number. */
-const SLUG_FROM_TITLE = 48;
-
-/**
- * A slug for a new group from its title: lower-case ASCII letters and digits with `-` between,
- * `kind` when nothing is left, and `-2`, `-3`, … after it while `held` says another group has it.
- */
-function freeSlug(title: string, kind: string, held: (slug: string) => boolean): string {
-  const base =
-    title
-      .normalize("NFKD")
-      .replace(/\p{M}/gu, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+/, "")
-      .slice(0, SLUG_FROM_TITLE)
-      .replace(/-+$/, "") || kind;
-  if (!held(base)) return base;
-  for (let n = 2; ; n += 1) {
-    const slug = `${base}-${String(n)}`;
-    if (!held(slug)) return slug;
-  }
 }
 
 /**

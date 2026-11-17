@@ -41,16 +41,24 @@ const FLAG_GLOBALS = new Set([
   "--help",
 ]);
 
+/** Fields an earlier build took, and the field that replaced each. */
+const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
+
 /**
  * The usage error for an unknown option: it names the option when it is a plain option word, else
  * nothing of what was typed (argv can hold task text).
  */
 export function unknownOption(command: string, token: string): UsageError {
   const name = token.split("=")[0] ?? "";
+  const now = Object.hasOwn(RENAMED, name.replace(/^--/, ""))
+    ? RENAMED[name.replace(/^--/, "")]
+    : undefined;
   return new UsageError(
-    /^--?[A-Za-z][A-Za-z0-9-]{0,40}$/.test(name)
-      ? `${command} has no option ${name}`
-      : `${command} has no such option`,
+    now !== undefined
+      ? `${command} has no option ${name}: use --${now}`
+      : /^--?[A-Za-z][A-Za-z0-9-]{0,40}$/.test(name)
+        ? `${command} has no option ${name}`
+        : `${command} has no such option`,
   );
 }
 
@@ -178,6 +186,13 @@ export const CLI_SPEC = spec as unknown as {
   readonly verbs: readonly VerbSpec[];
   readonly exitCodes: Readonly<Record<string, number>>;
 };
+
+/** The entries whose verbs take the CLI's own `--here` and `--create` (folders.ts). */
+const FOLDER_ENTRIES: ReadonlySet<string> = new Set(["task.add", "task.update", "group.manage"]);
+
+/** Whether a verb takes `--here` and `--create`. */
+export const takesFolder = (verb: Pick<VerbSpec, "entry">): boolean =>
+  FOLDER_ENTRIES.has(verb.entry);
 
 export function verbSpec(verb: string): VerbSpec | undefined {
   return CLI_SPEC.verbs.find((v) => v.verb === verb);
@@ -329,6 +344,15 @@ export async function parseVerb(
     }
     const eq = token.indexOf("=");
     const key = eq > 0 ? keys.get(token.slice(0, eq)) : undefined;
+    const old = eq > 0 ? token.slice(0, eq) : "";
+    if (
+      !ended &&
+      key === undefined &&
+      Object.hasOwn(RENAMED, old) &&
+      keys.has(RENAMED[old] ?? "")
+    ) {
+      throw new UsageError(`tasks ${verb.verb} has no key ${old}: use ${RENAMED[old] ?? ""}=`);
+    }
     if (!ended && key !== undefined && verb.keyValue !== undefined) {
       const raw = await text(token.slice(eq + 1), key.type);
       setAt(input, key.field, typed(raw, key.type, key.values, key.key), false);

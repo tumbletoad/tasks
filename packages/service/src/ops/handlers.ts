@@ -34,6 +34,8 @@ import {
 } from "@tasks/contracts";
 import {
   carriedTo,
+  folderKey,
+  freeSlug,
   isId,
   newId,
   type Id,
@@ -86,15 +88,16 @@ import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
-import { HERE_ROWS, hereOf, hereRows, placeState, type Match, type PlaceState } from "./here.ts";
-import { bindPlace, outsideWarning, placeRefused, remoteWarning } from "./places.ts";
+import { HERE_ROWS, hereOf, hereRows, type Match } from "./here.ts";
 import {
   checkFolder,
+  deepestProject,
   expanded,
   folderRefused,
   osOf,
   reservedBy,
   storedForm,
+  type BindFacts,
   type Folder,
 } from "./folders.ts";
 import {
@@ -118,8 +121,10 @@ import {
   readGroupNames,
   readGroups,
   readLaunch,
+  readLaunchFolder,
   readPlaced,
   readPlacedAny,
+  readProjectFolders,
   readReceipt,
   readScriptChange,
   readUndoTarget,
@@ -140,9 +145,17 @@ import {
   type BindRead,
   type Destination,
   type GroupNames,
+  type ProjectFolderRow,
 } from "./read.ts";
 import { duplicateWarning } from "./similar.ts";
-import { DIGEST_RANGES, digestOf, pagePlan, pageRanges, sectionsOf } from "./task-view.ts";
+import {
+  DIGEST_RANGES,
+  digestOf,
+  pagePlan,
+  pageRanges,
+  sectionsOf,
+  type DigestFolder,
+} from "./task-view.ts";
 import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
 import { readFinished } from "./task-rows.ts";
 
@@ -617,17 +630,17 @@ function actorOf(writer: SpaceWriterHandle, principal: Principal): Promise<Id<"a
   return found;
 }
 
-/** Whether a field of the input resolves against `cwd`: a place given as "cwd" (A3 3.4.5). */
+/** Whether a field of the input resolves against `cwd`: a folder given as "cwd". */
 function resolvesCwd(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(resolvesCwd);
   if (!isRecord(value)) return false;
-  return Object.entries(value).some(([k, v]) => (k === "place" && v === "cwd") || resolvesCwd(v));
+  return Object.entries(value).some(([k, v]) => (k === "folder" && v === "cwd") || resolvesCwd(v));
 }
 
 /**
  * The input as the receipt's fingerprint covers it (A3 3.4.1): the input as the
  * caller sent it, without `cwd` when nothing in it resolves against that folder. The CLI fills
- * `cwd` itself, like the base, so a retry from another folder is the same intent; a place given as
+ * `cwd` itself, like the base, so a retry from another folder is the same intent; a folder given as
  * "cwd" makes the folder part of what the caller asked for.
  */
 function intentInput(input: Record<string, unknown>): Record<string, unknown> {
@@ -656,6 +669,11 @@ async function submit(
     readonly hints?: Readonly<Record<string, string>>;
     /** The index of complete_task's `once` wrap-up operation (resultFailure). */
     readonly wrapUp?: number;
+    /**
+     * The groups a call creates by name, `count` operations put at `at` ahead of the handler's own:
+     * a refusal's `op` counts the handler's own operations, as its results do (`ownResults`).
+     */
+    readonly inserted?: { readonly at: number; readonly count: number };
   } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
@@ -711,7 +729,13 @@ async function submit(
     throw storageFailure(error);
   }
   if (result.status === "conflict" || result.status === "rejected") {
-    throw resultFailure(result, options.hints, options.wrapUp, principal.origin);
+    const { inserted } = options;
+    const own =
+      inserted === undefined
+        ? undefined
+        : (i: number): number | undefined =>
+            i < inserted.at ? i : i < inserted.at + inserted.count ? undefined : i - inserted.count;
+    throw resultFailure(result, options.hints, options.wrapUp, principal.origin, own);
   }
   return result;
 }
@@ -771,7 +795,7 @@ function commitOf(call: Call, op: OpResult, seq: number): Promise<CommitFacts | 
 /**
  * The fields of `named`, in their order, that the commit changed (A3 3.4.6: "Setting a field to
  * its current value is no change"): a task field by its change row, `area` and `project` by their
- * column of the grouping, `place` and `sources` by a row of theirs under the task.
+ * column of the grouping, `folder` and `sources` by a row of theirs under the task.
  */
 function changedFields(named: readonly string[], facts: CommitFacts): string[] {
   const rows = (entity: string) => facts.changes.filter((c) => c.entity === entity);
@@ -786,8 +810,8 @@ function changedFields(named: readonly string[], facts: CommitFacts): string[] {
         return moved("area_id");
       case "project":
         return moved("project_id");
-      case "place":
-        return rows("places").length > 0;
+      case "folder":
+        return rows("folders").length > 0;
       case "sources":
         return rows("task_sources").length > 0;
       default:
@@ -946,19 +970,26 @@ async function bindWith(
   }
 }
 
-/** A task's place on this machine as it resolves now: its folder, or why not (R11). */
-async function placeStateOf(call: Call, place: Row | undefined): Promise<PlaceState | undefined> {
-  if (place === undefined) return undefined;
-  return placeState(
-    {
-      root: place["root_id"],
-      path: place["rel_path"],
-      kind: place["kind"],
-      identity: place["identity"],
-    },
-    call.host.roots?.() ?? [],
-    call.host.platform ?? process.platform,
-  );
+/**
+ * The folder a digest names (storage's decideLaunchFolder): the task's own here, else its
+ * project's here, else the machine where one is. A space whose schema has no folders has none.
+ */
+async function digestFolder(call: Call, task: string): Promise<DigestFolder | undefined> {
+  let found;
+  try {
+    found = await readLaunchFolder(readerOf(call.space), task, call.host.machine.id);
+  } catch {
+    return undefined;
+  }
+  switch (found.kind) {
+    case "task":
+    case "project":
+      return { path: found.folder.path, of: found.kind };
+    case "other_machine":
+      return { machine: found.machine.name };
+    case "none":
+      return undefined;
+  }
 }
 
 function due(value: unknown, today: string, path: string): { date: string } | undefined {
@@ -992,83 +1023,168 @@ function sourceFields(source: Record<string, unknown>, path: string): SourceFiel
   return fields;
 }
 
-/** A place field of the input, for the task it binds (a draft's client ID or a reference). */
-interface PlaceAsk {
-  readonly task: string;
-  readonly value: unknown;
-  /** The field's input path, for refusals and warnings. */
-  readonly at: string;
+/** What a folder's checks need to know of this machine (folders.ts). */
+function bindFacts(call: Call): BindFacts & { readonly home: string } {
+  const { host } = call;
+  const home = host.home;
+  if (home === undefined) {
+    throw new AppError({ code: "internal", message: "This service has no home folder to bind." });
+  }
+  return {
+    home,
+    platform: host.platform ?? process.platform,
+    reserved: [
+      ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
+      ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
+    ],
+  };
 }
 
-/** The root ID of a stand-in `place.set` in a request the writer replays (`placeSets`). */
-const REPLAY_ROOT = "replay";
+/** The folder a field names, in its stored form: `"cwd"` is the caller's working folder. */
+function folderOf(
+  call: Call,
+  value: string,
+  at: string,
+  facts: BindFacts & { readonly home: string },
+): Folder {
+  let given = value;
+  if (value === "cwd") {
+    const cwd = call.input["cwd"];
+    if (typeof cwd !== "string") throw folderRefused("cwd", "no_cwd");
+    given = cwd;
+  }
+  const form = storedForm(given, facts.home, facts.platform);
+  if (typeof form === "string") throw folderRefused(at, form);
+  return form;
+}
 
 /**
- * The `place.set` operations of the place fields in `asks`, bound on this machine (places.ts): a
- * root ID and a relative path, whatever form the caller used. A folder under no root is left out
- * when `outside` is `warn` (A3 3.4.5: the task is created without a place, and the result warns),
- * and refused otherwise.
- *
- * A binding depends on this machine's folders as they are now, not on the input alone, so a retry
- * after a lost reply could be refused, or bound otherwise, although the first call was applied.
- * So when the request ID already has a receipt, nothing is bound and no place operation is sent:
- * the writer checks the request's shape, then finds the receipt by the intent before it stages
- * anything, replays it and applies nothing. The request then holds only the input's own
- * operations, never more than the first call had, so it passes the writer's operation limit; a
- * request with no other operation (an update of the place alone) gets one stand-in `place.set`
- * (root `replay`), because the writer refuses a request without operations.
- *
- * The callers put these operations after all others (`others` is how many there are), so every
- * other operation keeps its index whether a folder binds or not, and a replay's stored result
- * lines up with this call's.
- *
- * `warnings` are those of places bound without a remote because their repository's config could
- * not be read exactly (`remoteWarning`): a fact of this call's binding. The callers send them with
- * the request (`submit`'s `warnings`), and the writer keeps them with the result in its receipt, so
- * a replay says exactly what the first call said: never less after a lost reply, and never this
- * call's own binding when a retry raced its first call (that binding is not what was stored).
+ * The folder a task's field names, in its stored form and checked at bind (folders.ts). Tasks may
+ * share a folder, so no project's folder is in the way.
  */
-async function placeSets(
+async function taskFolder(
   call: Call,
-  asks: readonly PlaceAsk[],
-  outside: "warn" | "refuse",
-  others: number,
-): Promise<{ readonly ops: Operation[]; readonly warnings: string[] }> {
-  const asked = asks.filter((ask) => ask.value !== undefined);
-  const first = asked[0];
-  if (first === undefined) return { ops: [], warnings: [] };
-  const standIns = (): { ops: Operation[]; warnings: string[] } => ({
-    ops: others > 0 ? [] : [{ kind: "place.set", task: first.task, root: REPLAY_ROOT, path: "" }],
-    warnings: [],
-  });
-  // A request whose ID has a receipt is the writer's to replay: nothing of this machine's folders
-  // is read for it, so no folder, remote or root changed since can refuse or reshape a replay.
-  if (await applied(call)) return standIns();
-  const roots = call.host.roots?.() ?? [];
+  value: string,
+  at: string,
+  facts: BindFacts & { readonly home: string },
+): Promise<Folder> {
+  const folder = folderOf(call, value, at, facts);
+  const problem = await checkFolder(folder, facts);
+  if (problem !== undefined) throw folderRefused(at, problem.reason);
+  return folder;
+}
+
+/**
+ * The checks at bind of `project`'s folder on this machine (folders.ts), and of its tasks' folders
+ * that move along from its old one here: none may land in Tasks' own data. `taken`: another live
+ * project has the folder here. `moved`: how many task folders move along.
+ */
+async function projectFolderChecked(
+  facts: BindFacts & { readonly home: string },
+  project: string,
+  folder: Folder,
+  read: BindRead,
+): Promise<{ readonly taken?: ProjectFolderRow; readonly moved?: number }> {
+  const others = read.projects.filter((p) => p.project !== project);
+  const problem = await checkFolder(folder, { ...facts, projects: others });
+  if (problem?.reason === "folder_taken" && problem.project !== undefined) {
+    const holder = problem.project;
+    return {
+      taken: others.find((p) => p.project === holder.project) ?? { ...holder, archived: false },
+    };
+  }
+  if (problem !== undefined) throw folderRefused("folder", problem.reason);
+  const old = read.current;
+  if (old === undefined || old.path === folder.stored) return {};
+  let moved = 0;
+  for (const task of read.tasks) {
+    const to = carriedTo(task.path, old.path, folder.stored, osOf(facts.platform));
+    if (to === undefined || to === task.path) continue;
+    moved += 1;
+    const reason = await reservedBy(expanded(to, facts.home, facts.platform), facts);
+    if (reason !== undefined) throw folderRefused("folder", reason, { task: task.ref });
+  }
+  return { moved };
+}
+
+/** What binding an owner's folder on this machine reads first (read.ts). */
+async function bindRead(call: Call, kind: "project" | "task", id: string): Promise<BindRead> {
+  try {
+    return await readBind(readerOf(call.space), { kind, id }, call.host.machine.id);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+}
+
+/** Refuses a project's folder that another live project has here, naming that project. */
+const takenBy = (holder: ProjectFolderRow): AppError =>
+  folderRefused("folder", "folder_taken", { project: { id: holder.project, name: holder.name } });
+
+/** The drafts with the projects their folders file them in, and their folders' operations. */
+interface DraftFolders {
+  readonly list: Record<string, unknown>[];
+  /** `task.folder_set` for each draft that keeps a folder of its own: after every other operation. */
+  readonly ops: Operation[];
+  readonly warnings: string[];
+}
+
+/**
+ * The folders of new tasks. A draft that names no area and no project goes to the project whose
+ * folder holds its folder most closely (`deepestProject`), and keeps a folder of its own only when
+ * it is not that project's folder itself. A folder in an archived project's folder files the task
+ * in no project, and the result says so. `ids` are the drafts' task IDs.
+ *
+ * Checking a folder looks at this machine's disk, which may have changed since a call applied, so a
+ * retry the writer replays reads nothing and sends no folder: the writer finds its receipt before it
+ * stages anything. Every draft has its own task.create, so the request is never empty.
+ */
+async function draftFolders(
+  call: Call,
+  list: readonly Record<string, unknown>[],
+  ids: readonly string[],
+  path: (k: number) => string,
+): Promise<DraftFolders> {
+  const none = (): DraftFolders => ({ list: [...list], ops: [], warnings: [] });
+  if (!list.some((draft) => typeof draft["folder"] === "string") || (await applied(call))) {
+    return none();
+  }
+  const facts = bindFacts(call);
+  const out = [...list];
   const ops: Operation[] = [];
   const warnings: string[] = [];
-  for (const ask of asked) {
-    try {
-      const bound = await bindPlace(
-        ask.value,
-        call.input["cwd"],
-        roots,
-        ask.at,
-        call.host.platform ?? process.platform,
-      );
-      if (bound.kind === "outside") {
-        if (outside === "refuse") throw placeRefused(ask.at, "outside_roots", bound.roots);
-        continue;
+  let projects: readonly ProjectFolderRow[] | undefined;
+  const looks = new Map<string, Promise<string | undefined>>();
+  try {
+    for (const [k, draft] of list.entries()) {
+      const value = draft["folder"];
+      if (typeof value !== "string") continue;
+      const at = `${path(k)}.folder`;
+      const folder = await taskFolder(call, value, at, facts);
+      let own = true;
+      if (draft["area"] === undefined && draft["project"] === undefined) {
+        try {
+          projects ??= await readProjectFolders(readerOf(call.space), call.host.machine.id);
+        } catch (error) {
+          throw storageFailure(error);
+        }
+        const found = await deepestProject(folder, projects, facts, looks);
+        if (found?.project.archived === true) {
+          warnings.push(
+            `${at}: the folder is in an archived project's folder, so the task is in no project. Unarchive the project to file tasks there.`,
+          );
+        } else if (found !== undefined) {
+          out[k] = { ...draft, project: found.project.project };
+          own = !found.exact;
+        }
       }
-      ops.push({ kind: "place.set", task: ask.task, ...bound.place });
-      if (bound.remoteUnreadable) warnings.push(remoteWarning(ask.at));
-    } catch (error) {
-      // The same request may have been decided meanwhile (a retry racing its first call).
-      if (!(error instanceof AppError) || !(await applied(call))) throw error;
-      return standIns();
+      if (own) ops.push({ kind: "task.folder_set", task: ids[k] ?? "", path: folder.stored });
     }
+  } catch (error) {
+    // The same request may have been decided meanwhile (a retry racing its first call).
+    if (error instanceof AppError && (await applied(call))) return none();
+    throw error;
   }
-  return { ops, warnings };
+  return { list: out, ops, warnings };
 }
 
 /** Whether the call's request ID has a receipt in its writer scope: a retry the writer replays. */
@@ -1086,23 +1202,6 @@ async function applied(call: Call): Promise<boolean> {
   } catch (error) {
     throw storageFailure(error);
   }
-}
-
-/**
- * The warnings of drafts that asked for a place and got none: their folder is under no root. Read
- * from the writer's result (a place row under the created task), so a replay warns the same. A
- * draft that matched an existing task binds no place (A1 3.6), and gets no warning for it.
- */
-function placeWarnings(
-  result: WriteResult,
-  drafts: readonly { readonly asked: boolean; readonly first: number; readonly at: string }[],
-): string[] {
-  return drafts.flatMap((draft) => {
-    const create = opAt(result, draft.first);
-    if (!draft.asked || create.status === "existing") return [];
-    const bound = result.results.some((r) => r.id.startsWith("pl_") && r.task === create.id);
-    return bound ? [] : [outsideWarning(draft.at)];
-  });
 }
 
 /**
@@ -1200,13 +1299,17 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
-  // The groups an earlier draft makes join the names, so a later draft resolves them by the same
-  // rules as the space's own: one call answers as its drafts sent one by one would. A new group
-  // has no slug yet.
+  // The groups an earlier draft makes join the names, with the slugs the writer will give them, so
+  // a later draft resolves them by the same rules as the space's own: one call answers as its
+  // drafts sent one by one would.
   const areas = [...names.areas];
   const projects = [...names.projects];
   const working: GroupNames = { areas, projects, aliases: names.aliases };
   const made = new Set<string>();
+  const slugOf = (title: string, kind: "area" | "project"): string =>
+    freeSlug(title, kind, (slug) =>
+      (kind === "area" ? areas : projects).some((group) => group.slug === slug),
+    );
   try {
     const resolved = list.map((draft, k) => {
       const at = path(k);
@@ -1217,7 +1320,12 @@ async function resolvedDrafts(
         if (id === undefined) {
           const created = newId("a");
           made.add(created);
-          areas.push({ id: created, slug: "", title: area.trim(), area: null });
+          areas.push({
+            id: created,
+            slug: slugOf(area.trim(), "area"),
+            title: area.trim(),
+            area: null,
+          });
           groups.push({ kind: "area.create", id: created, title: area.trim() });
           id = created;
         }
@@ -1235,7 +1343,12 @@ async function resolvedDrafts(
         let id = resolveGroup(among, "project", project, `${at}.project`, { area: within });
         if (id === undefined) {
           const created = newId("p");
-          projects.push({ id: created, slug: "", title: project.trim(), area: within ?? null });
+          projects.push({
+            id: created,
+            slug: slugOf(project.trim(), "project"),
+            title: project.trim(),
+            area: within ?? null,
+          });
           groups.push({
             kind: "project.create",
             id: created,
@@ -1538,7 +1651,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         view: "digest",
         as_of: read.space.asOf,
         bound,
-        task: digestOf(read, call.today, await placeStateOf(call, read.place)),
+        task: digestOf(read, call.today, await digestFolder(call, String(read.row["id"]))),
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
@@ -1557,38 +1670,34 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     checkMode(input);
     const agent = call.principal.actorKind !== "human";
-    const { list, groups } = await resolvedDrafts(
-      call,
-      drafts(input["tasks"]),
-      (k) => `tasks.${String(k)}`,
-    );
+    const at = (k: number): string => `tasks.${String(k)}`;
+    const named = await resolvedDrafts(call, drafts(input["tasks"]), at);
+    const ids = named.list.map(() => newId("t"));
+    const folders = await draftFolders(call, named.list, ids, at);
+    const { list } = folders;
     const ops: Operation[] = [];
     const firsts: number[] = [];
-    const asks: PlaceAsk[] = [];
     const sourcePaths = new Map<number, string>();
     list.forEach((draft, k) => {
-      const id = newId("t");
       firsts.push(ops.length);
       ops.push(
-        ...draftOps(draft, id, call.today, `tasks.${String(k)}`, ops.length, sourcePaths, agent),
+        ...draftOps(draft, ids[k] as Id<"t">, call.today, at(k), ops.length, sourcePaths, agent),
       );
-      asks.push({ task: id, value: draft["place"], at: `tasks.${String(k)}.place` });
     });
     const duplicates = await duplicateWarnings(call, list, agent);
-    const places = await placeSets(call, asks, "warn", ops.length);
-    ops.push(...places.ops);
-    // The binding's own warnings and the possible duplicates go with the request: the writer keeps
+    // The folders last, so the drafts' operations keep their indexes in a replay, which sends none.
+    ops.push(...folders.ops);
+    // The folders' and the possible duplicates' warnings go with the request: the writer keeps
     // them with the result, so a replay says the first call's, never this call's late reading.
     // New groups first, so the drafts can name them; the drafts' results are read without them.
     const result = ownResults(
-      await submit(call, [...groups, ...ops], { warnings: [...duplicates, ...places.warnings] }),
-    );
-    const placed = placeWarnings(
-      result,
-      asks.map((ask, k) => ({ asked: ask.value !== undefined, first: firsts[k] ?? 0, at: ask.at })),
+      await submit(call, [...named.groups, ...ops], {
+        warnings: [...duplicates, ...folders.warnings],
+        inserted: { at: 0, count: named.groups.length },
+      }),
     );
     const outcomes = list.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
-    // A matched draft binds no place and creates no task, so the warnings of its place and its
+    // A matched draft takes no folder and creates no task, so the warnings of its folder and its
     // title do not apply: each starts with the draft's path.
     const matched = list
       .map((_, k) => `tasks.${String(k)}`)
@@ -1609,7 +1718,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           log_added: log?.status === "created",
         };
       }),
-      warnings: [...differsWarnings(result, sourcePaths), ...placed, ...kept],
+      warnings: [...differsWarnings(result, sourcePaths), ...kept],
       ...replayed(result),
     };
   },
@@ -1640,12 +1749,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (date !== undefined) values["due"] = date;
     if (typeof set["focus"] === "boolean") values["focus"] = set["focus"] ? today : null;
     const clear = Array.isArray(input["clear"]) ? (input["clear"] as string[]) : [];
-    // The place is a row of its own: `place.clear` unbinds it (A1 3.6), after the other operations.
-    const clearPlace = clear.includes("place");
-    if (clearPlace && set["place"] !== undefined) {
-      throw invalid("clear", "Set the place or clear it, not both");
+    // The folder is a row of its own, set or cleared after the other operations.
+    const clearFolder = clear.includes("folder");
+    if (clearFolder && set["folder"] !== undefined) {
+      throw invalid("clear", "Set the folder or clear it, not both");
     }
-    const unset = clear.filter((field) => field !== "place");
+    const unset = clear.filter((field) => field !== "folder");
     const context = isRecord(input["context"]) ? input["context"] : undefined;
     const append = context?.["mode"] === "append";
     if (context !== undefined && !append) values["context"] = context["text"];
@@ -1687,37 +1796,44 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       // source.unlink is M3's (A1 3.6), with the link versions of A1 3.5.
       throw unsupported("remove_sources", "M3's source.unlink operation");
     }
-    // The place last, so the other operations keep their indexes (placeSets). A folder under no
-    // root is refused: binding the place is what the caller asked for.
-    const places = await placeSets(
-      call,
-      [{ task, value: set["place"], at: "set.place" }],
-      "refuse",
-      ops.length,
-    );
-    ops.push(...places.ops);
-    // Clearing is no binding: it reads no folder, so a retry needs no stand-in (placeSets).
-    if (clearPlace) ops.push({ kind: "place.clear", task });
+    // The folder last, so the other operations keep their indexes in a replay, which checks no
+    // folder (draftFolders) and sends a stand-in when nothing else is in the request.
+    const folder = set["folder"];
+    if (typeof folder === "string") {
+      let stored: string | undefined;
+      if (!(await applied(call))) {
+        try {
+          stored = (await taskFolder(call, folder, "set.folder", bindFacts(call))).stored;
+        } catch (error) {
+          if (!(error instanceof AppError) || !(await applied(call))) throw error;
+        }
+      }
+      if (stored !== undefined) ops.push({ kind: "task.folder_set", task, path: stored });
+      else if (ops.length === 0) ops.push({ kind: "task.folder_clear", task });
+    }
+    if (clearFolder) ops.push({ kind: "task.folder_clear", task });
     fields.push(...Object.keys(set), ...clear);
     if (context !== undefined) fields.push("context");
     if (added.length > 0) fields.push("sources");
     if (ops.length === 0) throw invalid("set", "Nothing to change");
     // update_task changes an active task (A3 3.4.6): the writer refuses a completed or archived
     // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted.
-    // The binding's warnings go with the request, so a replay says the first call's (task.add).
     const result = ownResults(
-      await submit(call, [...groups, ...ops], { active: true, warnings: places.warnings }),
+      await submit(call, [...groups, ...ops], {
+        active: true,
+        inserted: { at: 0, count: groups.length },
+      }),
     );
-    const applied = result.status === "applied";
+    const updated = result.status === "applied";
     const first = opAt(result, 0);
     const named = [...new Set(fields)];
-    const facts = applied ? await commitOf(call, first, result.seq) : undefined;
+    const facts = updated ? await commitOf(call, first, result.seq) : undefined;
     return {
-      result: applied ? "updated" : "no_change",
+      result: updated ? "updated" : "no_change",
       task: refOf(first),
       // The fields the commit changed, read from its history, so a replay answers the same.
       // Unread, the fields the call set stand in.
-      fields: !applied ? [] : facts === undefined ? named : changedFields(named, facts),
+      fields: !updated ? [] : facts === undefined ? named : changedFields(named, facts),
       as_of: result.as_of,
       warnings: [...differsWarnings(result, sourcePaths), ...result.warnings],
       ...replayed(result),
@@ -1781,40 +1897,39 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       });
     }
     const own = ops.length;
-    const { list: follow, groups } = await resolvedDrafts(
-      call,
-      drafts(input["follow_ups"]),
-      (k) => `follow_ups.${String(k)}`,
-    );
+    const at = (k: number): string => `follow_ups.${String(k)}`;
+    const named = await resolvedDrafts(call, drafts(input["follow_ups"]), at);
+    const ids = named.list.map(() => newId("t"));
+    const folders = await draftFolders(call, named.list, ids, at);
     const agent = call.principal.actorKind !== "human";
-    const firsts: number[] = [];
-    // task.finish's result has no warnings (A3 3.4.8): a follow-up's source_differs stays in the
-    // receipt's operation results.
     const sourcePaths = new Map<number, string>();
-    const asks: PlaceAsk[] = [];
+    const follow = folders.list;
+    const firsts: number[] = [];
     follow.forEach((draft, k) => {
-      const id = newId("t");
       firsts.push(ops.length);
       ops.push(
-        ...draftOps(
-          draft,
-          id,
-          call.today,
-          `follow_ups.${String(k)}`,
-          ops.length,
-          sourcePaths,
-          agent,
-        ),
+        ...draftOps(draft, ids[k] as Id<"t">, call.today, at(k), ops.length, sourcePaths, agent),
       );
-      asks.push({ task: id, value: draft["place"], at: `follow_ups.${String(k)}.place` });
     });
-    // task.finish's result has no warnings, so a follow-up's folder under no root is refused. A
-    // follow-up bound without a remote (its config unreadable) has no remote check, unannounced.
-    ops.push(...(await placeSets(call, asks, "refuse", ops.length)).ops);
+    ops.push(...folders.ops);
     // New groups after the task's own operations, so its wrap-up keeps its index, and before the
     // follow-ups that name them; the results are read without them.
+    const groups = named.groups;
     const sent = [...ops.slice(0, own), ...groups, ...ops.slice(own)];
-    const result = ownResults(await submit(call, sent, own > 1 ? { wrapUp: 1 } : {}));
+    const result = ownResults(
+      await submit(call, sent, {
+        ...(own > 1 ? { wrapUp: 1 } : {}),
+        inserted: { at: own, count: groups.length },
+        warnings: folders.warnings,
+      }),
+    );
+    const outcomes = follow.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
+    // A matched follow-up takes no folder, so its folder's warning does not apply.
+    const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
+    const warnings = [
+      ...differsWarnings(result, sourcePaths),
+      ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
+    ];
     const done = opAt(result, 0);
     // Whether the call finished or wrapped up the task, from the operations' stored results; its
     // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a
@@ -1842,14 +1957,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
               : 0
             : facts.changes.filter((c) => c.entity === "learnings" && c.field === null).length,
       // A follow-up upserts by its source keys as task.add's drafts do (A3 3.4.5, 3.4.8).
-      follow_ups: follow.map((draft, k) => {
-        const outcome = draftOutcome(result, firsts[k] ?? 0);
-        return {
-          result: outcome.result,
-          ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
-          title: String(draft["title"]),
-        };
-      }),
+      follow_ups: outcomes.map((outcome, k) => ({
+        result: outcome.result,
+        ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
+        title: String(follow[k]?.["title"]),
+      })),
+      ...(warnings.length === 0 ? {} : { warnings }),
       as_of: result.as_of,
       ...replayed(result),
     };
@@ -2129,6 +2242,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           const rows = await hereRows(placed, found, roots, platform);
           return rows.map(({ row }) => String(row["id"]));
         },
+        folderOf: (given) => {
+          if (host.home === undefined) return undefined;
+          const form = storedForm(given, host.home, platform);
+          return typeof form === "string" ? undefined : { stored: form.stored, os: osOf(platform) };
+        },
       });
     } catch (error) {
       throw storageFailure(error);
@@ -2150,11 +2268,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
       return groupWrite(call, action);
     }
+    if (input["folder"] !== undefined) throw invalid("folder", "A list takes no folder");
     const reader = readerOf(call.space);
     let read;
     let names: GroupNames | undefined;
     try {
-      read = await readGroups(reader);
+      read = await readGroupsHere(call, reader);
       if (typeof input["path"] === "string") names = await readGroupNames(reader);
     } catch (error) {
       throw storageFailure(error);
@@ -2258,7 +2377,7 @@ async function oneAtATime<T>(space: string, work: () => Promise<T>): Promise<T> 
 
 /**
  * Whether a call binds a folder or names an area or project it may create: folder.manage,
- * organize's create and move, and a task tool whose drafts name a group.
+ * organize's create, move and set_folder, and a task tool whose drafts name a group.
  */
 function decidesOnNames(entry: string, input: Record<string, unknown>): boolean {
   const named = (list: unknown): boolean =>
@@ -2268,7 +2387,11 @@ function decidesOnNames(entry: string, input: Record<string, unknown>): boolean 
     case "folder.manage":
       return true;
     case "group.manage":
-      return input["action"] === "create" || input["action"] === "move";
+      return (
+        input["action"] === "create" ||
+        input["action"] === "move" ||
+        input["action"] === "set_folder"
+      );
     case "task.add":
       return named(input["tasks"]);
     case "task.update":
@@ -2297,19 +2420,14 @@ async function folderWrite(
   action: string,
   given: string | undefined,
 ): Promise<unknown> {
-  const { input, host } = call;
-  const platform = host.platform ?? process.platform;
-  const home = host.home;
-  if (home === undefined) {
-    throw new AppError({ code: "internal", message: "This service has no home folder to bind." });
-  }
+  const { input } = call;
+  const facts = bindFacts(call);
   let stored: Folder | undefined;
   if (given !== undefined) {
-    const form = storedForm(given, home, platform);
+    const form = storedForm(given, facts.home, facts.platform);
     if (typeof form === "string") throw folderRefused("folder", form);
     stored = form;
   }
-  const machine = host.machine.id;
   const replay = await applied(call);
   const reader = readerOf(call.space);
   let names: GroupNames;
@@ -2318,11 +2436,6 @@ async function folderWrite(
   } catch (error) {
     throw storageFailure(error);
   }
-  const reserved = [
-    ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
-    ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
-  ];
-  const facts = { home, platform, reserved };
 
   if (action === "add_project") {
     const name = String(input["project"]).trim();
@@ -2330,24 +2443,18 @@ async function folderWrite(
     const projectId = newId("p");
     const ops: Operation[] = [];
     if (!replay) {
-      let read: BindRead;
-      try {
-        read = await readBind(reader, { kind: "project", id: projectId }, machine);
-      } catch (error) {
-        throw storageFailure(error);
-      }
-      const problem = await checkFolder(folder, { ...facts, projects: read.projects });
+      const read = await bindRead(call, "project", projectId);
+      const { taken } = await projectFolderChecked(facts, projectId, folder, read);
       // A folder another live project has here: that project, rather than a second one for it.
-      if (problem?.reason === "folder_taken" && problem.project !== undefined) {
+      if (taken !== undefined) {
         return {
           action,
           result: "exists",
-          owner: { kind: "project", id: problem.project.project, name: problem.project.name },
-          folder: problem.project.stored,
+          owner: { kind: "project", id: taken.project, name: taken.name },
+          folder: taken.stored,
           as_of: read.space.asOf,
         };
       }
-      if (problem !== undefined) throw folderRefused("folder", problem.reason);
     }
     let area: string | undefined;
     if (typeof input["area"] === "string") {
@@ -2394,38 +2501,18 @@ async function folderWrite(
   let moved: number | undefined;
   if (!replay && action === "set") {
     const folder = must(stored);
-    let read: BindRead;
-    try {
-      read = await readBind(reader, owner, machine);
-    } catch (error) {
-      throw storageFailure(error);
-    }
-    const others = read.projects.filter((p) => p.project !== owner.id);
-    const problem = await checkFolder(folder, {
-      ...facts,
-      ...(owner.kind === "project" ? { projects: others } : {}),
-    });
-    if (problem !== undefined) {
-      throw folderRefused(
-        "folder",
-        problem.reason,
-        problem.project === undefined
-          ? {}
-          : { project: { id: problem.project.project, name: problem.project.name } },
+    if (owner.kind === "project") {
+      const checked = await projectFolderChecked(
+        facts,
+        owner.id,
+        folder,
+        await bindRead(call, "project", owner.id),
       );
-    }
-    // A project's tasks' folders inside its old folder move along: none may land in Tasks' own
-    // data, or the whole change is refused, naming the task.
-    const old = read.current;
-    if (owner.kind === "project" && old !== undefined && old.path !== folder.stored) {
-      moved = 0;
-      for (const task of read.tasks) {
-        const to = carriedTo(task.path, old.path, folder.stored, osOf(platform));
-        if (to === undefined || to === task.path) continue;
-        moved += 1;
-        const reason = await reservedBy(expanded(to, home, platform), facts);
-        if (reason !== undefined) throw folderRefused("folder", reason, { task: task.ref });
-      }
+      if (checked.taken !== undefined) throw takenBy(checked.taken);
+      moved = checked.moved;
+    } else {
+      const problem = await checkFolder(folder, facts);
+      if (problem !== undefined) throw folderRefused("folder", problem.reason);
     }
   }
   const op: Operation =
@@ -2479,6 +2566,8 @@ const GROUP_DONE: Readonly<Record<string, string>> = {
   move: "moved",
   archive: "archived",
   unarchive: "unarchived",
+  set_folder: "folder_set",
+  clear_folder: "folder_cleared",
 };
 
 /** The group a write names, by its path: `Area` or `Area/Project`. */
@@ -2498,11 +2587,21 @@ function groupPath(input: Record<string, unknown>): GroupPath {
   return { area, project };
 }
 
+/** The group a write changed, as its result names it. */
+interface WrittenGroup {
+  readonly kind: "area" | "project";
+  readonly id: string;
+  readonly name: string;
+  readonly folder?: string;
+}
+
 /**
- * organize's writes (A3 3.4.10): create an area, or a project in an area (a new area too), rename,
- * move a project to another area, archive and unarchive. A name resolves as a draft's does
- * (groups.ts): a name close to another is refused with the close ones, a group that exists is
- * `no_change` for create. The answer is the list as of the write.
+ * organize's writes (A3 3.4.10): create an area, or a project in an area (a new area too), with
+ * its folder here; rename, move a project to another area, archive and unarchive; set and clear a
+ * project's folder here. A name resolves as a draft's does (groups.ts): a name close to another is
+ * refused with the close ones, a group that exists is `no_change` for create. A project created
+ * with a folder another project has answers `exists` with that project, and writes nothing. The
+ * answer is the list as of the write.
  */
 async function groupWrite(call: Call, action: string): Promise<unknown> {
   const { input } = call;
@@ -2511,24 +2610,49 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   if ((action === "rename" || action === "move") && (to === undefined || to === "")) {
     throw invalid("to", `Required to ${action}`, action === "move" ? "Name the area." : undefined);
   }
-  const done = GROUP_DONE[action] ?? "no_change";
+  const given = typeof input["folder"] === "string" ? input["folder"] : undefined;
+  if (given !== undefined && action !== "create" && action !== "set_folder") {
+    throw invalid("folder", `A ${action} takes no folder`);
+  }
+  if (action === "set_folder" && given === undefined) {
+    throw invalid(
+      "folder",
+      "Required to set_folder",
+      'Give "cwd", an absolute folder or one under ~.',
+    );
+  }
+  const folderAction = action === "set_folder" || action === "clear_folder";
+  if ((folderAction || given !== undefined) && path.project === undefined) {
+    throw invalid("path", "Only a project has a folder", "Name it as Area/Project.");
+  }
+  const facts = given === undefined ? undefined : bindFacts(call);
+  const folder =
+    given === undefined || facts === undefined ? undefined : folderOf(call, given, "folder", facts);
   if (await applied(call)) {
-    // A retry of a decided write: the writer replays it. Its names are not resolved again, since
-    // a rename it made would refuse its own retry; a stand-in operation carries it to the writer.
+    // A retry of a decided write: the writer replays it. Its names and its folder are not looked
+    // at again, since a rename it made would refuse its own retry; a stand-in operation carries it
+    // to the writer.
     const result = await submit(call, [{ kind: "area.create", title: path.area }]);
-    const read = await afterWrite(call, readGroups);
+    const read = await afterWrite(call, (reader) => readGroupsHere(call, reader));
     const kind = action === "move" || path.project !== undefined ? "project" : "area";
+    const last = result.results.at(-1)?.id ?? "";
+    const id =
+      isId(last, "a") || isId(last, "p")
+        ? last
+        : await afterWrite(call, (reader) => readFolderOwner(reader, last));
+    const changed = result.status === "applied";
     return {
       ...(read === undefined
         ? { areas: [], projects: [], total_areas: 0, total_projects: 0 }
         : groupList(read, undefined)),
       action,
       as_of: result.as_of,
-      result: result.status === "applied" ? done : "no_change",
+      result: changed ? (GROUP_DONE[action] ?? "no_change") : "no_change",
       group: {
         kind,
-        id: result.results.at(-1)?.id ?? "",
+        id: id ?? "",
         name: action === "rename" ? (to ?? "") : (path.project ?? path.area),
+        ...(folder === undefined ? {} : { folder: folder.stored }),
       },
       ...replayed(result),
     };
@@ -2544,7 +2668,9 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   const titleOf = (kind: "area" | "project", id: string): string =>
     (kind === "area" ? names.areas : names.projects).find((g) => g.id === id)?.title ?? "";
   const ops: Operation[] = [];
-  let group: { kind: "area" | "project"; id: string; name: string };
+  let group: WrittenGroup;
+  let done = GROUP_DONE[action] ?? "no_change";
+  let moved: number | undefined;
   if (action === "create") {
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {
@@ -2560,11 +2686,45 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       let project = fresh
         ? undefined
         : resolveGroup(names, "project", path.project, "path", { area, create: true });
+      const exists = project !== undefined;
       if (project === undefined) {
         project = newId("p");
         ops.push({ kind: "project.create", id: project as Id<"p">, title: path.project, area });
         group = { kind: "project", id: project, name: path.project };
       } else group = { kind: "project", id: project, name: titleOf("project", project) };
+      if (folder !== undefined && facts !== undefined) {
+        const read = await bindRead(call, "project", project);
+        const here = read.current;
+        if (
+          here !== undefined &&
+          folderKey(here.path, osOf(facts.platform)) ===
+            folderKey(folder.stored, osOf(facts.platform))
+        ) {
+          group = { ...group, folder: here.path };
+        } else if (here !== undefined) {
+          throw invalid(
+            "folder",
+            "The project has another folder here",
+            "Change it with action set_folder and base.",
+          );
+        } else {
+          const { taken } = await projectFolderChecked(facts, project, folder, read);
+          // A folder another live project has here: that project, rather than a second one for it.
+          if (taken !== undefined) {
+            const list = await readGroupsHere(call, readerOf(call.space));
+            return {
+              ...groupList(list, undefined),
+              action,
+              as_of: read.space.asOf,
+              result: "exists",
+              group: { kind: "project", id: taken.project, name: taken.name, folder: taken.stored },
+            };
+          }
+          ops.push({ kind: "project.folder_set", project, path: folder.stored });
+          group = { ...group, folder: folder.stored };
+          if (exists) done = "folder_set";
+        }
+      }
     } else if (ops.length === 0) group = { kind: "area", id: area, name: titleOf("area", area) };
   } else {
     const kind = path.project === undefined ? "area" : "project";
@@ -2589,6 +2749,19 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
         ops.push({ kind: "area.create", id: target as Id<"a">, title: to ?? "" });
       }
       ops.push({ kind: "project.move", project: id, area: target });
+    } else if (action === "set_folder" && folder !== undefined && facts !== undefined) {
+      const checked = await projectFolderChecked(
+        facts,
+        id,
+        folder,
+        await bindRead(call, "project", id),
+      );
+      if (checked.taken !== undefined) throw takenBy(checked.taken);
+      moved = checked.moved;
+      ops.push({ kind: "project.folder_set", project: id, path: folder.stored });
+      group = { ...group, folder: folder.stored };
+    } else if (action === "clear_folder") {
+      ops.push({ kind: "project.folder_clear", project: id });
     } else {
       const archive = action === "archive";
       ops.push(
@@ -2608,9 +2781,9 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     if (result.status === "applied") outcome = done;
   }
   // The list as of the write, so the caller sees the group where it is now.
-  let read;
+  let read: GroupsHere;
   try {
-    read = await readGroups(readerOf(call.space));
+    read = await readGroupsHere(call, readerOf(call.space));
   } catch (error) {
     throw storageFailure(error);
   }
@@ -2620,17 +2793,41 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     as_of: asOf ?? read.space.asOf,
     result: outcome,
     group,
+    ...(outcome !== "no_change" && moved !== undefined && !replay ? { moved } : {}),
     ...(replay ? { replayed: true } : {}),
   };
 }
 
-/** A group row as the result names it. */
-function groupRow(row: Row): { id: string; slug: string; name: string; active: number } {
+/** The space's active areas and projects, and the projects' folders on this machine. */
+interface GroupsHere extends Awaited<ReturnType<typeof readGroups>> {
+  /** A project's folder here, by its ID. */
+  readonly folders: ReadonlyMap<string, string>;
+}
+
+/**
+ * The groups as organize lists them. The folders are read on their own: a space whose schema has
+ * no folders lists its groups without.
+ */
+async function readGroupsHere(call: Call, reader: WorkerConnection): Promise<GroupsHere> {
+  const read = await readGroups(reader);
+  const folders = await readProjectFolders(reader, call.host.machine.id).catch(
+    (): ProjectFolderRow[] => [],
+  );
+  return { ...read, folders: new Map(folders.map((f) => [f.project, f.stored])) };
+}
+
+/** A group row as the result names it, a project with its folder here. */
+function groupRow(
+  row: Row,
+  folders?: ReadonlyMap<string, string>,
+): { id: string; slug: string; name: string; active: number; folder?: string } {
+  const folder = folders?.get(String(row["id"]));
   return {
     id: String(row["id"]),
     slug: String(row["slug"]),
     name: String(row["title"]),
     active: Number(row["active"]),
+    ...(folder === undefined ? {} : { folder }),
   };
 }
 
@@ -2639,15 +2836,13 @@ function groupRow(row: Row): { id: string; slug: string; name: string; active: n
  * each with at most GROUP_LIMITS.projects projects and the count of those left out, and the
  * projects without an area. `only` keeps one area.
  */
-function groupList(
-  read: Awaited<ReturnType<typeof readGroups>>,
-  only: string | undefined,
-): Record<string, unknown> {
+function groupList(read: GroupsHere, only: string | undefined): Record<string, unknown> {
   const areas = read.areas.filter((row) => only === undefined || row["id"] === only);
   const projectsOf = (area: unknown) => read.projects.filter((p) => p["area_id"] === area);
   const loose = read.projects.filter(
     (p) => p["area_id"] === null || !read.areas.some((a) => a["id"] === p["area_id"]),
   );
+  const project = (row: Row) => groupRow(row, read.folders);
   return {
     action: "list",
     as_of: read.space.asOf,
@@ -2656,11 +2851,11 @@ function groupList(
       const more = projects.length - GROUP_LIMITS.projects;
       return {
         ...groupRow(row),
-        projects: projects.slice(0, GROUP_LIMITS.projects).map(groupRow),
+        projects: projects.slice(0, GROUP_LIMITS.projects).map(project),
         ...(more > 0 ? { more_projects: more } : {}),
       };
     }),
-    projects: only === undefined ? loose.slice(0, GROUP_LIMITS.projects).map(groupRow) : [],
+    projects: only === undefined ? loose.slice(0, GROUP_LIMITS.projects).map(project) : [],
     total_areas: areas.length,
     total_projects:
       only === undefined ? read.projects.length : areas.flatMap((a) => projectsOf(a["id"])).length,

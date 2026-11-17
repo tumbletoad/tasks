@@ -1,38 +1,46 @@
-// A place on a folder that does not answer, in a call that names a group: the binding is bounded,
-// so the call is refused in time and the space's other calls that decide on names go on. A real
-// service in this process, real sessions, fixture text only; the folder that does not answer is a
-// stand-in for node:fs/promises that waits at one file's open until the test lets it go.
-import { mkdirSync, writeFileSync } from "node:fs";
+// A project's folder that does not answer, in a call that binds it: the look is bounded, so the
+// call is refused in time and the space's other calls that decide on names go on. A real service
+// in this process, real sessions, fixture text only; the folder that does not answer is a stand-in
+// for node:fs/promises that waits at one folder's stat until the test lets it go, and says when
+// that late look has come back.
+import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { GroupManageResult } from "@tasks/contracts";
 import type { RpcSession } from "@tasks/bridge/protocol";
 
 const gate = vi.hoisted(() => ({
-  /** The file whose open waits, once. */
+  /** The folder whose stat waits, once. */
   path: undefined as string | undefined,
   entered: undefined as (() => void) | undefined,
   release: undefined as Promise<void> | undefined,
+  /** Told once the late stat has come back and what awaited it has run. */
+  finished: undefined as (() => void) | undefined,
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const real = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...real,
-    open: async (...args: Parameters<typeof real.open>) => {
-      if (gate.path !== undefined && resolve(String(args[0])) === gate.path) {
-        gate.path = undefined;
-        gate.entered?.();
-        await gate.release;
+    stat: async (...args: Parameters<typeof real.stat>) => {
+      if (gate.path === undefined || resolve(String(args[0])) !== gate.path) {
+        return real.stat(...args);
       }
-      return real.open(...args);
+      gate.path = undefined;
+      gate.entered?.();
+      await gate.release;
+      try {
+        return await real.stat(...args);
+      } finally {
+        setTimeout(() => gate.finished?.(), 0);
+      }
     },
   };
 });
 
 const { startService } = await import("../src/hub/service.ts");
 const { classSession, errorOf } = await import("./ops-helpers.ts");
-const { configOf, removeRuntimeDir, serviceEnv, tempRoot } = await import("./harness.ts");
+const { removeRuntimeDir, serviceEnv, tempRoot } = await import("./harness.ts");
 
 let service: Awaited<ReturnType<typeof startService>>;
 let home: string;
@@ -41,17 +49,11 @@ let cleanup: () => void;
 const sessions: RpcSession[] = [];
 
 beforeAll(async () => {
-  const temp = tempRoot("places-late");
+  const temp = tempRoot("folders-late");
   cleanup = temp.cleanup;
   home = join(temp.root, "h");
   work = join(temp.root, "work");
-  mkdirSync(join(work, "repo", ".git"), { recursive: true });
-  mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
-  writeFileSync(
-    join(configOf(home), "machine.toml"),
-    `[roots.work]\npath = ${JSON.stringify(work)}\n`,
-    { mode: 0o600 },
-  );
+  mkdirSync(join(work, "repo"), { recursive: true });
   service = await startService({
     env: serviceEnv(home),
     identity: () => ({ root: false, elevated: false, package: null }),
@@ -74,12 +76,8 @@ afterAll(async () => {
   cleanup();
 });
 
-describe("[A1.3.15.places.request-path] a place whose folder does not answer", () => {
+describe("[A1.3.15.folders.request-path] a project's folder that does not answer", () => {
   test("is refused in time, holds up no other call of the space, and its late answer writes nothing", async () => {
-    writeFileSync(
-      join(work, "repo", ".git", "config"),
-      '[remote "origin"]\n\turl = https://example.com/fixture/repo.git\n',
-    );
     const first = await classSession(home, service.endpoint.path, "cli-script");
     const second = await classSession(home, service.endpoint.path, "cli-script");
     sessions.push(first, second);
@@ -87,19 +85,24 @@ describe("[A1.3.15.places.request-path] a place whose folder does not answer", (
     const entered = new Promise<void>((done) => {
       gate.entered = done;
     });
+    const finished = new Promise<void>((done) => {
+      gate.finished = done;
+    });
     gate.release = new Promise<void>((done) => {
       release = done;
     });
-    gate.path = resolve(join(work, "repo", ".git", "config"));
+    gate.path = resolve(join(work, "repo"));
     try {
       const stuck = first
         .call(
           "op/call",
           {
-            op: "task.add",
+            op: "group.manage",
             input: {
-              tasks: [{ title: "Fixture stuck place", area: "Stuck", place: join(work, "repo") }],
-              request_id: "fixture-place-late-0000001",
+              action: "create",
+              path: "Stuck/Fixture repo",
+              folder: join(work, "repo"),
+              request_id: "fixture-folder-late-0000001",
             },
           },
           { timeoutMs: 60_000 },
@@ -115,7 +118,7 @@ describe("[A1.3.15.places.request-path] a place whose folder does not answer", (
           "op/call",
           {
             op: "group.manage",
-            input: { action: "create", path: "Errands", request_id: "fixture-place-late-0000002" },
+            input: { action: "create", path: "Errands", request_id: "fixture-folder-late-0000002" },
           },
           { timeoutMs: 60_000 },
         ),
@@ -128,7 +131,8 @@ describe("[A1.3.15.places.request-path] a place whose folder does not answer", (
     } finally {
       release();
     }
-    // Answered at last: the refused call still wrote nothing.
+    // The late look has come back: the refused call still wrote nothing.
+    await finished;
     const listed = GroupManageResult.parse(
       await second.call("op/call", { op: "group.manage", input: { action: "list" } }),
     );

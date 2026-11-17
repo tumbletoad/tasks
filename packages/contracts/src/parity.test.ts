@@ -355,7 +355,12 @@ describe("[A3.5.registry.zod-ajv-parity] Zod and Ajv agree at every field's boun
     if (update === undefined || status === undefined) throw new Error("entries are registered");
     const updateSlots = slots(inputJsonSchema(update), "", (v) => v, []).map((s) => s.path);
     expect(updateSlots).toContain("/add_sources[]/key");
-    expect(updateSlots).toContain("/set/place|1/path");
+    expect(updateSlots).toContain("/set/folder");
+    // A branch of a union no example takes: a digest's folder on another machine.
+    const get = registry.find((e) => e.name === "task.get");
+    if (get === undefined) throw new Error("task.get is registered");
+    const getSlots = slots(outputJsonSchema(get), "", (v) => v, []).map((s) => s.path);
+    expect(getSlots.some((path) => path.endsWith("/folder|1/machine"))).toBe(true);
     const statusSlots = slots(outputJsonSchema(status), "", (v) => v, []).map((s) => s.path);
     expect(statusSlots).toContain("/counts/statuses[]/count");
     expect(statusSlots).toContain("/here[]/live_sessions");

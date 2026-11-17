@@ -17,6 +17,7 @@ import {
   formatTaskRef,
   HAS_SEARCH_TABLES_SQL,
   ROWS_BY_IDS_SQL,
+  type FolderOs,
   type FrozenEntry,
   type Query as SqlQuery,
   type QueryResult,
@@ -71,6 +72,10 @@ export interface SearchEnv {
   readonly live: () => readonly string[];
   /** The tasks whose place here matches `cwd`; none when `cwd` is no folder here. */
   readonly here: (cwd: string) => Promise<readonly string[]>;
+  /** A folder given to `folder:` as this machine stores it (`cwd` already made the folder). */
+  readonly folderOf?: (
+    given: string,
+  ) => { readonly stored: string; readonly os: FolderOs } | undefined;
   /** Whether this machine's update of the space failed: a refusal of words says so. */
   readonly updateFailed?: boolean;
 }
@@ -108,6 +113,10 @@ const VOCABULARY: readonly SqlQuery[] = [
   // A stamp of every place: a place write makes its row the newest (its version is the commit's
   // seq), and a removal lowers the count, so any change to the places changes the stamp.
   { sql: "SELECT count(*) AS n, coalesce(max(version), 0) AS v FROM places", mode: "get" },
+  {
+    sql: "SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = 'folders'",
+    mode: "get",
+  },
 ];
 
 /**
@@ -145,10 +154,11 @@ interface Known {
   vocabulary: Vocabulary;
   indexed: boolean;
   places: string;
+  folders: boolean;
 }
 
 function vocabularyOf(results: readonly unknown[]): Known {
-  const [space, statuses, efforts, areas, projects, machines, indexed, places] = results;
+  const [space, statuses, efforts, areas, projects, machines, indexed, places, folders] = results;
   const decoded = decodeSpaceRow(space as Row);
   const groups = (value: unknown) =>
     rows(value).map((r) => ({ id: str(r["id"]), slug: str(r["slug"]), title: str(r["title"]) }));
@@ -156,6 +166,7 @@ function vocabularyOf(results: readonly unknown[]): Known {
     space: decoded,
     indexed: (indexed as Row | null)?.["n"] === 2,
     places: `${String((places as Row | null)?.["n"])}:${String((places as Row | null)?.["v"])}`,
+    folders: folders !== null && folders !== undefined,
     vocabulary: {
       refPrefix: decoded.refPrefix,
       statuses: keysOf("tasks.statuses", statuses),
@@ -177,6 +188,7 @@ const PLAN_ROUNDS = 3;
 function samePlan(a: Known, b: Known, placed: boolean): boolean {
   return (
     a.indexed === b.indexed &&
+    a.folders === b.folders &&
     (!placed || a.places === b.places) &&
     JSON.stringify(a.vocabulary) === JSON.stringify(b.vocabulary)
   );
@@ -244,6 +256,12 @@ export async function runSearch(
       ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
       ...(here === undefined ? {} : { here }),
       live,
+      folders: known.folders,
+      folderOf: (value) => {
+        const given = value.toLowerCase() === "cwd" ? input.cwd : value;
+        if (given === undefined) return "no_cwd";
+        return env.folderOf?.(given) ?? "not_a_folder";
+      },
     });
     const results = await reader.transaction("deferred", [
       ...VOCABULARY,

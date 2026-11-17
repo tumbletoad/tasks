@@ -737,9 +737,33 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.deepest",
+      "title": "The project a working folder belongs to: the deepest project folder that holds it, by whole names and the machine's case rule, exact when it is the project's folder, none for a sibling with a longer name; a project folder reached through a link holds the folders of its target",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.15.folders.request-path",
-      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
       "source": "A1 3.15, A3 3.4.5",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.folders.cli",
+      "title": "Folders at the command line: tasks add and tasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; tasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; tasks area list and tasks show print the folders; the old --place and place= name --folder",
+      "source": "A2 3.10, A3 3.4.13",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.folders.agent",
+      "title": "The agent's folder fields through the request path: a task added with folder cwd from a project's subfolder lands in the deepest project whose folder holds it with its own folder, from the project's folder itself takes the project's, from outside every project has no project and its folder, from an archived project's folder has no project, its folder and a warning; a draft that names its group keeps it; a follow-up with folder cwd; a retry replays after the folder went; organize creates a project with its folder, sets it to cwd, lists and clears it, and answers exists with the project that has a folder; cwd without a working folder, a missing folder and the old place field are refused with their reason and the field to use; has:folder and folder: in search; a group an earlier draft makes known by its slug; a refusal's op counting the call's own operations; update_task's folder from cwd",
+      "source": "A1 3.15, A3 3.4.3, A3 3.4.5, A3 3.4.6, A3 3.4.10",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3333,14 +3357,7 @@
       "kind": "ci",
       "profiles": ["v1"]
     },
-    {
-      "id": "A1.3.15.places.request-path",
-      "title": "place.set through op/call from cwd, an absolute folder or a root and path: the closest root and a relative path with the Git remote, a folder under no root a warning for a new task and a refusal for an update or a follow-up, a repository whose config cannot be read exactly bound without a remote and with a warning, a retry replayed after the folder went, and no absolute path in the space's files, the log or an error",
-      "source": "A1 3.15, A3 3.4.5, A3 3.4.6, A7 3.9 M2.07",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
+
     {
       "id": "A1.3.15.roots.add",
       "title": "tasks roots add is the user's only, edits machine.toml keeping its other bytes, gives the root its revision and binds places under it at once; an ID in use, a folder another root names, a missing folder and a bad ID are refused with the file unchanged",
