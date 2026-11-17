@@ -501,7 +501,7 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
   if (slot !== undefined && pinned !== undefined) {
     // The grant comes first: a home that may not use the space its binding pins can do nothing
     // here, whatever the call names, so `binding` (leave out the space) would not help it.
-    checkGrant(host.homes, homes, pinned);
+    checkGrant(host.homes, caller, pinned);
     const live = host.spaces().filter((s) => s.state !== "closed");
     if (named !== undefined && named !== pinned) {
       const other = findSpace(live, named);
@@ -533,7 +533,7 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
     throw error;
   }
   // Refused before it is pinned: a connection keeps no space it may not use.
-  checkGrant(host.homes, homes, picked.id);
+  checkGrant(host.homes, caller, picked.id);
   // An unbound connection pins the space of its first call when its bind frame could not name one
   // (A2 3.7.1: it never follows a later change of the default).
   if (slot !== undefined && picked.id !== undefined) host.bindings?.pin(slot, picked.id);
@@ -564,6 +564,11 @@ function grantedTarget(
   return candidates.every(
     (id) => id !== undefined && homes.every((home) => host.homes?.may(home, id) === true),
   );
+}
+
+/** The space a person's own command means: the one it names, else the machine's default. */
+export function personSpace(host: OpsHost, named: string | undefined): ServedSpace {
+  return pickByRule(host, { class: "cli-interactive", env: {} }, named);
 }
 
 function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
@@ -700,7 +705,7 @@ async function submit(
     // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
     // read and staged stops it before its actor is registered, and once more (below) before the
     // writer gets the request.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    checkGrant(call.host.homes, call.caller, call.space.id);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
@@ -715,6 +720,7 @@ async function submit(
         machine_id: call.host.machine.id as Id<"m">,
         origin: principal.origin,
         ...(principal.session === undefined ? {} : { session_id: principal.session as Id<"se"> }),
+        ...(principal.run === undefined ? {} : { run_id: principal.run as Id<"ru"> }),
       },
       ...(typeof input["base"] === "string" ? { base: input["base"] } : {}),
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
@@ -728,7 +734,7 @@ async function submit(
     };
     // The last step before the writer: no write is handed over after the revoke took effect. Only
     // a request the writer holds already can still commit.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    checkGrant(call.host.homes, call.caller, call.space.id);
     // An unbound connection's write was registered when its call started (`opCall`), so a retry
     // after a lost reply, once bound, still finds this receipt.
     result = await writer.submit(request);

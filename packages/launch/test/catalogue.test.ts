@@ -33,7 +33,7 @@ describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
     }
   });
 
-  test("A4 3.11.6's permission flags; inherit adds nothing and runs that need a mode refuse it", () => {
+  test("A4 3.11.6's permission flags; inherit adds nothing, and a Codex run takes no flags", () => {
     const claude = targetDef("claude-cli").permissionArgs;
     const codex = targetDef("codex-cli").permissionArgs;
     expect(claude.inherit).toEqual({ open: [], run: null });
@@ -48,15 +48,15 @@ describe("[A4.3.2.catalogue.invariants] the built-in target catalogue", () => {
     expect(codex.inherit).toEqual({ open: [], run: null });
     expect(codex["full-access"]).toEqual({
       open: ["--dangerously-bypass-approvals-and-sandbox"],
-      run: ["--dangerously-bypass-approvals-and-sandbox"],
+      run: null,
     });
     expect(codex["auto-edit"]).toEqual({
       open: ["-s", "workspace-write", "-a", "on-request"],
-      run: ["-s", "workspace-write"],
+      run: null,
     });
     expect(codex["read-only"]).toEqual({
       open: ["-s", "read-only", "-a", "on-request"],
-      run: ["-s", "read-only"],
+      run: null,
     });
     // Codex's terminal route keeps the session in the shim's process tree (A4 3.4.3).
     expect(targetDef("codex-cli").routes[0]?.argv).toContain("--no-daemon");

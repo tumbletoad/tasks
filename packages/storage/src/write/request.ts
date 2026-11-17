@@ -25,6 +25,7 @@ import { PATCHABLE_FIELDS, type PatchableField } from "./fields.ts";
 import { isFolderForm } from "./folders.ts";
 import {
   RUN_APP_TOOLS,
+  RUN_CLEANUPS,
   RUN_EVIDENCE_FIELDS,
   RUN_EVIDENCE_ID,
   RUN_LIMIT_BOUNDS,
@@ -1868,9 +1869,10 @@ function runResult(f: Fields): RunResultRow {
     f.raw(key) === null ? null : read();
   const text = (key: string, bytes: number): string | null =>
     nullable(key, () => f.text(key, { bytes, empty: true }));
-  const flags: Pick<RunResultRow, "text_cut" | "text_final"> = {};
+  const flags: Pick<RunResultRow, "text_cut" | "text_final" | "cleanup"> = {};
   if (f.has("text_cut")) flags.text_cut = f.boolean("text_cut");
   if (f.has("text_final")) flags.text_final = f.boolean("text_final");
+  if (f.has("cleanup")) flags.cleanup = f.oneOf("cleanup", RUN_CLEANUPS);
   const result: RunResultRow = {
     ok: f.boolean("ok"),
     outcome: f.oneOf("outcome", RUN_OUTCOMES),

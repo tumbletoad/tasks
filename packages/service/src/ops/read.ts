@@ -522,6 +522,45 @@ export async function readTaskRef(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Runs
+
+/** How many runs a list reads at most: the newest. */
+export const RUNS_LISTED = 50;
+
+const RUNS_ALL: Statement = {
+  sql:
+    "SELECT r.*, t.ref AS task_ref FROM runs r LEFT JOIN tasks t ON t.id = r.task_id " +
+    `ORDER BY r.queued_at DESC, r.id DESC LIMIT ${String(RUNS_LISTED)}`,
+  mode: "all",
+};
+const RUNS_OF_TASK: Statement = {
+  sql:
+    "SELECT r.*, t.ref AS task_ref FROM runs r LEFT JOIN tasks t ON t.id = r.task_id " +
+    `WHERE r.task_id = $task ORDER BY r.queued_at DESC, r.id DESC LIMIT ${String(RUNS_LISTED)}`,
+  mode: "all",
+};
+
+/**
+ * The space's newest runs, or a task's (`task`, a `t_` ID), newest first, each row with its task's
+ * reference (`task_ref`, formatted). Rows as the runs table holds them.
+ */
+export async function readRunRows(
+  reader: WorkerConnection,
+  task?: string,
+): Promise<{ row: Row; ref: string | null }[]> {
+  const [space, rows] = await snapshot(
+    reader,
+    [SPACE, task === undefined ? RUNS_ALL : RUNS_OF_TASK],
+    { task: task ?? null },
+  );
+  const prefix = spaceFacts(space).refPrefix;
+  return (rows as Row[]).map((row) => {
+    const ref = row["task_ref"];
+    return { row, ref: typeof ref === "number" ? formatTaskRef(prefix, ref) : null };
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Status
 
 const STATUS_ORDER: Statement = {

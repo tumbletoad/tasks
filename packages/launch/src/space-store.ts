@@ -20,6 +20,7 @@ import {
   APP_TOOLS_STATES,
   OUTCOME_REASONS,
   RUN_ADAPTERS,
+  RUN_CLEANUPS,
   RUN_EVIDENCE_FIELDS,
   RUN_PERMISSIONS,
   RUN_STATES,
@@ -27,6 +28,7 @@ import {
   type AppToolsState,
   type NewRun,
   type OutcomeReason,
+  type RunCleanup,
   type RunPatch,
   type RunRecord,
   type RunResult,
@@ -475,6 +477,7 @@ function resultRow(result: RunResult): Record<string, unknown> {
     declined: result.declined,
     permission_denials: result.permissionDenials,
     duration_ms: result.durationMs,
+    ...(result.cleanup === undefined ? {} : { cleanup: result.cleanup }),
   };
 }
 
@@ -595,8 +598,10 @@ function decodeResult(row: Readonly<Record<string, unknown>>): RunResult | undef
     declined: row["declined"] as number,
     permissionDenials: row["permission_denials"] as number,
     durationMs: (row["duration_ms"] ?? null) as number | null,
+    ...(row["cleanup"] === undefined ? {} : { cleanup: row["cleanup"] as RunCleanup }),
   };
   if (!isOf(OUTCOME_REASONS, result.outcome)) return undefined;
+  if (result.cleanup !== undefined && !isOf(RUN_CLEANUPS, result.cleanup)) return undefined;
   if (result.appTools !== null && !isOf(APP_TOOLS_STATES, result.appTools)) return undefined;
   return runResultProblem(result) === undefined ? result : undefined;
 }

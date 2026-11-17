@@ -1,6 +1,6 @@
-// The stream parser frame shared by both CLIs (A4 3.11.4): bytes or lines in, normalised events
-// and a final outcome out. Pure: no I/O, no clock, no logging. The CLI-specific part is a
-// `CliReader` (claude-print.ts, codex-exec.ts) that reads one parsed JSON object at a time.
+// The stream parser frame (A4 3.11.4): bytes or lines in, normalised events and a final outcome
+// out. Pure: no I/O, no clock, no logging. The CLI-specific part is a `CliReader` (claude-print.ts)
+// that reads one parsed JSON object at a time.
 //
 // Tolerant by construction: a line is split in bounded memory (lines.ts), decoded leniently,
 // parsed inside a try, and read through checked accessors (values.ts). A line handler that still

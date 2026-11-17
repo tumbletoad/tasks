@@ -209,6 +209,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.codex-app-server.fixture-content",
+      "title": "The recorded codex app-server exchanges hold only what their sanitiser writes (protocol words, synthetic IDs, fixture paths, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, account, machine name, prompts, answers and ticket, and the check refuses any other value",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.7.m0-bridge-bench.self-test",
       "title": "The M0 bridge harness runs B01 to B07 at a tiny size, reads process memory from outside, writes a result file per row and judges none of them",
       "source": "A7 3.7 (M0.06), A2 3.7.7",
@@ -1517,6 +1524,41 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.door",
+      "title": "tasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of Tasks' tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.codex.driver",
+      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, and a whole answer after megabytes of other output",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.codex.run",
+      "title": "A Codex run in the run host with real processes, its program resolved from an npm shim (.cmd on Windows): start to answer with both results kept, Stop during a turn, Stop while the app server will not end after its work, and a process the agent left behind ended with the cleanup saying so, also one left in the agent's own group after it exited, in a job object and without a process group, with nothing of a test left alive; on Windows Ctrl+C reaches the app server through Node's wrapper",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.json-rpc.lines",
+      "title": "JSON-RPC over lines with requests in both directions: answers matched by ID, error answers with their code, the other side's requests answered by the handler or with method not found and never with a handler's private error, a slow answer holding up nothing after it, a request left open answered later, lines read whole in bounded memory with bad and over-long lines skipped, and every open request ended when the connection ends",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.ungrouped",
+      "title": "Without a process group a run still starts on every OS: the agent reads its stdin and its end is no command, Stop ends the agent and the children it started (also ones that ignore the interrupt or keep forking), counted from the operating system, and no confirmation claims more than that",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.crash",
       "title": "Killing the stand-in service by force leaves nothing of its runs and recover confirms each container empty by name; a service that lost its records recovers a live container from its name; on Windows a job handle held elsewhere keeps a run alive past the crash, confirm says occupied and recover ends it",
       "source": "A4 3.11.8, A4 3.11.9",
@@ -1568,6 +1610,13 @@
       "id": "A4.3.11.9.run.folder",
       "title": "A queued run checks, right before it starts, the folder a launch of its task would use: a task whose folder went is refused as folder_gone and nothing starts, and a task without a folder runs in the work folder",
       "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.stop-unknown",
+      "title": "Stop of a run whose processes were not confirmed ended (unknown) ends them by force and settles the run as it ended",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2718,6 +2767,13 @@
       "title": "Detection on the real file system with fake commands and homes in a temporary folder and an injected PATH: the version from --version, wrappers never run, files in agent homes never opened",
       "source": "A4 3.2, A7 3.9 M2.06",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.detect.program",
+      "title": "The program a run starts for an instance is resolved before it starts, without running anything: a bare name from the agent's PATH, a Windows npm .cmd shim as Node with its package's entry, an npm link on Linux as Node with its script; a shim without an entry, a PowerShell script and a missing program are refused",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },

@@ -24,32 +24,20 @@ const OK: Record<StreamKind, string[]> = {
     '{"type":"assistant","message":{"content":[{"type":"text","text":"a"}]}}',
     '{"type":"result","subtype":"success","is_error":false,"result":"b","usage":{"input_tokens":1,"output_tokens":2}}',
   ],
-  "codex-exec": [
-    '{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000001"}',
-    '{"type":"turn.started"}',
-    '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"a"}}',
-    '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}',
-  ],
 };
 
 const kinds = (events: readonly RunEvent[]): string[] => events.map((e) => e.kind);
 
 /** A JSON line of the given UTF-8 length that is a whole, known-but-unused event. */
-function bigLine(kind: StreamKind, length: number): string {
-  const head =
-    kind === "claude-print" ? '{"type":"user","pad":"' : '{"type":"turn.started","pad":"';
+function bigLine(_kind: StreamKind, length: number): string {
+  const head = '{"type":"user","pad":"';
   return head + "x".repeat(length - head.length - 2) + '"}';
 }
 
 /** A message event whose text is `size` times `char`. */
-function bigMessage(kind: StreamKind, size: number, char = "y"): string {
+function bigMessage(_kind: StreamKind, size: number, char = "y"): string {
   const text = char.repeat(size);
-  return kind === "claude-print"
-    ? JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } })
-    : JSON.stringify({
-        type: "item.completed",
-        item: { id: "item_9", type: "agent_message", text },
-      });
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } });
 }
 
 describe.each(STREAM_KINDS)(
@@ -207,9 +195,7 @@ describe.each(STREAM_KINDS)(
       const parser = createStreamParser(kind);
       for (let i = 0; i < 100_000; i += 1) {
         parser.push(
-          kind === "claude-print"
-            ? `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t${String(i)}","name":"Bash"}]}}\n`
-            : `{"type":"item.started","item":{"id":"i${String(i)}","type":"command_execution","status":"declined"}}\n`,
+          `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t${String(i)}","name":"Bash"}]}}\n`,
         );
       }
       expect(parser.held().retained).toBeLessThanOrEqual(2 * 512);
@@ -220,15 +206,10 @@ describe.each(STREAM_KINDS)(
       const parser = createStreamParser(kind);
       const event = (i: number): string => {
         const id = String(i).padStart(8, "0") + "k".repeat(1024 * 1024 - 200);
-        return kind === "claude-print"
-          ? JSON.stringify({
-              type: "assistant",
-              message: { content: [{ type: "tool_use", id, name: "Bash" }] },
-            })
-          : JSON.stringify({
-              type: "item.started",
-              item: { id, type: "command_execution", status: "declined" },
-            });
+        return JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id, name: "Bash" }] },
+        });
       };
       for (let i = 0; i < 600; i += 1) parser.push(event(i) + "\n");
       // The same long ID again is still the same call.

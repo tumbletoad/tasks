@@ -4,7 +4,7 @@
 // home, no wrapper and no shim run. Fixture paths only (the user "mira").
 import { describe, expect, test } from "vitest";
 import { HOME_VARIABLES } from "../src/catalogue.ts";
-import { detect, instanceEntry, type Detection } from "../src/detect.ts";
+import { detect, instanceEntry, resolveProgram, type Detection } from "../src/detect.ts";
 import type { Instance } from "../src/sections.ts";
 import { fakeHost, type FakeHostSpec } from "./fake-host.ts";
 
@@ -328,5 +328,51 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
     const t3 = detection.proposals.find((p) => p.id === "t3");
     if (t3 === undefined) throw new Error("no t3 proposal");
     expect(instanceEntry(t3)).toEqual({ ok: false, needs: ["t3_provider_instance"] });
+  });
+});
+
+describe("[A4.3.2.detect.program] the program a run starts for an instance, resolved before it starts", () => {
+  test("Windows: a bare name and an npm .cmd shim become Node with the package's entry", () => {
+    const host = fakeHost(WINDOWS);
+    const entry = "C:\\Users\\mira\\npm-global\\node_modules\\@openai\\codex\\bin\\codex.js";
+    const node = "C:\\Program Files\\nodejs\\node.exe";
+    const want = { ok: true, command: node, args: [entry, "--x"] };
+    expect(resolveProgram(host, "codex", ["--x"], "codex-cli")).toEqual(want);
+    expect(
+      resolveProgram(host, "C:\\Users\\mira\\npm-global\\codex.cmd", ["--x"], "codex-cli"),
+    ).toEqual(want);
+    expect(host.ran).toEqual([]);
+  });
+
+  test("Windows: a shim with no package entry beside it, a PowerShell script and a missing program are refused", () => {
+    const host = fakeHost(WINDOWS);
+    expect(resolveProgram(host, "C:\\Users\\mira\\.t3\\bin\\t3.cmd", [], "t3")).toEqual({
+      ok: false,
+      reason: "cmd_shim",
+    });
+    expect(resolveProgram(host, "C:\\Users\\mira\\npm-global\\codex.ps1", [], "codex-cli")).toEqual(
+      {
+        ok: false,
+        reason: "cmd_shim",
+      },
+    );
+    expect(resolveProgram(host, "nothing-here", [], "codex-cli")).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+  });
+
+  test("Linux: a link into node_modules runs its script with Node; a native program runs as it is", () => {
+    const host = fakeHost(LINUX);
+    expect(resolveProgram(host, "codex", [], "codex-cli")).toEqual({
+      ok: true,
+      command: `${NVM}/bin/node`,
+      args: [`${NVM}/lib/node_modules/@openai/codex/bin/codex.js`],
+    });
+    expect(resolveProgram(host, "/home/mira/.local/bin/codex-work", ["a"], "codex-cli")).toEqual({
+      ok: true,
+      command: "/home/mira/.local/bin/codex-work",
+      args: ["a"],
+    });
   });
 });
