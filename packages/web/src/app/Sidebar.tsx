@@ -4,9 +4,10 @@
 // position, so an entry that came and went with its content would break that. Counts sit at the
 // inline end of Inbox, Open, Waiting, Review and Backlog, and nowhere else; a count is part of its
 // link's name ("Waiting, 2 tasks"). A counted view that holds nothing shows no count and a quieter
-// label, and its name says so ("Inbox, no tasks"). An area lists its projects beneath it while its
-// view is open. Areas show no counts.
-import { Link, useParams } from "@tanstack/react-router";
+// label, and its name says so ("Inbox, no tasks"). An area lists its projects beneath it, always:
+// projects that opened and closed with their area's view would move every entry below them.
+// Areas show no counts.
+import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useIntl } from "react-intl";
 import { slotOf } from "../groups.ts";
@@ -37,11 +38,41 @@ const EXACT_IGNORE_TASK = { exact: true, includeSearch: false } as const;
 const byPosition = (a: { position: string; id: string }, b: { position: string; id: string }) =>
   a.position < b.position ? -1 : a.position > b.position ? 1 : a.id < b.id ? -1 : 1;
 
+function Projects({
+  space,
+  area,
+  projects,
+}: {
+  readonly space: string;
+  readonly area: string;
+  readonly projects: readonly { readonly id: string; readonly title: string }[];
+}) {
+  if (projects.length === 0) return null;
+  return (
+    <ul className={styles.projects}>
+      {projects.map((project) => (
+        <li key={project.id}>
+          <Link
+            to="/s/$space/area/$area/project/$project"
+            params={{ space, area, project: project.id }}
+            className={styles.item}
+            activeProps={{ "aria-current": "page" }}
+            activeOptions={IGNORE_TASK}
+          >
+            <span className={styles.label} dir="auto">
+              {project.title}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function Sidebar({ space }: { readonly space: string }) {
   const t = useT();
   const intl = useIntl();
   const state = useLive();
-  const params: { area?: string; project?: string } = useParams({ strict: false });
   // The rows are known from the first snapshot on (an offline tab keeps them).
   const known = state.space !== undefined;
   const entries = useMemo(
@@ -102,27 +133,11 @@ export function Sidebar({ space }: { readonly space: string }) {
                   {area.title}
                 </span>
               </Link>
-              {params.area === area.id ? (
-                <ul className={styles.projects}>
-                  {projects
-                    .filter((project) => project.area_id === area.id)
-                    .map((project) => (
-                      <li key={project.id}>
-                        <Link
-                          to="/s/$space/area/$area/project/$project"
-                          params={{ space, area: area.id, project: project.id }}
-                          className={styles.item}
-                          activeProps={{ "aria-current": "page" }}
-                          activeOptions={IGNORE_TASK}
-                        >
-                          <span className={styles.label} dir="auto">
-                            {project.title}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
+              <Projects
+                space={space}
+                area={area.id}
+                projects={projects.filter((project) => project.area_id === area.id)}
+              />
             </li>
           ))}
         </ul>

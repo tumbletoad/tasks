@@ -1,8 +1,9 @@
 // One end-to-end world: a real service process (tests/e2e/serve-entry.ts) in a temporary
-// TASKS_HOME, serving the page's build on a loopback port the OS assigns, with two spaces of
-// fixture data: the seeded Mira sample (areas, projects, tasks) and an empty "Studio" with one
-// task. Sign-in goes the way `tasks open` goes: a code from `ui/mint_code` over the socket, in the
-// URL's fragment. The fake agent writes through the socket as an agent does (class `cli-agent`).
+// TASKS_HOME, serving the page's build on a loopback port the OS assigns, with three spaces of
+// fixture data: the seeded Mira sample (areas, projects, tasks), a "Studio" with one task and a
+// "Quiet" space whose views are empty. Sign-in goes the way `tasks open` goes: a code from
+// `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
+// as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -51,6 +52,8 @@ export interface World {
   readonly origin: string;
   readonly mira: SpaceInfo;
   readonly studio: SpaceInfo;
+  /** A space with no open task, area or project. Tests leave its views empty. */
+  readonly quiet: SpaceInfo;
   /** A task of Mira's in an area, for the launch. */
   readonly task: FixtureTask;
   /**
@@ -195,6 +198,11 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       { timeoutMs: SLOW_MS },
     );
+    const quiet = (await user.call(
+      "space/create",
+      { name: "Quiet", path: join(spacesRoot, "quiet"), ref_prefix: "Q" },
+      { timeoutMs: SLOW_MS },
+    )) as { space: Described };
     const agent = await classSession(home, endpoint, "cli-agent", { CLAUDECODE: "1" });
     sessions.push(agent);
 
@@ -208,6 +216,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       origin,
       mira: { id: opened.space.spaceId, name: opened.space.name },
       studio: { id: created.space.id, name: created.space.name },
+      quiet: { id: quiet.space.id, name: quiet.space.name },
       task,
       spare,
       signInUrl: async (to) => {
