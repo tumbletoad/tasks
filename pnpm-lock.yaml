@@ -245,6 +245,9 @@ importers:
         specifier: workspace:*
         version: link:../service
     devDependencies:
+      '@tasks/runs':
+        specifier: workspace:*
+        version: link:../runs
       '@tasks/storage':
         specifier: workspace:*
         version: link:../storage

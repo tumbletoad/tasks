@@ -19,14 +19,17 @@ import {
   waitFor,
 } from "@tasks/service/test/harness";
 import { classSession } from "@tasks/service/test/ops-helpers";
+import { FINAL_RUN_STATES } from "@tasks/contracts/runs";
+import { RunMachine } from "@tasks/runs";
 import { newId, type Id } from "@tasks/storage";
 import { seedMira } from "@tasks/testkit";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { BIN, runMain } from "./cli-harness.ts";
 
 const windows = process.platform === "win32";
 const SERVER = fileURLToPath(new URL("../../runs/test/codex-server.ts", import.meta.url));
+const FINAL: ReadonlySet<string> = new Set(FINAL_RUN_STATES);
 const REQUEST_MARK = "Look at MARKREQ7Q2 first.";
 const ANSWER_MARK = "Found MARKANS9X4 in the export.";
 const LOG_MARK = "Progress MARKLOG3K8 noted.";
@@ -259,6 +262,34 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       expect(text.includes("MARKREQ7Q2"), file).toBe(false);
       expect(text.includes("MARKANS9X4"), file).toBe(false);
     }
+  });
+
+  test("a run's right to use its space ends when the run does, not once its record is read again", async () => {
+    // Every read of the run once it is final says whether its calls could still use the space.
+    const after: boolean[] = [];
+    let id = "";
+    const read = Reflect.get<RunMachine, "read">(RunMachine.prototype, "read");
+    const spy = vi.spyOn(RunMachine.prototype, "read").mockImplementation(async function (
+      this: RunMachine,
+      run: string,
+    ) {
+      const record = await read.call(this, run);
+      if (run === id && record !== undefined && FINAL.has(record.state)) {
+        after.push(service?.ops.homes?.may("codex", spaceId, id) ?? false);
+      }
+      return record;
+    });
+    try {
+      const started = await user(["run", task, "--json", "Once."]);
+      id = (JSON.parse(started.stdout) as { id: string }).id;
+      expect(id).toMatch(/^ru_/);
+      const done = await service?.runs.ended(spaceId, id);
+      expect(done?.state).toBe("succeeded");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(after.length).toBeGreaterThan(0);
+    expect(after).not.toContain(true);
   });
 
   test("a retry with the same request ID starts nothing twice", async () => {

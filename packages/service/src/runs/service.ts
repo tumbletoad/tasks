@@ -594,7 +594,7 @@ export class RunService {
           const forget = (): void => {
             this.#tickets.delete(ticket);
           };
-          void lane.host.ended(run.id).then(forget, forget);
+          void lane.host.hosting(run.id).then(forget, forget);
           return command;
         },
       };

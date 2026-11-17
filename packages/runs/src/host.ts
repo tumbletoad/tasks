@@ -294,9 +294,16 @@ export class RunHost {
 
   /** Resolves with the run's record once this host's work on it is over. */
   async ended(id: string): Promise<RunRecord | undefined> {
-    const flow = this.#flows.get(id);
-    if (flow !== undefined) await flow.done;
+    await this.hosting(id);
     return this.#machine.read(id);
+  }
+
+  /**
+   * Resolves as soon as this host's work on the run is over: its end recorded, or the host
+   * closed. What the run may do ends here, without waiting for its record to be read again.
+   */
+  async hosting(id: string): Promise<void> {
+    await this.#flows.get(id)?.done;
   }
 
   /**
