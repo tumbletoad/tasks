@@ -1,14 +1,14 @@
 // `task.search` (A3 3.4.3, 3.9): a query through the space's reader, a page at a time.
 //
 // A first page reads the space's vocabulary, plans the query (plan.ts) and runs it in one read
-// transaction at as_of S, which freezes the ordered IDs (at most 1,000) under a cursor
+// transaction at as_of S, which freezes the ordered IDs (at most SEARCH_IDS) under a cursor
 // (cursors.ts). Then every page, the first included, reads its slice of that list fresh in one
 // read transaction through A1's `rows_by_ids`: the header's `as_of` is that read's, the base for
 // writes based on the page. A row changed after S is marked `changed`; one deleted or redacted
 // since keeps its place as a placeholder with its reference and no content (A3 3.9.5). A snippet
 // is always FTS5's `snippet()` over the document's current text, else the current summary, so a
 // page never shows text the space no longer holds.
-import { AppError, CURSOR_PATTERN, type SEARCH_SCOPES } from "@tasks/contracts";
+import { AppError, CURSOR_PATTERN, SEARCH_IDS, type SEARCH_SCOPES } from "@tasks/contracts";
 import {
   decodeRowsByIds,
   decodeSpaceRow,
@@ -34,7 +34,7 @@ import {
   type FrozenSearch,
   type SearchCursors,
 } from "./cursors.ts";
-import { planSearch, SEARCH_IDS, type Scope, type SearchPlan, type Vocabulary } from "./plan.ts";
+import { planSearch, type Scope, type SearchPlan, type Vocabulary } from "./plan.ts";
 import { namesLifecycle, parseQuery, printQuery, termsOf, type Query } from "./query.ts";
 
 /** What a search reads through: a space's reader connection (`WorkerConnection`). */
@@ -78,6 +78,8 @@ export interface SearchEnv {
   ) => { readonly stored: string; readonly os: FolderOs } | undefined;
   /** Whether this machine's update of the space failed: a refusal of words says so. */
   readonly updateFailed?: boolean;
+  /** Whether the caller's face shows this page whole (Caller.shows). Absent: it shows every row. */
+  readonly shows?: (page: SearchResult) => boolean;
 }
 
 /** The structured result: `TaskSearchResult`. */
@@ -85,7 +87,7 @@ export interface SearchResult {
   as_of: string;
   scope: Scope;
   parsed: string;
-  total: number | "1000+";
+  total: number | "10000+";
   first: number;
   rows: Record<string, unknown>[];
   cursor?: string;
@@ -297,7 +299,7 @@ export async function runSearch(
     match: plan.match,
     limit: input.limit ?? DEFAULT_LIMIT,
     items,
-    total: found.length > SEARCH_IDS ? "1000+" : found.length,
+    total: found.length > SEARCH_IDS ? "10000+" : found.length,
   };
   return page(reader, search, 0, env);
 }
@@ -346,9 +348,7 @@ async function page(
   const out = entries.map((entry, i) =>
     rowOf(entry, items[i] as FrozenItem, snippets, search, space.refPrefix, env.timeZone),
   );
-  const next = offset + search.limit;
-  const cursor = next < search.items.length ? env.cursors.issue(search, next) : undefined;
-  return {
+  const head = {
     as_of: formatAsOf({
       epoch: space.authority.epoch,
       incarnation: space.authority.incarnation,
@@ -357,11 +357,36 @@ async function page(
     scope: search.scope,
     parsed: search.parsed,
     total: search.total,
-    first: out.length === 0 ? 0 : offset + 1,
-    rows: out,
-    ...(cursor === undefined ? {} : { cursor }),
   };
+  const pageOf = (count: number, cursor: string | undefined): SearchResult => ({
+    ...head,
+    first: count === 0 ? 0 : offset + 1,
+    rows: out.slice(0, count),
+    ...(cursor === undefined ? {} : { cursor }),
+  });
+  // The rows the caller's face shows whole: the next page starts at the first one it would cut.
+  let keep = out.length;
+  const shows = env.shows;
+  if (shows !== undefined && keep > 1) {
+    const fits = (count: number) =>
+      shows(pageOf(count, offset + count < search.items.length ? SAMPLE_CURSOR : undefined));
+    if (!fits(keep)) {
+      let low = 1;
+      let high = keep - 1;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (fits(mid)) low = mid;
+        else high = mid - 1;
+      }
+      keep = low;
+    }
+  }
+  const next = offset + keep;
+  return pageOf(keep, next < search.items.length ? env.cursors.issue(search, next) : undefined);
 }
+
+/** A cursor as long as every cursor is, to measure a page before its cursor is issued. */
+const SAMPLE_CURSOR = `c_${"0".repeat(16)}`;
 
 /** A page's row for one frozen entry (A3 3.9.4). */
 function rowOf(

@@ -318,7 +318,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       as_of: AS_OF,
       scope: "all",
       parsed: cjk(500),
-      total: "1000+",
+      total: "10000+",
       first: 1,
       rows,
       cursor: "c_7m2k9q4w1z8r3c6d",
@@ -355,7 +355,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       if (name === "task.search") {
         expect(text).toContain('Next page: search with cursor "c_7m2k9q4w1z8r3c6d"');
         expect(text.split("\n")[0]).toBe(
-          `1-50 of 1000+ · scope all · as_of ${AS_OF} · * changed since the search ran`,
+          `1-50 of 10000+ · scope all · as_of ${AS_OF} · * changed since the search ran`,
         );
       }
       split(text);

@@ -387,3 +387,36 @@ describe("[A3.bulk.refusals] a refusal says what to change", () => {
     );
   });
 });
+
+describe("[A3.bulk.paging] an agent that pages through search sees every task once", () => {
+  test(
+    "a page holds what the tool's text shows, and its cursor goes on from the next row",
+    async () => {
+      const count = 130;
+      for (let start = 0; start < count; start += 25) {
+        await call("task.add", {
+          tasks: Array.from({ length: Math.min(25, count - start) }, (_, k) => ({
+            title: `Paging ${String(start + k)} ${"long words of a title ".repeat(8)}`.slice(
+              0,
+              200,
+            ),
+            area: "Paging",
+          })),
+          request_id: rid(),
+        });
+      }
+      const seen: string[] = [];
+      let text = await tool("search", { q: 'area:"Paging"', limit: 50 });
+      for (let pages = 0; pages < 40; pages += 1) {
+        expect(text).not.toContain("not shown");
+        seen.push(...[...text.matchAll(/^([A-Z]+-\d+) · /gmu)].map((m) => m[1] ?? ""));
+        const next = /with cursor "(c_[0-9a-z]+)"/u.exec(text)?.[1];
+        if (next === undefined) break;
+        text = await tool("search", { cursor: next });
+      }
+      expect(new Set(seen).size).toBe(count);
+      expect(seen).toHaveLength(count);
+    },
+    LONG,
+  );
+});

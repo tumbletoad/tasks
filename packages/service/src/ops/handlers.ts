@@ -2354,6 +2354,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         machine: host.machine.id,
         ...(boundTask === undefined ? {} : { boundTask }),
         updateFailed: call.space.state === "read_only" && call.space.reason === "migration_failed",
+        ...(call.caller.shows === undefined
+          ? {}
+          : { shows: (page: unknown) => call.caller.shows?.("task.search", page) !== false }),
         live: () =>
           [...(host.bindings?.liveSessions(space) ?? new Map<string, number>())]
             .filter(([, count]) => count > 0)

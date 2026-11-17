@@ -2829,8 +2829,8 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `scope` | "active" \| "finished" \| "all" \| "learnings" | yes | The scope searched |
 | `parsed` | string | yes | How the query was read |
-| `total` | integer, 0 to 1000 \| "1000+" | yes | Matches: exact up to 1,000 |
-| `first` | integer, 0 to 1000 | yes | Position of the first row; 0 without rows |
+| `total` | integer, 0 to 10000 \| "10000+" | yes | Matches: exact up to 10,000 |
+| `first` | integer, 0 to 10000 | yes | Position of the first row; 0 without rows |
 | `rows` | (object \| object \| object)[], max 50 items | yes | This page's rows, in the search's order |
 | `rows[].id` | string | yes | Task ID |
 | `rows[].ref` | string | yes | Task reference |

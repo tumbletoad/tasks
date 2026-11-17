@@ -2323,6 +2323,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.bulk.paging",
+      "title": "An agent that follows search's cursor with limit 50 over tasks with long titles sees every task once: a page holds the rows the tool's text shows whole, and the next page starts at the first row it left out",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.parser",
       "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",
@@ -2356,7 +2363,7 @@
     },
     {
       "id": "A3.5.search.cursors",
-      "title": "Cursor pages under random writes, tombstones, entity and text redactions and new matches have no gaps or duplicates and keep the snapshot's order, and a removed entry is a placeholder without its old text; a retried cursor gives the same page with a changed row marked and the page's own as_of; more than 1,000 matches freeze the first 1,000; an epoch, incarnation, binding, idle time, eviction or restart ends a cursor with its reason",
+      "title": "Cursor pages under random writes, tombstones, entity and text redactions and new matches have no gaps or duplicates and keep the snapshot's order, and a removed entry is a placeholder without its old text; a retried cursor gives the same page with a changed row marked and the page's own as_of; more than 10,000 matches freeze the first 10,000; an epoch, incarnation, binding, idle time, eviction or restart ends a cursor with its reason",
       "source": "A3 3.9.5, A3 3.5, A3 5, A1 3.12, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",

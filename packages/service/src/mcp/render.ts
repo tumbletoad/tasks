@@ -15,6 +15,7 @@ import {
   clip,
   entryLines,
   fit,
+  fitsWhole,
   fixed,
   textLines,
   type Part,
@@ -772,21 +773,39 @@ export const hasRenderer = (entryName: string): boolean => Object.hasOwn(RENDERE
 
 /** An entry's result as its compact text, within the entry's result budget (A3 3.2.5). */
 export function renderResult(entryName: string, result: unknown, random?: Random): string {
-  const renderer = RENDERERS[entryName];
-  const entry = findEntry(entryName);
-  const max = entry?.budget?.max ?? LIMITS.result;
-  if (renderer === undefined) {
+  const shaped = rendered(entryName, result);
+  if (shaped === undefined) {
     // No tool without a renderer is listed; a later entry gets one with its tool.
     return fit(
-      { parts: [fixed("ok"), { data: true, units: [[JSON.stringify(result)]] }], more: "" },
-      max,
+      {
+        parts: [fixed("ok"), { data: true, units: [[JSON.stringify(result)]] }],
+        more: "",
+      },
+      budgetOf(entryName),
       random,
     );
   }
-  const rendered = (
+  return fit(shaped.text, shaped.max, random);
+}
+
+/** Whether an entry's result shows whole in its tool's text: nothing of it is cut. */
+export function showsWhole(entryName: string, result: unknown): boolean {
+  const shaped = rendered(entryName, result);
+  return shaped === undefined || fitsWhole(shaped.text, shaped.max);
+}
+
+const budgetOf = (entryName: string): number => findEntry(entryName)?.budget?.max ?? LIMITS.result;
+
+/** An entry's result as its renderer lays it out, with the budget it fits. */
+function rendered(entryName: string, result: unknown): { text: Rendered; max: number } | undefined {
+  const renderer = RENDERERS[entryName];
+  if (renderer === undefined) return undefined;
+  const entry = findEntry(entryName);
+  const max = budgetOf(entryName);
+  const text = (
     renderer as (r: unknown, t: { getTask: string; tool: string }) => Rendered & { max?: number }
   )(result, { getTask: toolOf("task.get"), tool: entry?.faces.mcp?.tool ?? entryName });
-  return fit(rendered, Math.min(max, rendered.max ?? max, LIMITS.result), random);
+  return { text, max: Math.min(max, text.max ?? max, LIMITS.result) };
 }
 
 // ---------------------------------------------------------------------------------------------
