@@ -26,41 +26,17 @@ function verbOf(entry: string, input: Record<string, unknown>): string {
   return verb;
 }
 
-/**
- * The CLI's arguments for an entry: its verb with the input on stdin, or for the Planning
- * import, which has a command of its own (`tasks import planning`), its options: the dry run's,
- * `--apply <run> --token <token>` and `--undo <run>`.
- */
-function argvOf(entry: string, input: Record<string, unknown>): string[] {
-  if (entry === "import.planning.apply") {
-    const run = String(input["run"]);
-    const token = String(input["token"]);
-    return ["import", "planning", "--apply", run, "--token", token, "--json"];
-  }
-  if (entry === "import.planning.undo") {
-    return ["import", "planning", "--undo", String(input["run"]), "--json"];
-  }
-  if (entry !== "import.planning.preview") return [verbOf(entry, input), "--input", "-", "--json"];
-  const roots = (input["roots"] ?? []) as { id: string; folder: string }[];
-  return [
-    "import",
-    "planning",
-    String(input["folder"]),
-    "--dry-run",
-    "--json",
-    ...(typeof input["me"] === "string" ? ["--me", input["me"]] : []),
-    ...(roots.length === 0 ? [] : ["--roots", roots.map((r) => `${r.id}=${r.folder}`).join(",")]),
-    ...(typeof input["actions"] === "string" ? ["--actions", input["actions"]] : []),
-    ...(typeof input["checked_as"] === "string" ? ["--checked-as", input["checked_as"]] : []),
-    ...(input["include_orphans"] === true ? ["--include-orphans"] : []),
-  ];
-}
+/** The CLI's arguments for an entry: its verb with the input on stdin. */
+const argvOf = (entry: string, input: Record<string, unknown>): string[] => [
+  verbOf(entry, input),
+  "--input",
+  "-",
+  "--json",
+];
 
 /** Whether the CLI has a command for an entry. A read only the page makes has none. */
 const onCli = (entry: string): boolean =>
-  entry === "entry.add" ||
-  entry.startsWith("import.planning.") ||
-  CLI_SPEC.verbs.some((v) => v.entry === entry);
+  entry === "entry.add" || CLI_SPEC.verbs.some((v) => v.entry === entry);
 
 contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --json", async () => {
   const w = await contractWorld("cj");
@@ -69,11 +45,8 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
     folder: (task) => w.folder(task),
     // The CLI holds no binding: `tasks show --launch` resolves the reference for that call.
     binds: false,
-    // An entry with no command is the UI's alone; the import has commands of its own.
-    carries: (entry) =>
-      entry.startsWith("import.planning.") ||
-      entry === "entry.add" ||
-      CLI_SPEC.verbs.some((v) => v.entry === entry),
+    // An entry with no command is the UI's alone.
+    carries: onCli,
     launch: async (task) => (await w.launch(task)).reference,
     call: async (entry, input, actor) => {
       // An entry without a command goes the request path the CLI's own calls take.

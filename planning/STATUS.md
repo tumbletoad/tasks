@@ -2,9 +2,9 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 76 of 110, and M2.04b, M4.01b and M4.05b outside the base count.
+**Done so far:** 73 of 101, and M2.04b, M4.01b and M4.05b outside the base count.
 
-**Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 11 · total 110. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
+**Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 2 · total 101. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
 ## How to read and use it
 
@@ -145,11 +145,11 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05 is merged, bu
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
 | M4.09 | Folders in the space: storage and operations | M4.01b | M | done |
 | M4.10 | Agent and command-line fields for folders | M4.09 | M | done |
-| M4.11 | Folder follow-ups, the old places retired | M4.10, M6.16, M7.11, M3.10 | S | todo |
+| M4.11 | Folder follow-ups, the old places retired | M4.10, M6.16, M3.10 | S | todo |
 
 M4.05b and M4.01b are not in the base count.
 
-## M5: the planner UI (parallel with M6 and the importer)
+## M5: the planner UI (parallel with M6)
 
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
@@ -159,12 +159,12 @@ M4.05b and M4.01b are not in the base count.
 | M5.04 | Today | M5.03 | S | done |
 | M5.05 | Status, area, Completed, Agents views | M5.03 | S | done |
 | M5.06 | Expanded task | M5.03 | M | done |
-| M5.07 | Composer and action strip | M5.06 | S | doing |
+| M5.07 | Composer and action strip | M5.06 | S | done |
 | M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | done |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | done |
 | M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | done |
-| M5.12 | First-run setup | M5.11, M4.05 | S | ready |
+| M5.12 | First-run setup | M5.11, M4.05 | S | doing |
 | M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
 | M5.14 | Add project and folders in the page | M4.09, M6.16, M5.06 | M | todo |
 
@@ -177,7 +177,7 @@ M4.05b and M4.01b are not in the base count.
 | M6.03 | Run shim | M6.01, M2.08 | M | done |
 | M6.04 | Cancellation | M6.03 | M | done |
 | M6.05 | Stream parsers | M0.11 | S | done |
-| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | todo |
+| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | doing |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
 | M6.08 | The Tasks work folder | M6.06, M2.11 | S | todo |
 | M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | todo |
@@ -187,25 +187,16 @@ M4.05b and M4.01b are not in the base count.
 | M6.13 | Stable Windows launchers | M6.12 | S | done |
 | M6.14 | Real-run contract evals | M6.07, M4.08 | S RM | todo |
 | M6.15 | Real machines: Refresh, cancel, receipts | M6.01–M6.14 | S RM | todo |
-| M6.16 | Launch and service on folders | M4.09 | M | doing |
+| M6.16 | Launch and service on folders | M4.09 | M | done |
 
 ## M7: switch-over (v1)
 
 | Step | Title | Needs | Size | State |
 |---|---|---|---|---|
-| M7.01 | Synthetic prototype fixture | M1.03 | S | done |
-| M7.02 | Pure parsers | M7.01 | S | done |
-| M7.03 | Mapping to operations | M3.01, M3.06, M7.02 | M | done |
-| M7.04 | Dry-run report and import UI | M7.03 (UI parts: M5.12) | S | done |
-| M7.05 | Apply, undo, idempotent re-import | M7.04 | M | done |
-| M7.06 | Export to the prototype format | M7.03 | M | ready |
-| M7.07 | Rollback tooling | M7.05, M7.06 | M | todo |
-| M7.08 | Trial tooling | M7.07 | S | todo |
-| M7.09 | Rehearsal on the machine that holds the real work data | M5, M6, M7.08 | S RM | todo |
+| M7.09 | Rehearsal on the machine that holds the real work data | M5, M6 | S RM | todo |
 | M7.10 | Cutover and 10-day trial | M7.09 | S RM | todo |
-| M7.11 | The importer on folders | M7.05, M4.09 | M | doing |
 
-M7.01 and M7.02 run during M3 and M4. M7.03 to M7.08 run during M5 and M6. In M7 the work is fixing what the rehearsal and the trial find.
+The prototype importer and the steps built on it (M7.01 to M7.08 and M7.11) left the plan: agents recreate the first user's tasks with the product's own tools. Their IDs are not reused. In M7 the work is fixing what the rehearsal and the trial find.
 
 ## Conditional steps
 

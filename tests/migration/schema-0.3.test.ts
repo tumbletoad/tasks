@@ -452,7 +452,7 @@ describe("[A1.5.migration.run-parents-0003] a run outlives the redaction of its 
         kind: "run.create",
         task: task as Id<"t">,
         instance: "codex-work",
-        adapter: "codex-exec",
+        adapter: "codex",
         place: place as Id<"pl">,
         request: "Check the export and fix the time zone.",
         brief_hash: "7c2e9a41".repeat(8),

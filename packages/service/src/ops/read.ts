@@ -94,343 +94,6 @@ export async function readSpace(reader: WorkerConnection): Promise<SpaceFacts> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// What an import plan meets in the space (A7 3.15.4)
-
-/** The values an import plan names, each list sent as one JSON array. */
-export interface ImportNames {
-  readonly aliases: readonly string[];
-  readonly keys: readonly string[];
-  readonly areas: readonly string[];
-}
-
-export interface ImportRows {
-  readonly spaceId: string;
-  readonly epoch: number;
-  readonly incarnation: string;
-  readonly refPrefix: string;
-  readonly nextRef: number;
-  /** The space's `as_of` of the snapshot: an apply's base (A1 3.5). */
-  readonly asOf: string;
-  /** The snapshot's last seq: the state an apply decides on, and its barrier expects. */
-  readonly seq: number;
-  readonly aliases: { alias: string; task: string; version: number }[];
-  readonly sources: { key: string; id: string; version: number }[];
-  readonly areas: { slug: string; id: string; version: number; title: string }[];
-  readonly projects: {
-    slug: string;
-    id: string;
-    version: number;
-    area: string | null;
-    title: string;
-  }[];
-  /**
-   * Where earlier imports landed groups: by a planned group's identity, the group ID of the newest
-   * record (the importer's ItemBase.groups).
-   */
-  readonly landed: {
-    readonly areas: ReadonlyMap<string, string>;
-    readonly projects: ReadonlyMap<string, string>;
-  };
-}
-
-const IN = (param: string) => `IN (SELECT value FROM json_each(${param}))`;
-const IMPORT_READS: readonly Statement[] = [
-  SPACE,
-  {
-    sql:
-      "SELECT a.alias, t.id AS task, t.version FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
-      `WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND a.alias ${IN("$aliases")}`,
-    mode: "all",
-  },
-  {
-    sql: `SELECT source_key AS key, id, version FROM sources WHERE deleted_at IS NULL AND source_key ${IN("$keys")}`,
-    mode: "all",
-  },
-  {
-    // Every live area with its title: a planned area is the live area with its identity first,
-    // whatever its slug (placeGroups). A space has few areas.
-    sql: "SELECT slug, id, version, title FROM areas WHERE deleted_at IS NULL",
-    mode: "all",
-  },
-  {
-    // Every live project with its live area's slug and its title: a project slug is unique in the
-    // space, so a planned project's slug depends on the slugs of other areas' projects too, and a
-    // planned project is the live one with its identity in its area first (placeGroups).
-    sql:
-      "SELECT p.slug, p.id, p.version, a.slug AS area, p.title FROM projects p " +
-      "LEFT JOIN areas a ON a.id = p.area_id AND a.deleted_at IS NULL WHERE p.deleted_at IS NULL",
-    mode: "all",
-  },
-  {
-    // Where each applied import landed its groups, once per distinct record with its newest seq:
-    // an import's items repeat one record for every task of a group.
-    sql:
-      "SELECT json_extract(ei.base, '$.groups') AS groups, max(x.applied_seq) AS seq " +
-      "FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
-      "WHERE x.state = 'applied' AND json_extract(ei.base, '$.import') = 'planning' " +
-      "AND json_extract(ei.base, '$.groups') IS NOT NULL GROUP BY 1",
-    mode: "all",
-  },
-];
-
-/** The newest record of each group identity, from the rows of IMPORT_READS' last statement. */
-function landedOf(rows: Row[]): ImportRows["landed"] {
-  const newest = {
-    areas: new Map<string, [number, string]>(),
-    projects: new Map<string, [number, string]>(),
-  };
-  const note = (into: Map<string, [number, string]>, record: unknown, seq: number) => {
-    if (typeof record !== "object" || record === null) return;
-    const { key, id } = record as { key?: unknown; id?: unknown };
-    if (typeof key !== "string" || typeof id !== "string") return;
-    const known = into.get(key);
-    if (known === undefined || known[0] < seq) into.set(key, [seq, id]);
-  };
-  for (const row of rows) {
-    let groups: unknown;
-    try {
-      groups = JSON.parse(String(row["groups"]));
-    } catch {
-      continue;
-    }
-    if (typeof groups !== "object" || groups === null) continue;
-    const seq = Number(row["seq"]);
-    const { area, project } = groups as { area?: unknown; project?: unknown };
-    note(newest.areas, area, seq);
-    note(newest.projects, project, seq);
-  }
-  const ids = (m: Map<string, [number, string]>) => new Map([...m].map(([k, [, id]]) => [k, id]));
-  return { areas: ids(newest.areas), projects: ids(newest.projects) };
-}
-
-/** The tasks that hold one of `$aliases` as a planning alias, as SQL. */
-const ALIASED = `SELECT entity_id FROM aliases WHERE namespace = 'planning' AND entity_kind = 'task' AND alias ${IN("$aliases")}`;
-
-/**
- * What an import's apply reads besides the rows its preview met (A7 3.15.5, 3.15.6), in the same
- * snapshot: each task that holds a legacy ID of the plan, with its grouping's slugs and what made
- * its tombstone; its place on this machine; its live source links; its recorded bases from every
- * applied import; the fields an import's undo set back since; and the legacy IDs of live tasks.
- */
-const APPLY_READS: readonly Statement[] = [
-  {
-    sql:
-      "SELECT a.alias AS alias, t.*, ar.slug AS area_slug, pr.slug AS project_slug, " +
-      "(SELECT k.id FROM commits k WHERE k.seq = t.created_seq) AS created_commit, " +
-      "(SELECT k.kind FROM commits k WHERE t.deleted_at IS NOT NULL " +
-      "AND k.seq = coalesce(json_extract(t.fp, '$.deleted'), t.created_seq)) AS deleted_kind, " +
-      "(SELECT coalesce(k.revert_of, (SELECT u.id FROM commits u WHERE u.seq = k.undo_of)) " +
-      "FROM commits k WHERE t.deleted_at IS NOT NULL " +
-      "AND k.seq = coalesce(json_extract(t.fp, '$.deleted'), t.created_seq)) AS deleted_of " +
-      "FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
-      "LEFT JOIN areas ar ON ar.id = t.area_id LEFT JOIN projects pr ON pr.id = t.project_id " +
-      `WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND a.alias ${IN("$aliases")}`,
-    mode: "all",
-  },
-  {
-    // Each task's live place on this machine with its folder's version, else the newest version
-    // of a place it had here: a cleared place is a change too.
-    sql:
-      "SELECT owner_id AS task, root_id, rel_path, deleted_at, " +
-      "coalesce(json_extract(fv, '$.folder'), created_seq) AS folder_version, " +
-      "coalesce(json_extract(fv, '$.deleted'), created_seq) AS deleted_version FROM places " +
-      `WHERE owner_kind = 'task' AND machine_id = $machine AND owner_id IN (${ALIASED})`,
-    mode: "all",
-  },
-  {
-    sql:
-      "SELECT ts.task_id AS task, s.source_key AS key, s.url AS url FROM task_sources ts " +
-      "JOIN sources s ON s.id = ts.source_id WHERE ts.removed_at IS NULL " +
-      `AND s.deleted_at IS NULL AND ts.task_id IN (${ALIASED})`,
-    mode: "all",
-  },
-  {
-    sql:
-      "SELECT ei.task_id AS task, ei.base AS base, x.applied_seq AS seq, k.reverted_by AS undone " +
-      "FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
-      "JOIN commits k ON k.seq = x.applied_seq " +
-      `WHERE x.state = 'applied' AND ei.task_id IN (${ALIASED}) ORDER BY x.applied_seq DESC`,
-    mode: "all",
-  },
-  {
-    // What each import's undo set back, by task: its fields, and its links, places and entries.
-    sql:
-      "SELECT c.seq AS seq, c.entity AS entity, c.task_id AS task, c.field AS field FROM changes c " +
-      "WHERE c.seq IN (SELECT k.reverted_by FROM exchanges x JOIN commits k ON k.seq = x.applied_seq " +
-      `WHERE k.reverted_by IS NOT NULL) AND c.task_id IN (${ALIASED})`,
-    mode: "all",
-  },
-  {
-    sql:
-      "SELECT a.alias AS alias FROM aliases a JOIN tasks t ON t.id = a.entity_id " +
-      "WHERE a.namespace = 'planning' AND a.entity_kind = 'task' AND t.deleted_at IS NULL",
-    mode: "all",
-  },
-];
-
-/** What an import's apply read (APPLY_READS), as rows. */
-export interface ApplyRows {
-  readonly tasks: Row[];
-  readonly places: Row[];
-  readonly links: Row[];
-  readonly bases: Row[];
-  readonly undone: Row[];
-  readonly aliases: Row[];
-}
-
-function importRows(row: unknown, lists: unknown[]): ImportRows {
-  const [aliases, sources, areas, projects, groups] = lists;
-  const space = decodeSpaceRow(row as Row);
-  return {
-    spaceId: space.spaceId,
-    epoch: space.authority.epoch,
-    incarnation: space.authority.incarnation,
-    refPrefix: space.refPrefix,
-    nextRef: space.nextRef,
-    asOf: formatAsOf({
-      epoch: space.authority.epoch,
-      incarnation: space.authority.incarnation,
-      seq: space.lastSeq,
-    }),
-    seq: space.lastSeq,
-    aliases: aliases as ImportRows["aliases"],
-    sources: sources as ImportRows["sources"],
-    areas: areas as ImportRows["areas"],
-    projects: projects as ImportRows["projects"],
-    landed: landedOf((groups as Row[] | undefined) ?? []),
-  };
-}
-
-/**
- * The rows an import plan meets, in one snapshot: the space's authority and next reference, the
- * tasks that hold its legacy IDs as planning aliases, the live sources and areas with its keys and
- * slugs, and every live project, each with its version.
- */
-export async function readImportRows(
-  reader: WorkerConnection,
-  names: ImportNames,
-): Promise<ImportRows> {
-  const [row, ...lists] = await snapshot(reader, IMPORT_READS, {
-    aliases: JSON.stringify(names.aliases),
-    keys: JSON.stringify(names.keys),
-    areas: JSON.stringify(names.areas),
-  });
-  return importRows(row, lists);
-}
-
-/** The commit that applied an import's run (its exchange), or undefined: `--undo` reverts it. */
-export async function readImportCommit(
-  reader: WorkerConnection,
-  run: string,
-): Promise<{ id: string; seq: number; undone: boolean } | undefined> {
-  const [row] = await snapshot(
-    reader,
-    [
-      {
-        sql:
-          "SELECT k.id AS id, k.seq AS seq, k.reverted_by AS undone FROM exchanges x " +
-          "JOIN commits k ON k.seq = x.applied_seq " +
-          "WHERE x.id = $run AND x.state = 'applied' AND k.origin = 'import'",
-        mode: "get",
-      },
-    ],
-    { run },
-  );
-  const found = row as Row | null | undefined;
-  if (found === null || found === undefined) return undefined;
-  return {
-    id: String(found["id"]),
-    seq: Number(found["seq"]),
-    undone: found["undone"] !== null,
-  };
-}
-
-/**
- * What an applied run's commit did to each task of its exchange, from the space alone: created
- * there, changed by it, or neither. A replay answers with it when the run's apply.json is gone.
- */
-export async function readImportOutcome(
-  reader: WorkerConnection,
-  run: string,
-): Promise<{ legacy: string; ref: string; outcome: "created" | "updated" | "unchanged" }[]> {
-  const [rows] = await snapshot(
-    reader,
-    [
-      {
-        sql:
-          "SELECT ei.file AS legacy, t.ref AS ref, " +
-          "(SELECT ref_prefix FROM space WHERE one = 1) AS prefix, " +
-          "t.created_seq = x.applied_seq AS created, " +
-          "EXISTS (SELECT 1 FROM changes c WHERE c.seq = x.applied_seq AND c.task_id = t.id) " +
-          "AS changed FROM exchange_items ei JOIN exchanges x ON x.id = ei.exchange_id " +
-          "JOIN tasks t ON t.id = ei.task_id WHERE x.id = $run AND x.state = 'applied' " +
-          "ORDER BY ei.rowid",
-        mode: "all",
-      },
-    ],
-    { run },
-  );
-  return ((rows as Row[] | undefined) ?? []).map((r) => ({
-    legacy: String(r["legacy"]),
-    ref: formatTaskRef(String(r["prefix"]), Number(r["ref"])),
-    outcome: r["created"] === 1 ? "created" : r["changed"] === 1 ? "updated" : "unchanged",
-  }));
-}
-
-/**
- * The tasks a commit changed, with the table and field of each change, a task's child rows
- * included (its entries, links, place): what an import's undo removed and set back.
- */
-export async function readCommitFields(
-  reader: WorkerConnection,
-  seq: number,
-): Promise<{ task: string; entity: string; field: string | null }[]> {
-  const [rows] = await snapshot(
-    reader,
-    [
-      {
-        sql:
-          "SELECT task_id AS task, entity, field FROM changes " +
-          "WHERE seq = $seq AND task_id IS NOT NULL",
-        mode: "all",
-      },
-    ],
-    { seq },
-  );
-  return (rows as { task: string; entity: string; field: string | null }[] | undefined) ?? [];
-}
-
-/** The rows an import plan meets and what its apply reads (APPLY_READS), in one snapshot. */
-export async function readApplyRows(
-  reader: WorkerConnection,
-  names: ImportNames,
-  machine: string,
-): Promise<{ rows: ImportRows; apply: ApplyRows }> {
-  const [row, aliases, sources, areas, projects, groups, ...apply] = await snapshot(
-    reader,
-    [...IMPORT_READS, ...APPLY_READS],
-    {
-      aliases: JSON.stringify(names.aliases),
-      keys: JSON.stringify(names.keys),
-      areas: JSON.stringify(names.areas),
-      machine,
-    },
-  );
-  const [tasks, places, links, bases, undone, all] = apply as Row[][];
-  return {
-    rows: importRows(row, [aliases, sources, areas, projects, groups]),
-    apply: {
-      tasks: tasks ?? [],
-      places: places ?? [],
-      links: links ?? [],
-      bases: bases ?? [],
-      undone: undone ?? [],
-      aliases: all ?? [],
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------------------------
 // Tasks
 
 /** A task reference as A1 3.3 resolves it for a read: an ID, a reference, or a legacy alias. */
@@ -856,6 +519,45 @@ export async function readTaskRef(
   const [space, row] = await snapshot(reader, [SPACE, BOUND], { bound: id });
   const ref = isPlain(row) ? row["ref"] : undefined;
   return typeof ref === "number" ? formatTaskRef(spaceFacts(space).refPrefix, ref) : undefined;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Runs
+
+/** How many runs a list reads at most: the newest. */
+export const RUNS_LISTED = 50;
+
+const RUNS_ALL: Statement = {
+  sql:
+    "SELECT r.*, t.ref AS task_ref FROM runs r LEFT JOIN tasks t ON t.id = r.task_id " +
+    `ORDER BY r.queued_at DESC, r.id DESC LIMIT ${String(RUNS_LISTED)}`,
+  mode: "all",
+};
+const RUNS_OF_TASK: Statement = {
+  sql:
+    "SELECT r.*, t.ref AS task_ref FROM runs r LEFT JOIN tasks t ON t.id = r.task_id " +
+    `WHERE r.task_id = $task ORDER BY r.queued_at DESC, r.id DESC LIMIT ${String(RUNS_LISTED)}`,
+  mode: "all",
+};
+
+/**
+ * The space's newest runs, or a task's (`task`, a `t_` ID), newest first, each row with its task's
+ * reference (`task_ref`, formatted). Rows as the runs table holds them.
+ */
+export async function readRunRows(
+  reader: WorkerConnection,
+  task?: string,
+): Promise<{ row: Row; ref: string | null }[]> {
+  const [space, rows] = await snapshot(
+    reader,
+    [SPACE, task === undefined ? RUNS_ALL : RUNS_OF_TASK],
+    { task: task ?? null },
+  );
+  const prefix = spaceFacts(space).refPrefix;
+  return (rows as Row[]).map((row) => {
+    const ref = row["task_ref"];
+    return { row, ref: typeof ref === "number" ? formatTaskRef(prefix, ref) : null };
+  });
 }
 
 // ---------------------------------------------------------------------------------------------

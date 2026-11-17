@@ -19,12 +19,12 @@ import { folderVerb } from "./folders.ts";
 import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
 import { helpText, shortHelp } from "./help.ts";
-import { importCommand } from "./import.ts";
 import type { Io } from "./io.ts";
 import { MCP_VERB, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { rootsCommand } from "./roots.ts";
+import { runCommand } from "./runs.ts";
 import { serviceCommand } from "./service.ts";
 import { setupCommand, type SetupOptions } from "./setup.ts";
 import { spaceCommand } from "./space.ts";
@@ -127,8 +127,8 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         return rootsCommand(io, globals, args);
       case "view":
         return await viewCommand(io, globals, args, options);
-      case "import":
-        return await importCommand(io, globals, args, options);
+      case "run":
+        return await runCommand(io, globals, args, options);
       case "setup":
         return await setupCommand(io, globals, args, options);
       case "doctor":

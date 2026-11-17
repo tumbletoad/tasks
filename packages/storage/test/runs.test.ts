@@ -43,7 +43,7 @@ function task(): Id<"t"> {
 const createOp = (extra: Record<string, unknown> = {}): Operation => ({
   kind: "run.create",
   instance: "codex-work",
-  adapter: "codex-exec",
+  adapter: "codex",
   place: null,
   request: "Check the export\r\nand fix the time zone.",
   brief_hash: HASH,
@@ -109,7 +109,7 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       session_id: null,
       instance_id: "codex-work",
       machine_id: TEST_MACHINE,
-      adapter: "codex-exec",
+      adapter: "codex",
       place_id: null,
       // Stored as A1 3.7 normalises every text.
       request: "Check the export\nand fix the time zone.",

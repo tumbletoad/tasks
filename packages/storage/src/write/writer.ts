@@ -74,7 +74,6 @@ import {
   machineOs,
   type FolderOs,
 } from "./folders.ts";
-import { planImportRevert, recomputeToken } from "./imports.ts";
 import {
   applyInversions,
   brokenIn,
@@ -129,7 +128,6 @@ import {
   formatAsOf,
   incarnationTag,
   isHistoryOperation,
-  isImportRequest,
   LAUNCH_FAIL_REASONS,
   LAUNCH_UNKNOWN_REASONS,
   normaliseStored,
@@ -191,15 +189,6 @@ export type WritePoint = "before-commit" | "after-commit";
 export interface WriteDecision {
   request: CheckedRequest;
   result: WriteResult;
-}
-
-/** What the storage worker adds to a request it decides behind a barrier backup. */
-export interface SubmitOptions {
-  /**
-   * The state the barrier backup holds (A1 3.18, A7 3.15.5): the request is decided only when the
-   * space still stands there, else it fails with SPACE_CHANGED and stays undecided.
-   */
-  snapshot?: { seq: number; incarnation: string };
 }
 
 /** What tests inject. Not part of the package's interface, and off unless a caller passes it. */
@@ -425,11 +414,6 @@ interface StagedOp {
    * matched draft's `log.add` whose entry the task has already.
    */
   skip?: true;
-  /**
-   * `area.upsert`, `project.upsert` and `alias.add`: whether the operation creates its row, finds
-   * it as it is (`found`), or moves an alias from a deleted task (`move`).
-   */
-  upsert?: "create" | "found" | "move";
   /** A folder operation: the request's machine and its OS, whose case rule compares paths. */
   folder?: { machine: Id<"m">; os: FolderOs };
   /** `area.create` and `project.create`: the slug the new group takes. */
@@ -571,7 +555,7 @@ const SQL = {
     "$id, $ref, $title, $summary, $context, 'active', $status, $inbox, $priority, $effort, " +
     "$due_date, $due_at, $due_tz, $planned_for, $focus_on, $owner, $waiting_on, $area_id, " +
     "$project_id, $position, NULL, $source_at, $reviewed_at, NULL, NULL, NULL, NULL, NULL, NULL, " +
-    "NULL, $created_at, $created_by, $session, NULL, NULL, $seq, $seq, $seq, '{}', '{}', $ext)",
+    "NULL, $created_at, $created_by, $session, NULL, NULL, $seq, $seq, $seq, '{}', '{}', '{}')",
   taskVersions:
     "UPDATE tasks SET version = $seq, touched = $seq, fv = $fv, fp = $fp WHERE id = $id",
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
@@ -617,7 +601,7 @@ const SQL = {
   insertSource:
     "INSERT INTO sources (id, source_key, kind, title, who, ref, url, at, created_at, created_by, " +
     "deleted_at, created_seq, version, fv, fp, ext) VALUES ($id, $key, $kind, $title, $who, " +
-    "$ref, $url, $sent, $at, $author, NULL, $seq, $seq, '{}', '{}', $ext)",
+    "$ref, $url, $sent, $at, $author, NULL, $seq, $seq, '{}', '{}', '{}')",
   link: "SELECT * FROM task_sources WHERE task_id = $task AND source_id = $source",
   lastLink: "SELECT max(position) AS p FROM task_sources WHERE task_id = $task",
   insertLink:
@@ -663,52 +647,13 @@ const SQL = {
   updatePreference:
     "UPDATE preferences SET value = $value, schema_ver = $schema_ver WHERE key = $id",
   preferenceVersions: "UPDATE preferences SET version = $seq, fv = $fv, fp = $fp WHERE key = $id",
-  // An import's rows (A7 3.15.5): areas and projects it upserts, the legacy IDs it keeps as
-  // aliases, and its exchange with one item per task.
-  taskExt: "UPDATE tasks SET ext = $ext WHERE id = $id",
   areaRow: "SELECT * FROM areas WHERE id = $id",
   projectRow: "SELECT * FROM projects WHERE id = $id",
   lastArea: "SELECT max(position) AS p FROM areas",
   lastProject: "SELECT max(position) AS p FROM projects WHERE area_id IS $area",
-  insertArea:
-    "INSERT INTO areas (id, slug, title, position, color, brief, lifecycle, created_at, " +
-    "created_by, deleted_at, created_seq, version, fv, fp, ext) VALUES ($id, $slug, $title, " +
-    "$position, NULL, '', 'active', $at, $author, NULL, $seq, $seq, '{}', '{}', '{}')",
-  insertProject:
-    "INSERT INTO projects (id, area_id, slug, title, position, color, brief, defaults, lifecycle, " +
-    "created_at, created_by, deleted_at, created_seq, version, fv, fp, ext) VALUES ($id, $area, " +
-    "$slug, $title, $position, NULL, '', '{}', 'active', $at, $author, NULL, $seq, $seq, '{}', " +
-    "'{}', '{}')",
   aliasRow: "SELECT * FROM aliases WHERE namespace = $namespace AND alias = $alias",
-  insertAlias:
-    "INSERT INTO aliases (namespace, alias, entity_kind, entity_id, created_at) " +
-    "VALUES ($namespace, $alias, 'task', $task, $at)",
-  moveAlias:
-    "UPDATE aliases SET entity_kind = 'task', entity_id = $task " +
-    "WHERE namespace = $namespace AND alias = $alias",
-  // An alias has no versions: its last change row is its version and provenance (fields.ts).
-  aliasVersion: "SELECT max(seq) AS seq FROM changes WHERE entity_id = $id AND entity = 'aliases'",
   exchangeRow: "SELECT * FROM exchanges WHERE id = $id",
-  insertExchange:
-    "INSERT INTO exchanges (id, dir, base_seq, created_by, created_at, state, applied_seq, " +
-    "created_seq, version, fv, fp) VALUES ($id, $dir, $base, $author, $at, $state, $applied, " +
-    "$seq, $seq, '{}', '{}')",
   itemRow: "SELECT * FROM exchange_items WHERE exchange_id = $exchange AND task_id = $task",
-  insertItem:
-    "INSERT INTO exchange_items (exchange_id, task_id, file, base) " +
-    "VALUES ($exchange, $task, $file, $base)",
-  importActor: "SELECT kind FROM actors WHERE id = $id",
-  // An import's commit: origin `import`, holding its exchange (A7 3.15.5).
-  importCommit:
-    "SELECT k.seq AS seq, k.id AS id, k.reverted_by AS reverted_by FROM commits k " +
-    "WHERE k.id = $id AND k.origin = 'import' AND EXISTS (SELECT 1 FROM json_each(k.ops) " +
-    "WHERE json_extract(value, '$.op') = 'exchange.create')",
-  commitById: "SELECT seq FROM commits WHERE id = $id",
-  insertRevertCommit:
-    `INSERT INTO commits (${COMMIT_COLUMNS}) VALUES ($seq, $id, $epoch, $incarnation, $at, ` +
-    "$actor_kind, $principal, $author, $scope, $machine, $session, $run, $origin, $request, " +
-    "'revert', $ops, $affected, $reason, NULL, NULL, NULL, NULL, NULL, $revert_of, NULL, 0)",
-  markReverted: "UPDATE commits SET reverted_by = $seq WHERE seq = $target",
   // Areas and projects (A1 3.6): their fields, by the column names of fields.ts.
   areaBySlugAny: "SELECT id FROM areas WHERE slug = $slug AND deleted_at IS NULL",
   projectSlugTaken: "SELECT id FROM projects WHERE slug = $slug AND deleted_at IS NULL",
@@ -933,7 +878,7 @@ export class SpaceWriter {
    */
   readonly #search: boolean;
   readonly spaceId: Id<"sp">;
-  /** The space's folder, which an import's barrier backup reads (backup/barrier.ts). */
+  /** The space's folder. */
   readonly folder: string;
   #registered = false;
   #closed = false;
@@ -1052,7 +997,7 @@ export class SpaceWriter {
    * as the space's authority, adds one; elsewhere an unknown agent actor is refused with
    * STORAGE_READ_ONLY. Returns the actor's ID.
    */
-  actor(kind: "human" | "agent" | "import", label: string): Id<"ac"> {
+  actor(kind: "human" | "agent", label: string): Id<"ac"> {
     const conn = this.#usable();
     if (kind === "human") {
       const found = conn.transaction("deferred", () => conn.prepare(SQL.firstHuman).get());
@@ -1164,7 +1109,7 @@ export class SpaceWriter {
    * `replayed`. Storage failures throw StorageError: STORAGE_BUSY and DURABILITY_FAILED leave the
    * request undecided, and a retry with the same ID runs it (A1 3.8).
    */
-  submit(input: unknown, options: SubmitOptions = {}): WriteResult {
+  submit(input: unknown): WriteResult {
     const conn = this.#usable();
     if (!this.#registered) {
       throw misuse("The writer registers its machine before its first request");
@@ -1181,48 +1126,12 @@ export class SpaceWriter {
     const fingerprint = requestFingerprint(request);
     const at = this.#seams.at;
     const result = conn.transaction("immediate", () => {
-      // The state a barrier backup protects (SubmitOptions.snapshot) is the state this request
-      // starts from, or nothing is decided: a write the barrier did not hold came between.
-      const { snapshot } = options;
-      if (snapshot !== undefined) {
-        const space = decodeSpaceRow(conn.prepare(SQL.space).get());
-        if (
-          space.lastSeq !== snapshot.seq ||
-          space.authority.incarnation !== snapshot.incarnation
-        ) {
-          throw new StorageError("SPACE_CHANGED", "The space changed after its barrier backup");
-        }
-      }
       const decided = this.#decide(conn, request, fingerprint);
       at?.("before-commit", { request, result: decided });
       return decided;
     });
     at?.("after-commit", { request, result });
     return result;
-  }
-
-  /**
-   * Whether the scope holds a decided request with this ID and intent: a retry that replays.
-   * The worker asks it before an import's barrier backup, so a retry takes no second backup.
-   */
-  decided(input: unknown): boolean {
-    const conn = this.#usable();
-    let request: CheckedRequest;
-    try {
-      request = checkRequest(input);
-    } catch {
-      return false;
-    }
-    const fingerprint = requestFingerprint(request);
-    return conn.transaction("deferred", () =>
-      readReceipts(conn, {
-        scope_id: request.actor.scope_id,
-        ...(request.actor.earlier_scope_id === undefined
-          ? {}
-          : { earlier_scope_id: request.actor.earlier_scope_id }),
-        request_id: request.request_id,
-      }).some((receipt) => receipt.fingerprint === fingerprint),
-    );
   }
 
   #decide(conn: Connection, request: CheckedRequest, fingerprint: string): WriteResult {
@@ -1247,19 +1156,6 @@ export class SpaceWriter {
         });
       }
       checkActor(conn, request);
-      // An import is written by the import actor, which no connection presents (A1 3.21).
-      if (
-        isImportRequest(request) &&
-        conn.prepare(SQL.importActor).get({ id: request.actor.author_id ?? "" })?.["kind"] !==
-          "import"
-      ) {
-        problem(
-          "VALIDATION_FAILED",
-          "An import is written by the import actor",
-          undefined,
-          "actor.author_id",
-        );
-      }
     } catch (error) {
       if (!(error instanceof RequestProblem)) throw error;
       return refused("rejected", asOf, error.problem);
@@ -1314,21 +1210,6 @@ export class SpaceWriter {
       const [first] = request.ops;
       if (first !== undefined && isHistoryOperation(first)) {
         return this.#history(conn, request, first, space, asOf, at);
-      }
-      if (first?.kind === "import.undo")
-        return this.#importUndo(conn, request, first, space, asOf, at);
-      // An import applies only to the space its preview judged (A7 3.15.5): the token again, from
-      // the rows the plan meets as this transaction reads them.
-      if (
-        request.preview !== undefined &&
-        recomputeToken(conn, request.preview) !== request.preview.token
-      ) {
-        problem(
-          "PREVIEW_STALE",
-          "The space changed since the dry run: run the dry run again",
-          undefined,
-          "preview",
-        );
       }
       const plan = this.#stage(conn, request, space, at, wall);
       const conflicts = preconditions(conn, request, plan, space);
@@ -1396,15 +1277,11 @@ export class SpaceWriter {
     /** The lifecycle earlier operations leave each task in, as execution will find it. */
     const lifecycles = new Map<Id<"t">, TaskLifecycle>();
     /**
-     * Areas and projects that earlier `area.upsert` and `project.upsert` operations create or find,
-     * by slug and by ID, so a later operation of the request names them before their rows exist.
+     * Areas and projects that earlier operations create, by slug and by ID, so a later operation
+     * of the request names them before their rows exist.
      */
     const draftAreas = new Map<string, Id<"a">>();
     const draftProjects = new Map<string, { id: Id<"p">; areaId: Id<"a"> | null }>();
-    /** Legacy IDs earlier `alias.add` operations give, by `<namespace>|<alias>`. */
-    const draftAliases = new Set<string>();
-    /** Exchanges earlier operations create. */
-    const draftExchanges = new Set<string>();
     /** Areas and projects earlier operations create: they have no row before the request. */
     const createdGroups = new Set<string>();
     /** Slugs earlier operations give new areas and projects. */
@@ -1418,7 +1295,7 @@ export class SpaceWriter {
     const changedFolders = new Set<string>();
 
     const ops = request.ops.map((op, i): StagedOp => {
-      /** An area or project by ID or slug: first those the request upserts, then the space's. */
+      /** An area or project by ID or slug: first those the request creates, then the space's. */
       const areaOf = (ref: string): Id<"a"> => draftAreas.get(ref) ?? resolveArea(conn, ref, i);
       const projectOf = (ref: string): { id: Id<"p">; areaId: Id<"a"> | null } => {
         const found = draftProjects.get(ref) ?? resolveProject(conn, ref, i);
@@ -1641,7 +1518,6 @@ export class SpaceWriter {
             record: {
               ...valuesRecord(op),
               ...record,
-              ...(op.ext === undefined ? {} : { ext: op.ext }),
               ...(op.created_at === undefined ? {} : { created_at: op.created_at }),
             },
             ...placed,
@@ -1649,12 +1525,7 @@ export class SpaceWriter {
         }
         case "task.patch": {
           const target = task(op.task, "task");
-          // `set.ext` writes one logical field per key (A1 3.4: `ext.<key>`).
-          const fields = [
-            ...Object.keys(op.set ?? {}).filter((field) => field !== "ext"),
-            ...Object.keys(op.set?.ext ?? {}).map((key) => `ext.${key}`),
-            ...(op.unset ?? []),
-          ];
+          const fields = [...Object.keys(op.set ?? {}), ...(op.unset ?? [])];
           return {
             i,
             op,
@@ -2190,153 +2061,6 @@ export class SpaceWriter {
           }
           return { i, op, target: op.key, task: null, touches, record: inputOf(op) };
         }
-        case "area.upsert": {
-          // The live area with the slug, else a new one (A7 3.15.3). A found area keeps its title.
-          const known = draftAreas.get(op.slug);
-          if (known !== undefined) {
-            return {
-              i,
-              op,
-              target: known,
-              task: null,
-              touches: [],
-              record: inputOf(op),
-              upsert: "found",
-            };
-          }
-          const row = conn.prepare(SQL.areaBySlug).get({ slug: op.slug });
-          if (row !== undefined) {
-            const id = new RowReader("areas", row).id("id", "a");
-            draftAreas.set(op.slug, id);
-            return {
-              i,
-              op,
-              target: id,
-              task: null,
-              touches: [],
-              record: inputOf(op),
-              upsert: "found",
-            };
-          }
-          const id = op.id ?? newId("a", random);
-          if (draftAreas.has(id) || conn.prepare(SQL.areaById).get({ id }) !== undefined) {
-            problem("VALIDATION_FAILED", "An area with this ID exists", i, "id");
-          }
-          draftAreas.set(op.slug, id);
-          draftAreas.set(id, id);
-          return {
-            i,
-            op,
-            target: id,
-            task: null,
-            touches: [],
-            record: { ...inputOf(op), id },
-            upsert: "create",
-          };
-        }
-        case "project.upsert": {
-          // The live project with the slug in this area, else a new one. A slug of another area's
-          // project is the importer's to number (placeProjects), never the writer's to reuse.
-          const areaId = areaOf(op.area);
-          const other = (): never =>
-            problem("VALIDATION_FAILED", "A project of another area holds this slug", i, "slug");
-          const known = draftProjects.get(op.slug);
-          const record = { ...inputOf(op, "area"), area: areaId };
-          if (known !== undefined) {
-            if (known.areaId !== areaId) other();
-            return { i, op, target: known.id, task: null, touches: [], record, upsert: "found" };
-          }
-          const row = conn.prepare(SQL.projectBySlug).get({ slug: op.slug });
-          if (row !== undefined) {
-            const r = new RowReader("projects", row);
-            if (r.optText("area_id") !== areaId) other();
-            const id = r.id("id", "p");
-            draftProjects.set(op.slug, { id, areaId });
-            return { i, op, target: id, task: null, touches: [], record, upsert: "found" };
-          }
-          const id = op.id ?? newId("p", random);
-          if (draftProjects.has(id) || conn.prepare(SQL.projectById).get({ id }) !== undefined) {
-            problem("VALIDATION_FAILED", "A project with this ID exists", i, "id");
-          }
-          draftProjects.set(op.slug, { id, areaId });
-          draftProjects.set(id, { id, areaId });
-          return {
-            i,
-            op,
-            target: id,
-            task: null,
-            touches: [],
-            record: { ...record, id },
-            upsert: "create",
-          };
-        }
-        case "alias.add": {
-          const target = task(op.task, "task");
-          const key = `${op.namespace}|${op.alias}`;
-          if (draftAliases.has(key)) {
-            problem("VALIDATION_FAILED", "The request gives this legacy ID twice", i, "alias");
-          }
-          draftAliases.add(key);
-          const record = { task: target, ...inputOf(op, "task") };
-          const row = conn.prepare(SQL.aliasRow).get({ namespace: op.namespace, alias: op.alias });
-          if (row === undefined) {
-            return { i, op, target: key, task: target, touches: [], record, upsert: "create" };
-          }
-          const holder = row["entity_kind"] === "task" ? row["entity_id"] : undefined;
-          if (holder === target) {
-            return { i, op, target: key, task: target, touches: [], record, upsert: "found" };
-          }
-          // An alias never leaves a live task: it moves only from a task that is deleted, as a task
-          // whose import was undone is (A7 3.15.6), also by an earlier operation of the request.
-          const other = isId(holder, "t") ? conn.prepare(SQL.task).get({ id: holder }) : undefined;
-          const deleted =
-            other !== undefined &&
-            (tombstones.get(holder as Id<"t">) ?? other["deleted_at"] !== null);
-          if (!deleted) {
-            problem("VALIDATION_FAILED", "The legacy ID names another live task", i, "alias");
-          }
-          const seq = conn.prepare(SQL.aliasVersion).get({ id: key })?.["seq"] ?? 0;
-          if (!inRange(seq, "seq")) throw invalidValue("changes", "seq");
-          starts.set(rowKey("aliases", key), {
-            createdSeq: seq,
-            version: seq,
-            fv: {},
-            fp: {},
-            raw: row,
-          });
-          return { i, op, target: key, task: target, touches: [], record, upsert: "move" };
-        }
-        case "exchange.create": {
-          if (
-            draftExchanges.has(op.id) ||
-            conn.prepare(SQL.exchangeRow).get({ id: op.id }) !== undefined
-          ) {
-            problem("VALIDATION_FAILED", "An exchange with this ID exists", i, "id");
-          }
-          draftExchanges.add(op.id);
-          const items = new Set<Id<"t">>();
-          const resolved = op.items.map((item, k) => {
-            const id = task(item.task, `items[${String(k)}].task`);
-            if (items.has(id)) {
-              problem(
-                "VALIDATION_FAILED",
-                "An exchange has one item per task",
-                i,
-                `items[${String(k)}].task`,
-              );
-            }
-            items.add(id);
-            return { ...item, task: id };
-          });
-          return {
-            i,
-            op: { ...op, items: resolved },
-            target: op.id,
-            task: null,
-            touches: [],
-            record: { ...inputOf(op, "items"), items: resolved },
-          };
-        }
         case "area.create":
         case "project.create": {
           const entity = op.kind === "area.create" ? "areas" : "projects";
@@ -2564,9 +2288,6 @@ export class SpaceWriter {
             folder,
           };
         }
-        case "import.undo":
-          // A request of its own (request.ts), which #importUndo decides.
-          throw misuse("An import's undo is never staged");
         case "undo":
         case "redo":
           // A request of its own (request.ts), which #history decides.
@@ -2811,96 +2532,6 @@ export class SpaceWriter {
     };
   }
 
-  // ------------------------------------------------------------------------------------------
-  // The undo of an import (A7 3.15.5)
-
-  /**
-   * Reverts an import's commit (imports.ts: planImportRevert): one commit of kind `revert` that
-   * tombstones what the import created and sets back what it changed, except each task someone
-   * changed since, which stays as it is with all the import gave it and is listed in `conflicts`.
-   * The import's commit records `reverted_by`, so a second undo of it is INVALID_TRANSITION. The
-   * commit is never on an undo stack: a re-import brings the import back.
-   */
-  #importUndo(
-    conn: Connection,
-    request: CheckedRequest,
-    op: Extract<Operation, { kind: "import.undo" }>,
-    space: SpaceRow,
-    asOf: AsOf,
-    at: number,
-  ): WriteResult {
-    const { actor } = request;
-    const found = conn.prepare(SQL.importCommit).get({ id: op.commit });
-    if (found === undefined) {
-      return conn.prepare(SQL.commitById).get({ id: op.commit }) === undefined
-        ? problem("NOT_FOUND", "No commit has this ID", 0, "commit")
-        : problem("VALIDATION_FAILED", "The commit is no import's", 0, "commit");
-    }
-    const r = new RowReader("commits", found);
-    const target = { seq: r.int("seq", "seq"), id: r.id("id", "op") };
-    if (r.optInt("reverted_by", "seq") !== null) {
-      problem("INVALID_TRANSITION", "This import is undone already", 0, "commit");
-    }
-    if (target.seq < space.undoFloorSeq) {
-      problem("UNDO_BEFORE_FLOOR", "The import is older than the space's last format change", 0);
-    }
-    const { plan } = planImportRevert(conn, target.seq, { refPrefix: space.refPrefix, op: 0 });
-    const seq = nextSeq(space);
-    const commitId = newId("op", this.#random);
-    conn.exec("SAVEPOINT exec");
-    try {
-      const applied = must(
-        applyInversions(conn, plan, {
-          seq,
-          at,
-          principal: actor.principal_id,
-          op: 0,
-          refPrefix: space.refPrefix,
-          partial: true,
-        }),
-        "A partial inversion always applies",
-      );
-      conn.prepare(SQL.insertRevertCommit).run({
-        seq,
-        id: commitId,
-        epoch: space.authority.epoch,
-        incarnation: space.authority.incarnation,
-        at,
-        actor_kind: actor.actor_kind,
-        principal: actor.principal_id,
-        author: actor.author_id ?? actor.principal_id,
-        scope: actor.scope_id,
-        machine: actor.machine_id,
-        session: actor.session_id ?? null,
-        run: actor.run_id ?? null,
-        origin: actor.origin,
-        request: request.request_id,
-        ops: opsText([{ v: 1, op: op.kind, target: target.id, input: { commit: target.id } }]),
-        affected: affectedBy(plan.inversions),
-        reason: request.reason ?? null,
-        revert_of: target.id,
-      });
-      const inverted = applied.changes.map((c) => ({ ...c, action: "set" as const }));
-      insertChanges(conn, seq, inverted);
-      if (this.#search) indexChanges(conn, seq, inverted);
-      for (const task of applied.tasks) conn.prepare(SQL.outbox).run({ key: task, seq });
-      if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
-      conn.prepare(SQL.markReverted).run({ target: target.seq, seq });
-      conn.prepare(SQL.lastSeq).run({ seq });
-      conn.exec("RELEASE exec");
-    } catch (error) {
-      if (error instanceof RequestProblem) rollBack(conn);
-      throw error;
-    }
-    return {
-      ...accepted("applied", { ...asOf, seq }),
-      commit: commitId,
-      results: [{ i: 0, status: "updated", id: target.id, version: seq }],
-      // The tasks that stay as they are, by each field or row that keeps them.
-      conflicts: plan.conflicts,
-    };
-  }
-
   /** Closes the connection. Safe to call twice. */
   close(): void {
     if (this.#closed) return;
@@ -3072,23 +2703,6 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           version: row === undefined ? 0 : new RowReader("preferences", row).int("version", "seq"),
         };
       }
-      case "area.upsert":
-      case "project.upsert":
-      case "exchange.create": {
-        const entity =
-          op.kind === "area.upsert"
-            ? "areas"
-            : op.kind === "project.upsert"
-              ? "projects"
-              : "exchanges";
-        const row = readRow(conn, entity, staged.target);
-        return {
-          i,
-          status,
-          id: staged.target,
-          version: new RowReader(entity, row).int("version", "seq"),
-        };
-      }
       case "area.create":
       case "area.patch":
       case "area.archive":
@@ -3135,19 +2749,6 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           id: staged.target,
           ...(task === null ? {} : { task, ref: refOf(task) }),
           version,
-        };
-      }
-      case "alias.add": {
-        // An alias has no ID and no version: the result names its task, as a receipt names rows.
-        const task = must(staged.task, "An alias names its task");
-        const t = readTask(conn, task);
-        return {
-          i,
-          status,
-          id: task,
-          task,
-          ref: formatTaskRef(run.plan.refPrefix, t.ref),
-          version: t.version,
         };
       }
       case "task.wrap_up": {
@@ -3753,12 +3354,10 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         position: placed.position,
         source_at: column("source_at", "source_at", null),
         reviewed_at: column("reviewed_at", "reviewed_at", null),
-        // An imported task is the user's who applied it; the import actor authors its entries.
         created_at: op.created_at ?? run.at,
-        created_by: isImportRequest(run.request) ? actor.principal_id : author,
+        created_by: author,
         session: actor.session_id ?? null,
         seq: run.seq,
-        ext: op.ext === undefined ? "{}" : canonicalJson(op.ext),
       });
       wrote(run, i, "tasks", target, target, null);
       return;
@@ -3771,26 +3370,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       const values: Record<string, SqlValue> = {};
       for (const part of columns.values()) Object.assign(values, part);
       if (Object.keys(values).length > 0) update(conn, target, values);
-      const written: string[] = [...columns.keys()];
-      // Each key of `set.ext` is a logical field of its own; null removes the key (A1 3.4).
-      const ext = op.set?.ext;
-      if (ext !== undefined) {
-        const raw = readTask(conn, target).raw["ext"];
-        const map = JSON.parse(typeof raw === "string" ? raw : "{}") as Record<string, unknown>;
-        for (const [key, value] of Object.entries(ext)) {
-          if (value === null) Reflect.deleteProperty(map, key);
-          else
-            Object.defineProperty(map, key, {
-              value,
-              enumerable: true,
-              writable: true,
-              configurable: true,
-            });
-          written.push(`ext.${key}`);
-        }
-        conn.prepare(SQL.taskExt).run({ id: target, ext: canonicalJson(map) });
-      }
-      wrote(run, i, "tasks", target, target, written);
+      wrote(run, i, "tasks", target, target, [...columns.keys()]);
       return;
     }
     case "task.context_append": {
@@ -3970,7 +3550,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           at: run.at,
           author,
           seq: run.seq,
-          ext: fields.ext === undefined ? "{}" : canonicalJson(fields.ext),
         });
         wrote(run, i, "sources", source, task, null);
       } else {
@@ -4187,82 +3766,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       wrote(run, i, "preferences", op.key, null, ["value"]);
       return;
     }
-    case "area.upsert": {
-      if (staged.upsert !== "create") return;
-      // After the space's other areas, in the order the import names them.
-      const last = conn.prepare(SQL.lastArea).get()?.["p"] ?? undefined;
-      if (last !== undefined && !isPosition(last)) throw invalidValue("areas", "position");
-      conn.prepare(SQL.insertArea).run({
-        id: staged.target,
-        slug: op.slug,
-        title: op.title,
-        position: positionBetween(last, undefined),
-        at: run.at,
-        author,
-        seq: run.seq,
-      });
-      wrote(run, i, "areas", staged.target, null, null);
-      return;
-    }
-    case "project.upsert": {
-      if (staged.upsert !== "create") return;
-      const area = must(staged.record["area"] as string | undefined, "A project has its area");
-      const last = conn.prepare(SQL.lastProject).get({ area })?.["p"] ?? undefined;
-      if (last !== undefined && !isPosition(last)) throw invalidValue("projects", "position");
-      conn.prepare(SQL.insertProject).run({
-        id: staged.target,
-        area,
-        slug: op.slug,
-        title: op.title,
-        position: positionBetween(last, undefined),
-        at: run.at,
-        author,
-        seq: run.seq,
-      });
-      wrote(run, i, "projects", staged.target, null, null);
-      return;
-    }
-    case "alias.add": {
-      const task = must(staged.task, "An alias names its task");
-      if (staged.upsert === "create") {
-        conn.prepare(SQL.insertAlias).run({
-          namespace: op.namespace,
-          alias: op.alias,
-          task,
-          at: run.at,
-        });
-        wrote(run, i, "aliases", staged.target, task, null);
-      } else if (staged.upsert === "move") {
-        conn.prepare(SQL.moveAlias).run({ namespace: op.namespace, alias: op.alias, task });
-        wrote(run, i, "aliases", staged.target, task, ["entity"]);
-      }
-      return;
-    }
-    case "exchange.create": {
-      const { request } = run;
-      conn.prepare(SQL.insertExchange).run({
-        id: op.id,
-        dir: op.dir,
-        // The state the exchange was judged on: the request's start (A1 3.14).
-        base: run.seq - 1,
-        author: request.actor.principal_id,
-        at: run.at,
-        state: op.applied === true ? "applied" : "open",
-        applied: op.applied === true ? run.seq : null,
-        seq: run.seq,
-      });
-      wrote(run, i, "exchanges", op.id, null, null);
-      for (const item of op.items) {
-        conn.prepare(SQL.insertItem).run({
-          exchange: op.id,
-          task: item.task,
-          file: item.file,
-          base: canonicalJson(item.base),
-        });
-        wrote(run, i, "exchange_items", `${op.id}|${item.task}`, null, null);
-      }
-      return;
-    }
     case "area.create": {
       const last = conn.prepare(SQL.lastArea).get()?.["p"] ?? undefined;
       if (last !== undefined && !isPosition(last)) throw invalidValue("areas", "position");
@@ -4468,7 +3971,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       wrote(run, i, "folders", staged.target, staged.task, ["deleted"]);
       return;
     }
-    case "import.undo":
     case "undo":
     case "redo":
       throw misuse("A request of its own is never executed here");

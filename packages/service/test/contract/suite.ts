@@ -19,7 +19,6 @@
 //   example to VERIFIED. No example can be left out: the suite fails on an example in neither list.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@tasks/brand";
 import { registry, type ErrorBody } from "@tasks/contracts";
@@ -343,47 +342,7 @@ const VERIFIED = new Set([
   "prefs.manage 0",
   "history.undo 0",
   "history.redo 0",
-  "import.planning.preview 0",
-  "import.planning.apply 0",
-  "import.planning.undo 0",
 ]);
-
-/**
- * The prototype folder an import example names: the committed synthetic prototype (A7 3.14), as
- * `cwd` stands for the world's portal. Its `roots` are left out: the world's machine has its own.
- */
-const PLANNING_FIXTURE = fileURLToPath(
-  new URL("../../../../fixtures/planning-prototype", import.meta.url),
-);
-
-/** The report's counts that only the prototype folder decides: places depend on the roots. */
-const FOLDER_COUNTS = [
-  "todo_task_lines",
-  "done_task_lines",
-  "task_lines",
-  "metadata_entries",
-  "metadata_orphans",
-  "task_lines_without_metadata",
-  "event_files",
-  "ready_files",
-  "counted_event_files",
-  "events_not_ready",
-  "actions_events",
-  "actions_added",
-  "tasks",
-  "active",
-  "completed",
-  "wrapped",
-  "aliases",
-  "areas",
-  "projects",
-  "sources",
-  "links",
-  "duplicates_left_out",
-  "orphans_included",
-  "text_sanitised",
-  "source_changes",
-] as const;
 
 type Value = Record<string, unknown>;
 
@@ -515,32 +474,6 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
         copy: copy.replaceAll(reference, "{ref}").replace(/^Folder: .*$/mu, "Folder: {folder}"),
       };
     }
-    case "import.planning.preview": {
-      // The run, its folder and token, and the places are the world's: compared by form above.
-      const counts = value["counts"] as Value;
-      return {
-        blocked: value["blocked"],
-        reconciled: value["reconciled"],
-        token: typeof value["token"] === "string",
-        counts: Object.fromEntries(FOLDER_COUNTS.map((k) => [k, counts[k]])),
-      };
-    }
-    case "import.planning.apply": {
-      // The world's run, commit and backup: compared by form. It creates every task, the first time.
-      const counts = value["counts"] as Value;
-      return {
-        status: value["status"],
-        created: Number(counts["created"]) > 0,
-        commit: typeof value["commit"] === "string",
-        backup: typeof value["backup"] === "string",
-      };
-    }
-    case "import.planning.undo":
-      // Nobody changed the world's imported tasks, so the example's kept task is no part of it.
-      return {
-        undone: typeof value["undone"] === "string",
-        removed: Number(value["removed"]) > 0,
-      };
     case "prefs.manage":
       return { action: value["action"], prefs: value["prefs"], result: value["result"] };
     case "history.undo":
@@ -759,8 +692,6 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
       const transport = await open();
       try {
         const world = await buildWorld(transport);
-        /** The world's own dry run: its apply and undo examples name it. */
-        let dryRun: { run: string; token: string } | undefined;
         for (const entry of registry) {
           if (transport.carries?.(entry.name) === false) continue;
           for (const [i, example] of entry.examples.entries()) {
@@ -774,16 +705,6 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             // An example's folder is the world's portal too: a folder that exists on this machine.
             if (entry.name === "folder.manage" && typeof input["folder"] === "string") {
               input["folder"] = transport.portal;
-            }
-            // An import example's prototype folder is the committed synthetic prototype.
-            if (entry.name === "import.planning.preview") {
-              input["folder"] = PLANNING_FIXTURE;
-              delete input["roots"];
-            }
-            // The apply's and the undo's run is the world's dry run, and its token the run's.
-            if (entry.name === "import.planning.apply" || entry.name === "import.planning.undo") {
-              input["run"] = dryRun?.run ?? input["run"];
-              if (entry.name === "import.planning.apply") input["token"] = dryRun?.token ?? "";
             }
             // A verified example's launch reference stands for a launch of its task in the world:
             // `task.get 0` loads M-14 by the reference its Brief gave.
@@ -811,9 +732,6 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             const parsed = entry.output.safeParse(result);
             expect(parsed.success, key).toBe(true);
             const value = result as Value;
-            if (entry.name === "import.planning.preview") {
-              dryRun = { run: String(value["run"]), token: String(value["token"]) };
-            }
             if (typeof value["as_of"] === "string") expect(value["as_of"]).toMatch(AS_OF);
             expect(meaning(entry.name, value, true), key).toEqual(
               meaning(entry.name, example.output as Value, transport.binds),

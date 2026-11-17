@@ -6,7 +6,7 @@ import { PRODUCT_NAME } from "@tasks/brand";
 import type { AnyEntry } from "@tasks/contracts";
 import { AppError, findEntry } from "@tasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
-import type { BoundSession, Slot } from "./binding.ts";
+import { runOf, type BoundSession, type Slot } from "./binding.ts";
 
 export interface Caller {
   readonly class: ConnectionClass;
@@ -61,6 +61,11 @@ export interface Principal {
   readonly origin: "cli" | "ui" | "mcp";
   /** The bound session (`se_` ID): A1's credential carries it into every commit and log entry. */
   readonly session?: string;
+  /**
+   * The background run (`ru_` ID) the session acts for, when Tasks started its agent: the
+   * credential carries it too, so what the agent changes is recorded as the run's.
+   */
+  readonly run?: string;
 }
 
 /**
@@ -121,6 +126,7 @@ export function principalOf(cls: ConnectionClass, machine: string, grant?: strin
  * a second receipt lookup when it wrote unbound before it bound.
  */
 export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
+  const run = runOf(session);
   return {
     audience: "agent",
     actorKind: "agent",
@@ -131,6 +137,7 @@ export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
       : {}),
     origin: slot.origin,
     session: session.id,
+    ...(run === undefined ? {} : { run }),
   };
 }
 

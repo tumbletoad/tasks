@@ -90,8 +90,8 @@ export const CHILD_FIELDS = {
   },
   // A folder's path on its machine, and its tombstone. Its owner and machine never change.
   folders: { path: ["path"], deleted: ["deleted_at"] },
-  // An alias's target, which `alias.add` moves from a task whose import was undone (A7 3.15.6). An
-  // alias row has no versions: its last change row is its version and its provenance.
+  // An alias's target. An alias row has no versions: its last change row is its version and its
+  // provenance.
   aliases: { entity: ["entity_kind", "entity_id"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 

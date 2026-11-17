@@ -209,6 +209,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.codex-app-server.fixture-content",
+      "title": "The recorded codex app-server exchanges hold only what their sanitiser writes (protocol words, synthetic IDs, fixture paths, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, account, machine name, prompts, answers and ticket, and the check refuses any other value",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.7.m0-bridge-bench.self-test",
       "title": "The M0 bridge harness runs B01 to B07 at a tiny size, reads process memory from outside, writes a result file per row and judges none of them",
       "source": "A7 3.7 (M0.06), A2 3.7.7",
@@ -1001,14 +1008,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A7.3.14.planning-fixture.deterministic",
-      "title": "pnpm seed --planning regenerates the synthetic Planning prototype byte for byte, equal to the committed fixture with its CRLF lines",
-      "source": "A7 3.14 (M7.01), A7 3.15",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A1.5.write.coalesce",
       "title": "A request that writes one field twice records one change row with the first before-value and the final after-value, a field that ends where it started gets no row and keeps its versions, and sets on a new row fold into its create row",
       "source": "A1 3.7, A1 5, A7 3.8 M1.04",
@@ -1097,145 +1096,8 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A7.3.14.planning-fixture.index",
-      "title": "The synthetic Planning prototype's index names a place for every edge case of the M7.01 row, and each place holds what it names",
-      "source": "A7 3.14 (M7.01), A7 3.15.2",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.fixture",
-      "title": "Every case of the synthetic prototype's index parses to exactly what the index states: tasks with ID, group, title, body and flags, the counts, the counted event files, the folded check, star and focus day, the orphans, the optional files, and only the problems the cases name",
-      "source": "A7 3.14 (M7.02), A7 3.15.1, A7 3.15.2",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.fallback-id",
-      "title": "The fallback ID is 32-bit FNV-1a over the code points of <group>|<title> and matches the prototype's output for every unmarked synthetic title, including the two that tell code points from UTF-8 bytes and UTF-16 units",
-      "source": "A7 3.14 (M7.02), A7 3.15.2",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.total",
-      "title": "Every importer parser returns a result for any input and never throws, and its problems carry only a file, a line, a task ID, a field and a fixed code, never input text",
-      "source": "A7 3.14 (M7.02), A7 3.15.2",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.grammar",
-      "title": "The ledger, metadata, event and optional-file rules on small synthetic inputs: Python's line split and whitespace, markers, clauses, duplicate IDs, field types, event validity, microsecond order and the .ready rule",
-      "source": "A7 3.14 (M7.02), A7 3.15.2",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.bounds",
-      "title": "Each importer bound (file sizes, line length, task lines, entries, items, event files) gives its typed problem at the bound instead of unbounded work",
-      "source": "A7 3.14 (M7.02), A7 3.15.2",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.mapping",
-      "title": "Each mapping row of A7 3.15.3 has a fixture case and an assertion: the synthetic prototype maps to a plan of A1 operations with the areas, projects, statuses, owners, priorities, ranks, summaries, dates, sources and keys, places, completions, stars, aliases and ext.planning each row states",
-      "source": "A7 3.14 (M7.03), A7 3.15.3, A7 3.15.7",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.mapping-rules",
-      "title": "The mapping's rules on small inputs: URL kinds and keys, generic labels, slugs, roots, days at 09:00 local and a star's local day, cutting and SafeText with their problems, duplicates, orphans, reserved and deep metadata keys, and a pure, deterministic plan whose draft handles bind to IDs",
-      "source": "A7 3.14 (M7.03), A7 3.15.1, A7 3.15.3",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.shared-sources",
-      "title": "Through the writer, two legacy tasks with one source key become two tasks linked to one source row, and the Mira sample task that holds a legacy task's key is untouched",
-      "source": "A7 3.14 (M7.03), A7 3.15.3, A1 3.6",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.writer-fit",
-      "title": "Every value of a plan is one the space stores as it is: over many seeded synthetic prototype folders built from awkward text, days, instants, zones, URLs, paths, keys and numbers, the writer's request check takes every operation unchanged, aliases keep the marker grammar, instants stay in range and ext.planning is JSON that SafeText keeps",
-      "source": "A7 3.15.3, A1 3.7, A3 3.10",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.input-copy",
-      "title": "The input copy copies only the inputs into a new folder, records their SHA-256, refuses an existing or nested destination, follows no link, and reports any source file that changed, appeared or went away",
-      "source": "A7 3.14 (M7.02), A7 3.15.1",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.dry-run",
-      "title": "tasks import planning <fixture> --dry-run --json reports the fixture index's counts with zero source-hash changes and a preview token, writes no operation and only its run folder in the space, adds the actions export's events, gives no token when an error blocks, and refuses an agent and a script",
-      "source": "A7 3.14 (M7.04), A7 3.15.1, A7 3.15.4",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.preview",
-      "title": "The dry run's report and token: every error blocks and no warning does, the counts reconcile, proposed roots are named, report.md escapes the person's own text, and the token changes with the run, the space's authority, every input and the actions export, each option, the plan and every row the plan meets, and with nothing else",
-      "source": "A7 3.15.4",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.apply",
-      "title": "The apply of a dry run writes the fixture as one commit of the user with the import actor as author: tasks, aliases, reused and new areas, the prototype's instants, the exchange and its items, behind a verified pre-import backup; applying twice applies once; the same input again writes nothing; the token the writer recomputes in its transaction is the dry run's and another is refused; a space or a prototype that changed since the dry run, a failed backup and a full disk write nothing; and of two imports at once one applies",
-      "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.14, A1 3.18",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.reimport",
-      "title": "A re-import over a space the person changed applies exactly the fields the prototype changed, keeps and shows a field both sides changed until they agree, takes a field the person did not touch onto a completed task, never brings back a deleted task and keeps a moved one where the person put it",
-      "source": "A7 3.14 (M7.05), A7 3.15.6, A1 3.14",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.reimport-property",
-      "title": "Random prototype edits and random edits of the person between imports apply exactly the fields only the prototype changed, conflict and keep the space's value where both changed, settle where both agree, and the same input imported again gives zero operations",
-      "source": "A7 3.14 (M7.05, Verify), A7 3.15.6, A1 3.14",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.undo",
-      "title": "The undo of an import removes what it made, keeps every task someone changed since whole with its entries, links, place and area, lists those tasks, leaves the aliases and the exchange, is never on the undo stack, answers twice as once, and a re-import after it makes the undone tasks again",
-      "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.10",
-      "owner": "M7",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A7.3.15.importer.apply-crash",
-      "title": "An apply killed for real during its barrier backup, after it, inside its transaction and after its commit leaves nothing of the import or all of it, and the same apply again applies it exactly once",
-      "source": "A7 3.14 (M7.05), A7 3.15.5, A1 3.7",
+      "id": "A1.compat.imported-space",
+      "title": "A space made by the last build with the prototype importer, holding an import, the person's later change of an imported task and a second import applied and undone, opens as its machine's writer, lists, searches and renders the imported tasks, keeps the undone ones gone, finds a task by its ID in the earlier tool, names the import in a task's history, undoes and redoes a change made now and the one made before, and backs up, exports and restores",
       "owner": "M7",
       "kind": "ci",
       "profiles": ["v1"]
@@ -1646,6 +1508,41 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.door",
+      "title": "tasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of Tasks' tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.codex.driver",
+      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, and a whole answer after megabytes of other output",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.codex.run",
+      "title": "A Codex run in the run host with real processes, its program resolved from an npm shim (.cmd on Windows): start to answer with both results kept, Stop during a turn, Stop while the app server will not end after its work, and a process the agent left behind ended with the cleanup saying so, also one left in the agent's own group after it exited, in a job object and without a process group, with nothing of a test left alive; on Windows Ctrl+C reaches the app server through Node's wrapper",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.json-rpc.lines",
+      "title": "JSON-RPC over lines with requests in both directions: answers matched by ID, error answers with their code, the other side's requests answered by the handler or with method not found and never with a handler's private error, a slow answer holding up nothing after it, a request left open answered later, lines read whole in bounded memory with bad and over-long lines skipped, and every open request ended when the connection ends",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.8.container.ungrouped",
+      "title": "Without a process group a run still starts on every OS: the agent reads its stdin and its end is no command, Stop ends the agent and the children it started (also ones that ignore the interrupt or keep forking), counted from the operating system, and no confirmation claims more than that",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.8.container.crash",
       "title": "Killing the stand-in service by force leaves nothing of its runs and recover confirms each container empty by name; a service that lost its records recovers a live container from its name; on Windows a job handle held elsewhere keeps a run alive past the crash, confirm says occupied and recover ends it",
       "source": "A4 3.11.8, A4 3.11.9",
@@ -1697,6 +1594,13 @@
       "id": "A4.3.11.9.run.folder",
       "title": "A queued run checks, right before it starts, the folder a launch of its task would use: a task whose folder went is refused as folder_gone and nothing starts, and a task without a folder runs in the work folder",
       "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.9.run.stop-unknown",
+      "title": "Stop of a run whose processes were not confirmed ended (unknown) ends them by force and settles the run as it ended",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2868,6 +2772,13 @@
       "title": "Detection on the real file system with fake commands and homes in a temporary folder and an injected PATH: the version from --version, wrappers never run, files in agent homes never opened",
       "source": "A4 3.2, A7 3.9 M2.06",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.2.detect.program",
+      "title": "The program a run starts for an instance is resolved before it starts, without running anything: a bare name from the agent's PATH, a Windows npm .cmd shim as Node with its package's entry, an npm link on Linux as Node with its script; a shim without an entry, a PowerShell script and a missing program are refused",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },

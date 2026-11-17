@@ -53,8 +53,6 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A restored copy cannot be edited until you make it the current copy.
 - Apart from that clean-up of scheduled backups, Tasks never deletes your data or a backup as a
   side effect of something else.
-- An import first makes a backup that has passed a trial restore, and without one it changes
-  nothing.
 - An export that holds text shaped like a known kind of secret, such as an access token or a
   private key, is still written, and says what kind it is and where, without printing it.
 - A space is upgraded only after a backup of it has passed a trial restore. A failed upgrade
@@ -125,6 +123,23 @@ the behaviour it describes, and keep each one to a sentence or two.
   link until the launch is a day old. The agent reads it with the task, and it stays in the field
   until the agent did.
 - Tasks never changes another app's trust or approval settings.
+
+## Background runs
+
+- `tasks run` starts an agent on a task in the task's folder, the one Open uses, and only you can
+  start one. A run may do whatever your agent setup allows, without asking: the network, other
+  folders, other agents. An instance's `run_permission` narrows that.
+- Your request reaches the agent over its own connection, never on a command line. A run's
+  answer, or the agent's question when it needs you, is kept in the run's record. A question
+  from a helper the agent started does not reach you: that helper hears that no one answered.
+- Stop ends the agent and everything it started, and the run is called ended only once the system
+  confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
+  ends what Tasks could find of it: a process the agent detached from it may live on.
+- What a run's agent changes through Tasks' own tools is recorded as that run's.
+- A run's folder on this computer keeps the agent's raw output and its answer, which are task
+  text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
+  record. The agent's own history, such as Codex's sessions, keeps the run's conversation as it
+  keeps any session of yours, and Tasks leaves it there.
 
 ## The page
 

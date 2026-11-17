@@ -1,17 +1,19 @@
-// Stream parsers for the two v1 run adapters (A4 3.11.4).
+// The stream parser of an agent's print mode: Claude Code's `claude -p` (A4 3.11.4).
 import { createClaudePrintParser } from "./claude-print.ts";
-import { createCodexExecParser } from "./codex-exec.ts";
 import type { ProcessExit, RunEvent, RunOutcome, StreamKind } from "./events.ts";
 import type { StreamParser } from "./parser.ts";
 
 export * from "./events.ts";
 export { claudeToolLabel, createClaudePrintParser } from "./claude-print.ts";
-export { createCodexExecParser } from "./codex-exec.ts";
 export type { StreamParser } from "./parser.ts";
 
-/** A fresh parser for one run's stdout. */
+const PARSERS: Readonly<Record<StreamKind, () => StreamParser>> = {
+  "claude-print": createClaudePrintParser,
+};
+
+/** A fresh parser for one run's stdout: each print-mode adapter's own. */
 export function createStreamParser(kind: StreamKind): StreamParser {
-  return kind === "claude-print" ? createClaudePrintParser() : createCodexExecParser();
+  return PARSERS[kind]();
 }
 
 /** Parses a whole recorded stream at once: every event, the `finished` one last, and the outcome. */

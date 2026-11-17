@@ -838,24 +838,30 @@ export class LaunchService {
   }
 
   /**
-   * Whether the folder a task opens in here resolves now and its marker says it is the one set:
-   * what a background run checks before it starts, so it works where a launch would, and never
-   * in another machine's stead or in a folder that may be another.
+   * The folder a task opens in here, resolved now, when its marker says it is the one set: where
+   * a background run works, so it works where a launch would, never in another machine's stead or
+   * in a folder that may be another. Undefined when a launch could not use it.
    */
-  async folderUsable(space: string, folder: TaskFolder): Promise<boolean> {
+  async runFolder(space: string, folder: TaskFolder): Promise<string | undefined> {
     let planned: PlanFolder | null;
     try {
       planned = this.#planFolder(folder);
     } catch {
-      return false;
+      return undefined;
     }
-    if ((await this.resolveFolder(space, planned)).status !== "ok") return false;
+    const found = await this.resolveFolder(space, planned);
+    if (found.status !== "ok") return undefined;
     try {
       await this.#checkMarker(space, folder, false);
     } catch {
-      return false;
+      return undefined;
     }
-    return true;
+    return found.folder;
+  }
+
+  /** Whether the folder a task opens in here resolves now and is the one set (`runFolder`). */
+  async folderUsable(space: string, folder: TaskFolder): Promise<boolean> {
+    return (await this.runFolder(space, folder)) !== undefined;
   }
 
   /**

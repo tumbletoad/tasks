@@ -161,7 +161,6 @@ import {
   sectionsOf,
   type DigestFolder,
 } from "./task-view.ts";
-import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
 import { readFinished } from "./task-rows.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
@@ -184,10 +183,8 @@ export interface ServedSpace {
   readonly writer: SpaceWriterHandle | undefined;
   /** Set while the space is served: open or read-only. */
   readonly reader: WorkerConnection | undefined;
-  /** The space's folder on this machine: where an import's run folder goes (A7 3.15.1). */
+  /** The space's folder on this machine. */
   readonly folder?: string;
-  /** The space's machine-local backup folder, when one is set: an import's barrier backup. */
-  readonly backupDir?: string;
 }
 
 /** What the request path needs from its host. */
@@ -506,7 +503,7 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
   if (slot !== undefined && pinned !== undefined) {
     // The grant comes first: a home that may not use the space its binding pins can do nothing
     // here, whatever the call names, so `binding` (leave out the space) would not help it.
-    checkGrant(host.homes, homes, pinned);
+    checkGrant(host.homes, caller, pinned);
     const live = host.spaces().filter((s) => s.state !== "closed");
     if (named !== undefined && named !== pinned) {
       const other = findSpace(live, named);
@@ -538,7 +535,7 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
     throw error;
   }
   // Refused before it is pinned: a connection keeps no space it may not use.
-  checkGrant(host.homes, homes, picked.id);
+  checkGrant(host.homes, caller, picked.id);
   // An unbound connection pins the space of its first call when its bind frame could not name one
   // (A2 3.7.1: it never follows a later change of the default).
   if (slot !== undefined && picked.id !== undefined) host.bindings?.pin(slot, picked.id);
@@ -569,6 +566,11 @@ function grantedTarget(
   return candidates.every(
     (id) => id !== undefined && homes.every((home) => host.homes?.may(home, id) === true),
   );
+}
+
+/** The space a person's own command means: the one it names, else the machine's default. */
+export function personSpace(host: OpsHost, named: string | undefined): ServedSpace {
+  return pickByRule(host, { class: "cli-interactive", env: {} }, named);
 }
 
 function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
@@ -705,7 +707,7 @@ async function submit(
     // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
     // read and staged stops it before its actor is registered, and once more (below) before the
     // writer gets the request.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    checkGrant(call.host.homes, call.caller, call.space.id);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
@@ -720,6 +722,7 @@ async function submit(
         machine_id: call.host.machine.id as Id<"m">,
         origin: principal.origin,
         ...(principal.session === undefined ? {} : { session_id: principal.session as Id<"se"> }),
+        ...(principal.run === undefined ? {} : { run_id: principal.run as Id<"ru"> }),
       },
       ...(typeof input["base"] === "string" ? { base: input["base"] } : {}),
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
@@ -733,7 +736,7 @@ async function submit(
     };
     // The last step before the writer: no write is handed over after the revoke took effect. Only
     // a request the writer holds already can still commit.
-    checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
+    checkGrant(call.host.homes, call.caller, call.space.id);
     // An unbound connection's write was registered when its call started (`opCall`), so a retry
     // after a lost reply, once bound, still finds this receipt.
     result = await writer.submit(request);
@@ -2387,89 +2390,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
     };
-  },
-
-  "import.planning.preview": async (call) => {
-    // The dry run writes no operation, but it puts its run folder in the space's folder, and the
-    // import it previews can apply only to a space this machine writes: an open space only.
-    writerOf(call.space);
-    const reader = readerOf(call.space);
-    const folder = call.space.folder;
-    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
-    try {
-      return await planningPreview({
-        folder,
-        reader,
-        input: call.input,
-        roots: [],
-        platform: call.host.platform ?? process.platform,
-        timeZone: (call.host.timeZone ?? localTimeZone)(),
-      });
-    } catch (error) {
-      throw storageFailure(error);
-    }
-  },
-
-  // A7 3.15.5: the user's apply of a dry run, behind a verified backup, as the import actor.
-  "import.planning.apply": async (call) => {
-    const writer = writerOf(call.space);
-    const reader = readerOf(call.space);
-    const folder = call.space.folder;
-    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
-    let principal: Id<"ac">;
-    try {
-      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
-      principal = await actorOf(writer, call.principal);
-    } catch (error) {
-      throw storageFailure(error);
-    }
-    try {
-      return await planningApply({
-        folder,
-        reader,
-        writer,
-        input: call.input,
-        roots: [],
-        platform: call.host.platform ?? process.platform,
-        principal,
-        importer: () => writer.actor("import", "import"),
-        scope: call.principal.scope,
-        ...(call.principal.earlierScope === undefined
-          ? {}
-          : { earlierScope: call.principal.earlierScope }),
-        machine: call.host.machine.id as Id<"m">,
-        ...(call.space.backupDir === undefined ? {} : { backupDir: call.space.backupDir }),
-        ...(call.host.now === undefined ? {} : { now: call.host.now }),
-      });
-    } catch (error) {
-      throw storageFailure(error);
-    }
-  },
-
-  // A7 3.15.5: the undo of an applied import, partial by design, never on the undo stack.
-  "import.planning.undo": async (call) => {
-    const writer = writerOf(call.space);
-    const reader = readerOf(call.space);
-    let principal: Id<"ac">;
-    try {
-      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
-      principal = await actorOf(writer, call.principal);
-    } catch (error) {
-      throw storageFailure(error);
-    }
-    return await planningUndo({
-      ...(call.space.folder === undefined ? {} : { folder: call.space.folder }),
-      reader,
-      writer,
-      input: call.input,
-      principal,
-      scope: call.principal.scope,
-      ...(call.principal.earlierScope === undefined
-        ? {}
-        : { earlierScope: call.principal.earlierScope }),
-      machine: call.host.machine.id as Id<"m">,
-      origin: call.principal.origin,
-    });
   },
 
   // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by

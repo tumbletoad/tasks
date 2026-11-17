@@ -21,7 +21,6 @@ const SOURCES = [
   "packages/web/src",
   "packages/launch/src",
   "packages/runs/src",
-  "packages/importer-planning/src",
   "packages/contracts/src",
 ];
 

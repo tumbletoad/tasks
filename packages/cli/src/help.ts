@@ -8,11 +8,11 @@
 // does not exist.
 import { CLI_NAME } from "@tasks/brand";
 import { CLI_SPEC, takesFolder, verbSpec, type VerbSpec } from "./args.ts";
-import { IMPORT_HELP } from "./import.ts";
 import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
 import { SPACE_HELP } from "./space.ts";
+import { RUN_HELP } from "./runs.ts";
 import { VIEW_HELP } from "./view.ts";
 
 export interface LocalCommand {
@@ -144,16 +144,17 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     help: ROOTS_HELP,
   },
   {
+    name: "run",
+    summary:
+      "Start a background run of a task with an agent, list runs, show a run's answer, stop a run",
+    help: RUN_HELP,
+    subcommands: ["list", "show", "stop"],
+  },
+  {
     name: "view",
     summary: "Check a space's generated view/ and render it again (view rebuild)",
     help: VIEW_HELP,
     subcommands: ["rebuild"],
-  },
-  {
-    name: "import",
-    summary: "Preview the import of the Planning prototype (import planning <folder> --dry-run)",
-    help: IMPORT_HELP,
-    subcommands: ["planning"],
   },
   {
     name: "setup",

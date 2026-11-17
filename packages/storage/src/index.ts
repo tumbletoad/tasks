@@ -292,11 +292,8 @@ export {
   checkRequest,
   DEDUPE_MODES,
   DEDUPE_WINDOW_DAYS,
-  EXT_KEY,
   formatAsOf,
-  IMPORT_OPERATIONS,
   incarnationTag,
-  isImportRequest,
   isRelPath,
   LAUNCH_EVIDENCE_FIELDS,
   LAUNCH_EVIDENCE_ID,
@@ -316,10 +313,8 @@ export {
   FOLDER_OPERATIONS,
   type ActorKind,
   type Addressee,
-  type AliasAdd,
   type AreaCreate,
   type AreaPatch,
-  type AreaUpsert,
   type FolderClear,
   type FolderSet,
   type GroupArchive,
@@ -328,12 +323,6 @@ export {
   type ProjectDelete,
   type ProjectMove,
   type ProjectPatch,
-  type ExchangeCreate,
-  type ExchangeItem,
-  type ImportUndo,
-  type JsonValue,
-  type PreviewGuard,
-  type ProjectUpsert,
   type AsOf,
   type Base,
   type ConflictEntity,
@@ -399,9 +388,11 @@ export {
   type LaunchRecord,
 } from "./write/launches.ts";
 export {
+  decodeRun as decodeRunRow,
   FINAL_RUN_STATES,
   OPEN_RUN_STATES,
   RUN_APP_TOOLS,
+  RUN_CLEANUPS,
   RUN_EDGES,
   RUN_EVIDENCE_FIELDS,
   RUN_EVIDENCE_ID,
@@ -439,14 +430,7 @@ export {
   SYSTEM_SCOPE,
   type MachineInfo,
   type MachineOs,
-  type SubmitOptions,
   type WriterOptions,
   type WriteSeams,
 } from "./write/writer.ts";
-export { planImportRevert, recomputeToken, type ImportRevert } from "./write/imports.ts";
-export {
-  provenBackup,
-  submitBehindBackup,
-  type BarrierOptions,
-  type BarrierResult,
-} from "./backup/barrier.ts";
+export { provenBackup } from "./backup/barrier.ts";

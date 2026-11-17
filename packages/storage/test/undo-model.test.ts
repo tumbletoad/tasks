@@ -546,7 +546,7 @@ const property = (seen: Seen) =>
                 kind: "run.create",
                 task: id,
                 instance: "codex-work",
-                adapter: "codex-exec",
+                adapter: "codex",
                 place: null,
                 request: "Fixture instruction.",
                 brief_hash: "a1b2c3d4".repeat(8),
