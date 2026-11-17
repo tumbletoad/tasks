@@ -4391,6 +4391,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.web.search-finished",
+      "title": "A search's Completed group draws its rows as Completed does: when each task was completed or dropped, and no priority, effort or age; its To do rows keep theirs",
+      "source": "A5 3.13, A5 3.5",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.12.web.undo",
       "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo that conflicts on every field offers Restore mine (a partial undo, then the person's value with a fresh base), one that conflicts on some offers Undo the rest, a value no hand edit can set offers no Restore mine, and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
       "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",

@@ -301,8 +301,9 @@ interface Shown {
 }
 
 /**
- * The results as the list's groups: To do, then Completed, each hidden when empty. With
- * `byEffort`, To do is one group per effort, as the search found it, in the search's order. A row
+ * The results as the list's groups: To do, then Completed, each hidden when empty, Completed's rows
+ * drawn as the Completed view draws them. With `byEffort`, To do is one group per effort, as the
+ * search found it, in the search's order. A row
  * the live store holds is shown with the store's row, which carries the person's edits at once;
  * another with the search's row, which the feed keeps current. `held` is the expanded task, kept at
  * its place when a refresh no longer finds it.
@@ -357,6 +358,7 @@ export function searchGroups(
       kind: "section",
       label: group.label,
       ...(group.labelValues === undefined ? {} : { labelValues: group.labelValues }),
+      ...(group === done ? { finished: true } : {}),
       sections: [{ key: group.key, tasks: group.tasks }],
     }));
 }
