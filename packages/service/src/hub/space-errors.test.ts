@@ -19,9 +19,10 @@ describe("[A3.3.5.error-retry-words] an error's retry flag says what its sentenc
     for (const reason of ["opening", "not_served", "busy"]) {
       for (const retryable of [true, false]) {
         const body = spaceUnavailable(reason, retryable).toBody();
-        expect(asksToRetry(`${body.message} ${body.hint ?? ""}`), `${reason} ${retryable}`).toBe(
-          retryable,
-        );
+        expect(
+          asksToRetry(`${body.message} ${body.hint ?? ""}`),
+          `${reason} ${String(retryable)}`,
+        ).toBe(retryable);
       }
     }
   });
