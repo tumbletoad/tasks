@@ -699,12 +699,14 @@ export interface ProgramFacts {
  * blocking the service: a stalled folder on PATH must not hold up an Open, or anything else the
  * service does meanwhile. It runs the choice against what was found so far, looks at the first thing
  * it asked for and did not know, and repeats until it asks for nothing new: the same looks, in the
- * same order, as a choice that waited for each answer, and then the terminals a person can choose.
+ * same order, as a choice that waited for each answer. With `offered`, then also the terminals a
+ * person can choose, which an Open does not need.
  */
 export async function readProgramFacts(
   settings: TerminalSettings,
   host: TerminalHost,
   probe: FileProbe,
+  { offered = false }: { offered?: boolean } = {},
 ): Promise<ProgramFacts> {
   const executable = new Map<string, boolean>();
   const real = new Map<string, string | undefined>();
@@ -722,8 +724,7 @@ export async function readProgramFacts(
       },
     };
     terminalChoice(settings, asking);
-    // Then the terminals Settings offers, which a configured choice alone does not look for.
-    if (ask.next === undefined) installedTerminals(settings, asking);
+    if (offered && ask.next === undefined) installedTerminals(settings, asking);
     const next = ask.next;
     if (next === undefined) return { executable, realpath: real };
     // Only the first unknown: what the choice asks after it depends on its answer, so a folder

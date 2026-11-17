@@ -1105,9 +1105,13 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
     ]);
     expect(looked).not.toContain("/later/bin/kitty");
     expect(new Set(looked).size).toBe(looked.length);
-    // A terminal set with its fallbacks needs no default, yet Settings still offers every one found.
+    // A terminal set with its fallbacks: an Open looks only for those, while Settings still offers
+    // every one found.
     const chosen = settings({ app: "gnome-terminal", fallbacks: ["konsole"] });
-    const found = await readProgramFacts(chosen, osTerminalHost(input), probe);
+    looked.length = 0;
+    await readProgramFacts(chosen, osTerminalHost(input), probe);
+    expect(looked.some((path) => path.endsWith("/kitty"))).toBe(false);
+    const found = await readProgramFacts(chosen, osTerminalHost(input), probe, { offered: true });
     expect(installedTerminals(chosen, osTerminalHost({ ...input, programs: found }))).toEqual([
       "kitty",
     ]);

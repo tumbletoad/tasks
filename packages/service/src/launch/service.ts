@@ -377,7 +377,7 @@ export class LaunchService {
       settings: options.terminalSettings ?? DEFAULT_TERMINAL,
       install: options.install ?? "",
       shimCommand: options.shimCommand ?? defaultShimCommand(options),
-      host: async (session) => {
+      host: async (session, offered) => {
         // The person's PATH first, where `~/.local/bin` and the like are, then the service's.
         const person = pathEntries(this.#personEnv, options.platform);
         const path = [...person, ...servicePath.filter((p) => !person.includes(p))];
@@ -421,6 +421,7 @@ export class LaunchService {
           this.terminals.settings,
           osTerminalHost(known),
           probe,
+          { offered },
         );
         return osTerminalHost({ ...known, programs });
       },

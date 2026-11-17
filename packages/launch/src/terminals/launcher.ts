@@ -51,10 +51,12 @@ export interface TerminalLauncherOptions {
   readonly shimCommand: readonly string[] | undefined;
   /**
    * Detection's view of this machine, with the session's variables, the person's PATH and, on
-   * Windows, the default terminal setting read now.
+   * Windows, the default terminal setting read now. `offered`: it must also answer which terminals
+   * a person can choose, not only what the choice needs.
    */
   readonly host: (
     session: Readonly<Record<string, string>>,
+    offered: boolean,
   ) => TerminalHost | Promise<TerminalHost>;
   /**
    * Whether the program a command runs is there, right before its spawn, without blocking the
@@ -147,7 +149,7 @@ export class TerminalLauncher {
 
   /** The choice a launch now would make: settings over what this machine has now (doctor). */
   async choose(session: Readonly<Record<string, string>>): Promise<TerminalChoice> {
-    return terminalChoice(this.#settings, await this.#o.host(session));
+    return terminalChoice(this.#settings, await this.#o.host(session, false));
   }
 
   /** The choice a launch now would make, and the terminals a person can choose from here. */
@@ -155,7 +157,7 @@ export class TerminalLauncher {
     session: Readonly<Record<string, string>>,
   ): Promise<{ choice: TerminalChoice; installed: AdapterApp[] }> {
     const settings = this.#settings;
-    const host = await this.#o.host(session);
+    const host = await this.#o.host(session, true);
     return {
       choice: terminalChoice(settings, host),
       installed: installedTerminals(settings, host),
@@ -177,7 +179,7 @@ export class TerminalLauncher {
       return { outcome: { kind: "refused", reason: "refused" }, attempts: [], scoped: false };
     }
     const scoped = await this.scopes(input.env);
-    const host = await this.#o.host(input.session);
+    const host = await this.#o.host(input.session, false);
     const settings = this.#settings;
     const chain = terminalChoice(settings, host).chain;
     const run = this.#o.systemdRun;
