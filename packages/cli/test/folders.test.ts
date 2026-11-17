@@ -1,11 +1,13 @@
 // Folders at the command line: `tasks add` and `tasks set` give a task its folder with --folder,
 // a folder relative to the working one, --here and folder=, and clear it; `tasks area` makes a
-// project with its folder, and with --create makes the folder first; one undo takes the whole act
-// back; `tasks area list` shows the folders; the old --place and place= name --folder. The CLI in
+// project with its folder, and with --create makes the folder first, removed after a refusal and
+// kept after a lost reply; one undo takes the whole act back; `tasks area list` shows the folders;
+// the old --place and place= name --folder. The CLI in
 // this process against a service in this process; fixture text and temporary folders only.
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { LocalError } from "@tasks/bridge/protocol";
 import { contractWorld, type ContractWorld } from "@tasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
@@ -91,14 +93,49 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     expect(existsSync(made)).toBe(true);
   });
 
-  test("--folder . --create in an existing folder binds it as it is", async () => {
+  test("--folder . --create in a folder that holds files binds it as it is", async () => {
     const here = folder("already-here");
+    writeFileSync(join(here, "notes.txt"), "fixture");
     const created = await tasks(
       ["area", "create", "Fixture area/Fixture here", "--folder", ".", "--create", "--json"],
       here,
     );
     expect(created.code, created.stdout).toBe(0);
     expect(json(created)).toMatchObject({ group: { folder: ends("already-here") } });
+    expect(readFileSync(join(here, "notes.txt"), "utf8")).toBe("fixture");
+  });
+
+  test("a reply lost after the write keeps the folder --create made, which the binding names", async () => {
+    const parent = folder("lost-reply");
+    const made = join(parent, "fresh");
+    const lost = await runMain(
+      ["area", "create", "Fixture area/Fixture lost", "--folder", made, "--create", "--json"],
+      {
+        home: w.home,
+        cwd: parent,
+        tty: true,
+        main: {
+          wrap: (session) => ({
+            bound: session.bound,
+            close: () => {
+              session.close();
+            },
+            call: async (...args) => {
+              const result = await session.call(...args);
+              const [method, params] = args;
+              if (method === "op/call" && params?.["op"] === "group.manage") {
+                throw new LocalError("connection_lost", "test_lost_reply");
+              }
+              return result;
+            },
+          }),
+        },
+      },
+    );
+    expect(lost.code).toBe(6);
+    expect(existsSync(made)).toBe(true);
+    const listed = await tasks(["area", "list"], w.root);
+    expect(listed.stdout).toMatch(/\n {2}Fixture lost \(0\) {2}.*fresh\n/u);
   });
 
   test("tasks area set_folder --here and clear_folder change a project's folder", async () => {

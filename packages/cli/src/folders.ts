@@ -2,8 +2,8 @@
 // `tasks set` and `tasks area`. `--folder` comes from the contract and is made absolute here, as
 // the service never reads a relative path against its own working folder. `--here` is the working
 // folder. `--create` makes a folder that is not there yet, before the call: the person asks for it,
-// while the service never makes a folder for anyone. When the call does not succeed, the folders it
-// made are removed again while they are still empty.
+// while the service never makes a folder for anyone. When the call is refused, the folders it made
+// are removed again while they are still empty.
 import { rmdirSync } from "node:fs";
 import { makeDir } from "@tasks/files";
 import { homeFolder, hostFacts } from "@tasks/service/paths";
@@ -48,7 +48,9 @@ export async function folderVerb(
   ];
   if (!here && !create) return runVerb(io, globals, verb, rest, options);
   let made: string[] = [];
-  const call = { succeeded: false };
+  // A failure after which the write may have applied (a lost reply) leaves the folders: the binding
+  // may name them.
+  const call = { succeeded: false, uncertain: false };
   const code = await runVerb(
     io,
     globals,
@@ -74,9 +76,13 @@ export async function folderVerb(
         if (typeof folder !== "string") throw new UsageError("--create needs --folder or --here");
         made = makeDir(expandHome(folder, io), 0o700, { platform: io.platform });
       },
+      failed: (body) => {
+        if (body.data?.["retryable"] === true) call.uncertain = true;
+        return Promise.resolve(undefined);
+      },
     },
   );
-  if (!call.succeeded) {
+  if (!call.succeeded && !call.uncertain) {
     // Innermost first: a folder made here and still empty goes; anything put in it stays.
     for (const folder of made.toReversed()) {
       try {
