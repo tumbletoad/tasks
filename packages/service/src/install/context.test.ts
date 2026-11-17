@@ -26,14 +26,21 @@ describe("[A2.3.3.service-stop.alive] whether the service's process runs", () =>
   test.skipIf(process.platform !== "linux")(
     "on Linux a process that exited before its parent collected it does not run",
     async () => {
-      // The shell's background child exits; the program the shell becomes never collects it.
-      const parent = spawn("sh", ["-c", "sleep 0 & echo $!; exec sleep 60"], {
-        stdio: ["ignore", "pipe", "ignore"],
-      });
+      // The shell's background child waits for a byte on stdin, so it exits only after the shell
+      // has become a program that never collects it. A background job's own stdin is /dev/null,
+      // so it reads a copy taken first.
+      const script = "exec 3<&0; head -c 1 <&3 >/dev/null & echo $!; exec sleep 60 3<&-";
+      const parent = spawn("sh", ["-c", script], { stdio: ["pipe", "pipe", "ignore"] });
       try {
         const [line] = (await once(parent.stdout, "data")) as [Buffer];
         const pid = Number(line.toString().trim());
-        while (state(pid) !== "Z") await sleep(20);
+        const comm = `/proc/${String(parent.pid ?? 0)}/comm`;
+        while (readFileSync(comm, "utf8").trim() !== "sleep") await sleep(20);
+        parent.stdin.end("x");
+        while (state(pid) !== "Z") {
+          expect(state(pid)).toBeDefined();
+          await sleep(20);
+        }
         expect(processAlive(pid)).toBe(false);
         expect(processAlive(parent.pid ?? 0)).toBe(true);
       } finally {
