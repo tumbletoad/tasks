@@ -13,8 +13,8 @@
 // search with an empty search takes the draft along as the search, and "add instead" takes the
 // search along as the draft when there is none, so nothing typed is lost either way.
 //
-// The draft is kept per space in the browser (kept.ts), so it survives a switch to another space
-// and back, and a reload. A draft typed while an add was on its way stays. An add's text stays in
+// The draft is kept per space for the tab (kept.ts), so it survives a switch to another space and
+// back, and a reload; another tab keeps its own. A draft typed while an add was on its way stays. An add's text stays in
 // the field until the feed confirms the add, so the field tracks it until then: the same text is
 // not sent again while it is on its way, and when the space's session ends first (a switch of
 // space stops its store, which then confirms nothing), an add the service took drops its text from
@@ -31,7 +31,7 @@ import {
 } from "../capture/parse.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { keep, onKept, readKept, readKeptJson, typingIn } from "../kept.ts";
+import { tabKept } from "../kept.ts";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
@@ -76,7 +76,7 @@ interface Draft {
 const draftName = (space: string) => `top.${space}`;
 
 function readTop(space: string): Draft | undefined {
-  return draftOf(readKeptJson(draftName(space)));
+  return draftOf(tabKept.json(draftName(space)));
 }
 
 /** A kept draft, read by its shape. */
@@ -95,7 +95,7 @@ function keepTop(space: string, draft: Draft | undefined): void {
     draft === undefined || draft.text === ""
       ? undefined
       : JSON.stringify({ text: draft.text, kept: [...draft.kept] });
-  if (readKept(draftName(space)) !== value) keep(draftName(space), value);
+  if (tabKept.read(draftName(space)) !== value) tabKept.keep(draftName(space), value);
 }
 
 /** How long the search waits for typing to pause before it reads. */
@@ -179,18 +179,6 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     keepTop(space, text === "" ? undefined : { text, kept });
     if (text.trim() === "") setKept((known) => (known.size === 0 ? known : new Set()));
   }, [space, text, kept]);
-
-  // Another tab of this space changed the draft: this one follows while the person is not typing.
-  useEffect(
-    () =>
-      onKept(draftName(space), () => {
-        if (typingIn(field.current)) return;
-        const draft = readTop(space);
-        setText(draft?.text ?? "");
-        setKept(draft?.kept ?? new Set());
-      }),
-    [space],
-  );
 
   // Back, Forward, a reload or a link changed the URL's query: the field follows it. Leaving the
   // search route by any way ends the search.

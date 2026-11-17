@@ -40,14 +40,16 @@ const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const notes = (page: Page, ref: string) =>
   rowOf(page, ref).locator('[data-entry="note"] [data-part="entry-text"]');
 
-/** The browser's kept text of this product, by key: what a reload would bring back. */
+/** The kept text of this product, for the browser and for the tab: what a reload brings back. */
 const kept = (page: Page): Promise<Record<string, string>> =>
   page.evaluate((prefix) => {
     const found: Record<string, string> = {};
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i) ?? "";
-      if (/\.(draft|top|unsaved)\./u.test(key) && key.startsWith(prefix)) {
-        found[key] = localStorage.getItem(key) ?? "";
+    for (const storage of [localStorage, sessionStorage]) {
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i) ?? "";
+        if (/\.(draft|top|unsaved)\./u.test(key) && key.startsWith(prefix)) {
+          found[key] = storage.getItem(key) ?? "";
+        }
       }
     }
     return found;
@@ -166,7 +168,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(await violations(page)).toEqual([]);
   });
 
-  test("Open without text opens as the tile does, and a launch that is not recorded keeps the text", async ({
+  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and an agent that has the task open is not opened again", async ({
     page,
     world,
   }) => {
@@ -197,6 +199,17 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await expect(rowOf(page, ref).locator('[data-entry][data-state="confirmed"]')).toBeVisible({
       timeout: SLOW_MS,
     });
+    // The agent has the task open: a click would return that launch, which takes no request, so
+    // the button waits and says where the words can go instead.
+    await expect(open).toHaveAttribute("aria-disabled", "true");
+    await expect(open).toHaveAccessibleDescription(/already has this task open/u);
+    await composer.fill(`Now the ceiling too (${tag})`);
+    await expect(open).toHaveAttribute("aria-disabled", "true");
+    await composer.focus();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(toast(page)).toHaveText(/already has this task open/u);
+    expect(opened).toHaveLength(1);
+    await expect(composer).toHaveValue(`Now the ceiling too (${tag})`);
   });
 });
 
@@ -255,7 +268,7 @@ test.describe("[A7.3.12.m5-07.e2e.keys] The composer's keys: never while an inpu
 });
 
 test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", () => {
-  test("the top field's text comes back per space, also beside a second tab, and is gone once the task is added", async ({
+  test("the top field's text comes back per space after a reload of its tab, a second tab keeps its own, and it is gone once the task is added", async ({
     page,
     world,
   }) => {
@@ -283,7 +296,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await page.reload();
     await expect(field).toHaveValue(text, { timeout: SLOW_MS });
 
-    // Another space keeps its own; a second tab on Mira's space shows Mira's.
+    // Another space keeps its own; a second tab keeps its own, also through its own reload.
     await page.goto(`${origin}/s/${studio.id}/today`);
     await showsSpace(page, studio.name);
     await expect(field).toHaveValue("");
@@ -292,12 +305,16 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await second.goto(`${origin}/s/${mira.id}/today`);
     await showsSpace(second, mira.name);
     const secondField = second.getByRole("textbox", { name: "New task" });
-    await expect(secondField).toHaveValue(text);
+    await expect(secondField).toHaveValue("");
+    await secondField.fill(`The second tab's own (${tag})`);
+    await second.reload();
+    await showsSpace(second, mira.name);
+    await expect(secondField).toHaveValue(`The second tab's own (${tag})`);
     await page.goto(`${origin}/s/${mira.id}/today`);
     await showsSpace(page, mira.name);
     await expect(field).toHaveValue(text);
 
-    // Added: the text is gone, here, after a reload, and in the browser.
+    // Added: the text is gone, here and after a reload; the second tab keeps its own.
     await field.focus();
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText("Added to Inbox", { timeout: SLOW_MS });
@@ -305,8 +322,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await page.reload();
     await showsSpace(page, mira.name);
     await expect(field).toHaveValue("");
-    // The second tab was not typing: it follows.
-    await expect(secondField).toHaveValue("");
+    await expect(secondField).toHaveValue(`The second tab's own (${tag})`);
     const left = Object.keys(await kept(page)).filter((key) => key.includes(".top."));
     expect(left).toEqual([`${PRODUCT_ID}.top.${studio.id}`]);
     await page.goto(`${origin}/s/${studio.id}/today`);

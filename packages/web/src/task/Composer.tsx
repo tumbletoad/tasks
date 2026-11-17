@@ -10,7 +10,7 @@
 // method composes. Run, an agent working without a window, is not offered until it can start.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Toolbar } from "react-aria-components";
-import { requestId, type Instance, type Receipt } from "../api.ts";
+import { requestId, type Instance, type Receipt, type ReceiptState } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -27,6 +27,9 @@ import { DRAFT_MAX, keepDraft, onAsk, onDraft, readDraft } from "./composer.ts";
 import css from "./Expanded.module.css";
 
 const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap"]);
+
+/** A launch that ends here started nothing: the composer keeps its text. */
+const FAILED: ReadonlySet<ReceiptState> = new Set(["failed", "unknown"]);
 
 const STUBS: Readonly<Record<AskField, MessageId>> = {
   summary: "ask.summary",
@@ -133,13 +136,16 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
-    void actions.open(task, instance, request === "" ? undefined : request).then((ok) => {
+    // A click while a launch of the instance lives returns that launch: it takes no new request.
+    const before = new Set(receipts.filter((r) => r.instance === instance.key).map((r) => r.id));
+    void actions.open(task, instance, request === "" ? undefined : request).then((receipt) => {
       setOpening((known) => {
         const next = new Set(known);
         next.delete(instance.key);
         return next;
       });
-      if (ok && request !== "") sent(request);
+      const took = receipt !== undefined && !FAILED.has(receipt.state) && !before.has(receipt.id);
+      if (took && request !== "") sent(request);
     });
   };
 
@@ -148,6 +154,19 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     void actions.copy(task, event.shiftKey, request === "" ? undefined : request).then((ok) => {
       if (ok && request !== "") sent(request);
     });
+  };
+
+  /** Why an instance does not open now, as its tip says it; undefined when it opens. */
+  const held = (instance: Instance): string | undefined => {
+    const state = tileState(receipts, instance.key);
+    if (opening.has(instance.key) || state === "opening") {
+      return t("composer.opening", { label: instance.label });
+    }
+    // A click would return the launch it has, which takes no new request.
+    if (state === "connected" || state === "not_confirmed") {
+      return t("composer.hasSession", { label: instance.label });
+    }
+    return undefined;
   };
 
   const noteKeys = keysOf("note", singleKeys);
@@ -177,7 +196,11 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
           } else if (action === "open-first") {
             event.preventDefault();
             if (first === undefined) say(t("composer.noAgent"));
-            else if (tileState(receipts, first.key) !== "opening") open(first);
+            else {
+              const why = held(first);
+              if (why === undefined) open(first);
+              else say(why);
+            }
           }
         }}
       />
@@ -201,12 +224,12 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
         </button>
 
         {instances.map((instance, i) => {
-          const busy = opening.has(instance.key) || tileState(receipts, instance.key) === "opening";
-          const tip = busy
-            ? t("composer.opening", { label: instance.label })
-            : t(words === "" ? "composer.openTip" : "composer.openWithTip", {
-                label: instance.label,
-              });
+          const why = held(instance);
+          const tip =
+            why ??
+            t(words === "" ? "composer.openTip" : "composer.openWithTip", {
+              label: instance.label,
+            });
           return (
             <button
               key={instance.key}
@@ -216,12 +239,12 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               data-default={i === 0 ? "" : undefined}
               data-state={tileState(receipts, instance.key)}
               data-ring={instance.ring}
-              aria-disabled={busy}
+              aria-disabled={why !== undefined}
               aria-keyshortcuts={i === 0 ? ariaKeys(openKeys, mac) : undefined}
               aria-description={tip}
               data-tip={tip}
               onClick={() => {
-                if (!busy) open(instance);
+                if (why === undefined) open(instance);
               }}
             >
               <span className={styles.glyph} aria-hidden="true">

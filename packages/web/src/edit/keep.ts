@@ -5,7 +5,7 @@
 //
 // What is kept is the edit's source, never its request: the change is built again the one way a
 // control builds it (`changeOf`), so a value read back is only ever one a control could have made.
-import { keep, keptNames, readKeptJson } from "../kept.ts";
+import { browserKept } from "../kept.ts";
 import { changeOf, type Field } from "./change.ts";
 import type { Unsaved, UnsavedKeeper } from "./edits.ts";
 
@@ -71,11 +71,11 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
   return {
     load() {
       const found: Unsaved[] = [];
-      for (const name of keptNames(prefix)) {
-        const unsaved = unsavedOf(readKeptJson(name));
+      for (const name of browserKept.names(prefix)) {
+        const unsaved = unsavedOf(browserKept.json(name));
         // Not one of ours: it is removed, so it is never read again as anything.
         if (unsaved === undefined || nameOf(unsaved) !== name) {
-          keep(name, undefined);
+          browserKept.keep(name, undefined);
           continue;
         }
         found.push(unsaved);
@@ -89,9 +89,9 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
       for (const [name, each] of next) {
         if (known.get(name) === each) continue;
         const value = keptOf(each);
-        if (value !== undefined) keep(name, value);
+        if (value !== undefined) browserKept.keep(name, value);
       }
-      for (const name of known.keys()) if (!next.has(name)) keep(name, undefined);
+      for (const name of known.keys()) if (!next.has(name)) browserKept.keep(name, undefined);
       known = next;
     },
   };
@@ -100,10 +100,11 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
 /** The tasks of `space` with a kept edit. */
 export function unsavedTasks(space: string): string[] {
   const prefix = `unsaved.${space}.`;
-  return keptNames(prefix).map((name) => name.slice(prefix.length).split(".")[0] ?? "");
+  return browserKept.names(prefix).map((name) => name.slice(prefix.length).split(".")[0] ?? "");
 }
 
 /** Forgets the kept edits of a task that no longer exists. */
 export function forgetUnsaved(space: string, task: string): void {
-  for (const name of keptNames(`unsaved.${space}.${task}.`)) keep(name, undefined);
+  for (const name of browserKept.names(`unsaved.${space}.${task}.`))
+    browserKept.keep(name, undefined);
 }

@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { requestId, type Instance, type Receipt, type ReceiptState } from "../api.ts";
+import { requestId, type Instance, type Receipt } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -40,8 +40,7 @@ import css from "./TaskList.module.css";
 const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
-/** A launch that ends here started nothing: the composer keeps its text. */
-const FAILED: ReadonlySet<ReceiptState> = new Set(["failed", "unknown"]);
+
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
@@ -502,11 +501,11 @@ export function TaskList({
           .then(({ receipt, copy }) => {
             shown(task, receipt);
             if (copy !== undefined) void toClipboard(copy);
-            return !FAILED.has(receipt.state);
+            return receipt;
           })
           .catch((error: unknown) => {
             if (!live.failed(error)) say(t("row.openFailed"));
-            return false;
+            return undefined;
           });
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.

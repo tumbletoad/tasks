@@ -3728,7 +3728,7 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.races",
-      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
+      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, nor does the strip's button of that instance, which says why, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
       "owner": "M2",
       "kind": "ci",
@@ -4320,7 +4320,7 @@
     },
     {
       "id": "A5.3.8.web.kept",
-      "title": "Typed text kept in the browser under the product's prefix: listed per prefix, removed, kept for the tab's life when storage is full or blocked, and another tab's change heard by its name only",
+      "title": "Typed text kept under the product's prefix, for the browser or for the tab alone: listed per prefix, removed, kept for the tab's life when storage is full or blocked, and another tab's change heard by its name only",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
@@ -4344,7 +4344,7 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.strip",
-      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line; Open without text sends the brief alone; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line; Open without text sends the brief alone; an agent that has the task open is not opened again, with or without text, and says where the words can go; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
@@ -4360,7 +4360,7 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.reload",
-      "title": "In Chromium and Firefox: the top field's text is back after a reload, per space, shows in a second tab and is gone everywhere once the task is added; a task's draft follows into a second tab where nobody types, is back after a reload and leaves nothing behind once saved as a note; a field edit not saved because the connection was down, the task changed under it or the task was finished is back after a reload with its choices, and gone once saved or discarded",
+      "title": "In Chromium and Firefox: the top field's text is back after a reload of its tab, per space, a second tab keeps its own through its reload, a paste over the field's limit says it was cut, and the text is gone once the task is added; a task's draft follows into a second tab where nobody types, is back after a reload and leaves nothing behind once saved as a note; a field edit not saved because the connection was down, the task changed under it or the task was finished is back after a reload with its choices, and gone once saved or discarded",
       "source": "A5 3.8, A5 3.11, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",

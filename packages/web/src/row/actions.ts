@@ -1,6 +1,6 @@
 // What a row's controls do (Row.tsx), apart from the row so the expanded task's seam can take it
 // too without a cycle.
-import type { Instance } from "../api.ts";
+import type { Instance, Receipt } from "../api.ts";
 import type { TaskRow } from "../store/rows.ts";
 import type { RowMove } from "./model.ts";
 
@@ -14,10 +14,10 @@ export interface RowActions {
   /** The tile shows a launch on its way or done: expand to its thread entry. */
   readonly expand: (task: TaskRow) => void;
   /**
-   * Open the task in an instance, with the composer's `text` as the request. True once the
-   * service recorded a launch that did not fail.
+   * Open the task in an instance, with the composer's `text` as the request: the receipt of the
+   * launch the service recorded or returned, or undefined when it recorded none.
    */
-  readonly open: (task: TaskRow, instance: Instance, text?: string) => Promise<boolean>;
+  readonly open: (task: TaskRow, instance: Instance, text?: string) => Promise<Receipt | undefined>;
   /**
    * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5), with the
    * composer's `text`. True once it is on the clipboard.
