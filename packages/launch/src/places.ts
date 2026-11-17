@@ -35,44 +35,11 @@ import { lstat, readlink, realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import type { BigIntStats } from "node:fs";
 import { readGitRemote, type GitRemote } from "./git-remote.ts";
+import { RESOLVE_REASONS, type ResolveReason } from "./intents.ts";
 
 type PlatformPath = typeof posix;
 
-/** Why a place does not resolve to a folder, or a working folder fails its check. A closed list. */
-export const RESOLVE_REASONS = [
-  /** The relative path is not a place's path (A1 3.15). */
-  "invalid_path",
-  /** This machine has no root with the place's root ID. */
-  "root_missing",
-  /** The root's folder is not there, is not a folder or cannot be reached. */
-  "root_unavailable",
-  /** The place's folder is not there or cannot be reached (a dangling link included). */
-  "path_missing",
-  /** The place is a folder and a file is there (through a link to a file included). */
-  "not_a_directory",
-  /** The place is a file and something else is there. */
-  "not_a_file",
-  /** The path leads outside the root's folder, through a link or a junction. */
-  "escapes_root",
-  /** The folder holds another repository than the one the place recorded, or none it can read. */
-  "identity_mismatch",
-  /** The volume gives no file number (0), so the folder has no identity to check: never guessed. */
-  "identity_unavailable",
-  /**
-   * The working folder is not the directory `resolvePlace` found, or no longer lies at the depth
-   * it found below the root's directory: the tree changed in between.
-   */
-  "folder_changed",
-  /**
-   * A folder Tasks makes and owns (the space's work folder, A4 3.3) is not one it may work
-   * in: a link, a junction or another reparse point, another user's, open to other users (POSIX),
-   * or not inside its parent by identity.
-   */
-  "unsafe_folder",
-  /** The folder's drive or share did not answer in time: nothing was started. */
-  "not_answering",
-] as const;
-export type ResolveReason = (typeof RESOLVE_REASONS)[number];
+export { RESOLVE_REASONS, type ResolveReason };
 
 /** Why an absolute folder does not become a place on this machine. A closed list. */
 export const BIND_REASONS = [

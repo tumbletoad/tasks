@@ -97,6 +97,19 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     );
   });
 
+  test("a status section's title counts every task it has, and a count its read cut short with a +", () => {
+    const status = example("space.status", 0);
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => row(i + 1, "Call back"));
+    status["sections"] = [
+      { name: "today", tasks: rows(3), total: 12 },
+      { name: "changes", tasks: rows(2), total: 41, more: true, above: 7 },
+    ];
+    expect(entry("space.status").output.safeParse(status).success).toBe(true);
+    const text = renderResult("space.status", status);
+    expect(text).toContain("today (3 of 12):");
+    expect(text).toContain("changes (2 of 41+, 7 listed above):");
+  });
+
   test("worst cases at the field limits stay within their budgets and say what was cut", () => {
     // space.status: every section full of the longest rows, twenty statuses.
     const status = example("space.status", 0);
@@ -116,6 +129,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     status["sections"] = ["today", "week", "review", "waiting", "inbox", "changes"].map((name) => ({
       name,
       tasks: Array.from({ length: 8 }, (_, n) => row(n + 100, cjk(200))),
+      total: 8,
     }));
     // get_task's digest v0 as the request path bounds it (A3 3.9.6): every part at its limit, and
     // more of each left out.
@@ -511,7 +525,7 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
         live_sessions: 0,
       },
     ];
-    status["sections"] = [{ name: "today", tasks: [row(15, INJECTION)] }];
+    status["sections"] = [{ name: "today", tasks: [row(15, INJECTION)], total: 1 }];
 
     const digest = example("task.get", 0);
     const task = digest["task"] as Json;

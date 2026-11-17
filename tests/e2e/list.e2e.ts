@@ -345,3 +345,93 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
     await bulk.machine("ui.theme", null);
   });
 });
+
+/** The local calendar day `days` from today, YYYY-MM-DD. */
+function day(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at every width, and its effort shows quietly", () => {
+  test("every form of a due date fits, and an effort is a quiet mark, at 1,440, 1,280 and 390 px in both themes", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const tag = `${test.info().project.name}${String(test.info().workerIndex)}`;
+    // The widest forms: Tomorrow, a weekday and a two-digit day, a later day, the next year's day,
+    // a month and year, and late in days, weeks and years.
+    const dues: [string, number, string | undefined][] = [
+      ["tomorrow", 1, "S"],
+      ["this week", 5, "M"],
+      ["later", 23, "L"],
+      ["next year", 75, undefined],
+      ["months off", 340, "L"],
+      ["years off", 1_200, undefined],
+      ["late a day", -1, "M"],
+      ["late days", -99, undefined],
+      ["late weeks", -650, "S"],
+      ["late years", -800, undefined],
+    ];
+    const refs = await world.op(world.mira.id, "task.add", {
+      tasks: dues.map(([label, days, effort]) => ({
+        title: `Fit the due column, ${label} (${tag})`,
+        area: "home",
+        due: day(days),
+        ...(effort === undefined ? {} : { effort }),
+      })),
+    });
+    const shown = (refs as { tasks: { ref: string }[] }).tasks.map((task) => task.ref);
+    const rowOf = (ref: string) => page.locator(`[data-list] li[data-task="${ref}"]`);
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/open`));
+    await showsSpace(page, world.mira.name);
+
+    for (const theme of ["sumi", "washi"] as const) {
+      await world.machine("ui.theme", theme);
+      for (const width of [1440, 1280, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.reload();
+        await expect(rowOf(shown[0] ?? "")).toBeAttached({ timeout: SLOW_MS });
+        for (const [i, ref] of shown.entries()) {
+          const row = rowOf(ref);
+          await row.scrollIntoViewIfNeeded({ timeout: SLOW_MS });
+          const due = row.locator('[data-part="row-due"]');
+          await expect(due).not.toBeEmpty();
+          // Measured, not guessed: the text and its icon take no more room than the column gives.
+          // Fractional widths, because scrollWidth rounds a cut under half a pixel away on one OS
+          // and shows it on another.
+          const cut = await due.evaluate((el) => {
+            const content = document.createRange();
+            content.selectNodeContents(el);
+            return content.getBoundingClientRect().width - el.getBoundingClientRect().width;
+          });
+          expect(
+            cut,
+            `${dues[i]?.[0] ?? ""} at ${String(width)} px: ${await due.innerText()}`,
+          ).toBeLessThanOrEqual(0);
+          const effort = row.locator('[data-part="row-effort"]');
+          const key = dues[i]?.[2];
+          if (width === 390) await expect(effort).toBeHidden();
+          else if (key === undefined) await expect(effort).toBeEmpty();
+          else {
+            await expect(effort).toHaveText(key);
+            await expect(effort).toHaveAttribute("data-tip", `Effort ${key}`);
+          }
+        }
+        const scroll = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(scroll, `horizontal scroll at ${String(width)} px`).toBeLessThanOrEqual(0);
+        await rowOf(shown[0] ?? "").scrollIntoViewIfNeeded();
+        await page.screenshot({
+          path: test.info().outputPath(`row-due-effort-${theme}-${String(width)}.png`),
+        });
+      }
+    }
+    expect(await violations(page)).toEqual([]);
+    // The tests of a worker share its service: the theme goes back to its default.
+    await world.machine("ui.theme", null);
+  });
+});

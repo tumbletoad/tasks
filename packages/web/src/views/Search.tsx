@@ -23,6 +23,7 @@ import {
   sortsByEffort,
   type Found,
   type SearchRow,
+  wordsOf,
 } from "./search.ts";
 import css from "./Search.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
@@ -46,6 +47,7 @@ export function SearchPage({ q, task, onExpand }: SearchPageProps) {
   const [unindexed, setUnindexed] = useState(() => unindexedSpaces.has(space));
   const query = q.trim();
   const words = hasWords(query);
+  const title = wordsOf(query);
   const onUnindexed = useCallback(() => {
     unindexedSpaces.add(space);
     setUnindexed(true);
@@ -69,19 +71,19 @@ export function SearchPage({ q, task, onExpand }: SearchPageProps) {
           onUnindexed={onUnindexed}
         />
       )}
-      {words ? (
+      {title === "" ? null : (
         <p className={styles.foot}>
           <button
             type="button"
             className={styles.action}
             onClick={() => {
-              askField({ kind: "add", text: query });
+              askField({ kind: "add", text: title });
             }}
           >
-            <span dir="auto">{t("search.addInstead", { text: query })}</span>
+            <span dir="auto">{t("search.addInstead", { text: title })}</span>
           </button>
         </p>
-      ) : null}
+      )}
     </>
   );
 }

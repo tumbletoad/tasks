@@ -5,6 +5,7 @@
 // transactions interleave in SQLite while the backup copies its snapshot. Each request writes one
 // commit, one task and its `create` change, and moves last_seq.
 import { parentPort, workerData } from "node:worker_threads";
+import { StorageError } from "../src/errors.ts";
 import { isId } from "../src/ids.ts";
 import { nodeSqliteDriver } from "../src/node-sqlite.ts";
 import { openSpace } from "../src/space.ts";
@@ -27,10 +28,35 @@ const CONTROL_SLOTS = 3;
 
 const { folder, writer: index, control } = workerData as ConcurrentWriterData;
 const slots = new Int32Array(control);
+
+/**
+ * Runs `fn` again after a retryable storage error, as every caller is told to (A1 3.9). SQLite's
+ * busy handler is not fair: under ten writers on a loaded machine one of them can wait past any
+ * busy timeout, and that wait says nothing about the backup this test is about.
+ */
+function retrying<T>(fn: () => T): T {
+  for (;;) {
+    try {
+      return fn();
+    } catch (error) {
+      if (!(error instanceof StorageError) || !error.retryable) throw error;
+    }
+  }
+}
+
 const checked = await CheckedDriver.check(nodeSqliteDriver);
-const opened = openSpace(checked, folder, { role: "writer", busyTimeoutMs: 60_000 });
-const owner = opened.conn.prepare("SELECT id FROM actors WHERE kind = 'human'").get()?.["id"];
-const writer = SpaceWriter.open(opened, { machine: FIXTURE_MACHINE });
+// A writer that fails to open has closed its connection, so a retry opens the space again.
+const { writer, owner } = retrying(() => {
+  const opened = openSpace(checked, folder, { role: "writer", busyTimeoutMs: 60_000 });
+  let owner: unknown;
+  try {
+    owner = opened.conn.prepare("SELECT id FROM actors WHERE kind = 'human'").get()?.["id"];
+  } catch (error) {
+    opened.conn.close();
+    throw error;
+  }
+  return { writer: SpaceWriter.open(opened, { machine: FIXTURE_MACHINE }), owner };
+});
 try {
   if (!isId(owner, "ac")) throw new Error("the fixture space has no owner");
   const actor = ownerCredential(owner, `cli:writer-${String(index)}`);
@@ -43,9 +69,13 @@ try {
   }
   let commits = 0;
   while (Atomics.load(slots, 0) === 0) {
-    const result = writer.submit(
-      createRequest(writer.spaceId, actor, `Writer ${String(index)} task ${String(commits)}`),
+    // A request a busy database left undecided runs again with the same ID.
+    const request = createRequest(
+      writer.spaceId,
+      actor,
+      `Writer ${String(index)} task ${String(commits)}`,
     );
+    const result = retrying(() => writer.submit(request));
     if (result.status !== "applied") throw new Error(`a write was ${result.status}`);
     commits += 1;
     Atomics.store(slots, CONTROL_SLOTS + index, commits);

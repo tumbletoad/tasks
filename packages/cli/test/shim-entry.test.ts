@@ -46,7 +46,8 @@ const ALLOWED: readonly RegExp[] = [
   /^packages\/bridge\/src\/protocol\/[a-z-]+\.ts$/,
   /^packages\/bridge\/src\/mcp\/(discovery|names|unavailable)\.ts$/,
   /^packages\/launch\/src\/process\.ts$/,
-  /^packages\/launch\/src\/(places|git-remote)\.ts$/,
+  // The folder's reasons are launch codes too: intents.ts holds them, and imports nothing.
+  /^packages\/launch\/src\/(places|git-remote|intents)\.ts$/,
   /^packages\/launch\/src\/shim\/wire\.ts$/,
   /^packages\/brand\/src\/index\.ts$/,
   // exit.json's exact mode (A2 3.2.2 rule 5): a leaf that imports only Node built-ins.

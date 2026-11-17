@@ -14,6 +14,7 @@ import {
   searchGroups,
   searchSource,
   sortsByEffort,
+  wordsOf,
   type FoundRow,
   type Search,
   type SearchRow,
@@ -254,10 +255,11 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(sortsByEffort("sort:-Effort")).toBe(true);
     expect(sortsByEffort("fence effort:S")).toBe(false);
     expect(sortsByEffort('"sort:effort"')).toBe(false);
-    for (const q of ["sort=effort", 'sort:"-effort"', "order:effort"]) {
+    for (const q of ["sort=effort", 'sort:"-effort"']) {
       expect(sortsByEffort(q)).toBe(true);
     }
-    expect(searchFields("order:effort")).toContain("effort");
+    // No key of the query language: the service refuses it, and nothing is sorted.
+    expect(sortsByEffort("order:effort")).toBe(false);
     // The search's order: S, S, L, then XL (no longer in the scale) among the tasks without one.
     const found = (
       [
@@ -309,6 +311,28 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     );
     expect(kept[0]?.sections[0]?.tasks.map((t) => t.ref)).toEqual(["M-1", "M-2"]);
     expect(searchFields("fence sort:effort")).toEqual(["effort"]);
+  });
+
+  test("a filter written with = is a filter where the service reads one, and a word elsewhere", () => {
+    expect(hasWords("p=3")).toBe(false);
+    expect(hasWords("sort=effort fence")).toBe(true);
+    expect(filtersOnly("fence p=3 sort=effort")).toBe("p=3 sort=effort");
+    expect(searchFields("fence p=3")).toEqual(["priority"]);
+    // Behind a word that is no key, = is text, as the service reads it.
+    expect(hasWords("x=1")).toBe(true);
+    expect(filtersOnly("x=1 p:2")).toBe("p:2");
+  });
+
+  test("Add as a task takes the query's words only", () => {
+    expect(wordsOf("fence gate")).toBe("fence gate");
+    expect(wordsOf("fence p:1 sort:effort status:open")).toBe("fence");
+    expect(wordsOf('call "Ana ""the vet"" Reyes" p=2')).toBe('call Ana "the vet" Reyes');
+    expect(wordsOf("fence OR gate -dst")).toBe("fence gate");
+    expect(wordsOf("10:30 standup x=1")).toBe("10:30 standup x=1");
+    expect(wordsOf("p<=2 -is:inbox")).toBe("");
+    // Words that only look like filters are the person's text.
+    expect(wordsOf("read https://example.org/guide p:1")).toBe("read https://example.org/guide");
+    expect(wordsOf("fix bug:123 Status:open")).toBe("fix bug:123");
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {

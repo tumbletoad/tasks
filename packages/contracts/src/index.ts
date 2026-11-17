@@ -6,6 +6,7 @@ export * from "./errors.ts";
 export * from "./http.ts";
 export * from "./operations.ts";
 export * from "./preferences.ts";
+export * from "./query-terms.ts";
 export * from "./registry.ts";
 export type * from "./remote.ts";
 export { REMOTE_MAX_VALIDITY_S, REMOTE_USER_TEXT_MAX, REMOTE_VALIDITY_S } from "./remote.ts";

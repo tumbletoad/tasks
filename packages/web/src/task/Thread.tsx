@@ -87,7 +87,10 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
         ? t("receipt.confirmed", { label })
         : t("receipt.confirmedIn", { label, where });
     case "failed":
-      return t("receipt.failed", { reason: (receipt.reason ?? "failed").replaceAll("_", " ") });
+      return t("receipt.failed", {
+        reason: receipt.reason ?? "failed",
+        words: (receipt.reason ?? "failed").replaceAll("_", " "),
+      });
     case "unknown":
       return t("receipt.unknown");
   }
