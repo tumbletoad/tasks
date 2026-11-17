@@ -33,7 +33,11 @@ import {
   type FileHandle,
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((done) => {
+    setTimeout(done, ms);
+  });
 
 /**
  * Sets the mode of the file or folder open at `fd` to exactly `mode` (POSIX). Windows keeps the
