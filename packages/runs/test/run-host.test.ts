@@ -246,7 +246,7 @@ describe("[A4.3.11.9.run.crash] the service killed by force mid run and mid answ
     const { token, run } = await startRun(service, "answers");
     await waitFor(
       "answers being saved",
-      () => files.readAnswer(run)?.text.slice(0, 8) ?? "",
+      () => files.readAnswer(run)?.text?.slice(0, 8) ?? "",
       (n) => Number(n) >= 20,
     );
     const next = await crashAndRestart(label, at, service, token);

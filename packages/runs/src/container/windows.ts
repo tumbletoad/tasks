@@ -114,7 +114,7 @@ export class WindowsContainers implements Containers {
         reason: "check_failed",
         message: unavailableMessage(
           "check_failed",
-          `the test container was not empty: ${confirmed.detail}`,
+          `the test container was not empty: ${"detail" in confirmed ? confirmed.detail : confirmed.state}`,
         ),
       };
     }

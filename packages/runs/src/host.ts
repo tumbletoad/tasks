@@ -1,23 +1,31 @@
-// The run host: one background run from its `starting` record to its settled end, in a container
-// (container/) whose processes it ends together and confirms gone from the operating system's own
-// count. What the person can count on, and how this keeps it:
+// The run host: one background run from its `starting` record to its settled end. It starts the
+// agent's program in a container (container/) and owns its pipes; a driver (drivers/) speaks the
+// agent's protocol over them. A run has two results, and the record keeps both:
 //
-// - Stop ends the agent and everything it started, and the run is called ended only once that is
-//   confirmed. Stop is committed first (`cancelling`); then the agent gets an interrupt, so it can
-//   print its answer, and after the grace time the container is killed and confirmed empty. A
-//   container that is not empty in time leaves the run `unknown`, with End by force.
-// - The answer is kept whole up to 1 MiB, also after megabytes of other output: every byte of
-//   stdout goes through the parser, and each answer-bearing event is saved to the run's folder as
-//   it is parsed, before anything else, so a crash of the service keeps the last one.
+// - The work's, from the driver: done with its answer, needs the person, failed, stopped. It is
+//   saved to the run's folder first, before anything of the run is closed or ended.
+// - The cleanup's, from the container: nothing was left, what was left had to be ended, or (with
+//   no process group) Tasks ended what it could find. It never changes the work's.
+//
+// What the person can count on, and how this keeps it:
+// - The run is settled when its work is, not when its first turn ends or its process exits: the
+//   driver says when. Then the protocol is closed, the agent gets time to end by itself, and only
+//   what is still there is ended.
+// - Stop works at every moment, start-up and a close included, and waits for nothing: it is
+//   committed first (`cancelling`), the agent is asked to stop over its protocol (or interrupted
+//   when it has none), and after the grace time the container is killed. A container that is not
+//   confirmed empty in time leaves the run `unknown`, with End by force.
+// - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
+//   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
 // - When the service ends, its runs' processes end with it (the container's own guarantee). The
-//   next start confirms each open run's container from its name before it settles the run
-//   (`service_ended`), with the last saved answer.
+//   next start settles each open run from its saved work: its own result when the work had
+//   settled, else `service_ended` with the last saved answer.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
-// stop's grace, the confirmation and the drain of the output after the container is empty.
-import type { RunRecord, RunResult } from "@tasks/contracts/runs";
+// stop's grace, the close, the confirmation and the drain of the output.
+import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@tasks/contracts/runs";
 import { SIGNAL_NAME } from "@tasks/contracts/runs";
 import type {
   AgentExit,
@@ -26,9 +34,11 @@ import type {
   ContainerSpec,
   Containers,
 } from "./container/index.ts";
+import { printDriver } from "./drivers/print.ts";
+import type { DriverSession, OpenDriver, Work } from "./drivers/types.ts";
 import { RunMachine, type RunEnd } from "./machine.ts";
 import type { RunFolders, SavedAnswer } from "./run-files.ts";
-import { createStreamParser, type RunEvent, type RunOutcome } from "./streams/index.ts";
+import { STREAM_KINDS, type StreamKind } from "./streams/index.ts";
 
 /** The host's time limits, in milliseconds. A run's wall and idle times come from its record. */
 export interface RunTimes {
@@ -36,9 +46,13 @@ export interface RunTimes {
   startMs: number;
   /** From the interrupt to the kill. */
   stopGraceMs: number;
+  /** From the end of the protocol to the agent's own exit, before it is ended. */
+  closeMs: number;
+  /** After the agent's exit, for what it started to end by itself before it counts as left. */
+  settleMs: number;
   /** From the kill to the confirmation that the container is empty. */
   confirmMs: number;
-  /** For the output pipes to end once the container is empty. */
+  /** For the output pipes to end once the agent or its container ended. */
   drainMs: number;
   /** Between attempts to record a run's end that the store did not take. */
   retryMs: number;
@@ -47,13 +61,20 @@ export interface RunTimes {
 export const RUN_TIMES: Readonly<RunTimes> = {
   startMs: 60_000,
   stopGraceMs: 10_000,
+  closeMs: 10_000,
+  settleMs: 2_000,
   confirmMs: 10_000,
   drainMs: 5_000,
   retryMs: 30_000,
 };
 
-/** What runs in a run's container: the agent's program, arguments, folder and environment. */
-export type AgentCommand = Omit<ContainerSpec, "name">;
+/**
+ * What runs in a run's container: the agent's program, arguments, folder and environment, and
+ * its driver. Without one, a print-mode agent's stream parser is the driver.
+ */
+export interface AgentCommand extends Omit<ContainerSpec, "name"> {
+  readonly open?: OpenDriver;
+}
 
 /** What the host logs: codes and counts only, never a run's text. */
 export type RunHostLog = (
@@ -103,6 +124,17 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** Whether a run may settle on this confirmation: empty, or nothing can count what is left. */
+const settles = (confirmed: Confirmation): boolean =>
+  confirmed.state === "empty" || confirmed.state === "unconfirmable";
+
+/** The work, when the session settled already. */
+async function settledNow(session: DriverSession): Promise<Work | undefined> {
+  const pending = Symbol("pending");
+  const first = await Promise.race([session.settled, Promise.resolve(pending)]);
+  return first === pending ? undefined : first;
+}
+
 /** Resolves when a stream ended or failed. */
 const endOf = (stream: NodeJS.ReadableStream): Promise<void> =>
   new Promise((resolve) => {
@@ -113,46 +145,89 @@ const endOf = (stream: NodeJS.ReadableStream): Promise<void> =>
     });
   });
 
-/** The result a record keeps from the parser's outcome. */
-export function resultOf(outcome: RunOutcome, durationMs: number | null): RunResult {
-  const signal = outcome.exit.signal;
+/** The result a record keeps: the work's, how the agent's process ended, and the cleanup's. */
+export function resultOf(
+  work: Work,
+  exit: AgentExit | undefined,
+  durationMs: number | null,
+  cleanup: RunCleanup | undefined,
+): RunResult {
+  const signal = exit?.signal ?? null;
   return {
-    ok: outcome.ok,
-    outcome: outcome.reason,
-    exitCode: outcome.exit.code,
+    ok: work.ok,
+    outcome: work.outcome,
+    exitCode: exit?.code ?? null,
     signal: signal !== null && SIGNAL_NAME.test(signal) ? signal : null,
-    nativeId: outcome.nativeId,
-    text: outcome.result,
-    ...(outcome.resultCut ? { textCut: true } : {}),
-    ...(outcome.resultFinal ? { textFinal: true } : {}),
-    error: outcome.error,
-    usage: outcome.usage,
-    appTools: outcome.session?.appTools ?? null,
-    declined: outcome.counts.declined,
-    permissionDenials: outcome.counts.permissionDenials,
+    nativeId: work.nativeId,
+    text: work.text,
+    ...(work.textCut ? { textCut: true } : {}),
+    ...(work.textFinal ? { textFinal: true } : {}),
+    error: work.error,
+    usage: work.usage,
+    appTools: work.appTools,
+    declined: work.declined,
+    permissionDenials: work.permissionDenials,
     durationMs: durationMs === null ? null : Math.max(0, Math.round(durationMs)),
+    ...(cleanup === undefined ? {} : { cleanup }),
   };
 }
 
-/** The result recovery records from a run's saved answer: the run did not end by itself. */
-export function savedResult(run: RunRecord, saved: SavedAnswer | undefined): RunResult | null {
+/**
+ * The result recovery records from a run's saved work: its own verdict when the work had settled,
+ * else `no_result` with the last answer, since the run did not end by itself.
+ */
+export function savedResult(
+  run: RunRecord,
+  saved: SavedAnswer | undefined,
+  cleanup?: RunCleanup,
+): RunResult | null {
   if (saved === undefined) return null;
+  const outcome = saved.outcome ?? "no_result";
   return {
-    ok: false,
-    outcome: "no_result",
+    ok: outcome === "success",
+    outcome,
     exitCode: null,
     signal: null,
     nativeId: run.evidence.native_id ?? null,
     text: saved.text,
     ...(saved.cut ? { textCut: true } : {}),
     ...(saved.final ? { textFinal: true } : {}),
-    error: null,
+    error: saved.error ?? null,
     usage: null,
     appTools: null,
     declined: 0,
     permissionDenials: 0,
     durationMs: null,
+    ...(cleanup === undefined ? {} : { cleanup }),
   };
+}
+
+/** A driver that could not start its protocol: the work fails with no output. */
+const unopened: DriverSession = {
+  settled: Promise.resolve({
+    ok: false,
+    outcome: "no_output",
+    nativeId: null,
+    text: null,
+    textCut: false,
+    textFinal: false,
+    error: null,
+    usage: null,
+    appTools: null,
+    declined: 0,
+    permissionDenials: 0,
+  }),
+  interrupt: () => false,
+  close: () => undefined,
+  ended: () => undefined,
+};
+
+/** The driver of a run whose command names none: its adapter's print-mode stream parser. */
+function defaultDriver(run: RunRecord): OpenDriver | undefined {
+  const kind = run.adapter as string;
+  return (STREAM_KINDS as readonly string[]).includes(kind)
+    ? printDriver(kind as StreamKind)
+    : undefined;
 }
 
 export class RunHost {
@@ -384,7 +459,17 @@ export class RunHost {
     if (prepared === "stop" || flow.stopping) {
       return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     }
-    const spec: ContainerSpec = { ...prepared, name };
+    const open = prepared.open ?? defaultDriver(run);
+    if (open === undefined) {
+      return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
+    }
+    const spec: ContainerSpec = {
+      name,
+      command: prepared.command,
+      args: prepared.args,
+      cwd: prepared.cwd,
+      env: prepared.env,
+    };
 
     flow.startPending = true;
     const starting = this.#containers.start(spec).then(
@@ -398,7 +483,7 @@ export class RunHost {
     if (started === undefined) return this.#startTimedOut(flow, starting);
     // The container's contract: a refused start leaves nothing running and no container.
     if (!started.ok) return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
-    return this.#running(flow, run, started.contained);
+    return this.#running(flow, run, started.contained, open);
   }
 
   /**
@@ -435,34 +520,58 @@ export class RunHost {
     return this.#confirmed(flow, end, await this.#endContainer(name));
   }
 
-  /** The agent runs: its output is read, and the first of its exit, a Stop and a limit ends it. */
-  async #running(flow: Flow, run: RunRecord, contained: Contained): Promise<RunRecord | undefined> {
+  /**
+   * The agent runs: its driver speaks its protocol, and the first of its settled work, its own
+   * end, a Stop and a limit ends it. The work's result is saved, then the protocol is closed and
+   * the container cleaned up: the cleanup's result is added, and never changes the work's.
+   */
+  async #running(
+    flow: Flow,
+    run: RunRecord,
+    contained: Contained,
+    open: OpenDriver,
+  ): Promise<RunRecord | undefined> {
     const name = contained.name;
     const startedAt = this.#elapsed();
-    let exitedAt: number | undefined;
+    const agent: { exit: AgentExit | undefined; at: number | undefined } = {
+      exit: undefined,
+      at: undefined,
+    };
     const exited = contained.exited.then((exit) => {
-      exitedAt = this.#elapsed();
+      agent.exit = exit;
+      agent.at = this.#elapsed();
       return exit;
     });
     this.#log("run.started", { adapter: run.adapter });
 
     // Read before anything is awaited: a pipe nobody reads when the agent exits is emptied and its
     // output thrown away, so an agent that answers and exits quickly would lose its answer.
-    const parser = createStreamParser(run.adapter);
     const logs = this.#files.logs(flow.id);
     let lastOutput = startedAt;
-    const read = (events: readonly RunEvent[]): void => {
-      for (const event of events) this.#event(flow, event);
-    };
     contained.stdout.on("data", (chunk: Buffer) => {
       lastOutput = this.#elapsed();
       logs.stdout(chunk);
-      read(parser.push(chunk));
     });
     contained.stderr.on("data", (chunk: Buffer) => {
       logs.stderr(chunk);
     });
     const drained = Promise.all([endOf(contained.stdout), endOf(contained.stderr)]);
+    let session: DriverSession;
+    try {
+      session = open({ stdin: contained.stdin, stdout: contained.stdout }, (event) => {
+        this.#event(flow, event);
+      });
+    } catch (error) {
+      this.#failed("open", error);
+      contained.stdin.end();
+      session = unopened;
+    }
+    // The agent's own end: its exit, then the rest of its output for as long as the drain allows,
+    // since a process it left behind may hold the pipe.
+    const agentEnded = exited.then(async (exit) => {
+      await this.#within(flow, drained, this.#times.drainMs);
+      return exit;
+    });
 
     await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
       this.#failed("started", error);
@@ -473,30 +582,105 @@ export class RunHost {
       limits.abort();
     });
     const why = await Promise.race([
-      exited.then(() => "exited" as const),
+      session.settled.then(() => "settled" as const),
+      agentEnded.then(() => "exited" as const),
       flow.stopped,
       this.#limits(run, startedAt, () => lastOutput, limits.signal),
     ]);
     limits.abort();
 
-    if (why !== "exited") {
-      // A Stop or a limit: the agent may still print its answer, then whatever is left is killed.
-      await this.#containers.interrupt(name).catch(() => false);
-      await this.#within(flow, exited, this.#times.stopGraceMs);
+    if (why === "stop" || why === "wall" || why === "idle") {
+      // The agent is asked to stop, and may still say how its work ended.
+      if (!session.interrupt()) await this.#containers.interrupt(name).catch(() => false);
+      await this.#within(
+        flow,
+        Promise.race([session.settled, agentEnded]),
+        this.#times.stopGraceMs,
+      );
     }
-    const confirmed = await this.#endContainer(name);
-    // Once the container is empty, nothing holds the pipes: the rest of the output arrives.
-    if (confirmed.state === "empty") await this.#within(flow, drained, this.#times.drainMs);
-    const exit: AgentExit = (await this.#within(flow, exited, 0)) ?? { code: null, signal: null };
-    const parsed = parser.end(exit);
-    read(parsed.events);
+    let work = await settledNow(session);
+    if (work === undefined && agent.exit !== undefined) {
+      session.ended(agent.exit);
+      work = await settledNow(session);
+    }
+    if (work === undefined) {
+      // The agent did not end its work in time: it is ended, and what it said is its work.
+      await this.#containers.kill(name).catch(() => undefined);
+      await this.#within(flow, agentEnded, this.#times.confirmMs);
+      session.ended(agent.exit ?? { code: null, signal: null });
+      work = (await settledNow(session)) ?? (await unopened.settled);
+    }
+    if (this.#isClosed()) {
+      // The service ends, and the run with it: its work did not settle by itself, and the next
+      // start records why from what was saved.
+      logs.close();
+      return undefined;
+    }
+    // The work's result first: a crash of the service from here on still records it.
+    try {
+      this.#files.saveAnswer(flow.id, {
+        text: work.text,
+        final: work.textFinal,
+        cut: work.textCut,
+        outcome: work.outcome,
+        error: work.error,
+      });
+    } catch (error) {
+      this.#failed("answer", error);
+    }
+
+    // The protocol ends, and the agent gets time to end by itself; a Stop waits for nothing.
+    session.close();
+    if (agent.exit === undefined) {
+      await this.#within(flow, Promise.race([agentEnded, flow.stopped]), this.#times.closeMs);
+    }
+    const ended = why === "settled" || why === "exited";
+    const { confirmed, cleanup } = await this.#cleanUp(
+      name,
+      ended && agent.exit !== undefined && !flow.stopping ? this.#times.settleMs : 0,
+    );
+    if (confirmed.state === "empty" || confirmed.state === "unconfirmable") {
+      // Nothing holds the pipes any more: the rest of the output arrives.
+      await this.#within(flow, drained, this.#times.drainMs);
+    }
     logs.close();
-    const result = resultOf(parsed.outcome, exitedAt === undefined ? null : exitedAt - startedAt);
+    const result = resultOf(
+      work,
+      agent.exit,
+      agent.at === undefined ? null : agent.at - startedAt,
+      cleanup,
+    );
     const end: RunEnd =
       why === "wall" || why === "idle"
         ? { kind: "timed_out", limit: why, result }
         : { kind: "exited", result };
     return this.#confirmed(flow, end, confirmed);
+  }
+
+  /**
+   * The cleanup's result: whether anything was left after `waitMs` for it to end by itself, and
+   * once what was left was ended, whether the container is confirmed empty.
+   */
+  async #cleanUp(
+    name: string,
+    waitMs: number,
+  ): Promise<{ confirmed: Confirmation; cleanup: RunCleanup | undefined }> {
+    let first: Confirmation;
+    try {
+      first = await this.#containers.confirmEmpty(name, { waitMs });
+    } catch (error) {
+      first = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
+    }
+    if (first.state === "empty") return { confirmed: first, cleanup: "confirmed" };
+    if (first.state === "unconfirmable") {
+      await this.#containers.kill(name).catch(() => undefined);
+      return { confirmed: first, cleanup: "ended_found" };
+    }
+    const confirmed = await this.#endContainer(name);
+    return {
+      confirmed,
+      cleanup: confirmed.state === "empty" ? "ended_leftovers" : undefined,
+    };
   }
 
   /** Resolves with the run's limit that passed first: its wall time, or its time without output. */
@@ -557,19 +741,25 @@ export class RunHost {
     }
   }
 
-  /** Settles with `end` when the container is empty, else `unknown`, keeping `end` for later. */
+  /**
+   * Settles with `end` when the container is empty, or when no process group holds the run and
+   * nothing can be confirmed; else `unknown`, keeping `end` for later.
+   */
   async #confirmed(
     flow: Flow,
     end: RunEnd,
     confirmed: Confirmation,
   ): Promise<RunRecord | undefined> {
-    if (confirmed.state === "empty") return this.#settle(flow.id, end);
+    if (settles(confirmed)) return this.#settle(flow.id, end);
     flow.pending = end;
     return this.#settle(flow.id, { kind: "not_confirmed" });
   }
 
-  /** The end a run gets once the service that hosted it is gone: its last saved answer. */
-  #serviceEnded(run: RunRecord): RunEnd {
+  /**
+   * The end a run gets once the service that hosted it is gone: its saved work when the work had
+   * settled, else `service_ended` with its last saved answer.
+   */
+  #serviceEnded(run: RunRecord, cleanup?: RunCleanup): RunEnd {
     let saved: SavedAnswer | undefined;
     try {
       this.#files.removeTemps(run.id);
@@ -577,14 +767,35 @@ export class RunHost {
     } catch {
       saved = undefined;
     }
-    return { kind: "service_ended", result: savedResult(run, saved) };
+    const result = savedResult(run, saved, cleanup);
+    return saved?.outcome !== undefined && result !== null
+      ? { kind: "exited", result }
+      : { kind: "service_ended", result };
   }
 
-  /** Recovery's rule for one run no flow holds: confirm its container by name, then settle. */
+  /**
+   * Recovery's rule for one run no flow holds: confirm its container by name, ending what is
+   * left, then settle.
+   */
   async #reconcile(run: RunRecord): Promise<RunRecord | undefined> {
-    const end = this.#serviceEnded(run);
-    const confirmed = await this.#recoverContainer(containerName(run.id));
-    if (confirmed.state === "empty") return this.#settle(run.id, end);
+    const name = containerName(run.id);
+    let left: Confirmation;
+    try {
+      left = await this.#containers.confirmEmpty(name);
+    } catch (error) {
+      left = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
+    }
+    const confirmed = left.state === "empty" ? left : await this.#recoverContainer(name);
+    const cleanup: RunCleanup | undefined =
+      left.state === "empty"
+        ? "confirmed"
+        : confirmed.state === "unconfirmable"
+          ? "ended_found"
+          : confirmed.state === "empty"
+            ? "ended_leftovers"
+            : undefined;
+    const end = this.#serviceEnded(run, cleanup);
+    if (settles(confirmed)) return this.#settle(run.id, end);
     const flow = this.#flows.get(run.id) ?? this.#flow(run.id);
     flow.pending = end;
     return this.#settle(run.id, { kind: "not_confirmed" });

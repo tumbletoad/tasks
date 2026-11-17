@@ -72,6 +72,8 @@ export type AppToolsState = (typeof APP_TOOLS_STATES)[number];
  * - `exit_status`: the final event said success, but the process did not exit 0.
  * - `no_result`: the stream had events but no final one (killed, or a cancel that flushed none).
  * - `no_output`: the stream held no event at all (a startup failure; see stderr).
+ * - `needs_input`: the agent asked for the person's own words and could not go on without them;
+ *   its question is the result's text.
  */
 export const OUTCOME_REASONS = [
   "success",
@@ -82,6 +84,7 @@ export const OUTCOME_REASONS = [
   "exit_status",
   "no_result",
   "no_output",
+  "needs_input",
 ] as const;
 export type OutcomeReason = (typeof OUTCOME_REASONS)[number];
 
@@ -294,6 +297,7 @@ export const RUN_REASONS = {
     "exit_status",
     "no_result",
     "no_output",
+    "needs_input",
   ],
   /** The run's wall time, or its time without a stdout line, passed (RunLimits). */
   timed_out: ["wall", "idle"],
@@ -428,6 +432,18 @@ export const RUN_LIMIT_BOUNDS = {
 } as const;
 
 /**
+ * How the run's processes ended, which the run host decides from the container after the work's
+ * result is known, and which never changes it:
+ * - `confirmed`: nothing was left when the agent ended, as the operating system counts it.
+ * - `ended_leftovers`: processes the agent started, or the agent itself, had to be ended; the
+ *   operating system then confirmed none is left.
+ * - `ended_found`: no process group could hold the run, so Tasks ended the agent's processes it
+ *   could find, and nothing confirms that none is left.
+ */
+export const RUN_CLEANUPS = ["confirmed", "ended_leftovers", "ended_found"] as const;
+export type RunCleanup = (typeof RUN_CLEANUPS)[number];
+
+/**
  * The final outcome a run record keeps (A4 3.11.5): the outcome's verdict and counts, the answer
  * (≤ ANSWER_CAP_BYTES) and the error (≤ TEXT_CAP_BYTES), usage and the native ID. Never the working
  * folder.
@@ -451,6 +467,8 @@ export interface RunResult {
   declined: number;
   permissionDenials: number;
   durationMs: number | null;
+  /** How the run's processes ended. Absent on a result recorded before it was kept. */
+  cleanup?: RunCleanup;
 }
 
 /** What Run records (A4 3.11.2: written in `queued` before anything spawns). */

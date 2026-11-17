@@ -152,7 +152,9 @@ export class LinuxContainers implements Containers {
     }
     await this.kill(name);
     const confirmed = await this.confirmEmpty(name, { waitMs: 5_000 });
-    if (confirmed.state !== "empty") return `the test container was not empty: ${confirmed.detail}`;
+    if (confirmed.state !== "empty") {
+      return `the test container was not empty: ${"detail" in confirmed ? confirmed.detail : confirmed.state}`;
+    }
     return undefined;
   }
 

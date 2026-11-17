@@ -76,6 +76,7 @@ export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>>
     "exit_status",
     "no_result",
     "no_output",
+    "needs_input",
   ],
   timed_out: ["wall", "idle"],
   unknown: ["stop_timed_out"],
@@ -102,7 +103,11 @@ export const RUN_OUTCOMES = [
   "exit_status",
   "no_result",
   "no_output",
+  "needs_input",
 ] as const;
+
+/** How a run's processes ended, which a result records. */
+export const RUN_CLEANUPS = ["confirmed", "ended_leftovers", "ended_found"] as const;
 
 export const RUN_APP_TOOLS = ["connected", "not-connected", "absent"] as const;
 
@@ -158,6 +163,8 @@ export interface RunResultRow {
   declined: number;
   permission_denials: number;
   duration_ms: number | null;
+  /** How the run's processes ended. Absent on a result written before it was kept. */
+  cleanup?: string;
 }
 
 /** The usage keys a result may hold, each a non-negative number. */

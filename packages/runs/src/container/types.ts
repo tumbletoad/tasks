@@ -54,11 +54,14 @@ export interface Contained {
  * Whether a container is empty, as the operating system counts it. `empty` also means the
  * container is gone or released: a cgroup removed, a job's holder let go. `occupied`: processes
  * remain. `unknown`: the count could not be read, so the run must not be called ended.
+ * `unconfirmable`: no process group holds the run, so nothing counts what is left; Tasks ended
+ * what it could find.
  */
 export type Confirmation =
   | { readonly state: "empty" }
   | { readonly state: "occupied"; readonly detail: string }
-  | { readonly state: "unknown"; readonly detail: string };
+  | { readonly state: "unknown"; readonly detail: string }
+  | { readonly state: "unconfirmable" };
 
 /** Why runs cannot be contained on this machine. Each has a plain message for the person. */
 export type UnavailableReason =

@@ -236,8 +236,9 @@ describe("[A4.5.run.host] the run host's rules", () => {
     await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "stick", pick: 0 });
     await run({ kind: "exit", pick: 0, code: 0 }, STOP);
     expect((await read()).state).toBe("cancelling");
-    // The leftover survives the kill: the run is unknown, and keeps the Stop.
-    await run(tick(11_000));
+    // The leftover holds the output and survives the kill: after the drain and the confirmation
+    // time the run is unknown, and keeps the Stop.
+    await run(tick(16_000));
     expect(await read()).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
     await run({ kind: "release", pick: 0 }, { kind: "forceEnd", pick: 0 }, tick(1_000));
     const after = await read();
@@ -248,7 +249,8 @@ describe("[A4.5.run.host] the run host's rules", () => {
   test("a container that refuses to empty leaves the run unknown; End by force settles it once it is empty", async () => {
     const { run, read } = await oneRun();
     await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "stick", pick: 0 });
-    await run({ kind: "exit", pick: 0, code: 0 }, tick(11_000));
+    // After the drain, the time to end by itself and the confirmation time.
+    await run({ kind: "exit", pick: 0, code: 0 }, tick(18_000));
     expect(await read()).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
     // Still held: End by force cannot confirm it.
     await run({ kind: "forceEnd", pick: 0 }, tick(11_000));
@@ -292,6 +294,34 @@ describe("[A4.5.run.host] the run host's rules", () => {
     for (let i = 0; i < 4; i += 1) await wall.run(tick(40_000), say());
     await wall.run(tick(11_000));
     expect(await wall.read()).toMatchObject({ state: "timed_out", reason: "wall" });
+  });
+
+  test("a clean run keeps both results: the work's answer, and nothing left behind", async () => {
+    const { run, read } = await oneRun();
+    await run(start(), say(true), { kind: "exit", pick: 0, code: 0 }, tick(1_000));
+    const after = await read();
+    expect(after.state).toBe("succeeded");
+    expect(after.result).toMatchObject({ text: "answer 1", textFinal: true, cleanup: "confirmed" });
+  });
+
+  test("a run whose agent left a process behind: the work stays done, the cleanup says it was ended", async () => {
+    const { run, read, world } = await oneRun();
+    await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "exit", pick: 0, code: 0 });
+    await run(tick(10_000));
+    const after = await read();
+    expect(after.state).toBe("succeeded");
+    expect(after.result).toMatchObject({ text: "answer 1", cleanup: "ended_leftovers" });
+    expect(world.boxes.get(after.id)?.procs).toBe(0);
+  });
+
+  test("a crash after the work settled and was saved: the next start records the work's own result", async () => {
+    const { run, read } = await oneRun();
+    // The leftover holds the output, so the host is still cleaning up when the service dies.
+    await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "exit", pick: 0, code: 0 });
+    await run(tick(5_500), { kind: "crash" }, tick(1_000));
+    const after = await read();
+    expect(after.state).toBe("succeeded");
+    expect(after.result).toMatchObject({ ok: true, outcome: "success", text: "answer 1" });
   });
 
   test("a crash mid run: the next start ends it as interrupted with the last saved answer", async () => {
