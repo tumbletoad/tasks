@@ -514,7 +514,7 @@
     },
     {
       "id": "A1.5.bundle.secret-scan",
-      "title": "The export's secret scan: an export that finds nothing writes its bundle; a secret-shaped string in any table, with or without data.jsonl, or in an attachment refuses it and writes nothing, naming the kind and place but never the text; the vacuumed snapshot holds no byte of text edited away; an attachment reached through a link into the secrets folder is refused",
+      "title": "The export's secret scan: an export that finds nothing writes its bundle; a secret-shaped string in any table, with or without data.jsonl, or in an attachment is a warning on the written bundle that names each kind and place once but never the text; the vacuumed snapshot holds no byte of text edited away; an attachment reached through a link into the secrets folder is refused",
       "source": "A1 3.18, A6 3.16.4, A6 5, A7 3.10 M3.07",
       "owner": "M3",
       "kind": "ci",
@@ -2639,7 +2639,7 @@
     },
     {
       "id": "A2.3.10.cli.space-export",
-      "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title refuses the export with its kind and place and never the text",
+      "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title is a warning with its kind and place and never the text, and the bundle is written",
       "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",
       "owner": "M3",
       "kind": "ci",

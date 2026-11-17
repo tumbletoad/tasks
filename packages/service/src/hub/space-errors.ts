@@ -14,8 +14,7 @@ const MESSAGES: Readonly<Record<string, string>> = {
   BACKUP_FAILED: "The backup or export failed. Nothing was changed.",
   BUNDLE_LIMIT_EXCEEDED: "The backup or bundle is over a size limit.",
   BUNDLE_INVALID: "The bundle is not a valid export of a space, or does not verify.",
-  EXPORT_SECRET_FOUND:
-    "The space holds text shaped like a secret, such as an API key or token. Nothing was exported. Remove it from the task, then export again.",
+  EXPORT_SECRET_FOUND: `A file of the space lies in ${PRODUCT_NAME}'s secrets folder. Nothing was exported.`,
   SPACE_SCHEMA_FOREIGN: `The space's database holds tables, indexes or views that ${PRODUCT_NAME} does not make, so a restore would refuse its bundle. Nothing was exported.`,
   SPACE_WRITER_TAKEN: "Another writer still holds the space.",
   SPACE_LOCKED_ELSEWHERE: "Another process holds the space.",
