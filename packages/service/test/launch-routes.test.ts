@@ -25,6 +25,7 @@ import { FAKE_CLI_AGENT, type CliAgentReport } from "@tasks/testkit";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { instanceToml, readLog, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
+import { placeTask } from "./places-helper.ts";
 import { LAB_ROOT, LONG_MS, ShimLab } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
@@ -180,9 +181,7 @@ async function addTask(
       space: r.lab.spaceId,
       op: "task.add",
       input: {
-        tasks: [
-          { title, ...(folder === undefined ? {} : { place: { root: LAB_ROOT, path: folder } }) },
-        ],
+        tasks: [{ title }],
         request_id: rid(),
       },
     },
@@ -190,6 +189,9 @@ async function addTask(
   )) as { tasks: { id: string; ref: string }[] };
   const task = added.tasks[0];
   if (task === undefined) throw new Error("no task");
+  // The launch reads places, which no tool binds any more.
+  if (folder !== undefined)
+    await placeTask(r.lab.running.ops, task.id, LAB_ROOT, folder, r.lab.spaceId);
   return task;
 }
 

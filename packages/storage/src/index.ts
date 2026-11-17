@@ -266,6 +266,8 @@ export {
   type TaskField,
 } from "./write/fields.ts";
 export { FIRST_POSITION, isPosition, positionBetween } from "./write/positions.ts";
+// The slug a new area or project gets, for a caller that names groups it stages.
+export { freeSlug } from "./write/slugs.ts";
 // Folders (schema 0.5): their form on each OS, the case rule, and the folder a launch uses.
 export {
   carriedTo,

@@ -17,8 +17,8 @@
 //   text, the order is due date (none last), priority, most recent change, ID.
 // - Agents see documents with audience `all` only, in matches, negations, snippets and `has:notes`.
 // - Filters are SQL over the task, each wrapped so a NULL is false and a negation is exact.
-import type { SqlValue } from "@tasks/storage";
-import { normaliseSourceKey, SOURCE_KINDS } from "@tasks/storage";
+import type { FolderOs, SqlValue } from "@tasks/storage";
+import { normaliseSourceKey, separatorOf, SOURCE_KINDS } from "@tasks/storage";
 import { CLI_NAME } from "@tasks/brand";
 import { AppError, type SEARCH_SCOPES } from "@tasks/contracts";
 import { addDays } from "../ops/dates.ts";
@@ -73,6 +73,15 @@ export interface PlanContext {
   readonly here?: readonly string[];
   /** Tasks with a live session: `is:bound`. */
   readonly live: readonly string[];
+  /** Whether the space's schema holds folders (0.5 on). */
+  readonly folders: boolean;
+  /**
+   * A `folder:` value as this machine stores it, with its OS's case rule: `cwd` is the caller's
+   * working folder. `no_cwd` without one, `not_a_folder` for a value that names no folder here.
+   */
+  readonly folderOf?: (
+    value: string,
+  ) => { readonly stored: string; readonly os: FolderOs } | "no_cwd" | "not_a_folder";
 }
 
 export interface SearchPlan {
@@ -304,6 +313,42 @@ function dueCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string {
 
 const LIVE_NOTE = "n.deleted_at IS NULL";
 
+/** ASCII letters in lower case: what SQLite's lower() folds, so both sides fold alike. */
+const asciiLower = (text: string): string => text.replace(/[A-Z]/gu, (c) => c.toLowerCase());
+
+/**
+ * `folder:<folder>`: the tasks whose folder on this machine (its own, else its project's) is that
+ * folder or lies inside it, by stored text and the machine's case rule. Windows and macOS fold
+ * ASCII letters only, as SQLite does.
+ */
+function folderCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string {
+  const found = ctx.folderOf?.(term.value) ?? "not_a_folder";
+  if (found === "no_cwd") {
+    throw queryProblem("folder:cwd needs the working folder", "Pass cwd with the query.");
+  }
+  if (found === "not_a_folder") {
+    throw queryProblem(
+      "A folder: value is cwd, an absolute folder or one under ~",
+      "Use folder:cwd or folder:~/work/portal.",
+    );
+  }
+  if (!ctx.folders) return "0";
+  const fold = found.os === "linux" ? (s: string) => s : asciiLower;
+  const column = found.os === "linux" ? "f.path" : "lower(f.path)";
+  const path = fold(found.stored);
+  const sep = separatorOf(found.os);
+  const prefix = path.endsWith(sep) ? path : `${path}${sep}`;
+  const machine = b.bind(ctx.machine);
+  return (
+    `EXISTS (SELECT 1 FROM folders f WHERE f.machine_id = ${machine} AND f.deleted_at IS NULL ` +
+    "AND ((f.owner_kind = 'task' AND f.owner_id = t.id) OR (f.owner_kind = 'project' " +
+    "AND f.owner_id = t.project_id AND NOT EXISTS (SELECT 1 FROM folders g WHERE " +
+    `g.owner_kind = 'task' AND g.owner_id = t.id AND g.machine_id = ${machine} ` +
+    `AND g.deleted_at IS NULL))) AND (${column} = ${b.bind(path)} ` +
+    `OR substr(${column}, 1, ${b.bind(Array.from(prefix).length)}) = ${b.bind(prefix)}))`
+  );
+}
+
 function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string {
   const v = ctx.vocabulary;
   const value = lowerOf(term.value);
@@ -358,6 +403,13 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
       }
     case "has":
       switch (value) {
+        case "folder":
+          // Its own folder or its project's, on any machine.
+          return ctx.folders
+            ? "(EXISTS (SELECT 1 FROM folders f WHERE f.owner_kind = 'task' AND f.owner_id = t.id " +
+                "AND f.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM folders f WHERE " +
+                "f.owner_kind = 'project' AND f.owner_id = t.project_id AND f.deleted_at IS NULL))"
+            : "0";
         case "place":
           return (
             "EXISTS (SELECT 1 FROM places pl WHERE pl.owner_kind = 'task' AND pl.owner_id = t.id " +
@@ -435,6 +487,8 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
       }
       return `${placed}IN ${b.list(machines)})`;
     }
+    case "folder":
+      return folderCondition(term, ctx, b);
     case "id": {
       if (term.value.startsWith("t_")) return `t.id = ${b.bind(term.value)}`;
       const [prefix = "", number = "0"] = term.value.toUpperCase().split("-");

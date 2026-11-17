@@ -213,6 +213,20 @@ const SCRIPT_VERBS: Readonly<Record<string, string>> = {
 };
 
 /** Plain text for a person, per entry. `space` names the space a write went to (A2 3.10.2). */
+/** What `tasks area` says a write did, by its result. */
+const GROUP_DONE: Readonly<Record<string, string>> = {
+  created: "Created",
+  exists: "Another project has this folder:",
+  renamed: "Renamed",
+  moved: "Moved",
+  archived: "Archived",
+  unarchived: "Unarchived",
+  folder_set: "Folder set for",
+  folder_cleared: "Folder cleared for",
+  no_change: "No change to",
+  proposed: "Proposed for",
+};
+
 export function render(entry: string, result: Result, space: string): string {
   const lines: string[] = [];
   switch (entry) {
@@ -293,6 +307,14 @@ export function render(entry: string, result: Result, space: string): string {
       lines.push(taskLine(task));
       if (typeof task["summary"] === "string" && task["summary"] !== "")
         lines.push(`  ${task["summary"]}`);
+      const folder = task["folder"] as Result | undefined;
+      if (typeof folder?.["path"] === "string") {
+        lines.push(
+          `  folder: ${folder["path"]}${folder["of"] === "project" ? " (its project's)" : ""}`,
+        );
+      } else if (typeof folder?.["machine"] === "string") {
+        lines.push(`  folder: on ${folder["machine"]}`);
+      }
       const sections = (result["sections"] ?? task) as Result;
       for (const note of (sections["instructions"] as Result[] | undefined) ?? []) {
         lines.push(`  ${String(note["ref"])} user → agents: ${String(note["text"])}`);
@@ -361,21 +383,25 @@ export function render(entry: string, result: Result, space: string): string {
       // write says what it did to which group first.
       const group = result["group"] as Result | undefined;
       if (typeof result["result"] === "string" && group !== undefined) {
-        const done = result["result"] === "no_change" ? "No change to" : str(result["result"]);
-        const what = `${done.charAt(0).toUpperCase()}${done.slice(1)}`;
-        lines.push(`${what} ${str(group["kind"])} ${str(group["name"])}`);
+        const done = GROUP_DONE[str(result["result"])] ?? str(result["result"]);
+        const folder = typeof group["folder"] === "string" ? `: ${group["folder"]}` : "";
+        lines.push(`${done} ${str(group["kind"])} ${str(group["name"])}${folder}`);
+        if (typeof result["moved"] === "number" && result["moved"] > 0) {
+          lines.push(`${String(result["moved"])} task folders moved along.`);
+        }
       }
-      const named = (g: Result) => `${str(g["name"])} (${str(g["active"])})`;
+      // A project a line, with its folder on this machine.
+      const project = (g: Result) =>
+        `  ${str(g["name"])} (${str(g["active"])})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
       for (const area of (result["areas"] as Result[] | undefined) ?? []) {
-        lines.push(named(area));
-        const projects = (area["projects"] as Result[] | undefined) ?? [];
-        if (projects.length > 0) lines.push(`  ${projects.map(named).join(" · ")}`);
+        lines.push(`${str(area["name"])} (${str(area["active"])})`);
+        lines.push(...((area["projects"] as Result[] | undefined) ?? []).map(project));
         if (typeof area["more_projects"] === "number") {
           lines.push(`  and ${String(area["more_projects"])} more projects`);
         }
       }
       const loose = (result["projects"] as Result[] | undefined) ?? [];
-      if (loose.length > 0) lines.push(`No area: ${loose.map(named).join(" · ")}`);
+      if (loose.length > 0) lines.push("No area", ...loose.map(project));
       break;
     }
     case "prefs.manage":

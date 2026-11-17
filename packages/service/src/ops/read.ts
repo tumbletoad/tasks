@@ -1527,13 +1527,21 @@ export async function readFolderOwner(
   return typeof owner === "string" ? owner : undefined;
 }
 
+/** A live project's live folder on one machine. */
+export interface ProjectFolderRow {
+  readonly project: string;
+  readonly name: string;
+  readonly stored: string;
+  readonly archived: boolean;
+}
+
 /** What binding a folder on this machine reads first (folders.ts in ops). */
 export interface BindRead {
   readonly space: SpaceFacts;
   /** The owner's live folder on this machine. */
   readonly current: FolderView | undefined;
   /** Every live project's live folder on this machine, with the project's name. */
-  readonly projects: readonly { project: string; name: string; stored: string }[];
+  readonly projects: readonly ProjectFolderRow[];
   /** A project's tasks' live folders on this machine, with each task's reference. */
   readonly tasks: readonly { id: string; ref: string; path: string }[];
 }
@@ -1546,7 +1554,8 @@ const FOLDER_HERE: Statement = {
 };
 const PROJECT_FOLDERS_HERE: Statement = {
   sql:
-    "SELECT f.owner_id AS project, p.title AS name, f.path AS path FROM folders f " +
+    "SELECT f.owner_id AS project, p.title AS name, f.path AS path, p.lifecycle AS lifecycle " +
+    "FROM folders f " +
     "JOIN projects p ON p.id = f.owner_id WHERE f.machine_id = $machine " +
     "AND f.owner_kind = 'project' AND f.deleted_at IS NULL AND p.deleted_at IS NULL " +
     "ORDER BY f.created_seq, f.id",
@@ -1559,6 +1568,22 @@ const TASK_FOLDERS_HERE: Statement = {
     "AND f.deleted_at IS NULL AND t.project_id = $owner ORDER BY t.ref",
   mode: "all",
 };
+
+const projectFolderRow = (r: Row): ProjectFolderRow => ({
+  project: text(r["project"]),
+  name: text(r["name"]),
+  stored: text(r["path"]),
+  archived: r["lifecycle"] === "archived",
+});
+
+/** Every live project's live folder on `machine`, oldest first. */
+export async function readProjectFolders(
+  reader: WorkerConnection,
+  machine: string,
+): Promise<ProjectFolderRow[]> {
+  const [rows] = await snapshot(reader, [PROJECT_FOLDERS_HERE], { machine });
+  return (rows as Row[]).map(projectFolderRow);
+}
 
 /** One snapshot of what a folder's bind on `machine` checks (BindRead). */
 export async function readBind(
@@ -1575,11 +1600,7 @@ export async function readBind(
   return {
     space: facts,
     current: current === null || current === undefined ? undefined : folderView(current as Row),
-    projects: (projects as Row[]).map((r) => ({
-      project: text(r["project"]),
-      name: text(r["name"]),
-      stored: text(r["path"]),
-    })),
+    projects: (projects as Row[]).map(projectFolderRow),
     tasks:
       owner.kind === "project"
         ? (tasks as Row[]).map((r) => ({

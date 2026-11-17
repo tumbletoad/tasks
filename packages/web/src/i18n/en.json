@@ -188,7 +188,6 @@
   "source.tip": "{domain} · {url}",
   "source.kind": "{kind, select, email {Mail} chat {Chat} ticket {Ticket} pr {Pull request} issue {Issue} doc {Document} calendar {Event} crash {Crash} session {Session} book {Book} web {Web page} other {Source}}",
 
-  "place.missing": "Not found on this machine",
   "place.elsewhere": "On {machine}",
   "place.workFolder": "{product} work folder",
   "place.workFolderTip": "This task has no folder: Open and Run use the space's {product} work folder",

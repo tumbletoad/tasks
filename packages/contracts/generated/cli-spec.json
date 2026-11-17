@@ -214,9 +214,9 @@
           "type": "boolean"
         },
         {
-          "field": "tasks[].place",
-          "flag": "--place",
-          "help": "Its folder: \"cwd\", an absolute folder, or root and path",
+          "field": "tasks[].folder",
+          "flag": "--folder",
+          "help": "Its folder: \"cwd\", an absolute folder or one under ~",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -278,10 +278,19 @@
       "actors": "agent",
       "auto": [
         "base",
+        "cwd",
         "request_id"
       ],
       "entry": "group.manage",
       "flags": [
+        {
+          "field": "folder",
+          "flag": "--folder",
+          "help": "create, set_folder: the project's folder here, \"cwd\" or an absolute path",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
         {
           "field": "mode",
           "flag": "--mode",
@@ -300,7 +309,7 @@
       "positionals": [
         {
           "field": "action",
-          "help": "list reads; create, rename, move, archive and unarchive change a group",
+          "help": "list reads; the others change a group",
           "name": "action",
           "required": true,
           "type": "string",
@@ -310,7 +319,9 @@
             "rename",
             "move",
             "archive",
-            "unarchive"
+            "unarchive",
+            "set_folder",
+            "clear_folder"
           ]
         },
         {
@@ -772,7 +783,7 @@
             "effort",
             "due",
             "waiting_on",
-            "place",
+            "folder",
             "focus"
           ]
         },
@@ -873,9 +884,9 @@
             "type": "string"
           },
           {
-            "field": "set.place",
-            "help": "\"cwd\", an absolute folder, or root and path",
-            "key": "place",
+            "field": "set.folder",
+            "help": "\"cwd\", an absolute folder or one under ~",
+            "key": "folder",
             "type": "string"
           },
           {

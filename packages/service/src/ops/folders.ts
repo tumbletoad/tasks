@@ -26,10 +26,11 @@ import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
-import { FOLDER_PATH_MAX, folderKey, type FolderOs } from "@tasks/storage";
+import { FOLDER_PATH_MAX, folderKey, rebased, segmentsOf, type FolderOs } from "@tasks/storage";
 
 /** Why a folder is not bound. */
 export type FolderReason =
+  | "no_cwd"
   | "not_absolute"
   | "invalid_path"
   | "folder_missing"
@@ -43,6 +44,7 @@ export type FolderReason =
 export const LOOK_MS = 2_000;
 
 const SENTENCES: Readonly<Record<FolderReason, string>> = {
+  no_cwd: 'A folder given as "cwd" needs your working folder',
   not_absolute: "Not an absolute folder, nor one under ~",
   invalid_path: "A folder path this machine cannot store as given",
   folder_missing: "The folder is not there",
@@ -54,8 +56,9 @@ const SENTENCES: Readonly<Record<FolderReason, string>> = {
 };
 
 const HINTS: Partial<Record<FolderReason, string>> = {
+  no_cwd: "Pass cwd, your working folder as an absolute path, or give the folder itself.",
   not_absolute: "Give an absolute path, or one that starts with ~.",
-  folder_missing: "Make the folder first, then set it.",
+  folder_missing: "Make the folder first, then name it.",
   folder_reserved: `Choose a folder outside the ${PRODUCT_NAME} home and the space folders.`,
   folder_taken: "Open that project, or choose another folder.",
   not_answering: "Check that its drive or share is connected, then try again.",
@@ -125,8 +128,9 @@ export function storedForm(
   const parts = body.split(sep);
   // A root keeps its own separator: `/` and `C:\`.
   const head = parts[0] ?? "";
-  const rest = parts.slice(1).filter((part) => part !== "");
-  if (rest.some((part) => part === "." || part === "..")) return "invalid_path";
+  const rest = parts.slice(1).filter((part) => part !== "" && part !== ".");
+  // `a/link/..` is not `a` when `link` is a link, so `..` is not folded away by its text.
+  if (rest.includes("..")) return "invalid_path";
   let absolute: string;
   if (unc) {
     if (head === "" || rest.length === 0) return "not_absolute";
@@ -248,6 +252,63 @@ export async function checkFolder(
   );
   const taken = projects.find((_, k) => same[k] === true);
   return taken === undefined ? undefined : { reason: "folder_taken", project: taken };
+}
+
+/**
+ * The project whose folder holds `folder` most closely: the folder itself, or the deepest of the
+ * project folders it lies in. A project folder holds it by its stored text with the machine's case
+ * rule, or by identity, so a folder reached through a link still belongs to its project. A project
+ * folder that does not answer is judged by its text alone. `exact`: the folder is the project's.
+ * `looks` keeps the project folders' identities for the next folder of the same call.
+ */
+export async function deepestProject<P extends ProjectFolder>(
+  folder: Folder,
+  projects: readonly P[],
+  facts: Pick<BindFacts, "home" | "platform">,
+  looks: Map<string, Promise<string | undefined>> = new Map(),
+): Promise<{ project: P; exact: boolean } | undefined> {
+  if (projects.length === 0) return undefined;
+  const { platform } = facts;
+  const os = osOf(platform);
+  const depth = segmentsOf(folder.stored, os).length;
+  // How many folders up from `folder` each project's folder is, by its text.
+  const byText = projects.map((p) =>
+    rebased(folder.stored, p.stored, p.stored, os) === undefined
+      ? undefined
+      : depth - segmentsOf(p.stored, os).length,
+  );
+  const up = await bounded(async () => {
+    try {
+      const real = await realpath(folder.absolute);
+      return await Promise.all(ancestors(real, platform).map((at) => identityOf(at, platform)));
+    } catch {
+      return [];
+    }
+  });
+  const byIdentity = await Promise.all(
+    projects.map(async (p) => {
+      if (up === "not_answering" || up.length === 0) return undefined;
+      let look = looks.get(p.stored);
+      if (look === undefined) {
+        look = bounded(() => identityOf(expanded(p.stored, facts.home, platform), platform)).then(
+          (found) => (found === "not_answering" ? undefined : found),
+        );
+        looks.set(p.stored, look);
+      }
+      const theirs = await look;
+      if (theirs === undefined) return undefined;
+      const k = up.indexOf(theirs);
+      return k === -1 ? undefined : k;
+    }),
+  );
+  let best: { project: P; distance: number } | undefined;
+  projects.forEach((project, k) => {
+    const found = [byText[k], byIdentity[k]].filter((d): d is number => d !== undefined);
+    if (found.length === 0) return;
+    const distance = Math.min(...found);
+    if (best === undefined || distance < best.distance) best = { project, distance };
+  });
+  return best === undefined ? undefined : { project: best.project, exact: best.distance === 0 };
 }
 
 /**
